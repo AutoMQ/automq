@@ -24,6 +24,7 @@ import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
 import kafka.log.remote.RemoteLogManager
+import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog}
 import kafka.server._
 import kafka.server.checkpoints.OffsetCheckpoints
 import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
@@ -306,6 +307,7 @@ class Partition(val topicPartition: TopicPartition,
   // The current epoch for the partition for KRaft controllers. The current ZK version for the legacy controllers.
   @volatile private var partitionEpoch: Int = LeaderAndIsr.InitialPartitionEpoch
   @volatile private var leaderEpoch: Int = LeaderAndIsr.InitialLeaderEpoch - 1
+  @volatile private var newLeaderEpoch: Int = 0
   // start offset for 'leaderEpoch' above (leader epoch of the current leader for this partition),
   // defined when this broker is leader for partition
   @volatile private[cluster] var leaderEpochStartOffsetOpt: Option[Long] = None
@@ -349,6 +351,16 @@ class Partition(val topicPartition: TopicPartition,
   metricsGroup.newGauge("AtMinIsr", () => if (isAtMinIsr) 1 else 0, tags)
   metricsGroup.newGauge("ReplicasCount", () => if (isLeader) assignmentState.replicationFactor else 0, tags)
   metricsGroup.newGauge("LastStableOffsetLag", () => log.map(_.lastStableOffsetLag).getOrElse(0), tags)
+
+  // AutoMQ for Kafka inject start
+  private var closed: Boolean = false
+  /**
+   * Same with the `_confirmOffset` in `ElasticLog`
+   * Updated by [[ElasticUnifiedLog.confirmOffsetChangeListener]]
+   * Used to return fast when fetching messages with `fetchOffset` equals to `confirmOffset` in [[checkFetchOffsetAndMaybeGetInfo]]
+   */
+  private var confirmOffset: Long = -1L
+  // AutoMQ for Kafka inject end
 
   def hasLateTransaction(currentTimeMs: Long): Boolean = leaderLogIfLocal.exists(_.hasLateTransaction(currentTimeMs))
 
@@ -477,10 +489,21 @@ class Partition(val topicPartition: TopicPartition,
     logManager.initializingLog(topicPartition)
     var maybeLog: Option[UnifiedLog] = None
     try {
-      val log = logManager.getOrCreateLog(topicPartition, isNew, isFutureReplica, topicId, targetLogDirectoryId)
+      val log = logManager.getOrCreateLog(topicPartition, isNew, isFutureReplica, topicId, targetLogDirectoryId, newLeaderEpoch)
       if (!isFutureReplica) log.setLogOffsetsListener(logOffsetsListener)
       maybeLog = Some(log)
-      updateHighWatermark(log)
+      // AutoMQ for Kafka inject start
+      log match {
+        case elasticUnifiedLog: ElasticUnifiedLog =>
+          elasticUnifiedLog.confirmOffsetChangeListener = Some(() => handleLeaderConfirmOffsetMove())
+          // just update LEO to HW since we only have one replica
+          val initialHighWatermark = log.logEndOffset
+          log.updateHighWatermark(log.logEndOffset)
+          info(s"Log loaded for partition $topicPartition with initial high watermark $initialHighWatermark")
+        case _ =>
+          updateHighWatermark(log)
+      }
+      // AutoMQ for Kafka inject end
       log
     } finally {
       logManager.finishedInitializingLog(topicPartition, maybeLog)
@@ -577,6 +600,22 @@ class Partition(val topicPartition: TopicPartition,
     log.flatMap(_.topicId)
   }
 
+  // AutoMQ for Kafka inject start
+
+  /**
+   * Remove lambda function in [[topicId]] to avoid allocation.
+   */
+  def topicIdV2: Option[Uuid] = {
+    if (this.log.isDefined) {
+      this.log.get.topicId
+    } else {
+      val log = logManager.getLog(topicPartition)
+      log.flatMap(_.topicId)
+    }
+  }
+
+  // AutoMQ for Kafka inject end
+
   // remoteReplicas will be called in the hot path, and must be inexpensive
   def remoteReplicas: Iterable[Replica] =
     remoteReplicasMap.values
@@ -645,6 +684,51 @@ class Partition(val topicPartition: TopicPartition,
 
   def futureReplicaDirectoryId(): Option[Uuid] = futureLog.flatMap(log => logManager.directoryId(log.dir.getParent))
   def logDirectoryId(): Option[Uuid] = log.flatMap(log => logManager.directoryId(log.dir.getParent))
+
+
+
+  // AutoMQ for Kafka inject start
+  private def checkClosed(): Unit = {
+    if (closed) {
+      throw new NotLeaderOrFollowerException("Leader %d for partition %s on broker %d is already closed"
+        .format(localBrokerId, topicPartition, localBrokerId))
+    }
+  }
+
+  /**
+   * Close this partition and trigger a re-election.
+   * It may be messy here, but it is necessary to ensure the following steps:
+   * 1) This broker(current leader) has closed the partition and the related streams.
+   * 2) The next leader will then open the partition and the related streams.
+   */
+  def close(): CompletableFuture[Void] = {
+    info("Closing partition")
+    logManager.removeFromCurrentLogs(topicPartition)
+    ElasticLogManager.removeLog(topicPartition)
+    inWriteLock(leaderIsrUpdateLock) {
+      closed = true
+    }
+    val needCloseLog = log
+    // need to hold the lock to prevent appendMessagesToLeader() from hitting I/O exceptions due to log being deleted
+    inWriteLock(leaderIsrUpdateLock) {
+      remoteReplicasMap.clear()
+      assignmentState = SimpleAssignmentState(Seq.empty)
+      futureLog = None
+      partitionState = CommittedPartitionState(Set.empty, LeaderRecoveryState.RECOVERED)
+      leaderReplicaIdOpt = None
+      leaderEpochStartOffsetOpt = None
+      Partition.removeMetrics(topicPartition)
+    }
+    if (needCloseLog.isDefined) {
+      needCloseLog.get.close()
+      // TODO remove next line
+      CompletableFuture.completedFuture(null)
+    } else {
+      CompletableFuture.completedFuture(null)
+    }
+  }
+  // AutoMQ for Kafka inject end
+
   /**
    * Delete the partition. Note that deleting the partition does not delete the underlying logs.
    * The logs are deleted by the ReplicaManager after having deleted the partition.
@@ -740,6 +824,9 @@ class Partition(val topicPartition: TopicPartition,
       )
 
       try {
+        if (isNewLeaderEpoch) {
+          newLeaderEpoch = partitionState.leaderEpoch
+        }
         createLogInAssignedDirectoryId(partitionState, highWatermarkCheckpoints, topicId, targetDirectoryId)
       } catch {
         case e: ZooKeeperClientException =>
@@ -844,25 +931,27 @@ class Partition(val topicPartition: TopicPartition,
         LeaderRecoveryState.of(partitionState.leaderRecoveryState)
       )
 
-      try {
-        createLogInAssignedDirectoryId(partitionState, highWatermarkCheckpoints, topicId, targetLogDirectoryId)
-      } catch {
-        case e: ZooKeeperClientException =>
-          stateChangeLogger.error(s"A ZooKeeper client exception has occurred. makeFollower will be skipping the " +
-            s"state change for the partition $topicPartition with leader epoch: $leaderEpoch.", e)
-          return false
-      }
+      if (!ElasticLogManager.enabled()) {
+        try {
+          createLogInAssignedDirectoryId(partitionState, highWatermarkCheckpoints, topicId, targetLogDirectoryId)
+        } catch {
+          case e: ZooKeeperClientException =>
+            stateChangeLogger.error(s"A ZooKeeper client exception has occurred. makeFollower will be skipping the " +
+              s"state change for the partition $topicPartition with leader epoch: $leaderEpoch.", e)
+            return false
+        }
 
-      val followerLog = localLogOrException
-      if (isNewLeaderEpoch) {
-        val leaderEpochEndOffset = followerLog.logEndOffset
-        stateChangeLogger.info(s"Follower $topicPartition starts at leader epoch ${partitionState.leaderEpoch} from " +
-          s"offset $leaderEpochEndOffset with partition epoch ${partitionState.partitionEpoch} and " +
-          s"high watermark ${followerLog.highWatermark}. Current leader is ${partitionState.leader}. " +
-          s"Previous leader $leaderReplicaIdOpt and previous leader epoch was $leaderEpoch.")
-      } else {
-        stateChangeLogger.info(s"Skipped the become-follower state change for $topicPartition with topic id $topicId " +
-          s"and partition state $partitionState since it is already a follower with leader epoch $leaderEpoch.")
+        val followerLog = localLogOrException
+        if (isNewLeaderEpoch) {
+          val leaderEpochEndOffset = followerLog.logEndOffset
+          stateChangeLogger.info(s"Follower $topicPartition starts at leader epoch ${partitionState.leaderEpoch} from " +
+            s"offset $leaderEpochEndOffset with partition epoch ${partitionState.partitionEpoch} and " +
+            s"high watermark ${followerLog.highWatermark}. Current leader is ${partitionState.leader}. " +
+            s"Previous leader $leaderReplicaIdOpt and previous leader epoch was $leaderEpoch.")
+        } else {
+          stateChangeLogger.info(s"Skipped the become-follower state change for $topicPartition with topic id $topicId " +
+            s"and partition state $partitionState since it is already a follower with leader epoch $leaderEpoch.")
+        }
       }
 
       // We must restart the fetchers when the leader epoch changed regardless of
@@ -1171,6 +1260,16 @@ class Partition(val topicPartition: TopicPartition,
         newHighWatermark = replicaState.logEndOffsetMetadata
       }
     }
+    // AutoMQ for Kafka inject start
+    // move high watermark based on log confirm offset to prevent ack inflight record.
+    leaderLog match {
+      case elasticLog: ElasticUnifiedLog =>
+        val confirmOffset = elasticLog.confirmOffset()
+        newHighWatermark = confirmOffset
+        this.confirmOffset = confirmOffset.messageOffset
+      case _ =>
+    }
+    // AutoMQ for Kafka inject end
 
     leaderLog.maybeIncrementHighWatermark(newHighWatermark) match {
       case Some(oldHighWatermark) =>
@@ -1191,6 +1290,22 @@ class Partition(val topicPartition: TopicPartition,
         false
     }
   }
+
+  // AutoMQ for Kafka inject start
+  /**
+   * Only log confirm offset move forward, then the high watermark can move forward.
+   * So we need to try complete the delayed requests(ack to produce), after confirm offset move forward.
+   */
+  private def handleLeaderConfirmOffsetMove(): Unit = {
+    log match {
+      case Some(leaderLog) =>
+        if (maybeIncrementLeaderHW(leaderLog)) {
+          tryCompleteDelayedRequests()
+        }
+      case None => logger.warn("try to handle leader confirm offset move, but leader log is not exist")
+    }
+  }
+  // AutoMQ for Kafka inject end
 
   /**
    * The low watermark offset value, calculated only if the local replica is the partition leader
@@ -1348,7 +1463,11 @@ class Partition(val topicPartition: TopicPartition,
 
   def appendRecordsToLeader(records: MemoryRecords, origin: AppendOrigin, requiredAcks: Int,
                             requestLocal: RequestLocal, verificationGuard: VerificationGuard = VerificationGuard.SENTINEL): LogAppendInfo = {
+    checkClosed()
     val (info, leaderHWIncremented) = inReadLock(leaderIsrUpdateLock) {
+      // AutoMQ for Kafka inject start
+      checkClosed()
+      // AutoMQ for Kafka inject end
       leaderLogIfLocal match {
         case Some(leaderLog) =>
           val minIsr = effectiveMinIsr(leaderLog)
@@ -1444,6 +1563,69 @@ class Partition(val topicPartition: TopicPartition,
           fetchParams.replicaEpoch
         )
       }
+
+      logReadInfo
+    } else {
+      inReadLock(leaderIsrUpdateLock) {
+        val localLog = localLogWithEpochOrThrow(
+          fetchPartitionData.currentLeaderEpoch,
+          fetchParams.fetchOnlyLeader
+        )
+        readFromLocalLog(localLog)
+      }
+    }
+  }
+
+    /**
+   * Asynchronously fetch records from the partition.
+   */
+  def fetchRecordsAsync(
+                         fetchParams: FetchParams,
+                         fetchPartitionData: FetchRequest.PartitionData,
+                         fetchTimeMs: Long,
+                         maxBytes: Int,
+                         minOneMessage: Boolean,
+                         updateFetchState: Boolean): CompletableFuture[LogReadInfo] = {
+    def readFromLocalLog(log: UnifiedLog): CompletableFuture[LogReadInfo] = {
+      readRecordsAsync(
+        log,
+        fetchPartitionData.lastFetchedEpoch,
+        fetchPartitionData.fetchOffset,
+        fetchPartitionData.currentLeaderEpoch,
+        maxBytes,
+        fetchParams.isolation,
+        minOneMessage
+      )
+    }
+
+    if (fetchParams.isFromFollower) {
+      // Check that the request is from a valid replica before doing the read
+      val (replica, logReadInfo) = inReadLock(leaderIsrUpdateLock) {
+        val localLog = localLogWithEpochOrThrow(
+          fetchPartitionData.currentLeaderEpoch,
+          fetchParams.fetchOnlyLeader
+        )
+        val replica = followerReplicaOrThrow(
+          fetchParams.replicaId,
+          fetchPartitionData
+        )
+        val logReadInfo = readFromLocalLog(localLog)
+        (replica, logReadInfo)
+      }
+
+      logReadInfo.thenAccept(rst => {
+        // Update fetch state before returning response
+        if (updateFetchState && rst.divergingEpoch.isEmpty) {
+          updateFollowerFetchState(
+            replica,
+            followerFetchOffsetMetadata = rst.fetchedData.fetchOffsetMetadata,
+            followerStartOffset = fetchPartitionData.logStartOffset,
+            followerFetchTimeMs = fetchTimeMs,
+            leaderEndOffset = rst.logEndOffset,
+            fetchParams.replicaEpoch
+          )
+        }
+      })
 
       logReadInfo
     } else {
@@ -1553,6 +1735,112 @@ class Partition(val topicPartition: TopicPartition,
       initialLastStableOffset
     )
   }
+
+
+  // AutoMQ for Kafka inject start
+
+  /**
+   * Check whether the fetch offset in the fetch request equals to the current confirmed offset.
+   * If so, return empty response with necessary metadata, e.g., [[LogReadInfo.fetchedData.fetchOffsetMetadata]],
+   * [[LogReadInfo.highWatermark]], etc.
+   * Otherwise, return null.
+   * This method could be called before [[fetchRecordsAsync]] to avoid unnecessary log read.
+   */
+  def checkFetchOffsetAndMaybeGetInfo(fetchParams: FetchParams, fetchPartitionData: FetchRequest.PartitionData): LogReadInfo = {
+    if (confirmOffset < 0 || confirmOffset != fetchPartitionData.fetchOffset) {
+      return null
+    }
+
+    // The fetch offset equals to the confirmed offset
+    val localLog = localLogWithEpochOrThrow(fetchPartitionData.currentLeaderEpoch, fetchParams.fetchOnlyLeader)
+    assert(localLog.isInstanceOf[ElasticUnifiedLog])
+    val elasticLog = localLog.asInstanceOf[ElasticUnifiedLog]
+
+    // Get max offset from the log and recheck the fetch offset
+    val maxOffsetMetadata = elasticLog.maxOffsetMetadata(fetchParams.isolation)
+    if (maxOffsetMetadata.messageOffset != fetchPartitionData.fetchOffset) {
+      return null
+    }
+
+    // return empty response with necessary metadata
+    val fetchDataInfo = elasticLog.emptyFetchDataInfo(maxOffsetMetadata, fetchParams.isolation)
+    new LogReadInfo(
+      fetchDataInfo,
+      Optional.empty(),
+      localLog.highWatermark,
+      localLog.logStartOffset,
+      localLog.logEndOffset,
+      localLog.lastStableOffset
+    )
+  }
+
+  private def readRecordsAsync(
+                                localLog: UnifiedLog,
+                                lastFetchedEpoch: Optional[Integer],
+                                fetchOffset: Long,
+                                currentLeaderEpoch: Optional[Integer],
+                                maxBytes: Int,
+                                fetchIsolation: FetchIsolation,
+                                minOneMessage: Boolean): CompletableFuture[LogReadInfo] = {
+    // Note we use the log end offset prior to the read. This ensures that any appends following
+    // the fetch do not prevent a follower from coming into sync.
+    val initialHighWatermark = localLog.highWatermark
+    val initialLogStartOffset = localLog.logStartOffset
+    val initialLogEndOffset = localLog.logEndOffset
+    val initialLastStableOffset = localLog.lastStableOffset
+
+    lastFetchedEpoch.ifPresent { fetchEpoch =>
+      val epochEndOffset = lastOffsetForLeaderEpoch(currentLeaderEpoch, fetchEpoch, fetchOnlyFromLeader = false)
+      val error = Errors.forCode(epochEndOffset.errorCode)
+      if (error != Errors.NONE) {
+        return CompletableFuture.failedFuture(error.exception())
+      }
+
+      if (epochEndOffset.endOffset == UNDEFINED_EPOCH_OFFSET || epochEndOffset.leaderEpoch == UNDEFINED_EPOCH) {
+        return CompletableFuture.failedFuture(new OffsetOutOfRangeException("Could not determine the end offset of the last fetched epoch " +
+          s"$lastFetchedEpoch from the request"))
+      }
+
+      // If fetch offset is less than log start, fail with OffsetOutOfRangeException, regardless of whether epochs are diverging
+      if (fetchOffset < initialLogStartOffset) {
+        return CompletableFuture.failedFuture(throw new OffsetOutOfRangeException(s"Received request for offset $fetchOffset for partition $topicPartition, " +
+          s"but we only have log segments in the range $initialLogStartOffset to $initialLogEndOffset."))
+      }
+
+      if (epochEndOffset.leaderEpoch < fetchEpoch || epochEndOffset.endOffset < fetchOffset) {
+        val divergingEpoch = new FetchResponseData.EpochEndOffset()
+          .setEpoch(epochEndOffset.leaderEpoch)
+          .setEndOffset(epochEndOffset.endOffset)
+
+        return CompletableFuture.completedFuture(
+          new LogReadInfo(
+            FetchDataInfo.empty(fetchOffset),
+            Optional.of(divergingEpoch),
+            initialHighWatermark,
+            initialLogStartOffset,
+            initialLogEndOffset,
+            initialLastStableOffset))
+      }
+    }
+
+    localLog.readAsync(
+      fetchOffset,
+      maxBytes,
+      fetchIsolation,
+      minOneMessage
+    ).thenApply(fetchedData =>
+      new LogReadInfo(
+        fetchedData,
+        Optional.empty(),
+        initialHighWatermark,
+        initialLogStartOffset,
+        initialLogEndOffset,
+        initialLastStableOffset
+      )
+    )
+  }
+
+  // AutoMQ for Kafka inject end
 
   def fetchOffsetForTimestamp(timestamp: Long,
                               isolationLevel: Option[IsolationLevel],
@@ -1741,7 +2029,7 @@ class Partition(val topicPartition: TopicPartition,
           }
         case Right(error) => new EpochEndOffset()
           .setPartition(partitionId)
-          .setErrorCode(error.code)
+          .setErrorCode(error.code())
       }
     }
   }
