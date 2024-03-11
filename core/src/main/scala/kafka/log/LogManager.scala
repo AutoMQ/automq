@@ -17,6 +17,8 @@
 
 package kafka.log
 
+import kafka.log.streamaspect.ElasticUnifiedLog
+
 import java.io._
 import java.nio.file.{Files, NoSuchFileException}
 import java.util.concurrent._
@@ -256,6 +258,61 @@ class LogManager(logDirs: Seq[File],
       warn(s"Logs for partitions ${offlineCurrentTopicPartitions.mkString(",")} are offline and " +
            s"logs for future partitions ${offlineFutureTopicPartitions.mkString(",")} are offline due to failure on log directory $dir")
       dirLocks.filter(_.file.getParent == dir).foreach(dir => CoreUtils.swallow(dir.destroy(), this))
+    }
+  }
+
+  // AutoMQ for Kafka inject start
+  /**
+   * The partition failure handler. It will stop log cleaning and close handlers of logs in that partition.
+   *
+   * @param dir the absolute path of the partition's directory
+   */
+  def handlePartitionFailure(dir: String): Unit = {
+    warn(s"Stopping serving partition with dir $dir")
+    logCreationOrDeletionLock synchronized {
+
+      def removeOfflineLogs(logs: Pool[TopicPartition, UnifiedLog]): Iterable[TopicPartition] = {
+        val offlineTopicPartitions: Iterable[TopicPartition] = logs.collect {
+          case (tp, log) if log.dir.getAbsolutePath == dir => tp
+        }
+        offlineTopicPartitions.foreach { topicPartition => {
+          val removedLog = removeLogAndMetrics(logs, topicPartition)
+          removedLog.foreach {
+            log => log.closeHandlers()
+            quicklyCloseLogWithNoExceptionThrown(log)
+          }
+        }
+        }
+
+        offlineTopicPartitions
+      }
+
+      val offlineCurrentTopicPartitions = removeOfflineLogs(currentLogs)
+      if (cleaner != null)
+        offlineCurrentTopicPartitions.foreach(cleaner.abortAndPauseCleaning(_))
+      val offlineFutureTopicPartitions = removeOfflineLogs(futureLogs)
+
+      warn(s"Logs for partitions ${offlineCurrentTopicPartitions.mkString(",")} are offline and " +
+          s"logs for future partitions ${offlineFutureTopicPartitions.mkString(",")} are offline due to failure on log directory $dir")
+    }
+  }
+  // AutoMQ for Kafka inject end
+
+  /**
+   * Despite any exception occurs, quickly close the given log without flushing. Exceptions will only be logged and will
+   * not be thrown.
+   * @param log
+   */
+  private def quicklyCloseLogWithNoExceptionThrown(log: UnifiedLog): Unit = {
+    try {
+      log match {
+        case elasticUnifiedLog: ElasticUnifiedLog =>
+          elasticUnifiedLog.closeStreams().get()
+        case _ =>
+      }
+    } catch {
+      case e: Throwable =>
+        warn(s"Ignore error occurred while quickly closing partition ${log.topicPartition}, msg: ${e.getMessage}")
     }
   }
 
@@ -1018,7 +1075,7 @@ class LogManager(logDirs: Seq[File],
    * @throws InconsistentTopicIdException if the topic ID in the log does not match the topic ID provided
    */
   def getOrCreateLog(topicPartition: TopicPartition, isNew: Boolean = false, isFuture: Boolean = false,
-                     topicId: Option[Uuid], targetLogDirectoryId: Option[Uuid] = Option.empty): UnifiedLog = {
+                     topicId: Option[Uuid], targetLogDirectoryId: Option[Uuid] = Option.empty, leaderEpoch: Long = 0): UnifiedLog = {
     logCreationOrDeletionLock synchronized {
       val log = getLog(topicPartition, isFuture).getOrElse {
         // create the log if it has not already been created in another thread
@@ -1279,6 +1336,12 @@ class LogManager(logDirs: Seq[File],
 
     removedLog
   }
+
+  // AutoMQ for Kafka inject start
+  def removeFromCurrentLogs(topicPartition: TopicPartition): Unit = {
+    removeLogAndMetrics(currentLogs, topicPartition)
+  }
+  // AutoMQ for Kafka inject end
 
   /**
    * Rename the directories of the given topic-partitions and add them in the queue for
