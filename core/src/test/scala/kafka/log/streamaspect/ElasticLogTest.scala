@@ -28,7 +28,6 @@ import org.junit.jupiter.api.{AfterEach, BeforeEach, Tag, Test}
 import java.io.{File, IOException}
 import java.nio.charset.StandardCharsets
 import java.util.Collections
-import java.util.concurrent.Executors
 import java.util.regex.Pattern
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
@@ -618,8 +617,7 @@ class ElasticLogTest {
             maxTransactionTimeoutMs = 5 * 60 * 1000,
             producerStateManagerConfig = producerStateManagerConfig,
             topicId = Uuid.ZERO_UUID,
-            leaderEpoch = 0,
-            executorService = Executors.newSingleThreadExecutor()
+            leaderEpoch = 0
         )
     }
 }

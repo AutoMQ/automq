@@ -45,9 +45,14 @@ public class ElasticTimeIndex extends TimeIndex {
         FileCache cache) throws IOException {
         super(file, baseOffset, maxIndexSize, true, true);
         this.file = file;
-        lastEntry(initLastEntry);
         this.cache = cache;
         this.stream = sliceSupplier.get();
+        setEntries((int) (stream.nextOffset() / ENTRY_SIZE));
+        if (entries() == 0) {
+            lastEntry(new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset()));
+        } else {
+            lastEntry(initLastEntry);
+        }
     }
 
     @Override
