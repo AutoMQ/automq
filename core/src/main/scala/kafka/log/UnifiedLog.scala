@@ -1762,7 +1762,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     producerStateManager.mapEndOffset
   }
 
-  private[log] def flushProducerStateSnapshot(snapshot: Path): Unit = {
+  def flushProducerStateSnapshot(snapshot: Path): Unit = {
     maybeHandleIOException(s"Error while deleting producer state snapshot $snapshot for $topicPartition in dir ${dir.getParent}") {
       Utils.flushFileIfExists(snapshot)
     }

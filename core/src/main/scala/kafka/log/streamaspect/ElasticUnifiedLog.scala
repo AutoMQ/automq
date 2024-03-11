@@ -11,6 +11,7 @@
 
 package kafka.log.streamaspect
 
+import com.automq.stream.api.Client
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
 import kafka.server._
@@ -26,6 +27,7 @@ import org.apache.kafka.storage.internals.log._
 
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.file.Path
 import java.util
 import java.util.concurrent.atomic.LongAdder
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors}
@@ -38,9 +40,11 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     producerIdExpirationCheckIntervalMs: Int,
     _leaderEpochCache: Option[LeaderEpochFileCache],
     producerStateManager: ProducerStateManager,
-    __topicId: Option[Uuid])
+    __topicId: Option[Uuid],
+    logOffsetsListener: LogOffsetsListener
+)
     extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
-        _leaderEpochCache, producerStateManager, __topicId, false) {
+        _leaderEpochCache, producerStateManager, __topicId, false, false, logOffsetsListener) {
 
     ElasticUnifiedLog.Logs.put(elasticLog.topicPartition, this)
 
@@ -51,6 +55,8 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     // fuzzy interval bytes for checkpoint, it's ok not thread safe
     var checkpointIntervalBytes = 0
     var lastCheckpointTimestamp = time.milliseconds()
+
+    def getLocalLog(): ElasticLog = elasticLog
 
     def confirmOffset(): LogOffsetMetadata = {
         elasticLog.confirmOffset
@@ -67,7 +73,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
         val size = records.sizeInBytes()
         checkpointIntervalBytes += size
         ElasticUnifiedLog.DirtyBytes.add(size)
-        val rst = super.appendAsLeader(records, leaderEpoch, origin, interBrokerProtocolVersion, requestLocal)
+        val rst = super.appendAsLeader(records, leaderEpoch, origin, interBrokerProtocolVersion, requestLocal, verificationGuard)
         if (checkpointIntervalBytes > MaxCheckpointIntervalBytes && time.milliseconds() - lastCheckpointTimestamp > MinCheckpointIntervalMs) {
             checkpointIntervalBytes = 0
             lastCheckpointTimestamp = time.milliseconds()
@@ -218,6 +224,11 @@ class ElasticUnifiedLog(_logStartOffset: Long,
         localLog.createNewCleanedSegment(dir, logConfig, baseOffset)
     }
 
+    override def flushProducerStateSnapshot(
+        snapshot: Path): Unit = {
+        // noop implementation, producer snapshot and recover point will be appended to MetaStream, so they have order relation.
+    }
+
     // only used for test
     def listProducerSnapshots(): util.NavigableMap[java.lang.Long, ByteBuffer] = {
         producerStateManager.asInstanceOf[ElasticProducerStateManager].snapshotsMap
@@ -246,10 +257,16 @@ object ElasticUnifiedLog extends Logging {
         producerIdExpirationCheckIntervalMs: Int,
         logDirFailureChannel: LogDirFailureChannel,
         topicId: Option[Uuid],
-        leaderEpoch: Long = 0): ElasticUnifiedLog = {
+        leaderEpoch: Long = 0,
+        logOffsetsListener: LogOffsetsListener,
+
+        client: Client,
+        namespace: String,
+    ): ElasticUnifiedLog = {
         LocalLog.maybeHandleIOException(logDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
             val start = System.currentTimeMillis()
-            val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, topicId = topicId.get, leaderEpoch = leaderEpoch)
+            val localLog = ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
+                new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs, producerStateManagerConfig, topicId.get, leaderEpoch)
             val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
             // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
             // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.
@@ -259,7 +276,9 @@ object ElasticUnifiedLog extends Logging {
                 producerIdExpirationCheckIntervalMs,
                 _leaderEpochCache = leaderEpochFileCache,
                 localLog.producerStateManager,
-                topicId)
+                topicId,
+                logOffsetsListener
+            )
             val timeCost = System.currentTimeMillis() - start
             info(s"ElasticUnifiedLog $topicPartition opened time cost: $timeCost ms")
             elasticUnifiedLog

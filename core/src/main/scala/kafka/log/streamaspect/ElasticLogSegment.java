@@ -61,6 +61,8 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
     private final String logIdent;
 
+    private boolean forceRoll;
+
     public ElasticLogSegment(
         File dir,
         ElasticStreamSegmentMeta meta,
@@ -139,6 +141,9 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
     @Override
     public boolean shouldRoll(RollParams rollParams) {
+        if (forceRoll) {
+            return true;
+        }
         boolean reachedRollMs = timeWaitedForRoll(rollParams.now, rollParams.maxTimestampInMessages) > rollParams.maxSegmentMs - rollJitterMs;
         int size = size();
         return size > rollParams.maxSegmentBytes - rollParams.messagesSize ||
@@ -235,13 +240,14 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     public FetchDataInfo read(long startOffset, int maxSize, long maxPosition,
         boolean minOneMessage) throws IOException {
         try {
-            return readAsync(startOffset, maxSize, maxPosition, minOneMessage).get();
+            return readAsync(startOffset, maxSize, maxPosition, Long.MAX_VALUE, minOneMessage).get();
         } catch (Throwable e) {
             throw new IOException(e);
         }
     }
 
-    public CompletableFuture<FetchDataInfo> readAsync(long startOffset, int maxSize, long maxOffset,
+    @Override
+    public CompletableFuture<FetchDataInfo> readAsync(long startOffset, int maxSize, long maxPosition, long maxOffset,
         boolean minOneMessage) {
         // TODO: isolate the log clean read to another method
         if (maxSize < 0)
@@ -445,6 +451,10 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
     public CompletableFuture<Void> asyncLogFlush() {
         return log.asyncFlush();
+    }
+
+    public void forceRoll() {
+        this.forceRoll = true;
     }
 
     private void updateProducerState(ProducerStateManager producerStateManager, RecordBatch batch,
