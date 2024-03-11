@@ -2509,6 +2509,19 @@ object TestUtils extends Logging {
         s"${unexpected.mkString("`", ",", "`")}")
   }
 
+  // AutoMQ inject start
+  def createSimpleEsBrokerConfig(nodeId: Int = 1,
+      endpoint: String = "memory://",
+      kvEndpoint: String = "",
+      namespace: String = "__esk_test__"): Properties = {
+    val props = createBrokerConfig(nodeId, "")
+    props.put(KafkaConfig.ElasticStreamEnableProp, true)
+    props.put(KafkaConfig.ElasticStreamEndpointProp, endpoint)
+    props.put(KafkaConfig.ElasticStreamNamespaceProp, namespace)
+    props
+  }
+  // AutoMQ inject end
+
   class TestControllerRequestCompletionHandler(expectedResponse: Option[AbstractResponse] = None)
     extends ControllerRequestCompletionHandler {
     var actualResponse: Option[ClientResponse] = Option.empty

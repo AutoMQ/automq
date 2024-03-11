@@ -3138,7 +3138,7 @@ class UnifiedLogTest {
     assertValidLogOffsetMetadata(log, firstUnstableOffset)
   }
 
-  private def assertValidLogOffsetMetadata(log: UnifiedLog, offsetMetadata: LogOffsetMetadata): Unit = {
+  protected def assertValidLogOffsetMetadata(log: UnifiedLog, offsetMetadata: LogOffsetMetadata): Unit = {
     assertFalse(offsetMetadata.messageOffsetOnly)
 
     val segmentBaseOffset = offsetMetadata.segmentBaseOffset
@@ -3655,7 +3655,7 @@ class UnifiedLogTest {
     assertEquals(newLocalLogStartOffset, log.localLogStartOffset())
   }
 
-  private class MockLogOffsetsListener extends LogOffsetsListener {
+  protected class MockLogOffsetsListener extends LogOffsetsListener {
     private var highWatermark: Long = -1L
 
     override def onHighWatermarkUpdated(offset: Long): Unit = {
