@@ -56,7 +56,6 @@ import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.server.common
 import org.apache.kafka.server.common.DirectoryEventHandler
-import org.apache.kafka.server.common.MetadataVersion._
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.{Scheduler, ShutdownableThread}
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, FetchParams, FetchPartitionData, LeaderHwChange, LogAppendInfo, LogConfig, LogDirFailureChannel, LogOffsetMetadata, LogReadInfo, RecordValidationException, RemoteLogReadResult, RemoteStorageFetchInfo, VerificationGuard}
@@ -307,14 +306,14 @@ class ReplicaManager(val config: KafkaConfig,
   @volatile private[server] var highWatermarkCheckpoints: Map[String, OffsetCheckpointFile] = logManager.liveLogDirs.map(dir =>
     (dir.getAbsolutePath, new OffsetCheckpointFile(new File(dir, ReplicaManager.HighWatermarkFilename), logDirFailureChannel))).toMap
 
-  @volatile private var isInControlledShutdown = false
+  @volatile protected var isInControlledShutdown = false
 
   this.logIdent = s"[ReplicaManager broker=$localBrokerId] "
   protected val stateChangeLogger = new StateChangeLogger(localBrokerId, inControllerContext = false, None)
 
-  private var logDirFailureHandler: LogDirFailureHandler = _
+  protected var logDirFailureHandler: LogDirFailureHandler = _
 
-  private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
+  protected class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
     override def doWork(): Unit = {
       val newOfflineLogDir = logDirFailureChannel.takeNextOfflineLogDir()
       if (haltBrokerOnDirFailure) {
@@ -389,13 +388,15 @@ class ReplicaManager(val config: KafkaConfig,
     // If inter-broker protocol (IBP) < 1.0, the controller will send LeaderAndIsrRequest V0 which does not include isNew field.
     // In this case, the broker receiving the request cannot determine whether it is safe to create a partition if a log directory has failed.
     // Thus, we choose to halt the broker on any log directory failure if IBP < 1.0
-    val haltBrokerOnFailure = metadataCache.metadataVersion().isLessThan(IBP_1_0_IV0)
-    logDirFailureHandler = new LogDirFailureHandler("LogDirFailureHandler", haltBrokerOnFailure)
-    logDirFailureHandler.start()
+    // AutoMQ for Kafka inject start
+//    val haltBrokerOnFailure = metadataCache.metadataVersion().isLessThan(IBP_1_0_IV0)
+//    logDirFailureHandler = new LogDirFailureHandler("LogDirFailureHandler", haltBrokerOnFailure)
+//    logDirFailureHandler.start()
+    // AutoMQ for Kafka inject end
     addPartitionsToTxnManager.foreach(_.start())
   }
 
-  private def maybeRemoveTopicMetrics(topic: String): Unit = {
+  protected def maybeRemoveTopicMetrics(topic: String): Unit = {
     val topicHasNonOfflinePartition = allPartitions.values.exists {
       case online: HostedPartition.Online => topic == online.partition.topic
       case HostedPartition.None | HostedPartition.Offline(_) => false
@@ -575,7 +576,7 @@ class ReplicaManager(val config: KafkaConfig,
    * @return                 A map from partitions to exceptions which occurred.
    *                         If no errors occurred, the map will be empty.
    */
-  private def stopPartitions(partitionsToStop: Set[StopPartition]): Map[TopicPartition, Throwable] = {
+  protected def stopPartitions(partitionsToStop: Set[StopPartition]): Map[TopicPartition, Throwable] = {
     // First stop fetchers for all partitions.
     val partitions = partitionsToStop.map(_.topicPartition)
     replicaFetcherManager.removeFetcherForPartitions(partitions)
@@ -651,14 +652,14 @@ class ReplicaManager(val config: KafkaConfig,
 
   // An iterator over all non offline partitions. This is a weakly consistent iterator; a partition made offline after
   // the iterator has been constructed could still be returned by this iterator.
-  private def onlinePartitionsIterator: Iterator[Partition] = {
+  protected def onlinePartitionsIterator: Iterator[Partition] = {
     allPartitions.values.iterator.flatMap {
       case HostedPartition.Online(partition) => Some(partition)
       case _ => None
     }
   }
 
-  private def offlinePartitionCount: Int = {
+  protected def offlinePartitionCount: Int = {
     allPartitions.values.iterator.count(_.getClass == HostedPartition.Offline.getClass)
   }
 
@@ -1348,7 +1349,7 @@ class ReplicaManager(val config: KafkaConfig,
   /**
    * Append the messages to the local replica logs
    */
-  private def appendToLocalLog(internalTopicsAllowed: Boolean,
+  protected def appendToLocalLog(internalTopicsAllowed: Boolean,
                                origin: AppendOrigin,
                                entriesPerPartition: Map[TopicPartition, MemoryRecords],
                                requiredAcks: Short,
@@ -1441,7 +1442,7 @@ class ReplicaManager(val config: KafkaConfig,
    * Returns [[LogReadResult]] with error if a task for RemoteStorageFetchInfo could not be scheduled successfully
    * else returns [[None]].
    */
-  private def processRemoteFetch(remoteFetchInfo: RemoteStorageFetchInfo,
+  protected def processRemoteFetch(remoteFetchInfo: RemoteStorageFetchInfo,
                                  params: FetchParams,
                                  responseCallback: Seq[(TopicIdPartition, FetchPartitionData)] => Unit,
                                  logReadResults: Seq[(TopicIdPartition, LogReadResult)],
@@ -1468,7 +1469,7 @@ class ReplicaManager(val config: KafkaConfig,
     None
   }
 
-  private def buildPartitionToFetchPartitionData(logReadResults: Seq[(TopicIdPartition, LogReadResult)],
+  protected def buildPartitionToFetchPartitionData(logReadResults: Seq[(TopicIdPartition, LogReadResult)],
                                                  remoteFetchTopicPartition: TopicPartition,
                                                  error: LogReadResult): Seq[(TopicIdPartition, FetchPartitionData)] = {
     logReadResults.map { case (tp, result) =>
@@ -2072,7 +2073,7 @@ class ReplicaManager(val config: KafkaConfig,
    * @param logTopicIdOpt the topic ID in the log if the log and the topic ID exist
    * @return true if the request topic id is consistent, false otherwise
    */
-  private def hasConsistentTopicId(requestTopicIdOpt: Option[Uuid], logTopicIdOpt: Option[Uuid]): Boolean = {
+  protected def hasConsistentTopicId(requestTopicIdOpt: Option[Uuid], logTopicIdOpt: Option[Uuid]): Boolean = {
     requestTopicIdOpt match {
       case None => true
       case Some(requestTopicId) => logTopicIdOpt.isEmpty || logTopicIdOpt.contains(requestTopicId)
@@ -2733,7 +2734,7 @@ class ReplicaManager(val config: KafkaConfig,
     }
   }
 
-  private def applyLocalLeadersDelta(
+  protected def applyLocalLeadersDelta(
     changedPartitions: mutable.Set[Partition],
     newImage: MetadataImage,
     delta: TopicsDelta,
@@ -2766,7 +2767,7 @@ class ReplicaManager(val config: KafkaConfig,
     }
   }
 
-  private def applyLocalFollowersDelta(
+  protected def applyLocalFollowersDelta(
     changedPartitions: mutable.Set[Partition],
     newImage: MetadataImage,
     delta: TopicsDelta,
@@ -2867,7 +2868,7 @@ class ReplicaManager(val config: KafkaConfig,
     }
   }
 
-  private def maybeUpdateTopicAssignment(partition: TopicIdPartition, partitionDirectoryId: Uuid): Unit = {
+  protected def maybeUpdateTopicAssignment(partition: TopicIdPartition, partitionDirectoryId: Uuid): Unit = {
     for {
       topicPartitionActualLog <- logManager.getLog(partition.topicPartition(), false)
       topicPartitionActualDirectoryId <- logManager.directoryId(topicPartitionActualLog.dir.getParent)
