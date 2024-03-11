@@ -124,11 +124,17 @@ public class ElasticProducerStateManager extends ProducerStateManager {
     @Override
     public Optional<File> takeSnapshot(boolean sync) throws IOException {
         try {
+            Optional<File> rst;
+            if (lastMapOffset > lastSnapOffset) {
+                rst = Optional.of(LogFileUtils.producerSnapshotFile(logDir, lastMapOffset));
+            } else {
+                rst = Optional.empty();
+            }
             CompletableFuture<Void> cf = takeSnapshot0();
             if (sync) {
                 cf.get();
             }
-            return Optional.empty();
+            return rst;
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }

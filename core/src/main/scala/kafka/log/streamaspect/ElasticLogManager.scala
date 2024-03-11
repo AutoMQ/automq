@@ -11,29 +11,26 @@
 
 package kafka.log.streamaspect
 
-import ElasticLogManager.NAMESPACE
 import com.automq.stream.api.Client
 import com.automq.stream.s3.metadata.ObjectUtils
+import kafka.log.streamaspect.ElasticLogManager.NAMESPACE
 import kafka.log.streamaspect.cache.FileCache
 import kafka.log.streamaspect.client.{ClientFactoryProxy, Context}
 import kafka.log.streamaspect.utils.ExceptionUtil
 import kafka.server.{BrokerServer, KafkaConfig}
 import kafka.utils.Logging
-import org.apache.kafka.common.TopicPartition
-import org.apache.kafka.common.utils.{ThreadUtils, Time}
-import org.apache.kafka.common.Uuid
+import org.apache.kafka.common.{TopicPartition, Uuid}
+import org.apache.kafka.common.utils.Time
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.log.{LogConfig, LogDirFailureChannel, ProducerStateManagerConfig}
 
 import java.io.File
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap, ThreadPoolExecutor}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
 class ElasticLogManager(val client: Client) extends Logging {
     this.logIdent = s"[ElasticLogManager] "
     private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticLog]()
-    private val executorService = new ThreadPoolExecutor(1, 8, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
-        new java.util.concurrent.LinkedBlockingQueue[Runnable](), ThreadUtils.createThreadFactory("elastic-log-manager-%d", true))
 
     def getOrCreateLog(dir: File,
         config: LogConfig,
@@ -57,7 +54,7 @@ class ElasticLogManager(val client: Client) extends Logging {
             override def run(): Unit = {
                 // ElasticLog new is a time cost operation.
                 elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
-                    numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch, executorService)
+                    numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch)
             }
         }, s"Failed to create elastic log for $topicPartition", this)
         elasticLogs.putIfAbsent(topicPartition, elasticLog)

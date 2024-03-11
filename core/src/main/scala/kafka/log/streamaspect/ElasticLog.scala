@@ -12,6 +12,7 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
+import com.automq.stream.utils.FutureUtil
 import io.netty.buffer.Unpooled
 import kafka.log.LocalLog.CleanedFileSuffix
 import kafka.log._
@@ -501,7 +502,12 @@ class ElasticLog(val metaStream: MetaStream,
             readAsync(startOffset, maxLength, minOneMessage, maxOffsetMetadata, includeAbortedTxns).get()
         } catch {
             case e: Throwable =>
-                throw new KafkaStorageException(s"Error while reading from $topicPartition in dir ${dir.getParent}", e)
+                val cause = FutureUtil.cause(e)
+                if (cause.isInstanceOf[KafkaException]) {
+                    throw cause
+                } else {
+                    throw new KafkaStorageException(s"Error while reading from $topicPartition in dir ${dir.getParent}", cause)
+                }
         }
     }
 
@@ -599,8 +605,7 @@ object ElasticLog extends Logging {
         maxTransactionTimeoutMs: Int,
         producerStateManagerConfig: ProducerStateManagerConfig,
         topicId: Uuid,
-        leaderEpoch: Long,
-        executorService: ExecutorService): ElasticLog = {
+        leaderEpoch: Long): ElasticLog = {
         // TODO: better error mark for elastic log
         logDirFailureChannel.clearOfflineLogDirRecord(dir.getPath)
         val logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
