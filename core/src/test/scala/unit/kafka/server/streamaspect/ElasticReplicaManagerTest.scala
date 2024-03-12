@@ -26,7 +26,7 @@ import org.apache.kafka.server.util.timer.MockTimer
 import org.apache.kafka.server.util.{MockScheduler, Scheduler}
 import org.apache.kafka.storage.internals.log._
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.{Disabled, Test}
+import org.junit.jupiter.api.{Disabled, Tag, Test}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentMatchers
@@ -42,6 +42,7 @@ import scala.collection.{Map, Seq}
 import scala.compat.java8.OptionConverters.RichOptionForJava8
 import scala.jdk.CollectionConverters.{MapHasAsJava, PropertiesHasAsScala}
 
+@Tag("S3Unit")
 class ElasticReplicaManagerTest extends ReplicaManagerTest {
 
   override protected def setUpReplicaManager(config: KafkaConfig,
