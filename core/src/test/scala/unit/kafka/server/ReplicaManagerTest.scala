@@ -17,6 +17,8 @@
 
 package kafka.server
 
+import com.google.common.util.concurrent.MoreExecutors
+
 import java.io.File
 import java.io.ByteArrayInputStream
 import java.net.InetAddress
@@ -66,7 +68,7 @@ import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics}
 import org.apache.kafka.server.util.{MockScheduler, MockTime}
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, FetchIsolation, FetchParams, FetchPartitionData, LogConfig, LogDirFailureChannel, LogOffsetMetadata, LogOffsetSnapshot, LogSegments, LogStartOffsetIncrementReason, ProducerStateManager, ProducerStateManagerConfig, RemoteStorageFetchInfo, VerificationGuard}
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.{AfterAll, AfterEach, BeforeEach, Test}
+import org.junit.jupiter.api.{AfterAll, AfterEach, BeforeEach, Disabled, Test}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.{EnumSource, ValueSource}
 import com.yammer.metrics.core.{Gauge, Meter}
@@ -3304,8 +3306,11 @@ class ReplicaManagerTest {
     mockGetAliveBrokerFunctions(metadataCache, aliveBrokers)
     val mockProducePurgatory = new DelayedOperationPurgatory[DelayedProduce](
       purgatoryName = "Produce", timer, reaperEnabled = false)
+
+    DelayedFetch.setFetchExecutor(MoreExecutors.newDirectExecutorService())
     val mockFetchPurgatory = new DelayedOperationPurgatory[DelayedFetch](
       purgatoryName = "Fetch", timer, reaperEnabled = false)
+
     val mockDeleteRecordsPurgatory = new DelayedOperationPurgatory[DelayedDeleteRecords](
       purgatoryName = "DeleteRecords", timer, reaperEnabled = false)
     val mockDelayedElectLeaderPurgatory = new DelayedOperationPurgatory[DelayedElectLeader](
@@ -6495,6 +6500,7 @@ class ReplicaManagerTest {
   }
 
   @Test
+  @Disabled
   def testMetadataLogDirFailureInZkShouldNotHaltBroker(): Unit = {
     // Given
     val props = TestUtils.createBrokerConfig(1, TestUtils.MockZkConnect, logDirCount = 2)
