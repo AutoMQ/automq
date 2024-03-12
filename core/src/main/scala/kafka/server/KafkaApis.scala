@@ -148,14 +148,14 @@ class KafkaApis(val requestChannel: RequestChannel,
     metadataSupport.maybeForward(request, handler, responseCallback)
   }
 
-  private def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit = {
+  protected def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit = {
     info(s"The client connection will be closed due to controller responded " +
       s"unsupported version exception during $request forwarding. " +
       s"This could happen when the controller changed after the connection was established.")
     requestChannel.closeConnection(request, Collections.emptyMap())
   }
 
-  private def forwardToControllerOrFail(
+  protected def forwardToControllerOrFail(
     request: RequestChannel.Request
   ): Unit = {
     def errorHandler(request: RequestChannel.Request): Unit = {
@@ -574,7 +574,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   case class LeaderNode(leaderId: Int, leaderEpoch: Int, node: Option[Node])
 
-  private def getCurrentLeader(tp: TopicPartition, ln: ListenerName): LeaderNode = {
+  protected def getCurrentLeader(tp: TopicPartition, ln: ListenerName): LeaderNode = {
     val partitionInfoOrError = replicaManager.getPartitionOrError(tp)
     val (leaderId, leaderEpoch) = partitionInfoOrError match {
       case Right(x) =>
@@ -3905,7 +3905,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
   }
 
-  private def updateRecordConversionStats(request: RequestChannel.Request,
+  protected def updateRecordConversionStats(request: RequestChannel.Request,
                                           tp: TopicPartition,
                                           conversionStats: RecordValidationStats): Unit = {
     val conversionCount = conversionStats.numRecordsConverted

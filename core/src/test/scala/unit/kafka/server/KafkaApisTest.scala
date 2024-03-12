@@ -100,39 +100,39 @@ import scala.collection.{Map, Seq, mutable}
 import scala.jdk.CollectionConverters._
 
 class KafkaApisTest extends Logging {
-  private val requestChannel: RequestChannel = mock(classOf[RequestChannel])
-  private val requestChannelMetrics: RequestChannel.Metrics = mock(classOf[RequestChannel.Metrics])
-  private val replicaManager: ReplicaManager = mock(classOf[ReplicaManager])
-  private val groupCoordinator: GroupCoordinator = mock(classOf[GroupCoordinator])
-  private val adminManager: ZkAdminManager = mock(classOf[ZkAdminManager])
-  private val txnCoordinator: TransactionCoordinator = mock(classOf[TransactionCoordinator])
-  private val controller: KafkaController = mock(classOf[KafkaController])
-  private val forwardingManager: ForwardingManager = mock(classOf[ForwardingManager])
-  private val autoTopicCreationManager: AutoTopicCreationManager = mock(classOf[AutoTopicCreationManager])
+  protected val requestChannel: RequestChannel = mock(classOf[RequestChannel])
+  protected val requestChannelMetrics: RequestChannel.Metrics = mock(classOf[RequestChannel.Metrics])
+  protected val replicaManager: ReplicaManager = mock(classOf[ReplicaManager])
+  protected val groupCoordinator: GroupCoordinator = mock(classOf[GroupCoordinator])
+  protected val adminManager: ZkAdminManager = mock(classOf[ZkAdminManager])
+  protected val txnCoordinator: TransactionCoordinator = mock(classOf[TransactionCoordinator])
+  protected val controller: KafkaController = mock(classOf[KafkaController])
+  protected val forwardingManager: ForwardingManager = mock(classOf[ForwardingManager])
+  protected val autoTopicCreationManager: AutoTopicCreationManager = mock(classOf[AutoTopicCreationManager])
 
-  private val kafkaPrincipalSerde = new KafkaPrincipalSerde {
+  protected val kafkaPrincipalSerde = new KafkaPrincipalSerde {
     override def serialize(principal: KafkaPrincipal): Array[Byte] = Utils.utf8(principal.toString)
     override def deserialize(bytes: Array[Byte]): KafkaPrincipal = SecurityUtils.parseKafkaPrincipal(Utils.utf8(bytes))
   }
-  private val zkClient: KafkaZkClient = mock(classOf[KafkaZkClient])
-  private val metrics = new Metrics()
-  private val brokerId = 1
+  protected val zkClient: KafkaZkClient = mock(classOf[KafkaZkClient])
+  protected val metrics = new Metrics()
+  protected val brokerId = 1
   // KRaft tests should override this with a KRaftMetadataCache
-  private var metadataCache: MetadataCache = MetadataCache.zkMetadataCache(brokerId, MetadataVersion.latestTesting())
-  private val brokerEpochManager: ZkBrokerEpochManager = new ZkBrokerEpochManager(metadataCache, controller, None)
-  private val clientQuotaManager: ClientQuotaManager = mock(classOf[ClientQuotaManager])
-  private val clientRequestQuotaManager: ClientRequestQuotaManager = mock(classOf[ClientRequestQuotaManager])
-  private val clientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
-  private val replicaQuotaManager: ReplicationQuotaManager = mock(classOf[ReplicationQuotaManager])
-  private val quotas = QuotaManagers(clientQuotaManager, clientQuotaManager, clientRequestQuotaManager,
+  protected var metadataCache: MetadataCache = MetadataCache.zkMetadataCache(brokerId, MetadataVersion.latestTesting())
+  protected val brokerEpochManager: ZkBrokerEpochManager = new ZkBrokerEpochManager(metadataCache, controller, None)
+  protected val clientQuotaManager: ClientQuotaManager = mock(classOf[ClientQuotaManager])
+  protected val clientRequestQuotaManager: ClientRequestQuotaManager = mock(classOf[ClientRequestQuotaManager])
+  protected val clientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
+  protected val replicaQuotaManager: ReplicationQuotaManager = mock(classOf[ReplicationQuotaManager])
+  protected val quotas = QuotaManagers(clientQuotaManager, clientQuotaManager, clientRequestQuotaManager,
     clientControllerQuotaManager, replicaQuotaManager, replicaQuotaManager, replicaQuotaManager, None)
-  private val fetchManager: FetchManager = mock(classOf[FetchManager])
-  private val clientMetricsManager: ClientMetricsManager = mock(classOf[ClientMetricsManager])
-  private val brokerTopicStats = new BrokerTopicStats
-  private val clusterId = "clusterId"
-  private val time = new MockTime
-  private val clientId = ""
-  private var kafkaApis: KafkaApis = _
+  protected val fetchManager: FetchManager = mock(classOf[FetchManager])
+  protected val clientMetricsManager: ClientMetricsManager = mock(classOf[ClientMetricsManager])
+  protected val brokerTopicStats = new BrokerTopicStats
+  protected val clusterId = "clusterId"
+  protected val time = new MockTime
+  protected val clientId = ""
+  protected var kafkaApis: KafkaApis = _
 
   @AfterEach
   def tearDown(): Unit = {

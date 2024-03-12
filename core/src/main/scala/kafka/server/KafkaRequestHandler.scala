@@ -645,14 +645,14 @@ class BrokerTopicStats(configOpt: java.util.Optional[KafkaConfig] = java.util.Op
     }
   }
 
-  def updateBytesOut(topicIdPartition: TopicPartition, isFollower: Boolean, isReassignment: Boolean, value: Long): Unit = {
+  def updateBytesOut(topicPartition: TopicPartition, isFollower: Boolean, isReassignment: Boolean, value: Long): Unit = {
     if (isFollower) {
       if (isReassignment)
         updateReassignmentBytesOut(value)
       updateReplicationBytesOut(value)
     } else {
-      topicPartitionStats(topicIdPartition).bytesOutRate.mark(value)
-      topicStats(topicIdPartition.topic()).bytesOutRate.mark(value)
+      topicPartitionStats(topicPartition).bytesOutRate.mark(value)
+      topicStats(topicPartition.topic()).bytesOutRate.mark(value)
       allTopicsStats.bytesOutRate.mark(value)
     }
   }
