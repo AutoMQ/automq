@@ -1,3 +1,13 @@
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
@@ -242,7 +252,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         // TODO: support UnifiedLog#delete and maybe use another method name to avoid missing up to Kafka local replica deletion.
     }
 
-    //    @Test
+    @Test
     override def testCompactionDeletesProducerStateSnapshots(): Unit = {
         // TODO: After adaptor log.Cleaner, unmask the test
         val logConfig = LogTestUtils.createLogConfig(segmentBytes = 2048 * 5, cleanupPolicy = TopicConfig.CLEANUP_POLICY_COMPACT, fileDeleteDelayMs = 0)
