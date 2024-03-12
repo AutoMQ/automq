@@ -48,11 +48,16 @@ case class FetchPartitionStatus(startOffsetMetadata: LogOffsetMetadata, fetchInf
 
 // AutoMQ for Kafka inject start
 object DelayedFetch {
-  private val DELAYED_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delayed-fetch-executor-%d", true))
+  private var DELAYED_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delayed-fetch-executor-%d", true))
 
   def executorQueueSize: Int = DELAYED_FETCH_EXECUTOR match {
     case tp: ThreadPoolExecutor => tp.getQueue.size
     case _ => 0
+  }
+
+  // Used by test
+  def setFetchExecutor(executor: ExecutorService): Unit = {
+    DELAYED_FETCH_EXECUTOR = executor
   }
 }
 // AutoMQ for Kafka inject end
