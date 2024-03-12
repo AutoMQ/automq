@@ -11,6 +11,7 @@
 
 package kafka.log.streamaspect;
 
+import com.automq.stream.DefaultRecordBatch;
 import com.automq.stream.RecordBatchWithContextWrapper;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.Client;
@@ -30,7 +31,6 @@ import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.utils.FutureUtil;
-
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -108,12 +108,17 @@ public class MemoryClient implements Client {
         @Override
         public synchronized CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
             long baseOffset = nextOffsetAlloc.getAndAdd(recordBatch.count());
+            ByteBuffer copy = ByteBuffer.allocate(recordBatch.rawPayload().remaining());
+            copy.put(recordBatch.rawPayload().duplicate());
+            copy.flip();
+            recordBatch = new DefaultRecordBatch(recordBatch.count(), recordBatch.baseTimestamp(), recordBatch.properties(), copy);
             recordMap.put(baseOffset, new RecordBatchWithContextWrapper(recordBatch, baseOffset));
             return CompletableFuture.completedFuture(() -> baseOffset);
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxSizeHint) {
+        public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset,
+            int maxSizeHint) {
             Long floorKey = recordMap.floorKey(startOffset);
             if (floorKey == null) {
                 return CompletableFuture.completedFuture(ArrayList::new);

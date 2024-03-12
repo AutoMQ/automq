@@ -134,7 +134,7 @@ object LogTestUtils {
       batch.lastOffset > baseOffset + Int.MaxValue || batch.baseOffset < baseOffset
 
     for (segment <- log.logSegments.asScala) {
-      val overflowBatch = segment.log.batches.asScala.find(batch => hasOverflow(segment.baseOffset, batch))
+      val overflowBatch = segment.batches().asScala.find(batch => hasOverflow(segment.baseOffset, batch))
       if (overflowBatch.isDefined)
         return Some(segment)
     }
@@ -192,8 +192,8 @@ object LogTestUtils {
   /* extract all the keys from a log */
   def keysInLog(log: UnifiedLog): Iterable[Long] = {
     for (logSegment <- log.logSegments.asScala;
-         batch <- logSegment.log.batches.asScala if !batch.isControlBatch;
-         record <- batch.asScala if record.hasValue && record.hasKey)
+        batch <- logSegment.batches().asScala if !batch.isControlBatch;
+        record <- batch.asScala if record.hasValue && record.hasKey)
       yield TestUtils.readString(record.key).toLong
   }
 

@@ -18,6 +18,7 @@
 package kafka.log
 
 import kafka.common._
+import kafka.log.streamaspect.ElasticUnifiedLog
 import kafka.server.{BrokerTopicStats, KafkaConfig}
 import kafka.utils._
 import org.apache.kafka.common.TopicPartition
@@ -260,7 +261,7 @@ class LogCleanerTest extends Logging {
     // clean the log with only one message removed
     cleaner.clean(LogToClean(new TopicPartition("test", 0), log, 2, log.activeSegment.baseOffset))
 
-    assertTrue(log.logSegments.iterator.next().log.channel.size < originalMaxFileSize,
+    assertTrue(log.logSegments.iterator.next().size() < originalMaxFileSize,
       "Cleaned segment file should be trimmed to its real size.")
   }
 
@@ -1191,7 +1192,7 @@ class LogCleanerTest extends Logging {
 
     // the last (active) segment has just one message
 
-    def distinctValuesBySegment = log.logSegments.asScala.map(s => s.log.records.asScala.map(record => TestUtils.readString(record.value)).toSet.size).toSeq
+    def distinctValuesBySegment = log.logSegments.asScala.map(s => s.records.asScala.map(record => TestUtils.readString(record.value)).toSet.size).toSeq
 
     val disctinctValuesBySegmentBeforeClean = distinctValuesBySegment
     assertTrue(distinctValuesBySegment.reverse.tail.forall(_ > N),
@@ -1287,28 +1288,28 @@ class LogCleanerTest extends Logging {
     assertEquals(numInvalidMessages, stats.invalidMessagesRead, "Cleaner should have seen %d invalid messages.")
   }
 
-  private def batchBaseOffsetsInLog(log: UnifiedLog): Iterable[Long] = {
-    for (segment <- log.logSegments.asScala; batch <- segment.log.batches.asScala)
+  def batchBaseOffsetsInLog(log: UnifiedLog): Iterable[Long] = {
+    for (segment <- log.logSegments.asScala; batch <- segment.batches.asScala)
       yield batch.baseOffset
   }
 
   def lastOffsetsPerBatchInLog(log: UnifiedLog): Iterable[Long] = {
-    for (segment <- log.logSegments.asScala; batch <- segment.log.batches.asScala)
+    for (segment <- log.logSegments.asScala; batch <- segment.batches.asScala)
       yield batch.lastOffset
   }
 
   def lastSequencesInLog(log: UnifiedLog): Map[Long, Int] = {
     (for (segment <- log.logSegments.asScala;
-          batch <- segment.log.batches.asScala if !batch.isControlBatch && batch.hasProducerId)
+          batch <- segment.batches.asScala if !batch.isControlBatch && batch.hasProducerId)
       yield batch.producerId -> batch.lastSequence).toMap
   }
 
   /* extract all the offsets from a log */
   def offsetsInLog(log: UnifiedLog): Iterable[Long] =
-    log.logSegments.asScala.flatMap(s => s.log.records.asScala.filter(_.hasValue).filter(_.hasKey).map(m => m.offset))
+    log.logSegments.asScala.flatMap(s => s.records.asScala.filter(_.hasValue).filter(_.hasKey).map(m => m.offset))
 
   def unkeyedMessageCountInLog(log: UnifiedLog) =
-    log.logSegments.asScala.map(s => s.log.records.asScala.filter(_.hasValue).count(m => !m.hasKey)).sum
+    log.logSegments.asScala.map(s => s.records.asScala.filter(_.hasValue).count(m => !m.hasKey)).sum
 
   def abortCheckDone(topicPartition: TopicPartition): Unit = {
     throw new LogCleaningAbortedException()
@@ -1368,10 +1369,17 @@ class LogCleanerTest extends Logging {
     assertEquals(log.numberOfSegments, groups.size)
     assertTrue(groups.forall(_.size == 1), "All groups should be singletons.")
     checkSegmentOrder(groups)
-    groups = cleaner.groupSegmentsBySize(log.logSegments.asScala, maxSize = Int.MaxValue, maxIndexSize = 1, log.logEndOffset)
-    assertEquals(log.numberOfSegments, groups.size)
-    assertTrue(groups.forall(_.size == 1), "All groups should be singletons.")
-    checkSegmentOrder(groups)
+
+    // AutoMQ inject start
+    if (!log.isInstanceOf[ElasticUnifiedLog]) {
+      // AutoMQ don't have offset index
+      groups = cleaner.groupSegmentsBySize(log.logSegments.asScala, maxSize = Int.MaxValue, maxIndexSize = 1, log.logEndOffset)
+      assertEquals(log.numberOfSegments, groups.size)
+      assertTrue(groups.forall(_.size == 1), "All groups should be singletons.")
+      checkSegmentOrder(groups)
+    }
+    // AutoMQ inject start
+
 
     val groupSize = 3
 
@@ -1381,12 +1389,17 @@ class LogCleanerTest extends Logging {
     checkSegmentOrder(groups)
     assertTrue(groups.dropRight(1).forall(_.size == groupSize), "All but the last group should be the target size.")
 
-    // check grouping by index size
-    val indexSize = log.logSegments.asScala.take(groupSize).map(_.offsetIndex.sizeInBytes).sum + 1
-    groups = cleaner.groupSegmentsBySize(log.logSegments.asScala, maxSize = Int.MaxValue, maxIndexSize = indexSize, log.logEndOffset)
-    checkSegmentOrder(groups)
-    assertTrue(groups.dropRight(1).forall(_.size == groupSize),
-      "All but the last group should be the target size.")
+    // AutoMQ inject start
+    if (!log.isInstanceOf[ElasticUnifiedLog]) {
+      // AutoMQ don't have offset index
+      // check grouping by index size
+      val indexSize = log.logSegments.asScala.take(groupSize).map(_.offsetIndex.sizeInBytes).sum + 1
+      groups = cleaner.groupSegmentsBySize(log.logSegments.asScala, maxSize = Int.MaxValue, maxIndexSize = indexSize, log.logEndOffset)
+      checkSegmentOrder(groups)
+      assertTrue(groups.dropRight(1).forall(_.size == groupSize),
+        "All but the last group should be the target size.")
+    }
+    // AutoMQ inject end
   }
 
   @Test
@@ -1459,7 +1472,12 @@ class LogCleanerTest extends Logging {
     val records = messageWithOffset("hello".getBytes, "hello".getBytes, Int.MaxValue - 1)
     log.appendAsFollower(records)
     log.appendAsLeader(TestUtils.singletonRecords(value = "hello".getBytes, key = "hello".getBytes), leaderEpoch = 0)
-    assertEquals(Int.MaxValue, log.activeSegment.offsetIndex.lastOffset)
+
+    // AutoMQ inject start
+    if (!log.isInstanceOf[ElasticUnifiedLog]) {
+      assertEquals(Int.MaxValue, log.activeSegment.offsetIndex.lastOffset)
+    }
+    // AutoMQ inject end
 
     // grouping should result in a single group with maximum relative offset of Int.MaxValue
     var groups = cleaner.groupSegmentsBySize(log.logSegments.asScala, maxSize = Int.MaxValue, maxIndexSize = Int.MaxValue, log.logEndOffset)
@@ -1479,9 +1497,15 @@ class LogCleanerTest extends Logging {
 
     groups = cleaner.groupSegmentsBySize(log.logSegments.asScala, maxSize = Int.MaxValue, maxIndexSize = Int.MaxValue, log.logEndOffset)
     assertEquals(log.numberOfSegments - 1, groups.size)
-    for (group <- groups)
-      assertTrue(group.last.offsetIndex.lastOffset - group.head.offsetIndex.baseOffset <= Int.MaxValue,
-        "Relative offset greater than Int.MaxValue")
+
+    // AutoMQ inject start
+    if (!log.isInstanceOf[ElasticUnifiedLog]) {
+      for (group <- groups)
+        assertTrue(group.last.offsetIndex.lastOffset - group.head.offsetIndex.baseOffset <= Int.MaxValue,
+          "Relative offset greater than Int.MaxValue")
+    }
+    // AutoMQ inject end
+
     checkSegmentOrder(groups)
   }
 
@@ -1516,8 +1540,13 @@ class LogCleanerTest extends Logging {
     log.appendAsFollower(record4)
 
     assertTrue(log.logEndOffset - 1 - log.logStartOffset > Int.MaxValue, "Actual offset range should be > Int.MaxValue")
-    assertTrue(log.logSegments.asScala.last.offsetIndex.lastOffset - log.logStartOffset <= Int.MaxValue,
-      "index.lastOffset is reporting the wrong last offset")
+
+    // AutoMQ inject start
+    if (!log.isInstanceOf[ElasticUnifiedLog]) {
+      assertTrue(log.logSegments.asScala.last.offsetIndex.lastOffset - log.logStartOffset <= Int.MaxValue,
+        "index.lastOffset is reporting the wrong last offset")
+    }
+    // AutoMQ inject end
 
     // grouping should result in two groups because the second segment takes the offset range > MaxInt
     val groups = cleaner.groupSegmentsBySize(log.logSegments.asScala, maxSize = Int.MaxValue, maxIndexSize = Int.MaxValue, log.logEndOffset)
@@ -1794,7 +1823,15 @@ class LogCleanerTest extends Logging {
     assertEquals(2, map.get(key(2)))
     assertEquals(3, map.get(key(3)))
     assertEquals(-1, map.get(key(4)))
-    assertEquals(4, stats.mapMessagesRead)
+
+    // AutoMQ inject start
+    if (log.isInstanceOf[ElasticUnifiedLog]) {
+      // AutoMQ can precisely read
+      assertEquals(2, stats.mapMessagesRead)
+    } else {
+      assertEquals(4, stats.mapMessagesRead)
+    }
+    // AutoMQ inject end
   }
 
   /**
@@ -1878,7 +1915,7 @@ class LogCleanerTest extends Logging {
     log.roll()
 
     cleaner.clean(LogToClean(new TopicPartition("test", 0), log, 1, log.activeSegment.baseOffset))
-    assertEquals(1, log.logSegments.asScala.head.log.batches.iterator.next().lastOffset,
+    assertEquals(1, log.logSegments.asScala.head.batches().iterator.next().lastOffset,
       "The tombstone should be retained.")
     // Append a message and roll out another log segment.
     log.appendAsLeader(TestUtils.singletonRecords(value = "1".getBytes,
@@ -1886,7 +1923,7 @@ class LogCleanerTest extends Logging {
                                           timestamp = time.milliseconds()), leaderEpoch = 0)
     log.roll()
     cleaner.clean(LogToClean(new TopicPartition("test", 0), log, 2, log.activeSegment.baseOffset))
-    assertEquals(1, log.logSegments.asScala.head.log.batches.iterator.next().lastOffset,
+    assertEquals(1, log.logSegments.asScala.head.batches().iterator.next().lastOffset,
       "The tombstone should be retained.")
   }
 
@@ -2015,13 +2052,13 @@ class LogCleanerTest extends Logging {
     builder.build()
   }
 
-  private def messageWithOffset(key: Array[Byte], value: Array[Byte], offset: Long): MemoryRecords =
+  def messageWithOffset(key: Array[Byte], value: Array[Byte], offset: Long): MemoryRecords =
     MemoryRecords.withRecords(offset, CompressionType.NONE, 0, new SimpleRecord(key, value))
 
   private def messageWithOffset(key: Int, value: Int, offset: Long): MemoryRecords =
     messageWithOffset(key.toString.getBytes, value.toString.getBytes, offset)
 
-  private def makeLog(dir: File = dir, config: LogConfig = logConfig, recoveryPoint: Long = 0L) = {
+  protected def makeLog(dir: File = dir, config: LogConfig = logConfig, recoveryPoint: Long = 0L) = {
     UnifiedLog(
       dir = dir,
       config = config,
@@ -2039,7 +2076,7 @@ class LogCleanerTest extends Logging {
     )
   }
 
-  private def makeCleaner(capacity: Int, checkDone: TopicPartition => Unit = _ => (), maxMessageSize: Int = 64*1024) =
+  def makeCleaner(capacity: Int, checkDone: TopicPartition => Unit = _ => (), maxMessageSize: Int = 64*1024) =
     new Cleaner(id = 0,
                 offsetMap = new FakeOffsetMap(capacity),
                 ioBufferSize = maxMessageSize,

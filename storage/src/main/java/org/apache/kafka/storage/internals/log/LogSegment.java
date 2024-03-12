@@ -895,5 +895,13 @@ public class LogSegment implements Closeable {
             return CompletableFuture.failedFuture(e);
         }
     }
+
+    public Iterable<? extends RecordBatch> batches() {
+        return log.batches();
+    }
+
+    public Iterable<? extends org.apache.kafka.common.record.Record> records() {
+        return log.records();
+    }
     // AutoMQ inject end
 }
