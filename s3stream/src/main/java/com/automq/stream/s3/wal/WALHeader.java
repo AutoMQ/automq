@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 8 - [4B] {@link WALHeader#crc8} CRC of the rest of the WAL header, used to verify the correctness of the
  * WAL header
  */
-class WALHeader {
+public class WALHeader {
     public static final int WAL_HEADER_MAGIC_CODE = 0x12345678;
     public static final int WAL_HEADER_SIZE = 4 // magic code
         + 8 // capacity
