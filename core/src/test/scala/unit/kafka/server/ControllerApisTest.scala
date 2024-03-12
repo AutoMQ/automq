@@ -98,33 +98,33 @@ class ControllerApisTest {
     override def throttleTime: Int = if (isExceeded) MockControllerMutationQuota.throttleTimeMs else 0
   }
 
-  private val nodeId = 1
-  private val brokerRack = "Rack1"
-  private val clientID = "Client1"
-  private val requestChannelMetrics: RequestChannel.Metrics = mock(classOf[RequestChannel.Metrics])
-  private val requestChannel: RequestChannel = mock(classOf[RequestChannel])
-  private val time = new MockTime
-  private val clientQuotaManager: ClientQuotaManager = mock(classOf[ClientQuotaManager])
-  private val clientRequestQuotaManager: ClientRequestQuotaManager = mock(classOf[ClientRequestQuotaManager])
-  private val neverThrottlingClientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
+  protected val nodeId = 1
+  protected val brokerRack = "Rack1"
+  protected val clientID = "Client1"
+  protected val requestChannelMetrics: RequestChannel.Metrics = mock(classOf[RequestChannel.Metrics])
+  protected val requestChannel: RequestChannel = mock(classOf[RequestChannel])
+  protected val time = new MockTime
+  protected val clientQuotaManager: ClientQuotaManager = mock(classOf[ClientQuotaManager])
+  protected val clientRequestQuotaManager: ClientRequestQuotaManager = mock(classOf[ClientRequestQuotaManager])
+  protected val neverThrottlingClientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
   when(neverThrottlingClientControllerQuotaManager.newQuotaFor(
     any(classOf[RequestChannel.Request]),
     any(classOf[Short])
   )).thenReturn(
     MockControllerMutationQuota(Integer.MAX_VALUE) // never throttles
   )
-  private val alwaysThrottlingClientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
+  protected val alwaysThrottlingClientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
   when(alwaysThrottlingClientControllerQuotaManager.newQuotaFor(
     any(classOf[RequestChannel.Request]),
     any(classOf[Short])
   )).thenReturn(
     MockControllerMutationQuota(0) // always throttles
   )
-  private val replicaQuotaManager: ReplicationQuotaManager = mock(classOf[ReplicationQuotaManager])
-  private val raftManager: RaftManager[ApiMessageAndVersion] = mock(classOf[RaftManager[ApiMessageAndVersion]])
-  private val metadataCache: KRaftMetadataCache = MetadataCache.kRaftMetadataCache(0)
+  protected val replicaQuotaManager: ReplicationQuotaManager = mock(classOf[ReplicationQuotaManager])
+  protected val raftManager: RaftManager[ApiMessageAndVersion] = mock(classOf[RaftManager[ApiMessageAndVersion]])
+  protected val metadataCache: KRaftMetadataCache = MetadataCache.kRaftMetadataCache(0)
 
-  private val quotasNeverThrottleControllerMutations = QuotaManagers(
+  protected val quotasNeverThrottleControllerMutations = QuotaManagers(
     clientQuotaManager,
     clientQuotaManager,
     clientRequestQuotaManager,
@@ -134,7 +134,7 @@ class ControllerApisTest {
     replicaQuotaManager,
     None)
 
-  private val quotasAlwaysThrottleControllerMutations = QuotaManagers(
+  protected val quotasAlwaysThrottleControllerMutations = QuotaManagers(
     clientQuotaManager,
     clientQuotaManager,
     clientRequestQuotaManager,
@@ -144,9 +144,9 @@ class ControllerApisTest {
     replicaQuotaManager,
     None)
 
-  private var controllerApis: ControllerApis = _
+  protected var controllerApis: ControllerApis = _
 
-  private def createControllerApis(authorizer: Option[Authorizer],
+  protected def createControllerApis(authorizer: Option[Authorizer],
                                    controller: Controller,
                                    props: Properties = new Properties(),
                                    throttle: Boolean = false): ControllerApis = {
