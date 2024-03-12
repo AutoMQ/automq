@@ -86,20 +86,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
         batches = batchesFrom(start);
     }
 
-    // AutoMQ for Kafka inject start
-    // only for es inherent
-    public FileRecords(int start,
-                       int end,
-                       boolean isSlice) {
-        this.start = start;
-        this.end = end;
-        this.isSlice = isSlice;
-        this.size = new AtomicInteger();
-        channel = null;
-        batches = batchesFrom(start);
-    }
-    // AutoMQ for Kafka inject end
-
     @Override
     public int sizeInBytes() {
         return size.get();
@@ -120,12 +106,6 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public FileChannel channel() {
         return channel;
     }
-
-    // AutoMQ for Kafka inject start
-    public long fileSize() throws IOException {
-        return channel.size();
-    }
-    // AutoMQ for Kafka inject end
 
     /**
      * Read log batches into the given buffer until there are no bytes remaining in the buffer or the end of the file

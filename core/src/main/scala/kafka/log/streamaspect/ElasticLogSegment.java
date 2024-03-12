@@ -14,15 +14,18 @@ package kafka.log.streamaspect;
 import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import kafka.log.streamaspect.cache.FileCache;
 import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.utils.Time;
@@ -524,5 +527,45 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     @Override
     public int compareTo(ElasticLogSegment o) {
         return Long.compare(baseOffset, o.baseOffset);
+    }
+
+    public Iterable<? extends RecordBatch> batches() {
+        return log.batchesFrom(baseOffset);
+    }
+
+    public Iterable<? extends org.apache.kafka.common.record.Record> records() {
+        return (Iterable<Record>) () -> {
+            Iterator<? extends RecordBatch> recordBatchIt = batches().iterator();
+            AtomicReference<Iterator<Record>> recordItRef = new AtomicReference<>(recordBatchIt.hasNext() ? recordBatchIt.next().iterator() : null);
+            return new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    for (;;) {
+                        Iterator<Record> recordIt = recordItRef.get();
+                        if (recordIt == null) {
+                            if (!recordBatchIt.hasNext()) {
+                                return false;
+                            }
+                            recordItRef.set(recordBatchIt.next().iterator());
+                            continue;
+                        }
+                        if (!recordIt.hasNext()) {
+                            recordItRef.set(null);
+                            continue;
+                        }
+                        return true;
+                    }
+                }
+
+                @Override
+                public Record next() {
+                    if (!hasNext()) {
+                        throw new NoSuchElementException();
+                    }
+                    Iterator<Record> recordIt = recordItRef.get();
+                    return recordIt.next();
+                }
+            };
+        };
     }
 }
