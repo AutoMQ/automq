@@ -125,7 +125,8 @@ public class ElasticLogFileRecords implements AutoCloseable {
                 return CompletableFuture.failedFuture(ex);
             }
         } else {
-            return CompletableFuture.completedFuture(new BatchIteratorRecordsAdaptor(this, startOffset, maxOffset, maxSize));
+            long endOffset = Utils.min(this.committedOffset.get(), maxOffset);
+            return CompletableFuture.completedFuture(new BatchIteratorRecordsAdaptor(this, startOffset, endOffset, maxSize));
         }
     }
 
