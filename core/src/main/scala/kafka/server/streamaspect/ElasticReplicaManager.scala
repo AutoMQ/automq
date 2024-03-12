@@ -34,7 +34,7 @@ import org.apache.kafka.storage.internals.log._
 import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, ThreadPoolExecutor}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ExecutorService, Executors, ThreadPoolExecutor}
 import java.util.function.Consumer
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Seq, mutable}
@@ -81,7 +81,9 @@ class ElasticReplicaManager(
   threadNamePrefix: Option[String] = None,
   brokerEpochSupplier: () => Long = () => -1,
   addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
-  directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP
+  directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP,
+  private val fastFetchExecutor: ExecutorService = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true)),
+  private val slowFetchExecutor: ExecutorService = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
 ) extends ReplicaManager(config, metrics, time, scheduler, logManager, remoteLogManager, quotaManagers, metadataCache,
   logDirFailureChannel, alterPartitionManager, brokerTopicStats, isShuttingDown, zkClient, delayedProducePurgatoryParam,
   delayedFetchPurgatoryParam, delayedDeleteRecordsPurgatoryParam, delayedElectLeaderPurgatoryParam,
@@ -90,9 +92,6 @@ class ElasticReplicaManager(
 
   protected val openingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
   protected val closingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
-
-  private val fastFetchExecutor = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true))
-  private val slowFetchExecutor = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
 
   private val fetchExecutorQueueSizeGaugeMap = new util.HashMap[String, Integer]()
   S3StreamKafkaMetricsManager.setFetchPendingTaskNumSupplier(() => {

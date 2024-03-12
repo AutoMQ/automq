@@ -65,7 +65,7 @@ import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.server.common.MetadataVersion.IBP_2_6_IV0
 import org.apache.kafka.server.log.remote.storage.{NoOpRemoteLogMetadataManager, NoOpRemoteStorageManager, RemoteLogManagerConfig, RemoteLogSegmentMetadata, RemoteStorageException, RemoteStorageManager}
 import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics}
-import org.apache.kafka.server.util.{MockScheduler, MockTime}
+import org.apache.kafka.server.util.{MockScheduler, MockTime, Scheduler}
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, FetchIsolation, FetchParams, FetchPartitionData, LogConfig, LogDirFailureChannel, LogOffsetMetadata, LogOffsetSnapshot, LogSegments, LogStartOffsetIncrementReason, ProducerStateManager, ProducerStateManagerConfig, RemoteStorageFetchInfo, VerificationGuard}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.{AfterAll, AfterEach, BeforeEach, Disabled, Test}
@@ -98,31 +98,31 @@ object ReplicaManagerTest {
 
 class ReplicaManagerTest {
 
-  private val topic = "test-topic"
-  private val topicId = Uuid.randomUuid()
-  private val topicIds = scala.Predef.Map("test-topic" -> topicId)
-  private val topicNames = scala.Predef.Map(topicId -> "test-topic")
-  private val transactionalId = "txn"
-  private val time = new MockTime
-  private val metrics = new Metrics
-  private val startOffset = 0
-  private val endOffset = 20
-  private val highHW = 18
-  private var alterPartitionManager: AlterPartitionManager = _
-  private var config: KafkaConfig = _
-  private var quotaManager: QuotaManagers = _
-  private var mockRemoteLogManager: RemoteLogManager = _
-  private var addPartitionsToTxnManager: AddPartitionsToTxnManager = _
-  private var brokerTopicStats: BrokerTopicStats = _
+  protected val topic = "test-topic"
+  protected val topicId = Uuid.randomUuid()
+  protected val topicIds = scala.Predef.Map("test-topic" -> topicId)
+  protected val topicNames = scala.Predef.Map(topicId -> "test-topic")
+  protected val transactionalId = "txn"
+  protected val time = new MockTime
+  protected val metrics = new Metrics
+  protected val startOffset = 0
+  protected val endOffset = 20
+  protected val highHW = 18
+  protected var alterPartitionManager: AlterPartitionManager = _
+  protected var config: KafkaConfig = _
+  protected var quotaManager: QuotaManagers = _
+  protected var mockRemoteLogManager: RemoteLogManager = _
+  protected var addPartitionsToTxnManager: AddPartitionsToTxnManager = _
+  protected var brokerTopicStats: BrokerTopicStats = _
 
   // Constants defined for readability
-  private val zkVersion = 0
-  private val correlationId = 0
-  private val controllerEpoch = 0
-  private val brokerEpoch = 0L
+  protected val zkVersion = 0
+  protected val correlationId = 0
+  protected val controllerEpoch = 0
+  protected val brokerEpoch = 0L
 
   // These metrics are static and once we remove them after each test, they won't be created and verified anymore
-  private val metricsToBeDeletedInTheEnd = Set("kafka.server:type=DelayedRemoteFetchMetrics,name=ExpiresPerSec")
+  protected val metricsToBeDeletedInTheEnd = Set("kafka.server:type=DelayedRemoteFetchMetrics,name=ExpiresPerSec")
 
   @BeforeEach
   def setUp(): Unit = {
@@ -153,7 +153,7 @@ class ReplicaManagerTest {
   @Test
   def testHighWaterMarkDirectoryMapping(): Unit = {
     val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)))
-    val rm = new ReplicaManager(
+    val rm = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -182,7 +182,7 @@ class ReplicaManagerTest {
     props.put("log.dir", TestUtils.tempRelativeDir("data").getAbsolutePath)
     val config = KafkaConfig.fromProps(props)
     val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)))
-    val rm = new ReplicaManager(
+    val rm = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -208,7 +208,7 @@ class ReplicaManagerTest {
   @Test
   def testIllegalRequiredAcks(): Unit = {
     val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)))
-    val rm = new ReplicaManager(
+    val rm = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -236,7 +236,7 @@ class ReplicaManagerTest {
     }
   }
 
-  private def mockGetAliveBrokerFunctions(cache: MetadataCache, aliveBrokers: Seq[Node]): Unit = {
+  protected def mockGetAliveBrokerFunctions(cache: MetadataCache, aliveBrokers: Seq[Node]): Unit = {
     when(cache.hasAliveBroker(anyInt)).thenAnswer(new Answer[Boolean]() {
       override def answer(invocation: InvocationOnMock): Boolean = {
         aliveBrokers.map(_.id()).contains(invocation.getArgument(0).asInstanceOf[Int])
@@ -262,7 +262,7 @@ class ReplicaManagerTest {
     val metadataCache: MetadataCache = mock(classOf[MetadataCache])
     mockGetAliveBrokerFunctions(metadataCache, Seq(new Node(0, "host0", 0)))
     when(metadataCache.metadataVersion()).thenReturn(config.interBrokerProtocolVersion)
-    val rm = new ReplicaManager(
+    val rm = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -324,7 +324,7 @@ class ReplicaManagerTest {
     val metadataCache: MetadataCache = mock(classOf[MetadataCache])
     mockGetAliveBrokerFunctions(metadataCache, aliveBrokers)
     when(metadataCache.metadataVersion()).thenReturn(config.interBrokerProtocolVersion)
-    val rm = new ReplicaManager(
+    val rm = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -394,7 +394,7 @@ class ReplicaManagerTest {
 
     val mockMetricsGroupCtor = mockConstruction(classOf[KafkaMetricsGroup])
     try {
-      val rm = new ReplicaManager(
+      val rm = setUpReplicaManager(
         metrics = metrics,
         config = config,
         time = time,
@@ -2606,7 +2606,7 @@ class ReplicaManagerTest {
 
     val logManager = TestUtils.createLogManager(config.logDirs.map(new File(_)), defaultConfig = new LogConfig(new Properties()), time = time)
     val quotaManager = QuotaFactory.instantiate(config, metrics, time, "")
-    val replicaManager = new ReplicaManager(
+    val replicaManager = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -2690,7 +2690,7 @@ class ReplicaManagerTest {
   def testUpdateStrayLogs(): Unit = {
     val logManager = TestUtils.createLogManager(config.logDirs.map(new File(_)), defaultConfig = new LogConfig(new Properties()), time = time)
     val quotaManager = QuotaFactory.instantiate(config, metrics, time, "")
-    val replicaManager = new ReplicaManager(
+    val replicaManager = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -2791,7 +2791,7 @@ class ReplicaManagerTest {
    * ReplicaManager.becomeLeaderOrFollower() once with LeaderAndIsrRequest containing
    * 'leaderEpochInLeaderAndIsr' leader epoch for partition 'topicPartition'.
    */
-  private def prepareReplicaManagerAndLogManager(timer: MockTimer,
+  protected def prepareReplicaManagerAndLogManager(timer: MockTimer,
                                                  topicPartition: Int,
                                                  leaderEpochInLeaderAndIsr: Int,
                                                  followerBrokerId: Int,
@@ -3220,13 +3220,42 @@ class ReplicaManagerTest {
     replicaManager.getPartitionOrException(tp).log.get.verificationGuard(producerId)
   }
 
+  protected def setUpReplicaManager(config: KafkaConfig,
+    metrics: Metrics,
+    time: Time,
+    scheduler: Scheduler,
+    logManager: LogManager,
+    remoteLogManager: Option[RemoteLogManager] = None,
+    quotaManagers: QuotaManagers,
+    metadataCache: MetadataCache,
+    logDirFailureChannel: LogDirFailureChannel,
+    alterPartitionManager: AlterPartitionManager,
+    brokerTopicStats: BrokerTopicStats = new BrokerTopicStats(),
+    isShuttingDown: AtomicBoolean = new AtomicBoolean(false),
+    zkClient: Option[KafkaZkClient] = None,
+    delayedProducePurgatoryParam: Option[DelayedOperationPurgatory[DelayedProduce]] = None,
+    delayedFetchPurgatoryParam: Option[DelayedOperationPurgatory[DelayedFetch]] = None,
+    delayedDeleteRecordsPurgatoryParam: Option[DelayedOperationPurgatory[DelayedDeleteRecords]] = None,
+    delayedElectLeaderPurgatoryParam: Option[DelayedOperationPurgatory[DelayedElectLeader]] = None,
+    delayedRemoteFetchPurgatoryParam: Option[DelayedOperationPurgatory[DelayedRemoteFetch]] = None,
+    threadNamePrefix: Option[String] = None,
+    brokerEpochSupplier: () => Long = () => -1,
+    addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
+    directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP): ReplicaManager = {
+    new ReplicaManager(config, metrics, time, scheduler, logManager, remoteLogManager, quotaManagers,
+      metadataCache, logDirFailureChannel, alterPartitionManager, brokerTopicStats, isShuttingDown, zkClient,
+      delayedProducePurgatoryParam, delayedFetchPurgatoryParam, delayedDeleteRecordsPurgatoryParam,
+      delayedElectLeaderPurgatoryParam, delayedRemoteFetchPurgatoryParam, threadNamePrefix, brokerEpochSupplier,
+      addPartitionsToTxnManager, directoryEventHandler)
+  }
+
   private def setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager: AddPartitionsToTxnManager,
                                                                      transactionalTopicPartitions: List[TopicPartition],
                                                                      config: KafkaConfig = config): ReplicaManager = {
     val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)))
     val metadataCache = mock(classOf[MetadataCache])
 
-    val replicaManager = new ReplicaManager(
+    val replicaManager = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -3245,7 +3274,7 @@ class ReplicaManagerTest {
     replicaManager
   }
 
-  private def setupReplicaManagerWithMockedPurgatories(
+  protected def setupReplicaManagerWithMockedPurgatories(
     timer: MockTimer,
     brokerId: Int = 0,
     aliveBrokerIds: Seq[Int] = Seq(0, 1),
@@ -3635,7 +3664,7 @@ class ReplicaManagerTest {
     when(metadataCache1.metadataVersion()).thenReturn(config1.interBrokerProtocolVersion)
 
     // each replica manager is for a broker
-    val rm0 = new ReplicaManager(
+    val rm0 = setUpReplicaManager(
       metrics = metrics,
       config = config0,
       time = time,
@@ -3646,7 +3675,7 @@ class ReplicaManagerTest {
       metadataCache = metadataCache0,
       logDirFailureChannel = new LogDirFailureChannel(config0.logDirs.size),
       alterPartitionManager = alterPartitionManager)
-    val rm1 = new ReplicaManager(
+    val rm1 = setUpReplicaManager(
       metrics = metrics,
       config = config1,
       time = time,
@@ -4390,7 +4419,7 @@ class ReplicaManagerTest {
     }
   }
 
-  private def setupMockLog(path: String): UnifiedLog = {
+  protected def setupMockLog(path: String): UnifiedLog = {
     val mockLog = mock(classOf[UnifiedLog])
     val partitionDir = new File(path, s"$topic-0")
     partitionDir.mkdir()
@@ -6348,7 +6377,7 @@ class ReplicaManagerTest {
   @Test
   def testCheckpointHwOnShutdown(): Unit = {
     val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)))
-    val spyRm = spy(new ReplicaManager(
+    val spyRm = spy(setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
@@ -6509,7 +6538,7 @@ class ReplicaManagerTest {
     val logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
     val logManager = TestUtils.createLogManager(logDirFiles, defaultConfig = new LogConfig(new Properties()), time = time)
     val mockZkClient = mock(classOf[KafkaZkClient])
-    val replicaManager = new ReplicaManager(
+    val replicaManager = setUpReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
