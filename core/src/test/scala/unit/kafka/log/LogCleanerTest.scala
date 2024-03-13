@@ -2052,7 +2052,7 @@ class LogCleanerTest extends Logging {
     builder.build()
   }
 
-  def messageWithOffset(key: Array[Byte], value: Array[Byte], offset: Long): MemoryRecords =
+  private def messageWithOffset(key: Array[Byte], value: Array[Byte], offset: Long): MemoryRecords =
     MemoryRecords.withRecords(offset, CompressionType.NONE, 0, new SimpleRecord(key, value))
 
   private def messageWithOffset(key: Int, value: Int, offset: Long): MemoryRecords =
@@ -2076,7 +2076,7 @@ class LogCleanerTest extends Logging {
     )
   }
 
-  def makeCleaner(capacity: Int, checkDone: TopicPartition => Unit = _ => (), maxMessageSize: Int = 64*1024) =
+  private def makeCleaner(capacity: Int, checkDone: TopicPartition => Unit = _ => (), maxMessageSize: Int = 64*1024) =
     new Cleaner(id = 0,
                 offsetMap = new FakeOffsetMap(capacity),
                 ioBufferSize = maxMessageSize,
