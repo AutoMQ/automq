@@ -1041,6 +1041,55 @@ class KafkaConfigTest {
         case KafkaConfig.ConsumerGroupMaxSizeProp => assertPropertyInvalid(baseProperties, name, "not_a_number", 0, -1)
         case KafkaConfig.ConsumerGroupAssignorsProp => // ignore string
 
+        // AutoMQ inject start
+        case KafkaConfig.ElasticStreamEndpointProp => // ignore string
+        case KafkaConfig.ElasticStreamNamespaceProp => // ignore string
+        case KafkaConfig.S3EndpointProp => // ignore string
+        case KafkaConfig.S3RegionProp => // ignore string
+        case KafkaConfig.S3PathStyleProp => // ignore string
+        case KafkaConfig.S3BucketProp => // ignore string
+        case KafkaConfig.S3WALPathProp=> // ignore string
+        case KafkaConfig.S3WALCapacityProp => // ignore string
+        case KafkaConfig.S3WALThreadProp => // ignore string
+        case KafkaConfig.S3WALIOPSProp => // ignore string
+        case KafkaConfig.S3WALCacheSizeProp => // ignore string
+        case KafkaConfig.S3WALUploadThresholdProp => // ignore string
+        case KafkaConfig.S3StreamSplitSizeProp => // ignore string
+        case KafkaConfig.S3ObjectBlockSizeProp => // ignore string
+        case KafkaConfig.S3ObjectPartSizeProp => // ignore string
+        case KafkaConfig.S3BlockCacheSizeProp => // ignore string
+        case KafkaConfig.S3StreamObjectCompactionIntervalMinutesProp => // ignore string
+        case KafkaConfig.S3StreamObjectCompactionMaxSizeBytesProp => // ignore string
+        case KafkaConfig.S3ControllerRequestRetryMaxCountProp => // ignore string
+        case KafkaConfig.S3ControllerRequestRetryBaseDelayMsProp => // ignore string
+        case KafkaConfig.S3StreamSetObjectCompactionIntervalProp => // ignore string
+        case KafkaConfig.S3StreamSetObjectCompactionCacheSizeProp => // ignore string
+        case KafkaConfig.S3StreamSetObjectCompactionStreamSplitSizeProp => // ignore string
+        case KafkaConfig.S3StreamSetObjectCompactionForceSplitMinutesProp => // ignore string
+        case KafkaConfig.S3StreamSetObjectCompactionMaxObjectNumProp=> // ignore string
+        case KafkaConfig.S3MaxStreamNumPerStreamSetObjectProp => // ignore string
+        case KafkaConfig.S3MaxStreamObjectNumPerCommit => // ignore string
+        case KafkaConfig.S3MockEnableProp => // ignore string
+        case KafkaConfig.S3ObjectDeleteRetentionMinutes => // ignore string
+        case KafkaConfig.S3ObjectLogEnableProp => // ignore string
+        case KafkaConfig.S3NetworkBaselineBandwidthProp => // ignore string
+        case KafkaConfig.S3RefillPeriodMsProp => // ignore string
+        case KafkaConfig.S3MetricsEnableProp => // ignore string
+        case KafkaConfig.S3TracerEnableProp => // ignore string
+        case KafkaConfig.S3ExporterOTLPEndpointProp => // ignore string
+        case KafkaConfig.S3ExporterOTLPProtocolProp => // ignore string
+        case KafkaConfig.S3ExporterOTLPCompressionEnableProp => // ignore string
+        case KafkaConfig.S3TraceExporterOTLPEndpointProp => // ignore string
+        case KafkaConfig.S3ExporterReportIntervalMsProp => // ignore string
+        case KafkaConfig.S3MetricsLevelProp => // ignore string
+        case KafkaConfig.S3MetricsExporterTypeProp => // ignore string
+        case KafkaConfig.S3MetricsExporterPromHostProp => // ignore string
+        case KafkaConfig.S3MetricsExporterPromPortProp => // ignore string
+        case KafkaConfig.S3SpanScheduledDelayMsProp => // ignore string
+        case KafkaConfig.S3SpanMaxQueueSizeProp => // ignore string
+        case KafkaConfig.S3SpanMaxBatchSizeProp => // ignore string
+        // AutoMQ inject end
+
         case _ => assertPropertyInvalid(baseProperties, name, "not_a_number", "-1")
       }
     }

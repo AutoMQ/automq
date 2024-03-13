@@ -95,6 +95,10 @@ class LogConfigTest {
       case TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG => assertPropertyInvalid(name, "not_a_number", "-3")
       case TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG => assertPropertyInvalid(name, "not_a_number", "-3")
 
+      // AutoMQ inject start
+      case TopicConfig.REPLICATION_FACTOR_CONFIG => assertPropertyInvalid(name, "not_a_number", "0")
+      // AutoMQ inject end
+
       case _ => assertPropertyInvalid(name, "not_a_number", "-1")
     })
   }

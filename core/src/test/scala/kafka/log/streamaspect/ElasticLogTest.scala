@@ -31,6 +31,7 @@ import java.util.Collections
 import java.util.regex.Pattern
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
+// TODO: extends the LocalLogTest
 @Tag("S3Unit")
 class ElasticLogTest {
     val kafkaConfig: KafkaConfig = KafkaConfig.fromProps(TestUtils.createBrokerConfig(0, "127.0.0.1:1", port = -1))
