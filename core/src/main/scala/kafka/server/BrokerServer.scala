@@ -771,7 +771,7 @@ class BrokerServer(
 
   override def boundPort(listenerName: ListenerName): Int = socketServer.boundPort(listenerName)
 
-  def newBrokerToControllerChannelManager(channelName: String, retryTimeout: Int): NodeToControllerChannelManager = {
+  def newNodeToControllerChannelManager(channelName: String, retryTimeout: Int): NodeToControllerChannelManager = {
     new NodeToControllerChannelManagerImpl(
       controllerNodeProvider,
       time,
