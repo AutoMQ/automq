@@ -17,17 +17,55 @@
 
 package kafka
 
+import com.automq.s3shell.sdk.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
+import com.automq.s3shell.sdk.model.S3Url
+
 import java.util.Properties
 import joptsimple.OptionParser
+import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
 import kafka.utils.{Exit, Logging}
 import org.apache.kafka.common.utils.{Java, LoggingSignalHandler, OperatingSystem, Time, Utils}
 import org.apache.kafka.server.util.CommandLineUtils
+import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
 
 object Kafka extends Logging {
 
   def getPropsFromArgs(args: Array[String]): Properties = {
+    // AutoMQ for Kafka inject start
+    if (args.exists(_.contains("s3-url"))) {
+      val roleInfo = args.find(_.startsWith("process.roles="))
+      if (roleInfo.isEmpty) {
+        throw new IllegalArgumentException("'--override process.roles=broker|controller' is required")
+      }
+      if (!args.exists(_.startsWith("node.id"))) {
+        throw new IllegalArgumentException(s"'--override node.id= ' is required")
+      }
+      if (!args.exists(_.startsWith("controller.quorum.voters"))) {
+        throw new IllegalArgumentException(s"'--override controller.quorum.voters=''' is required")
+      }
+      if (!args.exists(_.startsWith("listeners"))) {
+        throw new IllegalArgumentException(s"'--override listeners=''' is required")
+      }
+
+      roleInfo match {
+        case Some("process.roles=broker") =>
+          if (!args.exists(_.startsWith("advertised.listeners"))) {
+            throw new IllegalArgumentException(s"'--override advertised.listeners=''' is required")
+          }
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "broker")
+        case Some("process.roles=controller") =>
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "controller")
+        case _ =>
+          if (!args.exists(_.startsWith("advertised.listeners"))) {
+            throw new IllegalArgumentException(s"'--override advertised.listeners=''' is required")
+          }
+          return S3ShellPropUtil.autoGenPropsByCmd(args, "broker,controller")
+      }
+    }
+    // AutoMQ for Kafka inject end
+
     val optionParser = new OptionParser(false)
     val overrideOpt = optionParser.accepts("override", "Optional property that should override values set in server.properties file")
       .withRequiredArg()
@@ -86,8 +124,17 @@ object Kafka extends Logging {
 
   def main(args: Array[String]): Unit = {
     try {
+      // AutoMQ for Kafka inject start
       val serverProps = getPropsFromArgs(args)
+      val s3UrlString = S3Url.parseS3UrlValFromArgs(args)
+      if (s3UrlString == null ) {
+        CredentialsProviderHolder.create(EnvVariableCredentialsProvider.get())
+      } else {
+        val s3Url = S3Url.parse(s3UrlString)
+        CredentialsProviderHolder.create(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Url.getS3AccessKey, s3Url.getS3SecretKey)))
+      }
       val server = buildServer(serverProps)
+      // AutoMQ for Kafka inject end
 
       try {
         if (!OperatingSystem.IS_WINDOWS && !Java.isIbmJdk)

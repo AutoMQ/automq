@@ -17,6 +17,7 @@
 package org.apache.kafka.storage.internals.log;
 
 import static java.util.Arrays.asList;
+import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Range.between;
 import static org.apache.kafka.common.config.ConfigDef.Type.BOOLEAN;
 import static org.apache.kafka.common.config.ConfigDef.Type.DOUBLE;
@@ -290,7 +291,8 @@ public class LogConfig extends AbstractConfig {
             .define(TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG, LONG, DEFAULT_LOCAL_RETENTION_MS, atLeast(-2), MEDIUM,
                 TopicConfig.LOCAL_LOG_RETENTION_MS_DOC)
             .define(TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG, LONG, DEFAULT_LOCAL_RETENTION_BYTES, atLeast(-2), MEDIUM,
-                TopicConfig.LOCAL_LOG_RETENTION_BYTES_DOC);
+                TopicConfig.LOCAL_LOG_RETENTION_BYTES_DOC)
+            .define(TopicConfig.REPLICATION_FACTOR_CONFIG, INT, 1, atLeast(1), HIGH, TopicConfig.REPLICATION_FACTOR_DOC);
     }
 
     public final Set<String> overriddenConfigs;
@@ -334,6 +336,7 @@ public class LogConfig extends AbstractConfig {
     public final List<String> leaderReplicationThrottledReplicas;
     public final List<String> followerReplicationThrottledReplicas;
     public final boolean messageDownConversionEnable;
+    public final int replicationFactor;
     public final RemoteLogConfig remoteLogConfig;
 
     private final int maxMessageSize;
@@ -384,6 +387,7 @@ public class LogConfig extends AbstractConfig {
         this.leaderReplicationThrottledReplicas = Collections.unmodifiableList(getList(LogConfig.LEADER_REPLICATION_THROTTLED_REPLICAS_CONFIG));
         this.followerReplicationThrottledReplicas = Collections.unmodifiableList(getList(LogConfig.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG));
         this.messageDownConversionEnable = getBoolean(TopicConfig.MESSAGE_DOWNCONVERSION_ENABLE_CONFIG);
+        this.replicationFactor = getInt(TopicConfig.REPLICATION_FACTOR_CONFIG);
 
         remoteLogConfig = new RemoteLogConfig(this);
     }
