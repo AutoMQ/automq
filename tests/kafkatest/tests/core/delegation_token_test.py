@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
@@ -112,6 +112,7 @@ client.id=console-consumer
 
         self.delegation_tokens.renew_delegation_token(dt["hmac"], new_expirydate_ms)
 
+    @ignore  # AutoMQ inject, delegation token doesn't support in KRAFT mode
     @cluster(num_nodes=5)
     @matrix(metadata_quorum=quorum.all_non_upgrade)
     def test_delegation_token_lifecycle(self, metadata_quorum=quorum.zk):

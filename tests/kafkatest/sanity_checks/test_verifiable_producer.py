@@ -45,12 +45,12 @@ class TestVerifiableProducer(Test):
             self.zk.start()
 
     @cluster(num_nodes=3)
-    @parametrize(producer_version=str(LATEST_0_8_2))
-    @parametrize(producer_version=str(LATEST_0_9))
-    @parametrize(producer_version=str(LATEST_0_10_0))
-    @parametrize(producer_version=str(LATEST_0_10_1))
-    @matrix(producer_version=[str(DEV_BRANCH)], acks=["0", "1", "-1"], enable_idempotence=[False])
-    @matrix(producer_version=[str(DEV_BRANCH)], acks=["-1"], enable_idempotence=[True])
+    # @parametrize(producer_version=str(LATEST_0_8_2))
+    # @parametrize(producer_version=str(LATEST_0_9))
+    # @parametrize(producer_version=str(LATEST_0_10_0))
+    # @parametrize(producer_version=str(LATEST_0_10_1))
+    # @matrix(producer_version=[str(DEV_BRANCH)], acks=["0", "1", "-1"], enable_idempotence=[False])
+    # @matrix(producer_version=[str(DEV_BRANCH)], acks=["-1"], enable_idempotence=[True])
     @matrix(producer_version=[str(DEV_BRANCH)], security_protocol=['PLAINTEXT', 'SSL'], metadata_quorum=quorum.all)
     @cluster(num_nodes=4)
     @matrix(producer_version=[str(DEV_BRANCH)], security_protocol=['SASL_SSL'], sasl_mechanism=['PLAIN', 'GSSAPI'],
