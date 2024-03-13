@@ -21,11 +21,9 @@ import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.slf4j.Logger;
 
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,62 +34,24 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
 
     protected abstract Resource resource();
 
-    private Optional<Action> trySwapPartitionOut(ClusterModelSnapshot cluster,
-                                                 TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica,
-                                                 BrokerUpdater.Broker srcBroker,
-                                                 List<BrokerUpdater.Broker> candidates,
-                                                 Collection<Goal> goalsByPriority) {
+    protected Optional<Action> trySwapPartitionOut(ClusterModelSnapshot cluster,
+                                                   TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica,
+                                                   BrokerUpdater.Broker srcBroker,
+                                                   List<BrokerUpdater.Broker> candidates,
+                                                   Collection<Goal> goalsByPriority) {
         List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
         for (BrokerUpdater.Broker candidate : candidates) {
             for (TopicPartitionReplicaUpdater.TopicPartitionReplica candidateReplica : cluster.replicasFor(candidate.getBrokerId())) {
                 if (candidate.load(resource()) > srcReplica.load(resource())) {
                     continue;
                 }
-                boolean isHardGoalViolated = false;
                 Action action = new Action(ActionType.SWAP, srcReplica.getTopicPartition(), srcBroker.getBrokerId(),
                         candidate.getBrokerId(), candidateReplica.getTopicPartition());
-                Map<Goal, Double> scoreMap = new HashMap<>();
-                for (Goal goal : goalsByPriority) {
-                    double score = goal.actionAcceptanceScore(action, cluster);
-                    if (goal.type() == GoalType.HARD && score == 0) {
-                        isHardGoalViolated = true;
-                        break;
-                    }
-                    scoreMap.put(goal, score);
-                }
-                if (!isHardGoalViolated) {
-                    candidateActionScores.add(new AbstractMap.SimpleEntry<>(action, normalizeGoalsScore(scoreMap)));
-                }
+                calculateCandidateActionScores(candidateActionScores, goalsByPriority, action, cluster);
             }
         }
-        LOGGER.debug("All possible action score: {}", candidateActionScores);
-        return getAcceptableAction(candidateActionScores);
-    }
-
-    private Optional<Action> tryMovePartitionOut(ClusterModelSnapshot cluster,
-                                                 TopicPartitionReplicaUpdater.TopicPartitionReplica replica,
-                                                 BrokerUpdater.Broker srcBroker,
-                                                 List<BrokerUpdater.Broker> candidates,
-                                                 Collection<Goal> goalsByPriority) {
-        List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
-        for (BrokerUpdater.Broker candidate : candidates) {
-            boolean isHardGoalViolated = false;
-            Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), srcBroker.getBrokerId(), candidate.getBrokerId());
-            Map<Goal, Double> scoreMap = new HashMap<>();
-            for (Goal goal : goalsByPriority) {
-                double score = goal.actionAcceptanceScore(action, cluster);
-                if (goal.type() == GoalType.HARD && score == 0) {
-                    isHardGoalViolated = true;
-                    break;
-                }
-                scoreMap.put(goal, score);
-            }
-            if (isHardGoalViolated) {
-                break;
-            }
-            candidateActionScores.add(new AbstractMap.SimpleEntry<>(action, normalizeGoalsScore(scoreMap)));
-        }
-        LOGGER.debug("All possible action score: {} for {}", candidateActionScores, name());
+        LOGGER.debug("try swap partition {} out for broker {}, all possible action score: {} on goal {}", srcReplica.getTopicPartition(),
+                srcBroker.getBrokerId(), candidateActionScores, name());
         return getAcceptableAction(candidateActionScores);
     }
 

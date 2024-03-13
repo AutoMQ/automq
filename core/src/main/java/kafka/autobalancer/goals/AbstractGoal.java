@@ -11,13 +11,21 @@
 
 package kafka.autobalancer.goals;
 
+import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
+import kafka.autobalancer.common.ActionType;
+import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.ModelUtils;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+import org.slf4j.Logger;
 
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,7 +34,42 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public abstract class AbstractGoal implements Goal {
+    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     protected static final double POSITIVE_ACTION_SCORE_THRESHOLD = 0.5;
+
+    protected Optional<Action> tryMovePartitionOut(ClusterModelSnapshot cluster,
+                                                 TopicPartitionReplicaUpdater.TopicPartitionReplica replica,
+                                                 BrokerUpdater.Broker srcBroker,
+                                                 List<BrokerUpdater.Broker> candidates,
+                                                 Collection<Goal> goalsByPriority) {
+        List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
+        for (BrokerUpdater.Broker candidate : candidates) {
+            Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), srcBroker.getBrokerId(), candidate.getBrokerId());
+            calculateCandidateActionScores(candidateActionScores, goalsByPriority, action, cluster);
+        }
+        LOGGER.debug("try move partition {} out for broker {}, all possible action score: {} on goal {}", replica.getTopicPartition(),
+                srcBroker.getBrokerId(), candidateActionScores, name());
+        return getAcceptableAction(candidateActionScores);
+    }
+
+    protected void calculateCandidateActionScores(List<Map.Entry<Action, Double>> candidateActionScores,
+                                                  Collection<Goal> goalsByPriority, Action action, ClusterModelSnapshot cluster) {
+        Map<Goal, Double> scoreMap = new HashMap<>();
+        boolean isHardGoalViolated = false;
+        for (Goal goal : goalsByPriority) {
+            double score = goal.actionAcceptanceScore(action, cluster);
+            if (goal.type() == GoalType.HARD && score == 0) {
+                isHardGoalViolated = true;
+                break;
+            }
+            scoreMap.put(goal, score);
+        }
+
+        if (!isHardGoalViolated) {
+            LOGGER.debug("action {} scores on each goal: {}", action, scoreMap);
+            candidateActionScores.add(new AbstractMap.SimpleEntry<>(action, normalizeGoalsScore(scoreMap)));
+        }
+    }
 
     /**
      * Calculate the score difference of src and dest. The score should be normalized to [0, 1.0]
