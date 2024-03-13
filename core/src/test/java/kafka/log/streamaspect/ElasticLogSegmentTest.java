@@ -53,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// TODO: extends the LogSegmentTest
 @Tag("S3Unit")
 public class ElasticLogSegmentTest {
     private TopicPartition topicPartition = new TopicPartition("topic", 0);

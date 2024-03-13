@@ -51,6 +51,8 @@ public class MetadataImageNode implements MetadataNode {
         children.put(AclsImageNode.NAME, image -> new AclsImageByIdNode(image.acls()));
         children.put(ScramImageNode.NAME, image -> new ScramImageNode(image.scram()));
         children.put(DelegationTokenImageNode.NAME, image -> new DelegationTokenImageNode(image.delegationTokens()));
+
+        // TODO; support AutoMQ image
         CHILDREN = Collections.unmodifiableMap(children);
     }
 
