@@ -18,6 +18,7 @@ import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
+import kafka.autobalancer.model.ModelUtils;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.slf4j.Logger;
 
@@ -53,6 +54,24 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
         LOGGER.debug("try swap partition {} out for broker {}, all possible action score: {} on goal {}", srcReplica.getTopicPartition(),
                 srcBroker.getBrokerId(), candidateActionScores, name());
         return getAcceptableAction(candidateActionScores);
+    }
+
+    @Override
+    protected boolean moveReplica(Action action, ClusterModelSnapshot cluster, BrokerUpdater.Broker src, BrokerUpdater.Broker dest) {
+        TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica = cluster.replica(action.getSrcBrokerId(), action.getSrcTopicPartition());
+        switch (action.getType()) {
+            case MOVE:
+                ModelUtils.moveReplicaLoad(src, dest, srcReplica);
+                break;
+            case SWAP:
+                TopicPartitionReplicaUpdater.TopicPartitionReplica destReplica = cluster.replica(action.getDestBrokerId(), action.getDestTopicPartition());
+                ModelUtils.moveReplicaLoad(src, dest, srcReplica);
+                ModelUtils.moveReplicaLoad(dest, src, destReplica);
+                break;
+            default:
+                return false;
+        }
+        return true;
     }
 
     /**
