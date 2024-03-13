@@ -135,19 +135,19 @@ public class S3StorageTest {
         calc.update();
         assertEquals(-1L, calc.get());
 
-        r0.persisted = true;
+        r0.confirmed = true;
         calc.update();
         assertEquals(0L, calc.get());
 
-        r3.persisted = true;
+        r3.confirmed = true;
         calc.update();
         assertEquals(0L, calc.get());
 
-        r1.persisted = true;
+        r1.confirmed = true;
         calc.update();
         assertEquals(1L, calc.get());
 
-        r2.persisted = true;
+        r2.confirmed = true;
         calc.update();
         assertEquals(3L, calc.get());
     }
