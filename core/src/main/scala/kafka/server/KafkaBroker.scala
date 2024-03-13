@@ -23,6 +23,7 @@ import kafka.log.remote.RemoteLogManager
 import kafka.metrics.LinuxIoMetricsCollector
 import kafka.network.SocketServer
 import kafka.security.CredentialProvider
+import kafka.server.streamaspect.ElasticReplicaManager
 import kafka.utils.Logging
 import org.apache.kafka.common.ClusterResource
 import org.apache.kafka.common.internals.ClusterResourceListeners
@@ -85,7 +86,7 @@ trait KafkaBroker extends Logging {
   def remoteLogManagerOpt: Option[RemoteLogManager]
   def metrics: Metrics
   def quotaManagers: QuotaFactory.QuotaManagers
-  def replicaManager: ReplicaManager
+  def replicaManager: ElasticReplicaManager
   def socketServer: SocketServer
   def metadataCache: MetadataCache
   def groupCoordinator: GroupCoordinator

@@ -56,7 +56,7 @@ class KafkaRaftServer(
   KafkaMetricsReporter.startReporters(VerifiableProperties(config.originals))
   KafkaYammerMetrics.INSTANCE.configure(config.originals)
 
-  private val (metaPropsEnsemble, bootstrapMetadata) =
+  val (metaPropsEnsemble, bootstrapMetadata) =
     KafkaRaftServer.initializeLogDirs(config, this.logger.underlying, this.logIdent)
 
   private val metrics = Server.initializeMetrics(
@@ -68,7 +68,7 @@ class KafkaRaftServer(
   private val controllerQuorumVotersFuture = CompletableFuture.completedFuture(
     RaftConfig.parseVoterConnections(config.quorumVoters))
 
-  private val sharedServer = new SharedServer(
+  val sharedServer = new SharedServer(
     config,
     metaPropsEnsemble,
     time,

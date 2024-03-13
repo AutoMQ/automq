@@ -22,10 +22,12 @@ import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWrite
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
 import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
+import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.security.CredentialProvider
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
+import kafka.server.streamaspect.ElasticReplicaManager
 import kafka.utils.CoreUtils
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.feature.SupportedVersionRange
@@ -111,7 +113,7 @@ class BrokerServer(
 
   var dynamicConfigHandlers: Map[String, ConfigHandler] = _
 
-  @volatile private[this] var _replicaManager: ReplicaManager = _
+  @volatile private[this] var _replicaManager: ElasticReplicaManager = _
 
   var credentialProvider: CredentialProvider = _
   var tokenCache: DelegationTokenCache = _
@@ -144,6 +146,8 @@ class BrokerServer(
 
   val brokerFeatures: BrokerFeatures = BrokerFeatures.createDefault(config.unstableMetadataVersionsEnabled)
 
+  var controllerNodeProvider: RaftControllerNodeProvider = _
+
   def kafkaYammerMetrics: KafkaYammerMetrics = KafkaYammerMetrics.INSTANCE
 
   val metadataPublishers: util.List[MetadataPublisher] = new util.ArrayList[MetadataPublisher]()
@@ -171,7 +175,7 @@ class BrokerServer(
     true
   }
 
-  def replicaManager: ReplicaManager = _replicaManager
+  def replicaManager: ElasticReplicaManager = _replicaManager
 
   override def startup(): Unit = {
     if (!maybeChangeStatus(SHUTDOWN, STARTING)) return
@@ -193,9 +197,17 @@ class BrokerServer(
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, s"broker-${config.nodeId}-")
 
-      logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
+      // AutoMQ for Kafka inject start
+      val channelBlockingNum = if (config.elasticStreamEnabled) 100 else config.logDirs.size
+      logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
+      // AutoMQ for Kafka inject end
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
+
+      // AutoMQ for Kafka inject start
+      // ElasticLogManager should be marked before LogManager is created.
+      ElasticLogManager.enable(config.elasticStreamEnabled)
+      // AutoMQ for Kafka inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
@@ -226,7 +238,7 @@ class BrokerServer(
         sharedServer.controllerQuorumVotersFuture,
         startupDeadline, time)
       val controllerNodes = RaftConfig.voterConnectionsToNodes(voterConnections).asScala
-      val controllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
+      controllerNodeProvider = RaftControllerNodeProvider(raftManager, config, controllerNodes)
 
       clientToControllerChannelManager = new NodeToControllerChannelManagerImpl(
         controllerNodeProvider,
@@ -309,7 +321,7 @@ class BrokerServer(
           lifecycleManager.propagateDirectoryFailure(directoryId)
       }
 
-      this._replicaManager = new ReplicaManager(
+      this._replicaManager = new ElasticReplicaManager(
         config = config,
         metrics = metrics,
         time = time,
@@ -362,6 +374,10 @@ class BrokerServer(
         case (k: String, v: SupportedVersionRange) =>
           k -> VersionRange.of(v.min, v.max)
       }.asJava
+
+      // AutoMQ for Kafka inject start
+      initElasticLogManager()
+      // AutoMQ for Kafka inject end
 
       val brokerLifecycleChannelManager = new NodeToControllerChannelManagerImpl(
         controllerNodeProvider,
@@ -662,6 +678,14 @@ class BrokerServer(
         CoreUtils.swallow(controlPlaneRequestProcessor.close(), this)
       CoreUtils.swallow(authorizer.foreach(_.close()), this)
 
+      // AutoMQ for Kafka inject start
+      // https://github.com/AutoMQ/automq-for-kafka/issues/540
+      // await partition shutdown before metadataListener.close()
+      if (replicaManager != null) {
+        CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
+      }
+      // AutoMQ for Kafka inject end
+
       /**
        * We must shutdown the scheduler early because otherwise, the scheduler could touch other
        * resources that might have been shutdown and cause exceptions.
@@ -692,11 +716,19 @@ class BrokerServer(
       if (alterPartitionManager != null)
         CoreUtils.swallow(alterPartitionManager.shutdown(), this)
 
-      if (clientToControllerChannelManager != null)
-        CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
-
+      // AutoMQ for Kafka inject start
+      // Note that logs are closed in logManager.shutdown().
+      // Make sure these thread pools are shutdown after the log manager's shutdown.
+      // shutdown log and underling stream
       if (logManager != null)
         CoreUtils.swallow(logManager.shutdown(lifecycleManager.brokerEpoch), this)
+
+      // log manager need clientToControllerChannelManager to send request to controller.
+      if (clientToControllerChannelManager != null) {
+        CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
+      }
+      // AutoMQ for Kafka inject end
+
 
       // Close remote log manager to give a chance to any of its underlying clients
       // (especially in RemoteStorageManager and RemoteLogMetadataManager) to close gracefully.
@@ -738,5 +770,27 @@ class BrokerServer(
   }
 
   override def boundPort(listenerName: ListenerName): Int = socketServer.boundPort(listenerName)
+
+  def newBrokerToControllerChannelManager(channelName: String, retryTimeout: Int): NodeToControllerChannelManager = {
+    new NodeToControllerChannelManagerImpl(
+      controllerNodeProvider,
+      time,
+      metrics,
+      config,
+      channelName,
+      s"broker-${config.nodeId}-",
+      retryTimeout
+    )
+  }
+
+  protected def initElasticLogManager(): Unit = {
+    if (config.elasticStreamEnabled) {
+      if (!ElasticLogManager.init(config, clusterId, this)) {
+        throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
+      }
+    } else {
+      warn("Elastic stream is disabled. This node will store data locally.")
+    }
+  }
 
 }
