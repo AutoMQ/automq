@@ -545,7 +545,9 @@ public class S3Storage implements Storage {
             waitingAckRequests = callbackSequencer.after(request);
             waitingAckRequests.forEach(r -> r.record.retain());
             for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
-                if (deltaWALCache.put(waitingAckRequest.record)) {
+                boolean full = deltaWALCache.put(waitingAckRequest.record);
+                waitingAckRequest.confirmed = true;
+                if (full) {
                     // cache block is full, trigger WAL upload.
                     uploadDeltaWAL();
                 }
@@ -766,7 +768,7 @@ public class S3Storage implements Storage {
                 }
                 WalWriteRequest request = wrapper.request;
                 assert request.offset != NOOP_OFFSET;
-                if (!request.persisted) {
+                if (!request.confirmed) {
                     minUnconfirmedOffset = Math.min(minUnconfirmedOffset, request.offset);
                 }
             }
@@ -783,7 +785,7 @@ public class S3Storage implements Storage {
                     break;
                 }
                 WalWriteRequest request = wrapper.request;
-                if (request.persisted && request.offset < minUnconfirmedOffset) {
+                if (request.confirmed && request.offset < minUnconfirmedOffset) {
                     confirmedOffset = Math.max(confirmedOffset, request.offset);
                     iterator.remove();
                 }
