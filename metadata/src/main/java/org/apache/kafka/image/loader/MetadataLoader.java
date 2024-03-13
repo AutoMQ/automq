@@ -333,8 +333,8 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
             return;
         }
 
-        if (log.isDebugEnabled()) {
-            log.debug("handleCommit: publishing new image with provenance {}.", image.provenance());
+        if (log.isTraceEnabled()) {
+            log.trace("handleCommit: publishing new image with provenance {}.", image.provenance());
         }
         for (MetadataPublisher publisher : publishers.values()) {
             try {

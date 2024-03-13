@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.log.stream.s3.metadata;
+package org.apache.kafka.image.loader;
 
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
