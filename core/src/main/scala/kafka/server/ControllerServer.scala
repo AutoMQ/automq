@@ -17,6 +17,10 @@
 
 package kafka.server
 
+import com.automq.stream.s3.metadata.ObjectUtils
+import kafka.autobalancer.config.AutoBalancerControllerConfig
+import kafka.autobalancer.{AutoBalancerManager, AutoBalancerService}
+import kafka.log.stream.s3.ConfigUtils
 import kafka.metrics.LinuxIoMetricsCollector
 import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
@@ -36,7 +40,7 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.LogContext
 import org.apache.kafka.common.{ClusterResource, Endpoint, Uuid}
 import org.apache.kafka.controller.metrics.{ControllerMetadataMetricsPublisher, QuorumControllerMetrics}
-import org.apache.kafka.controller.{Controller, QuorumController, QuorumFeatures}
+import org.apache.kafka.controller.{QuorumController, QuorumControllerExtension, QuorumFeatures}
 import org.apache.kafka.image.publisher.{ControllerRegistrationsPublisher, MetadataPublisher}
 import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
@@ -112,7 +116,7 @@ class ControllerServer(
   var createTopicPolicy: Option[CreateTopicPolicy] = None
   var alterConfigPolicy: Option[AlterConfigPolicy] = None
   @volatile var quorumControllerMetrics: QuorumControllerMetrics = _
-  var controller: Controller = _
+  var controller: QuorumController = _
   var quotaManagers: QuotaManagers = _
   var clientQuotaMetadataManager: ClientQuotaMetadataManager = _
   var controllerApis: ControllerApis = _
@@ -127,6 +131,12 @@ class ControllerServer(
   @volatile var incarnationId: Uuid = _
   @volatile var registrationManager: ControllerRegistrationManager = _
   @volatile var registrationChannelManager: NodeToControllerChannelManager = _
+
+  var autoBalancerManager: Option[AutoBalancerService] = None
+
+  protected def buildAutoBalancerManager: AutoBalancerService = {
+    new AutoBalancerManager(time, config, controller, raftManager.client)
+  }
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
     lock.lock()
@@ -240,6 +250,17 @@ class ControllerServer(
 
         quorumControllerMetrics = new QuorumControllerMetrics(Optional.of(KafkaYammerMetrics.defaultRegistry), time, config.migrationEnabled)
 
+        // AutoMQ for Kafka inject start
+        val streamConfig = ConfigUtils.to(config)
+        var namespace = config.elasticStreamNamespace
+        namespace =  if (namespace == null || namespace.isEmpty) {
+          "_kafka_" + clusterId
+        } else {
+          namespace
+        }
+        ObjectUtils.setNamespace(namespace)
+        // AutoMQ for Kafka inject end
+
         new QuorumController.Builder(config.nodeId, sharedServer.clusterId).
           setTime(time).
           setThreadNamePrefix(s"quorum-controller-${config.nodeId}-").
@@ -267,9 +288,12 @@ class ControllerServer(
           setDelegationTokenMaxLifeMs(config.delegationTokenMaxLifeMs).
           setDelegationTokenExpiryTimeMs(config.delegationTokenExpiryTimeMs).
           setDelegationTokenExpiryCheckIntervalMs(config.delegationTokenExpiryCheckIntervalMs).
-          setEligibleLeaderReplicasEnabled(config.elrEnabled)
+          setEligibleLeaderReplicasEnabled(config.elrEnabled).
+          setStreamConfig(streamConfig).
+          setQuorumVoters(config.quorumVoters)
       }
       controller = controllerBuilder.build()
+      controller.setExtension(quorumControllerExtension(controller))
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.
@@ -292,7 +316,7 @@ class ControllerServer(
         val propagator: LegacyPropagator = new MigrationPropagator(config.nodeId, config)
         val migrationDriver = KRaftMigrationDriver.newBuilder()
           .setNodeId(config.nodeId)
-          .setZkRecordConsumer(controller.asInstanceOf[QuorumController].zkRecordConsumer())
+          .setZkRecordConsumer(controller.zkRecordConsumer())
           .setZkMigrationClient(migrationClient)
           .setPropagator(propagator)
           .setInitialZkLoadHandler(publisher => sharedServer.loader.installPublishers(java.util.Collections.singletonList(publisher)))
@@ -335,6 +359,13 @@ class ControllerServer(
         s"${DataPlaneAcceptor.MetricPrefix}RequestHandlerAvgIdlePercent",
         DataPlaneAcceptor.ThreadPrefix,
         "controller")
+
+      autoBalancerManager = if (config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
+        Some(buildAutoBalancerManager)
+      } else {
+        None
+      }
+      autoBalancerManager.foreach(_.start())
 
       // Set up the metadata cache publisher.
       metadataPublishers.add(metadataCachePublisher)
@@ -474,6 +505,7 @@ class ControllerServer(
       // Ensure that we're not the Raft leader prior to shutting down our socket server, for a
       // smoother transition.
       sharedServer.ensureNotRaftLeader()
+      autoBalancerManager.foreach(_.shutdown())
       incarnationId = null
       if (registrationManager != null) {
         CoreUtils.swallow(registrationManager.close(), this)
@@ -543,4 +575,10 @@ class ControllerServer(
       lock.unlock()
     }
   }
+
+  // AutoMQ for Kafka inject start
+  def quorumControllerExtension(quorumController: QuorumController): QuorumControllerExtension = {
+    QuorumControllerExtension.NOOP
+  }
+  // AutoMQ for Kafka inject end
 }
