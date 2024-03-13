@@ -279,8 +279,13 @@ public final class QuorumController implements Controller {
         private long delegationTokenExpiryCheckIntervalMs;
 
         // AutoMQ for Kafka inject start
-        private Config streamConfig;
-        private List<String> quorumVoters;
+        // Provide a default value to pass the unit tests.
+        private Config streamConfig = new Config() {
+            {
+                this.mockEnable(true);
+            }
+        };
+        private List<String> quorumVoters = Collections.emptyList();
         // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
