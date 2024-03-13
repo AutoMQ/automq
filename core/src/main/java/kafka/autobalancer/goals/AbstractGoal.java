@@ -17,7 +17,6 @@ import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
-import kafka.autobalancer.model.ModelUtils;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.slf4j.Logger;
 
@@ -117,9 +116,9 @@ public abstract class AbstractGoal implements Goal {
         }
 
         if (!isSrcBrokerAcceptedBefore && !isSrcBrokerAcceptedAfter) {
-            return score <= POSITIVE_ACTION_SCORE_THRESHOLD ? 0.0 : score;
+            return score < POSITIVE_ACTION_SCORE_THRESHOLD ? 0.0 : score;
         } else if (!isDestBrokerAcceptedBefore && !isDestBrokerAcceptedAfter) {
-            return score <= POSITIVE_ACTION_SCORE_THRESHOLD ? 0.0 : score;
+            return score < POSITIVE_ACTION_SCORE_THRESHOLD ? 0.0 : score;
         }
         return score;
     }
@@ -162,23 +161,15 @@ public abstract class AbstractGoal implements Goal {
         BrokerUpdater.Broker destBrokerBefore = cluster.broker(action.getDestBrokerId());
         BrokerUpdater.Broker srcBrokerAfter = srcBrokerBefore.copy();
         BrokerUpdater.Broker destBrokerAfter = destBrokerBefore.copy();
-        TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica = cluster.replica(action.getSrcBrokerId(), action.getSrcTopicPartition());
 
-        switch (action.getType()) {
-            case MOVE:
-                ModelUtils.moveReplicaLoad(srcBrokerAfter, destBrokerAfter, srcReplica);
-                break;
-            case SWAP:
-                ModelUtils.moveReplicaLoad(srcBrokerAfter, destBrokerAfter, srcReplica);
-                ModelUtils.moveReplicaLoad(destBrokerAfter, srcBrokerAfter,
-                        cluster.replica(action.getDestBrokerId(), action.getDestTopicPartition()));
-                break;
-            default:
-                return 0.0;
+        if (!moveReplica(action, cluster, srcBrokerAfter, destBrokerAfter)) {
+            return 0.0;
         }
 
         return calculateAcceptanceScore(srcBrokerBefore, destBrokerBefore, srcBrokerAfter, destBrokerAfter);
     }
+
+    protected abstract boolean moveReplica(Action action, ClusterModelSnapshot cluster, BrokerUpdater.Broker src, BrokerUpdater.Broker dest);
 
     @Override
     public Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {
