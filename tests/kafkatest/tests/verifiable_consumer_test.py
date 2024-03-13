@@ -73,6 +73,7 @@ class VerifiableConsumerTest(KafkaTest):
 
     def await_consumed_messages(self, consumer, min_messages=1):
         current_total = consumer.total_consumed()
+        self.logger.info("currently consumed: %s, min messages: %s" % (current_total, min_messages))
         wait_until(lambda: consumer.total_consumed() >= current_total + min_messages,
                    timeout_sec=self.consumption_timeout_sec,
                    err_msg="Timed out waiting for consumption")

@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import random
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
@@ -56,6 +56,7 @@ class StreamsUpgradeTest(Test):
             node.version = KafkaVersion(to_version)
             self.kafka.start_node(node)
 
+    @ignore # Directly upgrade from local mode to AutoMQ is unsupported
     @cluster(num_nodes=6)
     @matrix(from_version=smoke_test_versions, to_version=dev_version, bounce_type=["full"])
     def test_app_upgrade(self, from_version, to_version, bounce_type):
