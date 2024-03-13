@@ -36,16 +36,19 @@ kafka_dir="$( cd "${ducker_dir}/../.." && pwd )"
 docker_build_memory_limit="3200m"
 
 # The maximum mmemory consumption to allow in containers.
-docker_run_memory_limit="2000m"
+docker_run_memory_limit="3000m"
 
 # The default number of cluster nodes to bring up if a number is not specified.
 default_num_nodes=14
 
 # The default OpenJDK base image.
-default_jdk="openjdk:8"
+default_jdk="automqinc/kos_e2e_base:3.4.0"
 
 # The default ducker-ak image name.
-default_image_name="ducker-ak"
+default_image_name="ducker-ak-kos"
+
+# The default apt/pip mirror URL. By default, no mirror is used.
+default_general_mirror_url=""
 
 # Port to listen on when debugging
 debugpy_port=5678
@@ -64,7 +67,7 @@ help|-h|--help
     Display this help message
 
 up [-n|--num-nodes NUM_NODES] [-f|--force] [docker-image]
-        [-C|--custom-ducktape DIR] [-e|--expose-ports ports]
+        [-C|--custom-ducktape DIR] [-e|--expose-ports ports] [--general-mirror-url URL]
     Bring up a cluster with the specified amount of nodes (defaults to ${default_num_nodes}).
     The docker image name defaults to ${default_image_name}.  If --force is specified, we will
     attempt to bring up an image even some parameters are not valid.
@@ -77,18 +80,20 @@ up [-n|--num-nodes NUM_NODES] [-f|--force] [docker-image]
     on the host. The argument can be a single port (like 5005), a port range like (5005-5009)
     or a combination of port/port-range separated by comma (like 2181,9092 or 2181,5005-5008).
     By default no port is exposed. See README.md for more detail on this option.
-    
-    Note that port 5678 will be automatically exposed for ducker01 node and will be mapped to 5678 
+
+    Note that port 5678 will be automatically exposed for ducker01 node and will be mapped to 5678
     on your local machine to enable debugging in VS Code.
+
+    If --general-mirror-url is specified then will use the provided URL as the apt/pip mirror URL.
 
 test [-d|--debug] [test-name(s)] [-- [ducktape args]]
     Run a test or set of tests inside the currently active Ducker nodes.
     For example, to run the system test produce_bench_test, you would run:
         ./tests/docker/ducker-ak test ./tests/kafkatest/tests/core/produce_bench_test.py
-    
+
     If --debug is passed, the tests will wait for remote VS Code debugger to connect on port 5678:
         ./tests/docker/ducker-ak test --debug ./tests/kafkatest/tests/core/produce_bench_test.py
-    
+
     To pass arguments to underlying ducktape invocation, pass them after `--`, e.g.:
         ./tests/docker/ducker-ak test ./tests/kafkatest/tests/core/produce_bench_test.py -- --test-runner-timeout 1800000
 
@@ -247,6 +252,7 @@ ducker_build() {
         --build-arg "ducker_creator=${user_name}" \
         --build-arg "jdk_version=${jdk_version}" \
         --build-arg "UID=${UID}" \
+        --build-arg "general_mirror_url=${general_mirror_url}" \
         -t "${image_name}" \
         -f "${ducker_dir}/Dockerfile" ${docker_args} -- .
     docker_status=$?
@@ -314,11 +320,13 @@ ducker_up() {
             -n|--num-nodes) set_once num_nodes "${2}" "number of nodes"; shift 2;;
             -j|--jdk) set_once jdk_version "${2}" "the OpenJDK base image"; shift 2;;
             -e|--expose-ports) set_once expose_ports "${2}" "the ports to expose"; shift 2;;
+            --general-mirror-url) set_once general_mirror_url "${2}" "general mirror url to accelerate package downing for apt and pip"; shift 2;;
             *) set_once image_name "${1}" "docker image name"; shift;;
         esac
     done
     [[ -n "${num_nodes}" ]] || num_nodes="${default_num_nodes}"
     [[ -n "${jdk_version}" ]] || jdk_version="${default_jdk}"
+    [[ -n "${general_mirror_url}" ]] || general_mirror_url="${default_general_mirror_url}"
     [[ -n "${image_name}" ]] || image_name="${default_image_name}-${jdk_version/:/-}"
     [[ "${num_nodes}" =~ ^-?[0-9]+$ ]] || \
         die "ducker_up: the number of nodes must be an integer."
@@ -361,7 +369,22 @@ attempting to start new ones."
     if docker network inspect ducknet &>/dev/null; then
         must_do -v docker network rm ducknet
     fi
-    must_do -v docker network create ducknet
+    must_do -v docker network create --subnet=10.5.0.0/16 ducknet
+
+    # AutoMQ for Kafka insert start
+    # must_do -v docker run --network=ducknet --name redis -d redis:7
+    # start es cluster
+#    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml up -d
+    # AutoMQ for Kafka insert end
+
+    # AutoMQ for Kafka inject start
+    must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml up -d
+    # AutoMQ for Kafka inject end
+
+    # node_hosts should be firstly created to be mounted to the container
+    mkdir -p "${ducker_dir}/build"
+    touch "${ducker_dir}/build/node_hosts"
+
     if [[ -n "${custom_ducktape}" ]]; then
         setup_custom_ducktape "${custom_ducktape}" "${image_name}"
     fi
@@ -370,7 +393,7 @@ attempting to start new ones."
         local node="ducker${n}"
         docker_run "${node}" "${image_name}" "${expose_ports}"
     done
-    mkdir -p "${ducker_dir}/build"
+
     exec 3<> "${ducker_dir}/build/node_hosts"
     for n in $(seq -f %02g 1 ${num_nodes}); do
         local node="ducker${n}"
@@ -388,6 +411,15 @@ attempting to start new ones."
     echo "ducker_up: added the latest entries to /etc/hosts on each node."
     generate_cluster_json_file "${num_nodes}" "${ducker_dir}/build/cluster.json"
     echo "ducker_up: successfully wrote ${ducker_dir}/build/cluster.json"
+
+    # AutoMQ for Kafka inject start
+    # ip is static and referenced from docker/s3/docker-compose.yaml
+    cmd="aws s3api create-bucket --bucket ko3 --endpoint=http://10.5.0.2:4566"
+    echo "docker exec ducker01 bash -c \"${cmd}\""
+    exec docker exec --user=ducker ducker01 bash -c "${cmd}"
+    echo "ducker_up: bucket ko3 ready for tests"
+    # AutoMQ for Kafka inject end
+
     echo "** ducker_up: successfully brought up ${num_nodes} nodes."
 }
 
@@ -453,15 +485,17 @@ ducker_test() {
         die "ducker_test: the ducker01 instance appears to be down. Did you run 'ducker up'?"
     declare -a test_name_args=()
     local debug=0
+    local force_update_snapshot=0
     while [[ $# -ge 1 ]]; do
         case "${1}" in
             -d|--debug) debug=1; shift;;
+            -f|--force-update-snapshot) force_update_snapshot=1; shift;;
             --) shift; break;;
             *) test_name_args+=("${1}"); shift;;
         esac
     done
     local ducktape_args=${*}
-    
+
     [[ ${#test_name_args} -lt 1 ]] && \
         die "ducker_test: you must supply at least one system test to run. Type --help for help."
     local test_names=""
@@ -475,9 +509,13 @@ ducker_test() {
             test_names="${test_names} ${test_name}"
         fi
     done
-    
+
     must_pushd "${kafka_dir}"
-    ( (test -f ./gradlew || gradle) && ./gradlew systemTestLibs ) || die "ducker_test: Failed to build system test libraries, please check the error log."
+    if [[ "${force_update_snapshot}" -eq 1 ]]; then
+        (test -f ./gradlew || gradle) && ./gradlew --refresh-dependencies clean systemTestLibs
+    else
+        (test -f ./gradlew || gradle) && ./gradlew systemTestLibs
+    fi
     must_popd
     if [[ "${debug}" -eq 1 ]]; then
         local ducktape_cmd="python3 -m debugpy --listen 0.0.0.0:${debugpy_port} --wait-for-client /usr/local/bin/ducktape"
@@ -572,6 +610,15 @@ ducker_down() {
         must_do -v docker network rm ducknet
     fi
     maybe_echo "${verbose}" "ducker_down: removed $(count ${all_containers}) containers."
+    # AutoMQ for Kafka insert start
+    # remove es
+#    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml down -v
+    # AutoMQ for Kafka insert end
+
+    # AutoMQ for Kafka inject start
+    # remove s3
+    must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml down -v
+    # AutoMQ for Kafka inject end
 }
 
 ducker_purge() {

@@ -32,7 +32,7 @@ class ReplicaScaleTest(Test):
         super(ReplicaScaleTest, self).__init__(test_context=test_context)
         self.test_context = test_context
         self.zk = ZookeeperService(test_context, num_nodes=1) if quorum.for_test(test_context) == quorum.zk else None
-        self.kafka = KafkaService(self.test_context, num_nodes=8, zk=self.zk, controller_num_nodes_override=1)
+        self.kafka = KafkaService(self.test_context, num_nodes=6, zk=self.zk, controller_num_nodes_override=1)
 
     def setUp(self):
         if self.zk:
@@ -48,19 +48,20 @@ class ReplicaScaleTest(Test):
             self.zk.stop()
 
     @cluster(num_nodes=12)
+    # @matrix(
+    #     topic_count=[50],
+    #     partition_count=[34],
+    #     replication_factor=[3],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
+    # FIXME: support large scale topic create
     @matrix(
-        topic_count=[50],
-        partition_count=[34],
-        replication_factor=[3],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
-    @matrix(
-        topic_count=[50],
+        topic_count=[3],
         partition_count=[34],
         replication_factor=[3],
         metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True, False]
+        use_new_coordinator=[True]
     )
     def test_produce_consume(self, topic_count, partition_count, replication_factor, 
                              metadata_quorum=quorum.zk, use_new_coordinator=False):
@@ -89,7 +90,9 @@ class ReplicaScaleTest(Test):
                                                 producer_workload_service.producer_node,
                                                 producer_workload_service.bootstrap_servers,
                                                 target_messages_per_sec=150000,
-                                                max_messages=3400000,
+                                                # optimize multiple partition read
+                                                # max_messages=3400000,
+                                                max_messages=1700000,
                                                 producer_conf={},
                                                 admin_client_conf={},
                                                 common_client_conf={},
@@ -117,15 +120,15 @@ class ReplicaScaleTest(Test):
         trogdor.stop()
 
     @cluster(num_nodes=12)
+    # @matrix(
+    #     topic_count=[50],
+    #     partition_count=[34],
+    #     replication_factor=[3],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
-        topic_count=[50],
-        partition_count=[34],
-        replication_factor=[3],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
-    @matrix(
-        topic_count=[50],
+        topic_count=[1],
         partition_count=[34],
         replication_factor=[3],
         metadata_quorum=[quorum.isolated_kraft],

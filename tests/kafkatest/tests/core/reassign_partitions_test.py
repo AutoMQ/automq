@@ -110,7 +110,7 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
         and waiting for them to be cleaned up.
         """
         producer = VerifiableProducer(self.test_context, 1, self.kafka, self.topic,
-                                      throughput=-1, enable_idempotence=True,
+                                      throughput=100, enable_idempotence=True,
                                       create_time=1000)
         producer.start()
         wait_until(lambda: producer.num_acked > 0,
@@ -129,7 +129,10 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
         # segment is deleted. An altenate to using timeouts is to poll each
         # partition until the log start offset matches the end offset. The
         # latter is more robust.
-        time.sleep(6)
+
+        # AutoMQ, 6->12 seconds to bypass the initial delay of cleanup task
+        # the broker clean up task initial delay is 30s
+        time.sleep(12 + 30)
 
     @cluster(num_nodes=8)
     @matrix(

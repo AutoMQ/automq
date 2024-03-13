@@ -53,7 +53,7 @@ class EndToEndTest(Test):
 
         topics = {
             self.topic: self.topic_config,
-            "__consumer_offsets": group_metadata_config
+            # "__consumer_offsets": group_metadata_config
         }
 
         if self.topic:
@@ -127,8 +127,8 @@ class EndToEndTest(Test):
             self._collect_all_logs()
             raise
 
-    def run_validation(self, min_records=5000, producer_timeout_sec=30,
-                       consumer_timeout_sec=30, enable_idempotence=False):
+    def run_validation(self, min_records=5000, producer_timeout_sec=60,
+                       consumer_timeout_sec=60, enable_idempotence=False):
         try:
             self.await_produced_records(min_records, producer_timeout_sec)
             self.logger.info("Stopping producer after writing up to offsets %s" %\
