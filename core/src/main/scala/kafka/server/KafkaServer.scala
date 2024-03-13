@@ -29,6 +29,7 @@ import kafka.network.{ControlPlaneAcceptor, DataPlaneAcceptor, RequestChannel, S
 import kafka.raft.KafkaRaftManager
 import kafka.security.CredentialProvider
 import kafka.server.metadata.{OffsetTrackingListener, ZkConfigRepository, ZkMetadataCache}
+import kafka.server.streamaspect.ElasticReplicaManager
 import kafka.utils._
 import kafka.zk.{AdminZkClient, BrokerInfo, KafkaZkClient}
 import org.apache.kafka.clients.{ApiVersions, ManualMetadataUpdater, NetworkClient, NetworkClientUtils}
@@ -139,7 +140,7 @@ class KafkaServer(
   @volatile private var _logManager: LogManager = _
   var remoteLogManagerOpt: Option[RemoteLogManager] = None
 
-  @volatile private var _replicaManager: ReplicaManager = _
+  @volatile private var _replicaManager: ElasticReplicaManager = _
   var adminManager: ZkAdminManager = _
   var tokenManager: DelegationTokenManager = _
 
@@ -192,7 +193,7 @@ class KafkaServer(
 
   private[kafka] def featureChangeListener = _featureChangeListener
 
-  override def replicaManager: ReplicaManager = _replicaManager
+  override def replicaManager: ElasticReplicaManager = _replicaManager
 
   override def logManager: LogManager = _logManager
 
@@ -678,7 +679,7 @@ class KafkaServer(
     }
   }
 
-  protected def createReplicaManager(isShuttingDown: AtomicBoolean): ReplicaManager = {
+  protected def createReplicaManager(isShuttingDown: AtomicBoolean): ElasticReplicaManager = {
     val addPartitionsLogContext = new LogContext(s"[AddPartitionsToTxnManager broker=${config.brokerId}]")
     val addPartitionsToTxnNetworkClient = NetworkUtils.buildNetworkClient("AddPartitionsManager", config, metrics, time, addPartitionsLogContext)
     val addPartitionsToTxnManager = new AddPartitionsToTxnManager(
@@ -691,7 +692,7 @@ class KafkaServer(
       time
     )
 
-    new ReplicaManager(
+    new ElasticReplicaManager(
       metrics = metrics,
       config = config,
       time = time,
