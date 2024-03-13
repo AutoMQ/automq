@@ -56,6 +56,7 @@ object EnvelopeUtils {
       ClientInformation.EMPTY,
       request.context.fromPrivilegedListener
     )
+    forwardedContext.originHeader(request.header)
 
     val forwardedRequest = parseForwardedRequest(
       request,

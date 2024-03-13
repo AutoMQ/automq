@@ -639,6 +639,11 @@ class GroupMetadataManager(brokerId: Int,
 
               fileRecords.readInto(buffer, 0)
               MemoryRecords.readableRecords(buffer)
+            // AutoMQ for Kafka inject start
+            // match other cases, like BatchIteratorRecordsAdaptor
+            case records: Records =>
+              records
+            // AutoMQ for Kafka inject end
           }
 
           memRecords.batches.forEach { batch =>
