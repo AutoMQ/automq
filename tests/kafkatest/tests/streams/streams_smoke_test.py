@@ -19,6 +19,7 @@ from ducktape.mark.resource import cluster
 from kafkatest.services.kafka import quorum
 from kafkatest.tests.kafka_test import KafkaTest
 from kafkatest.services.streams import StreamsSmokeTestDriverService, StreamsSmokeTestJobRunnerService
+from kafkatest.tests.monitor_util import get_monitor_with_offset
 
 class StreamsSmokeTest(KafkaTest):
     """
@@ -55,12 +56,12 @@ class StreamsSmokeTest(KafkaTest):
         processor2 = StreamsSmokeTestJobRunnerService(self.test_context, self.kafka, processing_guarantee)
         processor3 = StreamsSmokeTestJobRunnerService(self.test_context, self.kafka, processing_guarantee)
 
-        with processor1.node.account.monitor_log(processor1.STDOUT_FILE) as monitor1:
+        with get_monitor_with_offset(processor1.node.account, processor1.STDOUT_FILE, 1) as monitor1:
             processor1.start()
             monitor1.wait_until('REBALANCING -> RUNNING',
-                               timeout_sec=60,
-                               err_msg="Never saw 'REBALANCING -> RUNNING' message " + str(processor1.node.account)
-                               )
+                                timeout_sec=60,
+                                err_msg="Never saw 'REBALANCING -> RUNNING' message " + str(processor1.node.account)
+                                )
 
             self.driver.start()
 
@@ -74,7 +75,7 @@ class StreamsSmokeTest(KafkaTest):
 
             processor1.stop_nodes(not crash)
 
-        with processor2.node.account.monitor_log(processor2.STDOUT_FILE) as monitor2:
+        with get_monitor_with_offset(processor2.node.account, processor2.STDOUT_FILE, 1) as monitor2:
             processor2.start()
             monitor2.wait_until('REBALANCING -> RUNNING',
                                 timeout_sec=120,
@@ -90,7 +91,7 @@ class StreamsSmokeTest(KafkaTest):
 
         processor2.stop_nodes(not crash)
 
-        with processor3.node.account.monitor_log(processor3.STDOUT_FILE) as monitor3:
+        with get_monitor_with_offset(processor3.node.account, processor3.STDOUT_FILE, 1) as monitor3:
             processor3.start()
             monitor3.wait_until('REBALANCING -> RUNNING',
                                 timeout_sec=120,

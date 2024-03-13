@@ -19,6 +19,7 @@ import os.path
 import re
 import signal
 import time
+import subprocess
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -167,6 +168,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     ADMIN_CLIENT_AS_BROKER_JAAS_CONF_PROPERTY = "java.security.auth.login.config=/mnt/security/admin_client_as_broker_jaas.conf"
     KRB5_CONF = "java.security.krb5.conf=/mnt/security/krb5.conf"
     SECURITY_PROTOCOLS = [SecurityConfig.PLAINTEXT, SecurityConfig.SSL, SecurityConfig.SASL_PLAINTEXT, SecurityConfig.SASL_SSL]
+    KAFKA_HEAP_OPTS = "-Xmx512m -Xms512m" # AutoMQ inject
 
     logs = {
         "kafka_server_start_stdout_stderr": {
@@ -202,7 +204,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                  extra_kafka_opts="", tls_version=None,
                  isolated_kafka=None,
                  controller_num_nodes_override=0,
-                 allow_zk_with_kraft=False,
+                 allow_zk_with_kraft=True, # AutoMQ inject
                  quorum_info_provider=None,
                  use_new_coordinator=None
                  ):
@@ -448,6 +450,14 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.combined_nodes_started = 0
         self.nodes_to_start = self.nodes
 
+        # AutoMQ inject start
+        self.have_cleaned_topic_data = False
+        # ip is static and referenced from docker/s3/docker-compose.yaml
+        self.default_s3_ip = "10.5.0.2"
+        self.default_s3_port = 4566
+        self.default_s3_bucket_name = "ko3"
+        # AutoMQ inject end
+
     def reconfigure_zk_for_migration(self, kraft_quorum):
         self.configured_for_zk_migration = True
         self.controller_quorum = kraft_quorum
@@ -621,6 +631,13 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         return len(self.pids(node)) > 0
 
     def start(self, add_principals="", nodes_to_skip=[], timeout_sec=60, **kwargs):
+        try:
+            self.start0(add_principals=add_principals, nodes_to_skip=nodes_to_skip, timeout_sec=timeout_sec, **kwargs)
+        except RemoteCommandError as e:
+            self.logger.error("RemoteCommandError when starting Kafka service: %s", e)
+            raise
+
+    def start0(self, add_principals="", nodes_to_skip=[], timeout_sec=60, **kwargs):
         """
         Start the Kafka broker and wait until it registers its ID in ZooKeeper
         Startup will be skipped for any nodes in nodes_to_skip. These nodes can be started later via add_broker
@@ -814,6 +831,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
         cmd += fix_opts_for_new_jvm(node)
         cmd += "export KAFKA_OPTS=\"%s %s %s\"; " % (heap_kafka_opts, security_kafka_opts, self.extra_kafka_opts)
+        cmd += "export KAFKA_HEAP_OPTS=\"%s\"; " % self.KAFKA_HEAP_OPTS # AutoMQ inject
         cmd += "%s %s 1>> %s 2>> %s &" % \
                (self.path.script("kafka-server-start.sh", node),
                 KafkaService.CONFIG_FILE,
@@ -1000,6 +1018,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
     def kafka_topics_cmd_with_optional_security_settings(self, node, force_use_zk_connection, kafka_security_protocol=None, offline_nodes=[]):
         if self.quorum_info.using_kraft and not self.quorum_info.has_brokers:
+            self.logger.info("quorum_info = [using_kraft=%s, has_brokers=%s]" % (self.quorum_info.using_kraft, self.quorum_info.has_brokers))
             raise Exception("Must invoke kafka-topics against a broker, not a KRaft controller")
         if force_use_zk_connection:
             bootstrap_server_or_zookeeper = "--zookeeper %s" % (self.zk_connect_setting())
@@ -1189,7 +1208,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         else:
             cmd += " --partitions %(partitions)d --replication-factor %(replication-factor)d" % {
                 'partitions': topic_cfg.get('partitions', 1),
-                'replication-factor': topic_cfg.get('replication-factor', 1)
+                'replication-factor': 1 # AutoMQ inject
             }
 
         if topic_cfg.get('if-not-exists', False):
@@ -1289,7 +1308,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         cmd = fix_opts_for_new_jvm(node)
         cmd += "%s --list" % (self.kafka_topics_cmd_with_optional_security_settings(node, force_use_zk_connection))
         for line in node.account.ssh_capture(cmd):
-            if not line.startswith("SLF4J"):
+            if not line.startswith("SLF4J") and len(line.rstrip()) > 0: # AutoMQ inject
                 yield line.rstrip()
 
     def alter_message_format(self, topic, msg_format_version, node=None):
@@ -1821,3 +1840,38 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
     def java_class_name(self):
         return "kafka.Kafka"
+
+    # AutoMQ inject start
+
+    def stop(self, **kwargs):
+        """
+        If minikdc is enabled, topics have been already deleted in minikdc.stop_node().
+        """
+        super(KafkaService, self).stop()
+        self.delete_data_on_s3()
+
+    def delete_data_on_s3(self, timeout_sec=60):
+        """
+        Delete all topic data stored in s3.
+        Note that this is needed to prevent too much data stored in s3.
+        """
+        # make sure we don't try to delete data twice
+        if self.quorum_info.using_kraft and not self.quorum_info.has_brokers:
+            self.logger.info("skip topic deletion on KRaft controller-only cluster")
+            return
+        if self.have_cleaned_topic_data:
+            self.logger.info("skip topic deletion since it has already been done")
+            return
+
+        cmd = "aws s3 rm s3://%(bucket_name)s --recursive --endpoint=http://%(s3_ip)s:%(s3_port)d" % {
+            'bucket_name': self.default_s3_bucket_name,
+            's3_ip': self.default_s3_ip,
+            's3_port': self.default_s3_port
+        }
+
+        self.logger.info("Running cleaning s3 bucket command...\n%s" % cmd)
+        ret, val = subprocess.getstatusoutput(cmd)
+        if ret != 0:
+            raise Exception("Failed to delete s3 bucket, output: %s" % val)
+        self.have_cleaned_topic_data = True
+    # AutoMQ inject end

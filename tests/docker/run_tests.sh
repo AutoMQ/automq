@@ -17,8 +17,11 @@
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 KAFKA_NUM_CONTAINERS=${KAFKA_NUM_CONTAINERS:-14}
-TC_PATHS=${TC_PATHS:-./kafkatest/}
+TC_PATHS=${TC_PATHS:-${ESK_TEST_YML:-./kafkatest/}}
+TC_GENERAL_MIRROR_URL=${TC_GENERAL_MIRROR_URL:-""}
+TC_BASE_IMAGE=${TC_BASE_IMAGE:-"automqinc/kos_e2e_base:3.4.0"}
 REBUILD=${REBUILD:f}
+DUCKER_TEST_OPTIONS=${DUCKER_TEST_OPTIONS:-""}
 
 die() {
     echo $@
@@ -30,9 +33,17 @@ if [ "$REBUILD" == "t" ]; then
 fi
 
 if ${SCRIPT_DIR}/ducker-ak ssh | grep -q '(none)'; then
-    ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" || die "ducker-ak up failed"
+    if [ -n "${TC_GENERAL_MIRROR_URL}" ]; then
+        ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" --general-mirror-url "${TC_GENERAL_MIRROR_URL}" --jdk "${TC_BASE_IMAGE}" || die "ducker-ak up failed"
+    else
+        ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" --jdk "${TC_BASE_IMAGE}" || die "ducker-ak up failed"
+    fi
 fi
 
 [[ -n ${_DUCKTAPE_OPTIONS} ]] && _DUCKTAPE_OPTIONS="-- ${_DUCKTAPE_OPTIONS}"
 
-${SCRIPT_DIR}/ducker-ak test ${TC_PATHS} ${_DUCKTAPE_OPTIONS} || die "ducker-ak test failed"
+if [ -n "${DUCKER_TEST_OPTIONS}" ]; then
+    ${SCRIPT_DIR}/ducker-ak test "${DUCKER_TEST_OPTIONS}" ${TC_PATHS} ${_DUCKTAPE_OPTIONS} || die "ducker-ak test failed"
+else
+    ${SCRIPT_DIR}/ducker-ak test ${TC_PATHS} ${_DUCKTAPE_OPTIONS} || die "ducker-ak test failed"
+fi

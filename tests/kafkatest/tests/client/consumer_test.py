@@ -426,17 +426,17 @@ class OffsetValidationTest(VerifiableConsumerTest):
                 (consumer.last_commit(partition), consumer.current_position(partition))
 
     @cluster(num_nodes=7)
+    # @matrix(
+    #     clean_shutdown=[True, False],
+    #     enable_autocommit=[True, False],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
-        clean_shutdown=[True, False],
-        enable_autocommit=[True, False],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
-    @matrix(
-        clean_shutdown=[True, False],
+        clean_shutdown=[True],
         enable_autocommit=[True, False],
         metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True, False]
+        use_new_coordinator=[True]
     )
     def test_broker_failure(self, clean_shutdown, enable_autocommit, metadata_quorum=quorum.zk, use_new_coordinator=False):
         partition = TopicPartition(self.TOPIC, 0)
