@@ -280,6 +280,7 @@ public class TelemetryManager {
             case "grpc":
                 OtlpGrpcMetricExporterBuilder otlpExporterBuilder = OtlpGrpcMetricExporter.builder()
                         .setEndpoint(otlpExporterHost)
+                        .setCompression(kafkaConfig.s3ExporterOTLPCompressionEnable() ? "gzip" : "none")
                         .setTimeout(Duration.ofMillis(30000));
                 builder = PeriodicMetricReader.builder(otlpExporterBuilder.build());
                 break;
