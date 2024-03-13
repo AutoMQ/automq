@@ -17,6 +17,7 @@
 
 package kafka.server.metadata
 
+import com.google.common.util.concurrent.MoreExecutors
 import kafka.coordinator.transaction.TransactionCoordinator
 
 import java.util.Collections.{singleton, singletonList, singletonMap}
@@ -115,6 +116,7 @@ class BrokerMetadataPublisherTest {
         thenAnswer(new Answer[Unit]() {
           override def answer(invocation: InvocationOnMock): Unit = numTimesReloadCalled.addAndGet(1)
         })
+      broker.brokerMetadataPublisher.partitionOpCallbackExecutor = MoreExecutors.newDirectExecutorService()
       broker.brokerMetadataPublisher.dynamicConfigPublisher = publisher
       val admin = Admin.create(cluster.clientProperties())
       try {
@@ -140,6 +142,7 @@ class BrokerMetadataPublisherTest {
     }
   }
 
+  // TODO: the create topic response is suspended in SocketServer:1407
   @Test
   def testExceptionInUpdateCoordinator(): Unit = {
     val cluster = new KafkaClusterTestKit.Builder(
@@ -157,6 +160,7 @@ class BrokerMetadataPublisherTest {
       TestUtils.retry(60000) {
         assertNotNull(broker.brokerMetadataPublisher)
       }
+      broker.brokerMetadataPublisher.partitionOpCallbackExecutor = MoreExecutors.newDirectExecutorService()
       val publisher = Mockito.spy(broker.brokerMetadataPublisher)
       doThrow(new RuntimeException("injected failure")).when(publisher).updateCoordinator(any(), any(), any(), any(), any())
       broker.sharedServer.loader.removeAndClosePublisher(broker.brokerMetadataPublisher).get(1, TimeUnit.MINUTES)
@@ -202,6 +206,7 @@ class BrokerMetadataPublisherTest {
       faultHandler,
       faultHandler,
       mock(classOf[BrokerLifecycleManager]),
+      partitionOpCallbackExecutor = MoreExecutors.newDirectExecutorService()
     )
 
     val image = MetadataImage.EMPTY
@@ -246,6 +251,7 @@ class BrokerMetadataPublisherTest {
       faultHandler,
       faultHandler,
       brokerLifecycleManager,
+      partitionOpCallbackExecutor = MoreExecutors.newDirectExecutorService()
     )
 
     var image = MetadataImage.EMPTY

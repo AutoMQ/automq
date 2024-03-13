@@ -23,6 +23,8 @@ import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.S3ObjectsImage;
 import org.apache.kafka.image.S3StreamMetadataImage;
 import org.apache.kafka.image.S3StreamsMetadataImage;
+import org.apache.kafka.image.loader.LoaderManifest;
+import org.apache.kafka.image.publisher.MetadataPublisher;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3StreamObject;
@@ -40,7 +42,7 @@ import java.util.stream.Collectors;
 
 import static com.automq.stream.utils.FutureUtil.exec;
 
-public class StreamMetadataManager implements InRangeObjectsFetcher {
+public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPublisher {
 
     // TODO: optimize by more suitable concurrent protection
     private final static Logger LOGGER = LoggerFactory.getLogger(StreamMetadataManager.class);
@@ -60,13 +62,18 @@ public class StreamMetadataManager implements InRangeObjectsFetcher {
         this.streamsImage = currentImage.streamsMetadata();
         this.objectsImage = currentImage.objectsMetadata();
         this.version = currentImage.highestOffsetAndEpoch();
-        // TODO: uncomment the following line
-//        this.broker.metadataListener().registerMetadataListener(this::onImageChanged);
+        this.broker.metadataLoader().installPublishers(List.of(this)).join();
         this.pendingGetObjectsTasks = new LinkedList<>();
         this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
     }
 
-    private void onImageChanged(MetadataDelta delta, MetadataImage newImage) {
+    @Override
+    public String name() {
+        return this.getClass().getSimpleName();
+    }
+
+    @Override
+    public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage, LoaderManifest manifest) {
         if (newImage.highestOffsetAndEpoch().equals(this.version)) {
             return;
         }
