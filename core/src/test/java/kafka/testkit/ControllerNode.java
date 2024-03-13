@@ -17,6 +17,8 @@
 
 package kafka.testkit;
 
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.metadata.properties.MetaProperties;
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble;
@@ -32,6 +34,7 @@ public class ControllerNode implements TestKitNode {
         private String baseDirectory = null;
         private String metadataDirectory = null;
         private Uuid clusterId = null;
+        private final Map<String, String> propertyOverrides = new HashMap<>();
 
         public int id() {
             return id;
@@ -44,6 +47,11 @@ public class ControllerNode implements TestKitNode {
 
         public Builder setMetadataDirectory(String metadataDirectory) {
             this.metadataDirectory = metadataDirectory;
+            return this;
+        }
+
+        public Builder setPropertyOverrides(String propertyOverrides) {
+            this.metadataDirectory = propertyOverrides;
             return this;
         }
 
@@ -77,20 +85,23 @@ public class ControllerNode implements TestKitNode {
                 setNodeId(id).
                 setDirectoryId(copier.generateValidDirectoryId()).
                 build());
-            return new ControllerNode(copier.copy(), combined);
+            return new ControllerNode(copier.copy(), combined, propertyOverrides);
         }
     }
 
     private final MetaPropertiesEnsemble initialMetaPropertiesEnsemble;
 
     private final boolean combined;
+    private final Map<String, String> propertyOverrides;
 
     ControllerNode(
         MetaPropertiesEnsemble initialMetaPropertiesEnsemble,
-        boolean combined
+        boolean combined,
+        Map<String, String> propertyOverrides
     ) {
         this.initialMetaPropertiesEnsemble = initialMetaPropertiesEnsemble;
         this.combined = combined;
+        this.propertyOverrides = propertyOverrides;
     }
 
     @Override
@@ -101,5 +112,9 @@ public class ControllerNode implements TestKitNode {
     @Override
     public boolean combined() {
         return combined;
+    }
+
+    public Map<String, String> propertyOverrides() {
+        return propertyOverrides;
     }
 }

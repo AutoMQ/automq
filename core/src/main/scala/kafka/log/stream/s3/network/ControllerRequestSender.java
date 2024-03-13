@@ -31,6 +31,7 @@ import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractRequest.Builder;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.server.NodeToControllerChannelManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,8 +40,7 @@ public class ControllerRequestSender {
     private static final long MAX_RETRY_DELAY_MS = 10 * 1000; // 10s
     private final RetryPolicyContext retryPolicyContext;
 
-        // TODO: uncomment the following line
-//    private final BrokerToControllerChannelManager channelManager;
+    private final NodeToControllerChannelManager channelManager;
 
     private final ScheduledExecutorService retryService;
 
@@ -48,9 +48,8 @@ public class ControllerRequestSender {
 
     public ControllerRequestSender(BrokerServer brokerServer, RetryPolicyContext retryPolicyContext) {
         this.retryPolicyContext = retryPolicyContext;
-        // TODO: uncomment the following line
-//        this.channelManager = brokerServer.newBrokerToControllerChannelManager("s3stream-to-controller", 60000);
-//        this.channelManager.start();
+        this.channelManager = brokerServer.newNodeToControllerChannelManager("s3stream-to-controller", 60000);
+        this.channelManager.start();
         this.retryService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("controller-request-retry-sender"));
         this.requestAccumulatorMap = new ConcurrentHashMap<>();
     }

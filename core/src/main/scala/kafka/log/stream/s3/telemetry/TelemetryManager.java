@@ -59,10 +59,12 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import kafka.server.KafkaConfig;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
+import scala.collection.immutable.Set;
 
 public class TelemetryManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(TelemetryManager.class);
@@ -88,11 +90,10 @@ public class TelemetryManager {
     }
 
     private String getNodeType() {
-        // TODO: uncomment the following line
-//        Set<KafkaRaftServer.ProcessRole> roles = kafkaConfig.processRoles();
-//        if (roles.size() == 1) {
-//            return roles.last().toString();
-//        }
+        Set<ProcessRole> roles = kafkaConfig.processRoles();
+        if (roles.size() == 1) {
+            return roles.last().toString();
+        }
         return "server";
     }
 
@@ -169,15 +170,14 @@ public class TelemetryManager {
         jmxMetricInsight = JmxMetricInsight.createService(ot, kafkaConfig.s3ExporterReportIntervalMs());
         MetricConfiguration conf = new MetricConfiguration();
 
-        // TODO: uncomment the following line
-//        Set<KafkaRaftServer.ProcessRole> roles = kafkaConfig.processRoles();
-//        buildMetricConfiguration(conf, TelemetryConstants.COMMON_JMX_YAML_CONFIG_PATH);
-//        if (roles.contains(KafkaRaftServer.BrokerRole$.MODULE$)) {
-//            buildMetricConfiguration(conf, TelemetryConstants.BROKER_JMX_YAML_CONFIG_PATH);
-//        }
-//        if (roles.contains(KafkaRaftServer.ControllerRole$.MODULE$)) {
-//            buildMetricConfiguration(conf, TelemetryConstants.CONTROLLER_JMX_YAML_CONFIG_PATH);
-//        }
+        Set<ProcessRole> roles = kafkaConfig.processRoles();
+        buildMetricConfiguration(conf, TelemetryConstants.COMMON_JMX_YAML_CONFIG_PATH);
+        if (roles.contains(ProcessRole.BrokerRole)) {
+            buildMetricConfiguration(conf, TelemetryConstants.BROKER_JMX_YAML_CONFIG_PATH);
+        }
+        if (roles.contains(ProcessRole.ControllerRole)) {
+            buildMetricConfiguration(conf, TelemetryConstants.CONTROLLER_JMX_YAML_CONFIG_PATH);
+        }
         jmxMetricInsight.start(conf);
     }
 
