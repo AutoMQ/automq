@@ -456,6 +456,11 @@ class TransactionStateManager(brokerId: Int,
                 buffer.clear()
                 fileRecords.readInto(buffer, 0)
                 MemoryRecords.readableRecords(buffer)
+              // AutoMQ for Kafka inject start
+              // match other cases, like BatchIteratorRecordsAdaptor
+              case _ =>
+                fetchDataInfo.records
+              // AutoMQ for Kafka inject end
             }
 
             memRecords.batches.forEach { batch =>
