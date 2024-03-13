@@ -19,7 +19,6 @@ package kafka.coordinator.group
 import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
-
 import kafka.common.OffsetAndMetadata
 import kafka.utils.{CoreUtils, Logging, nonthreadsafe}
 import kafka.utils.Implicits._
@@ -30,6 +29,7 @@ import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.protocol.types.SchemaException
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.coordinator.group.Group
+import org.apache.kafka.server.metrics.KafkaMetricsGroup
 
 import scala.collection.{Seq, immutable, mutable}
 import scala.jdk.CollectionConverters._
@@ -127,6 +127,7 @@ private[group] case object Empty extends GroupState {
 
 
 private object GroupMetadata extends Logging {
+  private val CommitOffset: String = "CommitOffset"
 
   def loadGroup(groupId: String,
                 initialState: GroupState,
@@ -224,6 +225,28 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
   private var subscribedTopics: Option[Set[String]] = None
 
   var newMemberAdded: Boolean = false
+
+  private val metricsGroup = new KafkaMetricsGroup(GroupMetadata.getClass)
+  private def recreateOffsetMetric(tp: TopicPartition): Unit = {
+    removeOffsetMetric(tp)
+    metricsGroup.newGauge(
+      GroupMetadata.CommitOffset,
+      () => {
+        inLock(
+          offsets.get(tp) match {
+            case Some(offset) => offset.offsetAndMetadata.offset
+            case None => 0L
+          }
+        )
+      },
+      Map("group" -> groupId, "topic" -> tp.topic, "partition" -> tp.partition.toString).asJava
+    )
+  }
+
+  private def removeOffsetMetric(tp: TopicPartition): Unit = {
+    metricsGroup.removeMetric(GroupMetadata.CommitOffset,
+      Map("group" -> groupId, "topic" -> tp.topic, "partition" -> tp.partition.toString).asJava)
+  }
 
   def inLock[T](fun: => T): T = CoreUtils.inLock(lock)(fun)
 
@@ -429,6 +452,8 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
     assertValidTransition(groupState)
     state = groupState
     currentStateTimestamp = Some(time.milliseconds())
+    if (groupState == Dead)
+      offsets.foreach(offset => removeOffsetMetric(offset._1))
   }
 
   def selectProtocol: String = {
@@ -618,6 +643,10 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
 
   def initializeOffsets(offsets: collection.Map[TopicPartition, CommitRecordMetadataAndOffset],
                         pendingTxnOffsets: Map[Long, mutable.Map[TopicPartition, CommitRecordMetadataAndOffset]]): Unit = {
+    offsets.forKeyValue { (topicPartition, _) =>
+      if (!this.offsets.contains(topicPartition))
+        recreateOffsetMetric(topicPartition)
+    }
     this.offsets ++= offsets
     this.pendingTransactionalOffsetCommits ++= pendingTxnOffsets
   }
@@ -628,6 +657,8 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
       if (offsetWithCommitRecordMetadata.appendedBatchOffset.isEmpty)
         throw new IllegalStateException("Cannot complete offset commit write without providing the metadata of the record " +
           "in the log.")
+      if (!offsets.contains(topicPartition))
+        recreateOffsetMetric(topicPartition)
       if (!offsets.contains(topicPartition) || offsets(topicPartition).olderThan(offsetWithCommitRecordMetadata))
         offsets.put(topicPartition, offsetWithCommitRecordMetadata)
     }
@@ -750,6 +781,9 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
         pendingOffsets.remove(topicPartition)
       }
       val removedOffset = offsets.remove(topicPartition)
+      if (removedOffset.isDefined) {
+        removeOffsetMetric(topicPartition)
+      }
       removedOffset.map(topicPartition -> _.offsetAndMetadata)
     }.toMap
   }

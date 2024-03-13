@@ -16,6 +16,10 @@
   */
 package kafka.server.checkpoints
 
+import kafka.log.LogManager.{LogStartOffsetCheckpointFile, RecoveryPointCheckpointFile}
+import kafka.log.streamaspect.{CleanerOffsetCheckpoint, ElasticCheckoutPointFileWithHandler, ElasticLogManager, LogStartOffsetCheckpoint, RawKafkaMeta, RecoveryPointCheckpoint, ReplicationOffsetCheckpoint}
+import kafka.server.ReplicaManager.HighWatermarkFilename
+import kafka.server.checkpoints.OffsetCheckpointFile.moveToMetaMap
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.server.common.CheckpointFile.EntryFormatter
 import org.apache.kafka.storage.internals.checkpoint.CheckpointFileWithFailureHandler
@@ -29,6 +33,18 @@ import scala.collection._
 object OffsetCheckpointFile {
   private val WhiteSpacesPattern = Pattern.compile("\\s+")
   private[checkpoints] val CurrentVersion = 0
+  private val offsetCheckpointFile = "cleaner-offset-checkpoint"
+
+  private def moveToMetaMap = {
+    if (ElasticLogManager.enabled())
+      Map(
+        offsetCheckpointFile -> CleanerOffsetCheckpoint,
+        LogStartOffsetCheckpointFile -> LogStartOffsetCheckpoint,
+        RecoveryPointCheckpointFile -> RecoveryPointCheckpoint,
+        HighWatermarkFilename -> ReplicationOffsetCheckpoint)
+    else
+      Map.empty[String, RawKafkaMeta]
+  }
 
   object Formatter extends EntryFormatter[(TopicPartition, Long)] {
     override def toString(entry: (TopicPartition, Long)): String = {
@@ -62,21 +78,33 @@ trait OffsetCheckpoint {
  *  -----checkpoint file end----------
  */
 class OffsetCheckpointFile(val file: File, logDirFailureChannel: LogDirFailureChannel = null) {
-  val checkpoint = new CheckpointFileWithFailureHandler[(TopicPartition, Long)](file, OffsetCheckpointFile.CurrentVersion,
-    OffsetCheckpointFile.Formatter, logDirFailureChannel, file.getParent)
+  private val (checkpoint, elasticCheckpoint) = if (moveToMetaMap.contains(file.getName)) {
+    (null, new ElasticCheckoutPointFileWithHandler(moveToMetaMap(file.getName)))
+  } else {
+    (new CheckpointFileWithFailureHandler[(TopicPartition, Long)](file, OffsetCheckpointFile.CurrentVersion,
+      OffsetCheckpointFile.Formatter, logDirFailureChannel, file.getParent), null)
+  }
 
   def write(offsets: Map[TopicPartition, Long]): Unit = {
     val list: java.util.List[(TopicPartition, Long)] = new java.util.ArrayList[(TopicPartition, Long)](offsets.size)
     offsets.foreach(x => list.add(x))
-    checkpoint.write(list, true)
+    if (checkpoint == null) {
+      elasticCheckpoint.write(offsets)
+    } else {
+      checkpoint.write(list, true)
+    }
   }
 
   def read(): Map[TopicPartition, Long] = {
-    val list = checkpoint.read()
-    val result = mutable.Map.empty[TopicPartition, Long]
-    result.sizeHint(list.size())
-    list.forEach { case (tp, offset) => result(tp) = offset }
-    result
+    if (checkpoint == null) {
+      elasticCheckpoint.read().toMap
+    } else {
+      val list = checkpoint.read()
+      val result = mutable.Map.empty[TopicPartition, Long]
+      result.sizeHint(list.size())
+      list.forEach { case (tp, offset) => result(tp) = offset }
+      result
+    }
   }
 
 }
