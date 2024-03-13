@@ -29,6 +29,7 @@ import kafka.autobalancer.goals.NetworkInUsageDistributionGoal;
 import kafka.autobalancer.goals.NetworkOutUsageDistributionGoal;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
+import org.apache.commons.math3.distribution.PoissonDistribution;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.junit.jupiter.api.Assertions;
@@ -215,15 +216,14 @@ public class AnomalyDetectorTest {
 
     private int[] generatePartitionDist(int totalPartitionNum, int brokerNum) {
         int[] partitionNums = new int[brokerNum];
-        // TODO: uncomment the following line
-//        PoissonDistribution poissonDistribution = new PoissonDistribution(10);
-//        int[] samples = poissonDistribution.sample(brokerNum);
-//        int sum = Arrays.stream(samples).sum();
-//        for (int i = 0; i < brokerNum; i++) {
-//            partitionNums[i] = (int) (samples[i] * 1.0 / sum * totalPartitionNum);
-//        }
-//        int partitionSum = Arrays.stream(partitionNums).sum();
-//        partitionNums[0] += totalPartitionNum - partitionSum;
+        PoissonDistribution poissonDistribution = new PoissonDistribution(10);
+        int[] samples = poissonDistribution.sample(brokerNum);
+        int sum = Arrays.stream(samples).sum();
+        for (int i = 0; i < brokerNum; i++) {
+            partitionNums[i] = (int) (samples[i] * 1.0 / sum * totalPartitionNum);
+        }
+        int partitionSum = Arrays.stream(partitionNums).sum();
+        partitionNums[0] += totalPartitionNum - partitionSum;
         return partitionNums;
     }
 

@@ -21,6 +21,7 @@ import java.io.File;
 import java.util.Collections;
 import java.util.Map;
 import kafka.autobalancer.config.AutoBalancerConfig;
+import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.server.KafkaConfig;
 import kafka.testkit.BrokerNode;
@@ -65,12 +66,11 @@ public abstract class AutoBalancerIntegrationTestHarness {
                 i++;
             }
             for (ControllerNode controller : nodes.controllerNodes().values()) {
-        // TODO: uncomment the following line
-//                controller.propertyOverrides().put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true");
-//                controller.propertyOverrides().putAll(overridingControllerProps());
-//                controller.propertyOverrides().putAll(overridingNodeProps());
-//                controller.propertyOverrides().put(KafkaConfig.ElasticStreamEnableProp(), "true");
-//                controller.propertyOverrides().put(KafkaConfig.S3MockEnableProp(), "true");
+                controller.propertyOverrides().put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true");
+                controller.propertyOverrides().putAll(overridingControllerProps());
+                controller.propertyOverrides().putAll(overridingNodeProps());
+                controller.propertyOverrides().put(KafkaConfig.ElasticStreamEnableProp(), "true");
+                controller.propertyOverrides().put(KafkaConfig.S3MockEnableProp(), "true");
             }
 
             KafkaClusterTestKit.Builder builder = new KafkaClusterTestKit.Builder(nodes);

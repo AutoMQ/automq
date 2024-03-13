@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 
 /**
  * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.metric.MetricsUtils.
@@ -70,19 +71,17 @@ public final class MetricsUtils {
     }
 
     public static MetricName buildTopicPartitionMetricName(String name, String topic, String partition) {
-        // TODO: uncomment the following line
-//        Map<String, String> tags = Map.of("topic", topic, "partition", partition);
-//        String group = null;
-//        String type = null;
-//        if (BYTES_IN_PER_SEC.equals(name) || BYTES_OUT_PER_SEC.equals(name)) {
-//            group = KAFKA_SERVER;
-//            type = BROKER_TOPIC_PARTITION_METRICS_GROUP;
-//        }
-//        if (group == null) {
-//            return null;
-//        }
-//        return KafkaMetricsGroup$.MODULE$.explicitMetricName(group, type, name, CollectionConverters.asScala(tags));
-        return null;
+        Map<String, String> tags = Map.of("topic", topic, "partition", partition);
+        String group = null;
+        String type = null;
+        if (BYTES_IN_PER_SEC.equals(name) || BYTES_OUT_PER_SEC.equals(name)) {
+            group = KAFKA_SERVER;
+            type = BROKER_TOPIC_PARTITION_METRICS_GROUP;
+        }
+        if (group == null) {
+            return null;
+        }
+        return KafkaMetricsGroup.explicitMetricName(group, type, name, tags);
     }
 
     public static Set<String> getMetricNameMaybeMissing() {
