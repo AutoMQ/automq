@@ -36,7 +36,7 @@ import org.slf4j.LoggerFactory;
  * An offline log directory will stay offline until the broker is restarted.
  */ 
 public class LogDirFailureChannel {
-    private static final Logger log = LoggerFactory.getLogger(LogDirFailureChannel.class);
+    protected static final Logger log = LoggerFactory.getLogger(LogDirFailureChannel.class);
     private final ConcurrentMap<String, String> offlineLogDirs;
     private final BlockingQueue<String> offlineLogDirQueue;
 
