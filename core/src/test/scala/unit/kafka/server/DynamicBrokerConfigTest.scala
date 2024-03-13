@@ -25,6 +25,7 @@ import kafka.controller.KafkaController
 import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
+import kafka.server.streamaspect.ElasticReplicaManager
 import kafka.utils.TestUtils
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.common.{Endpoint, Reconfigurable}
@@ -142,7 +143,7 @@ class DynamicBrokerConfigTest {
     val acceptorMock = Mockito.mock(classOf[DataPlaneAcceptor])
     val handlerPoolMock = Mockito.mock(classOf[KafkaRequestHandlerPool])
     val socketServerMock = Mockito.mock(classOf[SocketServer])
-    val replicaManagerMock = Mockito.mock(classOf[ReplicaManager])
+    val replicaManagerMock = Mockito.mock(classOf[ElasticReplicaManager])
     val logManagerMock = Mockito.mock(classOf[LogManager])
     val schedulerMock = Mockito.mock(classOf[KafkaScheduler])
 

@@ -17,10 +17,12 @@
 
 package kafka.server
 
+import kafka.log.stream.s3.telemetry.TelemetryManager
 import kafka.raft.KafkaRaftManager
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
 import kafka.utils.{CoreUtils, Logging}
+import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.utils.{AppInfoParser, LogContext, Time}
 import org.apache.kafka.controller.metrics.ControllerMetadataMetrics
@@ -102,6 +104,10 @@ class SharedServer(
   private var usedByController: Boolean = false
   val brokerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
   val controllerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
+  // AutoMQ for Kafka injection start
+  ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
+  @volatile var telemetryManager: TelemetryManager = _
+  // AutoMQ for Kafka injection end
   @volatile var metrics: Metrics = _metrics
   @volatile var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _
   @volatile var brokerMetrics: BrokerServerMetrics = _
@@ -253,6 +259,7 @@ class SharedServer(
         if (sharedServerConfig.processRoles.contains(ProcessRole.ControllerRole)) {
           controllerServerMetrics = new ControllerMetadataMetrics(Optional.of(KafkaYammerMetrics.defaultRegistry()))
         }
+        telemetryManager = new TelemetryManager(sharedServerConfig, metaPropsEnsemble.clusterId.orElse(""))
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
           clusterId,
           sharedServerConfig,
@@ -370,6 +377,10 @@ class SharedServer(
       if (metrics != null) {
         CoreUtils.swallow(metrics.close(), this)
         metrics = null
+      }
+      if (telemetryManager != null) {
+        CoreUtils.swallow(telemetryManager.shutdown(), this)
+        telemetryManager = null
       }
       CoreUtils.swallow(AppInfoParser.unregisterAppInfo(MetricsPrefix, sharedServerConfig.nodeId.toString, metrics), this)
       started = false
