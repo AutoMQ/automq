@@ -1,0 +1,80 @@
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+package com.automq.stream.s3.streams;
+
+import com.automq.stream.s3.metadata.StreamMetadata;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+
+public interface StreamManager {
+
+    /**
+     * Get current server opening streams.
+     * When server is starting or recovering, WAL in EBS need streams offset to determine the recover point.
+     *
+     * @return list of {@link StreamMetadata}
+     */
+    CompletableFuture<List<StreamMetadata>> getOpeningStreams();
+
+    /**
+     * Get streams metadata by stream id.
+     *
+     * @param streamIds stream ids.
+     * @return list of {@link StreamMetadata}
+     */
+    CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds);
+
+    /**
+     * Create a new stream.
+     *
+     * @return stream id.
+     */
+    CompletableFuture<Long> createStream();
+
+    /**
+     * Open stream with newer epoch. The controller will:
+     * 1. update stream epoch to fence old stream writer to commit object.
+     * 2. calculate the last range endOffset.
+     * 2. create a new range with serverId = current serverId, startOffset = last range endOffset.
+     *
+     * @param streamId stream id.
+     * @param epoch    stream epoch.
+     * @return {@link StreamMetadata}
+     */
+    CompletableFuture<StreamMetadata> openStream(long streamId, long epoch);
+
+    /**
+     * Trim stream to new start offset.
+     *
+     * @param streamId       stream id.
+     * @param epoch          stream epoch.
+     * @param newStartOffset new start offset.
+     */
+    CompletableFuture<Void> trimStream(long streamId, long epoch, long newStartOffset);
+
+    /**
+     * Close stream. Other server can open stream with newer epoch.
+     *
+     * @param streamId stream id.
+     * @param epoch    stream epoch.
+     */
+    CompletableFuture<Void> closeStream(long streamId, long epoch);
+
+    /**
+     * Delete stream.
+     *
+     * @param streamId stream id.
+     * @param epoch    stream epoch.
+     */
+    CompletableFuture<Void> deleteStream(long streamId, long epoch);
+}
+
