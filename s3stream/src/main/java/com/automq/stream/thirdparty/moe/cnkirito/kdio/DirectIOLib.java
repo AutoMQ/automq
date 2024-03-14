@@ -306,11 +306,11 @@ public class DirectIOLib {
      * @return An integer file descriptor for the opened file
      */
     public int oDirectOpen(String pathname, boolean readOnly) throws IOException {
-        int flags = OpenFlags.O_DIRECT;
+        int flags = OpenFlags.INSTANCE.oDIRECT();
         if (readOnly) {
-            flags |= OpenFlags.O_RDONLY;
+            flags |= OpenFlags.INSTANCE.oRDONLY();
         } else {
-            flags |= OpenFlags.O_RDWR | OpenFlags.O_CREAT;
+            flags |= OpenFlags.INSTANCE.oRDWR() | OpenFlags.INSTANCE.oCREAT();
         }
         int fd = open(pathname, flags, 00644);
         if (fd < 0) {

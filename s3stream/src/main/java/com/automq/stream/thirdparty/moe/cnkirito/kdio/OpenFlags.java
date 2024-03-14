@@ -13,15 +13,48 @@ package com.automq.stream.thirdparty.moe.cnkirito.kdio;
 /**
  * Constants for {@link DirectIOLib#oDirectOpen(String, boolean)}.
  */
-public final class OpenFlags {
-    public static final int O_RDONLY = 00;
-    public static final int O_WRONLY = 01;
-    public static final int O_RDWR = 02;
-    public static final int O_CREAT = 0100;
-    public static final int O_TRUNC = 01000;
-    public static final int O_DIRECT = 040000;
-    public static final int O_SYNC = 04000000;
+public interface OpenFlags {
+    OpenFlags INSTANCE = instance();
 
-    private OpenFlags() {
+    private static OpenFlags instance() {
+        String arch = System.getProperty("os.arch");
+        switch (arch) {
+            case "aarch64":
+                return new Aarch64OpenFlags();
+            default:
+                return new DefaultOpenFlags();
+        }
+    }
+
+    default int oRDONLY() {
+        return 00;
+    }
+    default int oWRONLY() {
+        return 01;
+    }
+    default int oRDWR() {
+        return 02;
+    }
+    default int oCREAT() {
+        return 0100;
+    }
+    default int oTRUNC() {
+        return 01000;
+    }
+    default int oDIRECT() {
+        return 040000;
+    }
+    default int oSYNC() {
+        return 04010000;
+    }
+
+    class DefaultOpenFlags implements OpenFlags {
+    }
+
+    class Aarch64OpenFlags implements OpenFlags {
+        @Override
+        public int oDIRECT() {
+            return 0200000;
+        }
     }
 }
