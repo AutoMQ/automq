@@ -31,6 +31,7 @@ import kafka.server.QuotaFactory.QuotaManagers
 
 import scala.collection.immutable
 import kafka.server.metadata.{AclPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, KRaftMetadataCachePublisher, ScramPublisher}
+import kafka.server.streamaspect.ElasticControllerApis
 import kafka.utils.{CoreUtils, Logging}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -340,7 +341,7 @@ class ControllerServer(
         time,
         s"controller-${config.nodeId}-")
       clientQuotaMetadataManager = new ClientQuotaMetadataManager(quotaManagers, socketServer.connectionQuotas)
-      controllerApis = new ControllerApis(socketServer.dataPlaneRequestChannel,
+      controllerApis = new ElasticControllerApis(socketServer.dataPlaneRequestChannel,
         authorizer,
         quotaManagers,
         time,
