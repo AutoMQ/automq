@@ -108,8 +108,7 @@ public class ControllerRequestSender {
         channelManager.sendRequest(requestBuilder, new ControllerRequestCompletionHandler() {
             @Override
             public void onTimeout() {
-                // TODO: add timeout retry policy
-                LOGGER.error("Timeout while creating stream");
+                LOGGER.warn("Timeout while creating stream");
                 ctx.onError(new TimeoutException("Timeout while creating stream"));
             }
 
@@ -275,6 +274,14 @@ public class ControllerRequestSender {
 
         public void completeExceptionally(Throwable throwable) {
             future.completeExceptionally(throwable);
+        }
+
+        @Override
+        public String toString() {
+            return "RequestTask{" +
+                    "apiKey=" + request.apiKey() +
+                    ", sendCount=" + sendCount +
+                    '}';
         }
 
     }
