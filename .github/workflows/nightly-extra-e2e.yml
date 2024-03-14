@@ -1,0 +1,47 @@
+name: Nightly Extra E2E tests
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 16 * * *'
+
+jobs:
+  benchmarks_e2e:
+    name: "Run benchmarks E2E Tests"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "benchmarks"
+      test-path: "tests/kafkatest/benchmarks"
+      storage-path: "/data/github-actions/reports"
+      runner: "extra"
+  connect_e2e:
+    name: "Run connect E2E Tests"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "connect"
+      test-path: "tests/kafkatest/tests/connect"
+      storage-path: "/data/github-actions/reports"
+      runner: "extra"
+  streams_e2e:
+    name: "Run streams E2E Tests"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "streams"
+      test-path: "tests/kafkatest/tests/streams"
+      storage-path: "/data/github-actions/reports"
+      runner: "extra"
+  e2e_summary:
+    name: "E2E Tests Summary"
+    runs-on: [ self-hosted, extra ]
+    if: ${{ always() && github.repository_owner == 'AutoMQ' }}
+    needs: [ benchmarks_e2e, connect_e2e, streams_e2e ]
+    steps:
+      - name: Report results
+        run: python3 tests/report_e2e_results.py
+        env:
+          WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
+          SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL2 }}
+          STORAGE_PATH: "/data/github-actions/reports"
+          REPORT_TITLE_PREFIX: "Extra"
