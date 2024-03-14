@@ -92,11 +92,13 @@ public class WrappedByteBuf extends ByteBuf {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public final ByteOrder order() {
         return buf.order();
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public ByteBuf order(ByteOrder endianness) {
         return new WrappedByteBuf(root, buf.order(endianness), releaseHook);
     }

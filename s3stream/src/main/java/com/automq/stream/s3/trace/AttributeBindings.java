@@ -26,6 +26,7 @@ public class AttributeBindings {
         this.bindings = bindings;
     }
 
+    @SuppressWarnings("unchecked")
     public static AttributeBindings bind(Method method, String[] parametersNames) {
         Parameter[] parameters = method.getParameters();
         if (parameters.length != parametersNames.length) {

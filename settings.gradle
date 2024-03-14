@@ -47,15 +47,6 @@ buildCache {
     }
 }
 
-def s3stream_repo = 'https://github.com/AutoMQ/automq-for-rocketmq.git'
-
-sourceControl {
-    gitRepository(s3stream_repo) {
-        producesModule("com.automq.elasticstream:s3stream")
-        rootDir = "s3stream"
-    }
-}
-
 include 'clients',
     'connect:api',
     'connect:basic-auth-extension',
@@ -109,7 +100,8 @@ include 'clients',
     'tools:tools-api',
     'transaction-coordinator',
     'trogdor',
-    'kshell-sdk'
+    'kshell-sdk',
+    's3stream'
 
 project(":storage:api").name = "storage-api"
 rootProject.name = 'kafka'

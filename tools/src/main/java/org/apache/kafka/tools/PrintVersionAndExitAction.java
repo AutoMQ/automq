@@ -27,6 +27,7 @@ import java.util.Map;
 class PrintVersionAndExitAction implements ArgumentAction {
 
     @Override
+    @SuppressWarnings("deprecation")
     public void run(
         ArgumentParser parser,
         Argument arg,

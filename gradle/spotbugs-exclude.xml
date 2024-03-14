@@ -30,6 +30,11 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
     </Match>
 
     <Match>
+        <!-- Disable warnings for S3Stream -->
+        <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE,JLM_JSR166_UTILCONCURRENT_MONITORENTER,RV_RETURN_VALUE_IGNORED_BAD_PRACTICE,MS_CANNOT_BE_FINAL,MS_SHOULD_BE_REFACTORED_TO_BE_FINAL,PA_PUBLIC_PRIMITIVE_ATTRIBUTE,RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT,SE_COMPARATOR_SHOULD_BE_SERIALIZABLE,UPM_UNCALLED_PRIVATE_METHOD,URF_UNREAD_FIELD"/>
+    </Match>
+
+    <Match>
         <!-- Disable warnings about mutable objects and the use of public fields.
             EI_EXPOSE_REP: May expose internal representation by returning reference to mutable object
             EI_EXPOSE_REP2: May expose internal representation by incorporating reference to mutable object

@@ -128,7 +128,7 @@ public final class Coordinator {
         restServer.waitForShutdown();
         taskManager.waitForShutdown();
     }
-
+    @SuppressWarnings("deprecation")
     public static void main(String[] args) throws Exception {
         ArgumentParser parser = ArgumentParsers
             .newArgumentParser("trogdor-coordinator")

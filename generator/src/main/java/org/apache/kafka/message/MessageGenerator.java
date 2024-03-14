@@ -334,6 +334,7 @@ public final class MessageGenerator {
         return bytes;
     }
 
+    @SuppressWarnings("deprecation")
     public static void main(String[] args) throws Exception {
         ArgumentParser parser = ArgumentParsers
             .newArgumentParser("message-generator")
