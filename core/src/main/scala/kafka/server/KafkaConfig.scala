@@ -17,6 +17,8 @@
 
 package kafka.server
 
+import kafka.autobalancer.config.AutoBalancerControllerConfig
+
 import java.{lang, util}
 import java.util.concurrent.TimeUnit
 import java.util.{Collections, Properties}
@@ -445,7 +447,7 @@ object KafkaConfig {
   val PasswordEncoderKeyLengthProp = PasswordEncoderConfigs.KEY_LENGTH
   val PasswordEncoderIterationsProp = PasswordEncoderConfigs.ITERATIONS
 
-  // AutoMQ for Kafka inject start
+  // AutoMQ inject start
   /** ********* Elastic stream config *********/
   val ElasticStreamEnableProp = "elasticstream.enable"
   val ElasticStreamEndpointProp = "elasticstream.endpoint"
@@ -455,9 +457,7 @@ object KafkaConfig {
   val ElasticStreamEndpointDoc = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
     "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>"
   val ElasticStreamNamespaceDoc = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream."
-  // AutoMQ for Kafka inject end
 
-  // AutoMQ for Kafka inject start
   val S3EndpointProp = "s3.endpoint"
   val S3RegionProp = "s3.region"
   val S3PathStyleProp = "s3.path.style"
@@ -502,6 +502,7 @@ object KafkaConfig {
   val S3SpanScheduledDelayMsProp = "s3.telemetry.tracer.span.scheduled.delay.ms"
   val S3SpanMaxQueueSizeProp = "s3.telemetry.tracer.span.max.queue.size"
   val S3SpanMaxBatchSizeProp = "s3.telemetry.tracer.span.max.batch.size"
+  val EnableAutoBalancerProp = AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -548,7 +549,8 @@ object KafkaConfig {
   val S3SpanScheduledDelayMsDoc = "The delay in milliseconds to export queued spans"
   val S3SpanMaxQueueSizeDoc = "The max number of spans that can be queued before dropped"
   val S3SpanMaxBatchSizeDoc = "The max number of spans that can be exported in a single batch"
-  // AutoMQ for Kafka inject end
+  val EnableAutoBalancerDoc = AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE_DOC;
+  // AutoMQ inject end
 
 
   /** Internal Configurations **/
@@ -1417,14 +1419,10 @@ object KafkaConfig {
       .define(RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_CONFIG, INT, Defaults.QUORUM_REQUEST_TIMEOUT_MS, null, MEDIUM, RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_DOC)
       .define(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG, INT, Defaults.QUORUM_RETRY_BACKOFF_MS, null, LOW, RaftConfig.QUORUM_RETRY_BACKOFF_MS_DOC)
 
-      // AutoMQ for Kafka inject start
-      /** ********* Elastic stream Configuration ******** */
+      // AutoMQ inject start
       .define(ElasticStreamEnableProp, BOOLEAN, false, HIGH, ElasticStreamEnableDoc)
       .define(ElasticStreamEndpointProp, STRING, "s3://", HIGH, ElasticStreamEndpointDoc)
       .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
-      // AutoMQ for Kafka inject end
-
-      // AutoMQ for Kafka inject start
       .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
       .define(S3PathStyleProp, BOOLEAN, false, HIGH, S3PathStyleDoc)
@@ -1469,7 +1467,8 @@ object KafkaConfig {
       .define(S3SpanScheduledDelayMsProp, INT, Defaults.S3_SPAN_SCHEDULED_DELAY_MS, MEDIUM, S3SpanScheduledDelayMsDoc)
       .define(S3SpanMaxQueueSizeProp, INT, Defaults.S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, S3SpanMaxQueueSizeDoc)
       .define(S3SpanMaxBatchSizeProp, INT, Defaults.S3_SPAN_MAX_BATCH_SIZE, MEDIUM, S3SpanMaxBatchSizeDoc)
-    // AutoMQ for Kafka inject end
+      .define(EnableAutoBalancerProp, BOOLEAN, false, HIGH, EnableAutoBalancerDoc)
+      // AutoMQ inject end
 
       /** Internal Configurations **/
       // This indicates whether unreleased APIs should be advertised by this node.
@@ -2072,15 +2071,11 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val quorumRequestTimeoutMs = getInt(RaftConfig.QUORUM_REQUEST_TIMEOUT_MS_CONFIG)
   val quorumRetryBackoffMs = getInt(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG)
 
-    // AutoMQ for Kafka inject start
-  /** ********* Elastic stream Configuration *********/
+    // AutoMQ inject start
   val elasticStreamEnabled = getBoolean(KafkaConfig.ElasticStreamEnableProp)
   val elasticStreamEndpoint = getString(KafkaConfig.ElasticStreamEndpointProp)
   val elasticStreamNamespace = getString(KafkaConfig.ElasticStreamNamespaceProp)
-  // AutoMQ for Kafka inject end
 
-  // AutoMQ for Kafka inject start
-  /** ********* Kafka on S3 Configuration *********/
   val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
   val s3Region = getString(KafkaConfig.S3RegionProp)
   val s3PathStyle = getBoolean(KafkaConfig.S3PathStyleProp)
@@ -2127,7 +2122,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3SpanScheduledDelayMs = getInt(KafkaConfig.S3SpanScheduledDelayMsProp)
   val s3SpanMaxQueueSize = getInt(KafkaConfig.S3SpanMaxQueueSizeProp)
   val s3SpanMaxBatchSize = getInt(KafkaConfig.S3SpanMaxBatchSizeProp)
-  // AutoMQ for Kafka inject end
+  // AutoMQ inject end
 
   /** Internal Configurations **/
   val unstableApiVersionsEnabled = getBoolean(KafkaConfig.UnstableApiVersionsEnableProp)

@@ -27,7 +27,7 @@ import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.security.CredentialProvider
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
-import kafka.server.streamaspect.ElasticReplicaManager
+import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager}
 import kafka.utils.CoreUtils
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.feature.SupportedVersionRange
@@ -412,7 +412,7 @@ class BrokerServer(
 
       // Create the request processor objects.
       val raftSupport = RaftSupport(forwardingManager, metadataCache)
-      dataPlaneRequestProcessor = new KafkaApis(
+      dataPlaneRequestProcessor = new ElasticKafkaApis(
         requestChannel = socketServer.dataPlaneRequestChannel,
         metadataSupport = raftSupport,
         replicaManager = replicaManager,
