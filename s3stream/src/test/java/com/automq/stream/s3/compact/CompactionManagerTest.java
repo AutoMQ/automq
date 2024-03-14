@@ -524,6 +524,7 @@ public class CompactionManagerTest extends CompactionTestBase {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     public void testCompactionShutdown() throws Throwable {
         streamManager = Mockito.mock(MemoryMetadataManager.class);
         when(streamManager.getStreams(Mockito.anyList())).thenReturn(CompletableFuture.completedFuture(

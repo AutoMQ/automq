@@ -970,12 +970,7 @@ project(':core') {
     implementation libs.slf4jlog4j
     implementation libs.slf4jBridge
     implementation libs.nettyHttp2
-    implementation(extLibs.s3stream) {
-      exclude group: 'io.netty', module: '*'
-      exclude group: 'org.slf4j', module: '*'
-      exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version branchVersions.s3stream
-    }
+    implementation project(':s3stream')
 
     implementation libs.opentelemetryJava8
     implementation libs.opentelemetryOshi
@@ -985,6 +980,7 @@ project(':core') {
     implementation libs.opentelemetryExporterProm
     implementation libs.opentelemetryExporterOTLP
     implementation libs.opentelemetryJmx
+    implementation libs.awsSdkAuth
 
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
@@ -1005,6 +1001,7 @@ project(':core') {
     testImplementation project(':server').sourceSets.test.output
     testImplementation libs.bcpkix
     testImplementation libs.mockitoCore
+    testImplementation libs.guava
     testImplementation(libs.apacheda) {
       exclude group: 'xml-apis', module: 'xml-apis'
       // `mina-core` is a transitive dependency for `apacheds` and `apacheda`.
@@ -1295,12 +1292,9 @@ project(':metadata') {
     implementation libs.nettyCommon
     implementation libs.nettyHttp2
     implementation libs.zstd
-    implementation(extLibs.s3stream) {
-      exclude group: 'io.netty', module: '*'
-      exclude group: 'org.slf4j', module: '*'
-      exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version branchVersions.s3stream
-    }
+    implementation libs.guava
+    implementation libs.awsSdkAuth
+    implementation project(':s3stream')
 
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
@@ -1751,12 +1745,8 @@ project(':server-common') {
     implementation libs.joptSimple
     implementation libs.jacksonDatabind
     implementation libs.pcollections
-    implementation(extLibs.s3stream) {
-      exclude group: 'io.netty', module: '*'
-      exclude group: 'org.slf4j', module: '*'
-      exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version branchVersions.s3stream
-    }
+    implementation libs.opentelemetrySdk
+    implementation project(':s3stream')
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output
@@ -2006,6 +1996,37 @@ project(':kshell-sdk') {
   }
 }
 
+project(':s3stream') {
+  archivesBaseName = "s3stream"
+
+  checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-automq.xml")
+  }
+
+  dependencies {
+    implementation libs.awsSdk
+    implementation libs.nettyTcnativeBoringSsl
+    implementation libs.nettyBuffer
+    implementation libs.bucket4j
+    implementation libs.commonLang
+    implementation libs.slf4jApi
+    implementation libs.argparse4j
+    implementation libs.jna
+    implementation libs.guava
+    implementation libs.jacksonDatabind
+    implementation libs.opentelemetrySdk
+    implementation 'io.opentelemetry.instrumentation:opentelemetry-instrumentation-annotations:1.32.0'
+    implementation 'org.aspectj:aspectjrt:1.9.20.1'
+    implementation 'org.aspectj:aspectjweaver:1.9.20.1'
+    implementation 'com.github.jnr:jnr-posix:3.1.19'
+    implementation 'com.yammer.metrics:metrics-core:2.2.0'
+    testImplementation 'org.slf4j:slf4j-simple:2.0.9'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testImplementation 'org.mockito:mockito-core:5.5.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.5.0'
+  }
+}
+
 project(':tools:tools-api') {
   archivesBaseName = "kafka-tools-api"
 
@@ -2082,17 +2103,14 @@ project(':tools') {
     implementation libs.slf4jApi
     implementation libs.log4j
     implementation libs.joptSimple
+    implementation libs.awsSdkAuth
 
     // for SASL/OAUTHBEARER JWT validation
     implementation (libs.jose4j){
       exclude group: 'org.slf4j', module: '*'
     }
     implementation libs.jacksonJaxrsJsonProvider
-    implementation(extLibs.s3stream) {
-      exclude group: 'org.slf4j', module: '*'
-      exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version branchVersions.s3stream
-    }
+    implementation project(':s3stream')
     implementation libs.commonio
 
 
@@ -2106,13 +2124,6 @@ project(':tools') {
     testImplementation project(':core').sourceSets.test.output
     testImplementation (project(':server-common')){
       exclude group: 'org.slf4j', module: '*'
-    }
-
-
-    implementation(extLibs.s3stream) {
-      exclude group: 'org.slf4j', module: '*'
-      exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version branchVersions.s3stream
     }
 
     implementation libs.jose4j                    // for SASL/OAUTHBEARER JWT validation
@@ -2230,12 +2241,7 @@ project(':shell') {
     implementation libs.jose4j                    // for SASL/OAUTHBEARER JWT validation
     implementation libs.jacksonJaxrsJsonProvider
 
-    implementation(extLibs.s3stream) {
-      exclude group: 'io.netty', module: '*'
-      exclude group: 'org.slf4j', module: '*'
-      exclude group: 'net.sourceforge.argparse4j', module: '*'
-      version branchVersions.s3stream
-    }
+    implementation project(':s3stream')
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output

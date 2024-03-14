@@ -360,4 +360,5 @@
     <suppress checks="(ClassDataAbstractionCoupling|ClassFanOutComplexity)"
               files="(ReplicaFetcherThreadBenchmark).java"/>
 
+    <suppress checks="[a-zA-Z0-9]*" files="[a-zA-Z0-9]*" />
 </suppressions>

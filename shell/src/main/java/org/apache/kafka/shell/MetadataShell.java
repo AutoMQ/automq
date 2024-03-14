@@ -240,7 +240,8 @@ public final class MetadataShell {
 
     public static void main(String[] args) throws Exception {
         ArgumentParser parser = ArgumentParsers
-            .newArgumentParser("kafka-metadata-shell")
+            .newFor("kafka-metadata-shell")
+            .build()
             .defaultHelp(true)
             .description("The Apache Kafka metadata shell");
         parser.addArgument("--snapshot", "-s")

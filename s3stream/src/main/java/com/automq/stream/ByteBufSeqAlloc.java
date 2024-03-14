@@ -22,6 +22,7 @@ public class ByteBufSeqAlloc {
     final AtomicReference<HugeBuf>[] hugeBufArray;
     private final int allocType;
 
+    @SuppressWarnings("unchecked")
     public ByteBufSeqAlloc(int allocType, int concurrency) {
         this.allocType = allocType;
         hugeBufArray = new AtomicReference[concurrency];
