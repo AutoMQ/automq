@@ -7,10 +7,11 @@ import kafka.server.BrokerTopicStats
 import org.apache.kafka.common.Uuid
 import org.apache.kafka.server.config.Defaults
 import org.apache.kafka.storage.internals.log.{LogConfig, LogDirFailureChannel, LogOffsetsListener}
-import org.junit.jupiter.api.{BeforeEach, Test}
+import org.junit.jupiter.api.{BeforeEach, Tag, Test}
 
 import java.io.File
 
+@Tag("S3Unit")
 class ElasticLogCleanerTest extends LogCleanerTest {
     var client: Client = _
 
