@@ -29,7 +29,7 @@ import kafka.network.{ControlPlaneAcceptor, DataPlaneAcceptor, RequestChannel, S
 import kafka.raft.KafkaRaftManager
 import kafka.security.CredentialProvider
 import kafka.server.metadata.{OffsetTrackingListener, ZkConfigRepository, ZkMetadataCache}
-import kafka.server.streamaspect.ElasticReplicaManager
+import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager}
 import kafka.utils._
 import kafka.zk.{AdminZkClient, BrokerInfo, KafkaZkClient}
 import org.apache.kafka.clients.{ApiVersions, ManualMetadataUpdater, NetworkClient, NetworkClientUtils}
@@ -557,7 +557,7 @@ class KafkaServer(
         /* start processing requests */
         val zkSupport = ZkSupport(adminManager, kafkaController, zkClient, forwardingManager, metadataCache, brokerEpochManager)
 
-        def createKafkaApis(requestChannel: RequestChannel): KafkaApis = new KafkaApis(
+        def createKafkaApis(requestChannel: RequestChannel): KafkaApis = new ElasticKafkaApis(
           requestChannel = requestChannel,
           metadataSupport = zkSupport,
           replicaManager = replicaManager,

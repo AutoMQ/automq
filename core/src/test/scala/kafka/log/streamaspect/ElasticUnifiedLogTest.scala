@@ -52,15 +52,14 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         remoteStorageSystemEnable: Boolean,
         remoteLogManager: Option[RemoteLogManager],
         logOffsetsListener: LogOffsetsListener): ElasticUnifiedLog = {
-        val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
-        ElasticUnifiedLog.apply(topicPartition,
+        ElasticUnifiedLog.apply(
             dir,
             config,
             scheduler,
-            brokerTopicStats,
             time,
             maxTransactionTimeoutMs,
             producerStateManagerConfig,
+            brokerTopicStats,
             producerIdExpirationCheckIntervalMs: Int,
             new LogDirFailureChannel(10),
             topicId,

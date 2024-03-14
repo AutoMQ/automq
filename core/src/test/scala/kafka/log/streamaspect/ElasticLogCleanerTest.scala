@@ -2,7 +2,7 @@ package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
 import kafka.log.streamaspect.client.Context
-import kafka.log.{LogCleanerTest, UnifiedLog}
+import kafka.log.LogCleanerTest
 import kafka.server.BrokerTopicStats
 import org.apache.kafka.common.Uuid
 import org.apache.kafka.server.config.Defaults
@@ -48,15 +48,14 @@ class ElasticLogCleanerTest extends LogCleanerTest {
     override protected def makeLog(dir: File,
         config: LogConfig,
         recoveryPoint: Long): ElasticUnifiedLog = {
-        val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
-        ElasticUnifiedLog.apply(topicPartition,
+        ElasticUnifiedLog.apply(
             dir,
             config,
             time.scheduler,
-            brokerTopicStats = new BrokerTopicStats,
             time,
             maxTransactionTimeoutMs = 5 * 60 * 1000,
             producerStateManagerConfig,
+            brokerTopicStats = new BrokerTopicStats,
             producerIdExpirationCheckIntervalMs = Defaults.PRODUCER_ID_EXPIRATION_CHECK_INTERVAL_MS,
             new LogDirFailureChannel(10),
             topicId = Some(Uuid.ZERO_UUID),

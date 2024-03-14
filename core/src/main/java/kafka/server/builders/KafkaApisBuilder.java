@@ -17,6 +17,7 @@
 
 package kafka.server.builders;
 
+import java.util.concurrent.Executors;
 import kafka.coordinator.transaction.TransactionCoordinator;
 import kafka.network.RequestChannel;
 import kafka.server.ApiVersionManager;
@@ -31,7 +32,9 @@ import kafka.server.MetadataSupport;
 import kafka.server.QuotaFactory.QuotaManagers;
 import kafka.server.ReplicaManager;
 import kafka.server.metadata.ConfigRepository;
+import kafka.server.streamaspect.ElasticKafkaApis;
 import org.apache.kafka.common.metrics.Metrics;
+import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.group.GroupCoordinator;
 import org.apache.kafka.server.ClientMetricsManager;
@@ -182,7 +185,7 @@ public class KafkaApisBuilder {
         if (brokerTopicStats == null) brokerTopicStats = new BrokerTopicStats(Optional.of(config));
         if (apiVersionManager == null) throw new RuntimeException("You must set apiVersionManager");
 
-        return new KafkaApis(requestChannel,
+        return new ElasticKafkaApis(requestChannel,
                              metadataSupport,
                              replicaManager,
                              groupCoordinator,
@@ -201,6 +204,8 @@ public class KafkaApisBuilder {
                              time,
                              tokenManager,
                              apiVersionManager,
-                             OptionConverters.toScala(clientMetricsManager));
+                             OptionConverters.toScala(clientMetricsManager),
+                             Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true)),
+                             Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-list-offset-handle-executor-%d", true)));
     }
 }
