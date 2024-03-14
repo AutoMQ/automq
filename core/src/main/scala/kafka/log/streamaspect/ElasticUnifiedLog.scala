@@ -246,14 +246,14 @@ object ElasticUnifiedLog extends Logging {
 
     CheckpointExecutor.scheduleWithFixedDelay(() => fullCheckpoint(), 1, 1, java.util.concurrent.TimeUnit.MINUTES)
 
-    def apply(topicPartition: TopicPartition,
+    def apply(
         dir: File,
         config: LogConfig,
         scheduler: Scheduler,
-        brokerTopicStats: BrokerTopicStats,
         time: Time,
         maxTransactionTimeoutMs: Int,
         producerStateManagerConfig: ProducerStateManagerConfig,
+        brokerTopicStats: BrokerTopicStats,
         producerIdExpirationCheckIntervalMs: Int,
         logDirFailureChannel: LogDirFailureChannel,
         topicId: Option[Uuid],
@@ -263,6 +263,7 @@ object ElasticUnifiedLog extends Logging {
         client: Client,
         namespace: String,
     ): ElasticUnifiedLog = {
+        val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
         val partitionLogDirFailureChannel = new PartitionLogDirFailureChannel(logDirFailureChannel, dir.getPath);
         LocalLog.maybeHandleIOException(partitionLogDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
             val start = System.currentTimeMillis()

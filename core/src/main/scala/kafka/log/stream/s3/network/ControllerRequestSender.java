@@ -27,10 +27,12 @@ import java.util.function.Function;
 import kafka.log.stream.s3.network.request.BatchRequest;
 import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.BrokerServer;
+import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractRequest.Builder;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.server.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.NodeToControllerChannelManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +57,7 @@ public class ControllerRequestSender {
     }
 
     public void shutdown() {
-//        this.channelManager.shutdown();
+        this.channelManager.shutdown();
     }
 
     public void send(RequestTask task) {
@@ -103,30 +105,30 @@ public class ControllerRequestSender {
     }
 
     private void sendRequest(Builder requestBuilder, RequestCtx ctx) {
-//        channelManager.sendRequest(requestBuilder, new ControllerRequestCompletionHandler() {
-//            @Override
-//            public void onTimeout() {
-//                // TODO: add timeout retry policy
-//                LOGGER.error("Timeout while creating stream");
-//                ctx.onError(new TimeoutException("Timeout while creating stream"));
-//            }
-//
-//            @Override
-//            public void onComplete(ClientResponse response) {
-//                if (response.authenticationException() != null) {
-//                    LOGGER.error("Authentication error while sending request: {}", requestBuilder, response.authenticationException());
-//                    ctx.onError(response.authenticationException());
-//                    return;
-//                }
-//                if (response.versionMismatch() != null) {
-//                    LOGGER.error("Version mismatch while sending request: {}", requestBuilder, response.versionMismatch());
-//                    ctx.onError(response.versionMismatch());
-//                    return;
-//                }
-//                AbstractResponse resp = response.responseBody();
-//                ctx.onSuccess(resp);
-//            }
-//        });
+        channelManager.sendRequest(requestBuilder, new ControllerRequestCompletionHandler() {
+            @Override
+            public void onTimeout() {
+                // TODO: add timeout retry policy
+                LOGGER.error("Timeout while creating stream");
+                ctx.onError(new TimeoutException("Timeout while creating stream"));
+            }
+
+            @Override
+            public void onComplete(ClientResponse response) {
+                if (response.authenticationException() != null) {
+                    LOGGER.error("Authentication error while sending request: {}", requestBuilder, response.authenticationException());
+                    ctx.onError(response.authenticationException());
+                    return;
+                }
+                if (response.versionMismatch() != null) {
+                    LOGGER.error("Version mismatch while sending request: {}", requestBuilder, response.versionMismatch());
+                    ctx.onError(response.versionMismatch());
+                    return;
+                }
+                AbstractResponse resp = response.responseBody();
+                ctx.onSuccess(resp);
+            }
+        });
     }
 
     private void retryTask(RequestTask task) {

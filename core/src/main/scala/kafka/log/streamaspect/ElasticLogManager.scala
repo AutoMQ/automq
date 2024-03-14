@@ -13,48 +13,65 @@ package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
 import com.automq.stream.s3.metadata.ObjectUtils
+import kafka.log.UnifiedLog
 import kafka.log.streamaspect.ElasticLogManager.NAMESPACE
 import kafka.log.streamaspect.cache.FileCache
 import kafka.log.streamaspect.client.{ClientFactoryProxy, Context}
 import kafka.log.streamaspect.utils.ExceptionUtil
-import kafka.server.{BrokerServer, KafkaConfig}
+import kafka.server.{BrokerServer, BrokerTopicStats, KafkaConfig}
 import kafka.utils.Logging
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.server.util.Scheduler
-import org.apache.kafka.storage.internals.log.{LogConfig, LogDirFailureChannel, ProducerStateManagerConfig}
+import org.apache.kafka.storage.internals.log.{LogConfig, LogDirFailureChannel, LogOffsetsListener, ProducerStateManagerConfig}
 
 import java.io.File
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+import java.util.concurrent.{ConcurrentHashMap}
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
 class ElasticLogManager(val client: Client) extends Logging {
     this.logIdent = s"[ElasticLogManager] "
-    private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticLog]()
+    private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
 
     def getOrCreateLog(dir: File,
         config: LogConfig,
         scheduler: Scheduler,
         time: Time,
-        topicPartition: TopicPartition,
-        logDirFailureChannel: LogDirFailureChannel,
-        numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
         maxTransactionTimeoutMs: Int,
         producerStateManagerConfig: ProducerStateManagerConfig,
-        topicId: Uuid,
-        leaderEpoch: Long): ElasticLog = {
+        brokerTopicStats: BrokerTopicStats,
+        producerIdExpirationCheckIntervalMs: Int,
+        logDirFailureChannel: LogDirFailureChannel,
+        topicId: Option[Uuid],
+        leaderEpoch: Long = 0,
+    ): ElasticUnifiedLog = {
+        val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
         val log = elasticLogs.get(topicPartition)
         if (log != null) {
             return log
         }
-        var elasticLog: ElasticLog = null
+        var elasticLog: ElasticUnifiedLog = null
         // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
         // operate sequentially. So it's safe without lock
         ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
             override def run(): Unit = {
                 // ElasticLog new is a time cost operation.
-                elasticLog = ElasticLog(client, NAMESPACE, dir, config, scheduler, time, topicPartition, logDirFailureChannel,
-                    numRemainingSegments, maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch)
+                elasticLog = ElasticUnifiedLog(
+                    dir,
+                    config,
+                    scheduler,
+                    time,
+                    maxTransactionTimeoutMs,
+                    producerStateManagerConfig,
+                    brokerTopicStats,
+                    producerIdExpirationCheckIntervalMs,
+                    logDirFailureChannel,
+                    topicId,
+                    leaderEpoch,
+                    logOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
+                    client,
+                    NAMESPACE
+                )
             }
         }, s"Failed to create elastic log for $topicPartition", this)
         elasticLogs.putIfAbsent(topicPartition, elasticLog)
@@ -85,24 +102,6 @@ class ElasticLogManager(val client: Client) extends Logging {
      */
     def removeLog(topicPartition: TopicPartition): Unit = {
         elasticLogs.remove(topicPartition)
-    }
-
-    /**
-     * New elastic log segment.
-     */
-    def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, suffix: String): ElasticLogSegment = {
-        val elasticLog = elasticLogs.get(topicPartition)
-        if (elasticLog == null) {
-            throw new IllegalStateException(s"Cannot find elastic log for $topicPartition")
-        }
-
-        var segment: ElasticLogSegment = null
-        ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
-            override def run(): Unit = {
-                segment = elasticLog.newSegment(baseOffset, time, suffix)
-            }
-        }, s"Failed to create new segment for $topicPartition", this)
-        segment
     }
 
     def startup(): Unit = {
@@ -161,28 +160,23 @@ object ElasticLogManager {
         INSTANCE.get.destroyLog(topicPartition, topicId, epoch)
     }
 
-    def getElasticLog(topicPartition: TopicPartition): ElasticLog = INSTANCE.get.elasticLogs.get(topicPartition)
+    def getElasticLog(topicPartition: TopicPartition): ElasticUnifiedLog = INSTANCE.get.elasticLogs.get(topicPartition)
 
-    def getAllElasticLogs: Iterable[ElasticLog] = INSTANCE.get.elasticLogs.asScala.values
+    def getAllElasticLogs: Iterable[ElasticUnifiedLog] = INSTANCE.get.elasticLogs.asScala.values
 
     // visible for testing
     def getOrCreateLog(dir: File,
         config: LogConfig,
         scheduler: Scheduler,
         time: Time,
-        topicPartition: TopicPartition,
-        logDirFailureChannel: LogDirFailureChannel,
         maxTransactionTimeoutMs: Int,
         producerStateManagerConfig: ProducerStateManagerConfig,
-        numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
-        topicId: Uuid,
-        leaderEpoch: Long): ElasticLog = {
-        INSTANCE.get.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, numRemainingSegments,
-            maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch)
-    }
-
-    def newSegment(topicPartition: TopicPartition, baseOffset: Long, time: Time, fileSuffix: String): ElasticLogSegment = {
-        INSTANCE.get.newSegment(topicPartition, baseOffset, time, fileSuffix)
+        brokerTopicStats: BrokerTopicStats,
+        producerIdExpirationCheckIntervalMs: Int,
+        logDirFailureChannel: LogDirFailureChannel,
+        topicId: Option[Uuid],
+        leaderEpoch: Long = 0): ElasticUnifiedLog = {
+        INSTANCE.get.getOrCreateLog(dir, config, scheduler, time, maxTransactionTimeoutMs, producerStateManagerConfig, brokerTopicStats, producerIdExpirationCheckIntervalMs, logDirFailureChannel, topicId, leaderEpoch)
     }
 
     def shutdown(): Unit = {

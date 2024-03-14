@@ -43,7 +43,7 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) extend
                     if (elasticLog == null) {
                         warn(s"Cannot find elastic log for $topicPartition and skip persistence. Is this broker shutting down?")
                     } else {
-                        f(elasticLog, checkpoint)
+                        f(elasticLog.getLocalLog(), checkpoint)
                     }
                 }
             }
@@ -69,7 +69,7 @@ class ElasticCheckoutPointFileWithHandler(val rawKafkaMeta: RawKafkaMeta) extend
         var result: Seq[(TopicPartition, Long)] = Seq.empty
         ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
             override def run(): Unit = {
-                result = ElasticLogManager.getAllElasticLogs.map(f).toSeq
+                result = ElasticLogManager.getAllElasticLogs.map(log => log.getLocalLog()).map(f).toSeq
             }
         }, "error when reading", this)
         result
