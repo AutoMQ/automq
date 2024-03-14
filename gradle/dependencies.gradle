@@ -92,7 +92,7 @@ versions += [
   activation: "1.1.1",
   apacheda: "1.0.2",
   apacheds: "2.0.0-M24",
-  argparse4j: "0.7.0",
+  argparse4j: "0.9.0",
   bcpkix: "1.75",
   caffeine: "2.9.3", // 3.x supports JDK 11 and above
   // when updating checkstyle, check whether the exclusion of
@@ -149,6 +149,7 @@ versions += [
   mavenArtifact: "3.9.6",
   metrics: "2.2.0",
   netty: "4.1.100.Final",
+  nettyTcnativeBoringSsl: "2.0.65.Final",
   opentelemetryProto: "1.0.0-alpha",
   pcollections: "4.0.1",
   powermock: "2.0.9",
@@ -162,7 +163,7 @@ versions += [
   scalafmt: "3.7.14",
   scalaJava8Compat : "1.0.2",
   scoverage: "1.9.3",
-  slf4j: "1.7.36",
+  slf4j: "2.0.9",
   snappy: "1.1.10.5",
   spotbugs: "4.8.0",
   zinc: "1.9.2",
@@ -174,7 +175,10 @@ versions += [
   opentelemetry: "1.32.0",
   opentelemetryAlpha: "1.32.0-alpha",
   oshi: "6.4.7",
-  awsSdkAuth:"2.20.127"
+  awsSdk:"2.20.127",
+  bucket4j:"8.5.0",
+  jna:"5.2.0",
+  guava:"32.0.1-jre",
 ]
 
 libs += [
@@ -255,6 +259,8 @@ libs += [
   nettyTransportNativeEpoll: "io.netty:netty-transport-native-epoll:$versions.netty",
   nettyCommon: "io.netty:netty-common:$versions.netty",
   nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
+  nettyBuffer: "io.netty:netty-buffer:$versions.netty",
+  nettyTcnativeBoringSsl: "io.netty:netty-tcnative-boringssl-static:$versions.nettyTcnativeBoringSsl",
   pcollections: "org.pcollections:pcollections:$versions.pcollections",
   opentelemetryProto: "io.opentelemetry.proto:opentelemetry-proto:$versions.opentelemetryProto",
   powermockJunit4: "org.powermock:powermock-module-junit4:$versions.powermock",
@@ -269,6 +275,7 @@ libs += [
   slf4jApi: "org.slf4j:slf4j-api:$versions.slf4j",
   slf4jlog4j: "org.slf4j:slf4j-log4j12:$versions.slf4j",
   slf4jBridge: "org.slf4j:jul-to-slf4j:$versions.slf4j",
+  slf4jImplementation: "org.slf4j:slf4j-implementation:$versions.slf4j",
   snappy: "org.xerial.snappy:snappy-java:$versions.snappy",
   swaggerAnnotations: "io.swagger.core.v3:swagger-annotations:$swaggerVersion",
   swaggerJaxrs2: "io.swagger.core.v3:swagger-jaxrs2:$swaggerVersion",
@@ -280,7 +287,8 @@ libs += [
   commonLang: "org.apache.commons:commons-lang3:$versions.commonLang",
   commonio          : "commons-io:commons-io:$versions.commonio",
   commonMath3: "org.apache.commons:commons-math3:$versions.commonMath3",
-  awsSdkAuth: "software.amazon.awssdk:auth:$versions.awsSdkAuth",
+  awsSdkAuth: "software.amazon.awssdk:auth:$versions.awsSdk",
+  awsSdk: "software.amazon.awssdk:s3:$versions.awsSdk",
   opentelemetryJava8: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:$versions.opentelemetryAlpha",
   opentelemetryOshi: "io.opentelemetry.instrumentation:opentelemetry-oshi:$versions.opentelemetryAlpha",
   opentelemetrySdk: "io.opentelemetry:opentelemetry-sdk:$versions.opentelemetry",
@@ -289,13 +297,8 @@ libs += [
   opentelemetryExporterProm: "io.opentelemetry:opentelemetry-exporter-prometheus:$versions.opentelemetryAlpha",
   opentelemetryExporterOTLP: "io.opentelemetry:opentelemetry-exporter-otlp:$versions.opentelemetry",
   opentelemetryJmx: "io.opentelemetry.instrumentation:opentelemetry-jmx-metrics:$versions.opentelemetryAlpha",
-  oshi: "com.github.oshi:oshi-core-java11:$versions.oshi"
-]
-extLibs += [
-  s3stream: "com.automq.elasticstream:s3stream"
-]
-branchVersions += [
-  s3stream: {
-    branch = "main"
-  }
+  oshi: "com.github.oshi:oshi-core-java11:$versions.oshi",
+  bucket4j: "com.bucket4j:bucket4j-core:$versions.bucket4j",
+  jna: "net.java.dev.jna:jna:$versions.jna",
+  guava: "com.google.guava:guava:$versions.guava",
 ]

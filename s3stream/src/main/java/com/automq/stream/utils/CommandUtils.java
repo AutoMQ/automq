@@ -14,14 +14,15 @@ package com.automq.stream.utils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.util.stream.Collectors;
 
 public class CommandUtils {
     public static CommandResult run(String... cmd) {
         try {
             Process p = Runtime.getRuntime().exec(cmd);
-            try (BufferedReader inputReader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-                 BufferedReader errorReader = new BufferedReader(new InputStreamReader(p.getErrorStream()))) {
+            try (BufferedReader inputReader = new BufferedReader(new InputStreamReader(p.getInputStream(), Charset.defaultCharset()));
+                 BufferedReader errorReader = new BufferedReader(new InputStreamReader(p.getErrorStream(), Charset.defaultCharset()))) {
                 String stdout = inputReader.lines().collect(Collectors.joining("\n"));
                 String stderr = errorReader.lines().collect(Collectors.joining("\n"));
                 int code = p.waitFor();

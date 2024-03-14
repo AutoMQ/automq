@@ -33,7 +33,8 @@ public class AutoMQKafkaAdminTool {
         // suppress slf4j inner warning log
         System.err.close();
         ArgumentParser parser = ArgumentParsers
-            .newArgumentParser("automq-admin-tool")
+            .newFor("automq-admin-tool")
+            .build()
             .defaultHelp(true)
             .description("This AutoMQ admin tool contains several tools to help user init and manage AutoMQ cluster easily.");
         if (args.length == 0) {
