@@ -540,6 +540,9 @@ class ElasticReplicaManager(
             case -1 => // no non-empty read result
               handler.close()
             case i => // the first non-empty read result
+              // release part of the permits to the actual records size
+              val actualRecordsSize = logReadResults.map(_._2.info.records.sizeInBytes).sum
+              handler.releaseTo(actualRecordsSize)
               // replace it with a wrapper to release the handler
               val oldReadResult = logReadResults(i)._2
               val oldInfo = oldReadResult.info
