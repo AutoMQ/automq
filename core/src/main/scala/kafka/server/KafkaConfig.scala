@@ -2166,6 +2166,13 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   /** ********* Kafka on S3 Configuration *********/
   val s3StreamAllocatorPolicy = Enum.valueOf(classOf[ByteBufAllocPolicy], getString(KafkaConfig.S3StreamAllocatorPolicyProp))
 
+  private val userSetS3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
+  private val userSetS3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
+  private val s3WALCacheSizeSet = userSetS3WALCacheSize > 0
+  private val s3BlockCacheSizeSet = userSetS3BlockCacheSize > 0
+  if (s3WALCacheSizeSet != s3BlockCacheSizeSet) {
+    throw new ConfigException(s"${KafkaConfig.S3WALCacheSizeProp} and ${KafkaConfig.S3BlockCacheSizeProp} must be set together")
+  }
   private val s3CacheUseDirectMemory = s3StreamAllocatorPolicy.isDirect
   private val s3AvailableMemory = if (s3CacheUseDirectMemory) {
     PlatformDependent.maxDirectMemory()
@@ -2175,21 +2182,23 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   // 3GiB reserved for other usage
   private val s3AvailableMemoryForCache = s3AvailableMemory - 3 << 30
   private def getS3WALCacheSize(): Long = {
-    val s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
-    if (s3WALCacheSize > 0) {
-      s3WALCacheSize
+    if (s3WALCacheSizeSet) {
+      userSetS3WALCacheSize
     } else {
       // 2/3 of available cache memory, at least 256MiB
-      Math.max(1 << 28, s3AvailableMemoryForCache * 2 / 3)
+      val adjusted = Math.max(1 << 28, s3AvailableMemoryForCache * 2 / 3)
+      info(s"${KafkaConfig.S3WALCacheSizeProp} is not set, using $adjusted as the default value")
+      adjusted
     }
   }
   private def getS3BlockCacheSize(): Long = {
-    val s3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
-    if (s3BlockCacheSize > 0) {
-      s3BlockCacheSize
+    if (s3BlockCacheSizeSet) {
+      userSetS3BlockCacheSize
     } else {
       // 1/3 of available cache memory, at least 128MiB
-      Math.max(1 << 27, s3AvailableMemoryForCache / 3)
+      val adjusted = Math.max(1 << 27, s3AvailableMemoryForCache / 3)
+      info(s"${KafkaConfig.S3BlockCacheSizeProp} is not set, using $adjusted as the default value")
+      adjusted
     }
   }
 
