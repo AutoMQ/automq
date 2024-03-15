@@ -5,7 +5,6 @@ AutoMQ: Truly serverless Kafka solution that maximizes the benefits of cloud
     
 </h3>
 
-![GitHub License](https://img.shields.io/github/license/AutoMQ/automq-for-kafka)
 ![GitHub release (with filter)](https://img.shields.io/github/v/release/AutoMQ/automq-for-kafka)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/AutoMQ/automq-for-kafka)
 ![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/AutoMQ/automq-for-kafka)
@@ -42,6 +41,7 @@ AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, m
 ## 🔶Why AutoMQ
 
 - **Cloud Native**: Built on cloud service. Every system design decision take cloud service's feature and billing items into consideration to offer best low-latency, scalable, reliable and cost-effective Kafka service on cloud.
+- **High Reliability**: Leverage the features of cloud service to offer RPO of 0 and RTO in seconds. Use S3 express one zone and S3 to offer AZ level disaster recovery on AWS. Use regional SSD and cloud storage to offer AZ level disaster recovery on GCP. Use zone-redundant storage and blob storage to offer AZ level disaster recovery on Azure.
 - **Serverless**:
   - Auto Scaling: Watch key metrics of cluster and scale in/out automatically to match you workload and achieve pay-as-you-go.
   - Scaling in seconds: Computing layer (broker) is stateless and could scale in/out in seconds, which make AutoMQ true serverless. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
@@ -54,6 +54,7 @@ AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, m
   > Refer to the [AutoMQ Performance White Paper](https://docs.automq.com/docs/automq-s3kafka/CYxlwqDBHitThCkxSl2cePxrnBc) to see how we achieve this.
 - **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka greater than 0.9.x and not lose any good features of it, but cheaper and better.
 
+![image](./docs/images/automq-kafka-compare.png)
 
 
 ## ✨Architecture
