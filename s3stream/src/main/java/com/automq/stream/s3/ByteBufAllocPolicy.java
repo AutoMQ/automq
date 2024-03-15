@@ -14,11 +14,6 @@ package com.automq.stream.s3;
 public enum ByteBufAllocPolicy {
 
     /**
-     * Allocate memory from the heap without pooling.
-     */
-    UNPOOLED_HEAP(false, false),
-
-    /**
      * Allocate memory from the heap with pooling.
      */
     POOLED_HEAP(true, false),
