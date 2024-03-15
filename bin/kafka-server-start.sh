@@ -14,6 +14,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+calculate_max_heap_kb() {
+    if [[ "$(uname)" == "Linux" ]]; then
+        local total_mem_kb
+        local mem_75_percent_kb
+        local mem_32_gb_in_kb
+        total_mem_kb="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
+        mem_75_percent_kb="$((total_mem_kb * 3 / 4))"
+        mem_32_gb_in_kb="$((32 * 1024 * 1024))"
+        # Return the smaller of 75% of the total memory or 32GB
+        echo "$((mem_75_percent_kb < mem_32_gb_in_kb ? mem_75_percent_kb : mem_32_gb_in_kb))"
+    else
+        # Use 6GB as the default heap size on other platforms
+        echo "$((6 * 1024 * 1024))"
+    fi
+}
+
 if [ $# -lt 1 ];
 then
 	echo "USAGE: $0 [-daemon] server.properties [--override property=value]*"
@@ -26,7 +42,8 @@ if [ "x$KAFKA_LOG4J_OPTS" = "x" ]; then
 fi
 
 if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
-    export KAFKA_HEAP_OPTS="-Xmx6g -Xms6g -XX:MaxDirectMemorySize=6g -XX:MetaspaceSize=96m"
+    max_heap_kb=$(calculate_max_heap_kb)
+    export KAFKA_HEAP_OPTS="-Xmx${max_heap_kb}k -Xms${max_heap_kb}k -XX:MetaspaceSize=96m"
 fi
 
 EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer -loggc'}
