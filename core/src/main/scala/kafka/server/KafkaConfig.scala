@@ -18,6 +18,7 @@
 package kafka.server
 
 import com.automq.stream.s3.ByteBufAllocPolicy
+import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.AutoBalancerControllerConfig
 
 import java.util
@@ -1589,7 +1590,7 @@ object KafkaConfig {
       .define(S3PathStyleProp, BOOLEAN, false, HIGH, S3PathStyleDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
       .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
-      .define(S3WALCacheSizeProp, LONG, 2147483648L, MEDIUM, S3WALCacheSizeDoc)
+      .define(S3WALCacheSizeProp, LONG, -1L, MEDIUM, S3WALCacheSizeDoc)
       .define(S3WALCapacityProp, LONG, 2147483648L, MEDIUM, S3WALCapacityDoc)
       .define(S3WALThreadProp, INT, 8, MEDIUM, S3WALThreadDoc)
       .define(S3WALIOPSProp, INT, 3000, MEDIUM, S3WALIOPSDoc)
@@ -1597,7 +1598,7 @@ object KafkaConfig {
       .define(S3StreamSplitSizeProp, INT, 8388608, MEDIUM, S3StreamSplitSizeDoc)
       .define(S3ObjectBlockSizeProp, INT, 1048576, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
-      .define(S3BlockCacheSizeProp, LONG, 1073741824L, MEDIUM, S3BlockCacheSizeDoc)
+      .define(S3BlockCacheSizeProp, LONG, -1L, MEDIUM, S3BlockCacheSizeDoc)
       .define(S3StreamAllocatorPolicyProp, STRING, ByteBufAllocPolicy.POOLED_HEAP.name, MEDIUM, S3StreamAllocatorPolicyDoc)
       .define(S3StreamObjectCompactionIntervalMinutesProp, INT, 30, MEDIUM, S3StreamObjectCompactionIntervalMinutesDoc)
       .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 1073741824L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
@@ -2163,12 +2164,41 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
 
   // AutoMQ for Kafka inject start
   /** ********* Kafka on S3 Configuration *********/
+  val s3StreamAllocatorPolicy = Enum.valueOf(classOf[ByteBufAllocPolicy], getString(KafkaConfig.S3StreamAllocatorPolicyProp))
+
+  private val s3CacheUseDirectMemory = s3StreamAllocatorPolicy.isDirect
+  private val s3AvailableMemory = if (s3CacheUseDirectMemory) {
+    PlatformDependent.maxDirectMemory()
+  } else {
+    Runtime.getRuntime.maxMemory() / 2
+  }
+  // 3GiB reserved for other usage
+  private val s3AvailableMemoryForCache = s3AvailableMemory - 3 << 30
+  private def getS3WALCacheSize(): Long = {
+    val s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
+    if (s3WALCacheSize > 0) {
+      s3WALCacheSize
+    } else {
+      // 2/3 of available cache memory, at least 256MiB
+      Math.max(1 << 28, s3AvailableMemoryForCache * 2 / 3)
+    }
+  }
+  private def getS3BlockCacheSize(): Long = {
+    val s3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
+    if (s3BlockCacheSize > 0) {
+      s3BlockCacheSize
+    } else {
+      // 1/3 of available cache memory, at least 128MiB
+      Math.max(1 << 27, s3AvailableMemoryForCache / 3)
+    }
+  }
+
   val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
   val s3Region = getString(KafkaConfig.S3RegionProp)
   val s3PathStyle = getBoolean(KafkaConfig.S3PathStyleProp)
   val s3Bucket = getString(KafkaConfig.S3BucketProp)
   val s3WALPath = getString(KafkaConfig.S3WALPathProp)
-  val s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
+  val s3WALCacheSize = getS3WALCacheSize()
   val s3WALCapacity = getLong(KafkaConfig.S3WALCapacityProp)
   val s3WALThread = getInt(KafkaConfig.S3WALThreadProp)
   val s3WALIOPS = getInt(KafkaConfig.S3WALIOPSProp)
@@ -2176,8 +2206,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3StreamSplitSize = getInt(KafkaConfig.S3StreamSplitSizeProp)
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
   val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
-  val s3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
-  val s3StreamAllocatorPolicy = getString(KafkaConfig.S3StreamAllocatorPolicyProp)
+  val s3BlockCacheSize = getS3BlockCacheSize()
   val s3StreamObjectCompactionTaskIntervalMinutes = getInt(KafkaConfig.S3StreamObjectCompactionIntervalMinutesProp)
   val s3StreamObjectCompactionMaxSizeBytes = getLong(KafkaConfig.S3StreamObjectCompactionMaxSizeBytesProp)
   val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)

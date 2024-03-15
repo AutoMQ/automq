@@ -19,7 +19,7 @@ package kafka
 
 import com.automq.s3shell.sdk.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
 import com.automq.s3shell.sdk.model.S3Url
-import com.automq.stream.s3.{ByteBufAlloc, ByteBufAllocPolicy}
+import com.automq.stream.s3.ByteBufAlloc
 import joptsimple.OptionParser
 import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
@@ -110,7 +110,7 @@ object Kafka extends Logging {
     val config = KafkaConfig.fromProps(props, false)
     // AutoMQ for Kafka inject start
     // set allocator's policy as early as possible
-    ByteBufAlloc.setPolicy(Enum.valueOf(classOf[ByteBufAllocPolicy], config.s3StreamAllocatorPolicy))
+    ByteBufAlloc.setPolicy(config.s3StreamAllocatorPolicy)
     // AutoMQ for Kafka inject end
     if (config.requiresZookeeper) {
       new KafkaServer(
