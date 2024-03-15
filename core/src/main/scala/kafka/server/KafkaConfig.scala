@@ -752,7 +752,9 @@ object KafkaConfig {
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
   val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
   val S3BlockCacheSizeDoc = "The S3 block cache size in MiB."
-  val S3StreamAllocatorPolicyDoc = "The S3 stream memory allocator policy, supported value: " + ByteBufAllocPolicy.values().mkString(", ")
+  val S3StreamAllocatorPolicyDoc = "The S3 stream memory allocator policy, supported value: " + ByteBufAllocPolicy.values().mkString(", ") + ".\n" +
+    "Please note that when configured to use DIRECT memory, it is necessary to modify the heap size (e.g., -Xmx) and the direct memory size (e.g., -XX:MaxDirectMemorySize) in the vm options." +
+    " You can set them through the environment variable KAFKA_HEAP_OPTS."
   val S3StreamObjectCompactionIntervalMinutesDoc = "The S3 stream object compaction task interval in minutes."
   val S3StreamObjectCompactionMaxSizeBytesDoc = "The S3 stream object compaction max size in bytes."
   val S3ControllerRequestRetryMaxCountDoc = "The S3 controller request retry max count."
