@@ -929,6 +929,7 @@ project(':core') {
     implementation libs.opentelemetryExporterProm
     implementation libs.opentelemetryExporterOTLP
     implementation libs.opentelemetryJmx
+    implementation libs.awsSdkAuth
 
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
@@ -945,6 +946,7 @@ project(':core') {
     testImplementation project(':server-common').sourceSets.test.output
     testImplementation libs.bcpkix
     testImplementation libs.mockitoCore
+    testImplementation libs.guava
     testImplementation(libs.apacheda) {
       exclude group: 'xml-apis', module: 'xml-apis'
       // `mina-core` is a transitive dependency for `apacheds` and `apacheda`.
@@ -1236,6 +1238,8 @@ project(':metadata') {
       exclude group: 'net.sourceforge.argparse4j', module: '*'
       version branchVersions.s3stream
     }
+    implementation libs.guava
+    implementation libs.awsSdkAuth
 
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
@@ -1593,6 +1597,7 @@ project(':server-common') {
     api project(':clients')
     implementation libs.slf4jApi
     implementation libs.metrics
+    implementation libs.opentelemetrySdk
     implementation(extLibs.s3stream) {
       exclude group: 'io.netty', module: '*'
       exclude group: 'org.slf4j', module: '*'
@@ -1850,6 +1855,7 @@ project(':tools') {
       exclude group: 'org.slf4j', module: '*'
     }
     implementation libs.jacksonJaxrsJsonProvider
+    implementation libs.awsSdkAuth
     implementation(extLibs.s3stream) {
       exclude group: 'org.slf4j', module: '*'
       exclude group: 'net.sourceforge.argparse4j', module: '*'

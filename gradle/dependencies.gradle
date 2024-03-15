@@ -64,7 +64,7 @@ versions += [
   checkstyle: "8.36.2",
   commonsCli: "1.4",
   dropwizardMetrics: "4.1.12.1",
-  gradle: "7.6",
+  gradle: "8.6",
   grgit: "4.1.1",
   httpclient: "4.5.13",
   easymock: "4.3",
@@ -136,6 +136,7 @@ versions += [
   opentelemetryAlpha: "1.32.0-alpha",
   oshi: "6.4.7",
   awsSdkAuth:"2.20.127",
+  guava:"32.0.1-jre",
 ]
 libs += [
   activation: "javax.activation:activation:$versions.activation",
@@ -241,10 +242,11 @@ libs += [
   opentelemetryExporterProm: "io.opentelemetry:opentelemetry-exporter-prometheus:$versions.opentelemetryAlpha",
   opentelemetryExporterOTLP: "io.opentelemetry:opentelemetry-exporter-otlp:$versions.opentelemetry",
   opentelemetryJmx: "io.opentelemetry.instrumentation:opentelemetry-jmx-metrics:$versions.opentelemetryAlpha",
-  oshi: "com.github.oshi:oshi-core-java11:$versions.oshi"
+  oshi: "com.github.oshi:oshi-core-java11:$versions.oshi",
+  guava: "com.google.guava:guava:$versions.guava",
 ]
 extLibs += [
-  s3stream: "com.automq.elasticstream:s3stream"
+  s3stream: "org.apache.kafka:s3stream"
 ]
 branchVersions += [
   s3stream: {
