@@ -12,12 +12,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-def s3stream_repo = 'https://github.com/AutoMQ/automq-for-rocketmq.git'
+def s3stream_repo = 'https://github.com/AutoMQ/automq-for-kafka.git'
 
 sourceControl {
     gitRepository(s3stream_repo) {
-        producesModule("com.automq.elasticstream:s3stream")
-        rootDir = "s3stream"
+        producesModule("org.apache.kafka:s3stream")
     }
 }
 
@@ -68,4 +67,3 @@ include 'clients',
     'tools',
     'trogdor',
     'kshell-sdk'
-
