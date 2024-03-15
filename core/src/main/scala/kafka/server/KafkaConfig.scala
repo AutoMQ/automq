@@ -18,7 +18,6 @@
 package kafka.server
 
 import com.automq.stream.s3.ByteBufAllocPolicy
-import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.AutoBalancerControllerConfig
 
 import java.util
@@ -2164,52 +2163,12 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
 
   // AutoMQ for Kafka inject start
   /** ********* Kafka on S3 Configuration *********/
-  val s3StreamAllocatorPolicy = Enum.valueOf(classOf[ByteBufAllocPolicy], getString(KafkaConfig.S3StreamAllocatorPolicyProp))
-
-  private val userSetS3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
-  private val userSetS3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
-  private val s3WALCacheSizeSet = userSetS3WALCacheSize > 0
-  private val s3BlockCacheSizeSet = userSetS3BlockCacheSize > 0
-  if (s3WALCacheSizeSet != s3BlockCacheSizeSet) {
-    throw new ConfigException(s"${KafkaConfig.S3WALCacheSizeProp} and ${KafkaConfig.S3BlockCacheSizeProp} must be set together")
-  }
-  private val s3CacheUseDirectMemory = s3StreamAllocatorPolicy.isDirect
-  private val s3AvailableMemory = if (s3CacheUseDirectMemory) {
-    PlatformDependent.maxDirectMemory()
-  } else {
-    Runtime.getRuntime.maxMemory() / 2
-  }
-  private def getS3WALCacheSize(): Long = {
-    if (s3WALCacheSizeSet) {
-      userSetS3WALCacheSize
-    } else {
-      // for example:
-      // availableMemory = 3G, adjusted = max(3G / 3, (3G - 3G) / 3 * 2) = max(1G, 0) = 1G
-      // availableMemory = 6G, adjusted = max(6G / 3, (6G - 3G) / 3 * 2) = max(2G, 2G) = 2G
-      // availableMemory = 9G, adjusted = max(9G / 3, (9G - 3G) / 3 * 2) = max(3G, 4G) = 4G
-      // availableMemory = 12G, adjusted = max(12G / 3, (12G - 3G) / 3 * 2) = max(4G, 6G) = 6G
-      val adjusted = Math.max(s3AvailableMemory / 3, (s3AvailableMemory - 3L << 30) / 3 * 2)
-      info(s"${KafkaConfig.S3WALCacheSizeProp} is not set, using $adjusted as the default value")
-      adjusted
-    }
-  }
-  private def getS3BlockCacheSize(): Long = {
-    if (s3BlockCacheSizeSet) {
-      userSetS3BlockCacheSize
-    } else {
-      // it's just 1/2 of {@link #S3WALCacheSizeProp}
-      val adjusted = Math.max(s3AvailableMemory / 6, (s3AvailableMemory - 3L << 30) / 3)
-      info(s"${KafkaConfig.S3BlockCacheSizeProp} is not set, using $adjusted as the default value")
-      adjusted
-    }
-  }
-
   val s3Endpoint = getString(KafkaConfig.S3EndpointProp)
   val s3Region = getString(KafkaConfig.S3RegionProp)
   val s3PathStyle = getBoolean(KafkaConfig.S3PathStyleProp)
   val s3Bucket = getString(KafkaConfig.S3BucketProp)
   val s3WALPath = getString(KafkaConfig.S3WALPathProp)
-  val s3WALCacheSize = getS3WALCacheSize()
+  var s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
   val s3WALCapacity = getLong(KafkaConfig.S3WALCapacityProp)
   val s3WALThread = getInt(KafkaConfig.S3WALThreadProp)
   val s3WALIOPS = getInt(KafkaConfig.S3WALIOPSProp)
@@ -2217,7 +2176,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3StreamSplitSize = getInt(KafkaConfig.S3StreamSplitSizeProp)
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
   val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
-  val s3BlockCacheSize = getS3BlockCacheSize()
+  var s3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
+  val s3StreamAllocatorPolicy = Enum.valueOf(classOf[ByteBufAllocPolicy], getString(KafkaConfig.S3StreamAllocatorPolicyProp))
   val s3StreamObjectCompactionTaskIntervalMinutes = getInt(KafkaConfig.S3StreamObjectCompactionIntervalMinutesProp)
   val s3StreamObjectCompactionMaxSizeBytes = getLong(KafkaConfig.S3StreamObjectCompactionMaxSizeBytesProp)
   val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)
