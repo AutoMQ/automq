@@ -24,7 +24,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
-
+import org.apache.kafka.image.node.automq.AutoMQImageNode;
 
 public class MetadataImageNode implements MetadataNode {
     /**
@@ -52,7 +52,10 @@ public class MetadataImageNode implements MetadataNode {
         children.put(ScramImageNode.NAME, image -> new ScramImageNode(image.scram()));
         children.put(DelegationTokenImageNode.NAME, image -> new DelegationTokenImageNode(image.delegationTokens()));
 
-        // TODO; support AutoMQ image
+        // AutoMQ inject start
+        children.put(AutoMQImageNode.NAME, image -> new AutoMQImageNode(image.kv(), image.streamsMetadata(), image.objectsMetadata()));
+        // AutoMQ inject end
+
         CHILDREN = Collections.unmodifiableMap(children);
     }
 
