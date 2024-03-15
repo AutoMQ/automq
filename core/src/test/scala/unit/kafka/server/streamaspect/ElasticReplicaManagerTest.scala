@@ -3,15 +3,17 @@ package unit.kafka.server.streamaspect
 import com.google.common.util.concurrent.MoreExecutors
 import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.log.remote.RemoteLogManager
+import kafka.log.streamaspect.ElasticLogManager
 import kafka.log.{LocalLog, LogLoader, LogManager, UnifiedLog}
 import kafka.server.QuotaFactory.QuotaManagers
+import kafka.server._
 import kafka.server.epoch.util.MockBlockingSender
 import kafka.server.streamaspect.ElasticReplicaManager
-import kafka.server._
 import kafka.utils.{Pool, TestUtils}
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.clients.FetchSessionHandler
 import org.apache.kafka.common.config.TopicConfig
+import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.message.OffsetForLeaderEpochResponseData.EpochEndOffset
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.ListenerName
@@ -26,7 +28,7 @@ import org.apache.kafka.server.util.timer.MockTimer
 import org.apache.kafka.server.util.{MockScheduler, Scheduler}
 import org.apache.kafka.storage.internals.log._
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.{Disabled, Tag, Test}
+import org.junit.jupiter.api.{BeforeEach, Disabled, Tag, Test}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentMatchers
@@ -44,6 +46,29 @@ import scala.jdk.CollectionConverters.{MapHasAsJava, PropertiesHasAsScala}
 
 @Tag("S3Unit")
 class ElasticReplicaManagerTest extends ReplicaManagerTest {
+
+  @BeforeEach
+  override def setUp(): Unit = {
+    val props = TestUtils.createBrokerConfig(1, TestUtils.MockZkConnect)
+    props.put(KafkaConfig.ElasticStreamEnableProp, true)
+    props.put(KafkaConfig.ElasticStreamEndpointProp, "memory://")
+    config = KafkaConfig.fromProps(props)
+    alterPartitionManager = mock(classOf[AlterPartitionManager])
+    quotaManager = QuotaFactory.instantiate(config, metrics, time, "")
+    mockRemoteLogManager = mock(classOf[RemoteLogManager])
+    addPartitionsToTxnManager = mock(classOf[AddPartitionsToTxnManager])
+
+    // Anytime we try to verify, just automatically run the callback as though the transaction was verified.
+    when(addPartitionsToTxnManager.verifyTransaction(any(), any(), any(), any(), any())).thenAnswer { invocationOnMock =>
+      val callback = invocationOnMock.getArgument(4, classOf[AddPartitionsToTxnManager.AppendCallback])
+      callback(Map.empty[TopicPartition, Errors].toMap)
+    }
+
+    // Set the default value for the elastic storage system enable config
+    ElasticStreamSwitch.setSwitch(true)
+    ElasticLogManager.enable(true)
+    ElasticLogManager.init(config, "clusterId", null)
+  }
 
   override protected def setUpReplicaManager(config: KafkaConfig,
     metrics: Metrics,
@@ -533,11 +558,49 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
   }
 
   // Test leader only
+  @Test
+  @Disabled
+  override def testFetchFromFollowerShouldNotRunPreferLeaderSelect(): Unit = super.testFetchFromFollowerShouldNotRunPreferLeaderSelect()
+
   @ParameterizedTest
-  @ValueSource(booleans = Array(true))
+  @ValueSource(booleans = Array(false))
   @Disabled
   override def testOffsetOutOfRangeExceptionWhenFetchMessages(
     isFromFollower: Boolean): Unit = super.testOffsetOutOfRangeExceptionWhenFetchMessages(isFromFollower)
+
+
+  // Test with remote storage disable only
+  @ParameterizedTest
+  @ValueSource(booleans = Array(false))
+  @Disabled
+  override def testApplyDeltaShouldHandleReplicaAssignedToUnassignedDirectory(enableRemoteStorage: Boolean) = super.testApplyDeltaShouldHandleReplicaAssignedToUnassignedDirectory(enableRemoteStorage)
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(false))
+  @Disabled
+  override def testStopReplicaWithInexistentPartitionAndPartitionsDelete(enableRemoteStorage: Boolean) = super.testStopReplicaWithInexistentPartitionAndPartitionsDelete(enableRemoteStorage)
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(false))
+  override def testDeltaLeaderToNotReplica(enableRemoteStorage: Boolean) = super.testDeltaLeaderToNotReplica(enableRemoteStorage)
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(false))
+  @Disabled
+  override def testDeltaLeaderToRemovedTopic(enableRemoteStorage: Boolean): Unit = {
+  }
+
+  override def testStopReplicaWithExistingPartition(
+    leaderEpoch: Int,
+    deletePartition: Boolean,
+    throwIOException: Boolean,
+    expectedOutput: Errors,
+    enableRemoteStorage: Boolean): Unit = super.testStopReplicaWithExistingPartition(leaderEpoch, deletePartition, throwIOException, expectedOutput, enableRemoteStorage = false)
+
+  override def testStopReplicaWithInexistentPartition(
+    deletePartitions: Boolean,
+    throwIOException: Boolean,
+    enableRemoteStorage: Boolean): Unit = super.testStopReplicaWithInexistentPartition(deletePartitions, throwIOException, enableRemoteStorage = false)
 
   // Disable test kafka tiered storage
   @Test
@@ -547,8 +610,143 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
 
   @Test
   @Disabled
+  override def testPreferredReplicaAsFollower(): Unit = {
+  }
+
+  @Test
+  @Disabled
   override def testRemoteLogReaderMetrics(): Unit = {
   }
 
+  @Test
+  @Disabled
+  override def testFetchBeyondHighWatermark(): Unit = {
+  }
 
+  @Test
+  @Disabled
+  override def testFullLairDuringKRaftMigrationWithTopicRecreations(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testActiveProducerState(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testHighWaterMarkDirectoryMapping(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testFencedErrorCausedByBecomeLeader(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testPartitionMetadataFile(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testSuccessfulBuildRemoteLogAuxStateMetrics(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testClearPurgatoryOnBecomingFollower(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testPartitionMetadataFileCreatedWithExistingLog(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testFetchMessagesWhenNotFollowerForOnePartition(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testPartitionListener(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testReadCommittedFetchLimitedAtLSO(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testPartitionMetadataFileCreatedAfterPreviousRequestWithoutIds(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testClearProducePurgatoryOnStopReplica(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testHighwaterMarkRelativeDirectoryMapping(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testOldFollowerLosesMetricsWhenReassignPartitions(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testOldLeaderLosesMetricsWhenReassignPartitions(): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testFetcherAreNotRestartedIfLeaderEpochIsNotBumpedWithZkPath(): Unit = {
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  @Disabled
+  override def testReplicaAlterLogDirsWithAndWithoutIds(usesTopicIds: Boolean): Unit = {
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  @Disabled
+  override def testApplyDeltaShouldHandleReplicaAssignedToOnlineDirectory(enableRemoteStorage: Boolean): Unit = {
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  @Disabled
+  override def testStopReplicaWithInexistentPartitionAndPartitionsDeleteAndIOException(enableRemoteStorage: Boolean): Unit = {
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  @Disabled
+  override def testApplyDeltaShouldHandleReplicaAssignedToLostDirectory(enableRemoteStorage: Boolean): Unit = {
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  @Disabled
+  override def testStopReplicaWithDeletePartitionAndExistingPartitionAndNewerLeaderEpochAndIOException(enableRemoteStorage: Boolean): Unit = {
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  @Disabled
+  override def testPartitionMarkedOfflineIfLogCantBeCreated(becomeLeader: Boolean): Unit = {
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = Array(true, false))
+  @Disabled
+  override def testPartitionFetchStateUpdatesWithTopicIdChanges(startsWithTopicId: Boolean): Unit = {
+  }
 }

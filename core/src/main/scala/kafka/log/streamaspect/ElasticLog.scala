@@ -592,8 +592,13 @@ object ElasticLog extends Logging {
 
     private val META_SCHEDULE_EXECUTOR = Executors.newScheduledThreadPool(1, ThreadUtils.createThreadFactory("log-meta-schedule-executor", true))
 
-    private def formatStreamKey(namespace: String, topicPartition: TopicPartition,
-        topicId: Uuid): String = namespace + "/" + topicId.toString + "/" + topicPartition.partition()
+    private def formatStreamKey(namespace: String, topicPartition: TopicPartition, topicId: Option[Uuid]): String = {
+        if (topicId.isEmpty) {
+            namespace + "/" + topicPartition.topic() + "/" + topicPartition.partition()
+        } else {
+            namespace + "/" + topicId.toString + "/" + topicPartition.partition()
+        }
+    }
 
     def apply(client: Client, namespace: String, dir: File,
         config: LogConfig,
@@ -604,7 +609,7 @@ object ElasticLog extends Logging {
         numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
         maxTransactionTimeoutMs: Int,
         producerStateManagerConfig: ProducerStateManagerConfig,
-        topicId: Uuid,
+        topicId: Option[Uuid],
         leaderEpoch: Long): ElasticLog = {
         // TODO: better error mark for elastic log
         logDirFailureChannel.clearOfflineLogDirRecord(dir.getPath)
@@ -742,7 +747,7 @@ object ElasticLog extends Logging {
         currentEpoch: Long): Unit = {
         val logIdent = s"[ElasticLog partition=$topicPartition topicId=$topicId] "
 
-        val key = formatStreamKey(namespace, topicPartition, topicId)
+        val key = formatStreamKey(namespace, topicPartition, Some(topicId))
         var metaStreamIdOpt: Option[Long] = None
 
         try {
