@@ -3782,7 +3782,7 @@ class ReplicaManagerTest {
     testStopReplicaWithInexistentPartition(true, true, enableRemoteStorage)
   }
 
-  private def testStopReplicaWithInexistentPartition(deletePartitions: Boolean,
+  protected def testStopReplicaWithInexistentPartition(deletePartitions: Boolean,
                                                      throwIOException: Boolean,
                                                      enableRemoteStorage: Boolean): Unit = {
     val mockTimer = new MockTimer(time)
@@ -3791,7 +3791,7 @@ class ReplicaManagerTest {
 
     try {
       val tp0 = new TopicPartition(topic, 0)
-      val log = replicaManager.logManager.getOrCreateLog(tp0, true, topicId = None)
+      val log = replicaManager.logManager.getOrCreateLog(tp0, true, topicId = Some(Uuid.randomUuid()))
 
       if (throwIOException) {
         // Delete the underlying directory to trigger an KafkaStorageException
@@ -4444,7 +4444,7 @@ class ReplicaManagerTest {
     mockLog
   }
 
-  private def testStopReplicaWithExistingPartition(leaderEpoch: Int,
+  protected def testStopReplicaWithExistingPartition(leaderEpoch: Int,
                                                    deletePartition: Boolean,
                                                    throwIOException: Boolean,
                                                    expectedOutput: Errors,
