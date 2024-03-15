@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
@@ -21,15 +22,22 @@ import com.automq.stream.s3.compact.utils.GroupByOffsetPredicate;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import java.util.List;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import static com.automq.stream.s3.ByteBufAllocPolicy.POOLED_DIRECT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Timeout(30)
 @Tag("S3Unit")
 public class CompactionUtilTest extends CompactionTestBase {
+
+    @BeforeEach
+    public void setUp() throws Exception {
+        ByteBufAlloc.setPolicy(POOLED_DIRECT);
+    }
 
     @Test
     public void testMergeStreamDataBlocks() {

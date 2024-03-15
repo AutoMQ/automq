@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import static com.automq.stream.s3.ByteBufAllocPolicy.POOLED_DIRECT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -45,6 +47,7 @@ public class CompactionUploaderTest extends CompactionTestBase {
 
     @BeforeEach
     public void setUp() throws Exception {
+        ByteBufAlloc.setPolicy(POOLED_DIRECT);
         s3Operator = new MemoryS3Operator();
         objectManager = new MemoryMetadataManager();
         config = mock(Config.class);

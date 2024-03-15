@@ -10,6 +10,7 @@
  */
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3ObjectLogger;
 import com.automq.stream.s3.StreamDataBlock;
@@ -715,11 +716,14 @@ public class CompactionManager {
 
             streamObjectCfList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
 
-            List<CompactedObject> compactedObjects = compactionPlan.compactedObjects();
-            for (CompactedObject compactedObject : compactedObjects) {
-                for (StreamDataBlock block : compactedObject.streamDataBlocks()) {
-                    if (block.getDataCf().join().refCnt() > 0) {
-                        logger.error("Block {} is not released after compaction, compact type: {}", block, compactedObject.type());
+            if (ByteBufAlloc.getPolicy().isPooled()) {
+                // Check if all blocks are released after each iteration
+                List<CompactedObject> compactedObjects = compactionPlan.compactedObjects();
+                for (CompactedObject compactedObject : compactedObjects) {
+                    for (StreamDataBlock block : compactedObject.streamDataBlocks()) {
+                        if (block.getDataCf().join().refCnt() > 0) {
+                            logger.error("Block {} is not released after compaction, compact type: {}", block, compactedObject.type());
+                        }
                     }
                 }
             }
