@@ -2179,14 +2179,16 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   } else {
     Runtime.getRuntime.maxMemory() / 2
   }
-  // 3GiB reserved for other usage
-  private val s3AvailableMemoryForCache = s3AvailableMemory - 3 << 30
   private def getS3WALCacheSize(): Long = {
     if (s3WALCacheSizeSet) {
       userSetS3WALCacheSize
     } else {
-      // 2/3 of available cache memory, at least 256MiB
-      val adjusted = Math.max(1 << 28, s3AvailableMemoryForCache * 2 / 3)
+      // for example:
+      // availableMemory = 3G, adjusted = max(3G / 3, (3G - 3G) / 3 * 2) = max(1G, 0) = 1G
+      // availableMemory = 6G, adjusted = max(6G / 3, (6G - 3G) / 3 * 2) = max(2G, 2G) = 2G
+      // availableMemory = 9G, adjusted = max(9G / 3, (9G - 3G) / 3 * 2) = max(3G, 4G) = 4G
+      // availableMemory = 12G, adjusted = max(12G / 3, (12G - 3G) / 3 * 2) = max(4G, 6G) = 6G
+      val adjusted = Math.max(s3AvailableMemory / 3, (s3AvailableMemory - 3L << 30) / 3 * 2)
       info(s"${KafkaConfig.S3WALCacheSizeProp} is not set, using $adjusted as the default value")
       adjusted
     }
@@ -2195,8 +2197,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
     if (s3BlockCacheSizeSet) {
       userSetS3BlockCacheSize
     } else {
-      // 1/3 of available cache memory, at least 128MiB
-      val adjusted = Math.max(1 << 27, s3AvailableMemoryForCache / 3)
+      // it's just 1/2 of {@link #S3WALCacheSizeProp}
+      val adjusted = Math.max(s3AvailableMemory / 6, (s3AvailableMemory - 3L << 30) / 3)
       info(s"${KafkaConfig.S3BlockCacheSizeProp} is not set, using $adjusted as the default value")
       adjusted
     }
