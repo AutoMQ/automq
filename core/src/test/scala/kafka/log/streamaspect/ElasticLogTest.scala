@@ -617,7 +617,7 @@ class ElasticLogTest {
             logDirFailureChannel = logDirFailureChannel,
             maxTransactionTimeoutMs = 5 * 60 * 1000,
             producerStateManagerConfig = producerStateManagerConfig,
-            topicId = Uuid.ZERO_UUID,
+            topicId = Some(Uuid.ZERO_UUID),
             leaderEpoch = 0
         )
     }

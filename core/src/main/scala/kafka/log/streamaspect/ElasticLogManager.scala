@@ -26,7 +26,7 @@ import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.log.{LogConfig, LogDirFailureChannel, LogOffsetsListener, ProducerStateManagerConfig}
 
 import java.io.File
-import java.util.concurrent.{ConcurrentHashMap}
+import java.util.concurrent.ConcurrentHashMap
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
 class ElasticLogManager(val client: Client) extends Logging {
