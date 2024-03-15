@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import com.automq.stream.s3.ByteBufAllocPolicy
 import kafka.autobalancer.config.AutoBalancerControllerConfig
 
 import java.{lang, util}
@@ -472,6 +473,7 @@ object KafkaConfig {
   val S3ObjectBlockSizeProp = "s3.object.block.size"
   val S3ObjectPartSizeProp = "s3.object.part.size"
   val S3BlockCacheSizeProp = "s3.block.cache.size"
+  val S3StreamAllocatorPolicyProp = "s3.stream.allocator.policy"
   val S3StreamObjectCompactionIntervalMinutesProp = "s3.stream.object.compaction.interval.minutes"
   val S3StreamObjectCompactionMaxSizeBytesProp = "s3.stream.object.compaction.max.size.bytes"
   val S3ControllerRequestRetryMaxCountProp = "s3.controller.request.retry.max.count"
@@ -519,6 +521,7 @@ object KafkaConfig {
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
   val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
   val S3BlockCacheSizeDoc = "The S3 block cache size in MiB."
+  val S3StreamAllocatorPolicyDoc = "The S3 stream memory allocator policy, supported value: " + ByteBufAllocPolicy.values().mkString(", ")
   val S3StreamObjectCompactionIntervalMinutesDoc = "The S3 stream object compaction task interval in minutes."
   val S3StreamObjectCompactionMaxSizeBytesDoc = "The S3 stream object compaction max size in bytes."
   val S3ControllerRequestRetryMaxCountDoc = "The S3 controller request retry max count."
@@ -1437,6 +1440,7 @@ object KafkaConfig {
       .define(S3ObjectBlockSizeProp, INT, 1048576, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
       .define(S3BlockCacheSizeProp, LONG, 1073741824L, MEDIUM, S3BlockCacheSizeDoc)
+      .define(S3StreamAllocatorPolicyProp, STRING, ByteBufAllocPolicy.POOLED_HEAP.name, MEDIUM, S3StreamAllocatorPolicyDoc)
       .define(S3StreamObjectCompactionIntervalMinutesProp, INT, 30, MEDIUM, S3StreamObjectCompactionIntervalMinutesDoc)
       .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 1073741824L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
       .define(S3ControllerRequestRetryMaxCountProp, INT, Integer.MAX_VALUE, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
@@ -2090,6 +2094,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
   val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
   val s3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
+  val s3StreamAllocatorPolicy = getString(KafkaConfig.S3StreamAllocatorPolicyProp)
   val s3StreamObjectCompactionTaskIntervalMinutes = getInt(KafkaConfig.S3StreamObjectCompactionIntervalMinutesProp)
   val s3StreamObjectCompactionMaxSizeBytes = getLong(KafkaConfig.S3StreamObjectCompactionMaxSizeBytesProp)
   val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)
