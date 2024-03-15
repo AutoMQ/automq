@@ -41,7 +41,10 @@ AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, m
 ## 🔶Why AutoMQ
 
 - **Cloud Native**: Built on cloud service. Every system design decision take cloud service's feature and billing items into consideration to offer best low-latency, scalable, reliable and cost-effective Kafka service on cloud.
-- **High Reliability**: Leverage the features of cloud service to offer RPO of 0 and RTO in seconds. Use S3 express one zone and S3 to offer AZ level disaster recovery on AWS. Use regional SSD and cloud storage to offer AZ level disaster recovery on GCP. Use zone-redundant storage and blob storage to offer AZ level disaster recovery on Azure.
+- **High Reliability**: Leverage the features of cloud service to offer RPO of 0 and RTO in seconds. 
+  - AWS: Use S3 express one zone and S3 to offer AZ level disaster recovery. 
+  - GCP: Use regional SSD and cloud storage to offer AZ level disaster recovery. 
+  - Azure: Use zone-redundant storage and blob storage to offer AZ level disaster recovery.
 - **Serverless**:
   - Auto Scaling: Watch key metrics of cluster and scale in/out automatically to match you workload and achieve pay-as-you-go.
   - Scaling in seconds: Computing layer (broker) is stateless and could scale in/out in seconds, which make AutoMQ true serverless. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
