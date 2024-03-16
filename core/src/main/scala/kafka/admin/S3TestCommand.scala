@@ -46,6 +46,7 @@ object S3TestCommand extends Logging {
         val s3AccessKey = opts.options.valueOf(opts.s3AccessKeyOpt)
         val s3SecretKey = opts.options.valueOf(opts.s3SecretKeyOpt)
         val forcePathStyle = opts.has(opts.forcePathStyleOpt)
+        val tagging = opts.has(opts.tagging)
 
         val context = S3Utils.S3Context.builder()
             .setEndpoint(s3Endpoint)
@@ -53,6 +54,7 @@ object S3TestCommand extends Logging {
             .setBucketName(s3Bucket)
             .setRegion(s3Region)
             .setForcePathStyle(forcePathStyle)
+            .setTagging(tagging)
             .build()
 
         S3Utils.checkS3Access(context)
@@ -82,6 +84,7 @@ object S3TestCommand extends Logging {
             .ofType(classOf[String])
         val forcePathStyleOpt = parser.accepts("force-path-style", "Force path style access. Set it if you are using minio. " +
             "As a result, the bucket name is always left in the request URI and never moved to the host as a sub-domain.")
+        val tagging = parser.accepts("tagging", "Whether to test tagging access.")
 
 
         options = parser.parse(args: _*)
