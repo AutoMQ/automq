@@ -21,12 +21,14 @@ import com.automq.s3shell.sdk.auth.{CredentialsProviderHolder, EnvVariableCreden
 import com.automq.s3shell.sdk.model.S3Url
 
 import java.util.Properties
-import com.automq.stream.s3.{ByteBufAlloc, ByteBufAllocPolicy}
+import com.automq.stream.s3.ByteBufAlloc
+import io.netty.util.internal.PlatformDependent
 import joptsimple.OptionParser
 import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
 import kafka.utils.{Exit, Logging}
+import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.utils.{Java, LoggingSignalHandler, OperatingSystem, Time, Utils}
 import org.apache.kafka.server.util.CommandLineUtils
 import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
@@ -110,7 +112,8 @@ object Kafka extends Logging {
     val config = KafkaConfig.fromProps(props, doLog = false)
     // AutoMQ for Kafka inject start
     // set allocator's policy as early as possible
-    ByteBufAlloc.setPolicy(Enum.valueOf(classOf[ByteBufAllocPolicy], config.s3StreamAllocatorPolicy))
+    ByteBufAlloc.setPolicy(config.s3StreamAllocatorPolicy)
+    adjustKafkaConfig(config)
     // AutoMQ for Kafka inject end
     if (config.requiresZookeeper) {
       new KafkaServer(
@@ -178,4 +181,57 @@ object Kafka extends Logging {
     }
     Exit.exit(0)
   }
+
+  // AutoMQ for Kafka inject start
+  private def adjustKafkaConfig(config: KafkaConfig): Unit = {
+    val s3WALCacheSizeSet = config.s3WALCacheSize > 0
+    val s3BlockCacheSizeSet = config.s3BlockCacheSize > 0
+    if (s3WALCacheSizeSet != s3BlockCacheSizeSet) {
+      throw new ConfigException(s"${KafkaConfig.S3WALCacheSizeProp} and ${KafkaConfig.S3BlockCacheSizeProp} must be set together")
+    }
+
+    val s3AvailableMemory = if (config.s3StreamAllocatorPolicy.isDirect) {
+      PlatformDependent.maxDirectMemory()
+    } else {
+      Runtime.getRuntime.maxMemory() / 2
+    }
+
+    config.s3WALCacheSize = {
+      if (s3WALCacheSizeSet) {
+        config.s3WALCacheSize
+      } else {
+        // for example:
+        // availableMemory = 3G, adjusted = max(3G / 3, (3G - 3G) / 3 * 2) = max(1G, 0) = 1G
+        // availableMemory = 6G, adjusted = max(6G / 3, (6G - 3G) / 3 * 2) = max(2G, 2G) = 2G
+        // availableMemory = 9G, adjusted = max(9G / 3, (9G - 3G) / 3 * 2) = max(3G, 4G) = 4G
+        // availableMemory = 12G, adjusted = max(12G / 3, (12G - 3G) / 3 * 2) = max(4G, 6G) = 6G
+        val adjusted = Math.max(s3AvailableMemory / 3, (s3AvailableMemory - 3L * 1024 * 1024 * 1024) / 3 * 2)
+        info(s"${KafkaConfig.S3WALCacheSizeProp} is not set, using $adjusted as the default value")
+        adjusted
+      }
+    }
+
+    config.s3BlockCacheSize = {
+      if (s3BlockCacheSizeSet) {
+        config.s3BlockCacheSize
+      } else {
+        // it's just 1/2 of {@link KafkaConfig#s3WALCacheSize}
+        val adjusted = Math.max(s3AvailableMemory / 6, (s3AvailableMemory - 3L * 1024 * 1024 * 1024) / 3)
+        info(s"${KafkaConfig.S3BlockCacheSizeProp} is not set, using $adjusted as the default value")
+        adjusted
+      }
+    }
+
+    config.s3WALUploadThreshold = {
+      if (config.s3WALUploadThreshold > 0) {
+        config.s3WALUploadThreshold
+      } else {
+        // it should not be greater than 1/3 of {@link KafkaConfig#s3WALCapacity} and {@link KafkaConfig#s3WALCacheSize}
+        val adjusted = (config.s3WALCapacity / 3) min (config.s3WALCacheSize / 3) min (500L * 1024 * 1024)
+        info(s"${KafkaConfig.S3WALUploadThresholdProp} is not set, using $adjusted as the default value")
+        adjusted
+      }
+    }
+  }
+  // AutoMQ for Kafka inject end
 }
