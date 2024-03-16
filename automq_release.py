@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 import argparse
 
-main_branch = "develop"
+main_branch = "1.0"
 
 
 def fail(msg):
