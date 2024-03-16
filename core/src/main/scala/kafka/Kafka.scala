@@ -222,6 +222,17 @@ object Kafka extends Logging {
         adjusted
       }
     }
+
+    config.s3WALUploadThreshold = {
+      if (config.s3WALUploadThreshold > 0) {
+        config.s3WALUploadThreshold
+      } else {
+        // it should not be greater than 1/3 of {@link KafkaConfig#s3WALCapacity} and {@link KafkaConfig#s3WALCacheSize}
+        val adjusted = (config.s3WALCapacity / 3) min (config.s3WALCacheSize / 3) min (500L * 1024 * 1024)
+        info(s"${KafkaConfig.S3WALUploadThresholdProp} is not set, using $adjusted as the default value")
+        adjusted
+      }
+    }
   }
   // AutoMQ for Kafka inject end
 }
