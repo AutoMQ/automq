@@ -1596,7 +1596,7 @@ object KafkaConfig {
       .define(S3ObjectBlockSizeProp, INT, 1048576, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
       .define(S3BlockCacheSizeProp, LONG, 1073741824L, MEDIUM, S3BlockCacheSizeDoc)
-      .define(S3StreamAllocatorPolicyProp, STRING, ByteBufAllocPolicy.UNPOOLED_HEAP.name, MEDIUM, S3StreamAllocatorPolicyDoc)
+      .define(S3StreamAllocatorPolicyProp, STRING, ByteBufAllocPolicy.POOLED_HEAP.name, MEDIUM, S3StreamAllocatorPolicyDoc)
       .define(S3StreamObjectCompactionIntervalMinutesProp, INT, 30, MEDIUM, S3StreamObjectCompactionIntervalMinutesDoc)
       .define(S3StreamObjectCompactionMaxSizeBytesProp, LONG, 1073741824L, MEDIUM, S3StreamObjectCompactionMaxSizeBytesDoc)
       .define(S3ControllerRequestRetryMaxCountProp, INT, Integer.MAX_VALUE, MEDIUM, S3ControllerRequestRetryMaxCountDoc)
