@@ -168,7 +168,7 @@ def check_before_started(tag, s3stream_tag):
     if starting_branch != main_branch:
         fail(f"You must run this script on the {main_branch} branch. current: {starting_branch}")
     cmd(f"Checking branch {main_branch} up-to-date", f'git diff origin/{main_branch}...{main_branch} --quiet')
-    cmd(f"Checking tag {s3stream_tag} exists", f'git ls-remote --quiet --exit-code --tags git@github.com:AutoMQ/automq-for-rocketmq.git {s3stream_tag}')
+    cmd(f"Checking tag {s3stream_tag} exists", f'git ls-remote --quiet --exit-code --tags git@github.com:AutoMQ/automq-for-kafka.git {s3stream_tag}')
     cmd(f"Checking tag {tag} not exists in remote", f'! git ls-remote --quiet --exit-code --tags origin {tag}', shell=True)
     print(f"Checking tag {tag} not exists in local")
     if tag_exists(tag):
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     parser.add_argument("--kafka-tag", required=True, type=str,
                         help="release tag, which should be in the format of 'x.y.z' or 'x.y.z-rcN', e.g., 1.2.3 or 11.22.33-rc44")
     parser.add_argument("--s3stream-tag", required=True, type=str,
-                        help="related s3stream tag, which should have been pushed to the AutoMQ/automq-for-rocketmq repository,\
+                        help="related s3stream tag, which should have been pushed to the AutoMQ/automq-for-kafka repository,\
                             and should be in the format of 'x.y.z-s3stream' or 'x.y.z-s3stream-rcN', e.g., 1.2.3-s3stream or 11.22.33-s3stream-rc44")
 
     # get tag from command line
