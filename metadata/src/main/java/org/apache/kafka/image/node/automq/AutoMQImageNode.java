@@ -1,0 +1,54 @@
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+package org.apache.kafka.image.node.automq;
+
+import java.util.Arrays;
+import java.util.Collection;
+import org.apache.kafka.image.KVImage;
+import org.apache.kafka.image.S3ObjectsImage;
+import org.apache.kafka.image.S3StreamsMetadataImage;
+import org.apache.kafka.image.node.MetadataNode;
+
+public class AutoMQImageNode implements MetadataNode {
+    public final static String NAME = "automq";
+
+    private final KVImage kvImage;
+    private final S3StreamsMetadataImage streamsMetadataImage;
+    private final S3ObjectsImage objectsImage;
+
+    public AutoMQImageNode(KVImage kvImage, S3StreamsMetadataImage streamsMetadataImage, S3ObjectsImage objectsImage) {
+        this.kvImage = kvImage;
+        this.streamsMetadataImage = streamsMetadataImage;
+        this.objectsImage = objectsImage;
+    }
+
+    @Override
+    public Collection<String> childNames() {
+        return Arrays.asList(KVImageNode.NAME, StreamsImageNode.NAME, NodesImageNode.NAME, ObjectsImageNode.NAME);
+    }
+
+    @Override
+    public MetadataNode child(String name) {
+        switch (name) {
+            case KVImageNode.NAME:
+                return new KVImageNode(kvImage);
+            case StreamsImageNode.NAME:
+                return new StreamsImageNode(streamsMetadataImage.streamsMetadata());
+            case NodesImageNode.NAME:
+                return new NodesImageNode(streamsMetadataImage.nodeWALMetadata());
+            case ObjectsImageNode.NAME:
+                return new ObjectsImageNode(objectsImage);
+            default:
+                return null;
+        }
+    }
+}
