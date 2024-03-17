@@ -152,4 +152,18 @@ public class S3Object implements Comparable<S3Object> {
     public boolean isExpired() {
         return this.s3ObjectState == S3ObjectState.PREPARED && System.currentTimeMillis() > expiredTimeInMs;
     }
+
+    @Override
+    public String toString() {
+        return "S3Object{" +
+            "objectId=" + objectId +
+            ", objectSize=" + objectSize +
+            ", objectKey='" + objectKey + '\'' +
+            ", preparedTimeInMs=" + preparedTimeInMs +
+            ", expiredTimeInMs=" + expiredTimeInMs +
+            ", committedTimeInMs=" + committedTimeInMs +
+            ", markDestroyedTimeInMs=" + markDestroyedTimeInMs +
+            ", s3ObjectState=" + s3ObjectState +
+            '}';
+    }
 }

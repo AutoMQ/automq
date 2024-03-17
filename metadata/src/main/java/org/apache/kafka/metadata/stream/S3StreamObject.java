@@ -106,4 +106,15 @@ public class S3StreamObject {
     public int hashCode() {
         return Objects.hash(objectId);
     }
+
+    @Override
+    public String toString() {
+        return "S3StreamObject{" +
+            "objectId=" + objectId +
+            ", dataTimeInMs=" + dataTimeInMs +
+            ", streamId=" + streamId +
+            ", startOffset=" + startOffset +
+            ", endOffset=" + endOffset +
+            '}';
+    }
 }
