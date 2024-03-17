@@ -37,5 +37,14 @@ public class NoopLimiter implements Limiter {
         @Override
         public void close() {
         }
+
+        @Override
+        public void release(int permits) {
+        }
+
+        @Override
+        public int permitsHeld() {
+            return 0;
+        }
     }
 }
