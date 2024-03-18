@@ -1057,7 +1057,9 @@ class LogManager(logDirs: Seq[File],
    */
   def getOrCreateLog(topicPartition: TopicPartition, isNew: Boolean = false, isFuture: Boolean = false,
                      topicId: Option[Uuid], targetLogDirectoryId: Option[Uuid] = Option.empty, leaderEpoch: Long = 0): UnifiedLog = {
-    logCreationOrDeletionLock synchronized {
+      // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
+      // sequentially operate. So it's safe without lock
+//    logCreationOrDeletionLock synchronized {
       val log = getLog(topicPartition, isFuture).getOrElse {
         // create the log if it has not already been created in another thread
         val now = time.milliseconds()
@@ -1148,7 +1150,7 @@ class LogManager(logDirs: Seq[File],
         }
       }
       log
-    }
+//    }
   }
 
   private[log] def createLogDirectory(logDir: File, logDirName: String): Try[File] = {
