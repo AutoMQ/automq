@@ -596,7 +596,7 @@ object ElasticLog extends Logging {
         if (topicId.isEmpty) {
             namespace + "/" + topicPartition.topic() + "/" + topicPartition.partition()
         } else {
-            namespace + "/" + topicId.toString + "/" + topicPartition.partition()
+            namespace + "/" + topicId.get.toString + "/" + topicPartition.partition()
         }
     }
 
