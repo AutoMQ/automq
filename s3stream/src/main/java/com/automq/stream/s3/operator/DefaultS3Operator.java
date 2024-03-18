@@ -78,16 +78,23 @@ import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.Tagging;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
+import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.utils.FutureUtil.cause;
 
 public class DefaultS3Operator implements S3Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Operator.class);
     public final float maxMergeReadSparsityRate;
     private final String bucket;
+    /**
+     * Tagging for all objects
+     * It can be null if tagging is not enabled.
+     */
+    private final Tagging tagging;
     private final S3AsyncClient writeS3Client;
     private final S3AsyncClient readS3Client;
     private final Semaphore inflightWriteLimiter;
@@ -109,17 +116,19 @@ public class DefaultS3Operator implements S3Operator {
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
-        List<AwsCredentialsProvider> credentialsProviders) {
-        this(endpoint, region, bucket, forcePathStyle, credentialsProviders, null, null, false);
+        List<AwsCredentialsProvider> credentialsProviders, boolean tagging) {
+        this(endpoint, region, bucket, forcePathStyle, credentialsProviders, tagging, null, null, false);
     }
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders,
+        boolean tagging,
         AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
         AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate) {
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
+        this.tagging = tagging ? tagging() : null;
         this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders);
         this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders) : writeS3Client;
         this.inflightWriteLimiter = new Semaphore(50);
@@ -151,6 +160,7 @@ public class DefaultS3Operator implements S3Operator {
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
         this.bucket = bucket;
+        this.tagging = null;
         this.networkInboundBandwidthLimiter = null;
         this.networkOutboundBandwidthLimiter = null;
         this.inflightWriteLimiter = new Semaphore(50);
@@ -366,7 +376,7 @@ public class DefaultS3Operator implements S3Operator {
     private void write0(String path, ByteBuf data, CompletableFuture<Void> cf) {
         TimerUtil timerUtil = new TimerUtil();
         int objectSize = data.readableBytes();
-        PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).build();
+        PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).tagging(tagging).build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
@@ -444,7 +454,7 @@ public class DefaultS3Operator implements S3Operator {
 
     void createMultipartUpload0(String path, CompletableFuture<String> cf) {
         TimerUtil timerUtil = new TimerUtil();
-        CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucket).key(path).build();
+        CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucket).key(path).tagging(tagging).build();
         writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
             S3OperationStats.getInstance().createMultiPartUploadStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(createMultipartUploadResponse.uploadId());
@@ -879,6 +889,7 @@ public class DefaultS3Operator implements S3Operator {
         private String bucket;
         private boolean forcePathStyle;
         private List<AwsCredentialsProvider> credentialsProviders;
+        private boolean tagging;
         private AsyncNetworkBandwidthLimiter inboundLimiter;
         private AsyncNetworkBandwidthLimiter outboundLimiter;
         private boolean readWriteIsolate;
@@ -908,6 +919,11 @@ public class DefaultS3Operator implements S3Operator {
             return this;
         }
 
+        public Builder tagging(boolean tagging) {
+            this.tagging = tagging;
+            return this;
+        }
+
         public Builder inboundLimiter(AsyncNetworkBandwidthLimiter inboundLimiter) {
             this.inboundLimiter = inboundLimiter;
             return this;
@@ -924,7 +940,7 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         public DefaultS3Operator build() {
-            return new DefaultS3Operator(endpoint, region, bucket, forcePathStyle, credentialsProviders,
+            return new DefaultS3Operator(endpoint, region, bucket, forcePathStyle, credentialsProviders, tagging,
                 inboundLimiter, outboundLimiter, readWriteIsolate);
         }
     }

@@ -33,6 +33,7 @@ public class Config {
     private int streamSplitSize = 16777216;
     private int objectBlockSize = 1048576;
     private int objectPartSize = 16777216;
+    private boolean objectTagging = false;
     private long blockCacheSize = 100 * 1024 * 1024;
     private int streamObjectCompactionIntervalMinutes = 60;
     private long streamObjectCompactionMaxSizeBytes = 10737418240L;
@@ -133,6 +134,10 @@ public class Config {
 
     public int objectPartSize() {
         return objectPartSize;
+    }
+
+    public boolean objectTagging() {
+        return objectTagging;
     }
 
     public long blockCacheSize() {
@@ -304,6 +309,11 @@ public class Config {
 
     public Config objectPartSize(int s3ObjectPartSize) {
         this.objectPartSize = s3ObjectPartSize;
+        return this;
+    }
+
+    public Config objectTagging(boolean s3ObjectTagging) {
+        this.objectTagging = s3ObjectTagging;
         return this;
     }
 

@@ -2095,7 +2095,7 @@ public final class QuorumController implements Controller {
             s3Operator = new MemoryS3Operator();
         } else {
             s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), streamConfig.forcePathStyle(),
-                List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()));
+                List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()), streamConfig.objectTagging());
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
