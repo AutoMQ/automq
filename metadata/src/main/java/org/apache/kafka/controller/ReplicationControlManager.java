@@ -2120,9 +2120,9 @@ public class ReplicationControlManager {
         if (target.replicas() == null) {
             record = cancelPartitionReassignment(topicName, tp, part);
         } else if (ElasticStreamSwitch.isEnabled()) {
-            record = changePartitionReassignment(tp, part, target);
+            record = changePartitionReassignmentV2(tp, part, target);
         } else {
-            record = changePartitionReassignment0(tp, part, target);
+            record = changePartitionReassignment(tp, part, target);
         }
         record.ifPresent(records::add);
     }
@@ -2163,85 +2163,6 @@ public class ReplicationControlManager {
             build();
     }
 
-    // AutoMQ for Kafka inject start
-    Optional<ApiMessageAndVersion> changePartitionReassignment(TopicIdPartition tp,
-                                                               PartitionRegistration part,
-                                                               ReassignablePartition target) {
-
-        if (target.replicas().size() != 1) {
-            throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" + tp + "] replicas[" + target.replicas() + "]");
-        }
-
-        if (!this.clusterControl.isActive(target.replicas().get(0))) {
-            throw new InvalidReplicaAssignmentException("Unable to reassign " +
-                    "partition: " + tp + " to " +
-                    "broker " + target.replicas().get(0) + " because it is not currently active.");
-        }
-
-        // Check that the requested partition assignment is valid.
-        validateManualPartitionAssignment(target.replicas(), OptionalInt.empty());
-
-        List<Integer> currentReplicas = Replicas.toList(part.replicas);
-        // No need to change the assignment if it is already the same.
-        if (Objects.equals(currentReplicas, target.replicas())) {
-            // The requested assignment is the same as the current assignment.
-            return Optional.empty();
-        }
-
-        PartitionChangeBuilder builder = new PartitionChangeBuilder(part,
-                tp.topicId(),
-                tp.partitionId(),
-                // no leader election
-                // clusterControl::isActive,
-                brokerId -> false,
-                featureControl.metadataVersion(),
-                getTopicEffectiveMinIsr(topics.get(tp.topicId()).name.toString())
-        );
-        builder.setTargetNode(target.replicas().get(0));
-        TopicControlInfo topicControlInfo = topics.get(tp.topicId());
-        if (topicControlInfo == null) {
-            log.warn("unknown topicId[{}]", tp.topicId());
-        } else {
-            TopicPartition topicPartition = new TopicPartition(topicControlInfo.name, tp.partitionId());
-            addPartitionToReElectTimeouts(topicPartition);
-        }
-        return builder.build();
-    }
-
-    /**
-     * Add partition to re-elect leader timeout.
-     * Generally, this method is invoked to ensure that the partition leader can be re-elected even if the original broker is out of communication.
-     * @param topicPartition the topic partition that needs to be re-elected
-     */
-    private void addPartitionToReElectTimeouts(TopicPartition topicPartition) {
-        Timeout timeout =  timer.newTimeout(t -> {
-            partitionReElectTimeouts.remove(topicPartition);
-            if (quorumController != null) {
-                tryElectLeader(topicPartition);
-            }
-        }, PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS, TimeUnit.SECONDS);
-        partitionReElectTimeouts.put(topicPartition, timeout);
-    }
-
-    private void tryElectLeader(TopicPartition topicPartition) {
-        // only use deadlineNs, so it's ok to use null for other params
-        ControllerRequestContext context = new ControllerRequestContext(null, null, OptionalLong.empty());
-        ElectLeadersRequestData data = new ElectLeadersRequestData();
-        TopicPartitions topicPartitions = new TopicPartitions();
-        topicPartitions.setTopic(topicPartition.topic());
-        topicPartitions.partitions().add(topicPartition.partition());
-        data.setTopicPartitions(new ElectLeadersRequestData.TopicPartitionsCollection(Collections.singletonList(topicPartitions).listIterator()));
-        quorumController.electLeaders(context, data).whenComplete((resp, ex) -> {
-            if (ex != null) {
-                log.warn("force elect partition[{}] leader fail", topicPartition, ex);
-            } else {
-                log.info("force elect partition[{}] leader done, response[{}]", topicPartition, resp);
-            }
-        });
-        log.info("partition[{}] reassignment re-elect leader timeout, force async elect leader again", topicPartition);
-    }
-    // AutoMQ for Kafka inject end
-
     /**
      * Apply a given partition reassignment. In general a partition reassignment goes
      * through several stages:
@@ -2270,7 +2191,7 @@ public class ReplicationControlManager {
      * @return                  The ChangePartitionRecord for the new partition assignment,
      *                          or empty if no change is needed.
      */
-    Optional<ApiMessageAndVersion> changePartitionReassignment0(TopicIdPartition tp,
+    Optional<ApiMessageAndVersion> changePartitionReassignment(TopicIdPartition tp,
                                                                PartitionRegistration part,
                                                                ReassignablePartition target) {
         // Check that the requested partition assignment is valid.
@@ -2535,4 +2456,77 @@ public class ReplicationControlManager {
             return clusterControl.hasOnlineDir(brokerId, replicaDirectory);
         }
     }
+
+    // AutoMQ inject start
+    Optional<ApiMessageAndVersion> changePartitionReassignmentV2(TopicIdPartition tp,
+        PartitionRegistration part,
+        ReassignablePartition target) {
+
+        if (target.replicas().size() != 1) {
+            throw new InvalidReplicaAssignmentException("elastic stream only support replicas = 1, partition[" + tp + "] replicas[" + target.replicas() + "]");
+        }
+        // Check that the requested partition assignment is valid.
+        validateManualPartitionAssignment(target.replicas(), OptionalInt.empty());
+
+        List<Integer> currentReplicas = Replicas.toList(part.replicas);
+        // No need to change the assignment if it is already the same.
+        if (Objects.equals(currentReplicas, target.replicas())) {
+            // The requested assignment is the same as the current assignment.
+            return Optional.empty();
+        }
+
+        PartitionChangeBuilder builder = new PartitionChangeBuilder(part,
+            tp.topicId(),
+            tp.partitionId(),
+            // no leader election
+            brokerId -> false,
+            featureControl.metadataVersion(),
+            getTopicEffectiveMinIsr(topics.get(tp.topicId()).name.toString())
+        );
+        builder.setZkMigrationEnabled(clusterControl.zkRegistrationAllowed());
+        builder.setEligibleLeaderReplicasEnabled(isElrEnabled());
+        builder.setTargetNode(target.replicas().get(0));
+        TopicControlInfo topicControlInfo = topics.get(tp.topicId());
+        if (topicControlInfo == null) {
+            log.warn("unknown topicId[{}]", tp.topicId());
+        } else {
+            TopicPartition topicPartition = new TopicPartition(topicControlInfo.name, tp.partitionId());
+            addPartitionToReElectTimeouts(topicPartition);
+        }
+        return builder.setDefaultDirProvider(clusterDescriber).build();
+    }
+
+    /**
+     * Add partition to re-elect leader timeout.
+     * Generally, this method is invoked to ensure that the partition leader can be re-elected even if the original broker is out of communication.
+     * @param topicPartition the topic partition that needs to be re-elected
+     */
+    private void addPartitionToReElectTimeouts(TopicPartition topicPartition) {
+        Timeout timeout =  timer.newTimeout(t -> {
+            partitionReElectTimeouts.remove(topicPartition);
+            if (quorumController != null) {
+                tryElectLeader(topicPartition);
+            }
+        }, PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS, TimeUnit.SECONDS);
+        partitionReElectTimeouts.put(topicPartition, timeout);
+    }
+
+    private void tryElectLeader(TopicPartition topicPartition) {
+        // only use deadlineNs, so it's ok to use null for other params
+        ControllerRequestContext context = new ControllerRequestContext(null, null, OptionalLong.empty());
+        ElectLeadersRequestData data = new ElectLeadersRequestData();
+        TopicPartitions topicPartitions = new TopicPartitions();
+        topicPartitions.setTopic(topicPartition.topic());
+        topicPartitions.partitions().add(topicPartition.partition());
+        data.setTopicPartitions(new ElectLeadersRequestData.TopicPartitionsCollection(Collections.singletonList(topicPartitions).listIterator()));
+        quorumController.electLeaders(context, data).whenComplete((resp, ex) -> {
+            if (ex != null) {
+                log.warn("force elect partition[{}] leader fail", topicPartition, ex);
+            } else {
+                log.info("force elect partition[{}] leader done, response[{}]", topicPartition, resp);
+            }
+        });
+        log.info("partition[{}] reassignment re-elect leader timeout, force async elect leader again", topicPartition);
+    }
+    // AutoMQ inject end
 }
