@@ -1012,6 +1012,7 @@ class ElasticReplicaManager(
         val leaderChangedPartitions = new mutable.HashSet[Partition]
         val followerChangedPartitions = new mutable.HashSet[Partition]
 
+        val directoryIds = localChanges.directoryIds().asScala
         def doPartitionLeadingOrFollowing(onlyLeaderChange: Boolean): Unit = {
           stateChangeLogger.info(s"Transitioning partition(s) info: $localChanges")
           if (!localChanges.leaders.isEmpty) {
@@ -1026,7 +1027,7 @@ class ElasticReplicaManager(
                   try {
                     val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
                     leader += (tp -> info)
-                    applyLocalLeadersDelta(leaderChangedPartitions, newImage, delta, lazyOffsetCheckpoints, localChanges.leaders.asScala, localChanges.directoryIds.asScala)
+                    applyLocalLeadersDelta(leaderChangedPartitions, newImage, delta, lazyOffsetCheckpoints, leader, directoryIds)
                   } catch {
                     case t: Throwable => stateChangeLogger.error(s"Transitioning partition(s) fail: $localChanges", t)
                   } finally {
