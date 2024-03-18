@@ -191,7 +191,11 @@ public class S3Utils {
         private CompletableFuture<String> createMultipartUpload(S3AsyncClient writeS3Client, String bucketName,
             String path) {
             CompletableFuture<String> cf = new CompletableFuture<>();
-            CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucketName).key(path).tagging(tagging).build();
+            CreateMultipartUploadRequest.Builder builder = CreateMultipartUploadRequest.builder().bucket(bucketName).key(path);
+            if (null != tagging) {
+                builder.tagging(tagging);
+            }
+            CreateMultipartUploadRequest request = builder.build();
             writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
                 cf.complete(createMultipartUploadResponse.uploadId());
             }).exceptionally(ex -> {
@@ -294,7 +298,11 @@ public class S3Utils {
 
         private void writeObject(S3AsyncClient writeS3Client, String path, ByteBuffer data, CompletableFuture<Void> cf,
             String bucket) {
-            PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).tagging(tagging).build();
+            PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
+            if (null != tagging) {
+                builder.tagging(tagging);
+            }
+            PutObjectRequest request = builder.build();
             AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data);
             writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
                 cf.complete(null);
