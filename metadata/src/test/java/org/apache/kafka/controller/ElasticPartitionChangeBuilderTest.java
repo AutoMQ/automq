@@ -30,8 +30,9 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+// TODO: add test for AutoMQ partition change
 @Tag("S3Unit")
-public class PartitionChangeBuilderS3Test {
+public class ElasticPartitionChangeBuilderTest {
     @BeforeEach
     public void setUp() {
         ElasticStreamSwitch.setSwitch(true);

@@ -2042,9 +2042,6 @@ public class ReplicationControlManager {
             }
             // AutoMQ for Kafka inject end
 
-            builder.setTargetIsr(Replicas.toList(
-                Replicas.copyWithout(partition.isr, brokerToRemove)));
-
             builder.setDefaultDirProvider(clusterDescriber)
                     .build().ifPresent(records::add);
         }
@@ -2529,6 +2526,10 @@ public class ReplicationControlManager {
         public boolean test(int brokerId) {
             if (!isAcceptableLeader.test(brokerId)) {
                 return false;
+            }
+            if (ElasticStreamSwitch.isEnabled()) {
+                // AutoMQ don't have local files
+                return true;
             }
             Uuid replicaDirectory = partition.directory(brokerId);
             return clusterControl.hasOnlineDir(brokerId, replicaDirectory);
