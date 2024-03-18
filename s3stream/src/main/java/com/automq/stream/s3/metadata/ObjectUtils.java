@@ -11,9 +11,13 @@
 
 package com.automq.stream.s3.metadata;
 
+import software.amazon.awssdk.services.s3.model.Tag;
+import software.amazon.awssdk.services.s3.model.Tagging;
+
 public class ObjectUtils {
     public static final long NOOP_OBJECT_ID = -1L;
     public static final long NOOP_OFFSET = -1L;
+    private static final String OBJECT_TAG_KEY = "clusterID";
     private static String namespace = "DEFAULT";
 
     public static void setNamespace(String namespace) {
@@ -60,4 +64,11 @@ public class ObjectUtils {
         }
     }
 
+    /**
+     * Common tagging for all objects, identifying the namespace
+     */
+    public static Tagging tagging() {
+        Tag tag = Tag.builder().key(OBJECT_TAG_KEY).value(namespace).build();
+        return Tagging.builder().tagSet(tag).build();
+    }
 }

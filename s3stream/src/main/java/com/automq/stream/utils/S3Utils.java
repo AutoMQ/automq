@@ -44,6 +44,8 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.Tag;
+import software.amazon.awssdk.services.s3.model.Tagging;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
@@ -94,11 +96,13 @@ public class S3Utils {
     private static abstract class S3CheckTask implements AutoCloseable {
         protected final S3AsyncClient client;
         protected final String bucketName;
+        protected final Tagging tagging;
         private final String taskName;
 
         public S3CheckTask(S3Context context, String taskName) {
             this.client = newS3AsyncClient(context.endpoint, context.region, context.forcePathStyle, context.credentialsProviders);
             this.bucketName = context.bucketName;
+            this.tagging = context.tagging ? Tagging.builder().tagSet(Tag.builder().key("task").value(taskName).build()).build() : null;
             this.taskName = taskName;
         }
 
@@ -132,6 +136,7 @@ public class S3Utils {
     // This task is used to test s3 multipart upload
     private static class S3MultipartUploadTestTask extends ObjectOperationTask {
         private Random random = new Random();
+
         public S3MultipartUploadTestTask(S3Context context) {
             super(context, S3MultipartUploadTestTask.class.getSimpleName());
         }
@@ -186,7 +191,7 @@ public class S3Utils {
         private CompletableFuture<String> createMultipartUpload(S3AsyncClient writeS3Client, String bucketName,
             String path) {
             CompletableFuture<String> cf = new CompletableFuture<>();
-            CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucketName).key(path).build();
+            CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucketName).key(path).tagging(tagging).build();
             writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
                 cf.complete(createMultipartUploadResponse.uploadId());
             }).exceptionally(ex -> {
@@ -289,7 +294,7 @@ public class S3Utils {
 
         private void writeObject(S3AsyncClient writeS3Client, String path, ByteBuffer data, CompletableFuture<Void> cf,
             String bucket) {
-            PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).build();
+            PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).tagging(tagging).build();
             AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data);
             writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
                 cf.complete(null);
@@ -355,15 +360,18 @@ public class S3Utils {
         private final String bucketName;
         private final String region;
         private final boolean forcePathStyle;
+        private final boolean tagging;
 
         public S3Context(String endpoint, List<AwsCredentialsProvider> credentialsProviders, String bucketName,
             String region,
-            boolean forcePathStyle) {
+            boolean forcePathStyle,
+            boolean tagging) {
             this.endpoint = endpoint;
             this.credentialsProviders = credentialsProviders;
             this.bucketName = bucketName;
             this.region = region;
             this.forcePathStyle = forcePathStyle;
+            this.tagging = tagging;
         }
 
         public static Builder builder() {
@@ -407,6 +415,9 @@ public class S3Utils {
             if (!forcePathStyle) {
                 advises.add("forcePathStyle is set as false. Please set it as true if you are using minio.");
             }
+            if (tagging) {
+                advises.add("currently, it's only supported in AWS S3. Please make sure your object storage service supports tagging.");
+            }
             return advises;
         }
 
@@ -418,6 +429,7 @@ public class S3Utils {
                 ", bucketName='" + bucketName + '\'' +
                 ", region='" + region + '\'' +
                 ", forcePathStyle=" + forcePathStyle +
+                ", tagging=" + tagging +
                 '}';
         }
 
@@ -427,6 +439,7 @@ public class S3Utils {
             private String bucketName;
             private String region;
             private boolean forcePathStyle;
+            private boolean tagging;
 
             public Builder setEndpoint(String endpoint) {
                 this.endpoint = endpoint;
@@ -453,8 +466,13 @@ public class S3Utils {
                 return this;
             }
 
+            public Builder setTagging(boolean tagging) {
+                this.tagging = tagging;
+                return this;
+            }
+
             public S3Context build() {
-                return new S3Context(endpoint, credentialsProviders, bucketName, region, forcePathStyle);
+                return new S3Context(endpoint, credentialsProviders, bucketName, region, forcePathStyle, tagging);
             }
         }
 
