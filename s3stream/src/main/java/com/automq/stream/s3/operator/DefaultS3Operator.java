@@ -376,7 +376,11 @@ public class DefaultS3Operator implements S3Operator {
     private void write0(String path, ByteBuf data, CompletableFuture<Void> cf) {
         TimerUtil timerUtil = new TimerUtil();
         int objectSize = data.readableBytes();
-        PutObjectRequest request = PutObjectRequest.builder().bucket(bucket).key(path).tagging(tagging).build();
+        PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
+        if (null != tagging) {
+            builder.tagging(tagging);
+        }
+        PutObjectRequest request = builder.build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
@@ -454,7 +458,11 @@ public class DefaultS3Operator implements S3Operator {
 
     void createMultipartUpload0(String path, CompletableFuture<String> cf) {
         TimerUtil timerUtil = new TimerUtil();
-        CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder().bucket(bucket).key(path).tagging(tagging).build();
+        CreateMultipartUploadRequest.Builder builder = CreateMultipartUploadRequest.builder().bucket(bucket).key(path);
+        if (null != tagging) {
+            builder.tagging(tagging);
+        }
+        CreateMultipartUploadRequest request = builder.build();
         writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
             S3OperationStats.getInstance().createMultiPartUploadStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(createMultipartUploadResponse.uploadId());
