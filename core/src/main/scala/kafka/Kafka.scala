@@ -182,8 +182,8 @@ object Kafka extends Logging {
     Exit.exit(0)
   }
 
-  // AutoMQ for Kafka inject start
-  private def adjustKafkaConfig(props: Properties): Unit = {
+  // AutoMQ inject start
+  def adjustKafkaConfig(props: Properties): Unit = {
     // Only for convenient, please do not modify it.
     val tmpConfig = KafkaConfig.fromProps(props, doLog = false)
 
@@ -239,5 +239,5 @@ object Kafka extends Logging {
     }
     props.setProperty(KafkaConfig.S3WALUploadThresholdProp, s3WALUploadThreshold.toString)
   }
-  // AutoMQ for Kafka inject end
+  // AutoMQ inject end
 }
