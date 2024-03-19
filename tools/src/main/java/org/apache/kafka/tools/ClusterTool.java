@@ -23,6 +23,8 @@ import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
 import net.sourceforge.argparse4j.inf.Subparsers;
 import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.GetNextNodeIdOptions;
+import org.apache.kafka.clients.admin.GetNextNodeIdResult;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
@@ -68,7 +70,13 @@ public class ClusterTool {
                 .help("Get information about the ID of a cluster.");
         Subparser unregisterParser = subparsers.addParser("unregister")
                 .help("Unregister a broker.");
-        for (Subparser subpparser : Arrays.asList(clusterIdParser, unregisterParser)) {
+
+        // AutoMQ inject start
+        Subparser nodeIdParser = subparsers.addParser("next-node-id")
+                .help("Get next available node id of the cluster.");
+        // AutoMQ inject end
+
+        for (Subparser subpparser : Arrays.asList(clusterIdParser, unregisterParser, nodeIdParser)) {
             MutuallyExclusiveGroup connectionOptions = subpparser.addMutuallyExclusiveGroup().required(true);
             connectionOptions.addArgument("--bootstrap-server", "-b")
                     .action(store())
@@ -108,6 +116,15 @@ public class ClusterTool {
                 }
                 break;
             }
+            // AutoMQ inject start
+            case "next-node-id": {
+                try (Admin adminClient = Admin.create(properties)) {
+                    nextNodeIdCommand(System.out, adminClient);
+                }
+                break;
+            }
+            // AutoMQ inject end
+
             default:
                 throw new RuntimeException("Unknown command " + command);
         }
@@ -135,4 +152,11 @@ public class ClusterTool {
             }
         }
     }
+
+    // AutoMQ inject start
+    static void nextNodeIdCommand(PrintStream stream, Admin adminClient) throws Exception {
+        GetNextNodeIdResult rst = adminClient.getNextNodeId(new GetNextNodeIdOptions());
+        stream.println("next node id: " + rst.nodeId().get());
+    }
+    // AutoMQ inject end
 }
