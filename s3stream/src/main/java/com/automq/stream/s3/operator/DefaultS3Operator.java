@@ -108,7 +108,7 @@ public class DefaultS3Operator implements S3Operator {
         "s3-read-limiter-cb-executor", true, LOGGER);
     private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-limiter-cb-executor", true, LOGGER);
-    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(8,
         "s3-read-cb-executor", true, LOGGER);
     private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-cb-executor", true, LOGGER);
