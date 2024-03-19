@@ -33,3 +33,48 @@ rules:
         metric: kafka.io.threads.idle.rate.1m
         type: gauge
         desc: The fraction of time the io threads are idle for the last minute
+  # KRaft Metrics
+  - bean: kafka.server:type=raft-metrics
+    mapping:
+      current-leader:
+        metric: kafka.server.kraft.current.leader
+        type: gauge
+        desc: The current leader of the cluster
+      current-epoch:
+        metric: kafka.server.kraft.current.epoch
+        type: gauge
+        desc: The current quorum epoch of the cluster
+      high-watermark:
+        metric: kafka.server.kraft.high.watermark
+        type: gauge
+        desc: The high watermark maintained on this member; -1 if it is unknown
+      log-end-offset:
+        metric: kafka.server.kraft.log.end.offset
+        type: gauge
+        desc: The current raft log end offset.
+      log-end-epoch:
+        metric: kafka.server.kraft.log.end.epoch
+        type: gauge
+        desc: The current raft log end epoch.
+      commit-latency-avg:
+        metric: kafka.server.kraft.commit.latency.avg
+        type: gauge
+        unit: ms
+        desc: The average time in milliseconds to commit an entry in the raft log.
+      commit-latency-max:
+        metric: kafka.server.kraft.commit.latency.max
+        type: gauge
+        unit: ms
+        desc: The maximum time in milliseconds to commit an entry in the raft log.
+      fetch-records-rate:
+        metric: kafka.server.kraft.fetch.records.rate
+        type: gauge
+        desc: The average number of records fetched from the leader of the raft quorum.
+      append-records-rate:
+        metric: kafka.server.kraft.append.records.rate
+        type: gauge
+        desc: The average number of records appended per sec as the leader of the raft quorum.
+      poll-idle-ratio-avg:
+        metric: kafka.server.kraft.poll.idle.ratio.avg
+        type: gauge
+        desc: The average fraction of time the client's poll() is idle as opposed to waiting for the user code to process records.
