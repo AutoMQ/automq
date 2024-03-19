@@ -22,7 +22,7 @@ import org.slf4j.Logger;
 
 public class ReadAheadManager implements BlockCache.CacheEvictListener {
     private static final Logger LOGGER = new LogContext("[S3BlockCache] ").logger(ReadAheadManager.class);
-    private static final Integer MAX_READ_AHEAD_AGENT_NUM = 1024;
+    private static final Integer MAX_READ_AHEAD_AGENT_NUM = 2048;
     // <streamId, <lastReadOffset, ReadAheadAgent>>
     private final Map<Long, NavigableMap<Long, ReadAheadAgent>> readAheadAgentMap;
     private final LRUCache<ReadAheadAgent, Void> readAheadAgentLRUCache = new LRUCache<>();
