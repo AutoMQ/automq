@@ -20,7 +20,7 @@ import kafka.server.ReplicaManager
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException
-import org.apache.kafka.common.record.{ControlRecordType, FileRecords, MemoryRecords}
+import org.apache.kafka.common.record.{AbstractRecords, ControlRecordType, FileRecords, MemoryRecords}
 import org.apache.kafka.common.requests.TransactionResult
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.coordinator.group.runtime.CoordinatorLoader.{Deserializer, LoadSummary, UnknownRecordTypeException}
@@ -133,6 +133,10 @@ class CoordinatorLoaderImpl[T](
 
                 fileRecords.readInto(buffer, 0)
                 MemoryRecords.readableRecords(buffer)
+
+              // AutoMQ inject start
+              case others :AbstractRecords => others
+              // AutoMQ inject end
             }
 
             memoryRecords.batches.forEach { batch =>
