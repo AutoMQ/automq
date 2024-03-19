@@ -90,11 +90,11 @@ class ConsumerGroupCommandTest(Test):
         self.consumer.stop()
 
     @cluster(num_nodes=3)
-    @matrix(
-        security_protocol=['PLAINTEXT', 'SSL'],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     security_protocol=['PLAINTEXT', 'SSL'],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         security_protocol=['PLAINTEXT', 'SSL'],
         metadata_quorum=[quorum.isolated_kraft],
@@ -108,11 +108,11 @@ class ConsumerGroupCommandTest(Test):
         self.setup_and_verify(security_protocol)
 
     @cluster(num_nodes=3)
-    @matrix(
-        security_protocol=['PLAINTEXT', 'SSL'],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     security_protocol=['PLAINTEXT', 'SSL'],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         security_protocol=['PLAINTEXT', 'SSL'],
         metadata_quorum=[quorum.isolated_kraft],

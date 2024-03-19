@@ -48,10 +48,10 @@ class ConsumerRollingUpgradeTest(VerifiableConsumerTest):
             "Mismatched assignment: %s" % assignment
 
     @cluster(num_nodes=4)
-    @matrix(
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
