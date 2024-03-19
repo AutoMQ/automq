@@ -18,13 +18,14 @@
 package kafka.server
 
 import com.automq.stream.s3.ByteBufAllocPolicy
+import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.AutoBalancerControllerConfig
 
 import java.{lang, util}
 import java.util.concurrent.TimeUnit
 import java.util.{Collections, Properties}
 import kafka.cluster.EndPoint
-import kafka.server.KafkaConfig.{ControllerListenerNamesProp, ListenerSecurityProtocolMapProp}
+import kafka.server.KafkaConfig.{ControllerListenerNamesProp, ListenerSecurityProtocolMapProp, S3BlockCacheSizeProp, S3WALCacheSizeProp, S3WALUploadThresholdProp}
 import kafka.utils.CoreUtils.parseCsvList
 import kafka.utils.{CoreUtils, Logging}
 import kafka.utils.Implicits._
@@ -2081,6 +2082,75 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val quorumRetryBackoffMs = getInt(RaftConfig.QUORUM_RETRY_BACKOFF_MS_CONFIG)
 
     // AutoMQ inject start
+  /**
+   * Adjust S3 configurations based on memory resource.
+   *
+   * @return (s3WALCacheSize, s3BlockCacheSize, s3WALUploadThreshold)
+   */
+  private def adjustS3Configs(s3StreamAllocatorPolicy: ByteBufAllocPolicy, s3WALCapacity: Long): (Long, Long, Long) = {
+    val rawS3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
+    val rawS3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
+    val rawS3WALUploadThreshold = getLong(KafkaConfig.S3WALUploadThresholdProp)
+
+    val s3WALCacheSizeSet = rawS3WALCacheSize > 0
+    val s3BlockCacheSizeSet = rawS3BlockCacheSize > 0
+    val s3WALUploadThresholdSet = rawS3WALUploadThreshold > 0
+    if (s3WALCacheSizeSet != s3BlockCacheSizeSet) {
+      throw new ConfigException(s"${S3WALCacheSizeProp} and ${S3BlockCacheSizeProp} must be set together")
+    }
+
+    val s3AvailableMemory = if (s3StreamAllocatorPolicy.isDirect) {
+      PlatformDependent.maxDirectMemory()
+    } else {
+      Runtime.getRuntime.maxMemory() / 2
+    }
+
+    val s3WALCacheSize: Long = {
+      if (s3WALCacheSizeSet) {
+        rawS3WALCacheSize
+      } else {
+        // for example:
+        // availableMemory = 3G, adjusted = max(3G / 3, (3G - 3G) / 3 * 2) = max(1G, 0) = 1G
+        // availableMemory = 6G, adjusted = max(6G / 3, (6G - 3G) / 3 * 2) = max(2G, 2G) = 2G
+        // availableMemory = 9G, adjusted = max(9G / 3, (9G - 3G) / 3 * 2) = max(3G, 4G) = 4G
+        // availableMemory = 12G, adjusted = max(12G / 3, (12G - 3G) / 3 * 2) = max(4G, 6G) = 6G
+        val adjusted = Math.max(s3AvailableMemory / 3, (s3AvailableMemory - 3L * 1024 * 1024 * 1024) / 3 * 2)
+        if (doLog) {
+          info(s"$S3WALCacheSizeProp is not set, using $adjusted as the default value")
+        }
+        adjusted
+      }
+    }
+
+    val s3BlockCacheSize: Long = {
+      if (s3BlockCacheSizeSet) {
+        rawS3BlockCacheSize
+      } else {
+        // it's just 1/2 of s3WALCacheSize
+        val adjusted = Math.max(s3AvailableMemory / 6, (s3AvailableMemory - 3L * 1024 * 1024 * 1024) / 3)
+        if (doLog) {
+          info(s"$S3BlockCacheSizeProp is not set, using $adjusted as the default value")
+        }
+        adjusted
+      }
+    }
+
+    val s3WALUploadThreshold: Long = {
+      if (s3WALUploadThresholdSet) {
+        rawS3WALUploadThreshold
+      } else {
+        // it should not be greater than 1/3 of s3WALCapacity, 1/3 of s3WALCacheSize and 500M
+        val adjusted = (s3WALCapacity / 3) min (s3WALCacheSize / 3) min (500L * 1024 * 1024)
+        if (doLog) {
+          info(s"$S3WALUploadThresholdProp is not set, using $adjusted as the default value")
+        }
+        adjusted
+      }
+    }
+
+    (s3WALCacheSize, s3BlockCacheSize, s3WALUploadThreshold)
+  }
+
   val elasticStreamEnabled = getBoolean(KafkaConfig.ElasticStreamEnableProp)
   val elasticStreamEndpoint = getString(KafkaConfig.ElasticStreamEndpointProp)
   val elasticStreamNamespace = getString(KafkaConfig.ElasticStreamNamespaceProp)
@@ -2090,17 +2160,15 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3PathStyle = getBoolean(KafkaConfig.S3PathStyleProp)
   val s3Bucket = getString(KafkaConfig.S3BucketProp)
   val s3WALPath = getString(KafkaConfig.S3WALPathProp)
-  var s3WALCacheSize = getLong(KafkaConfig.S3WALCacheSizeProp)
   val s3WALCapacity = getLong(KafkaConfig.S3WALCapacityProp)
   val s3WALThread = getInt(KafkaConfig.S3WALThreadProp)
   val s3WALIOPS = getInt(KafkaConfig.S3WALIOPSProp)
-  var s3WALUploadThreshold = getLong(KafkaConfig.S3WALUploadThresholdProp)
   val s3StreamSplitSize = getInt(KafkaConfig.S3StreamSplitSizeProp)
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
   val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
   val s3ObjectTagging = getBoolean(KafkaConfig.S3ObjectTaggingProp)
-  var s3BlockCacheSize = getLong(KafkaConfig.S3BlockCacheSizeProp)
   val s3StreamAllocatorPolicy = Enum.valueOf(classOf[ByteBufAllocPolicy], getString(KafkaConfig.S3StreamAllocatorPolicyProp))
+  val (s3WALCacheSize, s3BlockCacheSize, s3WALUploadThreshold) = adjustS3Configs(s3StreamAllocatorPolicy, s3WALCapacity)
   val s3StreamObjectCompactionTaskIntervalMinutes = getInt(KafkaConfig.S3StreamObjectCompactionIntervalMinutesProp)
   val s3StreamObjectCompactionMaxSizeBytes = getLong(KafkaConfig.S3StreamObjectCompactionMaxSizeBytesProp)
   val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)
