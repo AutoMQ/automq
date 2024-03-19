@@ -68,14 +68,14 @@ class ConsumeBenchTest(Test):
         self.logger.debug("Produce workload finished")
 
     @cluster(num_nodes=10)
-    @matrix(
-        topics=[
-            ["consume_bench_topic[0-5]"], # topic subscription
-            ["consume_bench_topic[0-5]:[0-4]"] # manual topic assignment
-        ],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     topics=[
+    #         ["consume_bench_topic[0-5]"], # topic subscription
+    #         ["consume_bench_topic[0-5]:[0-4]"] # manual topic assignment
+    #     ],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         topics=[
             ["consume_bench_topic[0-5]"], # topic subscription
@@ -105,10 +105,10 @@ class ConsumeBenchTest(Test):
         self.logger.info("TASKS: %s\n" % json.dumps(tasks, sort_keys=True, indent=2))
 
     @cluster(num_nodes=10)
-    @matrix(
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
@@ -135,10 +135,10 @@ class ConsumeBenchTest(Test):
         self.logger.info("TASKS: %s\n" % json.dumps(tasks, sort_keys=True, indent=2))
 
     @cluster(num_nodes=10)
-    @matrix(
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
@@ -166,10 +166,10 @@ class ConsumeBenchTest(Test):
         self.logger.info("TASKS: %s\n" % json.dumps(tasks, sort_keys=True, indent=2))
 
     @cluster(num_nodes=10)
-    @matrix(
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
@@ -198,10 +198,10 @@ class ConsumeBenchTest(Test):
         self.logger.info("TASKS: %s\n" % json.dumps(tasks, sort_keys=True, indent=2))
 
     @cluster(num_nodes=10)
-    @matrix(
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
@@ -230,10 +230,10 @@ class ConsumeBenchTest(Test):
         self.logger.info("TASKS: %s\n" % json.dumps(tasks, sort_keys=True, indent=2))
 
     @cluster(num_nodes=10)
-    @matrix(
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]

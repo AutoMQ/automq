@@ -1642,7 +1642,7 @@ public class CoordinatorRuntime<S extends CoordinatorShard<U>, U> implements Aut
                                             }
                                         } catch (Throwable ex) {
                                             log.error("Failed to load metadata from {} with epoch {} due to {}.",
-                                                tp, partitionEpoch, ex.toString()
+                                                tp, partitionEpoch, ex.toString(), ex
                                             );
                                             ctx.transitionTo(CoordinatorState.FAILED);
                                         }
