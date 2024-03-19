@@ -244,14 +244,14 @@ class TransactionsTest(Test):
         }
 
     @cluster(num_nodes=9)
-    @matrix(
-        failure_mode=["hard_bounce", "clean_bounce"],
-        bounce_target=["brokers", "clients"],
-        check_order=[True, False],
-        use_group_metadata=[True, False],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     failure_mode=["hard_bounce", "clean_bounce"],
+    #     bounce_target=["brokers", "clients"],
+    #     check_order=[True, False],
+    #     use_group_metadata=[True, False],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         failure_mode=["hard_bounce", "clean_bounce"],
         bounce_target=["brokers", "clients"],

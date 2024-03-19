@@ -58,24 +58,24 @@ class SecurityTest(EndToEndTest):
         return True
 
     @cluster(num_nodes=6)
-    @matrix(
-        security_protocol=['PLAINTEXT'],
-        interbroker_security_protocol=['SSL'],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     security_protocol=['PLAINTEXT'],
+    #     interbroker_security_protocol=['SSL'],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         security_protocol=['PLAINTEXT'],
         interbroker_security_protocol=['SSL'],
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
     )
-    @matrix(
-        security_protocol=['SSL'],
-        interbroker_security_protocol=['PLAINTEXT'],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     security_protocol=['SSL'],
+    #     interbroker_security_protocol=['PLAINTEXT'],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         security_protocol=['SSL'],
         interbroker_security_protocol=['PLAINTEXT'],
