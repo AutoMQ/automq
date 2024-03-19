@@ -34,7 +34,7 @@ import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_S3_URL
 public class GenerateStartCmdCmd {
     private final Parameter parameter;
 
-    public GenerateStartCmdCmd(GenerateStartCmdCmd.Parameter parameter) {
+    public GenerateStartCmdCmd(Parameter parameter) {
         this.parameter = parameter;
     }
 
