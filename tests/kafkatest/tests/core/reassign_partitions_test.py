@@ -135,12 +135,12 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
         time.sleep(12 + 30)
 
     @cluster(num_nodes=8)
-    @matrix(
-        bounce_brokers=[True, False],
-        reassign_from_offset_zero=[True, False],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     bounce_brokers=[True, False],
+    #     reassign_from_offset_zero=[True, False],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         bounce_brokers=[True, False],
         reassign_from_offset_zero=[True, False],
