@@ -119,15 +119,16 @@ public class ReadAheadAgent {
     }
 
     private int calculateNextSize() {
-        long totalEvictedSize = this.evictedOffsetRanges.stream().mapToLong(range -> {
-            long left = Math.max(range.getLeft(), lastReadOffset);
-            long right = Math.min(range.getRight(), readAheadEndOffset);
-            return right - left;
-        }).sum();
-        double evictedFraction = (double) totalEvictedSize / (readAheadEndOffset - lastReadOffset);
-        int nextSize = (int) (bytePerSecond * ((double) S3_OPERATION_DELAY_MS / TimeUnit.SECONDS.toMillis(1)) * (1 - evictedFraction));
-        nextSize = Math.max(dataBlockSize, Math.min(nextSize, MAX_READ_AHEAD_SIZE));
-        return nextSize;
+//        long totalEvictedSize = this.evictedOffsetRanges.stream().mapToLong(range -> {
+//            long left = Math.max(range.getLeft(), lastReadOffset);
+//            long right = Math.min(range.getRight(), readAheadEndOffset);
+//            return right - left;
+//        }).sum();
+//        double evictedFraction = (double) totalEvictedSize / (readAheadEndOffset - lastReadOffset);
+//        int nextSize = (int) (bytePerSecond * ((double) S3_OPERATION_DELAY_MS / TimeUnit.SECONDS.toMillis(1)) * (1 - evictedFraction));
+//        nextSize = Math.max(dataBlockSize, Math.min(nextSize, MAX_READ_AHEAD_SIZE));
+//        return nextSize;
+        return 2 * 1024 * 1024;
     }
 
     public long getStreamId() {
