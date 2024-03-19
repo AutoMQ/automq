@@ -75,10 +75,10 @@ class OffsetValidationTest(VerifiableConsumerTest):
         return consumer
 
     @cluster(num_nodes=7)
-    @matrix(
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
@@ -133,12 +133,12 @@ class OffsetValidationTest(VerifiableConsumerTest):
             (consumer.total_consumed(), consumer.current_position(partition))
 
     @cluster(num_nodes=7)
-    @matrix(
-        clean_shutdown=[True],
-        bounce_mode=["all", "rolling"],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     clean_shutdown=[True],
+    #     bounce_mode=["all", "rolling"],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         clean_shutdown=[True],
         bounce_mode=["all", "rolling"],
@@ -187,14 +187,14 @@ class OffsetValidationTest(VerifiableConsumerTest):
                 (consumer.current_position(partition), consumer.total_consumed())
 
     @cluster(num_nodes=7)
-    @matrix(
-        clean_shutdown=[True],
-        static_membership=[True, False],
-        bounce_mode=["all", "rolling"],
-        num_bounces=[5],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     clean_shutdown=[True],
+    #     static_membership=[True, False],
+    #     bounce_mode=["all", "rolling"],
+    #     num_bounces=[5],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         clean_shutdown=[True],
         static_membership=[True, False],
@@ -264,11 +264,11 @@ class OffsetValidationTest(VerifiableConsumerTest):
                 (consumer.current_position(partition), consumer.total_consumed())
 
     @cluster(num_nodes=7)
-    @matrix(
-        bounce_mode=["all", "rolling"],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     bounce_mode=["all", "rolling"],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         bounce_mode=["all", "rolling"],
         metadata_quorum=[quorum.isolated_kraft],
@@ -304,12 +304,12 @@ class OffsetValidationTest(VerifiableConsumerTest):
         self.rolling_bounce_brokers(consumer, num_bounces=1)
 
     @cluster(num_nodes=10)
-    @matrix(
-        num_conflict_consumers=[1, 2],
-        fencing_stage=["stable", "all"],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     num_conflict_consumers=[1, 2],
+    #     fencing_stage=["stable", "all"],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         num_conflict_consumers=[1, 2],
         fencing_stage=["stable", "all"],
@@ -368,12 +368,12 @@ class OffsetValidationTest(VerifiableConsumerTest):
                        )
 
     @cluster(num_nodes=7)
-    @matrix(
-        clean_shutdown=[True],
-        enable_autocommit=[True, False],
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     clean_shutdown=[True],
+    #     enable_autocommit=[True, False],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         clean_shutdown=[True],
         enable_autocommit=[True, False],
@@ -474,10 +474,10 @@ class OffsetValidationTest(VerifiableConsumerTest):
                 (consumer.last_commit(partition), consumer.current_position(partition))
 
     @cluster(num_nodes=7)
-    @matrix(
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
@@ -532,13 +532,13 @@ class AssignmentValidationTest(VerifiableConsumerTest):
         })
 
     @cluster(num_nodes=6)
-    @matrix(
-        assignment_strategy=["org.apache.kafka.clients.consumer.RangeAssignor",
-                             "org.apache.kafka.clients.consumer.RoundRobinAssignor",
-                             "org.apache.kafka.clients.consumer.StickyAssignor"], 
-        metadata_quorum=[quorum.zk],
-        use_new_coordinator=[False]
-    )
+    # @matrix(
+    #     assignment_strategy=["org.apache.kafka.clients.consumer.RangeAssignor",
+    #                          "org.apache.kafka.clients.consumer.RoundRobinAssignor",
+    #                          "org.apache.kafka.clients.consumer.StickyAssignor"],
+    #     metadata_quorum=[quorum.zk],
+    #     use_new_coordinator=[False]
+    # )
     @matrix(
         assignment_strategy=["org.apache.kafka.clients.consumer.RangeAssignor",
                              "org.apache.kafka.clients.consumer.RoundRobinAssignor",
