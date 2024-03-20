@@ -22,6 +22,7 @@ import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -241,25 +242,33 @@ public class LogCache {
     }
 
     private void tryRealFree() {
-        if (size.get() <= capacity * 0.9) {
+        long currSize = size.get();
+        if (currSize <= capacity * 0.9) {
             return;
         }
+        AtomicLong remainSize = new AtomicLong(currSize);
         List<LogCacheBlock> removed = new ArrayList<>();
         writeLock.lock();
         try {
-            blocks.removeIf(b -> {
-                if (size.get() <= capacity * 0.9) {
-                    return false;
+            Iterator<LogCacheBlock> iter = blocks.iterator();
+            while (iter.hasNext()) {
+                if (remainSize.get() <= capacity * 0.9) {
+                    break;
                 }
-                if (b.free) {
-                    size.addAndGet(-b.size());
-                    removed.add(b);
+                LogCacheBlock block = iter.next();
+                if (block.free) {
+                    iter.remove();
+                    remainSize.addAndGet(-block.size());
+                    removed.add(block);
+                } else {
+                    break;
                 }
-                return b.free;
-            });
+            }
+
         } finally {
             writeLock.unlock();
         }
+        size.addAndGet(remainSize.get() - currSize);
         removed.forEach(b -> {
             blockFreeListener.accept(b);
             b.free();
