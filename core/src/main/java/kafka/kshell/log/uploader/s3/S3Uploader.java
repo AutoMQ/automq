@@ -52,7 +52,7 @@ public class S3Uploader implements Uploader {
                 .credentialsProvider(credentialsProvider)
                 .endpointOverride(URI.create(endPoint))
                 .build();
-        // 分配一个直接缓冲区（16 MB），该内存不由 JVM 控制，这里面存放日志，由 storeIndex 进行区分。
+        // 分配一个直接缓冲区（512 KB），该内存不由 JVM 控制，这里面存放日志，由 storeIndex 进行区分。
         currentByteBuffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
     }
 

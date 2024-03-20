@@ -36,9 +36,9 @@ public class Scanner {
     private final int NUM_OF_LOG_FILE = 11;
     private static final Logger LOGGER = LoggerFactory.getLogger(Scanner.class);
     // 4KB
-    private final int MAX_LINE_SIZE = 4 * 1024;
+    private final int MAX_LINE_SIZE = 2 * 1024;
     // 64KB
-    private final int MAX_SCAN_SIZE = 64 * 1024;
+    private final int MAX_SCAN_SIZE = 32 * 1024;
     private final String OFFSET_MAP_FILE_NAME = "offset-map.json";
     private final File offsetMapFile;
 
@@ -99,23 +99,15 @@ public class Scanner {
                     break;
                 }
             }
-            File[] files = dir.listFiles();
             timer.cancel();
-            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            File[] files = dir.listFiles();
             for (File file : Objects.requireNonNull(files)) {
                 if (file.isFile()) {
-                    try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
-                        readLine(byteArrayOutputStream, raf, MAX_LINE_SIZE);
-                        String line = byteArrayOutputStream.toString();
-                        // 无日志文件返回空字符串。
-                        byteArrayOutputStream.reset();
-                        offsetMap.put(file.getName(), new OffsetMapValue(0L, line));
-                        logFileList.add(file);
-                    } catch (FileNotFoundException e) {
-                        LOGGER.error(String.format("File not found: %s", file.getAbsolutePath()), e);
-                    } catch (IOException e) {
-                        LOGGER.error(String.format("Open file error: %s", file.getAbsolutePath()), e);
+                    if (file.getName().equals(Uploader.BUFFER_FILE_NAME) || file.getName().equals(OFFSET_MAP_FILE_NAME)) {
+                        continue;
                     }
+                    offsetMap.put(file.getName(), new OffsetMapValue(0L, ""));
+                    logFileList.add(file);
                 }
             }
         }
@@ -154,6 +146,7 @@ public class Scanner {
             try (RandomAccessFile raf = new RandomAccessFile(logFile, "r")) {
                 ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
                 if (!offsetMap.get(logFile.getName()).getLine().isEmpty()) {
+                    // logFile 是动态刷新的，即 File 刷新时，其内容也会更新。
                     readLine(byteArrayOutputStream, raf, MAX_LINE_SIZE);
                     String line = byteArrayOutputStream.toString();
                     byteArrayOutputStream.reset();
@@ -167,13 +160,28 @@ public class Scanner {
                 raf.seek(offset);
                 // 目前读取的数据大小。
                 int curSize = 0;
-                while (readLine(byteArrayOutputStream, raf, MAX_LINE_SIZE) && curSize < MAX_SCAN_SIZE) {
+                while (curSize < MAX_SCAN_SIZE && readLine(byteArrayOutputStream, raf, MAX_LINE_SIZE)) {
                     byte[] bytes = byteArrayOutputStream.toByteArray();
                     uploader.toBuffer(bytes);
                     byteArrayOutputStream.reset();
                     curSize += bytes.length;
                 }
                 offset += curSize;
+                // 判断是否是第一次写入日志，如果是，需要记录第一行的内容作为轮转唯一标识。
+                long preOffset = offsetMap.get(logFile.getName()).getOffset();
+                if (preOffset == 0) {
+                    try (RandomAccessFile rotationRaf = new RandomAccessFile(logFile, "r")) {
+                        byteArrayOutputStream.reset();
+                        readLine(byteArrayOutputStream, rotationRaf, MAX_LINE_SIZE);
+                        String line = byteArrayOutputStream.toString();
+                        byteArrayOutputStream.reset();
+                        offsetMap.get(logFile.getName()).setLine(line);
+                    } catch (FileNotFoundException e) {
+                        LOGGER.error(String.format("File not found: %s", logFile.getAbsolutePath()), e);
+                    } catch (IOException e) {
+                        LOGGER.error(String.format("Open file error: %s", logFile.getAbsolutePath()), e);
+                    }
+                }
                 // 更新 offset。
                 offsetMap.get(logFile.getName()).setOffset(offset);
             } catch (FileNotFoundException e) {
@@ -221,6 +229,10 @@ public class Scanner {
             File[] files = dir.listFiles();
             for (File file : files) {
                 if (file.isFile()) {
+                    if (file.getName().equals(logFile.getName())) {
+                        // 当前日志文件不需要处理。
+                        continue;
+                    }
                     if (file.getName().startsWith(fileName)) {
                         rotationLogFiles.add(file);
                     }
@@ -241,6 +253,7 @@ public class Scanner {
                 if (!line.equals(keyLine)) {
                     unRecordedFiles.add(file);
                 } else {
+                    unRecordedFiles.add(file);
                     break;
                 }
                 byteArrayOutputStream.reset();
@@ -270,5 +283,6 @@ public class Scanner {
             }
         }
         offsetMap.get(logFile.getName()).setOffset(0L);
+        offsetMap.get(logFile.getName()).setLine("");
     }
 }

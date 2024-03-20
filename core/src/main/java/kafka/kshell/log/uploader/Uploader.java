@@ -20,7 +20,7 @@ public interface Uploader {
     String SHUTDOWN_SIGNAL = "shutdown-signal";
     int MAX_RETRY = 10;
     String BUFFER_FILE_NAME = "buffer-file.log";
-    int BUFFER_SIZE = 16 * 1024 * 1024;
+    int BUFFER_SIZE =  512 * 1024;
 
     void toBuffer(byte[] value);
 

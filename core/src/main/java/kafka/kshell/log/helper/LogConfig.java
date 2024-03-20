@@ -19,6 +19,7 @@ import java.util.Properties;
  */
 public class LogConfig {
     private final String logDir = System.getenv("LOG_DIR");
+    // 需要注意的是，在单机测试的环境下，LOG_DIR 的配置值需要与 JVM 中的参数保持一致。
     private String s3EndPoint;
     private String s3Bucket;
     private final String s3AccessKey = System.getenv(EnvVariableCredentialsProvider.ACCESS_KEY_NAME);
