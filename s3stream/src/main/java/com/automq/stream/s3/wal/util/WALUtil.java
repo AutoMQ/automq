@@ -120,7 +120,7 @@ public class WALUtil {
 
     /**
      * Check if the given path is a block device.
-     * It returns false if the path does not exist.
+     * If the path does not exist, it returns false
      */
     public static boolean isBlockDevice(String path) {
         if (!new File(path).exists()) {
