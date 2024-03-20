@@ -362,6 +362,7 @@ class RequestChannel(val queueSize: Int,
   private val requestQueueSizeMetricName = metricNamePrefix.concat(RequestQueueSizeMetric)
   private val responseQueueSizeMetricName = metricNamePrefix.concat(ResponseQueueSizeMetric)
   private val callbackQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
+  private val multiCallbackQueue = new java.util.ArrayList[ArrayBlockingQueue[BaseRequest]]()
 
   metricsGroup.newGauge(requestQueueSizeMetricName, () => {
     if (multiRequestQueue.size() != 0) {
@@ -388,8 +389,8 @@ class RequestChannel(val queueSize: Int,
   def registerNRequestHandler(count: Int): util.List[BlockingQueue[BaseRequest]] = {
     val queueSize = math.max(this.queueSize / count, 1)
     for (i <- 0 until count) {
-      val requestQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
-      multiRequestQueue.add(requestQueue)
+      multiRequestQueue.add(new ArrayBlockingQueue[BaseRequest](queueSize))
+      multiCallbackQueue.add(new ArrayBlockingQueue[BaseRequest](queueSize))
     }
     Collections.unmodifiableList(multiRequestQueue)
   }
@@ -504,6 +505,21 @@ class RequestChannel(val queueSize: Int,
     }
   }
 
+  def receiveRequest(timeout: Long, id: Int): RequestChannel.BaseRequest = {
+    val callbackQueue = multiCallbackQueue.get(id)
+    val requestQueue = multiRequestQueue.get(id)
+    val callbackRequest = callbackQueue.poll()
+    if (callbackRequest != null)
+      callbackRequest
+    else {
+      val request = requestQueue.poll(timeout, TimeUnit.MILLISECONDS)
+      request match {
+        case WakeupRequest => callbackQueue.poll()
+        case _ => request
+      }
+    }
+  }
+
   /** Get the next request or block until there is one */
   @Deprecated
   def receiveRequest(): RequestChannel.BaseRequest =
@@ -519,6 +535,7 @@ class RequestChannel(val queueSize: Int,
     requestQueue.clear()
     callbackQueue.clear()
     multiRequestQueue.forEach(q => q.clear())
+    multiCallbackQueue.forEach(q => q.clear())
   }
 
   def shutdown(): Unit = {
@@ -532,6 +549,11 @@ class RequestChannel(val queueSize: Int,
   }
 
   def sendCallbackRequest(request: CallbackRequest): Unit = {
+    // AutoMQ inject start
+    val id = math.abs(request.originalRequest.context.connectionId.hashCode % multiRequestQueue.size())
+    val callbackQueue = multiCallbackQueue.get(id)
+    val requestQueue = multiRequestQueue.get(id)
+    // AutoMQ inject end
     callbackQueue.put(request)
     if (!requestQueue.offer(RequestChannel.WakeupRequest))
       trace("Wakeup request could not be added to queue. This means queue is full, so we will still process callback.")

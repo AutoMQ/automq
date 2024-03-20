@@ -96,7 +96,6 @@ class KafkaRequestHandler(
   val requestChannel: RequestChannel,
   apis: ApiRequestHandler,
   time: Time,
-  val requestQueue: BlockingQueue[BaseRequest],
   nodeName: String = "broker"
 ) extends Runnable with Logging {
   this.logIdent = s"[Kafka Request Handler $id on ${nodeName.capitalize} $brokerId], "
@@ -113,7 +112,7 @@ class KafkaRequestHandler(
       // time should be discounted by # threads.
       val startSelectTime = time.nanoseconds
 
-      val req = requestQueue.poll(300, TimeUnit.MILLISECONDS)
+      val req = requestChannel.receiveRequest(300, id)
       val endTime = time.nanoseconds
       val idleTime = endTime - startSelectTime
       aggregateIdleMeter.mark(idleTime / totalHandlerThreads.get)
@@ -222,7 +221,7 @@ class KafkaRequestHandlerPool(
   }
 
   def createHandler(id: Int, requestQueue: BlockingQueue[BaseRequest]): Unit = synchronized {
-    runnables += new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time, requestQueue, nodeName)
+    runnables += new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time, nodeName)
     KafkaThread.daemon(logAndThreadNamePrefix + "-kafka-request-handler-" + id, runnables(id)).start()
   }
 
