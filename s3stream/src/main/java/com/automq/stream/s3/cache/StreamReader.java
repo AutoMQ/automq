@@ -300,8 +300,7 @@ public class StreamReader {
     }
 
     CompletableFuture<Void> handleAsyncReadAhead(long streamId, long startOffset, long endOffset, int maxBytes,
-        ReadAheadAgent agent,
-        TimerUtil timer, ReadContext context) {
+        ReadAheadAgent agent, TimerUtil timer, ReadContext context) {
         if (context.streamDataBlocksPair.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
