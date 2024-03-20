@@ -546,7 +546,8 @@ public enum Errors {
      */
     public static Throwable maybeUnwrapException(Throwable t) {
         if (t instanceof CompletionException || t instanceof ExecutionException) {
-            return t.getCause();
+            Throwable cause = t.getCause();
+            return cause == null ? t: cause;
         } else {
             return t;
         }
