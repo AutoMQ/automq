@@ -244,6 +244,11 @@ public interface WALChannel {
         }
 
         public WALChannel build() {
+            if (recoveryMode && !new File(path).exists()) {
+                // Fail fast if the path does not exist in recovery mode.
+                throw new IllegalArgumentException("In recovery mode, the path must exist: " + path);
+            }
+
             String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable(path);
             boolean isBlockDevice = isBlockDevice(path);
             boolean useDirect = false;
@@ -262,13 +267,15 @@ public interface WALChannel {
                 throw new IllegalArgumentException(directNotAvailableMsg);
             }
 
+            if (!isBlockDevice) {
+                LOGGER.warn("WAL in a file system, which may cause performance degradation. path: {}", new File(path).getAbsolutePath());
+            }
+
             if (useDirect) {
-                if (!isBlockDevice) {
-                    LOGGER.warn("WAL in a file system, which may cause performance degradation. path: {}", new File(path).getAbsolutePath());
-                }
                 return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode);
             } else {
-                LOGGER.warn("Direct IO not used for WAL, which may cause performance degradation. path: {}", new File(path).getAbsolutePath());
+                LOGGER.warn("Direct IO not used for WAL, which may cause performance degradation. path: {}, isBlockDevice: {}, reason: {}",
+                    new File(path).getAbsolutePath(), isBlockDevice, directNotAvailableMsg);
                 return new WALFileChannel(path, capacity, recoveryMode);
             }
         }
