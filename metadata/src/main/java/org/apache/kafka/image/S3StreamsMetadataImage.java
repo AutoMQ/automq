@@ -17,6 +17,7 @@
 
 package org.apache.kafka.image;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
@@ -70,9 +71,19 @@ public final class S3StreamsMetadataImage {
         nodeStreamSetObjectMetadata.forEach((k, v) -> v.write(writer, options));
     }
 
+    /**
+     * Get objects in range [startOffset, endOffset) with limit.
+     *
+     * @param streamId stream id
+     * @param startOffset inclusive start offset of the stream
+     * @param endOffset exclusive end offset of the stream.
+     *                  NOTE: NOOP_OFFSET means to retrieve as many objects as it's within the limit.
+     * @param limit max number of s3 objects to return
+     * @return s3 objects within the range
+     */
     @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
     public InRangeObjects getObjects(long streamId, long startOffset, long endOffset, int limit) {
-        if (streamId < 0 || startOffset > endOffset || limit < 0) {
+        if (streamId < 0 || limit < 0 || (endOffset != ObjectUtils.NOOP_OFFSET && startOffset > endOffset)) {
             return InRangeObjects.INVALID;
         }
         S3StreamMetadataImage stream = streamsMetadata.get(streamId);
@@ -109,7 +120,7 @@ public final class S3StreamsMetadataImage {
                 }
                 objects.add(streamObject.toMetadata());
                 nextStartOffset = streamObject.endOffset();
-                if (objects.size() >= limit || nextStartOffset >= endOffset) {
+                if (objects.size() >= limit || (endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= endOffset)) {
                     return new InRangeObjects(streamId, objects);
                 }
             }
@@ -140,7 +151,7 @@ public final class S3StreamsMetadataImage {
                     objects.add(new S3ObjectMetadata(streamSetObject.objectId(), S3ObjectType.STREAM_SET, List.of(streamOffsetRange),
                         streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
-                    if (objects.size() >= limit || nextStartOffset >= endOffset) {
+                    if (objects.size() >= limit || (endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= endOffset)) {
                         return new InRangeObjects(streamId, objects);
                     }
                 } else {
