@@ -1,10 +1,20 @@
-package kafka.log.streamaspect.log;
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
 
-import kafka.log.stream.s3.ConfigUtils;
-import kafka.log.streamaspect.log.helper.Trigger;
-import kafka.log.streamaspect.log.scanner.Scanner;
-import kafka.log.streamaspect.log.uploader.s3.S3Uploader;
-import kafka.server.KafkaConfig;
+package kafka.kshell.log;
+
+import kafka.kshell.log.helper.LogConfig;
+import kafka.kshell.log.helper.Trigger;
+import kafka.kshell.log.scanner.Scanner;
+import kafka.kshell.log.uploader.s3.S3Uploader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,7 +28,6 @@ import java.util.concurrent.TimeUnit;
 public class LogInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger(LogInitializer.class);
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
-    private final String CLUSTER = "defaultCluster";
     private final S3Uploader s3Uploader;
     private final Scanner scanner;
     private final int SCAN_INTERVAL = 15;
@@ -26,13 +35,15 @@ public class LogInitializer {
     private int startNums = 0;
 
 
-    public LogInitializer(KafkaConfig kafkaConfig) {
-        String accessKey = System.getenv(ConfigUtils.ACCESS_KEY_NAME);
-        String secretKey = System.getenv(ConfigUtils.SECRET_KEY_NAME);
-        String logDir = System.getenv("LOG_DIR");
-        s3Uploader = new S3Uploader(kafkaConfig.s3Endpoint(), kafkaConfig.s3Bucket(),
-                accessKey, secretKey, CLUSTER + kafkaConfig.nodeId(), logDir);
-        scanner = new Scanner(s3Uploader, logDir);
+    public LogInitializer(LogConfig logConfig) {
+        s3Uploader = new S3Uploader(
+                logConfig.getS3EndPoint(),
+                logConfig.getS3Bucket(),
+                logConfig.getS3AccessKey(),
+                logConfig.getS3SecretKey(),
+                logConfig.getS3Region() + logConfig.getNodeId(),
+                logConfig.getLogDir());
+        scanner = new Scanner(s3Uploader, logConfig.getLogDir());
     }
 
     public void start() {

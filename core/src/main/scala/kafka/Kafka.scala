@@ -29,6 +29,8 @@ import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCrede
 
 import java.util.Properties
 import scala.jdk.CollectionConverters._
+import kafka.kshell.log.LogInitializer
+import kafka.kshell.log.helper.LogConfig
 
 object Kafka extends Logging {
 
@@ -128,6 +130,7 @@ object Kafka extends Logging {
       // AutoMQ for Kafka inject start
       val serverProps = getPropsFromArgs(args)
       val s3UrlString = S3Url.parseS3UrlValFromArgs(args)
+      val logServer: LogInitializer = new LogInitializer(new LogConfig(serverProps));
       if (s3UrlString == null ) {
         CredentialsProviderHolder.create(EnvVariableCredentialsProvider.get())
       } else {
@@ -155,8 +158,9 @@ object Kafka extends Logging {
             // Calling exit() can lead to deadlock as exit() can be called multiple times. Force exit.
             Exit.halt(1)
         }
+        logServer.stop()
       })
-
+      logServer.start()
       try server.startup()
       catch {
         case e: Throwable =>

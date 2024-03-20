@@ -1,6 +1,17 @@
-package kafka.log.streamaspect.log.uploader.s3;
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
 
-import kafka.log.streamaspect.log.uploader.Uploader;
+package kafka.kshell.log.uploader.s3;
+
+import kafka.kshell.log.uploader.Uploader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;

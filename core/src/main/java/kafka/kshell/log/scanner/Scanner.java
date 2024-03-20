@@ -1,10 +1,21 @@
-package kafka.log.streamaspect.log.scanner;
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+package kafka.kshell.log.scanner;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import kafka.log.streamaspect.log.helper.OffsetMapValue;
-import kafka.log.streamaspect.log.helper.Trigger;
-import kafka.log.streamaspect.log.uploader.Uploader;
+import kafka.kshell.log.helper.OffsetMapValue;
+import kafka.kshell.log.uploader.Uploader;
+import kafka.kshell.log.helper.Trigger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,11 +91,11 @@ public class Scanner {
                     count[0]++;
                 }
             }, 0, 1000);
-            // 自旋 10s 等待日志文件创建完成。
+            // 自旋 20s 等待日志文件创建完成。
             while (dir.listFiles() == null || Objects.requireNonNull(dir.listFiles()).length != NUM_OF_LOG_FILE) {
-                if (count[0] > 10) {
+                if (count[0] > 20) {
                     // 如果 10 秒内日志文件没有创建完成，那么就打印该信息。
-                    LOGGER.error("The collected log files that were recorded are missing.");
+                    LOGGER.error(String.format("Retry %d: The collected log files that were recorded are missing.", count[0]));
                     break;
                 }
             }
