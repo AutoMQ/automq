@@ -19,7 +19,6 @@ package kafka.server
 
 import com.yammer.metrics.core.Meter
 import kafka.network.RequestChannel
-import kafka.network.RequestChannel.BaseRequest
 import org.apache.kafka.common.memory.MemoryPool
 import org.apache.kafka.common.network.{ClientInformation, ListenerName}
 import org.apache.kafka.common.protocol.ApiKeys
@@ -37,7 +36,7 @@ import org.mockito.Mockito.{mock, times, verify, when}
 
 import java.net.InetAddress
 import java.nio.ByteBuffer
-import java.util.concurrent.{ArrayBlockingQueue, CompletableFuture}
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicInteger
 
 class KafkaRequestHandlerTest {
@@ -57,7 +56,7 @@ class KafkaRequestHandlerTest {
     val requestChannel = new RequestChannel(10, "", time, metrics)
     val apiHandler = mock(classOf[ApiRequestHandler])
     try {
-      val handler = new KafkaRequestHandler(0, 0, mock(classOf[Meter]), new AtomicInteger(1), requestChannel, apiHandler, time, new ArrayBlockingQueue[BaseRequest](1000))
+      val handler = new KafkaRequestHandler(0, 0, mock(classOf[Meter]), new AtomicInteger(1), requestChannel, apiHandler, time)
 
       val request = makeRequest(time, metrics)
       requestChannel.sendRequest(request)
@@ -93,7 +92,7 @@ class KafkaRequestHandlerTest {
     val metrics = mock(classOf[RequestChannel.Metrics])
     val apiHandler = mock(classOf[ApiRequestHandler])
     val requestChannel = new RequestChannel(10, "", time, metrics)
-    val handler = new KafkaRequestHandler(0, 0, mock(classOf[Meter]), new AtomicInteger(1), requestChannel, apiHandler, time, new ArrayBlockingQueue[BaseRequest](1000))
+    val handler = new KafkaRequestHandler(0, 0, mock(classOf[Meter]), new AtomicInteger(1), requestChannel, apiHandler, time)
 
     var handledCount = 0
     var tryCompleteActionCount = 0
@@ -129,7 +128,7 @@ class KafkaRequestHandlerTest {
     val metrics = mock(classOf[RequestChannel.Metrics])
     val apiHandler = mock(classOf[ApiRequestHandler])
     val requestChannel = new RequestChannel(10, "", time, metrics)
-    val handler = new KafkaRequestHandler(0, 0, mock(classOf[Meter]), new AtomicInteger(1), requestChannel, apiHandler, time, new ArrayBlockingQueue[BaseRequest](1000))
+    val handler = new KafkaRequestHandler(0, 0, mock(classOf[Meter]), new AtomicInteger(1), requestChannel, apiHandler, time)
 
     val originalRequestLocal = mock(classOf[RequestLocal])
 
@@ -163,7 +162,7 @@ class KafkaRequestHandlerTest {
     val metrics = mock(classOf[RequestChannel.Metrics])
     val apiHandler = mock(classOf[ApiRequestHandler])
     val requestChannel = new RequestChannel(10, "", time, metrics)
-    val handler = new KafkaRequestHandler(0, 0, mock(classOf[Meter]), new AtomicInteger(1), requestChannel, apiHandler, time, new ArrayBlockingQueue[BaseRequest](1000))
+    val handler = new KafkaRequestHandler(0, 0, mock(classOf[Meter]), new AtomicInteger(1), requestChannel, apiHandler, time)
 
     val originalRequestLocal = mock(classOf[RequestLocal])
     when(originalRequestLocal.bufferSupplier).thenReturn(BufferSupplier.create())
