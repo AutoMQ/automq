@@ -17,6 +17,7 @@
 
 package org.apache.kafka.image;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
@@ -192,6 +193,12 @@ public class S3StreamsMetadataImageTest {
         assertEquals(400L, objects.endOffset());
         assertEquals(7, objects.objects().size());
         assertEquals(expectedObjectIds.subList(1, 8), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+
+        objects = streamsImage.getObjects(STREAM0, 10, ObjectUtils.NOOP_OFFSET, 9);
+        assertEquals(10, objects.startOffset());
+        assertEquals(420, objects.endOffset());
+        assertEquals(9, objects.objects().size());
+        assertEquals(List.of(8L, 0L, 1L, 5L, 6L, 2L, 9L, 10L, 3L), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
     }
 
     /**
