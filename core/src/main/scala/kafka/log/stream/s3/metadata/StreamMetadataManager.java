@@ -62,9 +62,9 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         this.streamsImage = currentImage.streamsMetadata();
         this.objectsImage = currentImage.objectsMetadata();
         this.version = currentImage.highestOffsetAndEpoch();
-        this.broker.metadataLoader().installPublishers(List.of(this)).join();
         this.pendingGetObjectsTasks = new LinkedList<>();
         this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
+        this.broker.metadataLoader().installPublishers(List.of(this)).join();
     }
 
     @Override
