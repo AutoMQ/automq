@@ -23,6 +23,7 @@ import java.util.Deque;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.stream.Stream;
+import org.apache.kafka.common.errors.DuplicateSequenceException;
 import org.apache.kafka.common.record.RecordBatch;
 
 /**
@@ -131,8 +132,26 @@ public class ProducerStateEntry {
     }
 
     public Optional<BatchMetadata> findDuplicateBatch(RecordBatch batch) {
-        if (batch.producerEpoch() != producerEpoch) return Optional.empty();
-        else return batchWithSequenceRange(batch.baseSequence(), batch.lastSequence());
+        // AutoMQ inject start
+        if (batch.producerEpoch() != producerEpoch) {
+            return Optional.empty();
+        }
+        Optional<BatchMetadata> metadata = batchWithSequenceRange(batch.baseSequence(), batch.lastSequence());
+        if (metadata.isPresent()) {
+            return metadata;
+        }
+        BatchMetadata front = batchMetadata.peek();
+        if (front != null && front.recovered) {
+            // the batch metadata is recovered from snapshot
+            if (front.firstSeq() <= batch.baseSequence() && front.lastSeq >= batch.lastSequence()) {
+                throw new DuplicateSequenceException(
+                    String.format("The batch is duplicated, broker cached metadata is %s, the record batch is [%s, %s]",
+                        this, batch.baseSequence(), batch.lastSequence())
+                );
+            }
+        }
+        return metadata;
+        // AutoMQ inject end
     }
 
     // Return the batch metadata of the cached batch having the exact sequence range, if any.
