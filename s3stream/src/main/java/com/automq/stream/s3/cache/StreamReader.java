@@ -288,7 +288,7 @@ public class StreamReader {
         inflightReadAheadTaskMap.putIfAbsent(readAheadTaskKey, readAheadTaskContext);
         context.taskKeySet.add(readAheadTaskKey);
         getDataBlockIndices(TraceContext.DEFAULT, streamId, endOffset, context)
-            .thenAcceptAsync(v ->
+            .thenComposeAsync(v ->
                 handleAsyncReadAhead(streamId, startOffset, endOffset, maxBytes, agent, timer, context), streamReaderExecutor)
             .whenComplete((nil, ex) -> {
                 for (DefaultS3BlockCache.ReadAheadTaskKey key : context.taskKeySet) {
