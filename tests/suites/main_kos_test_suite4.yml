@@ -16,10 +16,4 @@
 # list all core tests that are part of the suite under the test suite name:
 core_test_suite:
   included:
-    - ../kafkatest/tests/core/consumer_group_command_test.py
-    - ../kafkatest/tests/core/controller_mutation_quota_test.py
-    - ../kafkatest/tests/core/delegation_token_test.py
-    - ../kafkatest/tests/core/get_offset_shell_test.py
-    - ../kafkatest/tests/core/group_mode_transactions_test.py
-    - ../kafkatest/tests/core/mirror_maker_test.py
-    - ../kafkatest/tests/core/produce_bench_test.py
+    - ../kafkatest/tests/core/transactions_test.py
