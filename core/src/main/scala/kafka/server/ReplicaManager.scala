@@ -237,6 +237,7 @@ object ReplicaManager {
   }
 
   def createLogReadResult(e: Throwable): LogReadResult = {
+    val exception = Option(e)
     LogReadResult(info = new FetchDataInfo(LogOffsetMetadata.UNKNOWN_OFFSET_METADATA, MemoryRecords.EMPTY),
       divergingEpoch = None,
       highWatermark = UnifiedLog.UnknownOffset,
@@ -245,7 +246,7 @@ object ReplicaManager {
       followerLogStartOffset = UnifiedLog.UnknownOffset,
       fetchTimeMs = -1L,
       lastStableOffset = None,
-      exception = Some(e))
+      exception = exception)
   }
 }
 
