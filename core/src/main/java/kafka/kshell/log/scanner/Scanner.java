@@ -24,6 +24,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -83,7 +84,7 @@ public class Scanner {
         if (offsetMapFile.length() > 0) {
             // 检验 offset 文件中是否存在内容。
             try {
-                String mapJson = new String(Files.readAllBytes(offsetMapFile.toPath()));
+                String mapJson = Files.readString(offsetMapFile.toPath(), StandardCharsets.UTF_8);
                 ObjectMapper objectMapper = new ObjectMapper();
                 this.offsetMap = objectMapper.readValue(mapJson, new TypeReference<>() {
                 });
@@ -104,16 +105,28 @@ public class Scanner {
                 }
             }, 0, 1000);
             // 自旋 20s 等待日志文件创建完成。
-            while (dir.listFiles() == null || Objects.requireNonNull(dir.listFiles()).length != NUM_OF_LOG_FILE) {
+            while (true) {
+                File[] files = dir.listFiles();
+                if (files == null) {
+                    LOGGER.error("The log file list is empty.");
+                    throw new RuntimeException("The log file list is empty.");
+                }
+                if (files.length >= NUM_OF_LOG_FILE) {
+                    break;
+                }
                 if (count[0] > 20) {
-                    // 如果 10 秒内日志文件没有创建完成，那么就打印该信息。
+                    // 如果 20 秒内日志文件没有创建完成，那么就打印该信息。
                     LOGGER.error(String.format("Retry %d: The collected log files that were recorded are missing.", count[0]));
                     break;
                 }
             }
             timer.cancel();
             File[] files = dir.listFiles();
-            for (File file : Objects.requireNonNull(files)) {
+            if (files == null) {
+                LOGGER.error("The log file list is empty.");
+                throw new RuntimeException("The log file list is empty.");
+            }
+            for (File file : files) {
                 if (file.isFile()) {
                     if (file.getName().equals(Uploader.BUFFER_FILE_NAME) || file.getName().equals(OFFSET_MAP_FILE_NAME)) {
                         continue;
@@ -144,7 +157,7 @@ public class Scanner {
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             String mapJson = objectMapper.writeValueAsString(offsetMap);
-            Files.write(Paths.get(offsetMapFile.getPath()), mapJson.getBytes());
+            Files.write(Paths.get(offsetMapFile.getPath()), mapJson.getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             LOGGER.error("Write offset map to file error.", e);
         }
@@ -160,7 +173,7 @@ public class Scanner {
                 if (!offsetMap.get(logFile.getName()).getLine().isEmpty()) {
                     // logFile 是动态刷新的，即 File 刷新时，其内容也会更新。
                     readLine(byteArrayOutputStream, raf, MAX_LINE_SIZE);
-                    String line = byteArrayOutputStream.toString();
+                    String line = byteArrayOutputStream.toString(StandardCharsets.UTF_8);
                     byteArrayOutputStream.reset();
                     if (!line.equals(offsetMap.get(logFile.getName()).getLine())) {
                         // 日志发生了轮转。
@@ -185,7 +198,7 @@ public class Scanner {
                     try (RandomAccessFile rotationRaf = new RandomAccessFile(logFile, "r")) {
                         byteArrayOutputStream.reset();
                         readLine(byteArrayOutputStream, rotationRaf, MAX_LINE_SIZE);
-                        String line = byteArrayOutputStream.toString();
+                        String line = byteArrayOutputStream.toString(StandardCharsets.UTF_8);
                         byteArrayOutputStream.reset();
                         offsetMap.get(logFile.getName()).setLine(line);
                     } catch (FileNotFoundException e) {
@@ -239,6 +252,10 @@ public class Scanner {
         List<File> rotationLogFiles = new ArrayList<>();
         if (dir.isDirectory()) {
             File[] files = dir.listFiles();
+            if (files == null) {
+                LOGGER.error("The log file list is empty.");
+                throw new RuntimeException("The log file list is empty.");
+            }
             for (File file : files) {
                 if (file.isFile()) {
                     if (file.getName().equals(logFile.getName())) {
@@ -261,7 +278,7 @@ public class Scanner {
             // 倒序寻找，过滤出没有被记录的日志文件。
             try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
                 readLine(byteArrayOutputStream, raf, MAX_LINE_SIZE);
-                String line = byteArrayOutputStream.toString();
+                String line = byteArrayOutputStream.toString(StandardCharsets.UTF_8);
                 if (!line.equals(keyLine)) {
                     unRecordedFiles.add(file);
                 } else {
