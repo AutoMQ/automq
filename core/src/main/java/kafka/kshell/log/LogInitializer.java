@@ -30,7 +30,8 @@ public class LogInitializer {
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
     private final S3Uploader s3Uploader;
     private final Scanner scanner;
-    private final int SCAN_INTERVAL = 15;
+    private static final int SCAN_INTERVAL = 15;
+    // 为了防止内存浪费，当成员变量被声明为 final 常量时，其最好声明为 static。
     private boolean isShutdown = false;
     private int startNums = 0;
 

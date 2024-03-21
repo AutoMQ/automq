@@ -155,4 +155,9 @@
     <allow pkg="kafka.tools" />
     <allow pkg="com.automq.s3shell.sdk" />
   </subpackage>
+
+  <subpackage name="kshell">
+    <allow pkg="kafka.kshell.log" />
+  </subpackage>
+
 </import-control>

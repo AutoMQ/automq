@@ -19,10 +19,21 @@ import kafka.kshell.log.helper.Trigger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.HashMap;
 
 public class Scanner {
 
@@ -33,13 +44,13 @@ public class Scanner {
     private final List<File> logFileList = new ArrayList<>();
 
     // 日志文件的数量，其中 auto-balancer.log 和 kafkaServer-gc.log 没有在 log4j 的配置文件中声明。
-    private final int NUM_OF_LOG_FILE = 11;
+    private static final int NUM_OF_LOG_FILE = 11;
     private static final Logger LOGGER = LoggerFactory.getLogger(Scanner.class);
     // 4KB
-    private final int MAX_LINE_SIZE = 2 * 1024;
+    private static final int MAX_LINE_SIZE = 2 * 1024;
     // 64KB
-    private final int MAX_SCAN_SIZE = 32 * 1024;
-    private final String OFFSET_MAP_FILE_NAME = "offset-map.json";
+    private static final int MAX_SCAN_SIZE = 32 * 1024;
+    private static final String OFFSET_MAP_FILE_NAME = "offset-map.json";
     private final File offsetMapFile;
 
 
@@ -74,7 +85,8 @@ public class Scanner {
             try {
                 String mapJson = new String(Files.readAllBytes(offsetMapFile.toPath()));
                 ObjectMapper objectMapper = new ObjectMapper();
-                this.offsetMap = objectMapper.readValue(mapJson, new TypeReference<>() {});
+                this.offsetMap = objectMapper.readValue(mapJson, new TypeReference<>() {
+                });
                 return;
             } catch (IOException e) {
                 LOGGER.error("Read offset map file error.", e);
