@@ -17,7 +17,7 @@ import software.amazon.awssdk.services.s3.model.Tagging;
 public class ObjectUtils {
     public static final long NOOP_OBJECT_ID = -1L;
     public static final long NOOP_OFFSET = -1L;
-    private static final String OBJECT_TAG_KEY = "automq:ClusterID";
+    private static final String OBJECT_TAG_KEY = "s3stream:namespace";
     private static String namespace = "DEFAULT";
 
     public static void setNamespace(String namespace) {
