@@ -2026,6 +2026,10 @@ project(':s3stream') {
     testImplementation 'org.mockito:mockito-core:5.5.0'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.5.0'
   }
+
+  test {
+    jvmArgs '--add-opens=java.base/java.nio=ALL-UNNAMED', '-Dio.netty.tryReflectionSetAccessible=true'
+  }
 }
 
 project(':tools:tools-api') {
