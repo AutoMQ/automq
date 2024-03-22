@@ -446,7 +446,7 @@ public class S3Storage implements Storage {
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
-        if (maxBytes <= 0) {
+        if (maxBytes <= 0 || startOffset >= endOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT));
         }
 
@@ -481,7 +481,7 @@ public class S3Storage implements Storage {
             List<StreamRecordBatch> rst = new ArrayList<>(blockCacheRst.getRecords());
             assert !rst.isEmpty();
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
-            return read0(context, streamId, rst.get(0).getLastOffset(), endOffset, remainingBytesSize).thenApply(tailRst -> {
+            return read0(context, streamId, rst.get(rst.size() - 1).getLastOffset(), endOffset, remainingBytesSize).thenApply(tailRst -> {
                 rst.addAll(tailRst.getRecords());
                 try {
                     continuousCheck(rst);
