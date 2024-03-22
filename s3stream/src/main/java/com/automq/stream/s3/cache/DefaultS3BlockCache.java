@@ -154,7 +154,9 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
         // 1. get from cache
         context.setStatus(ReadBlockCacheStatus.GET_FROM_CACHE);
+        TimerUtil timer = new TimerUtil();
         BlockCache.GetCacheResult cacheRst = cache.get(traceContext, streamId, nextStartOffset, endOffset, nextMaxBytes);
+        StorageOperationStats.getInstance().readBlockCacheTimeStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
         List<StreamRecordBatch> cacheRecords = cacheRst.getRecords();
         if (!cacheRecords.isEmpty()) {
             asyncReadAhead(streamId, agent, cacheRst.getReadAheadRecords());

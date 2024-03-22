@@ -32,6 +32,18 @@ public class AttributesUtils {
             .build();
     }
 
+    public static Attributes buildAttributesStage(String stage) {
+        return Attributes.builder()
+                .put(S3StreamMetricsConstant.LABEL_STAGE, stage)
+                .build();
+    }
+
+    public static Attributes buildAttributes(String status) {
+        return Attributes.builder()
+                .put(S3StreamMetricsConstant.LABEL_STATUS, status)
+                .build();
+    }
+
     public static Attributes buildAttributes(S3Stage stage) {
         return Attributes.builder()
             .putAll(buildAttributes(stage.getOperation()))

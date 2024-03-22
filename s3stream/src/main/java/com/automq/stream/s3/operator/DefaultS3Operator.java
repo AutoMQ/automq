@@ -17,6 +17,7 @@ import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.metrics.stats.S3OperationStats;
+import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
@@ -48,6 +49,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
@@ -88,7 +90,9 @@ import static com.automq.stream.utils.FutureUtil.cause;
 
 public class DefaultS3Operator implements S3Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Operator.class);
+    private static final AtomicInteger INDEX = new AtomicInteger(-1);
     public final float maxMergeReadSparsityRate;
+    private final int currentIndex;
     private final String bucket;
     /**
      * Tagging for all objects
@@ -125,6 +129,7 @@ public class DefaultS3Operator implements S3Operator {
         boolean tagging,
         AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
         AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate) {
+        this.currentIndex = INDEX.incrementAndGet();
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
@@ -145,8 +150,8 @@ public class DefaultS3Operator implements S3Operator {
             .build();
         LOGGER.info("You are using s3Context: {}", s3Context);
         checkAvailable(s3Context);
-        S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits);
-        S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits);
+        S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
+        S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
     }
 
     // used for test only.
@@ -156,6 +161,7 @@ public class DefaultS3Operator implements S3Operator {
 
     // used for test only.
     DefaultS3Operator(S3AsyncClient s3Client, String bucket, boolean manualMergeRead) {
+        this.currentIndex = 0;
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
@@ -706,7 +712,9 @@ public class DefaultS3Operator implements S3Operator {
     <T> CompletableFuture<T> acquireReadPermit(CompletableFuture<T> cf) {
         // TODO: async acquire?
         try {
+            TimerUtil timerUtil = new TimerUtil();
             inflightReadLimiter.acquire();
+            StorageOperationStats.getInstance().readS3LimiterStats(currentIndex).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             CompletableFuture<T> newCf = new CompletableFuture<>();
             cf.whenComplete((rst, ex) -> {
                 inflightReadLimiter.release();
@@ -732,7 +740,9 @@ public class DefaultS3Operator implements S3Operator {
      */
     <T> CompletableFuture<T> acquireWritePermit(CompletableFuture<T> cf) {
         try {
+            TimerUtil timerUtil = new TimerUtil();
             inflightWriteLimiter.acquire();
+            StorageOperationStats.getInstance().writeS3LimiterStats(currentIndex).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             CompletableFuture<T> newCf = new CompletableFuture<>();
             cf.whenComplete((rst, ex) -> {
                 inflightWriteLimiter.release();

@@ -19,6 +19,9 @@ import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
 import com.yammer.metrics.core.MetricName;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class StorageOperationStats {
     private volatile static StorageOperationStats instance = null;
 
@@ -70,16 +73,37 @@ public class StorageOperationStats {
     private final YammerHistogramMetric readBlockCacheMissStats = S3StreamMetricsManager.buildOperationMetric(
         new MetricName(StorageOperationStats.class, S3Operation.READ_STORAGE_BLOCK_CACHE.getUniqueKey() + S3StreamMetricsConstant.LABEL_STATUS_MISS),
         MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE, S3StreamMetricsConstant.LABEL_STATUS_MISS);
-    private final YammerHistogramMetric blockCacheReadAheadSyncStats = S3StreamMetricsManager.buildOperationMetric(
-        new MetricName(StorageOperationStats.class, S3Operation.BLOCK_CACHE_READ_AHEAD.getUniqueKey() + S3StreamMetricsConstant.LABEL_STATUS_SYNC),
-        MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD, S3StreamMetricsConstant.LABEL_STATUS_SYNC);
-    private final YammerHistogramMetric blockCacheReadAheadAsyncStats = S3StreamMetricsManager.buildOperationMetric(
-        new MetricName(StorageOperationStats.class, S3Operation.BLOCK_CACHE_READ_AHEAD.getUniqueKey() + S3StreamMetricsConstant.LABEL_STATUS_ASYNC),
-        MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD, S3StreamMetricsConstant.LABEL_STATUS_ASYNC);
-    public final YammerHistogramMetric readAheadSizeStats = S3StreamMetricsManager.buildReadAheadSizeMetric(
-        new MetricName(StorageOperationStats.class, "ReadAheadSize"), MetricsLevel.INFO);
-    public final YammerHistogramMetric readAheadLimiterQueueTimeStats = S3StreamMetricsManager.buildReadAheadLimiterQueueTimeMetric(
-        new MetricName(StorageOperationStats.class, "ReadAheadLimitQueueTime"), MetricsLevel.INFO);
+    private final YammerHistogramMetric readAheadSyncTimeStats = S3StreamMetricsManager.buildOperationMetric(
+            new MetricName(StorageOperationStats.class, S3Operation.BLOCK_CACHE_READ_AHEAD.getUniqueKey() + S3StreamMetricsConstant.LABEL_STATUS_SYNC),
+            MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD, S3StreamMetricsConstant.LABEL_STATUS_SYNC);
+    private final YammerHistogramMetric readAheadAsyncTimeStats = S3StreamMetricsManager.buildOperationMetric(
+            new MetricName(StorageOperationStats.class, S3Operation.BLOCK_CACHE_READ_AHEAD.getUniqueKey() + S3StreamMetricsConstant.LABEL_STATUS_ASYNC),
+            MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD, S3StreamMetricsConstant.LABEL_STATUS_ASYNC);
+    private final YammerHistogramMetric readAheadGetIndicesTimeStats = S3StreamMetricsManager.buildReadAheadStageTimeMetric(
+        new MetricName(StorageOperationStats.class, S3Operation.BLOCK_CACHE_READ_AHEAD.getUniqueKey() + S3StreamMetricsConstant.LABEL_STAGE_GET_INDICES),
+        MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_GET_INDICES);
+    private final YammerHistogramMetric readAheadThrottleTimeStats = S3StreamMetricsManager.buildReadAheadStageTimeMetric(
+            new MetricName(StorageOperationStats.class, S3Operation.BLOCK_CACHE_READ_AHEAD.getUniqueKey() + S3StreamMetricsConstant.LABEL_STAGE_THROTTLE),
+            MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_THROTTLE);
+    private final YammerHistogramMetric readAheadReadS3TimeStats = S3StreamMetricsManager.buildReadAheadStageTimeMetric(
+            new MetricName(StorageOperationStats.class, S3Operation.BLOCK_CACHE_READ_AHEAD.getUniqueKey() + S3StreamMetricsConstant.LABEL_STAGE_READ_S3),
+            MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_READ_S3);
+    private final YammerHistogramMetric readAheadPutBlockCacheTimeStats = S3StreamMetricsManager.buildReadAheadStageTimeMetric(
+            new MetricName(StorageOperationStats.class, S3Operation.BLOCK_CACHE_READ_AHEAD.getUniqueKey() + S3StreamMetricsConstant.LABEL_STAGE_PUT_BLOCK_CACHE),
+            MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_PUT_BLOCK_CACHE);
+
+    private final Map<String, YammerHistogramMetric> getIndexTimeStatsMap = new ConcurrentHashMap<>();
+    private final Map<Integer, YammerHistogramMetric> readS3LimiterStatsMap = new ConcurrentHashMap<>();
+    private final Map<Integer, YammerHistogramMetric> writeS3LimiterStatsMap = new ConcurrentHashMap<>();
+    public final YammerHistogramMetric readAheadSyncSizeStats = S3StreamMetricsManager.buildReadAheadSizeMetric(
+        new MetricName(StorageOperationStats.class, "ReadAheadSize-" + S3StreamMetricsConstant.LABEL_STATUS_SYNC),
+            MetricsLevel.INFO, S3StreamMetricsConstant.LABEL_STATUS_SYNC);
+    public final YammerHistogramMetric readAheadAsyncSizeStats = S3StreamMetricsManager.buildReadAheadSizeMetric(
+            new MetricName(StorageOperationStats.class, "ReadAheadSize-" + S3StreamMetricsConstant.LABEL_STATUS_ASYNC),
+            MetricsLevel.INFO, S3StreamMetricsConstant.LABEL_STATUS_ASYNC);
+
+    public final YammerHistogramMetric readBlockCacheTimeStats = S3StreamMetricsManager.buildReadBlockCacheTime(
+            new MetricName(StorageOperationStats.class, "ReadBlockCacheTime"), MetricsLevel.INFO);
 
     private StorageOperationStats() {
     }
@@ -103,7 +127,39 @@ public class StorageOperationStats {
         return isCacheHit ? readBlockCacheHitStats : readBlockCacheMissStats;
     }
 
-    public YammerHistogramMetric blockCacheReadAheadStats(boolean isSync) {
-        return isSync ? blockCacheReadAheadSyncStats : blockCacheReadAheadAsyncStats;
+    public YammerHistogramMetric readAheadTimeStats(boolean isSync) {
+        return isSync ? readAheadSyncTimeStats : readAheadAsyncTimeStats;
+    }
+
+    public YammerHistogramMetric readAheadStageTimeStats(String stage) {
+        switch (stage) {
+            case S3StreamMetricsConstant.LABEL_STAGE_GET_INDICES:
+                return readAheadGetIndicesTimeStats;
+            case S3StreamMetricsConstant.LABEL_STAGE_THROTTLE:
+                return readAheadThrottleTimeStats;
+            case S3StreamMetricsConstant.LABEL_STAGE_READ_S3:
+                return readAheadReadS3TimeStats;
+            default:
+                return readAheadPutBlockCacheTimeStats;
+        }
+    }
+
+    public YammerHistogramMetric getIndexTimeStats(String stage) {
+        return this.getIndexTimeStatsMap.computeIfAbsent(stage, k -> S3StreamMetricsManager.buildGetIndexTimeMetric(
+                new MetricName(StorageOperationStats.class, "GetIndexTime-" + stage), MetricsLevel.DEBUG, stage));
+    }
+
+    public YammerHistogramMetric readS3LimiterStats(int index) {
+        return this.readS3LimiterStatsMap.computeIfAbsent(index, k -> S3StreamMetricsManager.buildReadS3LimiterTimeMetric(
+                new MetricName(StorageOperationStats.class, "ReadS3Limiter-" + index), MetricsLevel.DEBUG, index));
+    }
+
+    public YammerHistogramMetric writeS3LimiterStats(int index) {
+        return this.writeS3LimiterStatsMap.computeIfAbsent(index, k -> S3StreamMetricsManager.buildWriteS3LimiterTimeMetric(
+                new MetricName(StorageOperationStats.class, "WriteS3Limiter-" + index), MetricsLevel.DEBUG, index));
+    }
+
+    public YammerHistogramMetric readAheadSizeStats(boolean isSync) {
+        return isSync ? readAheadSyncSizeStats : readAheadAsyncSizeStats;
     }
 }
