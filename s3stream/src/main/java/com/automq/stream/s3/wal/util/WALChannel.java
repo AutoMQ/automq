@@ -244,11 +244,6 @@ public interface WALChannel {
         }
 
         public WALChannel build() {
-            if (recoveryMode && !new File(path).exists()) {
-                // Fail fast if the path does not exist in recovery mode.
-                throw new IllegalArgumentException("In recovery mode, the path must exist: " + path);
-            }
-
             String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable(path);
             boolean isBlockDevice = isBlockDevice(path);
             boolean useDirect = false;
