@@ -101,7 +101,7 @@ public class S3StreamMetricsConstant {
     public static final String READ_S3_LIMITER_TIME_METRIC_NAME = "read_s3_limiter_time";
     public static final String WRITE_S3_LIMITER_TIME_METRIC_NAME = "write_s3_limiter_time";
     public static final String GET_INDEX_TIME_METRIC_NAME = "get_index_time";
-    public static final String READ_BLOCK_CACHE_METRIC_NAME = "read_block_cache_time";
+    public static final String READ_BLOCK_CACHE_METRIC_NAME = "read_block_cache_stage_time";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
     public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");
@@ -120,4 +120,10 @@ public class S3StreamMetricsConstant {
     public static final String LABEL_STAGE_THROTTLE = "throttle";
     public static final String LABEL_STAGE_READ_S3 = "read_s3";
     public static final String LABEL_STAGE_PUT_BLOCK_CACHE = "put_block_cache";
+    public static final String LABEL_STAGE_WAIT_INFLIGHT = "wait_inflight";
+    public static final String LABEL_STAGE_READ_CACHE = "read_cache";
+    public static final String LABEL_STAGE_READ_AHEAD = "read_ahead";
+    public static final String LABEL_STAGE_GET_OBJECTS = "get_objects";
+    public static final String LABEL_STAGE_FIND_INDEX = "find_index";
+    public static final String LABEL_STAGE_COMPUTE = "compute";
 }

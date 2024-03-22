@@ -173,8 +173,7 @@ public class StreamReader {
         CompletableFuture<Void> throttleCf = inflightReadThrottle.acquire(traceContext, uuid, totalReserveSize);
         return throttleCf.thenComposeAsync(nil -> {
             // concurrently read all data blocks
-            StorageOperationStats.getInstance().readAheadStageTimeStats(S3StreamMetricsConstant.LABEL_STAGE_THROTTLE)
-                    .record(throttleTimer.elapsedAndResetAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().readAheadGetIndicesTimeStats.record(throttleTimer.elapsedAndResetAs(TimeUnit.NANOSECONDS));
             for (int i = 0; i < streamDataBlocksToRead.size(); i++) {
                 TimerUtil timerReadS3 = new TimerUtil();
                 Pair<ObjectReader, StreamDataBlock> pair = streamDataBlocksToRead.get(i);
@@ -200,8 +199,7 @@ public class StreamReader {
                 try {
                     CompletableFuture<List<StreamRecordBatch>> cf = TraceUtils.runWithSpanAsync(new TraceContext(traceContext), Attributes.empty(), "StreamReader::readDataBlock",
                         () -> reserveResult.cf().thenApplyAsync(dataBlock -> {
-                            StorageOperationStats.getInstance().readAheadStageTimeStats(S3StreamMetricsConstant.LABEL_STAGE_READ_S3)
-                                    .record(timerReadS3.elapsedAndResetAs(TimeUnit.NANOSECONDS));
+                            StorageOperationStats.getInstance().readAheadReadS3TimeStats.record(timerReadS3.elapsedAndResetAs(TimeUnit.NANOSECONDS));
                             if (dataBlock.records().isEmpty()) {
                                 return new ArrayList<StreamRecordBatch>();
                             }
@@ -214,8 +212,7 @@ public class StreamReader {
                             blockCache.put(streamId, dataBlock.records());
                             dataBlock.release();
 
-                            StorageOperationStats.getInstance().readAheadStageTimeStats(S3StreamMetricsConstant.LABEL_STAGE_PUT_BLOCK_CACHE)
-                                    .record(timerReadS3.elapsedAndResetAs(TimeUnit.NANOSECONDS));
+                            StorageOperationStats.getInstance().readAheadPutBlockCacheTimeStats.record(timerReadS3.elapsedAndResetAs(TimeUnit.NANOSECONDS));
                             return dataBlock.records();
                         }, backgroundExecutor).whenComplete((ret, ex) -> {
                             if (ex != null) {
@@ -338,8 +335,7 @@ public class StreamReader {
             int readIndex = i;
             boolean isNotAlignedFirstBlock = i == 0 && startOffset != streamDataBlock.getStartOffset();
             CompletableFuture<Void> cf = reserveResult.cf().thenAcceptAsync(dataBlock -> {
-                StorageOperationStats.getInstance().readAheadStageTimeStats(S3StreamMetricsConstant.LABEL_STAGE_READ_S3)
-                        .record(timerRead.elapsedAndResetAs(TimeUnit.NANOSECONDS));
+                StorageOperationStats.getInstance().readAheadReadS3TimeStats.record(timerRead.elapsedAndResetAs(TimeUnit.NANOSECONDS));
                 if (dataBlock.records().isEmpty()) {
                     return;
                 }
@@ -352,8 +348,7 @@ public class StreamReader {
                     blockCache.put(streamId, dataBlock.records());
                 }
                 dataBlock.release();
-                StorageOperationStats.getInstance().readAheadStageTimeStats(S3StreamMetricsConstant.LABEL_STAGE_PUT_BLOCK_CACHE)
-                        .record(timerRead.elapsedAndResetAs(TimeUnit.NANOSECONDS));
+                StorageOperationStats.getInstance().readAheadPutBlockCacheTimeStats.record(timerRead.elapsedAndResetAs(TimeUnit.NANOSECONDS));
             }, backgroundExecutor).whenComplete((ret, ex) -> {
                 if (ex != null) {
                     LOGGER.error("[S3BlockCache] async ra fail to read data block, stream={}, {}-{}, data block: {}",
@@ -374,8 +369,7 @@ public class StreamReader {
             }
             if (reserveResult.reserveSize() > 0) {
                 inflightReadThrottle.acquire(TraceContext.DEFAULT, uuid, reserveResult.reserveSize()).thenAcceptAsync(nil -> {
-                    StorageOperationStats.getInstance().readAheadStageTimeStats(S3StreamMetricsConstant.LABEL_STAGE_THROTTLE)
-                            .record(timerRead.elapsedAndResetAs(TimeUnit.NANOSECONDS));
+                    StorageOperationStats.getInstance().readAheadThrottleTimeStats.record(timerRead.elapsedAndResetAs(TimeUnit.NANOSECONDS));
                     // read data block
                     if (context.taskKeySet.contains(taskKey)) {
                         setInflightReadAheadStatus(taskKey, DefaultS3BlockCache.ReadBlockCacheStatus.WAIT_FETCH_DATA);
@@ -482,11 +476,10 @@ public class StreamReader {
             context.objectIndex++;
             context.computeTime += timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
             if (findIndexResult.isFulfilled()) {
-                StorageOperationStats.getInstance().readAheadStageTimeStats(S3StreamMetricsConstant.LABEL_STAGE_GET_INDICES)
-                        .record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
-                StorageOperationStats.getInstance().getIndexTimeStats("get_objects").record(context.getObjectsTime);
-                StorageOperationStats.getInstance().getIndexTimeStats("find_index").record(context.findIndexTime);
-                StorageOperationStats.getInstance().getIndexTimeStats("compute").record(context.computeTime);
+                StorageOperationStats.getInstance().readAheadGetIndicesTimeStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+                StorageOperationStats.getInstance().getIndicesTimeGetObjectStats.record(context.getObjectsTime);
+                StorageOperationStats.getInstance().getIndicesTimeFindIndexStats.record(context.findIndexTime);
+                StorageOperationStats.getInstance().getIndicesTimeComputeStats.record(context.computeTime);
                 return CompletableFuture.completedFuture(null);
             }
             return getDataBlockIndices(traceContext, streamId, endOffset, context);
