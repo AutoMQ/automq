@@ -119,7 +119,7 @@ public class StreamReader {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[S3BlockCache] sync read ahead, stream={}, {}-{}, maxBytes={}", streamId, startOffset, endOffset, maxBytes);
         }
-        ReadContext context = new ReadContext(startOffset, maxBytes, true);
+        ReadContext context = new ReadContext(startOffset, maxBytes);
         TimerUtil timer = new TimerUtil();
         DefaultS3BlockCache.ReadAheadTaskKey readAheadTaskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset);
         // put a placeholder task at start offset to prevent next cache miss request spawn duplicated read ahead task
@@ -286,7 +286,7 @@ public class StreamReader {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[S3BlockCache] async read ahead, stream={}, {}-{}, maxBytes={}", streamId, startOffset, endOffset, maxBytes);
         }
-        ReadContext context = new ReadContext(startOffset, maxBytes, false);
+        ReadContext context = new ReadContext(startOffset, maxBytes);
         TimerUtil timer = new TimerUtil();
         DefaultS3BlockCache.ReadAheadTaskKey readAheadTaskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, startOffset);
         // put a placeholder task at start offset to prevent next cache miss request spawn duplicated read ahead task
@@ -555,12 +555,11 @@ public class StreamReader {
         int totalReadSize;
         long lastOffset;
         TimerUtil timer;
-        boolean isSync;
         long getObjectsTime = 0;
         long findIndexTime = 0;
         long computeTime = 0;
 
-        public ReadContext(long startOffset, int maxBytes, boolean isSync) {
+        public ReadContext(long startOffset, int maxBytes) {
             this.objects = new LinkedList<>();
             this.objectIndex = 0;
             this.streamDataBlocksPair = new LinkedList<>();
@@ -568,7 +567,6 @@ public class StreamReader {
             this.taskKeySet = new HashSet<>();
             this.nextStartOffset = startOffset;
             this.nextMaxBytes = maxBytes;
-            this.isSync = isSync;
             this.timer = new TimerUtil();
         }
 

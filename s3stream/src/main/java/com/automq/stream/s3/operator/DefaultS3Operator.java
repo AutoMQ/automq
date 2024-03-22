@@ -64,9 +64,11 @@ import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
+import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
@@ -91,6 +93,9 @@ import static com.automq.stream.utils.FutureUtil.cause;
 public class DefaultS3Operator implements S3Operator {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Operator.class);
     private static final AtomicInteger INDEX = new AtomicInteger(-1);
+    private static final int DEFAULT_CONCURRENCY_PER_CORE = 25;
+    private static final int MIN_CONCURRENCY = 50;
+    private static final int MAX_CONCURRENCY = 1000;
     public final float maxMergeReadSparsityRate;
     private final int currentIndex;
     private final String bucket;
@@ -134,10 +139,11 @@ public class DefaultS3Operator implements S3Operator {
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
         this.tagging = tagging ? tagging() : null;
-        this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders);
-        this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders) : writeS3Client;
-        this.inflightWriteLimiter = new Semaphore(50);
-        this.inflightReadLimiter = readWriteIsolate ? new Semaphore(50) : inflightWriteLimiter;
+        int maxS3Concurrency = getMaxS3Concurrency();
+        this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders, maxS3Concurrency);
+        this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders, maxS3Concurrency) : writeS3Client;
+        this.inflightWriteLimiter = new Semaphore(maxS3Concurrency);
+        this.inflightReadLimiter = readWriteIsolate ? new Semaphore(maxS3Concurrency) : inflightWriteLimiter;
         this.bucket = bucket;
         scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         checkConfig();
@@ -148,7 +154,7 @@ public class DefaultS3Operator implements S3Operator {
             .setForcePathStyle(forcePathStyle)
             .setCredentialsProviders(credentialsProviders)
             .build();
-        LOGGER.info("You are using s3Context: {}", s3Context);
+        LOGGER.info("You are using s3Context: {}, max concurrency: {}", s3Context, maxS3Concurrency);
         checkAvailable(s3Context);
         S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
@@ -192,6 +198,11 @@ public class DefaultS3Operator implements S3Operator {
             return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND;
         }
         return false;
+    }
+
+    public int getMaxS3Concurrency() {
+        int cpuCores = Runtime.getRuntime().availableProcessors();
+        return Math.max(MIN_CONCURRENCY, Math.min(cpuCores * DEFAULT_CONCURRENCY_PER_CORE, MAX_CONCURRENCY));
     }
 
     @Override
@@ -681,11 +692,15 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     public S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
-        List<AwsCredentialsProvider> credentialsProviders) {
+        List<AwsCredentialsProvider> credentialsProviders, int maxConcurrency) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
         }
+        SdkAsyncHttpClient httpClient = NettyNioAsyncHttpClient.builder()
+            .maxConcurrency(maxConcurrency)
+            .build();
+        builder.httpClient(httpClient);
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(2))
@@ -911,6 +926,8 @@ public class DefaultS3Operator implements S3Operator {
         private AsyncNetworkBandwidthLimiter inboundLimiter;
         private AsyncNetworkBandwidthLimiter outboundLimiter;
         private boolean readWriteIsolate;
+        private int maxReadConcurrency = 50;
+        private int maxWriteConcurrency = 50;
 
         public Builder endpoint(String endpoint) {
             this.endpoint = endpoint;

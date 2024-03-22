@@ -50,16 +50,30 @@ public class DefaultS3BlockCache implements S3BlockCache {
 
     public DefaultS3BlockCache(Config config, ObjectManager objectManager, S3Operator s3Operator) {
         int blockSize = config.objectBlockSize();
+        CacheSizeSet cacheSizeSet = getCacheSize(config.blockCacheSize());
 
-        this.cache = new BlockCache(config.blockCacheSize());
+        this.cache = new BlockCache(cacheSizeSet.blockCacheSize);
         this.readAheadManager = new ReadAheadManager(blockSize, this.cache);
         this.mainExecutor = Threads.newFixedThreadPoolWithMonitor(
             2,
             "s3-block-cache-main",
             false,
             LOGGER);
-        this.inflightReadThrottle = new InflightReadThrottle();
+        this.inflightReadThrottle = new InflightReadThrottle(cacheSizeSet.inflightReadSize);
         this.streamReader = new StreamReader(s3Operator, objectManager, cache, inflightReadAheadTasks, inflightReadThrottle);
+        LOGGER.info("Init s3 block cache, block cache size: {}, inflight read size: {}", cacheSizeSet.blockCacheSize, cacheSizeSet.inflightReadSize);
+    }
+
+    private CacheSizeSet getCacheSize(long blockCacheSize) {
+        CacheSizeSet cacheSizeSet = new CacheSizeSet();
+        cacheSizeSet.blockCacheSize = blockCacheSize;
+        cacheSizeSet.inflightReadSize = (int) (0.1 * blockCacheSize);
+        if (cacheSizeSet.inflightReadSize < 100 * 1024 * 1024) {
+            cacheSizeSet.inflightReadSize = 100 * 1024 * 1024;
+        } else {
+            cacheSizeSet.blockCacheSize = (long) (0.9 * blockCacheSize);
+        }
+        return cacheSizeSet;
     }
 
     public void shutdown() {
@@ -408,6 +422,11 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 "nextRAOffset=" + nextRAOffset + ']';
         }
 
+    }
+
+    private static class CacheSizeSet {
+        long blockCacheSize;
+        int inflightReadSize;
     }
 
 }
