@@ -149,6 +149,25 @@ public class LogCache {
         return records;
     }
 
+    /**
+     * Get the first record batch in the range [startOffset, endOffset) of the stream.
+     * It is similar to {@link #get(TraceContext, long, long, long, int)}, but some differences:
+     * - It only returns the first record batch in the range if it exists.
+     * - It do not record the metrics or trace.
+     * - There is no need to release the returned record after using it.
+     */
+    public StreamRecordBatch getFirst(long streamId, long startOffset, long endOffset) {
+        readLock.lock();
+        try {
+            // set maxBytes to 1 to get the first record
+            return get0(streamId, startOffset, endOffset, 1).stream()
+                .findFirst()
+                .orElse(null);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
     public List<StreamRecordBatch> get0(long streamId, long startOffset, long endOffset, int maxBytes) {
         List<StreamRecordBatch> rst = new LinkedList<>();
         long nextStartOffset = startOffset;
