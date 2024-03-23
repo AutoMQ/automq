@@ -13,7 +13,6 @@ package org.apache.kafka.image;
 
 import com.automq.stream.s3.cache.LRUCache;
 
-import javax.annotation.concurrent.NotThreadSafe;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -21,7 +20,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
 
-@NotThreadSafe
+/**
+ * NotThreadSafe, the caller should ensure the thread safety
+ */
 public class StreamOffsetIndexMap {
     private final int maxSize;
     private final LRUCache<StreamOffset, Void> streamOffsetCache;
