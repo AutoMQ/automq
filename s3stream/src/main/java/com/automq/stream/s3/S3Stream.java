@@ -202,6 +202,7 @@ public class S3Stream implements Stream {
                 }
                 return CompletableFuture.completedFuture(rs);
             });
+            pendingFetches.add(retCf);
             retCf.whenComplete((rs, ex) -> {
                 if (ex != null) {
                     Throwable cause = FutureUtil.cause(ex);
@@ -220,7 +221,6 @@ public class S3Stream implements Stream {
                 }
                 pendingFetches.remove(retCf);
             });
-            pendingFetches.add(retCf);
             return retCf;
         } finally {
             readLock.unlock();
