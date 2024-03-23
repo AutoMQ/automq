@@ -39,7 +39,7 @@ import java.util.concurrent.ExecutionException;
 public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     private static final Cache<Long, List<StreamOffsetRange>> RANGES_CACHE = CacheBuilder.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(1))
-            .maximumWeight(500000) // expected max heap occupied size is 15MiB
+            .maximumWeight(2500000) // expected max heap occupied size is 75MiB
             .weigher((Weigher<Long, List<StreamOffsetRange>>) (key, value) -> value.size())
             .build();
     public static final byte MAGIC = 0x01;

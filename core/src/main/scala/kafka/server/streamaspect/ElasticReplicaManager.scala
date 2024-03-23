@@ -107,8 +107,8 @@ class ElasticReplicaManager(
     fetchExecutorQueueSizeGaugeMap
   })
 
-  private val fastFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
-  private val slowFetchLimiter = new FairLimiter(100 * 1024 * 1024) // 100MiB
+  private val fastFetchLimiter = new FairLimiter(200 * 1024 * 1024) // 200MiB
+  private val slowFetchLimiter = new FairLimiter(200 * 1024 * 1024) // 200MiB
   private val fetchLimiterGaugeMap = new util.HashMap[String, Integer]()
   S3StreamKafkaMetricsManager.setFetchLimiterPermitNumSupplier(() => {
     fetchLimiterGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.availablePermits())

@@ -2006,6 +2006,7 @@ project(':s3stream') {
 
   dependencies {
     implementation libs.awsSdk
+    implementation libs.awsSdkNetty
     implementation libs.nettyTcnativeBoringSsl
     implementation libs.nettyBuffer
     implementation libs.bucket4j

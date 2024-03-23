@@ -15,6 +15,7 @@ import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 
@@ -44,6 +45,16 @@ public class FutureUtil {
                 dest.complete(rst);
             }
         });
+    }
+
+    public static <T> void propagateAsync(CompletableFuture<T> source, CompletableFuture<T> dest, ExecutorService executor) {
+        source.whenCompleteAsync((rst, ex) -> {
+            if (ex != null) {
+                dest.completeExceptionally(ex);
+            } else {
+                dest.complete(rst);
+            }
+        }, executor);
     }
 
     /**

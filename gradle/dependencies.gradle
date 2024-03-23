@@ -289,6 +289,7 @@ libs += [
   commonMath3: "org.apache.commons:commons-math3:$versions.commonMath3",
   awsSdkAuth: "software.amazon.awssdk:auth:$versions.awsSdk",
   awsSdk: "software.amazon.awssdk:s3:$versions.awsSdk",
+  awsSdkNetty: "software.amazon.awssdk:netty-nio-client:$versions.awsSdk",
   opentelemetryJava8: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:$versions.opentelemetryAlpha",
   opentelemetryOshi: "io.opentelemetry.instrumentation:opentelemetry-oshi:$versions.opentelemetryAlpha",
   opentelemetrySdk: "io.opentelemetry:opentelemetry-sdk:$versions.opentelemetry",
