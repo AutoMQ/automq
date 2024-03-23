@@ -28,6 +28,7 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.GlobalSwitch;
@@ -187,28 +188,40 @@ public class S3Stream implements Stream {
         readLock.lock();
         try {
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(context, startOffset, endOffset, maxBytes), LOGGER, "fetch");
-            pendingFetches.add(cf);
-            cf.whenComplete((rs, ex) -> {
-                StreamOperationStats.getInstance().fetchStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            CompletableFuture<FetchResult> retCf = cf.thenCompose(rs -> {
+                if (networkOutboundLimiter != null) {
+                    long totalSize = 0L;
+                    for (RecordBatch recordBatch : rs.recordBatchList()) {
+                        totalSize += recordBatch.rawPayload().remaining();
+                    }
+                    if (context.readOptions().fastRead()) {
+                        networkOutboundLimiter.forceConsume(totalSize);
+                    } else {
+                        return networkOutboundLimiter.consume(ThrottleStrategy.THROTTLE_1, totalSize).thenApply(nil -> rs);
+                    }
+                }
+                return CompletableFuture.completedFuture(rs);
+            });
+            retCf.whenComplete((rs, ex) -> {
                 if (ex != null) {
                     Throwable cause = FutureUtil.cause(ex);
                     if (!(cause instanceof FastReadFailFastException)) {
                         LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
                     }
-                } else if (networkOutboundLimiter != null) {
+                }
+                StreamOperationStats.getInstance().fetchStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                if (LOGGER.isDebugEnabled()) {
                     long totalSize = 0L;
                     for (RecordBatch recordBatch : rs.recordBatchList()) {
                         totalSize += recordBatch.rawPayload().remaining();
                     }
-                    networkOutboundLimiter.forceConsume(totalSize);
-                    if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("[S3BlockCache] fetch data, stream={}, {}-{}, total bytes: {}, cost={}ms", streamId,
+                    LOGGER.debug("[S3BlockCache] fetch data, stream={}, {}-{}, total bytes: {}, cost={}ms", streamId,
                             startOffset, endOffset, totalSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-                    }
                 }
-                pendingFetches.remove(cf);
+                pendingFetches.remove(retCf);
             });
-            return cf;
+            pendingFetches.add(retCf);
+            return retCf;
         } finally {
             readLock.unlock();
         }

@@ -78,6 +78,7 @@ public class S3StreamMetricsConstant {
     public static final String NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_inbound_limiter_queue_time";
     public static final String NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_outbound_limiter_queue_time";
     public static final String READ_AHEAD_SIZE_METRIC_NAME = "read_ahead_size";
+    public static final String READ_AHEAD_STAGE_TIME_METRIC_NAME = "read_ahead_stage_time";
     public static final String SUM_METRIC_NAME_SUFFIX = "_sum";
     public static final String COUNT_METRIC_NAME_SUFFIX = "_count";
     public static final String P50_METRIC_NAME_SUFFIX = "_50p";
@@ -97,12 +98,17 @@ public class S3StreamMetricsConstant {
     public static final String COMPACTION_WRITE_SIZE_METRIC_NAME = "compaction_write_size";
     public static final String BUFFER_ALLOCATED_MEMORY_SIZE_METRIC_NAME = "buffer_allocated_memory_size";
     public static final String BUFFER_USED_MEMORY_SIZE_METRIC_NAME = "buffer_used_memory_size";
+    public static final String READ_S3_LIMITER_TIME_METRIC_NAME = "read_s3_limiter_time";
+    public static final String WRITE_S3_LIMITER_TIME_METRIC_NAME = "write_s3_limiter_time";
+    public static final String GET_INDEX_TIME_METRIC_NAME = "get_index_time";
+    public static final String READ_BLOCK_CACHE_METRIC_NAME = "read_block_cache_stage_time";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
     public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");
     public static final AttributeKey<String> LABEL_STAGE = AttributeKey.stringKey("stage");
     public static final AttributeKey<String> LABEL_STATUS = AttributeKey.stringKey("status");
     public static final AttributeKey<String> LABEL_ALLOC_TYPE = AttributeKey.stringKey("type");
+    public static final AttributeKey<String> LABEL_INDEX = AttributeKey.stringKey("index");
     public static final String LABEL_STATUS_SUCCESS = "success";
     public static final String LABEL_STATUS_FAILED = "failed";
     public static final String LABEL_STATUS_HIT = "hit";
@@ -110,4 +116,14 @@ public class S3StreamMetricsConstant {
     public static final String LABEL_STATUS_SYNC = "sync";
     public static final String LABEL_STATUS_ASYNC = "async";
 
+    public static final String LABEL_STAGE_GET_INDICES = "get_indices";
+    public static final String LABEL_STAGE_THROTTLE = "throttle";
+    public static final String LABEL_STAGE_READ_S3 = "read_s3";
+    public static final String LABEL_STAGE_PUT_BLOCK_CACHE = "put_block_cache";
+    public static final String LABEL_STAGE_WAIT_INFLIGHT = "wait_inflight";
+    public static final String LABEL_STAGE_READ_CACHE = "read_cache";
+    public static final String LABEL_STAGE_READ_AHEAD = "read_ahead";
+    public static final String LABEL_STAGE_GET_OBJECTS = "get_objects";
+    public static final String LABEL_STAGE_FIND_INDEX = "find_index";
+    public static final String LABEL_STAGE_COMPUTE = "compute";
 }

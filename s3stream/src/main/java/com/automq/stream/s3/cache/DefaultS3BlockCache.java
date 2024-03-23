@@ -44,22 +44,42 @@ public class DefaultS3BlockCache implements S3BlockCache {
     private final Map<ReadTaskKey, ReadTaskContext> inflightReadStatusMap = new ConcurrentHashMap<>();
     private final BlockCache cache;
     private final ExecutorService mainExecutor;
+    private final ExecutorService callBackExecutor;
     private final ReadAheadManager readAheadManager;
     private final StreamReader streamReader;
     private final InflightReadThrottle inflightReadThrottle;
 
     public DefaultS3BlockCache(Config config, ObjectManager objectManager, S3Operator s3Operator) {
         int blockSize = config.objectBlockSize();
+        CacheSizeSet cacheSizeSet = getCacheSize(config.blockCacheSize());
 
-        this.cache = new BlockCache(config.blockCacheSize());
+        this.cache = new BlockCache(cacheSizeSet.blockCacheSize);
         this.readAheadManager = new ReadAheadManager(blockSize, this.cache);
         this.mainExecutor = Threads.newFixedThreadPoolWithMonitor(
             2,
             "s3-block-cache-main",
             false,
             LOGGER);
-        this.inflightReadThrottle = new InflightReadThrottle();
+        this.callBackExecutor = Threads.newFixedThreadPoolWithMonitor(
+                2,
+                "s3-block-cache-callback",
+                false,
+                LOGGER);
+        this.inflightReadThrottle = new InflightReadThrottle(cacheSizeSet.inflightReadSize);
         this.streamReader = new StreamReader(s3Operator, objectManager, cache, inflightReadAheadTasks, inflightReadThrottle);
+        LOGGER.info("Init s3 block cache, block cache size: {}, inflight read size: {}", cacheSizeSet.blockCacheSize, cacheSizeSet.inflightReadSize);
+    }
+
+    private CacheSizeSet getCacheSize(long blockCacheSize) {
+        CacheSizeSet cacheSizeSet = new CacheSizeSet();
+        cacheSizeSet.blockCacheSize = blockCacheSize;
+        cacheSizeSet.inflightReadSize = (int) (0.1 * blockCacheSize);
+        if (cacheSizeSet.inflightReadSize < 100 * 1024 * 1024) {
+            cacheSizeSet.inflightReadSize = 100 * 1024 * 1024;
+        } else {
+            cacheSizeSet.blockCacheSize = (long) (0.9 * blockCacheSize);
+        }
+        return cacheSizeSet;
     }
 
     public void shutdown() {
@@ -91,7 +111,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
         // submit read task to mainExecutor to avoid read slower the caller thread.
         mainExecutor.execute(() -> {
             try {
-                FutureUtil.propagate(read0(finalTraceContext, streamId, startOffset, endOffset, maxBytes, uuid, context).whenComplete((ret, ex) -> {
+                FutureUtil.propagateAsync(read0(finalTraceContext, streamId, startOffset, endOffset, maxBytes, uuid, context).whenComplete((ret, ex) -> {
                     if (ex != null) {
                         LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail", streamId, startOffset, endOffset, maxBytes, ex);
                         this.inflightReadThrottle.release(uuid);
@@ -105,6 +125,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
                     boolean isCacheHit = ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT;
                     StorageOperationStats.getInstance().readBlockCacheStats(isCacheHit).record(timeElapsed);
+                    recordStageTime(isCacheHit, context);
                     Span.fromContext(finalTraceContext.currentContext()).setAttribute("cache_hit", isCacheHit);
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("[S3BlockCache] read data complete, cache hit: {}, stream={}, {}-{}, total bytes: {}",
@@ -112,7 +133,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     }
                     this.inflightReadThrottle.release(uuid);
                     this.inflightReadStatusMap.remove(key);
-                }), readCf);
+                }), readCf, callBackExecutor);
             } catch (Exception e) {
                 LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail, {}", streamId, startOffset, endOffset, maxBytes, e);
                 this.inflightReadThrottle.release(uuid);
@@ -121,6 +142,20 @@ public class DefaultS3BlockCache implements S3BlockCache {
             }
         });
         return readCf;
+    }
+
+    private void recordStageTime(boolean isCacheHit, ReadTaskContext context) {
+        if (isCacheHit) {
+            StorageOperationStats.getInstance().readBlockCacheStageHitWaitInflightTimeStats.record(context.waitInflightTime);
+            StorageOperationStats.getInstance().readBlockCacheStageHitReadCacheTimeStats.record(context.readBlockCacheTime);
+            StorageOperationStats.getInstance().readBlockCacheStageHitReadAheadTimeStats.record(context.readAheadTime);
+            StorageOperationStats.getInstance().readBlockCacheStageHitReadS3TimeStats.record(context.readS3Time);
+        } else {
+            StorageOperationStats.getInstance().readBlockCacheStageMissWaitInflightTimeStats.record(context.waitInflightTime);
+            StorageOperationStats.getInstance().readBlockCacheStageMissReadCacheTimeStats.record(context.readBlockCacheTime);
+            StorageOperationStats.getInstance().readBlockCacheStageMissReadAheadTimeStats.record(context.readAheadTime);
+            StorageOperationStats.getInstance().readBlockCacheStageMissReadS3TimeStats.record(context.readS3Time);
+        }
     }
 
     @WithSpan
@@ -143,23 +178,31 @@ public class DefaultS3BlockCache implements S3BlockCache {
         long nextStartOffset = startOffset;
         int nextMaxBytes = maxBytes;
 
+        TimerUtil inflightTimer = new TimerUtil();
         ReadAheadTaskContext inflightReadAheadTaskContext = inflightReadAheadTasks.get(new ReadAheadTaskKey(streamId, nextStartOffset));
         if (inflightReadAheadTaskContext != null) {
             CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
             context.setStatus(ReadBlockCacheStatus.WAIT_INFLIGHT_RA);
-            inflightReadAheadTaskContext.cf.whenComplete((nil, ex) -> FutureUtil.exec(() -> FutureUtil.propagate(
-                read0(traceContext, streamId, startOffset, endOffset, maxBytes, uuid, context), readCf), readCf, LOGGER, "read0"));
+            inflightReadAheadTaskContext.cf.whenComplete((nil, ex) -> {
+                context.waitInflightTime += inflightTimer.elapsedAs(TimeUnit.NANOSECONDS);
+                FutureUtil.exec(() -> FutureUtil.propagate(
+                        read0(traceContext, streamId, startOffset, endOffset, maxBytes, uuid, context), readCf), readCf, LOGGER, "read0");
+
+            });
             return readCf;
         }
 
         // 1. get from cache
         context.setStatus(ReadBlockCacheStatus.GET_FROM_CACHE);
+        TimerUtil timer = new TimerUtil();
         BlockCache.GetCacheResult cacheRst = cache.get(traceContext, streamId, nextStartOffset, endOffset, nextMaxBytes);
+        context.readBlockCacheTime += timer.elapsedAndResetAs(TimeUnit.NANOSECONDS);
         List<StreamRecordBatch> cacheRecords = cacheRst.getRecords();
         if (!cacheRecords.isEmpty()) {
             asyncReadAhead(streamId, agent, cacheRst.getReadAheadRecords());
             nextStartOffset = cacheRecords.get(cacheRecords.size() - 1).getLastOffset();
             nextMaxBytes -= Math.min(nextMaxBytes, cacheRecords.stream().mapToInt(StreamRecordBatch::size).sum());
+            context.readAheadTime += timer.elapsedAs(TimeUnit.NANOSECONDS);
             if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
                 // cache hit
                 if (LOGGER.isDebugEnabled()) {
@@ -184,8 +227,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[S3BlockCache] read data cache miss, stream={}, {}-{}, total bytes: {} ", streamId, startOffset, endOffset, maxBytes);
         }
+        TimerUtil s3Timer = new TimerUtil();
         return streamReader.syncReadAhead(traceContext, streamId, startOffset, endOffset, maxBytes, agent, uuid)
             .thenCompose(rst -> {
+                context.readS3Time += s3Timer.elapsedAs(TimeUnit.NANOSECONDS);
                 if (!rst.isEmpty()) {
                     int remainBytes = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
                     long lastOffset = rst.get(rst.size() - 1).getLastOffset();
@@ -363,6 +408,10 @@ public class DefaultS3BlockCache implements S3BlockCache {
     public static class ReadTaskContext {
         final ReadAheadAgent agent;
         ReadBlockCacheStatus status;
+        long waitInflightTime;
+        long readBlockCacheTime;
+        long readAheadTime;
+        long readS3Time;
 
         public ReadTaskContext(ReadAheadAgent agent, ReadBlockCacheStatus status) {
             this.agent = agent;
@@ -406,6 +455,11 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 "nextRAOffset=" + nextRAOffset + ']';
         }
 
+    }
+
+    private static class CacheSizeSet {
+        long blockCacheSize;
+        int inflightReadSize;
     }
 
 }

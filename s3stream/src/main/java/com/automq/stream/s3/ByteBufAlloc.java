@@ -170,9 +170,9 @@ public class ByteBufAlloc {
             sb.append(allocatedMemory);
             sb.append(", detail=");
             for (Map.Entry<String, Long> entry : detail.entrySet()) {
-                sb.append(entry.getKey()).append("=").append(entry.getValue()).append(",");
+                sb.append(entry.getKey()).append("=").append(entry.getValue()).append(", ");
             }
-            sb.append(", pooled=");
+            sb.append("pooled=");
             sb.append(policy.isPooled());
             sb.append(", direct=");
             sb.append(policy.isDirect());

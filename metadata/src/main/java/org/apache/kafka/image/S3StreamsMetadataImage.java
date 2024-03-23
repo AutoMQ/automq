@@ -100,6 +100,7 @@ public final class S3StreamsMetadataImage {
         int lastRangeIndex = -1;
         List<S3StreamSetObject> streamSetObjects = null;
         int streamSetObjectIndex = 0;
+        NodeS3StreamSetObjectMetadataImage node = null;
         for (; ; ) {
             int roundStartObjectSize = objects.size();
 
@@ -134,9 +135,13 @@ public final class S3StreamsMetadataImage {
                 }
                 lastRangeIndex = rangeIndex;
                 RangeMetadata range = stream.getRanges().get(rangeIndex);
-                NodeS3StreamSetObjectMetadataImage node = nodeStreamSetObjectMetadata.get(range.nodeId());
-                streamSetObjects = node == null ? Collections.emptyList() : node.orderList();
-                streamSetObjectIndex = 0;
+                node = nodeStreamSetObjectMetadata.get(range.nodeId());
+                if (node != null) {
+                    streamSetObjects = node.orderList();
+                    streamSetObjectIndex = node.floorStreamSetObjectIndex(streamId, nextStartOffset);
+                } else {
+                    streamSetObjects = Collections.emptyList();
+                }
             }
 
             for (; streamSetObjectIndex < streamSetObjects.size(); streamSetObjectIndex++) {
@@ -147,9 +152,12 @@ public final class S3StreamsMetadataImage {
                     continue;
                 }
                 if ((streamOffsetRange.startOffset() == nextStartOffset)
-                    || (objects.isEmpty() && streamOffsetRange.startOffset() < nextStartOffset)) {
+                        || (objects.isEmpty() && streamOffsetRange.startOffset() < nextStartOffset)) {
+                    if (node != null) {
+                        node.recordStreamSetObjectIndex(streamId, nextStartOffset, streamSetObjectIndex);
+                    }
                     objects.add(new S3ObjectMetadata(streamSetObject.objectId(), S3ObjectType.STREAM_SET, List.of(streamOffsetRange),
-                        streamSetObject.dataTimeInMs()));
+                            streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
                     if (objects.size() >= limit || (endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= endOffset)) {
                         return new InRangeObjects(streamId, objects);

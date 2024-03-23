@@ -92,7 +92,6 @@ public class ReadAheadAgent {
             lock.lock();
             this.readAheadEndOffset = readAheadEndOffset;
             this.lastReadAheadSize = readAheadSize;
-            StorageOperationStats.getInstance().readAheadSizeStats.record(readAheadSize);
             if (logger.isDebugEnabled()) {
                 logger.debug("update read ahead offset {}, size: {}, lastReadOffset: {}", readAheadEndOffset, readAheadSize, lastReadOffset);
             }

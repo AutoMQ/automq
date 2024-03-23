@@ -36,6 +36,7 @@ public class NodeS3StreamSetObjectMetadataImage {
     private final int nodeId;
     private final long nodeEpoch;
     private final DeltaMap<Long/*objectId*/, S3StreamSetObject> s3Objects;
+    private final StreamOffsetIndexMap offsetIndexMap = new StreamOffsetIndexMap(2500000);
     private List<S3StreamSetObject> orderIndex;
 
     public NodeS3StreamSetObjectMetadataImage(int nodeId, long nodeEpoch, DeltaMap<Long, S3StreamSetObject> streamSetObjects) {
@@ -80,6 +81,14 @@ public class NodeS3StreamSetObjectMetadataImage {
             orderIndex = objects;
         }
         return orderIndex;
+    }
+
+    public int floorStreamSetObjectIndex(long streamId, long startOffset) {
+        return offsetIndexMap.floorIndex(streamId, startOffset);
+    }
+
+    public void recordStreamSetObjectIndex(long streamId, long startOffset, int index) {
+        offsetIndexMap.put(streamId, startOffset, index);
     }
 
     public int getNodeId() {

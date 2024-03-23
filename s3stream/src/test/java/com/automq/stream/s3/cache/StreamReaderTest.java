@@ -167,7 +167,7 @@ public class StreamReaderTest {
         Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlockGroup1));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
         CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, 0,
-            999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
+            999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), context);
 
         cf.whenComplete((rst, ex) -> {
             Assertions.assertNull(ex);
@@ -229,7 +229,7 @@ public class StreamReaderTest {
         context.taskKeySet.add(key);
         inflightReadAheadTasks.put(key, new DefaultS3BlockCache.ReadAheadTaskContext(new CompletableFuture<>(), DefaultS3BlockCache.ReadBlockCacheStatus.INIT));
         CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, startOffset,
-            999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
+            999, 64, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), context);
 
         cf.whenComplete((rst, ex) -> {
             Assertions.assertNull(ex);
@@ -290,7 +290,7 @@ public class StreamReaderTest {
         Mockito.when(reader.read(index2)).thenReturn(CompletableFuture.failedFuture(new RuntimeException("exception")));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
         CompletableFuture<List<StreamRecordBatch>> cf = streamReader.handleSyncReadAhead(TraceContext.DEFAULT, 233L, 0,
-            512, 1024, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), new TimerUtil(), context);
+            512, 1024, Mockito.mock(ReadAheadAgent.class), UUID.randomUUID(), context);
 
         Threads.sleep(1000);
 
@@ -354,7 +354,7 @@ public class StreamReaderTest {
         Mockito.when(reader.read(index1)).thenReturn(CompletableFuture.completedFuture(dataBlockGroup1));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
 
-        CompletableFuture<Void> cf = streamReader.handleAsyncReadAhead(233L, 0, 999, 1024, Mockito.mock(ReadAheadAgent.class), new TimerUtil(), context);
+        CompletableFuture<Void> cf = streamReader.handleAsyncReadAhead(233L, 0, 999, 1024, Mockito.mock(ReadAheadAgent.class), context);
 
         cf.whenComplete((rst, ex) -> {
             Assertions.assertNull(ex);
@@ -412,7 +412,7 @@ public class StreamReaderTest {
         Mockito.when(reader.read(index2)).thenReturn(CompletableFuture.failedFuture(new RuntimeException("exception")));
         context.objectReaderMap = new HashMap<>(Map.of(1L, reader));
 
-        CompletableFuture<Void> cf = streamReader.handleAsyncReadAhead(233L, 0, 999, 1024, Mockito.mock(ReadAheadAgent.class), new TimerUtil(), context);
+        CompletableFuture<Void> cf = streamReader.handleAsyncReadAhead(233L, 0, 999, 1024, Mockito.mock(ReadAheadAgent.class), context);
 
         try {
             cf.whenComplete((rst, ex) -> {
