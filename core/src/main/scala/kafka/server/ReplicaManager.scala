@@ -774,7 +774,7 @@ class ReplicaManager(val config: KafkaConfig,
     })
 
     maybeAddDelayedProduce(
-      requiredAcks,
+      1,
       delayedProduceLock,
       timeout,
       entriesPerPartition,
