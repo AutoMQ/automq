@@ -14,6 +14,9 @@ package kafka.log.streamaspect;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.ObjectWriter;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -28,6 +31,10 @@ import org.slf4j.LoggerFactory;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ElasticLogMeta {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectWriter WRITER = OBJECT_MAPPER.writer();
+    private static final ObjectReader READER = OBJECT_MAPPER.readerFor(ElasticLogMeta.class);
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogMeta.class);
     /**
      * KV map for segment file suffix -> streamId.
@@ -42,10 +49,8 @@ public class ElasticLogMeta {
     }
 
     public static ByteBuffer encode(ElasticLogMeta meta) {
-        ObjectMapper om = new ObjectMapper();
         try {
-            String str = om.writeValueAsString(meta);
-            return ByteBuffer.wrap(str.getBytes(StandardCharsets.UTF_8));
+            return ByteBuffer.wrap(WRITER.writeValueAsBytes(meta));
         } catch (JsonProcessingException e) {
             LOGGER.error("encode ElasticLogMeta {} failed", meta, e);
             throw new IllegalArgumentException(e);
@@ -54,9 +59,8 @@ public class ElasticLogMeta {
 
     public static ElasticLogMeta decode(ByteBuffer buf) {
         String metaStr = StandardCharsets.UTF_8.decode(buf).toString();
-        ObjectMapper om = new ObjectMapper();
         try {
-            return om.readValue(metaStr, ElasticLogMeta.class);
+            return READER.readValue(metaStr);
         } catch (JsonProcessingException e) {
             LOGGER.error("decode ElasticLogMeta {} failed", metaStr, e);
             throw new RuntimeException(e);
