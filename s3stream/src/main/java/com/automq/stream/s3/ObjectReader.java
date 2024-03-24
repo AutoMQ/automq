@@ -65,7 +65,7 @@ public class ObjectReader implements AutoCloseable {
     }
 
     public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
-        CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.THROTTLE_1);
+        CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.BYPASS);
         return rangeReadCf.thenApply(DataBlockGroup::new);
     }
 
