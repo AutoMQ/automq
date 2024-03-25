@@ -16,7 +16,9 @@ import com.automq.stream.s3.network.ThrottleStrategy;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+@Timeout(30)
 public class AsyncNetworkBandwidthLimiterTest {
 
     @Test
@@ -70,6 +72,21 @@ public class AsyncNetworkBandwidthLimiterTest {
         cf.whenComplete((v, e) -> {
             Assertions.assertNull(e);
             Assertions.assertEquals(0, bucket.getAvailableTokens());
+        });
+        cf.join();
+    }
+
+    @Test
+    public void testThrottleConsume4() {
+        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000, 100);
+        bucket.consume(ThrottleStrategy.BYPASS, 1000);
+        Assertions.assertEquals(-100, bucket.getAvailableTokens());
+        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.THROTTLE_1, 5);
+        bucket.consume(ThrottleStrategy.THROTTLE_1, 10);
+        cf.whenComplete((v, e) -> {
+            Assertions.assertNull(e);
+            Assertions.assertEquals(0, bucket.getAvailableTokens());
+            Assertions.assertEquals(5, bucket.getExtraTokens());
         });
         cf.join();
     }
