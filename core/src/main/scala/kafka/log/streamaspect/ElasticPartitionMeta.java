@@ -15,6 +15,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.ObjectWriter;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +26,10 @@ import java.nio.charset.StandardCharsets;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ElasticPartitionMeta {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectWriter WRITER = OBJECT_MAPPER.writer();
+    private static final ObjectReader READER = OBJECT_MAPPER.readerFor(ElasticPartitionMeta.class);
+
     /**
      * The start offset of this topicPartition.
      * It may be altered after log cleaning.
@@ -53,10 +59,8 @@ public class ElasticPartitionMeta {
     }
 
     public static ByteBuffer encode(ElasticPartitionMeta meta) {
-        ObjectMapper om = new ObjectMapper();
         try {
-            String str = om.writeValueAsString(meta);
-            return ByteBuffer.wrap(str.getBytes(StandardCharsets.UTF_8));
+            return ByteBuffer.wrap(WRITER.writeValueAsBytes(meta));
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException(e);
         }
@@ -64,9 +68,8 @@ public class ElasticPartitionMeta {
 
     public static ElasticPartitionMeta decode(ByteBuffer buf) {
         String metaStr = StandardCharsets.UTF_8.decode(buf).toString();
-        ObjectMapper om = new ObjectMapper();
         try {
-            return om.readValue(metaStr, ElasticPartitionMeta.class);
+            return READER.readValue(metaStr);
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException(e);
         }
