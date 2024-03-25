@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class AnomalyDetector {
     private final Logger logger;
@@ -172,6 +173,8 @@ public class AnomalyDetector {
             }
             prevAction.setDestBrokerId(action.getDestBrokerId());
         }
+        filteredActions = filteredActions.stream().filter(action -> action.getSrcBrokerId() != action.getDestBrokerId())
+                .collect(Collectors.toList());
 
         return filteredActions;
     }
