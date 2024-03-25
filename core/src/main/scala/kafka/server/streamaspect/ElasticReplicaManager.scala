@@ -11,8 +11,8 @@ import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.createLogReadResult
 import kafka.server._
 import kafka.server.checkpoints.{LazyOffsetCheckpoints, OffsetCheckpoints}
-import kafka.utils.{CoreUtils, Exit}
 import kafka.utils.Implicits.MapExtensionMethods
+import kafka.utils.{CoreUtils, Exit}
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.Topic
@@ -33,8 +33,8 @@ import org.apache.kafka.storage.internals.log._
 
 import java.util
 import java.util.Optional
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ExecutorService, Executors, ThreadPoolExecutor}
+import java.util.concurrent._
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong, AtomicReference}
 import java.util.function.Consumer
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Seq, mutable}
@@ -122,6 +122,9 @@ class ElasticReplicaManager(
   private val readFutureBuffer = new ThreadLocal[ArrayBuffer[CompletableFuture[Void]]] {
     override def initialValue(): ArrayBuffer[CompletableFuture[Void]] = new ArrayBuffer[CompletableFuture[Void]]()
   }
+
+  private val transactionWaitingForValidationMap = new ConcurrentHashMap[Long, Verification]
+  private val lastTransactionCleanTimestamp = new AtomicLong(time.milliseconds())
 
   private class ElasticLogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean)
     extends LogDirFailureHandler(name, haltBrokerOnDirFailure) {
@@ -1013,6 +1016,7 @@ class ElasticReplicaManager(
         val followerChangedPartitions = new mutable.HashSet[Partition]
 
         val directoryIds = localChanges.directoryIds().asScala
+
         def doPartitionLeadingOrFollowing(onlyLeaderChange: Boolean): Unit = {
           stateChangeLogger.info(s"Transitioning partition(s) info: $localChanges")
           if (!localChanges.leaders.isEmpty) {
@@ -1088,9 +1092,9 @@ class ElasticReplicaManager(
     replicaFetcherManager.removeFetcherForPartitions(localLeaders.keySet)
     localLeaders.forKeyValue { (tp, info) =>
       getOrCreatePartitionV2(tp, delta, info.topicId, partition => {
-          val state = info.partition.toLeaderAndIsrPartitionState(tp, true)
-          val partitionAssignedDirectoryId = directoryIds.find(_._1.topicPartition() == tp).map(_._2)
-          partition.makeLeader(state, offsetCheckpoints, Some(info.topicId), partitionAssignedDirectoryId)
+        val state = info.partition.toLeaderAndIsrPartitionState(tp, true)
+        val partitionAssignedDirectoryId = directoryIds.find(_._1.topicPartition() == tp).map(_._2)
+        partition.makeLeader(state, offsetCheckpoints, Some(info.topicId), partitionAssignedDirectoryId)
       }).foreach { case (partition, _) =>
         try {
           changedPartitions.add(partition)
@@ -1164,8 +1168,6 @@ class ElasticReplicaManager(
     }
   }
 
-
-
   def awaitAllPartitionShutdown(): Unit = {
     val start = System.currentTimeMillis()
     replicaStateChangeLock.synchronized {
@@ -1191,7 +1193,7 @@ class ElasticReplicaManager(
    * Check whether all partitions are closed, if not, retry until timeout.
    * If any partition's state changed, the timeout will be reset.
    *
-   * @param timeout timeout in milliseconds
+   * @param timeout       timeout in milliseconds
    * @param retryInterval retry interval in milliseconds
    * @return true if all partition closed, false otherwise
    */
@@ -1220,5 +1222,71 @@ class ElasticReplicaManager(
     }
     warn(s"not all partitions are closed. online partition: ${allPartitions.keys}, closing partition: ${closingPartitions.keySet()}, opening partition: ${openingPartitions.keySet()}")
     false
+  }
+
+  override def verify(transactionalId: String,
+    producerId: Long): Verification = {
+    if (transactionalId != null) {
+      transactionWaitingForValidationMap.computeIfAbsent(producerId, _ => {
+        Verification(
+          new AtomicBoolean(false),
+          new ArrayBlockingQueue[TransactionVerificationRequest](5),
+          new AtomicLong(time.milliseconds()))
+      })
+    } else {
+      null
+    }
+  }
+
+  override def checkWaitingTransaction(
+    verification: Verification,
+    task: () => Unit
+  ): Boolean = {
+    val request = TransactionVerificationRequest(task)
+    if (verification != null) {
+      verification.synchronized {
+        if (!verification.hasInflight.compareAndSet(false, true)) {
+          verification.waitingRequests.put(request)
+          return true
+        }
+      }
+    }
+    false
+  }
+
+  override def verifyTransactionCallbackWrapper[T](
+    verification: Verification,
+    callback: (RequestLocal, T) => Unit,
+  ):(RequestLocal, T) => Unit = {
+    (requestLocal, args) => {
+      try {
+        callback(requestLocal, args)
+      } catch {
+        case e: Throwable =>
+          error("Error in transaction verification callback", e)
+      }
+      if (verification != null) {
+        verification.synchronized {
+          verification.hasInflight.set(false)
+          verification.timestamp.set(time.milliseconds())
+          while (!verification.waitingRequests.isEmpty) {
+            val request = verification.waitingRequests.poll()
+            request.task()
+          }
+        }
+        val lastCleanTimestamp = lastTransactionCleanTimestamp.get();
+        val now = time.milliseconds()
+        if (now - lastCleanTimestamp > 60 * 1000 && lastTransactionCleanTimestamp.compareAndSet(lastCleanTimestamp, now)) {
+          transactionWaitingForValidationMap
+            .entrySet()
+            .removeIf(
+              entry => {
+                val verification = entry.getValue
+                !verification.hasInflight.get() && (now - verification.timestamp.get()) > 60 * 60 * 1000
+              })
+
+        }
+      }
+    }
   }
 }

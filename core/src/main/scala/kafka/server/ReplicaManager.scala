@@ -63,9 +63,9 @@ import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, Fetc
 import java.io.File
 import java.nio.file.{Files, Paths}
 import java.util
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import java.util.concurrent.locks.Lock
-import java.util.concurrent.{CompletableFuture, Future, RejectedExecutionException, TimeUnit}
+import java.util.concurrent.{ArrayBlockingQueue, CompletableFuture, Future, RejectedExecutionException, TimeUnit}
 import java.util.{Optional, OptionalInt, OptionalLong}
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
@@ -875,20 +875,49 @@ class ReplicaManager(val config: KafkaConfig,
       return
     }
 
-    maybeStartTransactionVerificationForPartitions(
-      topicPartitionBatchInfo,
-      transactionalId,
-      transactionalProducerInfo.head._1,
-      transactionalProducerInfo.head._2,
-      // Wrap the callback to be handled on an arbitrary request handler thread
-      // when transaction verification is complete. The request local passed in
-      // is only used when the callback is executed immediately.
-      KafkaRequestHandler.wrapAsyncCallback(
-        postVerificationCallback,
-        requestLocal
+    // AutoMQ inject start
+    // 1. get verification handle
+    val verification = verify(transactionalId, transactionalProducerInfo.head._1)
+    val task: () => Unit = () => {
+      maybeStartTransactionVerificationForPartitions(
+        topicPartitionBatchInfo,
+        transactionalId,
+        transactionalProducerInfo.head._1,
+        transactionalProducerInfo.head._2,
+        // Wrap the callback to be handled on an arbitrary request handler thread
+        // when transaction verification is complete. The request local passed in
+        // is only used when the callback is executed immediately.
+        KafkaRequestHandler.wrapAsyncCallback(
+          // 4. wrap the callback: after real callback, set the hasInflight = false and re-run the pending tasks.
+          verifyTransactionCallbackWrapper(verification, postVerificationCallback),
+          requestLocal
+        )
       )
-    )
+    }
+    // 2. ensure only one request is verifying transaction
+    val hasInflight = checkWaitingTransaction(verification, task)
+    if (hasInflight) {
+      return
+    }
+    // 3. if there is no inflight request, directly run the task
+    task()
+    // AutoMQ inject end
   }
+
+  def verify(transactionalId: String, producerId: Long): Verification = {
+    null
+  }
+
+
+  case class Verification(
+    hasInflight: AtomicBoolean,
+    waitingRequests: ArrayBlockingQueue[TransactionVerificationRequest],
+    timestamp: AtomicLong,
+  )
+
+  case class TransactionVerificationRequest(
+    task: () => Unit
+  )
 
   private def buildProducePartitionStatus(
     results: Map[TopicPartition, LogAppendResult]
@@ -1026,7 +1055,7 @@ class ReplicaManager(val config: KafkaConfig,
    * error and a verification guard for a topic partition if the topic partition was unable to be verified by the transaction
    * coordinator. Transaction coordinator errors are mapped to append-friendly errors.
    */
-  private def maybeStartTransactionVerificationForPartitions(
+  protected def maybeStartTransactionVerificationForPartitions(
     topicPartitionBatchInfo: Map[TopicPartition, Int],
     transactionalId: String,
     producerId: Long,
@@ -1082,7 +1111,7 @@ class ReplicaManager(val config: KafkaConfig,
 
   }
 
-  private def maybeStartTransactionVerificationForPartition(
+  protected def maybeStartTransactionVerificationForPartition(
     topicPartition: TopicPartition,
     producerId: Long,
     producerEpoch: Short,
@@ -2876,4 +2905,18 @@ class ReplicaManager(val config: KafkaConfig,
       if partitionDirectoryId != topicPartitionActualDirectoryId
     } directoryEventHandler.handleAssignment(new common.TopicIdPartition(partition.topicId, partition.partition()), topicPartitionActualDirectoryId, () => ())
   }
+
+  // AutoMQ inject start
+  def checkWaitingTransaction(verification: Verification, task: () => Unit): Boolean = {
+    false
+  }
+
+  def verifyTransactionCallbackWrapper[T](
+    verification: Verification,
+    callback: (RequestLocal, T) => Unit,
+  ):(RequestLocal, T) => Unit = {
+    (requestLocal, args) => callback(requestLocal, args)
+  }
+  // AutoMQ inject end
+
 }
