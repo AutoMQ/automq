@@ -698,6 +698,9 @@ public class ProducerStateManager {
                 OptionalLong currentTxnFirstOffsetVal = currentTxnFirstOffset >= 0 ? OptionalLong.of(currentTxnFirstOffset) : OptionalLong.empty();
                 Optional<BatchMetadata> batchMetadata =
                         (offset >= 0) ? Optional.of(new BatchMetadata(seq, offset, offsetDelta, timestamp)) : Optional.empty();
+                // AutoMQ inject start
+                batchMetadata.ifPresent(m -> m.recovered = true);
+                // AutoMQ inject end
                 entries.add(new ProducerStateEntry(producerId, producerEpoch, coordinatorEpoch, timestamp, currentTxnFirstOffsetVal, batchMetadata));
             }
 
@@ -716,12 +719,17 @@ public class ProducerStateManager {
         for (Map.Entry<Long, ProducerStateEntry> producerIdEntry : entries.entrySet()) {
             Long producerId = producerIdEntry.getKey();
             ProducerStateEntry entry = producerIdEntry.getValue();
+            // AutoMQ inject start
+            // encode cached entries sequence range to the snapshot, so we can detect the duplicated message after partition reassignment
+            // TODO: final solution, encoded full cached entries to the snapshot
+            int offsetDelta = entry.lastSeq() - entry.firstSeq();
+            // AutoMQ inject end
             Struct producerEntryStruct = struct.instance(PRODUCER_ENTRIES_FIELD);
             producerEntryStruct.set(PRODUCER_ID_FIELD, producerId)
                     .set(PRODUCER_EPOCH_FIELD, entry.producerEpoch())
                     .set(LAST_SEQUENCE_FIELD, entry.lastSeq())
                     .set(LAST_OFFSET_FIELD, entry.lastDataOffset())
-                    .set(OFFSET_DELTA_FIELD, entry.lastOffsetDelta())
+                    .set(OFFSET_DELTA_FIELD, offsetDelta) // AutoMQ inject
                     .set(TIMESTAMP_FIELD, entry.lastTimestamp())
                     .set(COORDINATOR_EPOCH_FIELD, entry.coordinatorEpoch())
                     .set(CURRENT_TXN_FIRST_OFFSET_FIELD, entry.currentTxnFirstOffset().orElse(-1L));

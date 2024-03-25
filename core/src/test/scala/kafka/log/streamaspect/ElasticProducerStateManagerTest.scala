@@ -576,8 +576,9 @@ class ElasticProducerStateManagerTest {
 
         // The snapshot only persists the last appended batch metadata
         val loadedEntry = recoveredMapping.lastEntry(producerId)
-        assertEquals(1, loadedEntry.get.firstDataOffset)
-        assertEquals(1, loadedEntry.get.firstSeq)
+        // AutoMQ will combine the batch metadata list to single one
+        assertEquals(0, loadedEntry.get.firstDataOffset)
+        assertEquals(0, loadedEntry.get.firstSeq)
         assertEquals(1, loadedEntry.get.lastDataOffset)
         assertEquals(1, loadedEntry.get.lastSeq)
         assertEquals(OptionalLong.of(0), loadedEntry.get.currentTxnFirstOffset)
@@ -600,8 +601,9 @@ class ElasticProducerStateManagerTest {
 
         // The snapshot only persists the last appended batch metadata
         val loadedEntry = recoveredMapping.lastEntry(producerId)
-        assertEquals(1, loadedEntry.get.firstDataOffset)
-        assertEquals(1, loadedEntry.get.firstSeq)
+        // AutoMQ will combine the batch metadata list to single one
+        assertEquals(0, loadedEntry.get.firstDataOffset)
+        assertEquals(0, loadedEntry.get.firstSeq)
         assertEquals(1, loadedEntry.get.lastDataOffset)
         assertEquals(1, loadedEntry.get.lastSeq)
         assertEquals(OptionalLong.empty(), loadedEntry.get.currentTxnFirstOffset)
