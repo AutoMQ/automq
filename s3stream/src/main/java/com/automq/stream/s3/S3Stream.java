@@ -197,7 +197,7 @@ public class S3Stream implements Stream {
                     if (context.readOptions().fastRead()) {
                         networkOutboundLimiter.forceConsume(totalSize);
                     } else {
-                        return networkOutboundLimiter.consume(ThrottleStrategy.BYPASS, totalSize).thenApply(nil -> rs);
+                        return networkOutboundLimiter.consume(ThrottleStrategy.THROTTLE_1, totalSize).thenApply(nil -> rs);
                     }
                 }
                 return CompletableFuture.completedFuture(rs);
