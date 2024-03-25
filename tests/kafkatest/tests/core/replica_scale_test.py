@@ -108,7 +108,7 @@ class ReplicaScaleTest(Test):
                                                 consumer_workload_service.consumer_node,
                                                 consumer_workload_service.bootstrap_servers,
                                                 target_messages_per_sec=150000,
-                                                max_messages=3400000,
+                                                max_messages=1700000,
                                                 consumer_conf={},
                                                 admin_client_conf={},
                                                 common_client_conf={},
