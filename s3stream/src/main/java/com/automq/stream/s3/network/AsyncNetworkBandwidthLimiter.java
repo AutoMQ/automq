@@ -28,6 +28,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class AsyncNetworkBandwidthLimiter {
+    private static final float DEFAULT_EXTRA_TOKEN_RATIO = 0.1f;
     private final Lock lock = new ReentrantLock();
     private final Condition condition = lock.newCondition();
     private final long maxTokens;
@@ -36,6 +37,7 @@ public class AsyncNetworkBandwidthLimiter {
     private final Queue<BucketItem> queuedCallbacks;
     private final Type type;
     private long availableTokens;
+    private long extraTokens;
 
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokenSize) {
         this.type = type;
@@ -48,12 +50,13 @@ public class AsyncNetworkBandwidthLimiter {
             while (true) {
                 lock.lock();
                 try {
-                    while (queuedCallbacks.isEmpty() || availableTokens <= 0) {
+                    while (queuedCallbacks.isEmpty() || (availableTokens <= 0 && extraTokens <= 0)) {
                         condition.await();
                     }
-                    while (!queuedCallbacks.isEmpty() && availableTokens > 0) {
+                    while (!queuedCallbacks.isEmpty() && (availableTokens > 0 || extraTokens > 0)) {
                         BucketItem head = queuedCallbacks.poll();
-                        availableTokens -= head.size;
+                        reduceToken(head.size);
+                        extraTokens = Math.max(0, extraTokens - head.size);
                         logMetrics(head.size);
                         head.cf.complete(null);
                     }
@@ -68,6 +71,13 @@ public class AsyncNetworkBandwidthLimiter {
             lock.lock();
             try {
                 availableTokens = Math.min(availableTokens + tokenSize, maxTokenSize);
+                if (availableTokens <= 0) {
+                    // provide extra tokens to prevent starvation when available tokens are exhausted
+                    extraTokens = (long) (tokenSize * DEFAULT_EXTRA_TOKEN_RATIO);
+                } else {
+                    // disable extra tokens when available tokens are sufficient
+                    extraTokens = 0;
+                }
                 condition.signalAll();
             } finally {
                 lock.unlock();
@@ -94,6 +104,15 @@ public class AsyncNetworkBandwidthLimiter {
         }
     }
 
+    public long getExtraTokens() {
+        lock.lock();
+        try {
+            return extraTokens;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     public int getQueueSize() {
         lock.lock();
         try {
@@ -106,7 +125,7 @@ public class AsyncNetworkBandwidthLimiter {
     public void forceConsume(long size) {
         lock.lock();
         try {
-            availableTokens -= size;
+            reduceToken(size);
             logMetrics(size);
         } finally {
             lock.unlock();
@@ -132,7 +151,7 @@ public class AsyncNetworkBandwidthLimiter {
                 queuedCallbacks.add(new BucketItem(priority, size, cf));
                 condition.signalAll();
             } else {
-                availableTokens -= size;
+                reduceToken(size);
                 cf.complete(null);
                 logMetrics(size);
             }
@@ -140,6 +159,10 @@ public class AsyncNetworkBandwidthLimiter {
             lock.unlock();
         }
         return cf;
+    }
+
+    private void reduceToken(long size) {
+        this.availableTokens = Math.max(-maxTokens, availableTokens - size);
     }
 
     private void logMetrics(long size) {
