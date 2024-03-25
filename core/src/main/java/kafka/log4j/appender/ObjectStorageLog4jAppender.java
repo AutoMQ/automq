@@ -36,6 +36,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class ObjectStorageLog4jAppender extends AppenderSkeleton {
     // 存储日志使用的是 oss，Kafka 数据跑在 s3 上。
+    // 此时需要注意，由于 ObjectStorageLog4jAppender 只被配置在了 rootLogger 上，因此其是单实例的。
     private int bufferSize;
     private ByteBuffer logBuffer = null;
     private String endPoint;
@@ -44,8 +45,7 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
     private String region;
     private int readyNum = 0;
     private OSS ossClient = null;
-    private static final ReentrantLock LOCK = new ReentrantLock();
-    private boolean upload = false;
+    private volatile boolean upload = false;
 
     @Override
     protected void append(LoggingEvent event) {
@@ -55,14 +55,11 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         }
         if (logBuffer.remaining() < event.getMessage().toString().getBytes(StandardCharsets.UTF_8).length) {
             // buffer 空间不足，将 buffer 中的日志写入 OSS，这里需要异步写入。
-            if (LOCK.tryLock()) {
-                upload = true;
-                new Thread(() -> {
-                    upload();
-                    LOCK.unlock();
-                    upload = false;
-                }).start();
-            }
+            upload = true;
+            new Thread(() -> {
+                upload();
+                upload = false;
+            }).start();
         } else {
             logBuffer.put(event.getMessage().toString().getBytes(StandardCharsets.UTF_8));
             // 使用 UTF-8 来解码数据。
