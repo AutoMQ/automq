@@ -884,6 +884,12 @@ project(':core') {
     implementation project(':storage')
     implementation project(':kshell-sdk')
 
+    // 添加 OSS SDK 依赖。
+    implementation 'javax.xml.bind:jaxb-api:2.3.1'
+    implementation 'javax.activation:activation:1.1.1'
+    implementation 'org.glassfish.jaxb:jaxb-runtime:2.3.3'
+    implementation 'com.aliyun.oss:aliyun-sdk-oss:3.17.2'
+
     implementation libs.argparse4j
     implementation libs.jacksonDatabind
     implementation libs.jacksonModuleScala
