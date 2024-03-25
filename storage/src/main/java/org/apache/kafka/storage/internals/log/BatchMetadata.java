@@ -25,6 +25,10 @@ public class BatchMetadata {
     public final int offsetDelta;
     public final long timestamp;
 
+    // AutoMQ inject start
+    public boolean recovered = false;
+    // AutoMQ inject end
+
     public BatchMetadata(
             int lastSeq,
             long lastOffset,

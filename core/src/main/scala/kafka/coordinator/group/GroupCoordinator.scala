@@ -929,20 +929,31 @@ private[group] class GroupCoordinator(
           }
         }
 
-        groupManager.replicaManager.maybeStartTransactionVerificationForPartition(
-          topicPartition = offsetTopicPartition,
-          transactionalId,
-          producerId,
-          producerEpoch,
-          RecordBatch.NO_SEQUENCE,
-          // Wrap the callback to be handled on an arbitrary request handler thread
-          // when transaction verification is complete. The request local passed in
-          // is only used when the callback is executed immediately.
-          KafkaRequestHandler.wrapAsyncCallback(
-            postVerificationCallback,
-            requestLocal
+        // AutoMQ inject start
+        val replicaManager = groupManager.replicaManager
+        val verification = replicaManager.verify(transactionalId, producerId)
+        val task = () => {
+          groupManager.replicaManager.maybeStartTransactionVerificationForPartition(
+            topicPartition = offsetTopicPartition,
+            transactionalId,
+            producerId,
+            producerEpoch,
+            RecordBatch.NO_SEQUENCE,
+            // Wrap the callback to be handled on an arbitrary request handler thread
+            // when transaction verification is complete. The request local passed in
+            // is only used when the callback is executed immediately.
+            KafkaRequestHandler.wrapAsyncCallback(
+              replicaManager.verifyTransactionCallbackWrapper(verification, postVerificationCallback),
+              requestLocal
+            )
           )
-        )
+        }
+        val hasInflight = replicaManager.checkWaitingTransaction(verification, task)
+        if (hasInflight) {
+          return
+        }
+        task()
+      // AutoMQ inject end
     }
   }
 
