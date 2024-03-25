@@ -18,11 +18,13 @@
 package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Action;
+import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
+import kafka.server.KafkaConfig;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringJoiner;
 
 @Tag("S3Unit")
@@ -67,6 +70,103 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
                 break;
         }
         return goal;
+    }
+
+    private void testSingleResourceGoalScore(Resource resource) {
+        AbstractResourceUsageDistributionGoal goal;
+        if (resource == Resource.NW_IN) {
+            goal = new NetworkInUsageDistributionGoal();
+        } else {
+            goal = new NetworkOutUsageDistributionGoal();
+        }
+
+        ClusterModelSnapshot cluster = new ClusterModelSnapshot();
+        Broker broker0 = createBroker(cluster, RACK, 0, true);
+        Broker broker1 = createBroker(cluster, RACK, 1, true);
+        Broker broker2 = createBroker(cluster, RACK, 2, true);
+
+        double load0 = 600 * 1024 * 1024;
+        broker0.setLoad(resource, load0);
+        double load1 = 900 * 1024 * 1024;
+        broker1.setLoad(resource, load1);
+        double load2 = 0;
+        broker2.setLoad(resource, load2);
+
+        TopicPartitionReplica replica = createTopicPartition(cluster, 0, TOPIC_0, 0);
+        replica.setLoad(resource, 50 * 1024 * 1024);
+
+        TopicPartitionReplica replica1 = createTopicPartition(cluster, 1, TOPIC_0, 1);
+        replica1.setLoad(resource, 50 * 1024 * 1024);
+
+        goal.configure(Map.of("autobalancer.controller.network.in.distribution.detect.avg.deviation", 0.1,
+                "autobalancer.controller.network.in.usage.distribution.detect.threshold", 2 * 1024 * 1024,
+                "autobalancer.controller.network.out.distribution.detect.avg.deviation", 0.1,
+                "autobalancer.controller.network.out.usage.distribution.detect.threshold", 2 * 1024 * 1024,
+                KafkaConfig.S3NetworkBaselineBandwidthProp(), 50 * 1024 * 1024));
+        goal.initialize(Set.of(broker0, broker1, broker2));
+        Assertions.assertEquals(2 * 1024 * 1024, goal.usageDetectThreshold);
+        Assertions.assertEquals(0.1, goal.usageAvgDeviation);
+        Assertions.assertEquals(500 * 1024 * 1024, goal.usageAvg);
+        Assertions.assertEquals(450 * 1024 * 1024, goal.usageDistLowerBound);
+        Assertions.assertEquals(550 * 1024 * 1024, goal.usageDistUpperBound);
+        Assertions.assertEquals(50 * 1024 * 1024, goal.maxNormalizedLoadBytes);
+
+        double score0 = goal.brokerScore(broker0);
+        double score1 = goal.brokerScore(broker1);
+        double score2 = goal.brokerScore(broker2);
+
+        Assertions.assertTrue(score0 > score1);
+        Assertions.assertTrue(score1 > score2);
+
+        Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), 0, 2);
+        Action action1 = new Action(ActionType.MOVE, replica1.getTopicPartition(), 1, 2);
+
+        double actionScore = goal.actionAcceptanceScore(action, cluster);
+        double actionScore1 = goal.actionAcceptanceScore(action1, cluster);
+
+        Assertions.assertEquals(1.0, actionScore, 0.0001);
+        Assertions.assertEquals(1.0, actionScore1, 0.0001);
+    }
+
+    @Test
+    public void testGoalConfig() {
+
+        Map<String, Object> config = new HashMap<>();
+        config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, NetworkInUsageDistributionGoal.class.getName());
+        config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 5 * 1024 * 1024);
+        config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, 0.1);
+        config.put(KafkaConfig.S3NetworkBaselineBandwidthProp(), 50 * 1024 * 1024);
+
+        AutoBalancerControllerConfig controllerConfig = new AutoBalancerControllerConfig(config, false);
+        List<Goal> goals = controllerConfig.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
+        Assertions.assertEquals(1, goals.size());
+        Assertions.assertTrue(goals.get(0) instanceof NetworkInUsageDistributionGoal);
+        NetworkInUsageDistributionGoal networkInUsageDistributionGoal = (NetworkInUsageDistributionGoal) goals.get(0);
+        Assertions.assertEquals(5 * 1024 * 1024, networkInUsageDistributionGoal.usageDetectThreshold);
+        Assertions.assertEquals(0.1, networkInUsageDistributionGoal.usageAvgDeviation);
+        Assertions.assertEquals(50 * 1024 * 1024, networkInUsageDistributionGoal.maxNormalizedLoadBytes);
+
+        config.remove(KafkaConfig.S3NetworkBaselineBandwidthProp());
+        controllerConfig = new AutoBalancerControllerConfig(config, false);
+        goals = controllerConfig.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
+        Assertions.assertEquals(1, goals.size());
+        Assertions.assertTrue(goals.get(0) instanceof NetworkInUsageDistributionGoal);
+        networkInUsageDistributionGoal = (NetworkInUsageDistributionGoal) goals.get(0);
+        Assertions.assertEquals(100 * 1024 * 1024, networkInUsageDistributionGoal.maxNormalizedLoadBytes);
+
+        config.put(KafkaConfig.S3NetworkBaselineBandwidthProp(), String.valueOf(60 * 1024 * 1024));
+        controllerConfig = new AutoBalancerControllerConfig(config, false);
+        goals = controllerConfig.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
+        Assertions.assertEquals(1, goals.size());
+        Assertions.assertTrue(goals.get(0) instanceof NetworkInUsageDistributionGoal);
+        networkInUsageDistributionGoal = (NetworkInUsageDistributionGoal) goals.get(0);
+        Assertions.assertEquals(60 * 1024 * 1024, networkInUsageDistributionGoal.maxNormalizedLoadBytes);
+    }
+
+    @Test
+    public void testGoalScore() {
+        testSingleResourceGoalScore(Resource.NW_IN);
+        testSingleResourceGoalScore(Resource.NW_OUT);
     }
 
     private void testSingleResourceDistributionOptimizeOneMove(Resource resource) {

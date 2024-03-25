@@ -35,6 +35,7 @@ public class NetworkInUsageDistributionGoal extends AbstractResourceUsageDistrib
 
     @Override
     public void configure(Map<String, ?> configs) {
+        super.configure(configs);
         AutoBalancerControllerConfig controllerConfig = new AutoBalancerControllerConfig(configs, false);
         this.usageDetectThreshold = controllerConfig.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD);
         this.usageAvgDeviation = Math.max(0.0, Math.min(1.0,
