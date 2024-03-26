@@ -189,12 +189,12 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     public void append(
         long largestOffset,
         long largestTimestampMs,
-        long shallowOffsetOfMaxTimestamp,
+        long offsetOfMaxTimestamp,
         MemoryRecords records) throws IOException {
         if (records.sizeInBytes() > 0) {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("Inserting {} bytes at end offset {} at position {} with largest timestamp {} at shallow offset {}",
-                    records.sizeInBytes(), largestOffset, log.sizeInBytes(), largestTimestampMs, shallowOffsetOfMaxTimestamp);
+                LOGGER.trace("Inserting {} bytes at end offset {} at position {} with largest timestamp {} at offset {}",
+                    records.sizeInBytes(), largestOffset, log.sizeInBytes(), largestTimestampMs, offsetOfMaxTimestamp);
             }
             int physicalPosition = log.sizeInBytes();
             if (physicalPosition == 0) {
@@ -207,7 +207,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
             LOGGER.trace("Appended {} to {} at end offset {}", appendedBytes, log, largestOffset);
             // Update the in memory max timestamp and corresponding offset.
             if (largestTimestampMs > maxTimestampSoFar()) {
-                maxTimestampAndOffsetSoFar = new TimestampOffset(largestTimestampMs, shallowOffsetOfMaxTimestamp);
+                maxTimestampAndOffsetSoFar = new TimestampOffset(largestTimestampMs, offsetOfMaxTimestamp);
             }
             // append an entry to the index (if needed)
             if (bytesSinceLastIndexEntry > indexIntervalBytes) {
