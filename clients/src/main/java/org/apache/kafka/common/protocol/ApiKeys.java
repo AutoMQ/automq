@@ -135,6 +135,7 @@ public enum ApiKeys {
     DELETE_KVS(ApiMessageType.DELETE_KVS, false, true),
     GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true);
     // AutoMQ for Kafka inject end
+
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =
         new EnumMap<>(ApiMessageType.ListenerType.class);
 
