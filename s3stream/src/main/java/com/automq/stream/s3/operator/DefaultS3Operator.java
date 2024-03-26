@@ -33,16 +33,7 @@ import io.netty.util.Timeout;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
@@ -69,23 +60,7 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
-import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
-import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.Delete;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
-import software.amazon.awssdk.services.s3.model.DeletedObject;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.model.Tagging;
-import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
-import software.amazon.awssdk.services.s3.model.UploadPartRequest;
-import software.amazon.awssdk.services.s3.model.UploadPartResponse;
+import software.amazon.awssdk.services.s3.model.*;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.utils.FutureUtil.cause;
@@ -446,20 +421,63 @@ public class DefaultS3Operator implements S3Operator {
                 .key(key)
                 .build()
         ).toArray(ObjectIdentifier[]::new);
+
+        // we need quiet here because BOS S3 API works as quiet mode
+        // in this mode success delete objects won't be returned.
+        // which could cause object not deleted in metadata.
+        //
+        // BOS doc: https://cloud.baidu.com/doc/BOS/s/tkc5twspg
+        // S3 doc: https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html#API_DeleteObjects_RequestBody
+
         DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-            .bucket(bucket)
-            .delete(Delete.builder().objects(toDeleteKeys).build())
-            .build();
+                .bucket(bucket)
+                .delete(Delete.builder()
+                        .objects(toDeleteKeys)
+                        .quiet(true)
+                        .build())
+                .build();
+
         // TODO: handle not exist object, should we regard it as deleted or ignore it.
-        return this.writeS3Client.deleteObjects(request).thenApply(resp -> {
-            S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", resp.deleted().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            return resp.deleted().stream().map(DeletedObject::key).collect(Collectors.toList());
-        }).exceptionally(ex -> {
-            S3OperationStats.getInstance().deleteObjectsStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
-            return Collections.emptyList();
-        });
+        return this.writeS3Client.deleteObjects(request)
+                .thenApply(resp -> handleDeleteObjectsResponse(objectKeys, timerUtil, resp))
+                .exceptionally(ex -> {
+                    S3OperationStats.getInstance().deleteObjectsStats(false)
+                            .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}",
+                            objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
+                    return Collections.emptyList();
+                });
+    }
+
+    private List<String> handleDeleteObjectsResponse(List<String> objectKeys, TimerUtil timerUtil,
+                                                     DeleteObjectsResponse response) {
+        List<String> ans = null;
+        int errDeleteCount = 0;
+
+        if (!response.hasErrors()) {
+            ans = objectKeys;
+        } else {
+            Set<String> successDeleteKeys = new HashSet<>(objectKeys);
+
+            for (S3Error error : response.errors()) {
+                if (!error.code().equals("NoSuchKey")) {
+                    successDeleteKeys.remove(error.key());
+                } else {
+                    LOGGER.error("[ControllerS3Operator]: Delete objects for key {} error code {} message {}",
+                            error.key(), error.code(), error.message());
+                    errDeleteCount++;
+                }
+            }
+
+            ans = new ArrayList<>(successDeleteKeys);
+        }
+
+        LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, errCount: {}, cost: {}",
+                ans.size(), errDeleteCount, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+
+        S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+
+        return ans;
     }
 
     @Override
