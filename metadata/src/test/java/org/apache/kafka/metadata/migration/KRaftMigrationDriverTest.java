@@ -573,7 +573,7 @@ public class KRaftMigrationDriverTest {
             TestUtils.waitForCondition(() -> driver.migrationState().get(1, TimeUnit.MINUTES).equals(MigrationDriverState.DUAL_WRITE),
                 "Waiting for KRaftMigrationDriver to enter ZK_MIGRATION state");
 
-            // Modify topics in a KRaft snapshot -- delete foo, modify bar, add baz
+            // Modify topics in a KRaft snapshot -- delete foo, modify bar, add baz, add new foo, add bam, delete bam
             provenance = new MetadataProvenance(200, 1, 1);
             delta = new MetadataDelta(image);
             RecordTestUtils.replayAll(delta, DELTA1_RECORDS);
@@ -583,10 +583,11 @@ public class KRaftMigrationDriverTest {
 
             assertEquals(1, topicClient.deletedTopics.size());
             assertEquals("foo", topicClient.deletedTopics.get(0));
-            assertEquals(1, topicClient.createdTopics.size());
-            assertEquals("baz", topicClient.createdTopics.get(0));
+            assertEquals(2, topicClient.createdTopics.size());
+            assertTrue(topicClient.createdTopics.contains("foo"));
+            assertTrue(topicClient.createdTopics.contains("baz"));
             assertTrue(topicClient.updatedTopicPartitions.get("bar").contains(0));
-            assertEquals(new ConfigResource(ConfigResource.Type.TOPIC, "foo"), configClient.deletedResources.get(0));
+            assertEquals(0, configClient.deletedResources.size());
         });
     }
 
@@ -630,7 +631,7 @@ public class KRaftMigrationDriverTest {
             TestUtils.waitForCondition(() -> driver.migrationState().get(1, TimeUnit.MINUTES).equals(MigrationDriverState.DUAL_WRITE),
                     "Waiting for KRaftMigrationDriver to enter DUAL_WRITE state");
 
-            // Modify topics in a KRaft snapshot -- delete foo, modify bar, add baz
+            // Modify topics in a KRaft snapshot -- delete foo, modify bar, add baz, add new foo, add bam, delete bam
             provenance = new MetadataProvenance(200, 1, 1);
             delta = new MetadataDelta(image);
             RecordTestUtils.replayAll(delta, DELTA1_RECORDS);
@@ -640,10 +641,11 @@ public class KRaftMigrationDriverTest {
 
             assertEquals(1, topicClient.deletedTopics.size());
             assertEquals("foo", topicClient.deletedTopics.get(0));
-            assertEquals(1, topicClient.createdTopics.size());
-            assertEquals("baz", topicClient.createdTopics.get(0));
+            assertEquals(2, topicClient.createdTopics.size());
+            assertTrue(topicClient.createdTopics.contains("foo"));
+            assertTrue(topicClient.createdTopics.contains("baz"));
             assertTrue(topicClient.updatedTopicPartitions.get("bar").contains(0));
-            assertEquals(new ConfigResource(ConfigResource.Type.TOPIC, "foo"), configClient.deletedResources.get(0));
+            assertEquals(0, configClient.deletedResources.size());
         });
     }
 
@@ -745,7 +747,7 @@ public class KRaftMigrationDriverTest {
             migrationClient.setMigrationRecoveryState(
                 ZkMigrationLeadershipState.EMPTY.withKRaftMetadataOffsetAndEpoch(100, 1));
 
-            // Modify topics in a KRaft -- delete foo, modify bar, add baz
+            // Modify topics in a KRaft -- delete foo, modify bar, add baz, add new foo, add bam, delete bam
             provenance = new MetadataProvenance(200, 1, 1);
             delta = new MetadataDelta(image);
             RecordTestUtils.replayAll(delta, DELTA1_RECORDS);
@@ -761,10 +763,11 @@ public class KRaftMigrationDriverTest {
                 "");
             assertEquals(1, topicClient.deletedTopics.size());
             assertEquals("foo", topicClient.deletedTopics.get(0));
-            assertEquals(1, topicClient.createdTopics.size());
-            assertEquals("baz", topicClient.createdTopics.get(0));
+            assertEquals(2, topicClient.createdTopics.size());
+            assertTrue(topicClient.createdTopics.contains("foo"));
+            assertTrue(topicClient.createdTopics.contains("baz"));
             assertTrue(topicClient.updatedTopicPartitions.get("bar").contains(0));
-            assertEquals(new ConfigResource(ConfigResource.Type.TOPIC, "foo"), configClient.deletedResources.get(0));
+            assertEquals(0, configClient.deletedResources.size());
         });
     }
 
