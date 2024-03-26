@@ -52,15 +52,15 @@ public class BOSDeleteObjectsCompatibilityHandler implements DeleteObjectsCompat
         } else {
             Set<String> successDeleteKeys = new HashSet<>(objectKeys);
             Set<String> errorDeleteKeys = null;
+
             for (S3Error error : response.errors()) {
                 if (!error.code().equals("NoSuchKey")) {
-                    successDeleteKeys.remove(error.key());
-                } else {
                     LOGGER.error("[ControllerS3Operator]: Delete objects for key {} error code {} message {}", error.key(), error.code(), error.message());
                     if (errorDeleteKeys == null) {
                         errorDeleteKeys = new HashSet<>();
                     }
                     errorDeleteKeys.add(error.key());
+                    successDeleteKeys.remove(error.key());
                 }
             }
 

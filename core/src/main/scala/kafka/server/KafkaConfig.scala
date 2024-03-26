@@ -558,6 +558,7 @@ object KafkaConfig {
   val S3SpanScheduledDelayMsDoc = "The delay in milliseconds to export queued spans"
   val S3SpanMaxQueueSizeDoc = "The max number of spans that can be queued before dropped"
   val S3SpanMaxBatchSizeDoc = "The max number of spans that can be exported in a single batch"
+  val S3DeleteObjectsCompatibilityHandlerClassDoc = "The S3 API compatibility handler for DeleteObjects"
   val EnableAutoBalancerDoc = AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE_DOC;
   // AutoMQ inject end
 
@@ -1479,6 +1480,7 @@ object KafkaConfig {
       .define(S3SpanMaxQueueSizeProp, INT, Defaults.S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, S3SpanMaxQueueSizeDoc)
       .define(S3SpanMaxBatchSizeProp, INT, Defaults.S3_SPAN_MAX_BATCH_SIZE, MEDIUM, S3SpanMaxBatchSizeDoc)
       .define(EnableAutoBalancerProp, BOOLEAN, false, HIGH, EnableAutoBalancerDoc)
+      .define(S3DeleteObjectsCompatibilityHandlerClassProp, STRING, "", MEDIUM, S3DeleteObjectsCompatibilityHandlerClassDoc)
       // AutoMQ inject end
 
       /** Internal Configurations **/
