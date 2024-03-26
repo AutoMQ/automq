@@ -718,7 +718,6 @@ object LocalLog extends Logging {
   def maybeHandleIOException[T](logDirFailureChannel: LogDirFailureChannel,
                                              logDir: String,
                                              errorMsg: => String)(fun: => T): T = {
-    // TODO: wrapper extends the logDirFailureChannel to only fail the partition
     if (logDirFailureChannel.hasOfflineLogDir(logDir)) {
       throw new KafkaStorageException(s"The log dir $logDir is already offline due to a previous IO exception.")
     }

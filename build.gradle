@@ -2090,6 +2090,7 @@ project(':tools:tools-api') {
 
 project(':tools') {
   archivesBaseName = "kafka-tools"
+  // TODO: compare the kafka and fix the incorrected exclude
   dependencies {
     implementation (project(':clients')){
       exclude group: 'org.slf4j', module: '*'

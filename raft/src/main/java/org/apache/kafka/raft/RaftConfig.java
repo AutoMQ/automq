@@ -80,7 +80,7 @@ public class RaftConfig {
     public static final String QUORUM_LINGER_MS_CONFIG = QUORUM_PREFIX + "append.linger.ms";
     public static final String QUORUM_LINGER_MS_DOC = "The duration in milliseconds that the leader will " +
         "wait for writes to accumulate before flushing them to disk.";
-    public static final int DEFAULT_QUORUM_LINGER_MS = 25;
+    public static final int DEFAULT_QUORUM_LINGER_MS = 1;
 
     public static final String QUORUM_REQUEST_TIMEOUT_MS_CONFIG = QUORUM_PREFIX +
         CommonClientConfigs.REQUEST_TIMEOUT_MS_CONFIG;
