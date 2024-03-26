@@ -13,6 +13,7 @@ package kafka.autobalancer.config;
 
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 
 import java.util.HashSet;
@@ -24,57 +25,40 @@ import java.util.concurrent.TimeUnit;
 /**
  * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.CruiseControlMetricsReporterConfig.
  */
-public class AutoBalancerMetricsReporterConfig extends AutoBalancerConfig {
-    private static final Set<String> CONFIGS = new HashSet<>();
+public class AutoBalancerMetricsReporterConfig extends AbstractConfig {
+    private static final Set<String> PRODUCER_CONFIGS = new HashSet<>();
+    public static final ConfigDef CONFIG_DEF = new ConfigDef();
     /* Configurations */
     private static final String PREFIX = "autobalancer.reporter.";
-    public static final String AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_TIMEOUT_MS_CONFIG = PREFIX + "topic.auto.create.timeout.ms";
-    public static final String AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_RETRIES_CONFIG = PREFIX + "topic.auto.create.retries";
     public static final String AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES_CONFIG = PREFIX + "producer.create.retries";
     public static final String AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG = PREFIX + "metrics.reporting.interval.ms";
-    public static final String AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID = PREFIX + "producer.client.id";
-    public static final String AUTO_BALANCER_METRICS_REPORTER_LINGER_MS_CONFIG = PREFIX + "producer.linger.ms";
-    public static final String AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_CONFIG = PREFIX + "producer.batch.size";
+    public static final String AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID = PREFIX + ProducerConfig.CLIENT_ID_CONFIG;
+    public static final String AUTO_BALANCER_METRICS_REPORTER_LINGER_MS_CONFIG = PREFIX + ProducerConfig.LINGER_MS_CONFIG;
+    public static final String AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_CONFIG = PREFIX + ProducerConfig.BATCH_SIZE_CONFIG;
     /* Default values */
     public static final String DEFAULT_AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID = "AutoBalancerMetricsReporterProducer";
-    public static final long DEFAULT_AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(10);
-    public static final Integer DEFAULT_AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_RETRIES = 5;
-    public static final Short DEFAULT_AUTO_BALANCER_METRICS_TOPIC_REPLICATION_FACTOR = 1;
     public static final long DEFAULT_AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS = TimeUnit.SECONDS.toMillis(10);
     public static final int DEFAULT_AUTO_BALANCER_METRICS_REPORTER_LINGER_MS = (int) TimeUnit.SECONDS.toMillis(1);
     public static final int DEFAULT_AUTO_BALANCER_METRICS_BATCH_SIZE = 800 * 1000;
     public static final int DEFAULT_AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES = 2;
     /* Documents */
-    private static final String AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_TIMEOUT_MS_DOC = "Timeout on the Auto Balancer metrics topic creation";
-    private static final String AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_RETRIES_DOC = "Number of retries of the Auto Balancer metrics reporter"
-            + " for the topic creation";
     private static final String AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES_DOC = "Number of times the Auto Balancer metrics reporter will "
             + "attempt to create the producer while starting up.";
     private static final String AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_DOC = "The interval in milliseconds the "
             + "metrics reporter should report the metrics.";
     public static final String AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID_DOC = CommonClientConfigs.CLIENT_ID_DOC;
     private static final String AUTO_BALANCER_METRICS_REPORTER_LINGER_MS_DOC = "The linger.ms configuration of KafkaProducer used in AutoBalancer "
-            + " metrics reporter. Set this config and autobalancer.metrics.reporter.batch.size to a large number to have better batching.";
+            + " metrics reporter. Set this config and autobalancer.reporter.batch.size to a large number to have better batching.";
     private static final String AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_DOC = "The batch.size configuration of KafkaProducer used in AutoBalancer "
-            + " metrics reporter. Set this config and autobalancer.metrics.reporter.linger.ms to a large number to have better batching.";
+            + " metrics reporter. Set this config and autobalancer.reporter.linger.ms to a large number to have better batching.";
 
     static {
-        ProducerConfig.configNames().forEach(name -> CONFIGS.add(PREFIX + name));
-        CONFIG.define(AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG,
+        ProducerConfig.configNames().forEach(name -> PRODUCER_CONFIGS.add(PREFIX + name));
+        CONFIG_DEF.define(AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG,
                         ConfigDef.Type.LONG,
                         DEFAULT_AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS,
                         ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_DOC)
-                .define(AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_TIMEOUT_MS_CONFIG,
-                        ConfigDef.Type.LONG,
-                        DEFAULT_AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_TIMEOUT_MS,
-                        ConfigDef.Importance.LOW,
-                        AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_TIMEOUT_MS_DOC)
-                .define(AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_RETRIES_CONFIG,
-                        ConfigDef.Type.INT,
-                        DEFAULT_AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_RETRIES,
-                        ConfigDef.Importance.LOW,
-                        AUTO_BALANCER_METRICS_TOPIC_AUTO_CREATE_RETRIES_DOC)
                 .define(AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES_CONFIG,
                         ConfigDef.Type.INT,
                         DEFAULT_AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES,
@@ -98,7 +82,7 @@ public class AutoBalancerMetricsReporterConfig extends AutoBalancerConfig {
     }
 
     public AutoBalancerMetricsReporterConfig(Map<?, ?> originals, boolean doLog) {
-        super(originals, doLog);
+        super(CONFIG_DEF, originals, doLog);
     }
 
     /**
@@ -107,7 +91,7 @@ public class AutoBalancerMetricsReporterConfig extends AutoBalancerConfig {
      */
     public static String config(String baseConfigName) {
         String configName = PREFIX + baseConfigName;
-        if (!CONFIGS.contains(configName)) {
+        if (!PRODUCER_CONFIGS.contains(configName)) {
             throw new IllegalArgumentException("The base config name " + baseConfigName + " is not defined.");
         }
         return configName;

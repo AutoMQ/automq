@@ -40,7 +40,7 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
         usageAvg = brokers.stream().mapToDouble(e -> e.load(resource)).sum() / brokers.size();
         usageDistLowerBound = Math.max(0, usageAvg * (1 - this.usageAvgDeviation));
         usageDistUpperBound = usageAvg * (1 + this.usageAvgDeviation);
-        LOGGER.info("{} expected dist bound: {}-{}", name(), usageDistLowerBound, usageDistUpperBound);
+        LOGGER.info("{} expected dist bound: {}", name(), String.format("%.2f-%f.2f", usageDistLowerBound / 1024, usageDistUpperBound / 1024));
     }
 
     @Override

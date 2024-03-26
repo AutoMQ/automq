@@ -17,7 +17,6 @@
 
 package kafka.autobalancer.metricsreporter;
 
-import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
@@ -29,6 +28,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -68,9 +68,6 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
     @Override
     protected Map<String, String> overridingNodeProps() {
         Map<String, String> props = new HashMap<>();
-//        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "false");
-        props.put(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
-        props.put(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG, "1");
         props.put(KafkaConfig.LogFlushIntervalMessagesProp(), "1");
         props.put(KafkaConfig.OffsetsTopicReplicationFactorProp(), "1");
         props.put(KafkaConfig.DefaultReplicationFactorProp(), "1");
@@ -94,7 +91,7 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "testReportingMetrics");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         try (Consumer<String, AutoBalancerMetrics> consumer = new KafkaConsumer<>(props)) {
-            consumer.subscribe(Collections.singleton(METRIC_TOPIC));
+            consumer.subscribe(Collections.singleton(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME));
             long startMs = System.currentTimeMillis();
             Set<Byte> expectedTopicPartitionMetricTypes = new HashSet<>(Arrays.asList(
                     TOPIC_PARTITION_BYTES_IN,

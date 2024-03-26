@@ -31,8 +31,10 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsReporter;
+import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.KafkaThread;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
@@ -59,7 +61,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private YammerMetricProcessor yammerMetricProcessor;
     private KafkaThread metricsReporterRunner;
     private KafkaProducer<String, AutoBalancerMetrics> producer;
-    private String autoBalancerMetricsTopic;
     private long reportingIntervalMs;
     private int brokerId;
     private String brokerRack;
@@ -69,21 +70,20 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private int metricsReporterCreateRetries;
     private long lastErrorReportTime = 0;
 
-    static String getBootstrapServers(Map<String, ?> configs) {
-        Object port = configs.get("port");
+    private String getBootstrapServers(Map<String, ?> configs) {
         String listeners = String.valueOf(configs.get(KafkaConfig.ListenersProp()));
         if (!"null".equals(listeners) && !listeners.isEmpty()) {
             // See https://kafka.apache.org/documentation/#listeners for possible responses. If multiple listeners are configured, this function
             // picks the first listener in the list of listeners. Hence, users of this config must adjust their order accordingly.
             String firstListener = listeners.split("\\s*,\\s*")[0];
             String[] protocolHostPort = firstListener.split(":");
-            // Use port of listener only if no explicit config specified for KafkaConfig.PortProp().
-            String portToUse = port == null ? protocolHostPort[protocolHostPort.length - 1] : String.valueOf(port);
+            String portToUse = protocolHostPort[protocolHostPort.length - 1];
             // Use host of listener if one is specified.
-            return ((protocolHostPort[1].length() == 2) ? DEFAULT_BOOTSTRAP_SERVERS_HOST : protocolHostPort[1].substring(2)) + ":" + portToUse;
+            return ((protocolHostPort[1].length() == 2) ? DEFAULT_BOOTSTRAP_SERVERS_HOST
+                    : protocolHostPort[1].substring(2)) + ":" + portToUse;
         }
 
-        return DEFAULT_BOOTSTRAP_SERVERS_HOST + ":" + (port == null ? DEFAULT_BOOTSTRAP_SERVERS_PORT : port);
+        return DEFAULT_BOOTSTRAP_SERVERS_HOST + ":" + DEFAULT_BOOTSTRAP_SERVERS_PORT;
     }
 
     @Override
@@ -155,7 +155,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
         Properties producerProps = AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs);
 
-        //Add BootstrapServers if not set
+        // Add BootstrapServers if not set
         if (!producerProps.containsKey(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG)) {
             String bootstrapServers = getBootstrapServers(configs);
             producerProps.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -163,7 +163,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
                     AutoBalancerMetricsReporterConfig.config(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG));
         }
 
-        //Add SecurityProtocol if not set
+        // Add SecurityProtocol if not set
         if (!producerProps.containsKey(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG)) {
             String securityProtocol = "PLAINTEXT";
             producerProps.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, securityProtocol);
@@ -181,7 +181,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         setIfAbsent(producerProps, ProducerConfig.BATCH_SIZE_CONFIG,
                 reporterConfig.getInt(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_CONFIG).toString());
         setIfAbsent(producerProps, ProducerConfig.RETRIES_CONFIG, "5");
-        setIfAbsent(producerProps, ProducerConfig.COMPRESSION_TYPE_CONFIG, "gzip");
+        setIfAbsent(producerProps, ProducerConfig.COMPRESSION_TYPE_CONFIG, CompressionType.GZIP.toString());
         setIfAbsent(producerProps, ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         setIfAbsent(producerProps, ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         setIfAbsent(producerProps, ProducerConfig.ACKS_CONFIG, "all");
@@ -200,7 +200,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
             brokerRack = "";
         }
 
-        autoBalancerMetricsTopic = reporterConfig.getString(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_TOPIC_CONFIG);
         reportingIntervalMs = reporterConfig.getLong(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG);
 
         LOGGER.info("AutoBalancerMetricsReporter configuration finished");
@@ -287,7 +286,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
      */
     public void sendAutoBalancerMetric(AutoBalancerMetrics ccm) {
         ProducerRecord<String, AutoBalancerMetrics> producerRecord =
-                new ProducerRecord<>(autoBalancerMetricsTopic, null, ccm.time(), ccm.key(), ccm);
+                new ProducerRecord<>(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, null, ccm.time(), ccm.key(), ccm);
         LOGGER.debug("Sending auto balancer metric {}.", ccm);
         producer.send(producerRecord, (recordMetadata, e) -> {
             if (e != null) {

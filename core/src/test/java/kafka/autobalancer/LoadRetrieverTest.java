@@ -18,7 +18,6 @@
 package kafka.autobalancer;
 
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter;
@@ -69,8 +68,6 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
     @Override
     protected Map<String, String> overridingNodeProps() {
         Map<String, String> props = new HashMap<>();
-        props.put(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
-        props.put(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG, "1");
         props.put(KafkaConfig.LogFlushIntervalMessagesProp(), "1");
         props.put(KafkaConfig.OffsetsTopicReplicationFactorProp(), "1");
         props.put(KafkaConfig.DefaultReplicationFactorProp(), "1");
@@ -137,7 +134,6 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
     @Test
     public void testConsume() throws InterruptedException {
         Map<String, Object> props = new HashMap<>();
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(props, false);
 
         RecordClusterModel clusterModel = new RecordClusterModel();

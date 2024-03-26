@@ -29,6 +29,7 @@ public class Topic {
     public static final String GROUP_METADATA_TOPIC_NAME = "__consumer_offsets";
     public static final String TRANSACTION_STATE_TOPIC_NAME = "__transaction_state";
     public static final String CLUSTER_METADATA_TOPIC_NAME = "__cluster_metadata";
+    public static final String AUTO_BALANCER_METRICS_TOPIC_NAME = "__auto_balancer_metrics";
     public static final TopicPartition CLUSTER_METADATA_TOPIC_PARTITION = new TopicPartition(
         CLUSTER_METADATA_TOPIC_NAME,
         0

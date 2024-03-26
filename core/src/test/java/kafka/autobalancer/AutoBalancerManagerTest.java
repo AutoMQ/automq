@@ -17,7 +17,6 @@
 
 package kafka.autobalancer;
 
-import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.goals.NetworkInUsageDistributionGoal;
@@ -32,6 +31,7 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartitionInfo;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -71,8 +71,6 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
     @Override
     protected Map<String, String> overridingNodeProps() {
         Map<String, String> props = new HashMap<>();
-        props.put(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
-        props.put(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG, "1");
         props.put(KafkaConfig.LogFlushIntervalMessagesProp(), "1");
         props.put(KafkaConfig.OffsetsTopicReplicationFactorProp(), "1");
         props.put(KafkaConfig.DefaultReplicationFactorProp(), "1");
@@ -102,7 +100,7 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, "10000");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS, "10000");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION, "true");
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS, "__consumer_offsets," + METRIC_TOPIC);
+        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS, "__consumer_offsets," + Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
 
         return props;
     }

@@ -15,7 +15,6 @@ import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.common.types.MetricTypes;
-import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
@@ -31,6 +30,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.CreatePartitionsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
@@ -68,10 +68,8 @@ public class LoadRetriever implements BrokerStatusListener {
     public static final Random RANDOM = new Random();
     protected final Logger logger;
     private final Map<Integer, BrokerEndpoints> bootstrapServerMap;
-    private final String metricReporterTopic;
     private final int metricReporterTopicPartition;
     private final long metricReporterTopicRetentionTime;
-    private final String metricReporterTopicCleanupPolicy;
     protected final long consumerPollTimeout;
     protected final String consumerClientIdPrefix;
     protected final long consumerRetryBackOffMs;
@@ -104,10 +102,8 @@ public class LoadRetriever implements BrokerStatusListener {
         this.cond = lock.newCondition();
         this.mainExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-main"));
         leaderEpochInitialized = false;
-        metricReporterTopic = config.getString(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG);
-        metricReporterTopicPartition = config.getInt(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
-        metricReporterTopicRetentionTime = config.getLong(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_RETENTION_MS_CONFIG);
-        metricReporterTopicCleanupPolicy = config.getString(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_CLEANUP_POLICY);
+        metricReporterTopicPartition = config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
+        metricReporterTopicRetentionTime = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_RETENTION_MS_CONFIG);
         consumerPollTimeout = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
         consumerClientIdPrefix = config.getString(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX);
         consumerRetryBackOffMs = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS);
@@ -325,10 +321,10 @@ public class LoadRetriever implements BrokerStatusListener {
                 .setValue(Long.toString(metricReporterTopicRetentionTime)));
         configCollection.add(new CreateTopicsRequestData.CreateableTopicConfig()
                 .setName(TopicConfig.CLEANUP_POLICY_CONFIG)
-                .setValue(metricReporterTopicCleanupPolicy));
+                .setValue(TopicConfig.CLEANUP_POLICY_DELETE));
 
         topicCollection.add(new CreateTopicsRequestData.CreatableTopic()
-                .setName(metricReporterTopic)
+                .setName(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME)
                 .setNumPartitions(metricReporterTopicPartition)
                 .setReplicationFactor((short) 1)
                 .setConfigs(configCollection));
@@ -340,14 +336,14 @@ public class LoadRetriever implements BrokerStatusListener {
                     request,
                     Collections.emptySet());
             CreateTopicsResponseData rsp = future.get();
-            CreateTopicsResponseData.CreatableTopicResult result = rsp.topics().find(metricReporterTopic);
+            CreateTopicsResponseData.CreatableTopicResult result = rsp.topics().find(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
             if (result.errorCode() == Errors.NONE.code()) {
-                logger.info("Create metrics reporter topic {} succeed", metricReporterTopic);
+                logger.info("Create metrics reporter topic {} succeed", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
             } else if (result.errorCode() != Errors.NONE.code() && result.errorCode() != Errors.TOPIC_ALREADY_EXISTS.code()) {
-                logger.warn("Create metrics reporter topic {} failed: {}", metricReporterTopic, result.errorMessage());
+                logger.warn("Create metrics reporter topic {} failed: {}", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, result.errorMessage());
             }
         } catch (Exception e) {
-            logger.error("Create metrics reporter topic {} exception", metricReporterTopic, e);
+            logger.error("Create metrics reporter topic {} exception", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, e);
         }
     }
 
@@ -363,7 +359,7 @@ public class LoadRetriever implements BrokerStatusListener {
         }
 
         CreatePartitionsRequestData.CreatePartitionsTopic topic = new CreatePartitionsRequestData.CreatePartitionsTopic()
-                .setName(metricReporterTopic)
+                .setName(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME)
                 .setCount(metricReporterTopicPartition)
                 .setAssignments(null);
         try {
@@ -373,14 +369,14 @@ public class LoadRetriever implements BrokerStatusListener {
             List<CreatePartitionsResponseData.CreatePartitionsTopicResult> result = future.get();
             for (CreatePartitionsResponseData.CreatePartitionsTopicResult r : result) {
                 if (r.errorCode() == Errors.NONE.code()) {
-                    logger.info("Create metrics reporter topic {} with {} partitions succeed", metricReporterTopic, metricReporterTopicPartition);
+                    logger.info("Create metrics reporter topic {} with {} partitions succeed", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, metricReporterTopicPartition);
                 } else {
-                    logger.warn("Create metrics reporter topic {} with {} partitions failed: {}", metricReporterTopic,
+                    logger.warn("Create metrics reporter topic {} with {} partitions failed: {}", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME,
                             metricReporterTopicPartition, r.errorMessage());
                 }
             }
         } catch (Exception e) {
-            logger.error("Create metrics reporter topic {} with {} partitions exception", metricReporterTopic,
+            logger.error("Create metrics reporter topic {} with {} partitions exception", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME,
                     metricReporterTopicPartition, e);
         }
     }
@@ -422,7 +418,7 @@ public class LoadRetriever implements BrokerStatusListener {
                     updateClusterModel(record.value());
                 }
                 if (logger.isDebugEnabled()) {
-                    logger.debug("Finished consuming {} metrics from {}.", records.count(), metricReporterTopic);
+                    logger.debug("Finished consuming {} metrics from {}.", records.count(), Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
                 }
             } catch (InvalidTopicException e) {
                 createTopic();
@@ -440,9 +436,9 @@ public class LoadRetriever implements BrokerStatusListener {
     }
 
     private TopicAction refreshAssignment() {
-        List<PartitionInfo> partitionInfos = this.consumer.partitionsFor(metricReporterTopic);
+        List<PartitionInfo> partitionInfos = this.consumer.partitionsFor(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
         if (partitionInfos.isEmpty()) {
-            logger.info("No partitions found for topic {}, try to create topic", metricReporterTopic);
+            logger.info("No partitions found for topic {}, try to create topic", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
             return TopicAction.CREATE;
         }
         if (partitionInfos.size() != currentAssignment.size()) {
@@ -452,7 +448,7 @@ public class LoadRetriever implements BrokerStatusListener {
                 currentAssignment.add(topicPartition);
             }
             this.consumer.assign(currentAssignment);
-            logger.info("Partition changed for {}, assigned to {} partitions", this.metricReporterTopic, currentAssignment.size());
+            logger.info("Partition changed for {}, assigned to {} partitions", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, currentAssignment.size());
         }
         if (partitionInfos.size() < metricReporterTopicPartition) {
             logger.info("Partition num {} less than expected {}, try to alter partition number", partitionInfos.size(), metricReporterTopicPartition);
