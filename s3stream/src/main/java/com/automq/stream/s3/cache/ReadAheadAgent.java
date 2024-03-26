@@ -12,7 +12,6 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.utils.LogContext;
 import com.google.common.base.Objects;
 import java.util.ArrayList;
