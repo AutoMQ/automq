@@ -81,7 +81,7 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
             ossClient.putObject(
                     bucket,
                     String.format(
-                            "logs/%s/%s",
+                            "logs/node-%s/%s",
                             nodeId,
                             UUID.randomUUID() + "-" + System.currentTimeMillis()),
                     new ByteArrayInputStream(logBytes)
