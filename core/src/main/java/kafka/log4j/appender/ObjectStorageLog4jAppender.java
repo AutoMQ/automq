@@ -13,24 +13,11 @@
 
 package kafka.log4j.appender;
 
-import com.aliyun.oss.ClientBuilderConfiguration;
-import com.aliyun.oss.OSS;
-import com.aliyun.oss.OSSClientBuilder;
-import com.aliyun.oss.OSSException;
-import com.aliyun.oss.common.comm.SignVersion;
-import com.aliyuncs.exceptions.ClientException;
-import com.aliyun.oss.common.auth.CredentialsProviderFactory;
 import org.apache.log4j.AppenderSkeleton;
 import org.apache.log4j.spi.LoggingEvent;
-import com.aliyun.oss.common.auth.EnvironmentVariableCredentialsProvider;
 
 
-import java.io.ByteArrayInputStream;
-import java.nio.BufferOverflowException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.UUID;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * @author ipsum-0320
@@ -38,94 +25,37 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ObjectStorageLog4jAppender extends AppenderSkeleton {
     // 存储日志使用的是 oss，Kafka 数据跑在 s3 上。
     // 此时需要注意，由于 ObjectStorageLog4jAppender 只被配置在了 rootLogger 上，因此其是单实例的。
-    private int bufferSize;
-    private ByteBuffer logBuffer = null;
+    private int queueSize;
+    private LinkedBlockingQueue<String> blockQueue = null;
     private String endPoint;
     private String nodeId;
     private String bucket;
     private String region;
     private int readyNum = 0;
-    private OSS ossClient = null;
     private volatile boolean upload = false;
 
     @Override
     protected void append(LoggingEvent event) {
         // 将日志写入 buffer。
-        if (upload || logBuffer == null) {
+        if (upload || blockQueue == null) {
             return;
         }
-        if (logBuffer.remaining() < event.getMessage().toString().getBytes(StandardCharsets.UTF_8).length) {
-            // buffer 空间不足，将 buffer 中的日志写入 OSS，这里需要异步写入。
-            upload = true;
-            new Thread(() -> {
-                upload();
-                upload = false;
-            }).start();
-        } else {
-            // 由于线程安全问题，这里依旧可能出现 put 失败的情况，此时需要丢失 log。
-            try {
-                logBuffer.put(event.getMessage().toString().getBytes(StandardCharsets.UTF_8));
-                // 使用 UTF-8 来解码数据。
-            } catch (BufferOverflowException e) {
-                System.out.println("Buffer overflow!");
-            }
-
-        }
+        blockQueue.offer(event.getMessage().toString());
     }
 
     public void upload() {
-        logBuffer.flip();
-        byte[] logBytes = new byte[logBuffer.remaining()];
-        logBuffer.get(logBytes);
-        try {
-            ossClient.putObject(
-                    bucket,
-                    String.format(
-                            "logs/node-%s/%s",
-                            nodeId,
-                            UUID.randomUUID() + "-" + System.currentTimeMillis()),
-                    new ByteArrayInputStream(logBytes)
-            );
-        } catch (OSSException oe) {
-            System.out.println("Caught an OSSException, which means request made it to OSS, but was rejected with an error response for some reason.");
-            System.out.println("Error Message:" + oe.getErrorMessage());
-            System.out.println("Error Code:" + oe.getErrorCode());
-            System.out.println("Request ID:" + oe.getRequestId());
-            System.out.println("Host ID:" + oe.getHostId());
-        }
-        logBuffer.clear();
+
     }
 
-    public void initOssClient() {
-        if (this.ossClient != null) {
-            return;
-        }
-        try {
-            EnvironmentVariableCredentialsProvider credentialsProvider = CredentialsProviderFactory.newEnvironmentVariableCredentialsProvider();
-            ClientBuilderConfiguration clientBuilderConfiguration = new ClientBuilderConfiguration();
-            clientBuilderConfiguration.setSignatureVersion(SignVersion.V4);
-            this.ossClient = OSSClientBuilder.create()
-                    .endpoint(this.endPoint)
-                    .credentialsProvider(credentialsProvider)
-                    .clientConfiguration(clientBuilderConfiguration)
-                    .region(this.region)
-                    .build();
-        } catch (ClientException e) {
-            // 初始化失败，避免使用 LOGGER 进行日志输出。
-            System.out.println("Failed to initialize OSS client.");
-        }
+    public void initS3Client() {
+
     }
 
     @Override
     public void close() {
         // 释放资源。
-        if (logBuffer != null) {
-            logBuffer.clear();
-            logBuffer = null;
-        }
-        if (ossClient != null) {
-            ossClient.shutdown();
-            ossClient = null;
+        if (blockQueue != null) {
+            blockQueue = null;
         }
     }
 
@@ -135,19 +65,17 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         return false;
     }
 
-    public void setBufferSize(int bufferSize) {
-        if (logBuffer != null) {
-            return;
+    public void setQueueSize(int queueSize) {
+        this.queueSize = queueSize;
+        if (blockQueue != null) {
+            blockQueue = new LinkedBlockingQueue<>(this.queueSize);
         }
-        this.bufferSize = bufferSize;
-        logBuffer = ByteBuffer.allocateDirect(this.bufferSize);
     }
 
     public void setEndPoint(String endPoint) {
         this.endPoint = endPoint;
         readyNum++;
         if (readyNum == 4) {
-            initOssClient();
         }
     }
 
@@ -155,7 +83,7 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         this.nodeId = nodeId;
         readyNum++;
         if (readyNum == 4) {
-            initOssClient();
+
         }
     }
 
@@ -163,7 +91,6 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         this.bucket = bucket;
         readyNum++;
         if (readyNum == 4) {
-            initOssClient();
         }
     }
 
@@ -171,7 +98,6 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         this.region = region;
         readyNum++;
         if (readyNum == 4) {
-            initOssClient();
         }
     }
 }
