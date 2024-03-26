@@ -428,8 +428,8 @@ public class LoadRetriever implements BrokerStatusListener {
                 createTopic();
                 this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
                 return;
-            } catch (Exception e) {
-                logger.error("Consumer poll error", e);
+            } catch (Throwable throwable) {
+                logger.error("Consumer poll throwable", throwable);
                 this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
                 return;
             }

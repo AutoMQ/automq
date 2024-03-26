@@ -104,9 +104,10 @@ public class AnomalyDetector {
             nextExecutionDelay = detect0();
         } catch (Exception e) {
             logger.error("Detect error", e);
+        } finally {
+            logger.info("Detect finished, next detect will be after {} ms", nextExecutionDelay);
+            this.executorService.schedule(this::detect, nextExecutionDelay, TimeUnit.MILLISECONDS);
         }
-        logger.info("Detect finished, next detect will be after {} ms", nextExecutionDelay);
-        this.executorService.schedule(this::detect, nextExecutionDelay, TimeUnit.MILLISECONDS);
     }
 
     long detect0() {
