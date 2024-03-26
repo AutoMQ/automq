@@ -511,12 +511,6 @@ public class ClusterControlManager {
         return OptionalLong.empty();
     }
 
-    // AutoMQ for Kafka inject start
-    public void replay(UpdateNextNodeIdRecord record) {
-        nextNodeId.set(record.nodeId());
-    }
-    // AutoMQ for Kafka inject end
-
     public void replay(RegisterBrokerRecord record, long offset) {
         registerBrokerRecordOffsets.put(record.brokerId(), offset);
         int brokerId = record.brokerId();
@@ -712,14 +706,6 @@ public class ClusterControlManager {
         return !registration.inControlledShutdown() && !registration.fenced();
     }
 
-    // AutoMQ for kafka inject start
-    public List<BrokerRegistration> getActiveBrokers() {
-        return brokerRegistrations.values().stream()
-            .filter(broker -> isActive(broker.id()))
-            .collect(Collectors.toList());
-    }
-    // AutoMQ for kafka inject end
-
     BrokerHeartbeatManager heartbeatManager() {
         if (heartbeatManager == null) {
             throw new RuntimeException("ClusterControlManager is not active.");
@@ -834,4 +820,16 @@ public class ClusterControlManager {
             }
         };
     }
+
+    // AutoMQ inject start
+    public void replay(UpdateNextNodeIdRecord record) {
+        nextNodeId.set(record.nodeId());
+    }
+
+    public List<BrokerRegistration> getActiveBrokers() {
+        return brokerRegistrations.values().stream()
+            .filter(broker -> isActive(broker.id()))
+            .collect(Collectors.toList());
+    }
+    // AutoMQ inject end
 }

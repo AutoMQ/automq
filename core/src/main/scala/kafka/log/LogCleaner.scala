@@ -496,7 +496,6 @@ class LogCleaner(initialConfig: CleanerConfig,
     }
 
   }
-
 }
 
 object LogCleaner {

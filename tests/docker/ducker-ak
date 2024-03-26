@@ -371,13 +371,7 @@ attempting to start new ones."
     fi
     must_do -v docker network create --subnet=10.5.0.0/16 ducknet
 
-    # AutoMQ for Kafka insert start
-    # must_do -v docker run --network=ducknet --name redis -d redis:7
-    # start es cluster
-#    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml up -d
-    # AutoMQ for Kafka insert end
-
-    # AutoMQ for Kafka inject start
+    # AutoMQ inject start
     must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml up -d
     # AutoMQ for Kafka inject end
 
@@ -485,11 +479,9 @@ ducker_test() {
         die "ducker_test: the ducker01 instance appears to be down. Did you run 'ducker up'?"
     declare -a test_name_args=()
     local debug=0
-    local force_update_snapshot=0
     while [[ $# -ge 1 ]]; do
         case "${1}" in
             -d|--debug) debug=1; shift;;
-            -f|--force-update-snapshot) force_update_snapshot=1; shift;;
             --) shift; break;;
             *) test_name_args+=("${1}"); shift;;
         esac
@@ -511,11 +503,7 @@ ducker_test() {
     done
 
     must_pushd "${kafka_dir}"
-    if [[ "${force_update_snapshot}" -eq 1 ]]; then
-        (test -f ./gradlew || gradle) && ./gradlew --refresh-dependencies clean systemTestLibs
-    else
-        (test -f ./gradlew || gradle) && ./gradlew systemTestLibs
-    fi
+    ( (test -f ./gradlew || gradle) && ./gradlew systemTestLibs ) || die "ducker_test: Failed to build system test libraries, please check the error log."
     must_popd
     if [[ "${debug}" -eq 1 ]]; then
         local ducktape_cmd="python3 -m debugpy --listen 0.0.0.0:${debugpy_port} --wait-for-client /usr/local/bin/ducktape"
@@ -610,15 +598,9 @@ ducker_down() {
         must_do -v docker network rm ducknet
     fi
     maybe_echo "${verbose}" "ducker_down: removed $(count ${all_containers}) containers."
-    # AutoMQ for Kafka insert start
-    # remove es
-#    must_do -v docker compose -f ${ducker_dir}/es/docker-compose.yaml down -v
-    # AutoMQ for Kafka insert end
-
-    # AutoMQ for Kafka inject start
-    # remove s3
+    # AutoMQ inject start
     must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml down -v
-    # AutoMQ for Kafka inject end
+    # AutoMQ inject end
 }
 
 ducker_purge() {

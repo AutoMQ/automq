@@ -18,7 +18,6 @@
 package kafka.server
 
 import com.yammer.metrics.core.{Gauge, Meter}
-import kafka.network.RequestChannel.BaseRequest
 import kafka.network._
 import kafka.server.KafkaRequestHandler.{threadCurrentRequest, threadRequestChannel}
 import kafka.utils._
@@ -30,7 +29,7 @@ import org.apache.kafka.server.metrics.KafkaMetricsGroup
 
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.{BlockingQueue, ConcurrentHashMap, CountDownLatch, TimeUnit}
+import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, TimeUnit}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
@@ -217,10 +216,10 @@ class KafkaRequestHandlerPool(
   var multiRequestQueue = requestChannel.registerNRequestHandler(numThreads)
 
   for (i <- 0 until numThreads) {
-    createHandler(i, multiRequestQueue.get(i))
+    createHandler(i)
   }
 
-  def createHandler(id: Int, requestQueue: BlockingQueue[BaseRequest]): Unit = synchronized {
+  def createHandler(id: Int): Unit = synchronized {
     runnables += new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time, nodeName)
     KafkaThread.daemon(logAndThreadNamePrefix + "-kafka-request-handler-" + id, runnables(id)).start()
   }
