@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import com.automq.s3shell.sdk.auth.CredentialsProviderHolder;
 import com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.operator.compatibility.CompatibilityHandler;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.MemoryS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
@@ -2094,8 +2095,18 @@ public final class QuorumController implements Controller {
             // only use for test
             s3Operator = new MemoryS3Operator();
         } else {
-            s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), streamConfig.forcePathStyle(),
-                List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()), streamConfig.objectTagging());
+            s3Operator = DefaultS3Operator.builder()
+                    .endpoint(streamConfig.endpoint())
+                    .region(streamConfig.region())
+                    .bucket(streamConfig.bucket())
+                    .forcePathStyle(streamConfig.forcePathStyle())
+                    .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()))
+                    .tagging(streamConfig.objectTagging())
+                    .inboundLimiter(null)
+                    .outboundLimiter(null)
+                    .readWriteIsolate(false)
+                    .compatibilityHandler(new CompatibilityHandler(streamConfig))
+                    .build();
         }
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);

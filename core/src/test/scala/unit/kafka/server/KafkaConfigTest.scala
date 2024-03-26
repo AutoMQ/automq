@@ -1088,6 +1088,7 @@ class KafkaConfigTest {
         case KafkaConfig.S3SpanScheduledDelayMsProp => // ignore string
         case KafkaConfig.S3SpanMaxQueueSizeProp => // ignore string
         case KafkaConfig.S3SpanMaxBatchSizeProp => // ignore string
+        case KafkaConfig.S3DeleteObjectsCompatibilityHandlerClassProp => // ignore string
         // AutoMQ inject end
 
         case _ => assertPropertyInvalid(baseProperties, name, "not_a_number", "-1")

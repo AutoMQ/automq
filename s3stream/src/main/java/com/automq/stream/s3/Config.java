@@ -56,6 +56,8 @@ public class Config {
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
 
+    private String deleteObjectsCompatibilityHandlerClassName = "";
+
     public int nodeId() {
         return nodeId;
     }
@@ -425,4 +427,12 @@ public class Config {
         return failoverEnable;
     }
 
+    public String deleteObjectsCompatibilityHandlerClassName() {
+        return deleteObjectsCompatibilityHandlerClassName;
+    }
+
+    public Config deleteObjectsCompatibilityHandlerClassName(String deleteObjectsCompatibilityHandlerClassName) {
+        this.deleteObjectsCompatibilityHandlerClassName = deleteObjectsCompatibilityHandlerClassName;
+        return this;
+    }
 }

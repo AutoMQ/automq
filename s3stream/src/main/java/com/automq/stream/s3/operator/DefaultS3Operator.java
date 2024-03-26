@@ -20,6 +20,7 @@ import com.automq.stream.s3.metrics.stats.S3OperationStats;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.s3.operator.compatibility.CompatibilityHandler;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.S3Utils;
 import com.automq.stream.utils.ThreadUtils;
@@ -124,16 +125,15 @@ public class DefaultS3Operator implements S3Operator {
     private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
 
-    public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
-        List<AwsCredentialsProvider> credentialsProviders, boolean tagging) {
-        this(endpoint, region, bucket, forcePathStyle, credentialsProviders, tagging, null, null, false);
-    }
+    private final CompatibilityHandler compatibilityHandler;
+
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders,
         boolean tagging,
         AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
-        AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate) {
+        AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate,
+        CompatibilityHandler compatibilityHandler) {
         this.currentIndex = INDEX.incrementAndGet();
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
@@ -145,6 +145,7 @@ public class DefaultS3Operator implements S3Operator {
         this.inflightWriteLimiter = new Semaphore(maxS3Concurrency);
         this.inflightReadLimiter = readWriteIsolate ? new Semaphore(maxS3Concurrency) : inflightWriteLimiter;
         this.bucket = bucket;
+        this.compatibilityHandler = compatibilityHandler;
         scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         checkConfig();
         S3Utils.S3Context s3Context = S3Utils.S3Context.builder()
@@ -175,6 +176,7 @@ public class DefaultS3Operator implements S3Operator {
         this.tagging = null;
         this.networkInboundBandwidthLimiter = null;
         this.networkOutboundBandwidthLimiter = null;
+        this.compatibilityHandler = CompatibilityHandler.NOOP;
         this.inflightWriteLimiter = new Semaphore(50);
         this.inflightReadLimiter = new Semaphore(50);
         if (!manualMergeRead) {
@@ -452,6 +454,10 @@ public class DefaultS3Operator implements S3Operator {
             .build();
         // TODO: handle not exist object, should we regard it as deleted or ignore it.
         return this.writeS3Client.deleteObjects(request).thenApply(resp -> {
+            if (compatibilityHandler.deleteObjectsCompatibilityHandler != null) {
+                return compatibilityHandler.deleteObjectsCompatibilityHandler.handleDeleteObjectsResponse(objectKeys, timerUtil, resp);
+            }
+
             S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", resp.deleted().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return resp.deleted().stream().map(DeletedObject::key).collect(Collectors.toList());
@@ -928,6 +934,7 @@ public class DefaultS3Operator implements S3Operator {
         private boolean readWriteIsolate;
         private int maxReadConcurrency = 50;
         private int maxWriteConcurrency = 50;
+        private CompatibilityHandler compatibilityHandler = CompatibilityHandler.NOOP;
 
         public Builder endpoint(String endpoint) {
             this.endpoint = endpoint;
@@ -974,9 +981,14 @@ public class DefaultS3Operator implements S3Operator {
             return this;
         }
 
+        public Builder compatibilityHandler(CompatibilityHandler c) {
+            this.compatibilityHandler = c;
+            return this;
+        }
+
         public DefaultS3Operator build() {
             return new DefaultS3Operator(endpoint, region, bucket, forcePathStyle, credentialsProviders, tagging,
-                inboundLimiter, outboundLimiter, readWriteIsolate);
+                inboundLimiter, outboundLimiter, readWriteIsolate, compatibilityHandler);
         }
     }
 }

@@ -50,7 +50,8 @@ public class ConfigUtils {
                 .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
                 .refillPeriodMs(s.s3RefillPeriodMsProp())
                 .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond())
-                .forcePathStyle(s.s3PathStyle());
+                .forcePathStyle(s.s3PathStyle())
+                .deleteObjectsCompatibilityHandlerClassName(s.s3DeleteObjectsCompatibilityHandlerClassName());
     }
 
 }

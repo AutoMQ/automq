@@ -506,6 +506,7 @@ object KafkaConfig {
   val S3SpanScheduledDelayMsProp = "s3.telemetry.tracer.span.scheduled.delay.ms"
   val S3SpanMaxQueueSizeProp = "s3.telemetry.tracer.span.max.queue.size"
   val S3SpanMaxBatchSizeProp = "s3.telemetry.tracer.span.max.batch.size"
+  val S3DeleteObjectsCompatibilityHandlerClassProp = "s3.api.compatibility.delete.objects.handler.classname"
   val EnableAutoBalancerProp = AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
@@ -2201,6 +2202,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3SpanScheduledDelayMs = getInt(KafkaConfig.S3SpanScheduledDelayMsProp)
   val s3SpanMaxQueueSize = getInt(KafkaConfig.S3SpanMaxQueueSizeProp)
   val s3SpanMaxBatchSize = getInt(KafkaConfig.S3SpanMaxBatchSizeProp)
+  val s3DeleteObjectsCompatibilityHandlerClassName = getString(KafkaConfig.S3DeleteObjectsCompatibilityHandlerClassProp)
   // AutoMQ inject end
 
   /** Internal Configurations **/
