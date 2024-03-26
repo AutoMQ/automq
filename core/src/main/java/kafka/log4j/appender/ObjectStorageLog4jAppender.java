@@ -26,6 +26,7 @@ import com.aliyun.oss.common.auth.EnvironmentVariableCredentialsProvider;
 
 
 import java.io.ByteArrayInputStream;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -61,8 +62,14 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
                 upload = false;
             }).start();
         } else {
-            logBuffer.put(event.getMessage().toString().getBytes(StandardCharsets.UTF_8));
-            // 使用 UTF-8 来解码数据。
+            // 由于线程安全问题，这里依旧可能出现 put 失败的情况，此时需要丢失 log。
+            try {
+                logBuffer.put(event.getMessage().toString().getBytes(StandardCharsets.UTF_8));
+                // 使用 UTF-8 来解码数据。
+            } catch (BufferOverflowException e) {
+                System.out.println("Buffer overflow!");
+            }
+
         }
     }
 
