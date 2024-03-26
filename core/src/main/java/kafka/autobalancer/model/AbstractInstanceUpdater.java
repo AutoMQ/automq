@@ -49,7 +49,6 @@ public abstract class AbstractInstanceUpdater {
         } finally {
             lock.unlock();
         }
-        LOGGER.debug("Successfully updated on {} at time {}", this.instance().name(), this.instance().getTimestamp());
         return true;
     }
 
@@ -61,12 +60,9 @@ public abstract class AbstractInstanceUpdater {
         lock.lock();
         try {
             if (this.instance().getTimestamp() < timeSince) {
-                LOGGER.debug("Metrics for {} is out of sync, expected earliest time: {}, actual: {}",
-                        this.instance().name(), timeSince, this.instance().getTimestamp());
                 return null;
             }
             if (!isValidInstance()) {
-                LOGGER.debug("Metrics for {} is invalid", this.instance().name());
                 return null;
             }
             return this.instance().copy();

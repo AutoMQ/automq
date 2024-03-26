@@ -40,6 +40,7 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
         usageAvg = brokers.stream().mapToDouble(e -> e.load(resource)).sum() / brokers.size();
         usageDistLowerBound = Math.max(0, usageAvg * (1 - this.usageAvgDeviation));
         usageDistUpperBound = usageAvg * (1 + this.usageAvgDeviation);
+        LOGGER.info("{} expected dist bound: {}-{}", name(), usageDistLowerBound, usageDistUpperBound);
     }
 
     @Override
@@ -60,6 +61,7 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
                 LOGGER.error("Failed to parse max normalized load bytes from config {}, using default value", nwBandwidth, e);
             }
         }
+        LOGGER.info("{} using maxNormalizedLoadBytes: {}", name(), this.maxNormalizedLoadBytes);
     }
 
     @Override
