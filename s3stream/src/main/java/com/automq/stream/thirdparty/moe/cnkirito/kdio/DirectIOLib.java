@@ -33,14 +33,14 @@ import org.slf4j.LoggerFactory;
  */
 public class DirectIOLib {
     static final int PC_REC_XFER_ALIGN = 0x11;
-    private static final Logger logger = LoggerFactory.getLogger(DirectIOLib.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(DirectIOLib.class);
     public static boolean binit;
 
     static {
         binit = false;
         try {
             if (!Platform.isLinux()) {
-                logger.warn("Not running Linux, jaydio support disabled");
+                LOGGER.warn("Not running Linux, jaydio support disabled");
             } else { // now check to see if we have O_DIRECT...
 
                 final int linuxVersion = 0;
@@ -75,11 +75,11 @@ public class DirectIOLib {
                     // get access to open(), pread(), etc
                     Native.register(Platform.C_LIBRARY_NAME);
                 } else {
-                    logger.warn(String.format("O_DIRECT not supported on your version of Linux: %d.%d.%d", linuxVersion, majorRev, minorRev));
+                    LOGGER.warn(String.format("O_DIRECT not supported on your version of Linux: %d.%d.%d", linuxVersion, majorRev, minorRev));
                 }
             }
         } catch (Throwable e) {
-            logger.warn("Unable to register libc at class load time: " + e.getMessage(), e);
+            LOGGER.warn("Unable to register libc at class load time: " + e.getMessage(), e);
         }
     }
 
@@ -100,7 +100,7 @@ public class DirectIOLib {
     public static DirectIOLib getLibForPath(String workingDir) {
         int fsBlockSize = initilizeSoftBlockSize(workingDir);
         if (fsBlockSize == -1) {
-            logger.warn("O_DIRECT support non available on your version of Linux (" + System.getProperty("os.version") + "), " +
+            LOGGER.warn("O_DIRECT support non available on your version of Linux (" + System.getProperty("os.version") + "), " +
                 "please upgrade your kernel in order to use jaydio.");
             return null;
         }
@@ -140,8 +140,8 @@ public class DirectIOLib {
 
             // lastly, a sanity check
             if (fsBlockSize <= 0 || ((fsBlockSize & (fsBlockSize - 1)) != 0)) {
-                logger.warn("file system block size should be a power of two, was found to be " + fsBlockSize);
-                logger.warn("Disabling O_DIRECT support");
+                LOGGER.warn("file system block size should be a power of two, was found to be " + fsBlockSize);
+                LOGGER.warn("Disabling O_DIRECT support");
                 return -1;
             }
         }

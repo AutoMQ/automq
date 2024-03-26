@@ -14,7 +14,6 @@ package com.automq.stream.s3.cache;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;

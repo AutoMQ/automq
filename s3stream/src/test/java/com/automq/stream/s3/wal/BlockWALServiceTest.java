@@ -107,7 +107,7 @@ class BlockWALServiceTest {
                 }).whenComplete((callbackResult, throwable) -> {
                     if (null != throwable) {
                         throwable.printStackTrace();
-                        System.exit(1);
+                        Assertions.fail();
                     }
                 });
             }
@@ -184,7 +184,7 @@ class BlockWALServiceTest {
                 }).whenComplete((callbackResult, throwable) -> {
                     if (null != throwable) {
                         throwable.printStackTrace();
-                        System.exit(1);
+                        Assertions.fail();
                     }
                 });
             }
@@ -242,7 +242,7 @@ class BlockWALServiceTest {
                         }).whenComplete((callbackResult, throwable) -> {
                             if (null != throwable) {
                                 throwable.printStackTrace();
-                                System.exit(1);
+                                Assertions.fail();
                             }
                         });
                     }
@@ -335,7 +335,7 @@ class BlockWALServiceTest {
             }).whenComplete((callbackResult, throwable) -> {
                 if (null != throwable) {
                     throwable.printStackTrace();
-                    System.exit(1);
+                    Assertions.fail();
                 }
             }).thenApply(ignored -> null));
         }

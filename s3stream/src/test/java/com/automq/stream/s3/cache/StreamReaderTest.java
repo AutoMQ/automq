@@ -19,7 +19,6 @@ import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.DefaultS3BlockCache.ReadAheadTaskKey;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
-import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryS3Operator;
