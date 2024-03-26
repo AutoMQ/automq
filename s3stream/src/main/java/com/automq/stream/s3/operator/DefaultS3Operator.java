@@ -247,7 +247,7 @@ public class DefaultS3Operator implements S3Operator {
             rangeRead0(path, start, end, cf);
         }
 
-        Timeout timeout = timeoutDetect.newTimeout((t) -> LOGGER.warn("rangeRead {} {}-{} timeout", path, start, end), 3, TimeUnit.MINUTES);
+        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", path, start, end), 3, TimeUnit.MINUTES);
         return cf.whenComplete((rst, ex) -> timeout.cancel());
     }
 
@@ -329,7 +329,7 @@ public class DefaultS3Operator implements S3Operator {
         TimerUtil timerUtil = new TimerUtil();
         long size = end - start + 1;
         GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
-        Consumer<Throwable> failHandler = (ex) -> {
+        Consumer<Throwable> failHandler = ex -> {
             if (isUnrecoverable(ex)) {
                 LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
                 cf.completeExceptionally(ex);
@@ -343,7 +343,7 @@ public class DefaultS3Operator implements S3Operator {
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
                 CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
-                responsePublisher.subscribe((bytes) -> {
+                responsePublisher.subscribe(bytes -> {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
                     buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
                 }).thenAccept(v -> {

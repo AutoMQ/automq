@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
@@ -319,7 +320,7 @@ public class S3Utils {
             readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
                 .thenAccept(responsePublisher -> {
                     CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
-                    responsePublisher.subscribe((bytes) -> {
+                    responsePublisher.subscribe(bytes -> {
                         // the aws client will copy DefaultHttpContent to heap ByteBuffer
                         buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
                     }).thenAccept(v -> {
@@ -404,7 +405,7 @@ public class S3Utils {
                     String[] dotSplits = splits[1].split("\\.");
                     if (dotSplits.length == 0 || StringUtils.isBlank(dotSplits[0])) {
                         advises.add("endpoint is invalid. Please supply a valid endpoint.");
-                    } else if (!StringUtils.isBlank(bucketName) && Objects.equals(bucketName.toLowerCase(), dotSplits[0].toLowerCase())) {
+                    } else if (!StringUtils.isBlank(bucketName) && Objects.equals(bucketName.toLowerCase(Locale.ENGLISH), dotSplits[0].toLowerCase(Locale.ENGLISH))) {
                         advises.add("bucket name should not be included in endpoint.");
                     }
                 }

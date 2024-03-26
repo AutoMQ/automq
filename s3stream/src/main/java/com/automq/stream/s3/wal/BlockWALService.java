@@ -415,11 +415,11 @@ public class BlockWALService implements WriteAheadLog {
         lock.lock();
         try {
             Block block = slidingWindowService.getCurrentBlockLocked();
-            expectedWriteOffset = block.addRecord(recordSize, (offset) -> record(body, crc, offset), appendResultFuture);
+            expectedWriteOffset = block.addRecord(recordSize, offset -> record(body, crc, offset), appendResultFuture);
             if (expectedWriteOffset < 0) {
                 // this block is full, create a new one
                 block = slidingWindowService.sealAndNewBlockLocked(block, recordSize, walHeader.getFlushedTrimOffset(), walHeader.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
-                expectedWriteOffset = block.addRecord(recordSize, (offset) -> record(body, crc, offset), appendResultFuture);
+                expectedWriteOffset = block.addRecord(recordSize, offset -> record(body, crc, offset), appendResultFuture);
             }
         } finally {
             lock.unlock();
@@ -863,7 +863,7 @@ public class BlockWALService implements WriteAheadLog {
             while (firstInvalidOffset == -1 || nextRecoverOffset < firstInvalidOffset + windowLength) {
                 try {
                     boolean skip = nextRecoverOffset == skipRecordAtOffset;
-                    ByteBuf nextRecordBody = readRecord(nextRecoverOffset, (offset) -> WALUtil.recordOffsetToPosition(offset, walHeader.getCapacity(), WAL_HEADER_TOTAL_CAPACITY));
+                    ByteBuf nextRecordBody = readRecord(nextRecoverOffset, offset -> WALUtil.recordOffsetToPosition(offset, walHeader.getCapacity(), WAL_HEADER_TOTAL_CAPACITY));
                     RecoverResultImpl recoverResult = new RecoverResultImpl(nextRecordBody, nextRecoverOffset);
                     nextRecoverOffset += RECORD_HEADER_SIZE + nextRecordBody.readableBytes();
                     if (skip) {
