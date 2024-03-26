@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix, parametrize, ignore
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -25,7 +25,8 @@ from kafkatest.tests.produce_consume_validate import ProduceConsumeValidateTest
 from kafkatest.utils import is_int_with_prefix
 from kafkatest.version import DEV_BRANCH, LATEST_0_10_0, LATEST_0_10_1, LATEST_0_10_2, LATEST_0_11_0, LATEST_1_0, \
     LATEST_1_1, LATEST_2_0, LATEST_2_1, LATEST_2_2, LATEST_2_3, LATEST_2_4, LATEST_2_5, LATEST_2_6, LATEST_2_7, \
-    LATEST_2_8, LATEST_3_0, LATEST_3_1, LATEST_3_2, LATEST_3_3, LATEST_3_4, LATEST_3_5, LATEST_3_6, KafkaVersion
+    LATEST_2_8, LATEST_3_0, LATEST_3_1, LATEST_3_2, LATEST_3_3, LATEST_3_4, LATEST_3_5, LATEST_3_6, LATEST_3_7, \
+    KafkaVersion
 
 class ClientCompatibilityProduceConsumeTest(ProduceConsumeValidateTest):
     """
@@ -56,30 +57,32 @@ class ClientCompatibilityProduceConsumeTest(ProduceConsumeValidateTest):
         # Override this since we're adding services outside of the constructor
         return super(ClientCompatibilityProduceConsumeTest, self).min_cluster_size() + self.num_producers + self.num_consumers
 
+    @ignore
     @cluster(num_nodes=9)
     @matrix(broker_version=[str(DEV_BRANCH)], metadata_quorum=quorum.all_non_upgrade)
-    # @parametrize(broker_version=str(LATEST_0_10_0))
-    # @parametrize(broker_version=str(LATEST_0_10_1))
-    # @parametrize(broker_version=str(LATEST_0_10_2))
-    # @parametrize(broker_version=str(LATEST_0_11_0))
-    # @parametrize(broker_version=str(LATEST_1_0))
-    # @parametrize(broker_version=str(LATEST_1_1))
-    # @parametrize(broker_version=str(LATEST_2_0))
-    # @parametrize(broker_version=str(LATEST_2_1))
-    # @parametrize(broker_version=str(LATEST_2_2))
-    # @parametrize(broker_version=str(LATEST_2_3))
-    # @parametrize(broker_version=str(LATEST_2_4))
-    # @parametrize(broker_version=str(LATEST_2_5))
-    # @parametrize(broker_version=str(LATEST_2_6))
-    # @parametrize(broker_version=str(LATEST_2_7))
-    # @parametrize(broker_version=str(LATEST_2_8))
-    # @parametrize(broker_version=str(LATEST_3_0))
-    # @parametrize(broker_version=str(LATEST_3_1))
-    # @parametrize(broker_version=str(LATEST_3_2))
-    # @parametrize(broker_version=str(LATEST_3_3))
-    # @parametrize(broker_version=str(LATEST_3_4))
-    # @parametrize(broker_version=str(LATEST_3_5))
-    # @parametrize(broker_version=str(LATEST_3_6))
+    @parametrize(broker_version=str(LATEST_0_10_0))
+    @parametrize(broker_version=str(LATEST_0_10_1))
+    @parametrize(broker_version=str(LATEST_0_10_2))
+    @parametrize(broker_version=str(LATEST_0_11_0))
+    @parametrize(broker_version=str(LATEST_1_0))
+    @parametrize(broker_version=str(LATEST_1_1))
+    @parametrize(broker_version=str(LATEST_2_0))
+    @parametrize(broker_version=str(LATEST_2_1))
+    @parametrize(broker_version=str(LATEST_2_2))
+    @parametrize(broker_version=str(LATEST_2_3))
+    @parametrize(broker_version=str(LATEST_2_4))
+    @parametrize(broker_version=str(LATEST_2_5))
+    @parametrize(broker_version=str(LATEST_2_6))
+    @parametrize(broker_version=str(LATEST_2_7))
+    @parametrize(broker_version=str(LATEST_2_8))
+    @parametrize(broker_version=str(LATEST_3_0))
+    @parametrize(broker_version=str(LATEST_3_1))
+    @parametrize(broker_version=str(LATEST_3_2))
+    @parametrize(broker_version=str(LATEST_3_3))
+    @parametrize(broker_version=str(LATEST_3_4))
+    @parametrize(broker_version=str(LATEST_3_5))
+    @parametrize(broker_version=str(LATEST_3_6))
+    @parametrize(broker_version=str(LATEST_3_7))
     def test_produce_consume(self, broker_version, metadata_quorum=quorum.zk):
         print("running producer_consumer_compat with broker_version = %s" % broker_version, flush=True)
         self.kafka.set_version(KafkaVersion(broker_version))

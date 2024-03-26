@@ -143,6 +143,9 @@ import org.apache.kafka.common.errors.UnsupportedEndpointTypeException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
+import org.apache.kafka.common.errors.AbortableTransactionException;
+
+// AutoMQ inject start
 import org.apache.kafka.common.errors.s3.CompactedObjectsNotFoundException;
 import org.apache.kafka.common.errors.s3.KeyExistException;
 import org.apache.kafka.common.errors.s3.NodeEpochExpiredException;
@@ -157,6 +160,8 @@ import org.apache.kafka.common.errors.s3.StreamInnerErrorException;
 import org.apache.kafka.common.errors.s3.StreamNotClosedException;
 import org.apache.kafka.common.errors.s3.StreamNotExistException;
 import org.apache.kafka.common.errors.s3.StreamNotOpenedException;
+// AutoMQ inject end
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -376,12 +381,12 @@ public enum Errors {
     DUPLICATE_RESOURCE(92, "A request illegally referred to the same resource twice.", DuplicateResourceException::new),
     UNACCEPTABLE_CREDENTIAL(93, "Requested credential would not meet criteria for acceptability.", UnacceptableCredentialException::new),
     INCONSISTENT_VOTER_SET(94, "Indicates that the either the sender or recipient of a " +
-            "voter-only request is not one of the expected voters", InconsistentVoterSetException::new),
+            "voter-only request is not one of the expected voters.", InconsistentVoterSetException::new),
     INVALID_UPDATE_VERSION(95, "The given update version was invalid.", InvalidUpdateVersionException::new),
     FEATURE_UPDATE_FAILED(96, "Unable to update finalized features due to an unexpected server error.", FeatureUpdateFailedException::new),
     PRINCIPAL_DESERIALIZATION_FAILURE(97, "Request principal deserialization failed during forwarding. " +
          "This indicates an internal error on the broker cluster security setup.", PrincipalDeserializationException::new),
-    SNAPSHOT_NOT_FOUND(98, "Requested snapshot was not found", SnapshotNotFoundException::new),
+    SNAPSHOT_NOT_FOUND(98, "Requested snapshot was not found.", SnapshotNotFoundException::new),
     POSITION_OUT_OF_RANGE(
         99,
         "Requested position is not greater than or equal to zero, and less than the size of the snapshot.",
@@ -389,10 +394,10 @@ public enum Errors {
     UNKNOWN_TOPIC_ID(100, "This server does not host this topic ID.", UnknownTopicIdException::new),
     DUPLICATE_BROKER_REGISTRATION(101, "This broker ID is already in use.", DuplicateBrokerRegistrationException::new),
     BROKER_ID_NOT_REGISTERED(102, "The given broker ID was not registered.", BrokerIdNotRegisteredException::new),
-    INCONSISTENT_TOPIC_ID(103, "The log's topic ID did not match the topic ID in the request", InconsistentTopicIdException::new),
-    INCONSISTENT_CLUSTER_ID(104, "The clusterId in the request does not match that found on the server", InconsistentClusterIdException::new),
-    TRANSACTIONAL_ID_NOT_FOUND(105, "The transactionalId could not be found", TransactionalIdNotFoundException::new),
-    FETCH_SESSION_TOPIC_ID_ERROR(106, "The fetch session encountered inconsistent topic ID usage", FetchSessionTopicIdException::new),
+    INCONSISTENT_TOPIC_ID(103, "The log's topic ID did not match the topic ID in the request.", InconsistentTopicIdException::new),
+    INCONSISTENT_CLUSTER_ID(104, "The clusterId in the request does not match that found on the server.", InconsistentClusterIdException::new),
+    TRANSACTIONAL_ID_NOT_FOUND(105, "The transactionalId could not be found.", TransactionalIdNotFoundException::new),
+    FETCH_SESSION_TOPIC_ID_ERROR(106, "The fetch session encountered inconsistent topic ID usage.", FetchSessionTopicIdException::new),
     INELIGIBLE_REPLICA(107, "The new ISR contains at least one ineligible replica.", IneligibleReplicaException::new),
     NEW_LEADER_ELECTED(108, "The AlterPartition request successfully updated the partition state but the leader has changed.", NewLeaderElectedException::new),
     OFFSET_MOVED_TO_TIERED_STORAGE(109, "The requested offset is moved to tiered storage.", OffsetMovedToTieredStorageException::new),
@@ -406,6 +411,7 @@ public enum Errors {
     UNKNOWN_SUBSCRIPTION_ID(117, "Client sent a push telemetry request with an invalid or outdated subscription ID.", UnknownSubscriptionIdException::new),
     TELEMETRY_TOO_LARGE(118, "Client sent a push telemetry request larger than the maximum size the broker will accept.", TelemetryTooLargeException::new),
     INVALID_REGISTRATION(119, "The controller has considered the broker registration to be invalid.", InvalidRegistrationException::new),
+    ABORTABLE_TRANSACTION(120, "The server encountered an error with the transaction. The client can abort the transaction to continue using this transactional ID.", AbortableTransactionException::new),
 
     // AutoMQ for Kafka inject start
     STREAM_EXIST(501, "The stream already exists.", StreamExistException::new),
@@ -423,7 +429,7 @@ public enum Errors {
     KEY_NOT_EXIST(513, "The key does not exist.", ObjectNotExistException::new),
     NODE_FENCED(514, "The node is fenced.", NodeFencedException::new),
     STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new);
-    // AutoMQ for Kafka inject end
+    // AutoMQ inject end
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 
