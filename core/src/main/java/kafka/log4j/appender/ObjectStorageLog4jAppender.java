@@ -26,6 +26,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author ipsum-0320
@@ -44,18 +45,21 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
     private S3Client s3Client = null;
     private String accessKey;
     private String secretKey;
-    private PatternLayout layout;
+    private PatternLayout layout = null;
     private int readyNum = 0;
     private static final int READY_TARGET = 7;
     private final Thread uploadThread = new Thread(() -> {
         try {
             StringBuilder logContent = new StringBuilder();
             int count = 0;
-            while (Thread.currentThread().isInterrupted()) {
-                String log = blockQueue.take();
+            while (!Thread.currentThread().isInterrupted()) {
+                String log = blockQueue.poll(1000, TimeUnit.MILLISECONDS);
+                if (log == null) {
+                    continue;
+                }
                 logContent.append(log);
                 count++;
-                if (count == queueSize || (blockQueue.isEmpty() && count >= (queueSize / 2))) {
+                if (count == queueSize) {
                     upload(logContent.toString());
                     logContent.setLength(0);
                     count = 0;
@@ -120,7 +124,7 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
 
     public void setQueueSize(int queueSize) {
         this.queueSize = queueSize;
-        if (blockQueue != null) {
+        if (blockQueue == null) {
             blockQueue = new LinkedBlockingQueue<>(this.queueSize);
             uploadThread.start();
         }
@@ -152,7 +156,9 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
 
     public void setPattern(String pattern) {
         this.pattern = pattern;
-        this.layout = new PatternLayout(this.pattern);
+        if (this.layout == null) {
+            this.layout = new PatternLayout(this.pattern);
+        }
     }
 
     public void setSystemAccessKey(String systemAccessKey) {
