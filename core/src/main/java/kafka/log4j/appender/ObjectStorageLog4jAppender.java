@@ -120,7 +120,16 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         return false;
     }
 
-    private void init(){
+    private boolean shouldInitS3Client() {
+        return s3Client == null &&
+                endPoint != null &&
+                nodeId != null &&
+                bucket != null &&
+                accessKey != null &&
+                secretKey != null;
+    }
+
+    private void init() {
         if (blockQueue == null && queueSize > 0) {
             blockQueue = new LinkedBlockingQueue<>(this.queueSize);
             uploadThread.start();
@@ -134,12 +143,7 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         if (layout == null && pattern != null) {
             this.layout = new PatternLayout(this.pattern);
         }
-        if (s3Client == null &&
-                endPoint != null &&
-                nodeId != null &&
-                bucket != null &&
-                accessKey != null &&
-                secretKey != null) {
+        if (shouldInitS3Client()) {
             initS3Client();
         }
     }

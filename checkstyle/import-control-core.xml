@@ -155,4 +155,12 @@
     <allow pkg="kafka.tools" />
     <allow pkg="com.automq.s3shell.sdk" />
   </subpackage>
+
+  <subpackage name="log4j">
+    <subpackage name="appender">
+      <allow pkg="org.apache.log4j.AppenderSkeleton" />
+      <allow pkg="org.apache.log4j.PatternLayout" />
+      <allow pkg="org.apache.log4j.spi.LoggingEvent" />
+    </subpackage>
+  </subpackage>
 </import-control>
