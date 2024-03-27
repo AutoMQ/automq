@@ -34,20 +34,18 @@ import java.util.concurrent.TimeUnit;
 public class ObjectStorageLog4jAppender extends AppenderSkeleton {
     // 存储日志使用的是 oss，Kafka 数据跑在 s3 上。
     // 此时需要注意，由于 ObjectStorageLog4jAppender 只被配置在了 rootLogger 上，因此其是单实例的。
-    private int queueSize;
-    private String endPoint;
-    private String nodeId;
-    private String bucket;
-    private String pattern;
-    private String systemAccessKey;
-    private String systemSecretKey;
+    private int queueSize = -1;
+    private String endPoint = null;
+    private String nodeId = null;
+    private String bucket = null;
+    private String pattern = null;
+    private String systemAccessKey = null;
+    private String systemSecretKey = null;
     private LinkedBlockingQueue<String> blockQueue = null;
     private S3Client s3Client = null;
-    private String accessKey;
-    private String secretKey;
+    private String accessKey = null;
+    private String secretKey = null;
     private PatternLayout layout = null;
-    private int readyNum = 0;
-    private static final int READY_TARGET = 7;
     private final Thread uploadThread = new Thread(() -> {
         try {
             StringBuilder logContent = new StringBuilder();
@@ -59,7 +57,7 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
                 }
                 logContent.append(log);
                 count++;
-                if (count == queueSize && s3Client != null) {
+                if (s3Client != null && count >= queueSize) {
                     upload(logContent.toString());
                     logContent.setLength(0);
                     count = 0;
@@ -73,7 +71,7 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
     @Override
     protected void append(LoggingEvent event) {
         // 将日志写入 buffer。
-        if (blockQueue == null) {
+        if (blockQueue == null || layout == null) {
             return;
         }
         blockQueue.offer(layout.format(event));
@@ -122,54 +120,64 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         return false;
     }
 
-    public void updateReadyNum() {
-        readyNum++;
-        if (readyNum == READY_TARGET) {
+    private void init(){
+        if (blockQueue == null && queueSize > 0) {
+            blockQueue = new LinkedBlockingQueue<>(this.queueSize);
+            uploadThread.start();
+        }
+        if (accessKey == null && systemAccessKey != null) {
+            this.accessKey = System.getenv(this.systemAccessKey);
+        }
+        if (secretKey == null && systemSecretKey != null) {
+            this.secretKey = System.getenv(this.systemSecretKey);
+        }
+        if (layout == null && pattern != null) {
+            this.layout = new PatternLayout(this.pattern);
+        }
+        if (s3Client == null &&
+                endPoint != null &&
+                nodeId != null &&
+                bucket != null &&
+                accessKey != null &&
+                secretKey != null) {
             initS3Client();
         }
     }
 
+
     public void setQueueSize(int queueSize) {
         this.queueSize = queueSize;
-        updateReadyNum();
-        if (blockQueue == null) {
-            blockQueue = new LinkedBlockingQueue<>(this.queueSize);
-            uploadThread.start();
-        }
+        init();
     }
 
     public void setEndPoint(String endPoint) {
         this.endPoint = endPoint;
-        updateReadyNum();
+        init();
     }
 
     public void setNodeId(String nodeId) {
         this.nodeId = nodeId;
-        updateReadyNum();
+        init();
     }
 
     public void setBucket(String bucket) {
         this.bucket = bucket;
-        updateReadyNum();
+        init();
     }
 
     public void setPattern(String pattern) {
         this.pattern = pattern;
-        updateReadyNum();
-        if (this.layout == null) {
-            this.layout = new PatternLayout(this.pattern);
-        }
+        init();
+
     }
 
     public void setSystemAccessKey(String systemAccessKey) {
         this.systemAccessKey = systemAccessKey;
-        updateReadyNum();
-        this.accessKey = System.getenv(this.systemAccessKey);
+        init();
     }
 
     public void setSystemSecretKey(String systemSecretKey) {
         this.systemSecretKey = systemSecretKey;
-        updateReadyNum();
-        this.secretKey = System.getenv(this.systemSecretKey);
+        init();
     }
 }
