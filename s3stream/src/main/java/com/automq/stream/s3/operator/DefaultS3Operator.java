@@ -74,10 +74,10 @@ import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.DeletedObject;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
@@ -125,6 +125,8 @@ public class DefaultS3Operator implements S3Operator {
         "s3-write-cb-executor", true, LOGGER);
     private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
+
+    private boolean deleteObjectsInQuietMode;
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders, boolean tagging) {
@@ -186,6 +188,10 @@ public class DefaultS3Operator implements S3Operator {
 
     public static Builder builder() {
         return new Builder();
+    }
+
+    public void deleteObjectsInQuietMode(boolean quiet) {
+        this.deleteObjectsInQuietMode = quiet;
     }
 
     private static boolean checkPartNumbers(CompletedMultipartUpload multipartUpload) {
@@ -440,16 +446,14 @@ public class DefaultS3Operator implements S3Operator {
         });
     }
 
-    @Override
-    public CompletableFuture<List<String>> delete(List<String> objectKeys) {
-        TimerUtil timerUtil = new TimerUtil();
+    private CompletableFuture<DeleteObjectsResponse> deleteObjects(List<String> objectKeys, boolean quietDelete) {
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
-            ObjectIdentifier.builder()
-                .key(key)
-                .build()
+                ObjectIdentifier.builder()
+                        .key(key)
+                        .build()
         ).toArray(ObjectIdentifier[]::new);
 
-        // we need quiet here because BOS S3 API works as quiet mode
+        // some time we need quiet here because BOS S3 API works as quiet mode
         // in this mode success delete objects won't be returned.
         // which could cause object not deleted in metadata.
         //
@@ -458,15 +462,22 @@ public class DefaultS3Operator implements S3Operator {
 
         DeleteObjectsRequest request = DeleteObjectsRequest.builder()
                 .bucket(bucket)
-                .delete(Delete.builder()
-                        .objects(toDeleteKeys)
-                        .quiet(true)
-                        .build())
+                .delete(b -> {
+                    b.objects(toDeleteKeys);
+                    if (quietDelete) {
+                        b.quiet(true); // When you add this element, you must set its value to true
+                    }
+                })
                 .build();
 
-        // TODO: handle not exist object, should we regard it as deleted or ignore it.
-        return this.writeS3Client.deleteObjects(request)
-                .thenApply(resp -> handleDeleteObjectsResponse(objectKeys, timerUtil, resp))
+        return this.writeS3Client.deleteObjects(request);
+    }
+
+    @Override
+    public CompletableFuture<List<String>> delete(List<String> objectKeys) {
+        TimerUtil timerUtil = new TimerUtil();
+        return deleteObjects(objectKeys, deleteObjectsInQuietMode)
+                .thenApply(resp -> handleDeleteObjectsResponse(objectKeys, timerUtil, resp, deleteObjectsInQuietMode))
                 .exceptionally(ex -> {
                     S3OperationStats.getInstance().deleteObjectsStats(false)
                             .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
@@ -476,35 +487,61 @@ public class DefaultS3Operator implements S3Operator {
                 });
     }
 
-    private List<String> handleDeleteObjectsResponse(List<String> objectKeys, TimerUtil timerUtil,
-                                                     DeleteObjectsResponse response) {
-        List<String> ans = null;
+    static List<String> handleDeleteObjectsResponse(List<String> objectKeys,
+                                                    TimerUtil timerUtil,
+                                                    DeleteObjectsResponse response,
+                                                    boolean quietDelete) {
+        Set<String> successDeleteKeys = new HashSet<>();
         int errDeleteCount = 0;
 
-        if (!response.hasErrors()) {
-            ans = objectKeys;
-        } else {
-            Set<String> successDeleteKeys = new HashSet<>(objectKeys);
+        if (!quietDelete) {
+            response.deleted().stream().map(DeletedObject::key).forEach(successDeleteKeys::add);
 
             for (S3Error error : response.errors()) {
-                if (!error.code().equals("NoSuchKey")) {
-                    successDeleteKeys.remove(error.key());
+                if ("NoSuchKey".equals(error.code()) && !StringUtils.isEmpty(error.key())) {
+                    successDeleteKeys.add(error.key());
                 } else {
-                    LOGGER.error("[ControllerS3Operator]: Delete objects for key {} error code {} message {}",
+                    LOGGER.error("[ControllerS3Operator]: Delete objects for key [{}] error code [{}] message [{}]",
                             error.key(), error.code(), error.message());
                     errDeleteCount++;
                 }
             }
 
-            ans = new ArrayList<>(successDeleteKeys);
+        } else {
+            // quiet mode won't return any success key. so think as all success.
+            successDeleteKeys.addAll(objectKeys);
+
+            boolean hasUnExpectedResponse = false;
+
+            for (S3Error error : response.errors()) {
+                LOGGER.error("[ControllerS3Operator]: Delete objects for key [{}] error code [{}] message [{}]",
+                        error.key(), error.code(), error.message());
+
+                if ("NoSuchKey".equals(error.code())) {
+                    // ignore for delete objects.
+                    continue;
+                }
+
+                if (!StringUtils.isEmpty(error.key())) {
+                    successDeleteKeys.remove(error.key());
+                } else {
+                    hasUnExpectedResponse = true;
+                }
+
+                errDeleteCount++;
+            }
+
+            if (hasUnExpectedResponse) {
+                successDeleteKeys = Collections.emptySet();
+            }
         }
 
         LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, errCount: {}, cost: {}",
-                ans.size(), errDeleteCount, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                successDeleteKeys.size(), errDeleteCount, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
 
         S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
 
-        return ans;
+        return new ArrayList<>(successDeleteKeys);
     }
 
     @Override
@@ -685,6 +722,33 @@ public class DefaultS3Operator implements S3Operator {
         }
     }
 
+    private void asyncCheckDeleteObjectsMode(S3Utils.S3Context s3Context) {
+        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+        String path1 = String.format("check_available/deleteObjectsMode/%d", System.nanoTime());
+        String path2 = String.format("check_available/deleteObjectsMode/%d", System.nanoTime() + 1);
+        List<String> path = List.of(path1, path2);
+        CompletableFuture
+                .allOf(
+                        this.write(path1, Unpooled.wrappedBuffer(content)),
+                        this.write(path2, Unpooled.wrappedBuffer(content))
+                )
+                .thenRunAsync(() ->
+                        deleteObjects(path, false)
+                                .thenAccept(resp -> {
+                                    if (resp.hasDeleted() && !resp.deleted().isEmpty()) {
+                                        deleteObjectsInQuietMode(false);
+                                    } else {
+                                        LOGGER.info("call deleteObjects in non-quiet delete objects mode" +
+                                                " but deleteObjectKeys not returned. set deleteObjectsInQuietMode = true");
+                                        deleteObjectsInQuietMode(true);
+                                    }
+                                }))
+                .exceptionally(e -> {
+                    LOGGER.error("error when check deleteObjects working mode ", e);
+                    return null;
+                });
+    }
+
     private void checkAvailable(S3Utils.S3Context s3Context) {
         byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
         String path = String.format("check_available/%d", System.nanoTime());
@@ -706,6 +770,9 @@ public class DefaultS3Operator implements S3Operator {
             read = this.rangeRead(multipartPath, 0, content.length).get(30, TimeUnit.SECONDS);
             read.release();
             this.delete(multipartPath).get(30, TimeUnit.SECONDS);
+
+            // Check if oss provider deleteObjects right.
+            asyncCheckDeleteObjectsMode(s3Context);
         } catch (Throwable e) {
             LOGGER.error("Failed to write/read/delete object on S3 ", e);
             String exceptionMsg = String.format("Failed to write/read/delete object on S3. You are using s3Context: %s.", s3Context);
