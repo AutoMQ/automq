@@ -450,12 +450,12 @@ public class S3Storage implements Storage {
             return CompletableFuture.completedFuture(new ReadDataBlock(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT));
         }
 
-        StreamRecordBatch first = deltaWALCache.getFirst(streamId, startOffset, endOffset);
-        if (null != first && first.getBaseOffset() <= startOffset) {
+        Long firstRecordBaseOffset = deltaWALCache.getFirstRecordBaseOffset(streamId, startOffset, endOffset);
+        if (null != firstRecordBaseOffset && firstRecordBaseOffset <= startOffset) {
             // The first record is in the cache, so we can read all from the cache.
             List<StreamRecordBatch> records = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
             // Re-check the first record, to avoid that it was removed from the cache.
-            if (records.isEmpty() || records.get(0).getBaseOffset() != first.getBaseOffset()) {
+            if (records.isEmpty() || records.get(0).getBaseOffset() != firstRecordBaseOffset) {
                 // The first record changed, which means it was removed from the cache. This rarely happens, so we just retry.
                 records.forEach(StreamRecordBatch::release);
                 records.clear();
@@ -470,9 +470,9 @@ public class S3Storage implements Storage {
         }
 
         final long blockCacheEndOffset;
-        if (null != first) {
+        if (null != firstRecordBaseOffset) {
             // Update the end offset (which will be used to read from block cache) to the first record.
-            blockCacheEndOffset = first.getBaseOffset();
+            blockCacheEndOffset = firstRecordBaseOffset;
         } else {
             blockCacheEndOffset = endOffset;
         }
