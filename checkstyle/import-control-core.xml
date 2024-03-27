@@ -157,10 +157,6 @@
   </subpackage>
 
   <subpackage name="log4j">
-    <subpackage name="appender">
-      <allow pkg="org.apache.log4j.AppenderSkeleton" />
-      <allow pkg="org.apache.log4j.PatternLayout" />
-      <allow pkg="org.apache.log4j.spi.LoggingEvent" />
-    </subpackage>
+    <allow pkg="org.apache.log4j" />
   </subpackage>
 </import-control>
