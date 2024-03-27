@@ -59,7 +59,7 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
                 }
                 logContent.append(log);
                 count++;
-                if (count == queueSize) {
+                if (count == queueSize && s3Client != null) {
                     upload(logContent.toString());
                     logContent.setLength(0);
                     count = 0;
@@ -122,8 +122,16 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
         return false;
     }
 
+    public void updateReadyNum() {
+        readyNum++;
+        if (readyNum == READY_TARGET) {
+            initS3Client();
+        }
+    }
+
     public void setQueueSize(int queueSize) {
         this.queueSize = queueSize;
+        updateReadyNum();
         if (blockQueue == null) {
             blockQueue = new LinkedBlockingQueue<>(this.queueSize);
             uploadThread.start();
@@ -132,30 +140,22 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
 
     public void setEndPoint(String endPoint) {
         this.endPoint = endPoint;
-        readyNum++;
-        if (readyNum == READY_TARGET) {
-            initS3Client();
-        }
+        updateReadyNum();
     }
 
     public void setNodeId(String nodeId) {
         this.nodeId = nodeId;
-        readyNum++;
-        if (readyNum == READY_TARGET) {
-            initS3Client();
-        }
+        updateReadyNum();
     }
 
     public void setBucket(String bucket) {
         this.bucket = bucket;
-        readyNum++;
-        if (readyNum == READY_TARGET) {
-            initS3Client();
-        }
+        updateReadyNum();
     }
 
     public void setPattern(String pattern) {
         this.pattern = pattern;
+        updateReadyNum();
         if (this.layout == null) {
             this.layout = new PatternLayout(this.pattern);
         }
@@ -163,11 +163,13 @@ public class ObjectStorageLog4jAppender extends AppenderSkeleton {
 
     public void setSystemAccessKey(String systemAccessKey) {
         this.systemAccessKey = systemAccessKey;
+        updateReadyNum();
         this.accessKey = System.getenv(this.systemAccessKey);
     }
 
     public void setSystemSecretKey(String systemSecretKey) {
         this.systemSecretKey = systemSecretKey;
+        updateReadyNum();
         this.secretKey = System.getenv(this.systemSecretKey);
     }
 }
