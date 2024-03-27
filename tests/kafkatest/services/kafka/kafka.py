@@ -424,7 +424,8 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             kraft_broker_configs = {
                 config_property.PORT: config_property.FIRST_BROKER_PORT,
                 config_property.NODE_ID: self.idx(node),
-                config_property.NEW_GROUP_COORDINATOR_ENABLE: use_new_coordinator
+                config_property.NEW_GROUP_COORDINATOR_ENABLE: use_new_coordinator,
+                'group.coordinator.rebalance.protocols': 'classic,consumer' # the default is classic
             }
             kraft_broker_plus_zk_configs = kraft_broker_configs.copy()
             kraft_broker_plus_zk_configs.update(zk_broker_configs)
