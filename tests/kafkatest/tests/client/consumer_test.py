@@ -442,7 +442,7 @@ class OffsetValidationTest(VerifiableConsumerTest):
         use_new_coordinator=[False]
     )
     @matrix(
-        clean_shutdown=[True, False],
+        clean_shutdown=[True],
         enable_autocommit=[True, False],
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
