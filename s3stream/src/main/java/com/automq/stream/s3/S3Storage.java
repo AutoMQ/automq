@@ -446,48 +446,56 @@ public class S3Storage implements Storage {
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
-        List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
-        if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
-            return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords, CacheAccessType.DELTA_WAL_CACHE_HIT));
+        if (maxBytes <= 0 || startOffset >= endOffset) {
+            return CompletableFuture.completedFuture(new ReadDataBlock(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT));
         }
+
+        Long firstRecordBaseOffset = deltaWALCache.getFirstRecordBaseOffset(streamId, startOffset, endOffset);
+        if (null != firstRecordBaseOffset && firstRecordBaseOffset <= startOffset) {
+            // The first record is in the cache, so we can read all from the cache.
+            List<StreamRecordBatch> records = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
+            // Re-check the first record, to avoid that it was removed from the cache.
+            if (records.isEmpty() || records.get(0).getBaseOffset() != firstRecordBaseOffset) {
+                // The first record changed, which means it was removed from the cache. This rarely happens, so we just retry.
+                records.forEach(StreamRecordBatch::release);
+                records.clear();
+                return read0(context, streamId, startOffset, endOffset, maxBytes);
+            }
+            return CompletableFuture.completedFuture(new ReadDataBlock(records, CacheAccessType.DELTA_WAL_CACHE_HIT));
+        }
+
         if (context.readOptions().fastRead()) {
-            // fast read fail fast when need read from block cache.
-            logCacheRecords.forEach(StreamRecordBatch::release);
-            logCacheRecords.clear();
+            // Fast read fail fast when need read from block cache.
             return CompletableFuture.failedFuture(FAST_READ_FAIL_FAST_EXCEPTION);
         }
-        if (!logCacheRecords.isEmpty()) {
-            endOffset = logCacheRecords.get(0).getBaseOffset();
+
+        final long blockCacheEndOffset;
+        if (null != firstRecordBaseOffset) {
+            // Update the end offset (which will be used to read from block cache) to the first record.
+            blockCacheEndOffset = firstRecordBaseOffset;
+        } else {
+            blockCacheEndOffset = endOffset;
         }
-        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("read from block cache timeout, stream={}, {}, maxBytes: {}", streamId, startOffset, maxBytes), 1, TimeUnit.MINUTES);
-        long finalEndOffset = endOffset;
-        return blockCache.read(context, streamId, startOffset, endOffset, maxBytes).thenApply(blockCacheRst -> {
+        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("read from block cache timeout, stream={}, {}-{}, maxBytes: {}", streamId, startOffset, blockCacheEndOffset, maxBytes), 1, TimeUnit.MINUTES);
+        return blockCache.read(context, streamId, startOffset, blockCacheEndOffset, maxBytes).thenCompose(blockCacheRst -> {
             List<StreamRecordBatch> rst = new ArrayList<>(blockCacheRst.getRecords());
+            assert !rst.isEmpty();
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
-            int readIndex = -1;
-            for (int i = 0; i < logCacheRecords.size() && remainingBytesSize > 0; i++) {
-                readIndex = i;
-                StreamRecordBatch record = logCacheRecords.get(i);
-                rst.add(record);
-                remainingBytesSize -= record.size();
-            }
-            try {
-                continuousCheck(rst);
-            } catch (IllegalArgumentException e) {
-                blockCacheRst.getRecords().forEach(StreamRecordBatch::release);
-                throw e;
-            }
-            if (readIndex < logCacheRecords.size()) {
-                // release unnecessary record
-                logCacheRecords.subList(readIndex + 1, logCacheRecords.size()).forEach(StreamRecordBatch::release);
-            }
-            return new ReadDataBlock(rst, blockCacheRst.getCacheAccessType());
+            return read0(context, streamId, rst.get(rst.size() - 1).getLastOffset(), endOffset, remainingBytesSize).thenApply(tailRst -> {
+                rst.addAll(tailRst.getRecords());
+                try {
+                    continuousCheck(rst);
+                } catch (IllegalArgumentException e) {
+                    rst.forEach(StreamRecordBatch::release);
+                    throw e;
+                }
+                return new ReadDataBlock(rst, blockCacheRst.getCacheAccessType());
+            });
         }).whenComplete((rst, ex) -> {
             timeout.cancel();
             if (ex != null) {
                 LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
-                    streamId, startOffset, finalEndOffset, maxBytes, ex);
-                logCacheRecords.forEach(StreamRecordBatch::release);
+                    streamId, startOffset, blockCacheEndOffset, maxBytes, ex);
             }
         });
     }
