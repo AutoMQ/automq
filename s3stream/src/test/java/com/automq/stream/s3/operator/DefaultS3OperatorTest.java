@@ -12,24 +12,33 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.metrics.TimerUtil;
 import io.netty.buffer.ByteBuf;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.DeletedObject;
+import software.amazon.awssdk.services.s3.model.S3Error;
+import software.amazon.awssdk.services.s3.model.S3ResponseMetadata;
 
+import static com.automq.stream.s3.operator.DefaultS3Operator.S3_API_NO_SUCH_KEY;
+import static com.automq.stream.s3.operator.DefaultS3Operator.checkIfDeleteObjectsWillReturnSuccessDeleteKeys;
+import static com.automq.stream.s3.operator.DefaultS3Operator.handleDeleteObjectsResponse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -72,6 +81,7 @@ class DefaultS3OperatorTest {
             });
         List<String> keys = List.of("test1", "test2");
         List<String> deleted = operator.delete(keys).join();
+        deleted.sort(String::compareTo);
         assertEquals(keys, deleted);
     }
 
@@ -155,5 +165,140 @@ class DefaultS3OperatorTest {
         buf = cf5.get();
         assertEquals(512, buf.readableBytes());
         buf.release();
+    }
+
+    private DeleteObjectsResponse geneDeleteObjectsResponse(List<String> successKeys, List<S3Error> errorKeys) {
+        DeleteObjectsResponse response = mock(DeleteObjectsResponse.class);
+        S3ResponseMetadata metadata = mock(S3ResponseMetadata.class);
+        SdkHttpResponse httpResponse = mock(SdkHttpResponse.class);
+        when(metadata.requestId()).thenReturn("request-id");
+        when(response.sdkHttpResponse()).thenReturn(httpResponse);
+        when(response.responseMetadata()).thenReturn(metadata);
+
+
+        if (!successKeys.isEmpty()) {
+            when(response.hasDeleted()).thenReturn(true);
+            when(response.deleted()).thenReturn(successKeys.stream().map(k -> DeletedObject.builder()
+                    .key(k)
+                    .build()).collect(Collectors.toList()));
+        }
+
+        if (!errorKeys.isEmpty()) {
+            when(response.hasErrors()).thenReturn(true);
+            when(response.errors()).thenReturn(errorKeys);
+        }
+
+        return response;
+    }
+
+    private S3Error generateS3Error(String code, String message, String key) {
+        return S3Error.builder().code(code).message(message).key(key).build();
+    }
+
+    @Test
+    public void testCheckIfDeleteObjectsWillReturnSuccessDeleteKeys() {
+        List<String> pathKeys = List.of("object1", "object2");
+
+        DeleteObjectsResponse normalResponse = geneDeleteObjectsResponse(pathKeys, Collections.emptyList());
+        assertTrue(checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, normalResponse));
+
+        DeleteObjectsResponse notReturnErrorsResponse = geneDeleteObjectsResponse(Collections.emptyList(),
+                Collections.emptyList());
+        assertFalse(checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, notReturnErrorsResponse));
+
+        DeleteObjectsResponse noSuchKeyResponse = geneDeleteObjectsResponse(Collections.emptyList(),
+                List.of(generateS3Error(S3_API_NO_SUCH_KEY, "mock NoSuchKey S3Error", "key")));
+        assertFalse(checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, noSuchKeyResponse));
+
+        assertThrows(IllegalStateException.class, () -> {
+            DeleteObjectsResponse abnormalResponse = geneDeleteObjectsResponse(pathKeys,
+                    List.of(generateS3Error(S3_API_NO_SUCH_KEY, "mock NoSuchKey S3Error", "key")));
+            checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, abnormalResponse);
+        });
+
+        assertThrows(IllegalStateException.class, () -> {
+            DeleteObjectsResponse abnormalResponse = geneDeleteObjectsResponse(Collections.emptyList(),
+                    List.of(generateS3Error("AccessDenied", "mock NoSuchKey S3Error", "key")));
+            checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, abnormalResponse);
+        });
+    }
+    @Test
+    public void testHandleQuietModeDeleteObjectsResponse() {
+        List<String> keys = IntStream.range(0, 10).mapToObj(i -> "deleteObj_" + i).sorted().collect(Collectors.toList());
+        String mockBadKey = "deleteObj_0";
+        List<String> expectNotBadKeys =  IntStream.range(1, 10).mapToObj(i -> "deleteObj_" + i).sorted().collect(Collectors.toList());
+        TimerUtil util = new TimerUtil();
+
+
+        // 1. normal case all delete success.
+        DeleteObjectsResponse normalResponse = geneDeleteObjectsResponse(keys, Collections.emptyList());
+
+        List<String> successKeys = handleDeleteObjectsResponse(keys, util, normalResponse, true);
+        successKeys.sort(String::compareTo);
+
+        assertEquals(successKeys, keys, "non-quiet deleteObjects should return all key success.");
+
+        normalResponse = geneDeleteObjectsResponse(Collections.emptyList(), Collections.emptyList());
+        successKeys = handleDeleteObjectsResponse(keys, util, normalResponse, false);
+        successKeys.sort(String::compareTo);
+
+        assertEquals(successKeys, keys, "quiet deleteObjects should return all key success.");
+
+
+        // 2. normal case one key not exist.
+        S3Error keyNotExistWithKey = generateS3Error(S3_API_NO_SUCH_KEY, "mock NoSuchKey S3Error", mockBadKey);
+
+        DeleteObjectsResponse responseWithOneKeyNotExistError = geneDeleteObjectsResponse(
+                Collections.emptyList(),
+                List.of(keyNotExistWithKey));
+        successKeys = handleDeleteObjectsResponse(keys, util, responseWithOneKeyNotExistError, false);
+        successKeys.sort(String::compareTo);
+
+        assertEquals(successKeys, keys, "quiet deleteObjects should return all key success. " +
+                "even with keys not exist.");
+
+
+        // 3. normal case one key can't delete.
+        S3Error keyErrorWithKey = generateS3Error("AccessDenied", "mock AccessDenied S3Error", mockBadKey);
+        DeleteObjectsResponse oneObjectCanNotAccess = geneDeleteObjectsResponse(
+                expectNotBadKeys,
+                List.of(keyErrorWithKey));
+
+        successKeys = handleDeleteObjectsResponse(keys, util, oneObjectCanNotAccess, true);
+        successKeys.sort(String::compareTo);
+
+        assertEquals(expectNotBadKeys, successKeys);
+        assertFalse(successKeys.contains(mockBadKey), "non-quiet deleteObjects " +
+                "should exclude one key not success delete.");
+
+        DeleteObjectsResponse quietOneObjectCanNotAccess = geneDeleteObjectsResponse(
+                Collections.emptyList(),
+                List.of(keyErrorWithKey));
+
+        successKeys = handleDeleteObjectsResponse(keys, util, quietOneObjectCanNotAccess, false);
+        successKeys.sort(String::compareTo);
+
+        assertEquals(expectNotBadKeys, successKeys);
+        assertFalse(successKeys.contains(mockBadKey), "quiet deleteObjects should " +
+                "exclude one key not success delete.");
+
+
+        // 4. if the whole response with oneError without key.
+        S3Error errorWithoutKey = generateS3Error("BadDigest", "mock BadDigest S3Error", "");
+        DeleteObjectsResponse errorWithoutKeyResp = geneDeleteObjectsResponse(
+                expectNotBadKeys,
+                List.of(errorWithoutKey));
+
+        successKeys = handleDeleteObjectsResponse(keys, util, errorWithoutKeyResp, true);
+        assertEquals(expectNotBadKeys, successKeys, "non-quiet deleteObjects should return success delete keys " +
+                "and ignore if unexpected S3Error without key received.");
+
+        DeleteObjectsResponse quietRequestLevelError = geneDeleteObjectsResponse(
+                Collections.emptyList(),
+                List.of(errorWithoutKey));
+
+        successKeys = handleDeleteObjectsResponse(keys, util, quietRequestLevelError, false);
+        assertTrue(successKeys.isEmpty(), "quiet deleteObjects should return empty success delete keys " +
+                "if unexpected S3Error without key received.");
     }
 }
