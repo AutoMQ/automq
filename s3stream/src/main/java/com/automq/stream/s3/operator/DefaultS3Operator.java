@@ -737,7 +737,7 @@ public class DefaultS3Operator implements S3Operator {
 
         boolean hasDeleted = resp.hasDeleted() && !resp.deleted().isEmpty();
         boolean hasErrors = resp.hasErrors() && !resp.errors().isEmpty();
-        boolean hasErrorsWithoutNoSuchKey = resp.errors().stream().noneMatch(s3Error -> !"NoSuchKey".equals(s3Error.key()));
+        boolean hasErrorsWithoutNoSuchKey = resp.errors().stream().filter(s3Error -> !"NoSuchKey".equals(s3Error.code())).count() == 0;
         boolean allDeleteKeyMatch = resp.deleted().stream().map(DeletedObject::key).sorted().collect(Collectors.toList()).equals(path);
 
         if (hasDeleted && !hasErrors && allDeleteKeyMatch) {
