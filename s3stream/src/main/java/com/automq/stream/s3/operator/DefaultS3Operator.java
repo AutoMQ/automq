@@ -128,6 +128,7 @@ public class DefaultS3Operator implements S3Operator {
         "s3-write-cb-executor", true, LOGGER);
     private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
+    public static final String S3APINoSuchKey = "NoSuchKey";
 
     private boolean deleteObjectsReturnSuccessKeys;
 
@@ -737,7 +738,7 @@ public class DefaultS3Operator implements S3Operator {
 
         boolean hasDeleted = resp.hasDeleted() && !resp.deleted().isEmpty();
         boolean hasErrors = resp.hasErrors() && !resp.errors().isEmpty();
-        boolean hasErrorsWithoutNoSuchKey = resp.errors().stream().filter(s3Error -> !"NoSuchKey".equals(s3Error.code())).count() == 0;
+        boolean hasErrorsWithoutNoSuchKey = resp.errors().stream().filter(s3Error -> !S3APINoSuchKey.equals(s3Error.code())).count() != 0;
         boolean allDeleteKeyMatch = resp.deleted().stream().map(DeletedObject::key).sorted().collect(Collectors.toList()).equals(path);
 
         if (hasDeleted && !hasErrors && allDeleteKeyMatch) {
