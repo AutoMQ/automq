@@ -194,13 +194,13 @@ class DefaultS3OperatorTest {
         // 1. normal case all delete success.
         DeleteObjectsResponse normalResponse = geneDeleteObjectsResponse(keys, Collections.emptyList());
 
-        List<String> successKeys = handleDeleteObjectsResponse(keys, util, normalResponse, false);
+        List<String> successKeys = handleDeleteObjectsResponse(keys, util, normalResponse, true);
         successKeys.sort(String::compareTo);
 
         assertEquals(successKeys, keys, "non-quiet deleteObjects should return all key success.");
 
         normalResponse = geneDeleteObjectsResponse(Collections.emptyList(), Collections.emptyList());
-        successKeys = handleDeleteObjectsResponse(keys, util, normalResponse, true);
+        successKeys = handleDeleteObjectsResponse(keys, util, normalResponse, false);
         successKeys.sort(String::compareTo);
 
         assertEquals(successKeys, keys, "quiet deleteObjects should return all key success.");
@@ -213,7 +213,7 @@ class DefaultS3OperatorTest {
                 expectNotBadKeys,
                 List.of(keyNotExistWithKey));
 
-        successKeys = handleDeleteObjectsResponse(keys, util, responseWithOneKeyNotExistError, false);
+        successKeys = handleDeleteObjectsResponse(keys, util, responseWithOneKeyNotExistError, true);
         successKeys.sort(String::compareTo);
 
         assertEquals(successKeys, keys, "non-quiet deleteObjects should return all key success. " +
@@ -222,7 +222,7 @@ class DefaultS3OperatorTest {
         responseWithOneKeyNotExistError = geneDeleteObjectsResponse(
                 Collections.emptyList(),
                 List.of(keyNotExistWithKey));
-        successKeys = handleDeleteObjectsResponse(keys, util, responseWithOneKeyNotExistError, true);
+        successKeys = handleDeleteObjectsResponse(keys, util, responseWithOneKeyNotExistError, false);
         successKeys.sort(String::compareTo);
 
         assertEquals(successKeys, keys, "quiet deleteObjects should return all key success. " +
@@ -235,7 +235,7 @@ class DefaultS3OperatorTest {
                 expectNotBadKeys,
                 List.of(keyErrorWithKey));
 
-        successKeys = handleDeleteObjectsResponse(keys, util, oneObjectCanNotAccess, false);
+        successKeys = handleDeleteObjectsResponse(keys, util, oneObjectCanNotAccess, true);
         successKeys.sort(String::compareTo);
 
         assertEquals(expectNotBadKeys, successKeys);
@@ -246,7 +246,7 @@ class DefaultS3OperatorTest {
                 Collections.emptyList(),
                 List.of(keyErrorWithKey));
 
-        successKeys = handleDeleteObjectsResponse(keys, util, quietOneObjectCanNotAccess, true);
+        successKeys = handleDeleteObjectsResponse(keys, util, quietOneObjectCanNotAccess, false);
         successKeys.sort(String::compareTo);
 
         assertEquals(expectNotBadKeys, successKeys);
@@ -260,7 +260,7 @@ class DefaultS3OperatorTest {
                 expectNotBadKeys,
                 List.of(errorWithoutKey));
 
-        successKeys = handleDeleteObjectsResponse(keys, util, errorWithoutKeyResp, false);
+        successKeys = handleDeleteObjectsResponse(keys, util, errorWithoutKeyResp, true);
         assertEquals(expectNotBadKeys, successKeys, "non-quiet deleteObjects should return success delete keys " +
                 "and ignore if unexpected S3Error without key received.");
 
@@ -268,7 +268,7 @@ class DefaultS3OperatorTest {
                 Collections.emptyList(),
                 List.of(errorWithoutKey));
 
-        successKeys = handleDeleteObjectsResponse(keys, util, quietRequestLevelError, true);
+        successKeys = handleDeleteObjectsResponse(keys, util, quietRequestLevelError, false);
         assertTrue(successKeys.isEmpty(), "quiet deleteObjects should return empty success delete keys " +
                 "if unexpected S3Error without key received.");
     }
