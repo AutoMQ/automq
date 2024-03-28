@@ -728,7 +728,7 @@ public class DefaultS3Operator implements S3Operator {
                         .thenApply(resp -> checkIfDeleteObjectsWillReturnSuccessDeleteKeys(path, resp)));
     }
 
-    private boolean checkIfDeleteObjectsWillReturnSuccessDeleteKeys(List<String> path, DeleteObjectsResponse resp) {
+    static boolean checkIfDeleteObjectsWillReturnSuccessDeleteKeys(List<String> path, DeleteObjectsResponse resp) {
         // BOS S3 API works as quiet mode
         // in this mode success delete objects won't be returned.
         // which could cause object not deleted in metadata.

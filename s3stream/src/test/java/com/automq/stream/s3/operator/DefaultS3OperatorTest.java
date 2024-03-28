@@ -25,16 +25,20 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.DeletedObject;
 import software.amazon.awssdk.services.s3.model.S3Error;
+import software.amazon.awssdk.services.s3.model.S3ResponseMetadata;
 
 import static com.automq.stream.s3.operator.DefaultS3Operator.S3_API_NO_SUCH_KEY;
+import static com.automq.stream.s3.operator.DefaultS3Operator.checkIfDeleteObjectsWillReturnSuccessDeleteKeys;
 import static com.automq.stream.s3.operator.DefaultS3Operator.handleDeleteObjectsResponse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -77,6 +81,7 @@ class DefaultS3OperatorTest {
             });
         List<String> keys = List.of("test1", "test2");
         List<String> deleted = operator.delete(keys).join();
+        deleted.sort(String::compareTo);
         assertEquals(keys, deleted);
     }
 
@@ -164,6 +169,12 @@ class DefaultS3OperatorTest {
 
     private DeleteObjectsResponse geneDeleteObjectsResponse(List<String> successKeys, List<S3Error> errorKeys) {
         DeleteObjectsResponse response = mock(DeleteObjectsResponse.class);
+        S3ResponseMetadata metadata = mock(S3ResponseMetadata.class);
+        SdkHttpResponse httpResponse = mock(SdkHttpResponse.class);
+        when(metadata.requestId()).thenReturn("request-id");
+        when(response.sdkHttpResponse()).thenReturn(httpResponse);
+        when(response.responseMetadata()).thenReturn(metadata);
+
 
         if (!successKeys.isEmpty()) {
             when(response.hasDeleted()).thenReturn(true);
@@ -184,6 +195,33 @@ class DefaultS3OperatorTest {
         return S3Error.builder().code(code).message(message).key(key).build();
     }
 
+    @Test
+    public void testCheckIfDeleteObjectsWillReturnSuccessDeleteKeys() {
+        List<String> pathKeys = List.of("object1", "object2");
+
+        DeleteObjectsResponse normalResponse = geneDeleteObjectsResponse(pathKeys, Collections.emptyList());
+        assertTrue(checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, normalResponse));
+
+        DeleteObjectsResponse notReturnErrorsResponse = geneDeleteObjectsResponse(Collections.emptyList(),
+                Collections.emptyList());
+        assertFalse(checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, notReturnErrorsResponse));
+
+        DeleteObjectsResponse noSuchKeyResponse = geneDeleteObjectsResponse(Collections.emptyList(),
+                List.of(generateS3Error(S3_API_NO_SUCH_KEY, "mock NoSuchKey S3Error", "key")));
+        assertFalse(checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, noSuchKeyResponse));
+
+        assertThrows(IllegalStateException.class, () -> {
+            DeleteObjectsResponse abnormalResponse = geneDeleteObjectsResponse(pathKeys,
+                    List.of(generateS3Error(S3_API_NO_SUCH_KEY, "mock NoSuchKey S3Error", "key")));
+            checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, abnormalResponse);
+        });
+
+        assertThrows(IllegalStateException.class, () -> {
+            DeleteObjectsResponse abnormalResponse = geneDeleteObjectsResponse(Collections.emptyList(),
+                    List.of(generateS3Error("AccessDenied", "mock NoSuchKey S3Error", "key")));
+            checkIfDeleteObjectsWillReturnSuccessDeleteKeys(pathKeys, abnormalResponse);
+        });
+    }
     @Test
     public void testHandleQuietModeDeleteObjectsResponse() {
         List<String> keys = IntStream.range(0, 10).mapToObj(i -> "deleteObj_" + i).sorted().collect(Collectors.toList());
