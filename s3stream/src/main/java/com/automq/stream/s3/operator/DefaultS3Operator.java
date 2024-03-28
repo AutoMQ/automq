@@ -485,14 +485,11 @@ public class DefaultS3Operator implements S3Operator {
         if (deleteObjectsReturnSuccessKeys) {
             response.deleted().stream().map(DeletedObject::key).forEach(successDeleteKeys::add);
 
+            // expect NoSuchKey is not response because s3 api won't return this in errors.
             for (S3Error error : response.errors()) {
-                if ("NoSuchKey".equals(error.code()) && !StringUtils.isEmpty(error.key())) {
-                    successDeleteKeys.add(error.key());
-                } else {
-                    LOGGER.error("[ControllerS3Operator]: Delete objects for key [{}] error code [{}] message [{}]",
-                            error.key(), error.code(), error.message());
-                    errDeleteCount++;
-                }
+                LOGGER.error("[ControllerS3Operator]: Delete objects for key [{}] error code [{}] message [{}]",
+                        error.key(), error.code(), error.message());
+                errDeleteCount++;
             }
 
         } else {
@@ -740,6 +737,7 @@ public class DefaultS3Operator implements S3Operator {
 
         boolean hasDeleted = resp.hasDeleted() && !resp.deleted().isEmpty();
         boolean hasErrors = resp.hasErrors() && !resp.errors().isEmpty();
+        boolean hasErrorsWithoutNoSuchKey = resp.errors().stream().noneMatch(s3Error -> !"NoSuchKey".equals(s3Error.key()));
         boolean allDeleteKeyMatch = resp.deleted().stream().map(DeletedObject::key).sorted().collect(Collectors.toList()).equals(path);
 
         if (hasDeleted && !hasErrors && allDeleteKeyMatch) {
@@ -747,7 +745,7 @@ public class DefaultS3Operator implements S3Operator {
 
             return true;
 
-        } else if (!hasDeleted && !hasErrors) {
+        } else if (!hasDeleted && !hasErrorsWithoutNoSuchKey) {
             LOGGER.info("call deleteObjects but deleteObjectKeys not returned. set deleteObjectsReturnSuccessKeys = false");
 
             return false;
