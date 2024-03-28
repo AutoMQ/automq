@@ -20,15 +20,12 @@ import kafka.server.BrokerServer;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
-import org.apache.kafka.image.S3ObjectsImage;
 import org.apache.kafka.image.S3StreamMetadataImage;
-import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.image.loader.LoaderManifest;
 import org.apache.kafka.image.publisher.MetadataPublisher;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.raft.OffsetAndEpoch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
