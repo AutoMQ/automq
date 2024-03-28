@@ -24,6 +24,7 @@ import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;
+import kafka.autobalancer.goals.AbstractResourceUsageDistributionGoal;
 import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.goals.NetworkInUsageDistributionGoal;
 import kafka.autobalancer.goals.NetworkOutUsageDistributionGoal;
@@ -32,6 +33,7 @@ import kafka.autobalancer.model.ClusterModelSnapshot;
 import org.apache.commons.math3.distribution.PoissonDistribution;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.config.ConfigException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -43,6 +45,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 
 public class AnomalyDetectorTest {
@@ -77,6 +80,16 @@ public class AnomalyDetectorTest {
 
                     @Override
                     public void execute(List<Action> actions) {
+
+                    }
+
+                    @Override
+                    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
+
+                    }
+
+                    @Override
+                    public void reconfigure(Map<String, Object> configs) {
 
                     }
                 })
@@ -161,6 +174,7 @@ public class AnomalyDetectorTest {
         List<Action> actionList = new ArrayList<>();
         AnomalyDetector detector = new AnomalyDetectorBuilder()
                 .clusterModel(clusterModel)
+                .detectIntervalMs(Long.MAX_VALUE)
                 .addGoal(goal0)
                 .addGoal(goal1)
                 .executor(new ActionExecutorService() {
@@ -183,11 +197,21 @@ public class AnomalyDetectorTest {
                     public void execute(List<Action> actions) {
                         actionList.addAll(actions);
                     }
+
+                    @Override
+                    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
+
+                    }
+
+                    @Override
+                    public void reconfigure(Map<String, Object> configs) {
+
+                    }
                 })
                 .build();
 
         TimerUtil timerUtil = new TimerUtil();
-        detector.resume();
+        detector.start();
         detector.detect();
         System.out.printf("Detect cost: %d ms, %d actions detected%n", timerUtil.elapsedAs(TimeUnit.MILLISECONDS), actionList.size());
         Assertions.assertFalse(actionList.isEmpty());
@@ -233,5 +257,43 @@ public class AnomalyDetectorTest {
         metrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, r.nextDouble(0, 1024 * 1024));
         metrics.put(RawMetricTypes.PARTITION_SIZE, 0.0);
         return metrics;
+    }
+
+    @Test
+    public void testReconfigure() {
+        AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(Collections.emptyMap(), false);
+        List<Goal> goals = config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
+
+        AnomalyDetector detector = new AnomalyDetectorBuilder()
+                .clusterModel(Mockito.mock(ClusterModel.class))
+                .detectIntervalMs(Long.MAX_VALUE)
+                .addGoals(goals)
+                .executor(Mockito.mock(ActionExecutorService.class))
+                .build();
+        Assertions.assertEquals(2, detector.goals().size());
+        Assertions.assertEquals(NetworkInUsageDistributionGoal.class, detector.goals().get(0).getClass());
+        Assertions.assertEquals(1024 * 1024, ((AbstractResourceUsageDistributionGoal) detector.goals().get(0)).getUsageDetectThreshold());
+        Assertions.assertEquals(0.2, ((AbstractResourceUsageDistributionGoal) detector.goals().get(0)).getUsageAvgDeviation());
+        Assertions.assertEquals(NetworkOutUsageDistributionGoal.class, detector.goals().get(1).getClass());
+        Assertions.assertEquals(1024 * 1024, ((AbstractResourceUsageDistributionGoal) detector.goals().get(1)).getUsageDetectThreshold());
+        Assertions.assertEquals(0.2, ((AbstractResourceUsageDistributionGoal) detector.goals().get(1)).getUsageAvgDeviation());
+
+        detector.reconfigure(Map.of(
+                AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, new StringJoiner(",")
+                        .add(NetworkInUsageDistributionGoal.class.getName())
+                        .add(NetworkOutUsageDistributionGoal.class.getName()).toString(),
+                AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 2048 * 1024,
+                AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 4096 * 1024,
+                AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, 0.3,
+                AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION, 0.45
+        ));
+
+        Assertions.assertEquals(2, detector.goals().size());
+        Assertions.assertEquals(NetworkInUsageDistributionGoal.class, detector.goals().get(0).getClass());
+        Assertions.assertEquals(2048 * 1024, ((AbstractResourceUsageDistributionGoal) detector.goals().get(0)).getUsageDetectThreshold());
+        Assertions.assertEquals(0.3, ((AbstractResourceUsageDistributionGoal) detector.goals().get(0)).getUsageAvgDeviation());
+        Assertions.assertEquals(NetworkOutUsageDistributionGoal.class, detector.goals().get(1).getClass());
+        Assertions.assertEquals(4096 * 1024, ((AbstractResourceUsageDistributionGoal) detector.goals().get(1)).getUsageDetectThreshold());
+        Assertions.assertEquals(0.45, ((AbstractResourceUsageDistributionGoal) detector.goals().get(1)).getUsageAvgDeviation());
     }
 }

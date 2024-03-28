@@ -52,6 +52,10 @@ public class AutoBalancerMetricsReporterConfig extends AbstractConfig {
     private static final String AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_DOC = "The batch.size configuration of KafkaProducer used in AutoBalancer "
             + " metrics reporter. Set this config and autobalancer.reporter.linger.ms to a large number to have better batching.";
 
+    public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(
+            AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG
+    );
+
     static {
         ProducerConfig.configNames().forEach(name -> PRODUCER_CONFIGS.add(PREFIX + name));
         CONFIG_DEF.define(AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG,

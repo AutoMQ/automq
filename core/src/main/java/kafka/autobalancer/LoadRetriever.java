@@ -12,7 +12,6 @@
 package kafka.autobalancer;
 
 import com.automq.stream.utils.LogContext;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
@@ -21,6 +20,7 @@ import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import kafka.autobalancer.model.ClusterModel;
+import kafka.autobalancer.services.AbstractResumableService;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -28,6 +28,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.internals.Topic;
@@ -40,11 +41,11 @@ import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
-import org.slf4j.Logger;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -64,13 +65,12 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class LoadRetriever implements BrokerStatusListener {
+public class LoadRetriever extends AbstractResumableService implements BrokerStatusListener {
     public static final Random RANDOM = new Random();
-    protected final Logger logger;
     private final Map<Integer, BrokerEndpoints> bootstrapServerMap;
-    private final int metricReporterTopicPartition;
+    private volatile int metricReporterTopicPartition;
     private final long metricReporterTopicRetentionTime;
-    protected final long consumerPollTimeout;
+    protected volatile long consumerPollTimeout;
     protected final String consumerClientIdPrefix;
     protected final long consumerRetryBackOffMs;
     protected final ClusterModel clusterModel;
@@ -83,17 +83,13 @@ public class LoadRetriever implements BrokerStatusListener {
     private volatile boolean leaderEpochInitialized;
     private volatile boolean isLeader;
     private volatile Consumer<String, AutoBalancerMetrics> consumer;
-    private volatile boolean shutdown;
 
     public LoadRetriever(AutoBalancerControllerConfig config, Controller controller, ClusterModel clusterModel) {
         this(config, controller, clusterModel, null);
     }
 
     public LoadRetriever(AutoBalancerControllerConfig config, Controller controller, ClusterModel clusterModel, LogContext logContext) {
-        if (logContext == null) {
-            logContext = new LogContext("[LoadRetriever] ");
-        }
-        this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
+        super(logContext);
         this.controller = controller;
         this.clusterModel = clusterModel;
         this.bootstrapServerMap = new HashMap<>();
@@ -109,14 +105,17 @@ public class LoadRetriever implements BrokerStatusListener {
         consumerRetryBackOffMs = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS);
     }
 
-    public void start() {
-        this.shutdown = false;
-        this.mainExecutorService.schedule(this::retrieve, 0, TimeUnit.MILLISECONDS);
-        logger.info("Started");
+    @Override
+    protected void doStart() {
+        // seek to the latest offset if consumer exists
+        if (this.consumer != null) {
+            this.consumer.seekToEnd(Collections.emptyList());
+        }
+        scheduleRetrieve(this.epoch.get());
     }
 
-    public void shutdown() {
-        this.shutdown = true;
+    @Override
+    protected void doShutdown() {
         this.mainExecutorService.shutdown();
         try {
             if (!mainExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -125,15 +124,46 @@ public class LoadRetriever implements BrokerStatusListener {
         } catch (InterruptedException ignored) {
 
         }
+        shutdownConsumer();
+    }
 
-        if (this.consumer != null) {
-            try {
-                this.consumer.close(Duration.ofMillis(5000));
-            } catch (Exception e) {
-                logger.error("Exception when close consumer: {}", e.getMessage());
+    @Override
+    protected void doPause() {
+
+    }
+
+    private void scheduleRetrieve(int epoch) {
+        this.mainExecutorService.schedule(() -> retrieve(epoch), 0, TimeUnit.MILLISECONDS);
+    }
+
+    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
+        try {
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG)) {
+                int numPartitions = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
+                if (numPartitions <= 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG, numPartitions);
+                }
             }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT)) {
+                long pollTimeout = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
+                if (pollTimeout < 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT, pollTimeout);
+                }
+            }
+        } catch (ConfigException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ConfigException("Reconfiguration validation error " + e.getMessage());
         }
-        logger.info("Shutdown completed");
+    }
+
+    public void reconfigure(Map<String, Object> configs) {
+        if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG)) {
+            this.metricReporterTopicPartition = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
+        }
+        if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT)) {
+            this.consumerPollTimeout = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
+        }
     }
 
     protected KafkaConsumer<String, AutoBalancerMetrics> createConsumer(String bootstrapServer) {
@@ -270,41 +300,53 @@ public class LoadRetriever implements BrokerStatusListener {
         return String.join(",", endpoints);
     }
 
-    private void checkAndCreateConsumer() {
+    private void checkAndCreateConsumer(int epoch) {
         String bootstrapServer;
         this.lock.lock();
         try {
+            if (!isRunnable(epoch)) {
+                return;
+            }
             if (!hasAvailableBrokerInUse()) {
                 logger.info("No available broker in use, try to close current consumer");
                 shutdownConsumer();
-                while (!shutdown && !hasAvailableBroker()) {
+                while (isRunnable(epoch) && !hasAvailableBroker()) {
                     try {
                         this.cond.await();
                     } catch (InterruptedException ignored) {
 
                     }
                 }
-                if (this.shutdown) {
+                if (!isRunnable(epoch)) {
                     return;
                 }
             }
             bootstrapServer = buildBootstrapServer();
+            if (this.consumer == null && !bootstrapServer.isEmpty()) {
+                //TODO: fetch metadata from controller
+                this.consumer = createConsumer(bootstrapServer);
+                logger.info("Created consumer on {}", bootstrapServer);
+            }
         } finally {
             lock.unlock();
-        }
-        if (this.consumer == null && !bootstrapServer.isEmpty()) {
-            //TODO: fetch metadata from controller
-            this.consumer = createConsumer(bootstrapServer);
-            logger.info("Created consumer on {}", bootstrapServer);
         }
     }
 
     private void shutdownConsumer() {
-        if (this.consumer != null) {
-            this.consumer.close(Duration.ofSeconds(5));
-            this.consumer = null;
-            this.currentAssignment.clear();
-            logger.info("Consumer closed");
+        this.lock.lock();
+        try {
+            if (this.consumer != null) {
+                try {
+                    this.consumer.close(Duration.ofSeconds(5));
+                } catch (Exception e) {
+                    logger.error("Exception when close consumer: {}", e.getMessage());
+                }
+                this.consumer = null;
+                this.currentAssignment.clear();
+                logger.info("Consumer closed");
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -389,11 +431,11 @@ public class LoadRetriever implements BrokerStatusListener {
         return hasAvailableBroker();
     }
 
-    public void retrieve() {
-        while (!shutdown) {
+    public void retrieve(int epoch) {
+        while (isRunnable(epoch)) {
             try {
-                checkAndCreateConsumer();
-                if (shutdown) {
+                checkAndCreateConsumer(epoch);
+                if (!isRunnable(epoch)) {
                     return;
                 }
                 TopicAction action = refreshAssignment();
@@ -404,7 +446,7 @@ public class LoadRetriever implements BrokerStatusListener {
                         createTopicPartitions();
                     }
                     shutdownConsumer();
-                    this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
+                    this.mainExecutorService.schedule(() -> retrieve(epoch), 1, TimeUnit.SECONDS);
                     return;
                 }
                 ConsumerRecords<String, AutoBalancerMetrics> records = this.consumer.poll(Duration.ofMillis(consumerPollTimeout));
@@ -422,11 +464,11 @@ public class LoadRetriever implements BrokerStatusListener {
                 }
             } catch (InvalidTopicException e) {
                 createTopic();
-                this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
+                this.mainExecutorService.schedule(() -> retrieve(epoch), 1, TimeUnit.SECONDS);
                 return;
             } catch (Exception e) {
                 logger.error("Consumer poll error", e);
-                this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
+                this.mainExecutorService.schedule(() -> retrieve(epoch), 1, TimeUnit.SECONDS);
                 return;
             } catch (Throwable t) {
                 logger.error("Consumer poll error and exit retrieve loop", t);

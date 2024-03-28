@@ -17,6 +17,8 @@
 
 package kafka.server
 
+import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
+
 import java.util
 import java.util.{Collections, Properties}
 import java.util.concurrent.CopyOnWriteArrayList
@@ -93,7 +95,9 @@ object DynamicBrokerConfig {
     DynamicListenerConfig.ReconfigurableConfigs ++
     SocketServer.ReconfigurableConfigs ++
     ProducerStateManagerConfig.RECONFIGURABLE_CONFIGS.asScala ++
-    DynamicRemoteLogConfig.ReconfigurableConfigs
+    DynamicRemoteLogConfig.ReconfigurableConfigs ++
+    AutoBalancerControllerConfig.RECONFIGURABLE_CONFIGS.asScala ++
+    AutoBalancerMetricsReporterConfig.RECONFIGURABLE_CONFIGS.asScala
 
   private val ClusterLevelListenerConfigs = Set(KafkaConfig.MaxConnectionsProp, KafkaConfig.MaxConnectionCreationRateProp, KafkaConfig.NumNetworkThreadsProp)
   private val PerBrokerConfigs = (DynamicSecurityConfigs ++ DynamicListenerConfig.ReconfigurableConfigs).diff(
@@ -295,6 +299,7 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
       addReconfigurable(new DynamicMetricsReporters(kafkaConfig.nodeId, controller.config, controller.metrics, controller.clusterId))
     }
     addReconfigurable(new DynamicClientQuotaCallback(controller.quotaManagers, controller.config))
+    addReconfigurable(controller.autoBalancerManager)
     addBrokerReconfigurable(new ControllerDynamicThreadPool(controller))
     // TODO: addBrokerReconfigurable(new DynamicListenerConfig(controller))
     addBrokerReconfigurable(controller.socketServer)

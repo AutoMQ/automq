@@ -14,46 +14,52 @@ package kafka.autobalancer.detector;
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
+import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+import kafka.autobalancer.services.AbstractResumableService;
 import org.apache.kafka.common.TopicPartition;
-import org.slf4j.Logger;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.utils.ConfigUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
-public class AnomalyDetector {
-    private final Logger logger;
-    private final List<Goal> goalsByPriority;
+public class AnomalyDetector extends AbstractResumableService {
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
     private final ActionExecutorService actionExecutor;
-    private final Set<Integer> excludedBrokers;
-    private final Set<String> excludedTopics;
-    private final int maxActionsNumPerExecution;
-    private final long detectInterval;
-    private final long maxTolerateMetricsDelayMs;
-    private final long coolDownIntervalPerActionMs;
-    private volatile boolean running;
+    private final Lock configChangeLock;
+    private volatile List<Goal> goalsByPriority;
+    private volatile Set<Integer> excludedBrokers;
+    private volatile Set<String> excludedTopics;
+    private volatile int maxActionsNumPerExecution;
+    private volatile long detectInterval;
+    private volatile long maxTolerateMetricsDelayMs;
+    private volatile long coolDownIntervalPerActionMs;
+    private volatile boolean isLeader = false;
 
     AnomalyDetector(LogContext logContext, int maxActionsNumPerDetect, long detectIntervalMs, long maxTolerateMetricsDelayMs,
                     long coolDownIntervalPerActionMs, ClusterModel clusterModel, ActionExecutorService actionExecutor,
                     List<Goal> goals, Set<Integer> excludedBrokers, Set<String> excludedTopics) {
-        this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
+        super(logContext);
+        this.configChangeLock = new ReentrantLock();
         this.maxActionsNumPerExecution = maxActionsNumPerDetect;
         this.detectInterval = detectIntervalMs;
         this.maxTolerateMetricsDelayMs = maxTolerateMetricsDelayMs;
@@ -65,19 +71,18 @@ public class AnomalyDetector {
         Collections.sort(this.goalsByPriority);
         this.excludedBrokers = excludedBrokers;
         this.excludedTopics = excludedTopics;
-        this.running = false;
-        logger.info("maxActionsNumPerDetect: {}, detectInterval: {}ms, coolDownIntervalPerAction: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
-                this.maxActionsNumPerExecution, this.detectInterval, coolDownIntervalPerActionMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
-    }
-
-    public void start() {
-        this.actionExecutor.start();
         this.executorService.schedule(this::detect, detectInterval, TimeUnit.MILLISECONDS);
-        logger.info("Started");
+        logger.info("maxActionsNumPerDetect: {}, detectInterval: {}ms, coolDownIntervalPerAction: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
+                this.maxActionsNumPerExecution, this.detectInterval, this.coolDownIntervalPerActionMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
     }
 
-    public void shutdown() throws InterruptedException {
-        this.running = false;
+    @Override
+    public void doStart() {
+
+    }
+
+    @Override
+    public void doShutdown() {
         this.executorService.shutdown();
         try {
             if (!this.executorService.awaitTermination(10, TimeUnit.SECONDS)) {
@@ -85,17 +90,114 @@ public class AnomalyDetector {
             }
         } catch (InterruptedException ignored) {
         }
-
-        this.actionExecutor.shutdown();
-        logger.info("Shutdown completed");
     }
 
-    public void pause() {
-        this.running = false;
+    @Override
+    public void doPause() {
+
     }
 
-    public void resume() {
-        this.running = true;
+    public void onLeaderChanged(boolean isLeader) {
+        this.isLeader = isLeader;
+    }
+
+    List<Goal> goals() {
+        return new ArrayList<>(goalsByPriority);
+    }
+
+    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
+        try {
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS)) {
+                long metricsDelay = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS);
+                if (metricsDelay <= 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS,
+                            metricsDelay, "Max accepted metrics delay should be positive");
+                }
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS)) {
+                AutoBalancerControllerConfig tmp = new AutoBalancerControllerConfig(configs, false);
+                tmp.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS)) {
+                long detectInterval = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS);
+                if (detectInterval < 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, detectInterval);
+                }
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS)) {
+                long steps = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS);
+                if (steps < 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT, steps);
+                }
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS)) {
+                AutoBalancerControllerConfig tmp = new AutoBalancerControllerConfig(configs, false);
+                List<String> brokerIdStrs = tmp.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS);
+                for (String brokerIdStr : brokerIdStrs) {
+                    Integer.parseInt(brokerIdStr);
+                }
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS)) {
+                AutoBalancerControllerConfig tmp = new AutoBalancerControllerConfig(configs, false);
+                tmp.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS);
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS)) {
+                long coolDownInterval = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
+                if (coolDownInterval < 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, coolDownInterval);
+                }
+            }
+            validateGoalsReconfiguration(configs);
+        } catch (ConfigException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ConfigException("Reconfiguration validation error " + e.getMessage());
+        }
+    }
+
+    private void validateGoalsReconfiguration(Map<String, Object> configs) {
+        for (Goal goal : this.goalsByPriority) {
+            goal.validateReconfiguration(configs);
+        }
+    }
+
+    public void reconfigure(Map<String, Object> configs) {
+        configChangeLock.lock();
+        try {
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS)) {
+                this.maxTolerateMetricsDelayMs = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS);
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS)) {
+                this.detectInterval = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS);
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS)) {
+                this.maxActionsNumPerExecution = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS);
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS)) {
+                AutoBalancerControllerConfig tmp = new AutoBalancerControllerConfig(configs, false);
+                this.excludedBrokers = tmp.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS)
+                        .stream().map(Integer::parseInt).collect(Collectors.toSet());
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS)) {
+                AutoBalancerControllerConfig tmp = new AutoBalancerControllerConfig(configs, false);
+                this.excludedTopics = new HashSet<>(tmp.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS));
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS)) {
+                this.coolDownIntervalPerActionMs = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS)) {
+                reconfigureGoals(configs);
+            }
+        } finally {
+            configChangeLock.unlock();
+        }
+    }
+
+    private void reconfigureGoals(Map<String, Object> configs) {
+        AutoBalancerControllerConfig tmp = new AutoBalancerControllerConfig(configs, false);
+        List<Goal> goals = tmp.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
+        Collections.sort(goals);
+        this.goalsByPriority = goals;
     }
 
     public void detect() {
@@ -112,14 +214,35 @@ public class AnomalyDetector {
         this.executorService.schedule(this::detect, nextExecutionDelay, TimeUnit.MILLISECONDS);
     }
 
+    private boolean isRunnable() {
+        return this.running.get() && this.isLeader;
+    }
+
     long detect0() {
-        if (!this.running) {
-            logger.info("Not active controller, skip detect");
+        long detectInterval;
+        Set<Integer> excludedBrokers;
+        Set<String> excludedTopics;
+        long maxTolerateMetricsDelayMs;
+        long coolDownIntervalPerActionMs;
+        List<Goal> goals;
+        configChangeLock.lock();
+        try {
+            detectInterval = this.detectInterval;
+            excludedBrokers = new HashSet<>(this.excludedBrokers);
+            excludedTopics = new HashSet<>();
+            maxTolerateMetricsDelayMs = this.maxTolerateMetricsDelayMs;
+            coolDownIntervalPerActionMs = this.coolDownIntervalPerActionMs;
+            goals = new ArrayList<>(this.goalsByPriority);
+        } finally {
+            configChangeLock.unlock();
+        }
+        if (!isRunnable()) {
+            logger.info("not running, skip detect");
             return detectInterval;
         }
         logger.info("Start detect");
         // The delay in processing kraft log could result in outdated cluster snapshot
-        ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics, this.maxTolerateMetricsDelayMs);
+        ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics, maxTolerateMetricsDelayMs);
 
         for (BrokerUpdater.Broker broker : snapshot.brokers()) {
             logger.info("Broker status: {}", broker.shortString());
@@ -131,18 +254,21 @@ public class AnomalyDetector {
         }
 
         List<Action> totalActions = new ArrayList<>();
-        for (Goal goal : goalsByPriority) {
-            if (!this.running) {
+        for (Goal goal : goals) {
+            if (!isRunnable()) {
                 break;
             }
-            totalActions.addAll(goal.optimize(snapshot, goalsByPriority));
+            totalActions.addAll(goal.optimize(snapshot, goals));
+        }
+        if (!isRunnable()) {
+            return detectInterval;
         }
         int totalActionSize = totalActions.size();
         List<Action> actionsToExecute = checkAndMergeActions(totalActions);
         logger.info("Total actions num: {}, executable num: {}", totalActionSize, actionsToExecute.size());
         this.actionExecutor.execute(actionsToExecute);
 
-        return actionsToExecute.size() * this.coolDownIntervalPerActionMs + this.detectInterval;
+        return actionsToExecute.size() * coolDownIntervalPerActionMs + detectInterval;
     }
 
     List<Action> checkAndMergeActions(List<Action> actions) throws IllegalStateException {

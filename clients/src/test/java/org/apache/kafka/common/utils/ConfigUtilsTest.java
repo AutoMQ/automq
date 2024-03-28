@@ -25,10 +25,13 @@ import org.junit.jupiter.api.Test;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ConfigUtilsTest {
 
@@ -193,5 +196,80 @@ public class ConfigUtilsTest {
         config = new HashMap<>();
         config.put(key, 5);
         assertEquals(defaultValue, ConfigUtils.getBoolean(config, key, defaultValue));
+    }
+
+    @Test
+    public void testGetBooleanWithoutDefaultValue() {
+        String key = "test.key";
+
+        final Map<String, Object> config = new HashMap<>();
+        config.put("some.other.key", false);
+        assertThrowsExactly(NoSuchElementException.class, () -> ConfigUtils.getBoolean(config, key));
+
+        config.put(key, false);
+        assertEquals(false, ConfigUtils.getBoolean(config, key));
+
+        config.put(key, "false");
+        assertEquals(false, ConfigUtils.getBoolean(config, key));
+
+        config.put(key, "not-a-boolean");
+        assertEquals(false, ConfigUtils.getBoolean(config, key));
+
+        config.put(key, 5);
+        assertThrowsExactly(IllegalArgumentException.class, () -> ConfigUtils.getBoolean(config, key));
+    }
+
+    @Test
+    public void testGetIntegerWithoutDefaultValue() {
+        String key = "test.key";
+
+        final Map<String, Object> config = new HashMap<>();
+        config.put("some.other.key", 2);
+        assertThrowsExactly(NoSuchElementException.class, () -> ConfigUtils.getInteger(config, key));
+
+        config.put(key, 1);
+        assertEquals(1, ConfigUtils.getInteger(config, key));
+
+        config.put(key, "2");
+        assertEquals(2, ConfigUtils.getInteger(config, key));
+
+        config.put(key, "not-a-number");
+        assertThrowsExactly(NumberFormatException.class, () -> ConfigUtils.getInteger(config, key));
+
+        config.put(key, false);
+        assertThrowsExactly(IllegalArgumentException.class, () -> ConfigUtils.getInteger(config, key));
+
+        config.put(key, 3.3);
+        assertEquals(3, ConfigUtils.getInteger(config, key));
+
+        config.put(key, Long.MAX_VALUE);
+        assertEquals(-1, ConfigUtils.getInteger(config, key));
+    }
+
+    @Test
+    public void testGetLongWithoutDefaultValue() {
+        String key = "test.key";
+
+        final Map<String, Object> config = new HashMap<>();
+        config.put("some.other.key", 2);
+        assertThrowsExactly(NoSuchElementException.class, () -> ConfigUtils.getLong(config, key));
+
+        config.put(key, 1L);
+        assertEquals(1L, ConfigUtils.getLong(config, key));
+
+        config.put(key, "2");
+        assertEquals(2L, ConfigUtils.getLong(config, key));
+
+        config.put(key, "not-a-number");
+        assertThrowsExactly(NumberFormatException.class, () -> ConfigUtils.getLong(config, key));
+
+        config.put(key, false);
+        assertThrowsExactly(IllegalArgumentException.class, () -> ConfigUtils.getLong(config, key));
+
+        config.put(key, 3.3);
+        assertEquals(3, ConfigUtils.getInteger(config, key));
+
+        config.put(key, Long.MAX_VALUE);
+        assertEquals(Long.MAX_VALUE, ConfigUtils.getLong(config, key));
     }
 }

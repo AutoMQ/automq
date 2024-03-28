@@ -19,7 +19,7 @@ package kafka.server
 
 import com.automq.stream.s3.ByteBufAllocPolicy
 import io.netty.util.internal.PlatformDependent
-import kafka.autobalancer.config.AutoBalancerControllerConfig
+import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 
 import java.{lang, util}
 import java.util.concurrent.TimeUnit
@@ -1457,6 +1457,7 @@ object KafkaConfig {
   /** ********* Remote Log Management Configuration *********/
   RemoteLogManagerConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   AutoBalancerControllerConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
+  AutoBalancerMetricsReporterConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
 
   def configNames: Seq[String] = configDef.names.asScala.toBuffer.sorted
   private[server] def defaultValues: Map[String, _] = configDef.defaultValues.asScala

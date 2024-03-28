@@ -183,12 +183,12 @@ public class DefaultS3BlockCache implements S3BlockCache {
         if (inflightReadAheadTaskContext != null) {
             CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
             context.setStatus(ReadBlockCacheStatus.WAIT_INFLIGHT_RA);
-            inflightReadAheadTaskContext.cf.whenComplete((nil, ex) -> {
+            inflightReadAheadTaskContext.cf.whenCompleteAsync((nil, ex) -> {
                 context.waitInflightTime += inflightTimer.elapsedAs(TimeUnit.NANOSECONDS);
                 FutureUtil.exec(() -> FutureUtil.propagate(
                         read0(traceContext, streamId, startOffset, endOffset, maxBytes, uuid, context), readCf), readCf, LOGGER, "read0");
 
-            });
+            }, mainExecutor);
             return readCf;
         }
 

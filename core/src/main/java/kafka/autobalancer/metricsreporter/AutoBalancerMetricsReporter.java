@@ -36,6 +36,7 @@ import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsReporter;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.common.utils.KafkaThread;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.slf4j.Logger;
@@ -46,6 +47,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -58,12 +60,12 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoBalancerMetricsReporter.class);
     private final Map<MetricName, Metric> interestedMetrics = new ConcurrentHashMap<>();
     private final MetricsRegistry metricsRegistry = KafkaYammerMetrics.defaultRegistry();
-    private YammerMetricProcessor yammerMetricProcessor;
+    protected YammerMetricProcessor yammerMetricProcessor;
     private KafkaThread metricsReporterRunner;
     private KafkaProducer<String, AutoBalancerMetrics> producer;
-    private long reportingIntervalMs;
-    private int brokerId;
-    private String brokerRack;
+    private volatile long reportingIntervalMs;
+    protected int brokerId;
+    protected String brokerRack;
     private long lastReportingTime = System.currentTimeMillis();
     private int numMetricSendFailure = 0;
     private volatile boolean shutdown = false;
@@ -134,6 +136,35 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     @Override
     public void metricRemoval(KafkaMetric metric) {
         // do nothing, we only interested in yammer metrics now
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        return AutoBalancerMetricsReporterConfig.RECONFIGURABLE_CONFIGS;
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
+        Map<String, Object> objectConfigs = new HashMap<>(configs);
+        try {
+            if (configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG)) {
+                long intervalMs = ConfigUtils.getLong(objectConfigs, AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG);
+                if (intervalMs <= 0) {
+                    throw new ConfigException(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG, intervalMs);
+                }
+            }
+        } catch (Exception e) {
+            throw new ConfigException("Reconfiguration validation error " + e.getMessage());
+        }
+
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        Map<String, Object> objectConfigs = new HashMap<>(configs);
+        if (configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG)) {
+            this.reportingIntervalMs = ConfigUtils.getLong(objectConfigs, AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG);
+        }
     }
 
     @Override
@@ -303,7 +334,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         LOGGER.debug("Reporting metrics.");
 
         YammerMetricProcessor.Context context = new YammerMetricProcessor.Context(now, brokerId, brokerRack, reportingIntervalMs);
-        processYammerMetrics(context);
+        processMetrics(context);
         for (Map.Entry<String, AutoBalancerMetrics> entry : context.getMetricMap().entrySet()) {
             sendAutoBalancerMetric(entry.getValue());
         }
@@ -311,15 +342,19 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         LOGGER.debug("Finished reporting metrics, total metrics size: {}, merged size: {}.", interestedMetrics.size(), context.getMetricMap().size());
     }
 
-    private void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {
+    protected void processMetrics(YammerMetricProcessor.Context context) throws Exception {
+        processYammerMetrics(context);
+        addMandatoryMetrics(context);
+    }
+
+    protected void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {
         for (Map.Entry<MetricName, Metric> entry : interestedMetrics.entrySet()) {
             LOGGER.trace("Processing yammer metric {}, scope = {}", entry.getKey(), entry.getKey().getScope());
             entry.getValue().processWith(yammerMetricProcessor, entry.getKey(), context);
         }
-        addMandatoryPartitionMetrics(context);
     }
 
-    private void addMandatoryPartitionMetrics(YammerMetricProcessor.Context context) {
+    private void addMandatoryMetrics(YammerMetricProcessor.Context context) {
         for (AutoBalancerMetrics metrics : context.getMetricMap().values()) {
             if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC
                     && !MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics)) {
@@ -330,8 +365,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         }
     }
 
-    private void addMetricIfInterested(MetricName name, Metric metric) {
-        LOGGER.debug("Checking Yammer metric {}", name);
+    protected void addMetricIfInterested(MetricName name, Metric metric) {
         if (MetricsUtils.isInterested(name)) {
             LOGGER.debug("Added new metric {} to auto balancer metrics reporter.", name);
             interestedMetrics.put(name, metric);

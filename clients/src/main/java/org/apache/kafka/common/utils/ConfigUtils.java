@@ -28,6 +28,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -164,5 +165,96 @@ public class ConfigUtils {
             log.error("Invalid value (" + value + ") on configuration '" + key + "'. The default value '" + defaultValue + "' will be used instead. Please specify a true/false value.");
             return defaultValue;
         }
+    }
+
+    /**
+     * Finds and returns a boolean configuration option from the configuration map.
+     *
+     * @param configs Map with the configuration options
+     * @param key Configuration option for which the boolean value will be returned
+     * @return A boolean value of the configuration option
+     * @throws NoSuchElementException if the configuration option is not set
+     * @throws IllegalArgumentException if the configuration option is not a boolean or a string
+     */
+    public static boolean getBoolean(final Map<String, Object> configs, final String key) {
+        final Object value = configs.get(key);
+        if (value == null) {
+            throw new NoSuchElementException("Missing required configuration '" + key + "'");
+        }
+        if (value instanceof Boolean) {
+            return (boolean) value;
+        } else if (value instanceof String) {
+            return Boolean.parseBoolean((String) value);
+        }
+        throw new IllegalArgumentException("Invalid value (" + value + ") on configuration '" + key + "'. Please specify a true/false value.");
+    }
+
+    /**
+     * Finds and returns an integer configuration option from the configuration map
+     *
+     * @param configs Map with the configuration options
+     * @param key Configuration option for which the integer value will be returned
+     * @return An integer value of the configuration option
+     * @throws NumberFormatException if the configuration option is not a valid integer
+     * @throws NoSuchElementException if the configuration option is not set
+     * @throws IllegalArgumentException if the configuration option is not a integer or a string
+     */
+    public static int getInteger(final Map<String, Object> configs, final String key) {
+        final Object value = configs.get(key);
+        if (value == null) {
+            throw new NoSuchElementException("Missing required configuration '" + key + "'");
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        } else if (value instanceof String) {
+            return Integer.parseInt((String) value);
+        }
+        throw new IllegalArgumentException("Invalid value (" + value + ") on configuration '" + key + "'. Please specify an integer value.");
+    }
+
+    /**
+     * Finds and returns a long configuration option from the configuration map
+     *
+     * @param configs Map with the configuration options
+     * @param key Configuration option for which the long value will be returned
+     * @return A long value of the configuration option
+     * @throws NumberFormatException if the configuration option is not a valid long
+     * @throws NoSuchElementException if the configuration option is not set
+     * @throws IllegalArgumentException if the configuration option is not a long or a string
+     */
+    public static long getLong(final Map<String, Object> configs, final String key) {
+        final Object value = configs.get(key);
+        if (value == null) {
+            throw new NoSuchElementException("Missing required configuration '" + key + "'");
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        } else if (value instanceof String) {
+            return Long.parseLong((String) value);
+        }
+        throw new IllegalArgumentException("Invalid value (" + value + ") on configuration '" + key + "'. Please specify a long value.");
+    }
+
+    /**
+     * Finds and returns a double configuration option from the configuration map
+     *
+     * @param configs Map with the configuration options
+     * @param key Configuration option for which the double value will be returned
+     * @return A double value of the configuration option
+     * @throws NumberFormatException if the configuration option is not a valid double
+     * @throws NoSuchElementException if the configuration option is not set
+     * @throws IllegalArgumentException if the configuration option is not a double or a string
+     */
+    public static double getDouble(final Map<String, Object> configs, final String key) {
+        final Object value = configs.get(key);
+        if (value == null) {
+            throw new NoSuchElementException("Missing required configuration '" + key + "'");
+        }
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        } else if (value instanceof String) {
+            return Double.parseDouble((String) value);
+        }
+        throw new IllegalArgumentException("Invalid value (" + value + ") on configuration '" + key + "'. Please specify a double value.");
     }
 }
