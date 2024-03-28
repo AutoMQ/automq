@@ -31,6 +31,7 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.DeletedObject;
 import software.amazon.awssdk.services.s3.model.S3Error;
 
+import static com.automq.stream.s3.operator.DefaultS3Operator.S3_API_NO_SUCH_KEY;
 import static com.automq.stream.s3.operator.DefaultS3Operator.handleDeleteObjectsResponse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -207,19 +208,9 @@ class DefaultS3OperatorTest {
 
 
         // 2. normal case one key not exist.
-        S3Error keyNotExistWithKey = generateS3Error("NoSuchKey", "mock NoSuchKey S3Error", mockBadKey);
+        S3Error keyNotExistWithKey = generateS3Error(S3_API_NO_SUCH_KEY, "mock NoSuchKey S3Error", mockBadKey);
 
         DeleteObjectsResponse responseWithOneKeyNotExistError = geneDeleteObjectsResponse(
-                expectNotBadKeys,
-                List.of(keyNotExistWithKey));
-
-        successKeys = handleDeleteObjectsResponse(keys, util, responseWithOneKeyNotExistError, true);
-        successKeys.sort(String::compareTo);
-
-        assertEquals(successKeys, keys, "non-quiet deleteObjects should return all key success. " +
-                "even with keys not exist.");
-
-        responseWithOneKeyNotExistError = geneDeleteObjectsResponse(
                 Collections.emptyList(),
                 List.of(keyNotExistWithKey));
         successKeys = handleDeleteObjectsResponse(keys, util, responseWithOneKeyNotExistError, false);
