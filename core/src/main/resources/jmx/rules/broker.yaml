@@ -252,14 +252,14 @@ rules:
         desc: The number of requests waiting in purgatory
 
   # Replica Metrics
-  - bean: kafka.server:type=ReplicaManager,name=PartitionCount
+  - bean: kafka.server.streamaspect:type=ElasticReplicaManager,name=PartitionCount
     mapping:
       Value:
         metric: kafka.partition.count
         type: gauge
         desc: The number of partitions on the broker
 
-  - bean: kafka.server:type=ReplicaManager,name=ReassigningPartitions
+  - bean: kafka.server.streamaspect:type=ElasticReplicaManager,name=ReassigningPartitions
     mapping:
       Value:
         metric: kafka.reassign.partition.count
@@ -292,7 +292,7 @@ rules:
         type: gauge
         desc: Log flush time - max
 
-  - bean: kafka.log.streamaspect:type=Log,name=LogEndOffset,topic=*,partition=*
+  - bean: kafka.log:type=Log,name=LogEndOffset,topic=*,partition=*
     metricAttribute:
       topic: param(topic)
       partition: param(partition)
@@ -302,7 +302,7 @@ rules:
         type: gauge
         desc: Log end offset for topic-partition
 
-  - bean: kafka.log.streamaspect:type=Log,name=Size,topic=*,partition=*
+  - bean: kafka.log:type=Log,name=Size,topic=*,partition=*
     metricAttribute:
       topic: param(topic)
       partition: param(partition)
