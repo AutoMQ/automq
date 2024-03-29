@@ -562,24 +562,6 @@ public class StreamControlManager {
         List<StreamObject> streamObjects = data.streamObjects();
         long committedTs = System.currentTimeMillis();
 
-        if (compactedObjectIds == null || compactedObjectIds.isEmpty()) {
-            // verify stream continuity
-            List<StreamOffsetRange> offsetRanges = Stream.concat(
-                    streamRanges
-                        .stream()
-                        .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
-                    streamObjects
-                        .stream()
-                        .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
-                .collect(Collectors.toList());
-            Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
-            if (continuityCheckResult != Errors.NONE) {
-                log.error("[CommitStreamSetObject] streamId={} advance check failed, error: {}", offsetRanges, continuityCheckResult);
-                resp.setErrorCode(continuityCheckResult.code());
-                return ControllerResult.of(Collections.emptyList(), resp);
-            }
-        }
-
         // commit object
         ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize, committedTs);
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
@@ -644,6 +626,22 @@ public class StreamControlManager {
             compactedObjectIds.forEach(id -> records.add(new ApiMessageAndVersion(new RemoveStreamSetObjectRecord()
                 .setNodeId(nodeId)
                 .setObjectId(id), (short) 0)));
+        } else {
+            // verify stream continuity
+            List<StreamOffsetRange> offsetRanges = Stream.concat(
+                    streamRanges
+                        .stream()
+                        .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
+                    streamObjects
+                        .stream()
+                        .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
+                .collect(Collectors.toList());
+            Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
+            if (continuityCheckResult != Errors.NONE) {
+                log.error("[CommitStreamSetObject] streamId={} advance check failed, error: {}", offsetRanges, continuityCheckResult);
+                resp.setErrorCode(continuityCheckResult.code());
+                return ControllerResult.of(Collections.emptyList(), resp);
+            }
         }
         log.info("[CommitStreamSetObject]: nodeId={} commit object: {} success, compacted objects: {}, stream range: {}, stream objects: {}",
             nodeId, objectId, compactedObjectIds, data.objectStreamRanges(), streamObjects);
