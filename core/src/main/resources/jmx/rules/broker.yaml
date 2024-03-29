@@ -122,11 +122,6 @@ rules:
     metricAttribute:
       type: param(request)
     mapping:
-      Count:
-        metric: kafka.request.size
-        type: counter
-        desc: The total size of requests received by the broker
-        unit: By
       Mean:
         metric: kafka.request.size.mean
         type: gauge
@@ -153,10 +148,6 @@ rules:
       type: param(request)
     unit: ms
     mapping:
-      Count:
-        metric: kafka.request.time
-        type: counter
-        desc: The total time the broker has taken to service requests
       Mean:
         metric: kafka.request.time.mean
         type: gauge
@@ -180,7 +171,7 @@ rules:
     unit: ms
     mapping:
       Count:
-        metric: kafka.request.queue.time
+        metric: kafka.request.queue.time.count
         type: counter
         desc: The total time the broker has taken to dequeue requests
       Mean:
@@ -206,7 +197,7 @@ rules:
     unit: ms
     mapping:
       Count:
-        metric: kafka.response.queue.time
+        metric: kafka.response.queue.time.count
         type: counter
         desc: The total time the broker has taken to dequeue responses
       Mean:
