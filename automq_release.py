@@ -149,8 +149,9 @@ def do_release(tag, s3stream_tag):
     cmd("Committing changes", ["git", "commit", "--all", "--gpg-sign", "--signoff", "--message", f"ci: bump version to {tag}"])
     cmd("Pushing changes", ["git", "push", "--quiet", "origin", new_branch])
 
-    cmd("Tagging %s" % tag, ["git", "tag", "--sign", "--annotate", tag, "--message", f"release {tag}"])
-    cmd("Pushing tag %s" % tag, ["git", "push", "--quiet", "origin", tag])
+    # TODO: tag it in the main branch rather than in the PR branch
+    # cmd("Tagging %s" % tag, ["git", "tag", "--sign", "--annotate", tag, "--message", f"release {tag}"])
+    # cmd("Pushing tag %s" % tag, ["git", "push", "--quiet", "origin", tag])
 
     return new_branch
 
@@ -197,3 +198,8 @@ if __name__ == '__main__':
     print(f"=== release {tag} done ===")
     print(f"Please create a PR to merge release branch to {main_branch} visiting:")
     print(f"    https://github.com/AutoMQ/automq-for-kafka/pull/new/{main_branch}...{branch}")
+    print(f"After the PR is merged, please tag it:")
+    print(f"    git checkout {main_branch}")
+    print(f"    git pull")
+    print(f"    git tag --sign --annotate {tag} --message 'release {tag}'")
+    print(f"    git push origin {tag}")
