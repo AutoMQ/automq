@@ -44,6 +44,8 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
  * 2. Compact some stream objects with the same stream ID into bigger stream objects.
  */
 public class StreamObjectCompactor {
+    public static final int EXPIRED_OBJECTS_CLEAN_UP_STEP = 1000;
+
     /**
      * max object count in one group, the group count will limit the compact request size to kraft and multipart object
      * part count (less than {@code Writer.MAX_PART_COUNT}).
@@ -115,12 +117,20 @@ public class StreamObjectCompactor {
         // clean up the expired objects
         if (!expiredObjects.isEmpty()) {
             List<Long> compactedObjectIds = expiredObjects.stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList());
-            request = new CompactStreamObjectRequest(NOOP_OBJECT_ID, 0,
-                streamId, stream.streamEpoch(), NOOP_OFFSET, NOOP_OFFSET, compactedObjectIds);
-            objectManager.compactStreamObject(request).get();
-            if (s3ObjectLogger.isTraceEnabled()) {
-                s3ObjectLogger.trace("{}", request);
+            int expiredObjectCount = compactedObjectIds.size();
+            // limit the expired objects compaction step to EXPIRED_OBJECTS_CLEAN_UP_STEP
+            for (int i = 0; i < expiredObjectCount; ) {
+                int start = i;
+                int end = Math.min(i + EXPIRED_OBJECTS_CLEAN_UP_STEP, expiredObjectCount);
+                request = new CompactStreamObjectRequest(NOOP_OBJECT_ID, 0,
+                    streamId, stream.streamEpoch(), NOOP_OFFSET, NOOP_OFFSET, new ArrayList<>(compactedObjectIds.subList(start, end)));
+                objectManager.compactStreamObject(request).get();
+                if (s3ObjectLogger.isTraceEnabled()) {
+                    s3ObjectLogger.trace("{}", request);
+                }
+                i = end;
             }
+
         }
 
         if (onlyCleanup) {

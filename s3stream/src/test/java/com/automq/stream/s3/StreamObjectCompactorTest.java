@@ -27,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -298,6 +299,44 @@ class StreamObjectCompactorTest {
         assertEquals(List.of(2L), groups.get(0).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(3L, 4L), groups.get(1).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(5L, 6L), groups.get(2).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+    }
+
+    @Test
+    public void testCleanup_byStep() throws ExecutionException, InterruptedException {
+        // prepare object
+        List<S3ObjectMetadata> objects = new LinkedList<>();
+        for (int i = 0; i < 1500; i++) {
+            ObjectWriter writer = ObjectWriter.writer(1, s3Operator, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            writer.write(streamId, List.of(
+                newRecord(i, 1, 1)
+            ));
+            writer.close().get();
+            objects.add(new S3ObjectMetadata(i, S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamId, i, i + 1)),
+                System.currentTimeMillis(), System.currentTimeMillis(), writer.size(), 1));
+        }
+
+        when(objectManager.getStreamObjects(eq(streamId), eq(0L), eq(1500L), eq(Integer.MAX_VALUE)))
+            .thenReturn(CompletableFuture.completedFuture(objects));
+        AtomicLong nextObjectId = new AtomicLong(1501);
+        doAnswer(invocationOnMock -> CompletableFuture.completedFuture(nextObjectId.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
+        when(objectManager.compactStreamObject(any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(stream.streamId()).thenReturn(streamId);
+        when(stream.startOffset()).thenReturn(1450L);
+        when(stream.confirmOffset()).thenReturn(1500L);
+
+        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
+            .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
+        task.cleanup();
+
+        ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
+        verify(objectManager, times(2)).compactStreamObject(ac.capture());
+        CompactStreamObjectRequest clean = ac.getAllValues().get(0);
+        assertEquals(ObjectUtils.NOOP_OBJECT_ID, clean.getObjectId());
+        assertEquals(LongStream.range(0, StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP).boxed().collect(Collectors.toList()), clean.getSourceObjectIds());
+
+        clean = ac.getAllValues().get(1);
+        assertEquals(ObjectUtils.NOOP_OBJECT_ID, clean.getObjectId());
+        assertEquals(LongStream.range(StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP, 1450).boxed().collect(Collectors.toList()), clean.getSourceObjectIds());
     }
 
     StreamRecordBatch newRecord(long offset, int count, int payloadSize) {
