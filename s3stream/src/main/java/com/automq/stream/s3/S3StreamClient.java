@@ -244,7 +244,7 @@ public class S3StreamClient implements StreamClient {
                 // so we need to check if the stream is closed before starting the compaction.
                 return;
             }
-            if (System.currentTimeMillis() - lastCompactionTimestamp > STREAM_OBJECT_COMPACTION_INTERVAL_MS) {
+            if (System.currentTimeMillis() - lastCompactionTimestamp < STREAM_OBJECT_COMPACTION_INTERVAL_MS) {
                 // skip compaction if the last compaction is within the interval.
                 return;
             }
