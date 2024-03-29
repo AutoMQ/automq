@@ -32,9 +32,9 @@ public class StorageOperationStats {
     public final YammerHistogramMetric appendWALBlockPolledStats = S3StreamMetricsManager.buildStageOperationMetric(
         new MetricName(StorageOperationStats.class, S3Stage.APPEND_WAL_BLOCK_POLLED.getUniqueKey()), MetricsLevel.DEBUG, S3Stage.APPEND_WAL_BLOCK_POLLED);
     public final YammerHistogramMetric appendWALAwaitStats = S3StreamMetricsManager.buildStageOperationMetric(
-        new MetricName(StorageOperationStats.class, S3Stage.APPEND_WAL_AWAIT.getUniqueKey()), MetricsLevel.DEBUG, S3Stage.APPEND_WAL_AWAIT);
+        new MetricName(StorageOperationStats.class, S3Stage.APPEND_WAL_AWAIT.getUniqueKey()), MetricsLevel.INFO, S3Stage.APPEND_WAL_AWAIT);
     public final YammerHistogramMetric appendWALWriteStats = S3StreamMetricsManager.buildStageOperationMetric(
-        new MetricName(StorageOperationStats.class, S3Stage.APPEND_WAL_WRITE.getUniqueKey()), MetricsLevel.DEBUG, S3Stage.APPEND_WAL_WRITE);
+        new MetricName(StorageOperationStats.class, S3Stage.APPEND_WAL_WRITE.getUniqueKey()), MetricsLevel.INFO, S3Stage.APPEND_WAL_WRITE);
     public final YammerHistogramMetric appendWALAfterStats = S3StreamMetricsManager.buildStageOperationMetric(
         new MetricName(StorageOperationStats.class, S3Stage.APPEND_WAL_AFTER.getUniqueKey()), MetricsLevel.DEBUG, S3Stage.APPEND_WAL_AFTER);
     public final YammerHistogramMetric appendWALCompleteStats = S3StreamMetricsManager.buildStageOperationMetric(
