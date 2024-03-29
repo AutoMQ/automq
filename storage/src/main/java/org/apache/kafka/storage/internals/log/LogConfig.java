@@ -290,7 +290,10 @@ public class LogConfig extends AbstractConfig {
             .define(TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG, LONG, DEFAULT_LOCAL_RETENTION_MS, atLeast(-2), MEDIUM,
                 TopicConfig.LOCAL_LOG_RETENTION_MS_DOC)
             .define(TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG, LONG, DEFAULT_LOCAL_RETENTION_BYTES, atLeast(-2), MEDIUM,
-                TopicConfig.LOCAL_LOG_RETENTION_BYTES_DOC);
+                TopicConfig.LOCAL_LOG_RETENTION_BYTES_DOC)
+
+            // dynamic config #validateNames check will check the old configs name validity
+            .define("elasticstream.replication.factor", INT, 1, atLeast(1), LOW, "deprecated, should not remove for compatibility");
     }
 
     public final Set<String> overriddenConfigs;
