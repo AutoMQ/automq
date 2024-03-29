@@ -267,7 +267,8 @@ public class StreamControlManager {
         }
         if (streamMetadata.currentState() == StreamState.OPENED) {
             // stream still in opened state, can't open until it is closed
-            log.warn("[OpenStream] streamId={}'s state still is OPENED at epoch={}, request nodeId={}", streamId, streamMetadata.currentEpoch(), nodeId);
+            log.warn("[OpenStream] streamId={}'s state still is OPENED at epoch={} by nodeId={}, request nodeId={}",
+                streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeOwner(), nodeId);
             resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
