@@ -614,9 +614,15 @@ public class StreamControlManager {
                 if (streamsMetadata.containsKey(streamObject.streamId())) {
                     ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
                         streamObject.objectSize(), committedTs);
-                    if (streamObjectCommitResult.response() != Errors.NONE) {
-                        log.error("[CommitStreamSetObject]: stream object not exist. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
+                    if (streamObjectCommitResult.response() == Errors.REDUNDANT_OPERATION) {
+                        // regard it as redundant commit operation, just return success
+                        log.warn("[CommitStreamSetObject]: stream object already committed. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
                             streamObject.objectId(), objectId, nodeId, nodeEpoch);
+                        return ControllerResult.of(Collections.emptyList(), resp);
+                    }
+                    if (streamObjectCommitResult.response() != Errors.NONE) {
+                        log.error("[CommitStreamSetObject]: failed to commit srteam object. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}, code={}",
+                            streamObject.objectId(), objectId, nodeId, nodeEpoch, streamObjectCommitResult.response().code());
                         resp.setErrorCode(streamObjectCommitResult.response().code());
                         return ControllerResult.of(Collections.emptyList(), resp);
                     }
