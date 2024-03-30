@@ -67,10 +67,12 @@ import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -490,6 +492,96 @@ public class StreamControlManagerTest {
         assertEquals(0, ((RemoveStreamSetObjectRecord) records.get(5).message()).objectId());
 
         assertEquals(1, ((RemoveStreamSetObjectRecord) records.get(6).message()).objectId());
+    }
+
+    @Test
+    public void testCommitStreamSetObject_theSameStreamSetObject() {
+        List<Long> committed = new LinkedList<>();
+        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
+            long objectId = args.getArgument(0);
+            if (committed.contains(objectId)) {
+                return ControllerResult.of(Collections.emptyList(), Errors.REDUNDANT_OPERATION);
+            }
+            committed.add(objectId);
+            return ControllerResult.of(Collections.emptyList(), Errors.NONE);
+        });
+        registerAlwaysSuccessEpoch(BROKER0);
+
+        // 1. create and open stream_0
+        CreateStreamRequest request0 = new CreateStreamRequest();
+        ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
+        replay(manager, result0.records());
+        ControllerResult<OpenStreamResponse> result2 = manager.openStream(BROKER0, 0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        verifyFirstTimeOpenStreamResult(result2, EPOCH0, BROKER0);
+        replay(manager, result2.records());
+
+        // 2. commit valid stream set object
+        List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(0L)
+            .setEndOffset(100L));
+        CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
+            .setObjectId(0L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0);
+        ControllerResult<CommitStreamSetObjectResponseData> result3 = manager.commitStreamSetObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result3.response().errorCode());
+        replay(manager, result3.records());
+
+        // 3. re-commit the same object
+        ControllerResult<CommitStreamSetObjectResponseData> result4 = manager.commitStreamSetObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result4.response().errorCode());
+        assertTrue(result4.records().isEmpty());
+    }
+
+    @Test
+    public void testCommitStreamSetObject_theSameStreamObject() {
+        List<Long> committed = new LinkedList<>();
+        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
+            long objectId = args.getArgument(0);
+            if (objectId == NOOP_OBJECT_ID) {
+                return ControllerResult.of(Collections.emptyList(), Errors.NONE);
+            }
+            if (committed.contains(objectId)) {
+                return ControllerResult.of(Collections.emptyList(), Errors.REDUNDANT_OPERATION);
+            }
+            committed.add(objectId);
+            return ControllerResult.of(Collections.emptyList(), Errors.NONE);
+        });
+        registerAlwaysSuccessEpoch(BROKER0);
+
+        // 1. create and open stream_0
+        CreateStreamRequest request0 = new CreateStreamRequest();
+        ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
+        replay(manager, result0.records());
+        ControllerResult<OpenStreamResponse> result2 = manager.openStream(BROKER0, 0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        verifyFirstTimeOpenStreamResult(result2, EPOCH0, BROKER0);
+        replay(manager, result2.records());
+
+        // 2. commit valid stream set object
+        List<StreamObject> streamObjects = List.of(new StreamObject()
+            .setStreamId(STREAM0)
+            .setObjectId(0L)
+            .setObjectSize(999)
+            .setStartOffset(0L)
+            .setEndOffset(100L));
+        CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
+            .setObjectId(-1L)
+            .setNodeId(BROKER0)
+            .setObjectSize(0)
+            .setStreamObjects(streamObjects);
+        ControllerResult<CommitStreamSetObjectResponseData> result3 = manager.commitStreamSetObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result3.response().errorCode());
+        replay(manager, result3.records());
+
+        // 3. re-commit the same object
+        ControllerResult<CommitStreamSetObjectResponseData> result4 = manager.commitStreamSetObject(commitRequest0);
+        assertEquals(Errors.NONE.code(), result4.response().errorCode());
+        assertTrue(result4.records().isEmpty());
     }
 
     private long createStream() {
