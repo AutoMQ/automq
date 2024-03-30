@@ -73,6 +73,13 @@ public class S3StreamMetadata {
         this.currentRangeIndex.set(currentRangeIndex);
     }
 
+    /**
+     * Return the owner (node id) of current range.
+     */
+    public int currentRangeOwner() {
+        return ranges.get(currentRangeIndex.get()).nodeId();
+    }
+
     public long startOffset() {
         return startOffset.get();
     }

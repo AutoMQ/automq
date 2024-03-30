@@ -153,8 +153,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CreateStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[CreateStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         // TODO: pre assigned a batch of stream id in controller
@@ -169,7 +169,7 @@ public class StreamControlManager {
             .setStartOffset(S3StreamConstant.INIT_START_OFFSET)
             .setRangeIndex(S3StreamConstant.INIT_RANGE_INDEX), (short) 0);
         resp.setStreamId(streamId);
-        log.info("[CreateStream] create streamId={} success", streamId);
+        log.info("[CreateStream] successfully create a stream. streamId={}, nodeId={}, nodeEpoch={}", streamId, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
     }
 
@@ -215,23 +215,23 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[OpenStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[OpenStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
         // verify stream exist
         if (!this.streamsMetadata.containsKey(streamId)) {
             resp.setErrorCode(Errors.STREAM_NOT_EXIST.code());
-            log.warn("[OpenStream] streamId={} not exist", streamId);
+            log.warn("[OpenStream] stream not exist. streamId={}, nodeId={}, nodeEpoch={}", streamId, nodeId, nodeEpoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         // verify epoch match
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
         if (streamMetadata.currentEpoch() > epoch) {
             resp.setErrorCode(Errors.STREAM_FENCED.code());
-            log.warn("[OpenStream] streamId={}'s epoch={} is larger than request epoch {}", streamId,
-                streamMetadata.currentEpoch(), epoch);
+            log.warn("[OpenStream] steam has been fenced. streamId={}, streamEpoch={}, requestEpoch={}, nodeId={}, nodeEpoch={}",
+                streamId, streamMetadata.currentEpoch(), epoch, nodeId, nodeEpoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (streamMetadata.currentEpoch() == epoch) {
@@ -240,14 +240,14 @@ public class StreamControlManager {
             RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
             if (rangeMetadata == null) {
                 // should not happen
-                log.error("[OpenStream] streamId={}'s current range={} not exist when open stream with epoch={}", streamId,
-                    streamMetadata.currentRangeIndex(), epoch);
+                log.error("[OpenStream] the current range not exist. streamId={}, streamEpoch={}, currentRangeIndex={}, nodeId={}, nodeEpoch={}",
+                    streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeIndex(), nodeId, nodeEpoch);
                 resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
             if (rangeMetadata.nodeId() != nodeId) {
-                log.warn("[OpenStream] streamId={}'s current range={}'s nodeId={} is not equal to request nodeId={}",
-                    streamId, streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId);
+                log.warn("[OpenStream] the current range owner mismatch. streamId={}, streamEpoch={}, currentRangeIndex={}, ownerId={}, nodeId={}, nodeEpoch={}",
+                    streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId, nodeEpoch);
                 resp.setErrorCode(Errors.STREAM_FENCED.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -267,7 +267,8 @@ public class StreamControlManager {
         }
         if (streamMetadata.currentState() == StreamState.OPENED) {
             // stream still in opened state, can't open until it is closed
-            log.warn("[OpenStream] streamId={}'s state still is OPENED at epoch={}, request nodeId={}", streamId, streamMetadata.currentEpoch(), nodeId);
+            log.warn("[OpenStream] stream still in opened state. streamId={}, streamEpoch={}, ownerId={}, nodeId={}, nodeEpoch={}",
+                streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeOwner(), nodeId, nodeEpoch);
             resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -307,7 +308,8 @@ public class StreamControlManager {
             .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(streamMetadata.startOffset());
         resp.setNextOffset(startOffset);
-        log.info("[OpenStream] nodeId={} open streamId={} with epoch={} success", nodeId, streamId, epoch);
+        log.info("[OpenStream] successfully open the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
+            streamId, epoch, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -347,8 +349,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, false);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CloseStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[CloseStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -372,7 +374,8 @@ public class StreamControlManager {
                 .setRangeIndex(streamMetadata.currentRangeIndex())
                 .setStartOffset(streamMetadata.startOffset())
                 .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
-        log.info("[CloseStream] nodeId={} close streamId={} with epochId={} success", nodeId, streamId, epoch);
+        log.info("[CloseStream] successfully close the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
+            streamId, epoch, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -386,8 +389,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[TrimStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[TrimStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -399,13 +402,14 @@ public class StreamControlManager {
         }
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
         if (streamMetadata.currentState() == StreamState.CLOSED) {
-            log.warn("[TrimStream] streamId={}'s state is CLOSED, can't trim", streamId);
+            log.warn("[TrimStream] can't trim a closed stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
+                streamId, epoch, nodeId, nodeEpoch);
             resp.setErrorCode(Errors.STREAM_NOT_OPENED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (streamMetadata.startOffset() > newStartOffset) {
-            log.warn("[TrimStream] streamId={}'s start offset {} is larger than request new start offset {}",
-                streamId, streamMetadata.startOffset(), newStartOffset);
+            log.warn("[TrimStream] trim offset less than start offset. streamId={}, streamEpoch={}, trimOffset={}, startOffset={}, nodeId={}, nodeEpoch={}",
+                streamId, epoch, newStartOffset, streamMetadata.startOffset(), nodeId, nodeEpoch);
             resp.setErrorCode(Errors.OFFSET_NOT_MATCHED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -468,7 +472,8 @@ public class StreamControlManager {
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        log.info("[TrimStream] nodeId={} trim streamId={} to new start offset={} with epoch={} success", nodeId, streamId, newStartOffset, epoch);
+        log.info("[TrimStream] successfully trim the stream. streamId={}, streamEpoch={}, trimOffset={}, nodeId={}, nodeEpoch={}",
+            streamId, epoch, newStartOffset, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -482,8 +487,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[DeleteStream] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[DeleteStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -504,7 +509,8 @@ public class StreamControlManager {
         List<Long> streamObjectIds = streamMetadata.streamObjects().keySet().stream().collect(Collectors.toList());
         ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(streamObjectIds);
         if (!markDestroyResult.response()) {
-            log.error("[DeleteStream]: Mark destroy stream objects: {} failed", streamObjectIds);
+            log.error("[DeleteStream]: failed to mark destroy stream objects. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, objects={}",
+                streamId, epoch, nodeId, nodeEpoch, streamObjectIds);
             resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -513,7 +519,8 @@ public class StreamControlManager {
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        log.info("[DeleteStream]: nodeId={} delete streamId={} with epoch={} success", nodeId, streamId, epoch);
+        log.info("[DeleteStream]: successfully delete the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
+            streamId, epoch, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -551,8 +558,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, !data.failoverMode());
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CommitStreamSetObject] nodeId={}'s epoch={} check failed, code: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[CommitStreamSetObject] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -561,34 +568,16 @@ public class StreamControlManager {
         List<StreamObject> streamObjects = data.streamObjects();
         long committedTs = System.currentTimeMillis();
 
-        if (compactedObjectIds == null || compactedObjectIds.isEmpty()) {
-            // verify stream continuity
-            List<StreamOffsetRange> offsetRanges = Stream.concat(
-                    streamRanges
-                        .stream()
-                        .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
-                    streamObjects
-                        .stream()
-                        .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
-                .collect(Collectors.toList());
-            Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
-            if (continuityCheckResult != Errors.NONE) {
-                log.error("[CommitStreamSetObject] streamId={} advance check failed, error: {}", offsetRanges, continuityCheckResult);
-                resp.setErrorCode(continuityCheckResult.code());
-                return ControllerResult.of(Collections.emptyList(), resp);
-            }
-        }
-
         // commit object
         ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize, committedTs);
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
-            log.error("[CommitStreamSetObject] object={} not exist when commit stream set object", objectId);
+            log.error("[CommitStreamSetObject] stream set object id not exist. streamSetObjectId={}, nodeId={}, nodeEpoch={}", objectId, nodeId, nodeEpoch);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (commitResult.response() == Errors.REDUNDANT_OPERATION) {
             // regard it as redundant commit operation, just return success
-            log.warn("[CommitStreamSetObject] object={} already committed", objectId);
+            log.warn("[CommitStreamSetObject] stream set object already committed. streamSetObjectId={}, nodeId={}, nodeEpoch={}", objectId, nodeId, nodeEpoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         List<ApiMessageAndVersion> records = new ArrayList<>(commitResult.records());
@@ -597,7 +586,8 @@ public class StreamControlManager {
         if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(compactedObjectIds);
             if (!destroyResult.response()) {
-                log.error("[CommitStreamSetObject]: Mark destroy compacted objects: {} failed", compactedObjectIds);
+                log.error("[CommitStreamSetObject]: failed to mark destroy compacted objects. compactedObjects={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
+                    compactedObjectIds, objectId, nodeId, nodeEpoch);
                 resp.setErrorCode(Errors.COMPACTED_OBJECTS_NOT_FOUND.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -624,15 +614,23 @@ public class StreamControlManager {
                 if (streamsMetadata.containsKey(streamObject.streamId())) {
                     ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
                         streamObject.objectSize(), committedTs);
+                    if (streamObjectCommitResult.response() == Errors.REDUNDANT_OPERATION) {
+                        // regard it as redundant commit operation, just return success
+                        log.warn("[CommitStreamSetObject]: stream object already committed. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
+                            streamObject.objectId(), objectId, nodeId, nodeEpoch);
+                        return ControllerResult.of(Collections.emptyList(), resp);
+                    }
                     if (streamObjectCommitResult.response() != Errors.NONE) {
-                        log.error("[CommitStreamSetObject]: stream object={} not exist when commit stream set object: {}", streamObject.objectId(), objectId);
+                        log.error("[CommitStreamSetObject]: failed to commit srteam object. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
+                            streamObject.objectId(), objectId, nodeId, nodeEpoch, streamObjectCommitResult.response());
                         resp.setErrorCode(streamObjectCommitResult.response().code());
                         return ControllerResult.of(Collections.emptyList(), resp);
                     }
                     records.addAll(streamObjectCommitResult.records());
                     records.add(new S3StreamObject(streamObject.objectId(), streamObject.streamId(), streamObject.startOffset(), streamObject.endOffset(), committedTs).toRecord());
                 } else {
-                    log.info("streamId={} is already deleted, then fast delete the stream object={} from compaction", streamObject.streamId(), streamObject);
+                    log.info("stream already deleted, then fast delete the stream object from compaction. streamId={}, streamObject={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
+                        streamObject.streamId(), streamObject, objectId, nodeId, nodeEpoch);
                     ControllerResult<Boolean> deleteRst = this.s3ObjectControlManager.markDestroyObjects(List.of(streamObject.objectId()));
                     records.addAll(deleteRst.records());
                 }
@@ -643,9 +641,26 @@ public class StreamControlManager {
             compactedObjectIds.forEach(id -> records.add(new ApiMessageAndVersion(new RemoveStreamSetObjectRecord()
                 .setNodeId(nodeId)
                 .setObjectId(id), (short) 0)));
+        } else {
+            // verify stream continuity
+            List<StreamOffsetRange> offsetRanges = Stream.concat(
+                    streamRanges
+                        .stream()
+                        .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
+                    streamObjects
+                        .stream()
+                        .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
+                .collect(Collectors.toList());
+            Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
+            if (continuityCheckResult != Errors.NONE) {
+                log.error("[CommitStreamSetObject] advance check failed. streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
+                    objectId, nodeId, nodeEpoch, continuityCheckResult);
+                resp.setErrorCode(continuityCheckResult.code());
+                return ControllerResult.of(Collections.emptyList(), resp);
+            }
         }
-        log.info("[CommitStreamSetObject]: nodeId={} commit object: {} success, compacted objects: {}, stream range: {}, stream objects: {}",
-            nodeId, objectId, compactedObjectIds, data.objectStreamRanges(), streamObjects);
+        log.info("[CommitStreamSetObject]: successfully commit stream set object. streamSetObjectId={}, nodeId={}, nodeEpoch={}, compacted objects: {}, stream range: {}, stream objects: {}",
+            objectId, nodeId, nodeEpoch, compactedObjectIds, data.objectStreamRanges(), streamObjects);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -685,8 +700,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CommitStreamObject]: nodeId={}'s epoch={} check failed, code: {}, req: {}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code(), data);
+            log.warn("[CommitStreamObject]: invalid node epoch. nodeId={}, nodeEpoch={}, error={}, req={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult, data);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -703,13 +718,13 @@ public class StreamControlManager {
         // commit object
         ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(streamObjectId, objectSize, committedTs);
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
-            log.error("[CommitStreamObject]: object={} not exist when commit stream object, req: {}", streamObjectId, data);
+            log.error("[CommitStreamObject]: stream object not exist. streamObjectId={}, req={}", streamObjectId, data);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (commitResult.response() == Errors.REDUNDANT_OPERATION) {
             // regard it as redundant commit operation, just return success
-            log.warn("[CommitStreamObject]: object={} already committed, req: {}", streamObjectId, data);
+            log.warn("[CommitStreamObject]: stream object already committed. streamObjectId={}, req={}", streamObjectId, data);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         List<ApiMessageAndVersion> records = new ArrayList<>(commitResult.records());
@@ -719,7 +734,8 @@ public class StreamControlManager {
         if (sourceObjectIds != null && !sourceObjectIds.isEmpty()) {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(sourceObjectIds);
             if (!destroyResult.response()) {
-                log.error("[CommitStreamObject]: Mark destroy compacted objects: {} failed, req: {}", sourceObjectIds, data);
+                log.error("[CommitStreamObject]: failed to mark destroy compacted objects. compactedObjects={}, req={}",
+                    sourceObjectIds, data);
                 resp.setErrorCode(Errors.COMPACTED_OBJECTS_NOT_FOUND.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -748,8 +764,8 @@ public class StreamControlManager {
                 .setObjectId(id)
                 .setStreamId(streamId), (short) 0)));
         }
-        log.info("[CommitStreamObject]: nodeId={} compat stream(streamId={}, epoch={}) object success objectId={}, compacted objects={}",
-            nodeId, streamId, streamEpoch, streamObjectId, sourceObjectIds);
+        log.info("[CommitStreamObject]: successfully commit stream object. streamObjectId={}, streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, compactedObjects={}",
+            streamObjectId, streamId, streamEpoch, nodeId, nodeEpoch, sourceObjectIds);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -773,7 +789,7 @@ public class StreamControlManager {
         if (nodeMetadata != null && nodeEpoch < nodeMetadata.getNodeEpoch()) {
             // node epoch has been expired
             resp.setErrorCode(Errors.NODE_EPOCH_EXPIRED.code());
-            log.warn("[GetOpeningStreams]: nodeId={}'s epoch={} has been expired", nodeId, nodeEpoch);
+            log.warn("[GetOpeningStreams]: expired node epoch. nodeId={}, nodeEpoch={}", nodeId, nodeEpoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
