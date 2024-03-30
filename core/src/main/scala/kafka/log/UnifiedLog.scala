@@ -1911,6 +1911,8 @@ object UnifiedLog extends Logging {
                              logDirFailureChannel: LogDirFailureChannel,
                              topicId: Option[Uuid],
                              leaderEpoch: Long = 0): UnifiedLog = {
+    // TODO: better error mark for elastic log
+    logDirFailureChannel.clearOfflineLogDirRecord(dir.getPath)
     LocalLog.maybeHandleIOException(logDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
       val start = System.currentTimeMillis()
       val localLog = ElasticLogManager.getOrCreateLog(dir, config, scheduler, time, topicPartition, logDirFailureChannel, maxTransactionTimeoutMs, producerStateManagerConfig, topicId = topicId.get, leaderEpoch = leaderEpoch)
