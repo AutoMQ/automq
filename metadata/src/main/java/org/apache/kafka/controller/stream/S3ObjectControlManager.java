@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
@@ -96,6 +97,9 @@ public class S3ObjectControlManager {
 
     private final ObjectCleaner objectCleaner;
     private final AtomicLong s3ObjectSize = new AtomicLong(0);
+
+    private long lastCleanStartTimestamp = 0;
+    private CompletableFuture<Void> lastCleanCf = CompletableFuture.completedFuture(null);
 
     public S3ObjectControlManager(
             QuorumController quorumController,
@@ -263,6 +267,10 @@ public class S3ObjectControlManager {
      * @return the result of the check, contains the records which should be applied to the raft.
      */
     public ControllerResult<Void> checkS3ObjectsLifecycle() {
+        if (!lastCleanCf.isDone()) {
+            log.info("the last deletion[timestamp={}] is not finished, skip this check", lastCleanStartTimestamp);
+            return ControllerResult.of(Collections.emptyList(), null);
+        }
         List<ApiMessageAndVersion> records = new ArrayList<>();
         List<Long> ttlReachedObjects = new LinkedList<>();
         // check the expired objects
@@ -291,15 +299,21 @@ public class S3ObjectControlManager {
             log.info("objects TTL is reached, objects={}", ttlReachedObjects);
         }
         // check the mark destroyed objects
-        List<String> destroyedObjectKeys = this.markDestroyedObjects.stream()
-                .map(this.objectsMetadata::get)
-                .filter(obj -> obj.getMarkDestroyedTimeInMs() + (this.config.objectRetentionTimeInSecond() * 1000L) < System.currentTimeMillis())
-                .map(S3Object::getObjectKey)
-                .collect(Collectors.toList());
-        if (destroyedObjectKeys.isEmpty()) {
-            return ControllerResult.of(records, null);
+        List<String> requiredDeleteKeys = new LinkedList<>();
+        for (Long objectId : this.markDestroyedObjects) {
+            S3Object object = this.objectsMetadata.get(objectId);
+            if (object.getMarkDestroyedTimeInMs() + (this.config.objectRetentionTimeInSecond() * 1000L) < System.currentTimeMillis()) {
+                // exceed delete retention time, trigger the truly deletion
+                requiredDeleteKeys.add(object.getObjectKey());
+            } else {
+                // the following objects' mark destroyed time is not expired, so break the loop
+                break;
+            }
         }
-        this.objectCleaner.clean(destroyedObjectKeys);
+        if (!requiredDeleteKeys.isEmpty()) {
+            this.lastCleanStartTimestamp = System.currentTimeMillis();
+            this.lastCleanCf = this.objectCleaner.clean(requiredDeleteKeys);
+        }
         return ControllerResult.of(records, null);
     }
 
@@ -342,37 +356,39 @@ public class S3ObjectControlManager {
 
         public static final int MAX_BATCH_DELETE_SIZE = 800;
 
-        void clean(List<String> objectKeys) {
+        CompletableFuture<Void> clean(List<String> objectKeys) {
+            List<CompletableFuture<Void>> cfList = new LinkedList<>();
             for (int i = 0; i < objectKeys.size() / MAX_BATCH_DELETE_SIZE; i++) {
                 List<String> batch = objectKeys.subList(i * MAX_BATCH_DELETE_SIZE, (i + 1) * MAX_BATCH_DELETE_SIZE);
-                clean0(batch);
+                cfList.add(clean0(batch));
             }
             if (objectKeys.size() % MAX_BATCH_DELETE_SIZE != 0) {
                 List<String> batch = objectKeys.subList(objectKeys.size() / MAX_BATCH_DELETE_SIZE * MAX_BATCH_DELETE_SIZE, objectKeys.size());
-                clean0(batch);
+                cfList.add(clean0(batch));
             }
+            return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
         }
 
-        private void clean0(List<String> objectKeys) {
-            operator.delete(objectKeys).whenCompleteAsync((resp, e) -> {
-                if (e != null) {
+        private CompletableFuture<Void> clean0(List<String> objectKeys) {
+            return operator.delete(objectKeys)
+                .exceptionally(e -> {
                     log.error("Failed to delete the S3Object from S3, objectKeys: {}",
-                            String.join(",", objectKeys), e);
-                    return;
-                }
-                if (resp != null && !resp.isEmpty()) {
-                    List<Long> deletedObjectIds = resp.stream().map(key -> ObjectUtils.parseObjectId(0, key)).collect(Collectors.toList());
-                    // notify the controller an objects deletion event to drive the removal of the objects
-                    ControllerRequestContext ctx = new ControllerRequestContext(
+                        String.join(",", objectKeys), e);
+                    return null;
+                }).thenAccept(resp -> {
+                    if (resp != null && !resp.isEmpty()) {
+                        List<Long> deletedObjectIds = resp.stream().map(key -> ObjectUtils.parseObjectId(0, key)).collect(Collectors.toList());
+                        // notify the controller an objects deletion event to drive the removal of the objects
+                        ControllerRequestContext ctx = new ControllerRequestContext(
                             null, null, OptionalLong.empty());
-                    quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
-                        if (exp != null) {
-                            log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
+                        quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
+                            if (exp != null) {
+                                log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
                                     Arrays.toString(deletedObjectIds.toArray()), exp);
-                        }
-                    });
-                }
-            });
+                            }
+                        });
+                    }
+                });
         }
     }
 
