@@ -18,6 +18,7 @@
 package org.apache.kafka.controller;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.operator.S3Operator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -40,12 +41,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.times;
 
 @Timeout(40)
 @Tag("S3Unit")
@@ -58,10 +62,11 @@ public class S3ObjectControlManagerTest {
     private static final String S3_REGION = "us-east-1";
     private static final String S3_BUCKET = "kafka-on-S3-bucket";
 
-    private static final Config S3_CONFIG = new Config().endpoint(S3_ENDPOINT).region(S3_REGION).bucket(S3_BUCKET).objectRetentionTimeInSecond(5);
+    private static final Config S3_CONFIG = new Config().endpoint(S3_ENDPOINT).region(S3_REGION).bucket(S3_BUCKET).objectRetentionTimeInSecond(1);
     private S3ObjectControlManager manager;
     private QuorumController controller;
     private S3Operator operator;
+    private long nextObjectId;
 
     @BeforeEach
     public void setUp() {
@@ -146,7 +151,8 @@ public class S3ObjectControlManagerTest {
         }
     }
 
-    private void verifyPrepareObjectRecord(ApiMessageAndVersion result, long expectedObjectId, long expectedTimeToLiveInMs) {
+    private void verifyPrepareObjectRecord(ApiMessageAndVersion result, long expectedObjectId,
+        long expectedTimeToLiveInMs) {
         ApiMessage message = result.message();
         assertInstanceOf(S3ObjectRecord.class, message);
         S3ObjectRecord record = (S3ObjectRecord) message;
@@ -212,7 +218,75 @@ public class S3ObjectControlManagerTest {
         // 3. 5s later, it should be removed
         Thread.sleep(5 * 1000);
         assertEquals(0, manager.objectsMetadata().size());
-        Mockito.verify(operator, Mockito.times(1)).delete(anyList());
+        Mockito.verify(operator, times(1)).delete(anyList());
+    }
+
+    @Test
+    public void testCheckS3ObjectsLifecycle_inflightLimit() throws InterruptedException {
+        Mockito.when(controller.checkS3ObjectsLifecycle(any(ControllerRequestContext.class)))
+            .then(inv -> {
+                ControllerResult<Void> result = manager.checkS3ObjectsLifecycle();
+                replay(manager, result.records());
+                return CompletableFuture.completedFuture(null);
+            });
+        Mockito.when(controller.notifyS3ObjectDeleted(any(ControllerRequestContext.class), anyList()))
+            .then(inv -> {
+                ControllerResult<Void> result = manager.notifyS3ObjectDeleted(inv.getArgument(1));
+                replay(manager, result.records());
+                return CompletableFuture.completedFuture(null);
+            });
+
+        CompletableFuture<Void> delayTrigger = new CompletableFuture<>();
+        Mockito.when(operator.delete(anyList())).then(inv -> {
+            List<String> objectKeys = inv.getArgument(0);
+            return delayTrigger.thenApply(ignore -> objectKeys);
+        });
+
+        genMarkDestroyObject();
+        // TODO: use MockTime instead of sleep
+        Thread.sleep(1001L);
+
+        manager.checkS3ObjectsLifecycle();
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<String>> ac = ArgumentCaptor.forClass(List.class);
+        Mockito.verify(operator, times(1)).delete(ac.capture());
+        assertEquals(List.of(ObjectUtils.genKey(0, 0L)), ac.getValue());
+
+        genMarkDestroyObject();
+        Thread.sleep(1001L);
+
+        // the last delete is inflight, so the next check should not trigger another delete
+        manager.checkS3ObjectsLifecycle();
+        Mockito.verify(operator, times(1)).delete(ac.capture());
+
+        // complete the last delete
+        delayTrigger.complete(null);
+
+        manager.checkS3ObjectsLifecycle();
+        Mockito.verify(operator, times(2)).delete(ac.capture());
+        assertEquals(List.of(ObjectUtils.genKey(0, 1L)), ac.getValue());
+    }
+
+    private void genMarkDestroyObject() {
+        // commit and destroy the object
+        long objectId = prepareOneObject(60 * 1000);
+        {
+            long expectedCommittedTs = 1313L;
+            ControllerResult<Errors> result = manager.commitObject(objectId, 1024, expectedCommittedTs);
+            assertEquals(Errors.NONE, result.response());
+            assertEquals(1, result.records().size());
+            S3ObjectRecord record = (S3ObjectRecord) result.records().get(0).message();
+            manager.replay(record);
+        }
+
+        {
+            ControllerResult<Boolean> result = manager.markDestroyObjects(List.of(objectId));
+            assertTrue(result.response());
+            assertEquals(1, result.records().size());
+            S3ObjectRecord record = (S3ObjectRecord) result.records().get(0).message();
+            assertEquals(S3ObjectState.MARK_DESTROYED.toByte(), record.objectState());
+            assertEquals(objectId, record.objectId());
+            manager.replay(record);
+        }
     }
 
     @Test
@@ -261,10 +335,10 @@ public class S3ObjectControlManagerTest {
         // 3. 6s(3s * 2) later, they should be removed
         Thread.sleep(6 * 1000);
         assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
-        Mockito.verify(operator, Mockito.times(3)).delete(anyList());
+        Mockito.verify(operator, times(3)).delete(anyList());
     }
 
-    private void prepareOneObject(long ttl) {
+    private long prepareOneObject(long ttl) {
         ControllerResult<PrepareS3ObjectResponseData> result0 = manager.prepareObject(new PrepareS3ObjectRequestData()
             .setNodeId(BROKER0)
             .setPreparedCount(1)
@@ -274,9 +348,11 @@ public class S3ObjectControlManagerTest {
         ApiMessage message = result0.records().get(0).message();
         assertInstanceOf(AssignedS3ObjectIdRecord.class, message);
         AssignedS3ObjectIdRecord assignedRecord = (AssignedS3ObjectIdRecord) message;
-        assertEquals(0, assignedRecord.assignedS3ObjectId());
-        verifyPrepareObjectRecord(result0.records().get(1), 0, ttl);
+        long objectId = nextObjectId++;
+        assertEquals(objectId, assignedRecord.assignedS3ObjectId());
+        verifyPrepareObjectRecord(result0.records().get(1), objectId, ttl);
         replay(manager, result0.records());
+        return objectId;
     }
 
 }
