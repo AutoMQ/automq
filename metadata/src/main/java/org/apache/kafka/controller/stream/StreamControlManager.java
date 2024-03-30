@@ -153,8 +153,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CreateStream] invalid node epoch. nodeId={}, nodeEpoch={}, code={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[CreateStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         // TODO: pre assigned a batch of stream id in controller
@@ -215,8 +215,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[OpenStream] invalid node epoch. nodeId={}, nodeEpoch={}, code={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[OpenStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -349,8 +349,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, false);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CloseStream] invalid node epoch. nodeId={}, nodeEpoch={}, code={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[CloseStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -389,8 +389,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[TrimStream] invalid node epoch. nodeId={}, nodeEpoch={}, code={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[TrimStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -487,8 +487,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[DeleteStream] invalid node epoch. nodeId={}, nodeEpoch={}, code={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[DeleteStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -558,8 +558,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, !data.failoverMode());
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CommitStreamSetObject] invalid node epoch. nodeId={}, nodeEpoch={}, code={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code());
+            log.warn("[CommitStreamSetObject] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -621,8 +621,8 @@ public class StreamControlManager {
                         return ControllerResult.of(Collections.emptyList(), resp);
                     }
                     if (streamObjectCommitResult.response() != Errors.NONE) {
-                        log.error("[CommitStreamSetObject]: failed to commit srteam object. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}, code={}",
-                            streamObject.objectId(), objectId, nodeId, nodeEpoch, streamObjectCommitResult.response().code());
+                        log.error("[CommitStreamSetObject]: failed to commit srteam object. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
+                            streamObject.objectId(), objectId, nodeId, nodeEpoch, streamObjectCommitResult.response());
                         resp.setErrorCode(streamObjectCommitResult.response().code());
                         return ControllerResult.of(Collections.emptyList(), resp);
                     }
@@ -653,8 +653,8 @@ public class StreamControlManager {
                 .collect(Collectors.toList());
             Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
             if (continuityCheckResult != Errors.NONE) {
-                log.error("[CommitStreamSetObject] advance check failed. streamSetObjectId={}, nodeId={}, nodeEpoch={}, code={}",
-                    objectId, nodeId, nodeEpoch, continuityCheckResult.code());
+                log.error("[CommitStreamSetObject] advance check failed. streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
+                    objectId, nodeId, nodeEpoch, continuityCheckResult);
                 resp.setErrorCode(continuityCheckResult.code());
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
@@ -700,8 +700,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CommitStreamObject]: invalid node epoch. nodeId={}, nodeEpoch={}, code={}, req={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult.code(), data);
+            log.warn("[CommitStreamObject]: invalid node epoch. nodeId={}, nodeEpoch={}, error={}, req={}",
+                nodeId, nodeEpoch, nodeEpochCheckResult, data);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
