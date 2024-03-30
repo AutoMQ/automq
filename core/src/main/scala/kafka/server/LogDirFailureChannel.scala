@@ -47,7 +47,9 @@ class LogDirFailureChannel(logDirNum: Int) extends Logging {
   }
 
   def clearOfflineLogDirRecord(logDir: String): Unit = {
-    offlineLogDirs.remove(logDir)
+    if (offlineLogDirs.remove(logDir) != null) {
+      info(s"Clearing offline log dir record for $logDir")
+    }
   }
 
   /*
