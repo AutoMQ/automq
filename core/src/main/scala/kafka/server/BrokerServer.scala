@@ -529,6 +529,16 @@ class BrokerServer(
         }
       }
 
+      // AutoMQ for Kafka inject start
+      // https://github.com/AutoMQ/automq-for-kafka/issues/540
+      // await partition shutdown:
+      // 1. after lifecycleManager start shutdown to trigger partitions gracefully reassign.
+      // 2. before metadataListener start close to ensure S3Stream can read the latest metadata.
+      if (replicaManager != null) {
+        CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
+      }
+      // AutoMQ for Kafka inject end
+
       if (metadataListener != null)
         metadataListener.beginShutdown()
 
@@ -546,14 +556,6 @@ class BrokerServer(
       if (controlPlaneRequestProcessor != null)
         CoreUtils.swallow(controlPlaneRequestProcessor.close(), this)
       CoreUtils.swallow(authorizer.foreach(_.close()), this)
-
-      // AutoMQ for Kafka inject start
-      // https://github.com/AutoMQ/automq-for-kafka/issues/540
-      // await partition shutdown before metadataListener.close()
-      if (replicaManager != null) {
-        CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
-      }
-      // AutoMQ for Kafka inject end
 
       if (metadataListener != null) {
         CoreUtils.swallow(metadataListener.close(), this)
