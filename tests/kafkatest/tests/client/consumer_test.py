@@ -558,12 +558,13 @@ class AssignmentValidationTest(VerifiableConsumerTest):
         use_new_coordinator=[True],
         group_protocol=[consumer_group.classic_group_protocol],
     )
-    @matrix(
-        metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True],
-        group_protocol=[consumer_group.consumer_group_protocol],
-        group_remote_assignor=consumer_group.all_remote_assignors
-    )
+    # TODO: When apache kafka new consumer coordinator function is stable, revert it back
+    # @matrix(
+    #     metadata_quorum=[quorum.isolated_kraft],
+    #     use_new_coordinator=[True],
+    #     group_protocol=[consumer_group.consumer_group_protocol],
+    #     group_remote_assignor=consumer_group.all_remote_assignors
+    # )
     def test_valid_assignment(self, assignment_strategy=None, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None, group_remote_assignor=None):
         """
         Verify assignment strategy correctness: each partition is assigned to exactly
