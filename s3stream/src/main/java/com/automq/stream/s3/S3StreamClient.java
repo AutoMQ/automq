@@ -20,6 +20,7 @@ import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
@@ -39,7 +40,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +50,7 @@ public class S3StreamClient implements StreamClient {
     private static final long STREAM_OBJECT_COMPACTION_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1);
     private final ScheduledExecutorService streamObjectCompactionScheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-scheduler", true), LOGGER, true);
-    private final Map<Long, StreamWrapper> openedStreams;
+    final Map<Long, StreamWrapper> openedStreams;
     private final StreamManager streamManager;
     private final Storage storage;
     private final ObjectManager objectManager;
@@ -57,6 +59,13 @@ public class S3StreamClient implements StreamClient {
     private final AsyncNetworkBandwidthLimiter networkInboundBucket;
     private final AsyncNetworkBandwidthLimiter networkOutboundBucket;
     private ScheduledFuture<?> scheduledCompactionTaskFuture;
+
+    private final ReentrantLock lock = new ReentrantLock();
+
+    final Map<Long, CompletableFuture<Stream>> openingStreams = new ConcurrentHashMap<>();
+    final Map<Long, CompletableFuture<Stream>> closingStreams = new ConcurrentHashMap<>();
+
+    private boolean closed;
 
     @SuppressWarnings("unused")
     public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
@@ -80,21 +89,30 @@ public class S3StreamClient implements StreamClient {
 
     @Override
     public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
-        TimerUtil timerUtil = new TimerUtil();
-        return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
-            StreamOperationStats.getInstance().createStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            return openStream0(streamId, options.epoch());
-        }), LOGGER, "createAndOpenStream");
+        return runInLock(() -> {
+            checkState();
+            TimerUtil timerUtil = new TimerUtil();
+            return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
+                StreamOperationStats.getInstance().createStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                return openStream0(streamId, options.epoch());
+            }), LOGGER, "createAndOpenStream");
+        });
     }
 
     @Override
     public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
-        return FutureUtil.exec(() -> openStream0(streamId, openStreamOptions.epoch()), LOGGER, "openStream");
+        return runInLock(() -> {
+            checkState();
+            return FutureUtil.exec(() -> openStream0(streamId, openStreamOptions.epoch()), LOGGER, "openStream");
+        });
     }
 
     @Override
     public Optional<Stream> getStream(long streamId) {
-        return Optional.ofNullable(openedStreams.get(streamId));
+        return runInLock(() -> {
+            checkState();
+            return Optional.ofNullable(openedStreams.get(streamId));
+        });
     }
 
     /**
@@ -108,21 +126,32 @@ public class S3StreamClient implements StreamClient {
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
-        TimerUtil timerUtil = new TimerUtil();
-        return streamManager.openStream(streamId, epoch).
-            thenApply(metadata -> {
-                StreamWrapper stream = new StreamWrapper(new S3Stream(
-                    metadata.streamId(), metadata.epoch(),
-                    metadata.startOffset(), metadata.endOffset(),
-                    storage, streamManager, networkInboundBucket, networkOutboundBucket));
-                openedStreams.put(streamId, stream);
-                StreamOperationStats.getInstance().openStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                return stream;
-            });
+        return runInLock(() -> {
+            TimerUtil timerUtil = new TimerUtil();
+            CompletableFuture<Stream> cf = streamManager.openStream(streamId, epoch).
+                thenApply(metadata -> {
+                    StreamWrapper stream = new StreamWrapper(newStream(metadata));
+                    runInLock(() -> openedStreams.put(streamId, stream));
+                    StreamOperationStats.getInstance().openStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    return stream;
+                });
+            openingStreams.put(streamId, cf);
+            cf.whenComplete((stream, ex) -> runInLock(() -> openingStreams.remove(streamId, cf)));
+            return cf;
+        });
+    }
+
+    S3Stream newStream(StreamMetadata metadata) {
+        return new S3Stream(
+            metadata.streamId(), metadata.epoch(),
+            metadata.startOffset(), metadata.endOffset(),
+            storage, streamManager, networkInboundBucket, networkOutboundBucket);
     }
 
     @Override
     public void shutdown() {
+        LOGGER.info("S3StreamClient start shutting down");
+        markClosed();
         // cancel the submitted task if not started; do not interrupt the task if it is running.
         if (scheduledCompactionTaskFuture != null) {
             scheduledCompactionTaskFuture.cancel(false);
@@ -139,17 +168,52 @@ public class S3StreamClient implements StreamClient {
         }
 
         TimerUtil timerUtil = new TimerUtil();
-        Map<Long, CompletableFuture<Void>> streamCloseFutures = new ConcurrentHashMap<>();
-        openedStreams.forEach((streamId, stream) -> streamCloseFutures.put(streamId, stream.close()));
         for (; ; ) {
-            Threads.sleep(1000);
-            List<Long> closingStreams = streamCloseFutures.entrySet().stream().filter(e -> !e.getValue().isDone()).map(Map.Entry::getKey).collect(Collectors.toList());
-            LOGGER.info("waiting streams close, closed {} / all {}, closing[{}]", streamCloseFutures.size() - closingStreams.size(), streamCloseFutures.size(), closingStreams);
-            if (closingStreams.isEmpty()) {
-                break;
+            lock.lock();
+            try {
+                openedStreams.forEach((streamId, stream) -> {
+                    LOGGER.info("trigger stream force close, streamId={}", streamId);
+                    stream.close();
+                });
+                if (openedStreams.isEmpty() && openingStreams.isEmpty() && closingStreams.isEmpty()) {
+                    LOGGER.info("all streams are closed");
+                    break;
+                }
+                LOGGER.info("waiting streams close, opened[{}], opening[{}], closing[{}]", openedStreams.keySet(), openingStreams.keySet(), closingStreams.keySet());
+            } finally {
+                lock.unlock();
             }
+            Threads.sleep(1000);
         }
-        LOGGER.info("wait streams[{}] closed cost {}ms", streamCloseFutures.keySet(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+        LOGGER.info("S3StreamClient shutdown, cost {}ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+    }
+
+    private void checkState() {
+        if (closed) {
+            throw new IllegalStateException("S3StreamClient is already closed");
+        }
+    }
+
+    private void markClosed() {
+        runInLock(() -> closed = true);
+    }
+
+    private void runInLock(Runnable runnable) {
+        lock.lock();
+        try {
+            runnable.run();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private <T> T runInLock(Supplier<T> supplier) {
+        lock.lock();
+        try {
+            return supplier.get();
+        } finally {
+            lock.unlock();
+        }
     }
 
     class StreamWrapper implements Stream {
@@ -218,12 +282,28 @@ public class S3StreamClient implements StreamClient {
 
         @Override
         public CompletableFuture<Void> close() {
-            return stream.close().whenComplete((v, e) -> openedStreams.remove(streamId(), this));
+            return runInLock(() -> {
+                CompletableFuture<Stream> cf = new CompletableFuture<>();
+                openedStreams.remove(streamId(), this);
+                closingStreams.put(streamId(), cf);
+                return stream.close().whenComplete((v, e) -> runInLock(() -> {
+                    cf.complete(StreamWrapper.this);
+                    closingStreams.remove(streamId(), cf);
+                }));
+            });
         }
 
         @Override
         public CompletableFuture<Void> destroy() {
-            return stream.destroy().whenComplete((v, e) -> openedStreams.remove(streamId(), this));
+            return runInLock(() -> {
+                CompletableFuture<Stream> cf = new CompletableFuture<>();
+                openedStreams.remove(streamId(), this);
+                closingStreams.put(streamId(), cf);
+                return stream.destroy().whenComplete((v, e) -> runInLock(() -> {
+                    cf.complete(StreamWrapper.this);
+                    closingStreams.remove(streamId(), cf);
+                }));
+            });
         }
 
         public boolean isClosed() {
