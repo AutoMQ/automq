@@ -1,0 +1,81 @@
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+package com.automq.stream.s3;
+
+import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.streams.StreamManager;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@Tag("S3Unit")
+public class S3StreamClientTest {
+    private S3StreamClient client;
+    private StreamManager streamManager;
+    private ScheduledExecutorService scheduler;
+
+    @BeforeEach
+    void setup() {
+        streamManager = mock(StreamManager.class);
+        client = spy(new S3StreamClient(streamManager, mock(Storage.class), mock(ObjectManager.class), mock(S3Operator.class), new Config()));
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+    }
+
+    @AfterEach
+    void cleanup() {
+        scheduler.shutdown();
+    }
+
+    @Test
+    public void testShutdown_withOpeningStream() {
+        S3Stream stream = mock(S3Stream.class);
+        when(stream.close()).thenReturn(CompletableFuture.completedFuture(null));
+        when(stream.streamId()).thenReturn(1L);
+
+        CompletableFuture<StreamMetadata> cf = new CompletableFuture<>();
+        when(streamManager.openStream(anyLong(), anyLong())).thenReturn(cf);
+
+        doAnswer(args -> stream).when(client).newStream(any());
+
+        scheduler.schedule(() -> {
+            cf.complete(new StreamMetadata(1, 2, 100, 200, StreamState.OPENED));
+        }, 100, MILLISECONDS);
+
+        client.openStream(1, OpenStreamOptions.builder().build());
+        client.shutdown();
+
+        verify(stream, times(1)).close();
+        assertEquals(0, client.openingStreams.size());
+        assertEquals(0, client.openedStreams.size());
+        assertEquals(0, client.closingStreams.size());
+    }
+
+}
