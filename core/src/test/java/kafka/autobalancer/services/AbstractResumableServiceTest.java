@@ -30,18 +30,18 @@ public class AbstractResumableServiceTest {
         Assertions.assertTrue(service.isShutdown());
         Assertions.assertEquals(0, service.currentEpoch());
         Mockito.verify(service, Mockito.times(1)).doShutdown();
-        service.resume();
+        service.run();
         Assertions.assertFalse(service.isRunning());
         Assertions.assertTrue(service.isShutdown());
         Assertions.assertEquals(0, service.currentEpoch());
-        Mockito.verify(service, Mockito.times(0)).doResume();
+        Mockito.verify(service, Mockito.times(0)).doRun();
 
         service = createService();
-        service.resume();
+        service.run();
         Assertions.assertTrue(service.isRunning());
         Assertions.assertFalse(service.isShutdown());
         Assertions.assertEquals(1, service.currentEpoch());
-        Mockito.verify(service, Mockito.times(1)).doResume();
+        Mockito.verify(service, Mockito.times(1)).doRun();
         service.pause();
         Assertions.assertFalse(service.isRunning());
         Assertions.assertFalse(service.isShutdown());
@@ -52,11 +52,11 @@ public class AbstractResumableServiceTest {
         Assertions.assertFalse(service.isShutdown());
         Assertions.assertEquals(1, service.currentEpoch());
         Mockito.verify(service, Mockito.times(1)).doPause();
-        service.resume();
+        service.run();
         Assertions.assertTrue(service.isRunning());
         Assertions.assertFalse(service.isShutdown());
         Assertions.assertEquals(2, service.currentEpoch());
-        Mockito.verify(service, Mockito.times(2)).doResume();
+        Mockito.verify(service, Mockito.times(2)).doRun();
         service.shutdown();
         Assertions.assertFalse(service.isRunning());
         Assertions.assertTrue(service.isShutdown());
@@ -69,11 +69,11 @@ public class AbstractResumableServiceTest {
         Mockito.verify(service, Mockito.times(1)).doPause();
 
         service = createService();
-        service.resume();
+        service.run();
         Assertions.assertTrue(service.isRunning());
         Assertions.assertFalse(service.isShutdown());
         Assertions.assertEquals(1, service.currentEpoch());
-        Mockito.verify(service, Mockito.times(1)).doResume();
+        Mockito.verify(service, Mockito.times(1)).doRun();
         service.pause();
         Assertions.assertFalse(service.isRunning());
         Assertions.assertFalse(service.isShutdown());
@@ -89,7 +89,7 @@ public class AbstractResumableServiceTest {
     public AbstractResumableService createService() {
         AbstractResumableService service = new AbstractResumableService(null) {
             @Override
-            protected void doResume() {
+            protected void doRun() {
 
             }
 

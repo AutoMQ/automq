@@ -36,9 +36,9 @@ public abstract class AbstractResumableService implements ResumableService {
     }
 
     @Override
-    final public void resume() {
+    final public void run() {
         if (shutdown.get()) {
-            logger.warn("Service is shutdown, cannot be resumed.");
+            logger.warn("Service is shutdown, cannot be running again.");
             return;
         }
         if (!running.compareAndSet(false, true)) {
@@ -46,8 +46,8 @@ public abstract class AbstractResumableService implements ResumableService {
             return;
         }
         epoch.incrementAndGet();
-        doResume();
-        logger.info("Service started.");
+        doRun();
+        logger.info("Service is running.");
     }
 
     @Override
@@ -87,7 +87,7 @@ public abstract class AbstractResumableService implements ResumableService {
         return epoch.get();
     }
 
-    protected abstract void doResume();
+    protected abstract void doRun();
     protected abstract void doShutdown();
     protected abstract void doPause();
 }

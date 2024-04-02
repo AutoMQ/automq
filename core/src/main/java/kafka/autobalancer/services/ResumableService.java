@@ -12,7 +12,7 @@
 package kafka.autobalancer.services;
 
 public interface ResumableService {
-    void resume();
+    void run();
     void shutdown();
     void pause();
 }

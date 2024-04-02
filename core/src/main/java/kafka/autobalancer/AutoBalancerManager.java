@@ -53,7 +53,7 @@ public class AutoBalancerManager extends AutoBalancerService {
         this.raftClient = raftClient;
         init();
         if (enabled) {
-            resume();
+            run();
         }
     }
 
@@ -90,9 +90,9 @@ public class AutoBalancerManager extends AutoBalancerService {
     }
 
     @Override
-    protected void doResume() {
-        loadRetriever.resume();
-        anomalyDetector.resume();
+    protected void doRun() {
+        loadRetriever.run();
+        anomalyDetector.run();
     }
 
     @Override
@@ -140,7 +140,7 @@ public class AutoBalancerManager extends AutoBalancerService {
             boolean isEnable = ConfigUtils.getBoolean(objectConfigs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE);
             if (!this.enabled && isEnable) {
                 this.enabled = true;
-                this.resume();
+                this.run();
                 logger.info("AutoBalancerManager resumed.");
             } else if (this.enabled && !isEnable) {
                 this.enabled = false;

@@ -77,7 +77,7 @@ public class AnomalyDetector extends AbstractResumableService {
     }
 
     @Override
-    public void doResume() {
+    public void doRun() {
 
     }
 
