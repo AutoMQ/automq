@@ -19,7 +19,6 @@ package kafka.server
 
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
-import kafka.autobalancer.config.AutoBalancerControllerConfig
 import kafka.autobalancer.services.AutoBalancerService
 import kafka.log.stream.s3.ConfigUtils
 import kafka.metrics.LinuxIoMetricsCollector
@@ -363,9 +362,6 @@ class ControllerServer(
         "controller")
 
       autoBalancerManager = buildAutoBalancerManager
-      if (config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
-        autoBalancerManager.start()
-      }
 
       // Set up the metadata cache publisher.
       metadataPublishers.add(metadataCachePublisher)

@@ -52,9 +52,12 @@ public class AutoBalancerManager extends AutoBalancerService {
         this.quorumController = quorumController;
         this.raftClient = raftClient;
         init();
+        if (enabled) {
+            resume();
+        }
     }
 
-    public void init() {
+    protected void init() {
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(configs, false);
         this.enabled = config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE);
         RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
@@ -87,9 +90,9 @@ public class AutoBalancerManager extends AutoBalancerService {
     }
 
     @Override
-    protected void doStart() {
-        loadRetriever.start();
-        anomalyDetector.start();
+    protected void doResume() {
+        loadRetriever.resume();
+        anomalyDetector.resume();
     }
 
     @Override
@@ -137,7 +140,7 @@ public class AutoBalancerManager extends AutoBalancerService {
             boolean isEnable = ConfigUtils.getBoolean(objectConfigs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE);
             if (!this.enabled && isEnable) {
                 this.enabled = true;
-                this.start();
+                this.resume();
                 logger.info("AutoBalancerManager resumed.");
             } else if (this.enabled && !isEnable) {
                 this.enabled = false;

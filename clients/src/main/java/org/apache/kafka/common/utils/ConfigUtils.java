@@ -167,6 +167,7 @@ public class ConfigUtils {
         }
     }
 
+    // AutoMQ injection start
     /**
      * Finds and returns a boolean configuration option from the configuration map.
      *
@@ -257,4 +258,5 @@ public class ConfigUtils {
         }
         throw new IllegalArgumentException("Invalid value (" + value + ") on configuration '" + key + "'. Please specify a double value.");
     }
+    // AutoMQ injection end
 }

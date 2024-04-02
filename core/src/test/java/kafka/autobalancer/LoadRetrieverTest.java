@@ -104,13 +104,13 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
         ClusterModel clusterModel = new ClusterModel();
         LoadRetriever loadRetriever = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
-        loadRetriever.start();
+        loadRetriever.resume();
 
         Assertions.assertTimeout(Duration.ofMillis(15000), loadRetriever::shutdown);
 
         LoadRetriever loadRetriever2 = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
-        loadRetriever2.start();
+        loadRetriever2.resume();
         BrokerServer broker = cluster.brokers().values().iterator().next();
         KafkaConfig brokerConfig = broker.config();
         EndPoint endpoint = brokerConfig.effectiveAdvertisedListeners().iterator().next();
@@ -134,7 +134,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
         RecordClusterModel clusterModel = new RecordClusterModel();
         LoadRetriever loadRetriever = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
-        loadRetriever.start();
+        loadRetriever.resume();
 
         BrokerServer broker = cluster.brokers().values().iterator().next();
         KafkaConfig brokerConfig = broker.config();

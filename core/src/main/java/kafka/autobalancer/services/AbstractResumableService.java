@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class AbstractResumableService implements ResumableService {
     protected final Logger logger;
     protected final AtomicBoolean running = new AtomicBoolean(false);
+    protected final AtomicBoolean shutdown = new AtomicBoolean(false);
     protected final AtomicInteger epoch = new AtomicInteger(0);
 
     public AbstractResumableService(LogContext logContext) {
@@ -34,30 +35,38 @@ public abstract class AbstractResumableService implements ResumableService {
         return running.get() && this.epoch.get() == epoch;
     }
 
-
     @Override
-    final public void start() {
+    final public void resume() {
+        if (shutdown.get()) {
+            logger.warn("Service is shutdown, cannot be resumed.");
+            return;
+        }
         if (!running.compareAndSet(false, true)) {
             logger.warn("Service is already running.");
             return;
         }
         epoch.incrementAndGet();
-        doStart();
+        doResume();
         logger.info("Service started.");
     }
 
     @Override
     final public void shutdown() {
-        if (!running.compareAndSet(true, false)) {
+        if (!shutdown.compareAndSet(false, true)) {
             logger.warn("Service is already shutdown.");
             return;
         }
+        this.running.set(false);
         doShutdown();
         logger.info("Service shutdown.");
     }
 
     @Override
     final public void pause() {
+        if (shutdown.get()) {
+            logger.warn("Service is shutdown, cannot be paused.");
+            return;
+        }
         if (!running.compareAndSet(true, false)) {
             logger.warn("Service is already paused.");
             return;
@@ -70,11 +79,15 @@ public abstract class AbstractResumableService implements ResumableService {
         return running.get();
     }
 
+    public boolean isShutdown() {
+        return shutdown.get();
+    }
+
     public int currentEpoch() {
         return epoch.get();
     }
 
-    protected abstract void doStart();
+    protected abstract void doResume();
     protected abstract void doShutdown();
     protected abstract void doPause();
 }

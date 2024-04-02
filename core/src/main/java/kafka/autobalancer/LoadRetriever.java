@@ -104,7 +104,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
     }
 
     @Override
-    protected void doStart() {
+    protected void doResume() {
         // seek to the latest offset if consumer exists
         if (this.consumer != null) {
             this.consumer.seekToEnd(Collections.emptyList());
