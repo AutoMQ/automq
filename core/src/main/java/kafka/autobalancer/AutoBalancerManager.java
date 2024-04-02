@@ -121,7 +121,6 @@ public class AutoBalancerManager extends AutoBalancerService {
             if (objectConfigs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
                 ConfigUtils.getBoolean(objectConfigs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE);
             }
-            this.loadRetriever.validateReconfiguration(objectConfigs);
             this.anomalyDetector.validateReconfiguration(objectConfigs);
             this.actionExecutorService.validateReconfiguration(objectConfigs);
         } catch (ConfigException e) {
@@ -146,7 +145,6 @@ public class AutoBalancerManager extends AutoBalancerService {
                 logger.info("AutoBalancerManager paused.");
             }
         }
-        this.loadRetriever.reconfigure(objectConfigs);
         this.anomalyDetector.reconfigure(objectConfigs);
         this.actionExecutorService.reconfigure(objectConfigs);
     }

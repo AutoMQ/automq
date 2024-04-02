@@ -151,7 +151,6 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
                 .setInControlledShutdown(false);
         clusterModel.onBrokerRegister(record);
         Uuid testTopicId = Uuid.randomUuid();
-        Uuid metricTopicId = Uuid.randomUuid();
         clusterModel.onTopicCreate(new TopicRecord()
                 .setName(TOPIC_0)
                 .setTopicId(testTopicId));

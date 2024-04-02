@@ -136,36 +136,6 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         this.mainExecutorService.schedule(() -> retrieve(epoch), 0, TimeUnit.MILLISECONDS);
     }
 
-    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
-        try {
-            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG)) {
-                int numPartitions = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
-                if (numPartitions <= 0) {
-                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG, numPartitions);
-                }
-            }
-            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT)) {
-                long pollTimeout = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
-                if (pollTimeout < 0) {
-                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT, pollTimeout);
-                }
-            }
-        } catch (ConfigException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new ConfigException("Reconfiguration validation error " + e.getMessage());
-        }
-    }
-
-    public void reconfigure(Map<String, Object> configs) {
-        if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG)) {
-            this.metricReporterTopicPartition = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
-        }
-        if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT)) {
-            this.consumerPollTimeout = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
-        }
-    }
-
     protected KafkaConsumer<String, AutoBalancerMetrics> createConsumer(String bootstrapServer) {
         long randomToken = RANDOM.nextLong();
         Properties consumerProps = new Properties();

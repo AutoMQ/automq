@@ -86,8 +86,6 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
 
     public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE,
-            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG,
-            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS,
