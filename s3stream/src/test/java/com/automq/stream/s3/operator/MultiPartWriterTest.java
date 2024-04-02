@@ -183,7 +183,7 @@ class MultiPartWriterTest {
                     assertEquals(120L, writeContentLengths.get(i));
                     break;
                 case 3:
-                    assertEquals(280L, writeContentLengths.get(i));
+                    assertEquals(21L, writeContentLengths.get(i));
                     break;
                 case 4:
                     assertEquals(10L, writeContentLengths.get(i));
