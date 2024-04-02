@@ -19,7 +19,7 @@ package kafka.server
 
 import com.automq.stream.s3.ByteBufAllocPolicy
 import io.netty.util.internal.PlatformDependent
-import kafka.autobalancer.config.AutoBalancerControllerConfig
+import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 
 import java.{lang, util}
 import java.util.concurrent.TimeUnit
@@ -495,7 +495,6 @@ object KafkaConfig {
   val S3SpanScheduledDelayMsProp = "s3.telemetry.tracer.span.scheduled.delay.ms"
   val S3SpanMaxQueueSizeProp = "s3.telemetry.tracer.span.max.queue.size"
   val S3SpanMaxBatchSizeProp = "s3.telemetry.tracer.span.max.batch.size"
-  val EnableAutoBalancerProp = AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE
 
   val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
   val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
@@ -546,7 +545,6 @@ object KafkaConfig {
   val S3SpanScheduledDelayMsDoc = "The delay in milliseconds to export queued spans"
   val S3SpanMaxQueueSizeDoc = "The max number of spans that can be queued before dropped"
   val S3SpanMaxBatchSizeDoc = "The max number of spans that can be exported in a single batch"
-  val EnableAutoBalancerDoc = AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE_DOC;
   // AutoMQ inject end
 
 
@@ -1447,7 +1445,6 @@ object KafkaConfig {
       .define(S3SpanScheduledDelayMsProp, INT, Defaults.S3_SPAN_SCHEDULED_DELAY_MS, MEDIUM, S3SpanScheduledDelayMsDoc)
       .define(S3SpanMaxQueueSizeProp, INT, Defaults.S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, S3SpanMaxQueueSizeDoc)
       .define(S3SpanMaxBatchSizeProp, INT, Defaults.S3_SPAN_MAX_BATCH_SIZE, MEDIUM, S3SpanMaxBatchSizeDoc)
-      .define(EnableAutoBalancerProp, BOOLEAN, false, HIGH, EnableAutoBalancerDoc)
       // AutoMQ inject end
 
       /** Internal Configurations **/
@@ -1459,6 +1456,8 @@ object KafkaConfig {
 
   /** ********* Remote Log Management Configuration *********/
   RemoteLogManagerConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
+  AutoBalancerControllerConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
+  AutoBalancerMetricsReporterConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
 
   def configNames: Seq[String] = configDef.names.asScala.toBuffer.sorted
   private[server] def defaultValues: Map[String, _] = configDef.defaultValues.asScala

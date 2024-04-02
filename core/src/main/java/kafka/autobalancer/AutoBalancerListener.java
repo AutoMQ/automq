@@ -26,6 +26,7 @@ import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.queue.KafkaEventQueue;
 import org.apache.kafka.raft.Batch;
 import org.apache.kafka.raft.BatchReader;
@@ -45,11 +46,11 @@ public class AutoBalancerListener implements RaftClient.Listener<ApiMessageAndVe
     private final LoadRetriever loadRetriever;
     private final AnomalyDetector anomalyDetector;
 
-    public AutoBalancerListener(int nodeId, LogContext logContext, KafkaEventQueue queue, ClusterStatusListenerRegistry registry,
+    public AutoBalancerListener(int nodeId, Time time, ClusterStatusListenerRegistry registry,
                                 LoadRetriever loadRetriever, AnomalyDetector anomalyDetector) {
         this.nodeId = nodeId;
-        this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
-        this.queue = queue;
+        this.logger = new LogContext(String.format("[AutoBalancerListener id=%d] ", nodeId)).logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
+        this.queue = new KafkaEventQueue(time, new org.apache.kafka.common.utils.LogContext(), "auto-balancer-listener-");
         this.registry = registry;
         this.loadRetriever = loadRetriever;
         this.anomalyDetector = anomalyDetector;
@@ -138,18 +139,14 @@ public class AutoBalancerListener implements RaftClient.Listener<ApiMessageAndVe
                 return;
             }
             boolean isLeader = leader.isLeader(nodeId);
-            if (isLeader) {
-                this.anomalyDetector.resume();
-            } else {
-                this.anomalyDetector.pause();
-            }
+            this.anomalyDetector.onLeaderChanged(isLeader);
             this.loadRetriever.onLeaderChanged(isLeader);
         });
     }
 
     @Override
     public void beginShutdown() {
-        RaftClient.Listener.super.beginShutdown();
+        this.queue.beginShutdown("AutoBalancerListenerShutdown");
     }
 }
 

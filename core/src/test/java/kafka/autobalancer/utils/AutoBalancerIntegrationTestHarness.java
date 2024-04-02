@@ -20,7 +20,6 @@ package kafka.autobalancer.utils;
 import java.io.File;
 import java.util.Collections;
 import java.util.Map;
-import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.server.KafkaConfig;
@@ -35,7 +34,6 @@ import org.apache.kafka.test.TestUtils;
 
 
 public abstract class AutoBalancerIntegrationTestHarness {
-    protected static final String METRIC_TOPIC = AutoBalancerConfig.DEFAULT_AUTO_BALANCER_TOPIC;
     public static final String HOST = "localhost";
 
     protected KafkaClusterTestKit cluster = null;

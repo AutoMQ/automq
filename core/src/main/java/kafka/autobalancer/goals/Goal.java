@@ -15,9 +15,11 @@ import kafka.autobalancer.common.Action;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import org.apache.kafka.common.Configurable;
+import org.apache.kafka.common.config.ConfigException;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public interface Goal extends Configurable, Comparable<Goal> {
@@ -57,4 +59,6 @@ public interface Goal extends Configurable, Comparable<Goal> {
     default int compareTo(Goal other) {
         return Integer.compare(other.type().priority(), this.type().priority());
     }
+
+    void validateReconfiguration(Map<String, ?> configs) throws ConfigException;
 }

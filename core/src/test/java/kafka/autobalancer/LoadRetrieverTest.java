@@ -18,7 +18,6 @@
 package kafka.autobalancer;
 
 import kafka.autobalancer.common.Resource;
-import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter;
@@ -51,7 +50,6 @@ import java.util.Map;
 
 @Tag("S3Unit")
 public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness {
-    protected static final String METRIC_TOPIC = "AutoBalancerMetricsReporterTest";
 
     /**
      * Setup the unit test.
@@ -69,8 +67,6 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
     @Override
     protected Map<String, String> overridingNodeProps() {
         Map<String, String> props = new HashMap<>();
-        props.put(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
-        props.put(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG, "1");
         props.put(KafkaConfig.LogFlushIntervalMessagesProp(), "1");
         props.put(KafkaConfig.OffsetsTopicReplicationFactorProp(), "1");
         props.put(KafkaConfig.DefaultReplicationFactorProp(), "1");
@@ -92,17 +88,13 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
             return false;
         }
         TopicPartition testTp = new TopicPartition(TOPIC_0, 0);
-        TopicPartition metricTp = new TopicPartition(METRIC_TOPIC, 0);
         TopicPartitionReplica testReplica = snapshot.replica(brokerId, testTp);
-        TopicPartitionReplica metricReplica = snapshot.replica(brokerId, metricTp);
-        if (testReplica == null || metricReplica == null) {
+        if (testReplica == null) {
             return false;
         }
 
         return testReplica.load(Resource.NW_IN) != 0
-                && testReplica.load(Resource.NW_OUT) == 0
-                && metricReplica.load(Resource.NW_IN) != 0
-                && metricReplica.load(Resource.NW_OUT) != 0;
+                && testReplica.load(Resource.NW_OUT) == 0;
     }
 
     @Test
@@ -112,13 +104,13 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
         ClusterModel clusterModel = new ClusterModel();
         LoadRetriever loadRetriever = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
-        loadRetriever.start();
+        loadRetriever.run();
 
         Assertions.assertTimeout(Duration.ofMillis(15000), loadRetriever::shutdown);
 
         LoadRetriever loadRetriever2 = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
-        loadRetriever2.start();
+        loadRetriever2.run();
         BrokerServer broker = cluster.brokers().values().iterator().next();
         KafkaConfig brokerConfig = broker.config();
         EndPoint endpoint = brokerConfig.effectiveAdvertisedListeners().iterator().next();
@@ -137,13 +129,12 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
     @Test
     public void testConsume() throws InterruptedException {
         Map<String, Object> props = new HashMap<>();
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(props, false);
 
         RecordClusterModel clusterModel = new RecordClusterModel();
         LoadRetriever loadRetriever = new LoadRetriever(config,
                 cluster.controllers().values().iterator().next().controller(), clusterModel);
-        loadRetriever.start();
+        loadRetriever.run();
 
         BrokerServer broker = cluster.brokers().values().iterator().next();
         KafkaConfig brokerConfig = broker.config();
@@ -160,7 +151,6 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
                 .setInControlledShutdown(false);
         clusterModel.onBrokerRegister(record);
         Uuid testTopicId = Uuid.randomUuid();
-        Uuid metricTopicId = Uuid.randomUuid();
         clusterModel.onTopicCreate(new TopicRecord()
                 .setName(TOPIC_0)
                 .setTopicId(testTopicId));
@@ -168,14 +158,9 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
                 .setLeader(brokerConfig.brokerId())
                 .setTopicId(testTopicId)
                 .setPartitionId(0));
-        clusterModel.onTopicCreate(new TopicRecord()
-                .setName(METRIC_TOPIC)
-                .setTopicId(metricTopicId));
-        clusterModel.onPartitionCreate(new PartitionRecord()
-                .setLeader(brokerConfig.brokerId())
-                .setTopicId(metricTopicId)
-                .setPartitionId(0));
         loadRetriever.onBrokerRegister(record);
+
+        System.out.printf("Waiting for consume record%n");
 
         TestUtils.waitForCondition(() -> checkConsumeRecord(clusterModel, brokerConfig.brokerId(), 3000L),
                 15000L, 1000L, () -> "cluster model failed to reach expected status");
@@ -191,9 +176,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
             }
             TopicPartitionReplica testReplica = snapshot.replica(brokerConfig.brokerId(),
                     new TopicPartition(TOPIC_0, 0));
-            TopicPartitionReplica metricReplica = snapshot.replica(brokerConfig.brokerId(),
-                    new TopicPartition(METRIC_TOPIC, 0));
-            return testReplica == null && metricReplica == null;
+            return testReplica == null;
         });
 
         clusterModel.onBrokerRegister(record);

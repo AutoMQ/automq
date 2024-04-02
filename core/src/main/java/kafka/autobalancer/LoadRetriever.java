@@ -12,16 +12,15 @@
 package kafka.autobalancer;
 
 import com.automq.stream.utils.LogContext;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.common.types.MetricTypes;
-import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import kafka.autobalancer.model.ClusterModel;
+import kafka.autobalancer.services.AbstractResumableService;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -31,6 +30,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
 import org.apache.kafka.common.message.CreatePartitionsResponseData;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
@@ -44,7 +44,6 @@ import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
-import org.slf4j.Logger;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -64,15 +63,12 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class LoadRetriever implements BrokerStatusListener {
+public class LoadRetriever extends AbstractResumableService implements BrokerStatusListener {
     public static final Random RANDOM = new Random();
-    protected final Logger logger;
     private final Map<Integer, BrokerEndpoints> bootstrapServerMap;
-    private final String metricReporterTopic;
-    private final int metricReporterTopicPartition;
+    private volatile int metricReporterTopicPartition;
     private final long metricReporterTopicRetentionTime;
-    private final String metricReporterTopicCleanupPolicy;
-    protected final long consumerPollTimeout;
+    protected volatile long consumerPollTimeout;
     protected final String consumerClientIdPrefix;
     protected final long consumerRetryBackOffMs;
     protected final ClusterModel clusterModel;
@@ -85,17 +81,13 @@ public class LoadRetriever implements BrokerStatusListener {
     private volatile boolean leaderEpochInitialized;
     private volatile boolean isLeader;
     private volatile Consumer<String, AutoBalancerMetrics> consumer;
-    private volatile boolean shutdown;
 
     public LoadRetriever(AutoBalancerControllerConfig config, Controller controller, ClusterModel clusterModel) {
         this(config, controller, clusterModel, null);
     }
 
     public LoadRetriever(AutoBalancerControllerConfig config, Controller controller, ClusterModel clusterModel, LogContext logContext) {
-        if (logContext == null) {
-            logContext = new LogContext("[LoadRetriever] ");
-        }
-        this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
+        super(logContext);
         this.controller = controller;
         this.clusterModel = clusterModel;
         this.bootstrapServerMap = new HashMap<>();
@@ -104,23 +96,24 @@ public class LoadRetriever implements BrokerStatusListener {
         this.cond = lock.newCondition();
         this.mainExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-main"));
         leaderEpochInitialized = false;
-        metricReporterTopic = config.getString(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG);
-        metricReporterTopicPartition = config.getInt(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
-        metricReporterTopicRetentionTime = config.getLong(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_RETENTION_MS_CONFIG);
-        metricReporterTopicCleanupPolicy = config.getString(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_CLEANUP_POLICY);
+        metricReporterTopicPartition = config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
+        metricReporterTopicRetentionTime = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_RETENTION_MS_CONFIG);
         consumerPollTimeout = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
         consumerClientIdPrefix = config.getString(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX);
         consumerRetryBackOffMs = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS);
     }
 
-    public void start() {
-        this.shutdown = false;
-        this.mainExecutorService.schedule(this::retrieve, 0, TimeUnit.MILLISECONDS);
-        logger.info("Started");
+    @Override
+    protected void doRun() {
+        // seek to the latest offset if consumer exists
+        if (this.consumer != null) {
+            this.consumer.seekToEnd(Collections.emptyList());
+        }
+        scheduleRetrieve(this.epoch.get());
     }
 
-    public void shutdown() {
-        this.shutdown = true;
+    @Override
+    protected void doShutdown() {
         this.mainExecutorService.shutdown();
         try {
             if (!mainExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -129,15 +122,16 @@ public class LoadRetriever implements BrokerStatusListener {
         } catch (InterruptedException ignored) {
 
         }
+        shutdownConsumer();
+    }
 
-        if (this.consumer != null) {
-            try {
-                this.consumer.close(Duration.ofMillis(5000));
-            } catch (Exception e) {
-                logger.error("Exception when close consumer: {}", e.getMessage());
-            }
-        }
-        logger.info("Shutdown completed");
+    @Override
+    protected void doPause() {
+
+    }
+
+    private void scheduleRetrieve(int epoch) {
+        this.mainExecutorService.schedule(() -> retrieve(epoch), 0, TimeUnit.MILLISECONDS);
     }
 
     protected KafkaConsumer<String, AutoBalancerMetrics> createConsumer(String bootstrapServer) {
@@ -274,41 +268,53 @@ public class LoadRetriever implements BrokerStatusListener {
         return String.join(",", endpoints);
     }
 
-    private void checkAndCreateConsumer() {
+    private void checkAndCreateConsumer(int epoch) {
         String bootstrapServer;
         this.lock.lock();
         try {
+            if (!isRunnable(epoch)) {
+                return;
+            }
             if (!hasAvailableBrokerInUse()) {
                 logger.info("No available broker in use, try to close current consumer");
                 shutdownConsumer();
-                while (!shutdown && !hasAvailableBroker()) {
+                while (isRunnable(epoch) && !hasAvailableBroker()) {
                     try {
                         this.cond.await();
                     } catch (InterruptedException ignored) {
 
                     }
                 }
-                if (this.shutdown) {
+                if (!isRunnable(epoch)) {
                     return;
                 }
             }
             bootstrapServer = buildBootstrapServer();
+            if (this.consumer == null && !bootstrapServer.isEmpty()) {
+                //TODO: fetch metadata from controller
+                this.consumer = createConsumer(bootstrapServer);
+                logger.info("Created consumer on {}", bootstrapServer);
+            }
         } finally {
             lock.unlock();
-        }
-        if (this.consumer == null && !bootstrapServer.isEmpty()) {
-            //TODO: fetch metadata from controller
-            this.consumer = createConsumer(bootstrapServer);
-            logger.info("Created consumer on {}", bootstrapServer);
         }
     }
 
     private void shutdownConsumer() {
-        if (this.consumer != null) {
-            this.consumer.close(Duration.ofSeconds(5));
-            this.consumer = null;
-            this.currentAssignment.clear();
-            logger.info("Consumer closed");
+        this.lock.lock();
+        try {
+            if (this.consumer != null) {
+                try {
+                    this.consumer.close(Duration.ofSeconds(5));
+                } catch (Exception e) {
+                    logger.error("Exception when close consumer: {}", e.getMessage());
+                }
+                this.consumer = null;
+                this.currentAssignment.clear();
+                logger.info("Consumer closed");
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -325,10 +331,10 @@ public class LoadRetriever implements BrokerStatusListener {
                 .setValue(Long.toString(metricReporterTopicRetentionTime)));
         configCollection.add(new CreateTopicsRequestData.CreateableTopicConfig()
                 .setName(TopicConfig.CLEANUP_POLICY_CONFIG)
-                .setValue(metricReporterTopicCleanupPolicy));
+                .setValue(TopicConfig.CLEANUP_POLICY_DELETE));
 
         topicCollection.add(new CreateTopicsRequestData.CreatableTopic()
-                .setName(metricReporterTopic)
+                .setName(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME)
                 .setNumPartitions(metricReporterTopicPartition)
                 .setReplicationFactor((short) 1)
                 .setConfigs(configCollection));
@@ -340,14 +346,14 @@ public class LoadRetriever implements BrokerStatusListener {
                     request,
                     Collections.emptySet());
             CreateTopicsResponseData rsp = future.get();
-            CreateTopicsResponseData.CreatableTopicResult result = rsp.topics().find(metricReporterTopic);
+            CreateTopicsResponseData.CreatableTopicResult result = rsp.topics().find(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
             if (result.errorCode() == Errors.NONE.code()) {
-                logger.info("Create metrics reporter topic {} succeed", metricReporterTopic);
+                logger.info("Create metrics reporter topic {} succeed", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
             } else if (result.errorCode() != Errors.NONE.code() && result.errorCode() != Errors.TOPIC_ALREADY_EXISTS.code()) {
-                logger.warn("Create metrics reporter topic {} failed: {}", metricReporterTopic, result.errorMessage());
+                logger.warn("Create metrics reporter topic {} failed: {}", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, result.errorMessage());
             }
         } catch (Exception e) {
-            logger.error("Create metrics reporter topic {} exception", metricReporterTopic, e);
+            logger.error("Create metrics reporter topic {} exception", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, e);
         }
     }
 
@@ -363,7 +369,7 @@ public class LoadRetriever implements BrokerStatusListener {
         }
 
         CreatePartitionsRequestData.CreatePartitionsTopic topic = new CreatePartitionsRequestData.CreatePartitionsTopic()
-                .setName(metricReporterTopic)
+                .setName(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME)
                 .setCount(metricReporterTopicPartition)
                 .setAssignments(null);
         try {
@@ -373,14 +379,14 @@ public class LoadRetriever implements BrokerStatusListener {
             List<CreatePartitionsResponseData.CreatePartitionsTopicResult> result = future.get();
             for (CreatePartitionsResponseData.CreatePartitionsTopicResult r : result) {
                 if (r.errorCode() == Errors.NONE.code()) {
-                    logger.info("Create metrics reporter topic {} with {} partitions succeed", metricReporterTopic, metricReporterTopicPartition);
+                    logger.info("Create metrics reporter topic {} with {} partitions succeed", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, metricReporterTopicPartition);
                 } else {
-                    logger.warn("Create metrics reporter topic {} with {} partitions failed: {}", metricReporterTopic,
+                    logger.warn("Create metrics reporter topic {} with {} partitions failed: {}", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME,
                             metricReporterTopicPartition, r.errorMessage());
                 }
             }
         } catch (Exception e) {
-            logger.error("Create metrics reporter topic {} with {} partitions exception", metricReporterTopic,
+            logger.error("Create metrics reporter topic {} with {} partitions exception", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME,
                     metricReporterTopicPartition, e);
         }
     }
@@ -393,11 +399,11 @@ public class LoadRetriever implements BrokerStatusListener {
         return hasAvailableBroker();
     }
 
-    public void retrieve() {
-        while (!shutdown) {
+    public void retrieve(int epoch) {
+        while (isRunnable(epoch)) {
             try {
-                checkAndCreateConsumer();
-                if (shutdown) {
+                checkAndCreateConsumer(epoch);
+                if (!isRunnable(epoch)) {
                     return;
                 }
                 TopicAction action = refreshAssignment();
@@ -408,7 +414,7 @@ public class LoadRetriever implements BrokerStatusListener {
                         createTopicPartitions();
                     }
                     shutdownConsumer();
-                    this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
+                    this.mainExecutorService.schedule(() -> retrieve(epoch), 1, TimeUnit.SECONDS);
                     return;
                 }
                 ConsumerRecords<String, AutoBalancerMetrics> records = this.consumer.poll(Duration.ofMillis(consumerPollTimeout));
@@ -422,15 +428,15 @@ public class LoadRetriever implements BrokerStatusListener {
                     updateClusterModel(record.value());
                 }
                 if (logger.isDebugEnabled()) {
-                    logger.debug("Finished consuming {} metrics from {}.", records.count(), metricReporterTopic);
+                    logger.debug("Finished consuming {} metrics from {}.", records.count(), Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
                 }
             } catch (InvalidTopicException e) {
                 createTopic();
-                this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
+                this.mainExecutorService.schedule(() -> retrieve(epoch), 1, TimeUnit.SECONDS);
                 return;
             } catch (Exception e) {
                 logger.error("Consumer poll error", e);
-                this.mainExecutorService.schedule(this::retrieve, 1, TimeUnit.SECONDS);
+                this.mainExecutorService.schedule(() -> retrieve(epoch), 1, TimeUnit.SECONDS);
                 return;
             } catch (Throwable t) {
                 logger.error("Consumer poll error and exit retrieve loop", t);
@@ -440,9 +446,9 @@ public class LoadRetriever implements BrokerStatusListener {
     }
 
     private TopicAction refreshAssignment() {
-        List<PartitionInfo> partitionInfos = this.consumer.partitionsFor(metricReporterTopic);
+        List<PartitionInfo> partitionInfos = this.consumer.partitionsFor(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
         if (partitionInfos.isEmpty()) {
-            logger.info("No partitions found for topic {}, try to create topic", metricReporterTopic);
+            logger.info("No partitions found for topic {}, try to create topic", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
             return TopicAction.CREATE;
         }
         if (partitionInfos.size() != currentAssignment.size()) {
@@ -452,7 +458,7 @@ public class LoadRetriever implements BrokerStatusListener {
                 currentAssignment.add(topicPartition);
             }
             this.consumer.assign(currentAssignment);
-            logger.info("Partition changed for {}, assigned to {} partitions", this.metricReporterTopic, currentAssignment.size());
+            logger.info("Partition changed for {}, assigned to {} partitions", Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, currentAssignment.size());
         }
         if (partitionInfos.size() < metricReporterTopicPartition) {
             logger.info("Partition num {} less than expected {}, try to alter partition number", partitionInfos.size(), metricReporterTopicPartition);

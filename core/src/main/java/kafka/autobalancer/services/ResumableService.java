@@ -9,9 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.autobalancer;
+package kafka.autobalancer.services;
 
-public interface AutoBalancerService {
-    void start();
+public interface ResumableService {
+    void run();
     void shutdown();
+    void pause();
 }

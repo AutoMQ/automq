@@ -12,8 +12,10 @@
 package kafka.autobalancer.executor;
 
 import kafka.autobalancer.common.Action;
+import org.apache.kafka.common.config.ConfigException;
 
 import java.util.List;
+import java.util.Map;
 
 public interface ActionExecutorService {
 
@@ -24,4 +26,8 @@ public interface ActionExecutorService {
     void execute(Action action);
 
     void execute(List<Action> actions);
+
+    void validateReconfiguration(Map<String, Object> configs) throws ConfigException;
+
+    void reconfigure(Map<String, Object> configs);
 }

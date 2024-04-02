@@ -18,8 +18,8 @@
 package kafka.server
 
 import com.automq.stream.s3.metadata.ObjectUtils
-import kafka.autobalancer.config.AutoBalancerControllerConfig
-import kafka.autobalancer.{AutoBalancerManager, AutoBalancerService}
+import kafka.autobalancer.AutoBalancerManager
+import kafka.autobalancer.services.AutoBalancerService
 import kafka.log.stream.s3.ConfigUtils
 import kafka.metrics.LinuxIoMetricsCollector
 import kafka.migration.MigrationPropagator
@@ -133,10 +133,10 @@ class ControllerServer(
   @volatile var registrationManager: ControllerRegistrationManager = _
   @volatile var registrationChannelManager: NodeToControllerChannelManager = _
 
-  var autoBalancerManager: Option[AutoBalancerService] = None
+  var autoBalancerManager: AutoBalancerService = _
 
   protected def buildAutoBalancerManager: AutoBalancerService = {
-    new AutoBalancerManager(time, config, controller, raftManager.client)
+    new AutoBalancerManager(time, config.props, controller, raftManager.client)
   }
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -361,12 +361,7 @@ class ControllerServer(
         DataPlaneAcceptor.ThreadPrefix,
         "controller")
 
-      autoBalancerManager = if (config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
-        Some(buildAutoBalancerManager)
-      } else {
-        None
-      }
-      autoBalancerManager.foreach(_.start())
+      autoBalancerManager = buildAutoBalancerManager
 
       // Set up the metadata cache publisher.
       metadataPublishers.add(metadataCachePublisher)
@@ -506,7 +501,10 @@ class ControllerServer(
       // Ensure that we're not the Raft leader prior to shutting down our socket server, for a
       // smoother transition.
       sharedServer.ensureNotRaftLeader()
-      autoBalancerManager.foreach(_.shutdown())
+      if (autoBalancerManager != null) {
+        autoBalancerManager.shutdown()
+      }
+
       incarnationId = null
       if (registrationManager != null) {
         CoreUtils.swallow(registrationManager.close(), this)
