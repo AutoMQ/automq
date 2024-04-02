@@ -354,6 +354,7 @@ class RequestChannel(val queueSize: Int,
   private val processors = new ConcurrentHashMap[Int, Processor]()
   val requestQueueSizeMetricName = metricNamePrefix.concat(RequestQueueSizeMetric)
   val responseQueueSizeMetricName = metricNamePrefix.concat(ResponseQueueSizeMetric)
+  var notifiedShutdown = false
 
   newGauge(requestQueueSizeMetricName, () => {
     if (multiRequestQueue.size() != 0) {
@@ -502,8 +503,14 @@ class RequestChannel(val queueSize: Int,
   }
 
   def sendShutdownRequest(): Unit = {
-    requestQueue.put(ShutdownRequest)
-    multiRequestQueue.forEach(q => q.put(ShutdownRequest))
+    if (multiRequestQueue.size() != 0) {
+      if (!notifiedShutdown) {
+        notifiedShutdown = true
+        multiRequestQueue.forEach(q => q.put(ShutdownRequest))
+      }
+    } else {
+      requestQueue.put(ShutdownRequest)
+    }
   }
 
 }
