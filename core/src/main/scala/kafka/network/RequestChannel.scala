@@ -363,6 +363,7 @@ class RequestChannel(val queueSize: Int,
   private val responseQueueSizeMetricName = metricNamePrefix.concat(ResponseQueueSizeMetric)
   private val callbackQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
   private val multiCallbackQueue = new java.util.ArrayList[ArrayBlockingQueue[BaseRequest]]()
+  private var notifiedShutdown = false
 
   metricsGroup.newGauge(requestQueueSizeMetricName, () => {
     if (multiRequestQueue.size() != 0) {
@@ -544,8 +545,14 @@ class RequestChannel(val queueSize: Int,
   }
 
   def sendShutdownRequest(): Unit = {
-    requestQueue.put(ShutdownRequest)
-    multiRequestQueue.forEach(q => q.put(ShutdownRequest))
+    if (multiRequestQueue.size() != 0) {
+      if (!notifiedShutdown) {
+        notifiedShutdown = true
+        multiRequestQueue.forEach(q => q.put(ShutdownRequest))
+      }
+    } else {
+      requestQueue.put(ShutdownRequest)
+    }
   }
 
   def sendCallbackRequest(request: CallbackRequest): Unit = {
