@@ -211,8 +211,9 @@ public class AnomalyDetectorTest {
                 .build();
 
         TimerUtil timerUtil = new TimerUtil();
+        detector.onLeaderChanged(true);
         detector.start();
-        detector.detect();
+        detector.detect0();
         System.out.printf("Detect cost: %d ms, %d actions detected%n", timerUtil.elapsedAs(TimeUnit.MILLISECONDS), actionList.size());
         Assertions.assertFalse(actionList.isEmpty());
 

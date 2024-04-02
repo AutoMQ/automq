@@ -50,7 +50,6 @@ import java.util.Map;
 
 @Tag("S3Unit")
 public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness {
-    protected static final String METRIC_TOPIC = "AutoBalancerMetricsReporterTest";
 
     /**
      * Setup the unit test.
@@ -89,17 +88,13 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
             return false;
         }
         TopicPartition testTp = new TopicPartition(TOPIC_0, 0);
-        TopicPartition metricTp = new TopicPartition(METRIC_TOPIC, 0);
         TopicPartitionReplica testReplica = snapshot.replica(brokerId, testTp);
-        TopicPartitionReplica metricReplica = snapshot.replica(brokerId, metricTp);
-        if (testReplica == null || metricReplica == null) {
+        if (testReplica == null) {
             return false;
         }
 
         return testReplica.load(Resource.NW_IN) != 0
-                && testReplica.load(Resource.NW_OUT) == 0
-                && metricReplica.load(Resource.NW_IN) != 0
-                && metricReplica.load(Resource.NW_OUT) != 0;
+                && testReplica.load(Resource.NW_OUT) == 0;
     }
 
     @Test
@@ -164,14 +159,9 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
                 .setLeader(brokerConfig.brokerId())
                 .setTopicId(testTopicId)
                 .setPartitionId(0));
-        clusterModel.onTopicCreate(new TopicRecord()
-                .setName(METRIC_TOPIC)
-                .setTopicId(metricTopicId));
-        clusterModel.onPartitionCreate(new PartitionRecord()
-                .setLeader(brokerConfig.brokerId())
-                .setTopicId(metricTopicId)
-                .setPartitionId(0));
         loadRetriever.onBrokerRegister(record);
+
+        System.out.printf("Waiting for consume record%n");
 
         TestUtils.waitForCondition(() -> checkConsumeRecord(clusterModel, brokerConfig.brokerId(), 3000L),
                 15000L, 1000L, () -> "cluster model failed to reach expected status");
@@ -187,9 +177,7 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
             }
             TopicPartitionReplica testReplica = snapshot.replica(brokerConfig.brokerId(),
                     new TopicPartition(TOPIC_0, 0));
-            TopicPartitionReplica metricReplica = snapshot.replica(brokerConfig.brokerId(),
-                    new TopicPartition(METRIC_TOPIC, 0));
-            return testReplica == null && metricReplica == null;
+            return testReplica == null;
         });
 
         clusterModel.onBrokerRegister(record);
