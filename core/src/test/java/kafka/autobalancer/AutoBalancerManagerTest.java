@@ -17,7 +17,6 @@
 
 package kafka.autobalancer;
 
-import kafka.autobalancer.config.AutoBalancerConfig;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.goals.NetworkInUsageDistributionGoal;
@@ -32,10 +31,14 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.TopicPartitionInfo;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.utils.SystemTime;
+import org.apache.kafka.controller.QuorumController;
+import org.apache.kafka.raft.KafkaRaftClient;
 import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -43,6 +46,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -71,8 +75,6 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
     @Override
     protected Map<String, String> overridingNodeProps() {
         Map<String, String> props = new HashMap<>();
-        props.put(AutoBalancerConfig.AUTO_BALANCER_TOPIC_CONFIG, METRIC_TOPIC);
-        props.put(AutoBalancerConfig.AUTO_BALANCER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG, "1");
         props.put(KafkaConfig.LogFlushIntervalMessagesProp(), "1");
         props.put(KafkaConfig.OffsetsTopicReplicationFactorProp(), "1");
         props.put(KafkaConfig.DefaultReplicationFactorProp(), "1");
@@ -101,8 +103,7 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION, "0.2");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, "10000");
         props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS, "10000");
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_LOAD_AGGREGATION, "true");
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS, "__consumer_offsets," + METRIC_TOPIC);
+        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS, "__consumer_offsets," + Topic.AUTO_BALANCER_METRICS_TOPIC_NAME);
 
         return props;
     }
@@ -128,6 +129,19 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
         return consumerProps;
+    }
+
+    @Test
+    public void testReconfigure() {
+        AutoBalancerManager autoBalancerManager = new AutoBalancerManager(new SystemTime(), Map.of(
+                AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, false
+        ), Mockito.mock(QuorumController.class), Mockito.mock(KafkaRaftClient.class));
+        autoBalancerManager.init();
+        Assertions.assertFalse(autoBalancerManager.isRunning());
+        Assertions.assertEquals(0, autoBalancerManager.currentEpoch());
+        autoBalancerManager.reconfigure(Map.of(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true"));
+        Assertions.assertTrue(autoBalancerManager.isRunning());
+        Assertions.assertEquals(1, autoBalancerManager.currentEpoch());
     }
 
     @Disabled

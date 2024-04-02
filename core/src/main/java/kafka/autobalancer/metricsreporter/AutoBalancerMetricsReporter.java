@@ -31,9 +31,12 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsReporter;
+import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.common.utils.KafkaThread;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.slf4j.Logger;
@@ -44,6 +47,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -56,34 +60,32 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoBalancerMetricsReporter.class);
     private final Map<MetricName, Metric> interestedMetrics = new ConcurrentHashMap<>();
     private final MetricsRegistry metricsRegistry = KafkaYammerMetrics.defaultRegistry();
-    private YammerMetricProcessor yammerMetricProcessor;
+    protected YammerMetricProcessor yammerMetricProcessor;
     private KafkaThread metricsReporterRunner;
     private KafkaProducer<String, AutoBalancerMetrics> producer;
-    private String autoBalancerMetricsTopic;
-    private long reportingIntervalMs;
-    private int brokerId;
-    private String brokerRack;
+    private volatile long reportingIntervalMs;
+    protected int brokerId;
+    protected String brokerRack;
     private long lastReportingTime = System.currentTimeMillis();
     private int numMetricSendFailure = 0;
     private volatile boolean shutdown = false;
     private int metricsReporterCreateRetries;
     private long lastErrorReportTime = 0;
 
-    static String getBootstrapServers(Map<String, ?> configs) {
-        Object port = configs.get("port");
+    private String getBootstrapServers(Map<String, ?> configs) {
         String listeners = String.valueOf(configs.get(KafkaConfig.ListenersProp()));
         if (!"null".equals(listeners) && !listeners.isEmpty()) {
             // See https://kafka.apache.org/documentation/#listeners for possible responses. If multiple listeners are configured, this function
             // picks the first listener in the list of listeners. Hence, users of this config must adjust their order accordingly.
             String firstListener = listeners.split("\\s*,\\s*")[0];
             String[] protocolHostPort = firstListener.split(":");
-            // Use port of listener only if no explicit config specified for KafkaConfig.PortProp().
-            String portToUse = port == null ? protocolHostPort[protocolHostPort.length - 1] : String.valueOf(port);
+            String portToUse = protocolHostPort[protocolHostPort.length - 1];
             // Use host of listener if one is specified.
-            return ((protocolHostPort[1].length() == 2) ? DEFAULT_BOOTSTRAP_SERVERS_HOST : protocolHostPort[1].substring(2)) + ":" + portToUse;
+            return ((protocolHostPort[1].length() == 2) ? DEFAULT_BOOTSTRAP_SERVERS_HOST
+                    : protocolHostPort[1].substring(2)) + ":" + portToUse;
         }
 
-        return DEFAULT_BOOTSTRAP_SERVERS_HOST + ":" + (port == null ? DEFAULT_BOOTSTRAP_SERVERS_PORT : port);
+        return DEFAULT_BOOTSTRAP_SERVERS_HOST + ":" + DEFAULT_BOOTSTRAP_SERVERS_PORT;
     }
 
     @Override
@@ -137,6 +139,35 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     }
 
     @Override
+    public Set<String> reconfigurableConfigs() {
+        return AutoBalancerMetricsReporterConfig.RECONFIGURABLE_CONFIGS;
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
+        Map<String, Object> objectConfigs = new HashMap<>(configs);
+        try {
+            if (configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG)) {
+                long intervalMs = ConfigUtils.getLong(objectConfigs, AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG);
+                if (intervalMs <= 0) {
+                    throw new ConfigException(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG, intervalMs);
+                }
+            }
+        } catch (Exception e) {
+            throw new ConfigException("Reconfiguration validation error " + e.getMessage());
+        }
+
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        Map<String, Object> objectConfigs = new HashMap<>(configs);
+        if (configs.containsKey(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG)) {
+            this.reportingIntervalMs = ConfigUtils.getLong(objectConfigs, AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG);
+        }
+    }
+
+    @Override
     public void close() {
         LOGGER.info("Closing Auto Balancer metrics reporter, id={}.", brokerId);
         shutdown = true;
@@ -155,7 +186,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
         Properties producerProps = AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs);
 
-        //Add BootstrapServers if not set
+        // Add BootstrapServers if not set
         if (!producerProps.containsKey(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG)) {
             String bootstrapServers = getBootstrapServers(configs);
             producerProps.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -163,7 +194,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
                     AutoBalancerMetricsReporterConfig.config(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG));
         }
 
-        //Add SecurityProtocol if not set
+        // Add SecurityProtocol if not set
         if (!producerProps.containsKey(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG)) {
             String securityProtocol = "PLAINTEXT";
             producerProps.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, securityProtocol);
@@ -181,7 +212,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         setIfAbsent(producerProps, ProducerConfig.BATCH_SIZE_CONFIG,
                 reporterConfig.getInt(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_BATCH_SIZE_CONFIG).toString());
         setIfAbsent(producerProps, ProducerConfig.RETRIES_CONFIG, "5");
-        setIfAbsent(producerProps, ProducerConfig.COMPRESSION_TYPE_CONFIG, "gzip");
+        setIfAbsent(producerProps, ProducerConfig.COMPRESSION_TYPE_CONFIG, CompressionType.GZIP.toString());
         setIfAbsent(producerProps, ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         setIfAbsent(producerProps, ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         setIfAbsent(producerProps, ProducerConfig.ACKS_CONFIG, "all");
@@ -200,7 +231,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
             brokerRack = "";
         }
 
-        autoBalancerMetricsTopic = reporterConfig.getString(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_TOPIC_CONFIG);
         reportingIntervalMs = reporterConfig.getLong(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG);
 
         LOGGER.info("AutoBalancerMetricsReporter configuration finished");
@@ -287,7 +317,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
      */
     public void sendAutoBalancerMetric(AutoBalancerMetrics ccm) {
         ProducerRecord<String, AutoBalancerMetrics> producerRecord =
-                new ProducerRecord<>(autoBalancerMetricsTopic, null, ccm.time(), ccm.key(), ccm);
+                new ProducerRecord<>(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, null, ccm.time(), ccm.key(), ccm);
         LOGGER.debug("Sending auto balancer metric {}.", ccm);
         producer.send(producerRecord, (recordMetadata, e) -> {
             if (e != null) {
@@ -304,7 +334,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         LOGGER.debug("Reporting metrics.");
 
         YammerMetricProcessor.Context context = new YammerMetricProcessor.Context(now, brokerId, brokerRack, reportingIntervalMs);
-        processYammerMetrics(context);
+        processMetrics(context);
         for (Map.Entry<String, AutoBalancerMetrics> entry : context.getMetricMap().entrySet()) {
             sendAutoBalancerMetric(entry.getValue());
         }
@@ -312,15 +342,19 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         LOGGER.debug("Finished reporting metrics, total metrics size: {}, merged size: {}.", interestedMetrics.size(), context.getMetricMap().size());
     }
 
-    private void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {
+    protected void processMetrics(YammerMetricProcessor.Context context) throws Exception {
+        processYammerMetrics(context);
+        addMandatoryMetrics(context);
+    }
+
+    protected void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {
         for (Map.Entry<MetricName, Metric> entry : interestedMetrics.entrySet()) {
             LOGGER.trace("Processing yammer metric {}, scope = {}", entry.getKey(), entry.getKey().getScope());
             entry.getValue().processWith(yammerMetricProcessor, entry.getKey(), context);
         }
-        addMandatoryPartitionMetrics(context);
     }
 
-    private void addMandatoryPartitionMetrics(YammerMetricProcessor.Context context) {
+    private void addMandatoryMetrics(YammerMetricProcessor.Context context) {
         for (AutoBalancerMetrics metrics : context.getMetricMap().values()) {
             if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC
                     && !MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics)) {
@@ -331,8 +365,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         }
     }
 
-    private void addMetricIfInterested(MetricName name, Metric metric) {
-        LOGGER.debug("Checking Yammer metric {}", name);
+    protected void addMetricIfInterested(MetricName name, Metric metric) {
         if (MetricsUtils.isInterested(name)) {
             LOGGER.debug("Added new metric {} to auto balancer metrics reporter.", name);
             interestedMetrics.put(name, metric);

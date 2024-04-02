@@ -28,8 +28,8 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     private final Comparator<BrokerUpdater.Broker> lowLoadComparator = Comparator.comparingDouble(b -> b.load(resource()));
 
     protected long maxNormalizedLoadBytes = 100 * 1024 * 1024;
-    protected long usageDetectThreshold;
-    protected double usageAvgDeviation;
+    protected volatile long usageDetectThreshold;
+    protected volatile double usageAvgDeviation;
     protected double usageAvg;
     protected double usageDistLowerBound;
     protected double usageDistUpperBound;
@@ -40,7 +40,7 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
         usageAvg = brokers.stream().mapToDouble(e -> e.load(resource)).sum() / brokers.size();
         usageDistLowerBound = Math.max(0, usageAvg * (1 - this.usageAvgDeviation));
         usageDistUpperBound = usageAvg * (1 + this.usageAvgDeviation);
-        LOGGER.info("{} expected dist bound: {}-{}", name(), usageDistLowerBound, usageDistUpperBound);
+        LOGGER.info("{} expected dist bound: {}", name(), String.format("%.2fKB/s-%.2fKB/s", usageDistLowerBound / 1024, usageDistUpperBound / 1024));
     }
 
     @Override
@@ -97,5 +97,13 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     @Override
     protected Comparator<BrokerUpdater.Broker> lowLoadComparator() {
         return lowLoadComparator;
+    }
+
+    public long getUsageDetectThreshold() {
+        return usageDetectThreshold;
+    }
+
+    public double getUsageAvgDeviation() {
+        return usageAvgDeviation;
     }
 }

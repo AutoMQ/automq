@@ -16,8 +16,11 @@ import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.utils.ConfigUtils;
 import org.slf4j.Logger;
 
+import java.util.HashMap;
 import java.util.Map;
 
 public class NetworkInUsageDistributionGoal extends AbstractResourceUsageDistributionGoal {
@@ -50,5 +53,27 @@ public class NetworkInUsageDistributionGoal extends AbstractResourceUsageDistrib
     @Override
     public GoalType type() {
         return GoalType.SOFT;
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
+        Map<String, Object> objectConfigs = new HashMap<>(configs);
+        try {
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD)) {
+                long detectThreshold = ConfigUtils.getLong(objectConfigs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD);
+                if (detectThreshold < 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, detectThreshold);
+                }
+            }
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION)) {
+                double avgDeviation = ConfigUtils.getDouble(objectConfigs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION);
+                if (avgDeviation < 0 || avgDeviation > 1) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, avgDeviation,
+                            "Value must be in between 0 and 1");
+                }
+            }
+        } catch (Exception e) {
+            throw new ConfigException("Reconfiguration validation error", e);
+        }
     }
 }

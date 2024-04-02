@@ -43,8 +43,6 @@ public abstract class AutoBalancerClientsIntegrationTestHarness extends AutoBala
     protected static final String TOPIC_0 = "TestTopic";
     protected static final String TOPIC_1 = "TestTopic1";
     protected static final String TOPIC_2 = "TestTopic2";
-    protected static final String TOPIC_3 = "TestTopic3";
-    protected static final String TOPIC_4 = "TestTopic4";
 
     protected AdminClient adminClient;
 
