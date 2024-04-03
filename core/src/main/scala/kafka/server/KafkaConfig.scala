@@ -439,15 +439,9 @@ object KafkaConfig {
   val PasswordEncoderIterationsProp = PasswordEncoderConfigs.ITERATIONS
 
   // AutoMQ inject start
-  /** ********* Elastic stream config *********/
   val ElasticStreamEnableProp = "elasticstream.enable"
   val ElasticStreamEndpointProp = "elasticstream.endpoint"
   val ElasticStreamNamespaceProp = "elasticstream.namespace"
-
-  val ElasticStreamEnableDoc = "Specifies whether to store events in elastic streams"
-  val ElasticStreamEndpointDoc = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
-    "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>"
-  val ElasticStreamNamespaceDoc = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream."
 
   val S3EndpointProp = "s3.endpoint"
   val S3RegionProp = "s3.region"
@@ -496,40 +490,52 @@ object KafkaConfig {
   val S3SpanMaxQueueSizeProp = "s3.telemetry.tracer.span.max.queue.size"
   val S3SpanMaxBatchSizeProp = "s3.telemetry.tracer.span.max.batch.size"
 
-  val S3EndpointDoc = "The S3 endpoint, ex. <code>https://s3.{region}.amazonaws.com</code>."
-  val S3RegionDoc = "The S3 region, ex. <code>us-east-1</code>."
-  val S3PathStyleDoc = "The S3 path style, ex. <code>true</code>."
-  val S3BucketDoc = "The S3 bucket, ex. <code>my-bucket</code>."
-  val S3WALPathDoc = "The S3 WAL path. It could be a block device like /dev/xxx or file path in file system"
-  val S3WALCapacityDoc = "The S3 WAL capacity. The value should be larger than s3.wal.cache.size cause of log storage format may not compact."
+
+  val ElasticStreamEnableDoc = "Whether to enable AutoMQ, it has to be set to true"
+  val ElasticStreamEndpointDoc = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
+    "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>"
+  val ElasticStreamNamespaceDoc = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream."
+  val S3EndpointDoc = "The object storage endpoint, ex. <code>https://s3.us-east-1.amazonaws.com</code>."
+  val S3RegionDoc = "The object storage region, ex. <code>us-east-1</code>."
+  val S3PathStyleDoc = "The object storage access path style. When using MinIO, it should be set to true."
+  val S3BucketDoc = "The object storage bucket."
+  val S3WALPathDoc = "The local WAL path for AutoMQ can be set to a block device path such as /dev/xxx or a filesystem file path." +
+    "It is recommended to use a block device for better write performance."
+  val S3WALCapacityDoc = "The size of the local WAL for AutoMQ. This determines the maximum amount of data that can be written to the buffer before data is uploaded to object storage." +
+    "A larger capacity can tolerate more write jitter in object storage."
   val S3WALThreadDoc = "The IO thread count for S3 WAL."
   val S3WALIOPSDoc = "The max iops for S3 WAL."
-  val S3WALCacheSizeDoc = "The S3 storage max WAL cache size. When WAL cache is full, storage will hang the request, \n" +
-    "until WAL cache is free by S3 WAL upload."
-  val S3WALUploadThresholdDoc = "The S3 WAL trigger upload (bytes) threshold."
+  val S3WALCacheSizeDoc = "The WAL (Write-Ahead Log) cache is a FIFO (First In, First Out) queue that contains data that has not yet been uploaded to object storage, as well as data that has been uploaded but not yet evicted from the cache." +
+    "When the data in the cache that has not been uploaded fills the entire capacity, the storage will backpressure subsequent requests until the data upload is completed." +
+    "It will be set to a reasonable value according to memory by default."
+  val S3WALUploadThresholdDoc = "The threshold at which WAL triggers upload to object storage. The configuration value needs to be less than s3.wal.cache.size. The larger the configuration value, the higher the data aggregation and the lower the cost of metadata storage."
   val S3StreamSplitSizeDoc = "The S3 stream object split size threshold when upload delta WAL or compact stream set object."
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
   val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
   val S3ObjectTaggingDoc = "Whether to tag S3 objects"
-  val S3BlockCacheSizeDoc = "The S3 block cache size in MiB."
+  val S3BlockCacheSizeDoc = "s3.block.cache.size is the size of the block cache. The block cache is used to cache cold data read from object storage. " +
+    "It is recommended to set this configuration item to be greater than 4MB * the concurrent cold reads per partition, to achieve better cold read performance."
   val S3StreamAllocatorPolicyDoc = "The S3 stream memory allocator policy, supported value: " + ByteBufAllocPolicy.values().mkString(", ") + ".\n" +
     "Please note that when configured to use DIRECT memory, it is necessary to modify the heap size (e.g., -Xmx) and the direct memory size (e.g., -XX:MaxDirectMemorySize) in the vm options." +
     " You can set them through the environment variable KAFKA_HEAP_OPTS."
-  val S3StreamObjectCompactionIntervalMinutesDoc = "The S3 stream object compaction task interval in minutes."
-  val S3StreamObjectCompactionMaxSizeBytesDoc = "The S3 stream object compaction max size in bytes."
+  val S3StreamObjectCompactionIntervalMinutesDoc = "Interval period for stream object compaction. The larger the interval, the lower the cost of API calls, but it increases the scale of metadata storage."
+  val S3StreamObjectCompactionMaxSizeBytesDoc = "The maximum size of the object that Stream object compaction allows to synthesize. The larger this value, the higher the cost of API calls, but the smaller the scale of metadata storage."
   val S3ControllerRequestRetryMaxCountDoc = "The S3 controller request retry max count."
   val S3ControllerRequestRetryBaseDelayMsDoc = "The S3 controller request retry base delay in milliseconds."
-  val S3StreamSetObjectCompactionIntervalDoc = "The execution interval of stream set object compaction in minutes."
-  val S3StreamSetObjectCompactionCacheSizeDoc = "The stream set object compaction cache size in Bytes."
-  val S3StreamSetObjectCompactionStreamSplitSizeDoc = "The stream set object compaction stream split size threshold in Bytes."
+  val S3StreamSetObjectCompactionIntervalDoc = "Set the interval for Stream object compaction. The smaller this value, the smaller the scale of metadata storage, and the earlier the data can become compact. " +
+    "However, the number of compactions that the final generated stream object goes through will increase."
+  val S3StreamSetObjectCompactionCacheSizeDoc = "The size of memory is available during the Stream object compaction process. The larger this value, the lower the cost of API calls."
+  val S3StreamSetObjectCompactionStreamSplitSizeDoc = "During the Stream object compaction process, if the amount of data in a single stream exceeds this threshold, the data of this stream will be directly split and written into a single stream object. " +
+    "The smaller this value, the earlier the data can be split from the stream set object, the lower the subsequent API call cost for stream object compaction, but the higher the API call cost for splitting."
   val S3StreamSetObjectCompactionForceSplitMinutesDoc = "The stream set object compaction force split period in minutes."
-  val S3StreamSetObjectCompactionMaxObjectNumDoc = "The maximum num of stream set objects to be compact at one time"
+  val S3StreamSetObjectCompactionMaxObjectNumDoc = "The maximum number of stream set objects to be compact at one time."
   val S3MaxStreamNumPerStreamSetObjectDoc = "The maximum number of streams allowed in single stream set object"
   val S3MaxStreamObjectNumPerCommitDoc = "The maximum number of stream objects in single commit request"
   val S3MockEnableDoc = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement."
   val S3ObjectDeleteRetentionMinutesDoc = "The marked-for-deletion S3 object retention time in minutes, default is 10 minutes (600s)."
   val S3ObjectLogEnableDoc = "Whether to enable S3 object trace log."
-  val S3NetworkBaselineBandwidthDoc = "The network baseline bandwidth in Bytes/s."
+  val S3NetworkBaselineBandwidthDoc = "The total available bandwidth for object storage requests. This is used to prevent stream set object compaction and catch-up read from monopolizing normal read and write traffic. Produce and Consume will also separately consume traffic in and traffic out. " +
+    "For example, suppose this value is set to 100MB/s, and the normal read and write traffic is 80MB/s, then the available traffic for stream set object compaction is 20MB/s."
   val S3RefillPeriodMsDoc = "The network bandwidth token refill period in milliseconds."
   val S3MetricsEnableDoc = "Whether to enable metrics exporter for s3stream."
   val S3TracerEnableDoc = "Whether to enable tracer exporter for s3stream."
@@ -1401,7 +1407,7 @@ object KafkaConfig {
       .define(ElasticStreamNamespaceProp, STRING, null, MEDIUM, ElasticStreamNamespaceDoc)
       .define(S3EndpointProp, STRING, null, HIGH, S3EndpointDoc)
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
-      .define(S3PathStyleProp, BOOLEAN, false, HIGH, S3PathStyleDoc)
+      .define(S3PathStyleProp, BOOLEAN, false, LOW, S3PathStyleDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
       .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
       .define(S3WALCacheSizeProp, LONG, -1L, MEDIUM, S3WALCacheSizeDoc)
