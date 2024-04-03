@@ -13,7 +13,6 @@ package kafka.autobalancer.model;
 
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.Resource;
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.Collection;
@@ -30,17 +29,6 @@ public class ClusterModelSnapshot {
         rackToBrokerMap = new HashMap<>();
         brokerMap = new HashMap<>();
         brokerToReplicaMap = new HashMap<>();
-    }
-
-    public void aggregate() {
-        // Override broker load with sum of replicas
-        for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater.TopicPartitionReplica>> entry : brokerToReplicaMap.entrySet()) {
-            int brokerId = entry.getKey();
-            for (Resource resource : Resource.cachedValues()) {
-                double sum = entry.getValue().values().stream().mapToDouble(e -> e.load(resource)).sum();
-                brokerMap.get(brokerId).setLoad(resource, sum);
-            }
-        }
     }
 
     public void addBroker(int brokerId, String rack, BrokerUpdater.Broker broker) {

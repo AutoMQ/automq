@@ -13,6 +13,7 @@ package kafka.autobalancer.model;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
+import kafka.autobalancer.common.Resource;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
@@ -112,9 +113,11 @@ public class ClusterModel {
             }
             for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> entry : brokerReplicaMap.entrySet()) {
                 int brokerId = entry.getKey();
-                if (snapshot.broker(brokerId) == null) {
+                BrokerUpdater.Broker broker = snapshot.broker(brokerId);
+                if (broker == null) {
                     continue;
                 }
+                Map<Resource, Double> totalLoads = new HashMap<>();
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
                     TopicPartition tp = tpEntry.getKey();
                     TopicPartitionReplicaUpdater.TopicPartitionReplica replica =
@@ -124,28 +127,29 @@ public class ClusterModel {
                         snapshot.removeBroker(brokerIdToRackMap.get(brokerId), brokerId);
                         break;
                     }
+                    replica.processMetrics();
+                    for (Resource resource : Resource.cachedValues()) {
+                        double load = replica.load(resource);
+                        totalLoads.put(resource, totalLoads.getOrDefault(resource, 0.0) + load);
+                    }
                     if (excludedTopics.contains(tp.topic())) {
                         continue;
                     }
-                    replica.processMetrics();
                     snapshot.addTopicPartition(brokerId, tp, replica);
+                }
+                for (Map.Entry<Resource, Double> loadEntry : totalLoads.entrySet()) {
+                    broker.setLoad(loadEntry.getKey(), loadEntry.getValue());
                 }
             }
         } finally {
             clusterLock.unlock();
         }
 
-        postProcess(snapshot);
-
         return snapshot;
     }
 
     protected ClusterModelSnapshot createSnapshot() {
         return new ClusterModelSnapshot();
-    }
-
-    public void postProcess(ClusterModelSnapshot snapshot) {
-        snapshot.aggregate();
     }
 
     public boolean updateBrokerMetrics(int brokerId, Map<Byte, Double> metricsMap, long time) {
