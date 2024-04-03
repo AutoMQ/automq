@@ -68,21 +68,24 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
     /* Documents */
     private static final String AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG_DOC = "The number of partitions of Auto Balancer metrics topic";
     private static final String AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_RETENTION_MS_CONFIG_DOC = TopicConfig.RETENTION_MS_DOC;
-    public static final String AUTO_BALANCER_CONTROLLER_ENABLE_DOC = "Whether to enable auto balancer";
+    public static final String AUTO_BALANCER_CONTROLLER_ENABLE_DOC = "Whether to enable AutoBalancing.";
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT_DOC = "The maximum time to block for one poll request in millisecond";
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_CLIENT_ID_PREFIX_DOC = "An id string to pass to the server when making requests. The purpose of this is to be able to track the source of requests beyond just ip/port by allowing a logical application name to be included in server-side request logging.";
     public static final String AUTO_BALANCER_CONTROLLER_CONSUMER_RETRY_BACKOFF_MS_DOC = CommonClientConfigs.RETRY_BACKOFF_MS_DOC;
-    public static final String AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS_DOC = "The maximum delayed time to consider a metrics valid";
-    public static final String AUTO_BALANCER_CONTROLLER_GOALS_DOC = "The goals to be detect in anomaly detector";
-    public static final String AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS_DOC = "Time interval between anomaly detections in milliseconds";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD_DOC = "The network input bandwidth usage detect threshold in bytes";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC = "The acceptable range of deviation for average network input bandwidth usage";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD_DOC = "The network output bandwidth usage detect threshold in bytes";
-    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC = "The acceptable range of deviation for average network output bandwidth usage";
+    public static final String AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS_DOC = "When the controller performs load balancing, if the latest metrics delay of the broker exceeds the configured value, the broker will be excluded for its out-of-sync status. " +
+        "This configuration should not be less than the broker metrics reporting interval.";
+    public static final String AUTO_BALANCER_CONTROLLER_GOALS_DOC = "The goals to be optimized on load balancing.";
+    public static final String AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS_DOC = "The minimum interval for a controller to check whether data rebalancing is needed. " +
+        "The actual timing for the next rebalancing also depends on the number of the partitions that have been reassigned. Reducing the minimum checking interval can improve the sensitivity of data rebalancing. " +
+        "However, it should be configured in conjunction with the reporting interval of broker metrics to prevent the controller from missing the results of the most recent reassignments.";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD_DOC = "The detection threshold of NetworkInUsageDistributionGoal. If a broker's inbound network bandwidth usage is below this configured value, the broker will not be proactively scheduled for rebalancing.";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC = "The acceptable range of deviation for average network input bandwidth usage. Default is 0.2, which means the expected network traffic range will be [0.8 * loadAvg, 1.2 * loadAvg]";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD_DOC = "The detection threshold of NetworkOutUsageDistributionGoal. If a broker's outbound network bandwidth usage is below this configured value, the broker will not be proactively scheduled for rebalancing.";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC = "The acceptable range of deviation for average network out bandwidth usage. Default is 0.2, which means the expected network traffic range will be [0.8 * loadAvg, 1.2 * loadAvg]";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS_DOC = "Time interval between reassignments per broker in milliseconds";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS_DOC = "The max number of reassignments per broker in one execution";
-    public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS_DOC = "Broker ids that auto balancer will ignore during balancing, separated by comma";
-    public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS_DOC = "Topics that auto balancer will ignore during balancing, separated by comma";
+    public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS_DOC = "Broker ids that auto balancer will ignore during balancing";
+    public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS_DOC = "Topics that auto balancer will ignore during balancing";
 
     public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE,
