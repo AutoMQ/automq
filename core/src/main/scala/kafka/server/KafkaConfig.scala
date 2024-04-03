@@ -502,7 +502,7 @@ object KafkaConfig {
   val S3WALPathDoc = "The local WAL path for AutoMQ can be set to a block device path such as /dev/xxx or a filesystem file path." +
     "It is recommended to use a block device for better write performance."
   val S3WALCapacityDoc = "The size of the local WAL for AutoMQ. This determines the maximum amount of data that can be written to the buffer before data is uploaded to object storage." +
-    "A larger capacity can tolerate more write jitter in object storage. The value should be larger than s3.wal.cache.size"
+    "A larger capacity can tolerate more write jitter in object storage."
   val S3WALThreadDoc = "The IO thread count for S3 WAL."
   val S3WALIOPSDoc = "The max iops for S3 WAL."
   val S3WALCacheSizeDoc = "The WAL (Write-Ahead Log) cache is a FIFO (First In, First Out) queue that contains data that has not yet been uploaded to object storage, as well as data that has been uploaded but not yet evicted from the cache." +
