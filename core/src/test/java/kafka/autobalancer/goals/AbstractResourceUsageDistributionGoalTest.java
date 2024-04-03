@@ -84,6 +84,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         Broker broker0 = createBroker(cluster, RACK, 0, true);
         Broker broker1 = createBroker(cluster, RACK, 1, true);
         Broker broker2 = createBroker(cluster, RACK, 2, true);
+        Broker broker3 = createBroker(cluster, RACK, 3, true);
 
         double load0 = 600 * 1024 * 1024;
         broker0.setLoad(resource, load0);
@@ -91,6 +92,8 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         broker1.setLoad(resource, load1);
         double load2 = 0;
         broker2.setLoad(resource, load2);
+        double load3 = 500 * 1024 * 1024;
+        broker3.setLoad(resource, load3);
 
         TopicPartitionReplica replica = createTopicPartition(cluster, 0, TOPIC_0, 0);
         replica.setLoad(resource, 50 * 1024 * 1024);
@@ -98,25 +101,34 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         TopicPartitionReplica replica1 = createTopicPartition(cluster, 1, TOPIC_0, 1);
         replica1.setLoad(resource, 50 * 1024 * 1024);
 
-        goal.configure(Map.of("autobalancer.controller.network.in.distribution.detect.avg.deviation", 0.1,
+        TopicPartitionReplica replica2 = createTopicPartition(cluster, 3, TOPIC_0, 2);
+        replica2.setLoad(resource, 20 * 1024 * 1024);
+
+        goal.configure(Map.of("autobalancer.controller.network.in.distribution.detect.avg.deviation", 0.15,
                 "autobalancer.controller.network.in.usage.distribution.detect.threshold", 2 * 1024 * 1024,
-                "autobalancer.controller.network.out.distribution.detect.avg.deviation", 0.1,
+                "autobalancer.controller.network.out.distribution.detect.avg.deviation", 0.15,
                 "autobalancer.controller.network.out.usage.distribution.detect.threshold", 2 * 1024 * 1024,
                 KafkaConfig.S3NetworkBaselineBandwidthProp(), 50 * 1024 * 1024));
         goal.initialize(Set.of(broker0, broker1, broker2));
         Assertions.assertEquals(2 * 1024 * 1024, goal.usageDetectThreshold);
-        Assertions.assertEquals(0.1, goal.usageAvgDeviation);
+        Assertions.assertEquals(0.15, goal.usageAvgDeviationRatio);
         Assertions.assertEquals(500 * 1024 * 1024, goal.usageAvg);
-        Assertions.assertEquals(450 * 1024 * 1024, goal.usageDistLowerBound);
-        Assertions.assertEquals(550 * 1024 * 1024, goal.usageDistUpperBound);
+        Assertions.assertEquals(75 * 1024 * 1024, goal.usageAvgDeviation);
+        Assertions.assertEquals(425 * 1024 * 1024, goal.usageDistLowerBound);
+        Assertions.assertEquals(575 * 1024 * 1024, goal.usageDistUpperBound);
         Assertions.assertEquals(50 * 1024 * 1024, goal.maxNormalizedLoadBytes);
 
         double score0 = goal.brokerScore(broker0);
         double score1 = goal.brokerScore(broker1);
         double score2 = goal.brokerScore(broker2);
+        double score3 = goal.brokerScore(broker3);
 
+        Assertions.assertTrue(score0 < 1.0);
+        Assertions.assertTrue(score0 > 0.1);
         Assertions.assertTrue(score0 > score1);
+        Assertions.assertTrue(score1 < 0.1);
         Assertions.assertTrue(score1 > score2);
+        Assertions.assertEquals(1.0, score3);
 
         Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), 0, 2);
         Action action1 = new Action(ActionType.MOVE, replica1.getTopicPartition(), 1, 2);
@@ -124,8 +136,8 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         double actionScore = goal.actionAcceptanceScore(action, cluster);
         double actionScore1 = goal.actionAcceptanceScore(action1, cluster);
 
-        Assertions.assertEquals(1.0, actionScore, 0.0001);
-        Assertions.assertEquals(1.0, actionScore1, 0.0001);
+        Assertions.assertEquals(0.50024, actionScore, 0.00001);
+        Assertions.assertEquals(0.50024, actionScore1, 0.00001);
     }
 
     @Test
@@ -143,7 +155,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         Assertions.assertTrue(goals.get(0) instanceof NetworkInUsageDistributionGoal);
         NetworkInUsageDistributionGoal networkInUsageDistributionGoal = (NetworkInUsageDistributionGoal) goals.get(0);
         Assertions.assertEquals(5 * 1024 * 1024, networkInUsageDistributionGoal.usageDetectThreshold);
-        Assertions.assertEquals(0.1, networkInUsageDistributionGoal.usageAvgDeviation);
+        Assertions.assertEquals(0.1, networkInUsageDistributionGoal.usageAvgDeviationRatio);
         Assertions.assertEquals(50 * 1024 * 1024, networkInUsageDistributionGoal.maxNormalizedLoadBytes);
 
         config.remove(KafkaConfig.S3NetworkBaselineBandwidthProp());
