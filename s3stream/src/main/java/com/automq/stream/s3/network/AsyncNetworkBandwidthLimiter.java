@@ -57,7 +57,7 @@ public class AsyncNetworkBandwidthLimiter {
                         BucketItem head = queuedCallbacks.poll();
                         reduceToken(head.size);
                         extraTokens = Math.max(0, extraTokens - head.size);
-                        logMetrics(head.size);
+                        logMetrics(head.size, head.strategy);
                         head.cf.complete(null);
                     }
                 } catch (InterruptedException ignored) {
@@ -126,7 +126,7 @@ public class AsyncNetworkBandwidthLimiter {
         lock.lock();
         try {
             reduceToken(size);
-            logMetrics(size);
+            logMetrics(size, ThrottleStrategy.BYPASS);
         } finally {
             lock.unlock();
         }
@@ -138,25 +138,19 @@ public class AsyncNetworkBandwidthLimiter {
             forceConsume(size);
             cf.complete(null);
         } else {
-            cf = consume(throttleStrategy.priority(), size);
-        }
-        return cf;
-    }
-
-    private CompletableFuture<Void> consume(int priority, long size) {
-        CompletableFuture<Void> cf = new CompletableFuture<>();
-        lock.lock();
-        try {
-            if (availableTokens < 0 || !queuedCallbacks.isEmpty()) {
-                queuedCallbacks.add(new BucketItem(priority, size, cf));
-                condition.signalAll();
-            } else {
-                reduceToken(size);
-                cf.complete(null);
-                logMetrics(size);
+            lock.lock();
+            try {
+                if (availableTokens < 0 || !queuedCallbacks.isEmpty()) {
+                    queuedCallbacks.add(new BucketItem(throttleStrategy, size, cf));
+                    condition.signalAll();
+                } else {
+                    reduceToken(size);
+                    cf.complete(null);
+                    logMetrics(size, throttleStrategy);
+                }
+            } finally {
+                lock.unlock();
             }
-        } finally {
-            lock.unlock();
         }
         return cf;
     }
@@ -165,8 +159,8 @@ public class AsyncNetworkBandwidthLimiter {
         this.availableTokens = Math.max(-maxTokens, availableTokens - size);
     }
 
-    private void logMetrics(long size) {
-        NetworkStats.getInstance().networkUsageStats(type).add(MetricsLevel.INFO, size);
+    private void logMetrics(long size, ThrottleStrategy strategy) {
+        NetworkStats.getInstance().networkUsageStats(type, strategy).add(MetricsLevel.INFO, size);
     }
 
     public enum Type {
@@ -185,27 +179,19 @@ public class AsyncNetworkBandwidthLimiter {
     }
 
     static final class BucketItem implements Comparable<BucketItem> {
-        private final int priority;
+        private final ThrottleStrategy strategy;
         private final long size;
         private final CompletableFuture<Void> cf;
 
-        BucketItem(int priority, long size, CompletableFuture<Void> cf) {
-            this.priority = priority;
+        BucketItem(ThrottleStrategy strategy, long size, CompletableFuture<Void> cf) {
+            this.strategy = strategy;
             this.size = size;
             this.cf = cf;
         }
 
         @Override
         public int compareTo(BucketItem o) {
-            return Long.compare(priority, o.priority);
-        }
-
-        public int priority() {
-            return priority;
-        }
-
-        public long size() {
-            return size;
+            return Long.compare(strategy.priority(), o.strategy.priority());
         }
 
         public CompletableFuture<Void> cf() {
@@ -219,20 +205,20 @@ public class AsyncNetworkBandwidthLimiter {
             if (obj == null || obj.getClass() != this.getClass())
                 return false;
             var that = (BucketItem) obj;
-            return this.priority == that.priority &&
+            return this.strategy == that.strategy &&
                 this.size == that.size &&
                 Objects.equals(this.cf, that.cf);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(priority, size, cf);
+            return Objects.hash(strategy, size, cf);
         }
 
         @Override
         public String toString() {
             return "BucketItem[" +
-                "priority=" + priority + ", " +
+                "throttleStrategy=" + strategy + ", " +
                 "size=" + size + ", " +
                 "cf=" + cf + ']';
         }

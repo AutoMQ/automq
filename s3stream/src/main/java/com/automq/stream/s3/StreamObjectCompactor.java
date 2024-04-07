@@ -186,7 +186,7 @@ public class StreamObjectCompactor {
             long compactedEndOffset = objectGroup.get(objectGroup.size() - 1).endOffset();
             List<Long> compactedObjectIds = new LinkedList<>();
             CompositeByteBuf indexes = ByteBufAlloc.compositeByteBuffer();
-            Writer writer = s3Operator.writer(new Writer.Context(STREAM_OBJECT_COMPACTION_READ), ObjectUtils.genKey(0, objectId), ThrottleStrategy.THROTTLE_2);
+            Writer writer = s3Operator.writer(new Writer.Context(STREAM_OBJECT_COMPACTION_READ), ObjectUtils.genKey(0, objectId), ThrottleStrategy.COMPACTION);
             long groupStartOffset = -1L;
             long groupStartPosition = -1L;
             int groupSize = 0;

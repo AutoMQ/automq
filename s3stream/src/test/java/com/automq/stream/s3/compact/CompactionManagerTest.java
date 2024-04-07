@@ -533,7 +533,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager = Mockito.spy(MemoryMetadataManager.class);
         s3Operator = Mockito.spy(MemoryS3Operator.class);
         List<Pair<InvocationOnMock, CompletableFuture<ByteBuf>>> invocations = new ArrayList<>();
-        when(s3Operator.rangeRead(Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong(), Mockito.eq(ThrottleStrategy.THROTTLE_2)))
+        when(s3Operator.rangeRead(Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong(), Mockito.eq(ThrottleStrategy.COMPACTION)))
             .thenAnswer(invocation -> {
                 CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
                 invocations.add(Pair.of(invocation, cf));
