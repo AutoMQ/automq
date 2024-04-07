@@ -24,7 +24,6 @@
         <slf4j.version>2.0.9</slf4j.version>
         <s3.version>2.20.127</s3.version>
 
-        <maven-checkstyle-plugin.version>3.2.0</maven-checkstyle-plugin.version>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -37,17 +36,17 @@
             <artifactId>s3</artifactId>
             <version>${s3.version}</version>
         </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>netty-nio-client</artifactId>
+            <version>${s3.version}</version>
+        </dependency>
         <!-- https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/best-practices.html#bestpractice4 -->
         <!-- https://netty.io/wiki/forked-tomcat-native.html -->
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-tcnative-boringssl-static</artifactId>
             <version>2.0.53.Final</version>
-        </dependency>
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-buffer</artifactId>
-            <version>4.1.100.Final</version>
         </dependency>
         <dependency>
             <groupId>com.bucket4j</groupId>
@@ -142,28 +141,6 @@
 
     <build>
         <plugins>
-            <plugin>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <version>${maven-checkstyle-plugin.version}</version>
-                <executions>
-                    <execution>
-                        <id>validate</id>
-                        <phase>validate</phase>
-                        <configuration>
-                            <configLocation>../style/rmq_checkstyle.xml</configLocation>
-                            <inputEncoding>UTF-8</inputEncoding>
-                            <consoleOutput>true</consoleOutput>
-                            <failsOnError>true</failsOnError>
-                            <includeTestSourceDirectory>true</includeTestSourceDirectory>
-                            <excludes>**/generated*/**/*</excludes>
-                            <excludes>**/thirdparty/**/*</excludes>
-                        </configuration>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
@@ -289,14 +266,4 @@
             </plugin>
         </plugins>
     </build>
-    <distributionManagement>
-        <snapshotRepository>
-            <id>oss.sonatype.org</id>
-            <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-        </snapshotRepository>
-        <repository>
-            <id>oss.sonatype.org</id>
-            <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </repository>
-    </distributionManagement>
 </project>
