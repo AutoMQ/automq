@@ -53,7 +53,7 @@ public class DataBlockWriter {
         waitingUploadBlocks = new LinkedList<>();
         waitingUploadBlockCfs = new ConcurrentHashMap<>();
         completedBlocks = new LinkedList<>();
-        writer = s3Operator.writer(new Writer.Context(STREAM_SET_OBJECT_COMPACTION_READ), objectKey, ThrottleStrategy.THROTTLE_2);
+        writer = s3Operator.writer(new Writer.Context(STREAM_SET_OBJECT_COMPACTION_READ), objectKey, ThrottleStrategy.COMPACTION);
     }
 
     public long getObjectId() {

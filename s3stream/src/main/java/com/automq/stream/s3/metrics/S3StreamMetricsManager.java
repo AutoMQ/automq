@@ -20,6 +20,7 @@ import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 import com.automq.stream.s3.metrics.wrapper.HistogramInstrument;
 import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import io.opentelemetry.api.common.Attributes;
@@ -91,7 +92,7 @@ public class S3StreamMetricsManager {
     private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
     private static final MultiAttributes<String> ALLOC_TYPE_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
-        S3StreamMetricsConstant.LABEL_ALLOC_TYPE);
+        S3StreamMetricsConstant.LABEL_TYPE);
     private static final MultiAttributes<String> OPERATOR_INDEX_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
             S3StreamMetricsConstant.LABEL_INDEX);
 
@@ -431,34 +432,40 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static CounterMetric buildNetworkInboundUsageMetric() {
+    public static CounterMetric buildNetworkInboundUsageMetric(ThrottleStrategy strategy) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, networkInboundUsageInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), networkInboundUsageInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
     }
 
-    public static CounterMetric buildNetworkOutboundUsageMetric() {
+    public static CounterMetric buildNetworkOutboundUsageMetric(ThrottleStrategy strategy) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, networkOutboundUsageInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), networkOutboundUsageInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
     }
 
-    public static YammerHistogramMetric buildNetworkInboundLimiterQueueTimeMetric(MetricName metricName, MetricsLevel metricsLevel) {
+    public static YammerHistogramMetric buildNetworkInboundLimiterQueueTimeMetric(MetricName metricName,
+                                                                                  MetricsLevel metricsLevel,
+                                                                                  ThrottleStrategy strategy) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig,
+                    AttributesUtils.buildAttributes(strategy));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static YammerHistogramMetric buildNetworkOutboundLimiterQueueTimeMetric(MetricName metricName, MetricsLevel metricsLevel) {
+    public static YammerHistogramMetric buildNetworkOutboundLimiterQueueTimeMetric(MetricName metricName,
+                                                                                   MetricsLevel metricsLevel,
+                                                                                   ThrottleStrategy strategy) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig);
+            YammerHistogramMetric metric = new YammerHistogramMetric(metricName, metricsLevel, metricsConfig,
+                    AttributesUtils.buildAttributes(strategy));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRICS.add(metric);
             return metric;
