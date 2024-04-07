@@ -34,17 +34,11 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     void initialize(Set<BrokerUpdater.Broker> brokers);
 
-    void onBalanceFailed(BrokerUpdater.Broker broker);
-
-    boolean isBrokerAcceptable(BrokerUpdater.Broker broker);
-
     GoalType type();
 
     Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster);
 
     String name();
-
-    double brokerScore(BrokerUpdater.Broker broker);
 
     /**
      * Get the acceptance score of the goal if the action applied to the given cluster.

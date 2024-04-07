@@ -34,8 +34,8 @@ public class GoalTestBase {
 
     protected Broker createBroker(ClusterModelSnapshot cluster, String rack,
                                   int brokerId, boolean active) {
-        Broker broker = new Broker(brokerId, active);
-        cluster.addBroker(brokerId, rack, broker);
+        Broker broker = new Broker(brokerId, rack, active);
+        cluster.addBroker(broker);
         return broker;
     }
 

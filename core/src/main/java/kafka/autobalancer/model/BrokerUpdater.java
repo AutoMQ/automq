@@ -19,8 +19,8 @@ import java.util.Objects;
 public class BrokerUpdater extends AbstractInstanceUpdater {
     private final Broker broker;
 
-    public BrokerUpdater(int brokerId, boolean active) {
-        this.broker = createBroker(brokerId, active);
+    public BrokerUpdater(int brokerId, String rack, boolean active) {
+        this.broker = createBroker(brokerId, rack, active);
     }
 
     public void setActive(boolean active) {
@@ -32,8 +32,8 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         }
     }
 
-    protected Broker createBroker(int brokerId, boolean active) {
-        return new Broker(brokerId, active);
+    protected Broker createBroker(int brokerId, String rack, boolean active) {
+        return new Broker(brokerId, rack, active);
     }
 
     @Override
@@ -53,21 +53,28 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
     public static class Broker extends AbstractInstance {
         private final int brokerId;
+        private final String rack;
         private boolean active;
 
-        public Broker(int brokerId, boolean active) {
+        public Broker(int brokerId, String rack, boolean active) {
             this.brokerId = brokerId;
+            this.rack = rack;
             this.active = active;
         }
 
         public Broker(Broker other) {
             super(other);
             this.brokerId = other.brokerId;
+            this.rack = other.rack;
             this.active = other.active;
         }
 
         public int getBrokerId() {
             return this.brokerId;
+        }
+
+        public String getRack() {
+            return this.rack;
         }
 
         public void setActive(boolean active) {
