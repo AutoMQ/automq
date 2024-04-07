@@ -229,7 +229,7 @@ public class AnomalyDetector extends AbstractResumableService {
         try {
             detectInterval = this.detectInterval;
             excludedBrokers = new HashSet<>(this.excludedBrokers);
-            excludedTopics = new HashSet<>();
+            excludedTopics = new HashSet<>(this.excludedTopics);
             maxTolerateMetricsDelayMs = this.maxTolerateMetricsDelayMs;
             coolDownIntervalPerActionMs = this.coolDownIntervalPerActionMs;
             goals = new ArrayList<>(this.goalsByPriority);
