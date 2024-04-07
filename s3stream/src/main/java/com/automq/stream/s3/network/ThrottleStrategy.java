@@ -12,17 +12,23 @@
 package com.automq.stream.s3.network;
 
 public enum ThrottleStrategy {
-    BYPASS(0),
-    THROTTLE_1(1),
-    THROTTLE_2(2);
+    BYPASS(0, "bypass"),
+    THROTTLE_1(1, "catchup"),
+    THROTTLE_2(2, "compaction");
 
     private final int priority;
+    private final String name;
 
-    ThrottleStrategy(int priority) {
+    ThrottleStrategy(int priority, String name) {
         this.priority = priority;
+        this.name = name;
     }
 
     public int priority() {
         return priority;
+    }
+
+    public String getName() {
+        return name;
     }
 }

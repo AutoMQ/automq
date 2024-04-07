@@ -90,4 +90,21 @@ public class AsyncNetworkBandwidthLimiterTest {
         });
         cf.join();
     }
+
+    @Test
+    public void testThrottleConsumeWithPriority() {
+        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000, 100);
+        bucket.consume(ThrottleStrategy.BYPASS, 1000);
+        Assertions.assertEquals(-100, bucket.getAvailableTokens());
+        bucket.consume(ThrottleStrategy.THROTTLE_1, 10);
+        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.THROTTLE_2, 100);
+        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.THROTTLE_1, 100);
+        cf2.whenComplete((v, e) -> {
+            Assertions.assertNull(e);
+            Assertions.assertEquals(-100, bucket.getAvailableTokens());
+            Assertions.assertEquals(0, bucket.getExtraTokens());
+            Assertions.assertFalse(cf.isDone());
+        });
+        cf.join();
+    }
 }

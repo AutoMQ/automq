@@ -14,6 +14,7 @@ package com.automq.stream.s3.metrics;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import io.opentelemetry.api.common.Attributes;
 
 public class AttributesUtils {
@@ -41,6 +42,12 @@ public class AttributesUtils {
     public static Attributes buildAttributes(String status) {
         return Attributes.builder()
                 .put(S3StreamMetricsConstant.LABEL_STATUS, status)
+                .build();
+    }
+
+    public static Attributes buildAttributes(ThrottleStrategy strategy) {
+        return Attributes.builder()
+                .put(S3StreamMetricsConstant.LABEL_TYPE, strategy.getName())
                 .build();
     }
 
