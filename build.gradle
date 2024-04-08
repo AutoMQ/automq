@@ -960,10 +960,6 @@ project(':core') {
       exclude group: 'org.slf4j', module: '*'
     }
 
-    // https://github.com/netty/netty-tcnative/issues/716
-    // After 2.0.48, gradle project need explicitly declare the tcnative dependencies with classifiers
-    implementation 'io.netty:netty-tcnative-boringssl-static:2.0.65.Final'
-
     compileOnly libs.log4j
 
     testImplementation project(':clients').sourceSets.test.output
@@ -1984,7 +1980,31 @@ project(':s3stream') {
   dependencies {
     implementation libs.awsSdk
     implementation libs.awsSdkNetty
-    implementation libs.nettyTcnativeBoringSsl
+    // In gradle, we need to specify the classifier for netty-tcnative
+    // see
+    // https://netty.io/wiki/forked-tomcat-native.html
+    // https://github.com/netty/netty-tcnative/issues/716
+    // https://github.com/grpc/grpc-java/pull/9027
+    runtimeOnly (libs.nettyTcnativeBoringSsl) {
+      artifact {
+        classifier = "linux-x86_64"
+      }
+    }
+    runtimeOnly (libs.nettyTcnativeBoringSsl) {
+      artifact {
+        classifier = "linux-aarch_64"
+      }
+    }
+    runtimeOnly (libs.nettyTcnativeBoringSsl) {
+      artifact {
+        classifier = "osx-x86_64"
+      }
+    }
+    runtimeOnly (libs.nettyTcnativeBoringSsl) {
+      artifact {
+        classifier = "osx-aarch_64"
+      }
+    }
     implementation libs.nettyBuffer
     implementation libs.bucket4j
     implementation libs.commonLang
