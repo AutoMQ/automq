@@ -54,7 +54,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
@@ -63,15 +62,17 @@ import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.exception.ApiCallTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
-import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
@@ -102,6 +103,7 @@ public class DefaultS3Operator implements S3Operator {
     private static final int MIN_CONCURRENCY = 50;
     private static final int MAX_CONCURRENCY = 1000;
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
+    private static final long DEFAULT_UPLOAD_PART_COPY_TIMEOUT = TimeUnit.MINUTES.toMillis(2);
     public final float maxMergeReadSparsityRate;
     private final int currentIndex;
     private final String bucket;
@@ -448,15 +450,15 @@ public class DefaultS3Operator implements S3Operator {
 
     private CompletableFuture<DeleteObjectsResponse> deleteObjects(List<String> objectKeys) {
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
-                ObjectIdentifier.builder()
-                        .key(key)
-                        .build()
+            ObjectIdentifier.builder()
+                .key(key)
+                .build()
         ).toArray(ObjectIdentifier[]::new);
 
         DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-                .bucket(bucket)
-                .delete(Delete.builder().objects(toDeleteKeys).build())
-                .build();
+            .bucket(bucket)
+            .delete(Delete.builder().objects(toDeleteKeys).build())
+            .build();
 
         return this.writeS3Client.deleteObjects(request);
     }
@@ -465,20 +467,20 @@ public class DefaultS3Operator implements S3Operator {
     public CompletableFuture<List<String>> delete(List<String> objectKeys) {
         TimerUtil timerUtil = new TimerUtil();
         return deleteObjects(objectKeys)
-                .thenApply(resp -> handleDeleteObjectsResponse(objectKeys, timerUtil, resp, deleteObjectsReturnSuccessKeys))
-                .exceptionally(ex -> {
-                    S3OperationStats.getInstance().deleteObjectsStats(false)
-                            .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                    LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}",
-                            objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
-                    return Collections.emptyList();
-                });
+            .thenApply(resp -> handleDeleteObjectsResponse(objectKeys, timerUtil, resp, deleteObjectsReturnSuccessKeys))
+            .exceptionally(ex -> {
+                S3OperationStats.getInstance().deleteObjectsStats(false)
+                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}",
+                    objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
+                return Collections.emptyList();
+            });
     }
 
     static List<String> handleDeleteObjectsResponse(List<String> objectKeys,
-                                                    TimerUtil timerUtil,
-                                                    DeleteObjectsResponse response,
-                                                    boolean deleteObjectsReturnSuccessKeys) {
+        TimerUtil timerUtil,
+        DeleteObjectsResponse response,
+        boolean deleteObjectsReturnSuccessKeys) {
         Set<String> successDeleteKeys = new HashSet<>();
         int errDeleteCount = 0;
         boolean hasUnExpectedResponse = false;
@@ -489,14 +491,13 @@ public class DefaultS3Operator implements S3Operator {
             // expect NoSuchKey is not response because s3 api won't return this in errors.
             for (S3Error error : response.errors()) {
                 LOGGER.error("[ControllerS3Operator]: Delete objects for key [{}] error code [{}] message [{}]",
-                        error.key(), error.code(), error.message());
+                    error.key(), error.code(), error.message());
                 errDeleteCount++;
             }
 
         } else {
             // deleteObjects not return successKeys think as all success.
             successDeleteKeys.addAll(objectKeys);
-
 
             for (S3Error error : response.errors()) {
                 if (S3_API_NO_SUCH_KEY.equals(error.code())) {
@@ -506,7 +507,7 @@ public class DefaultS3Operator implements S3Operator {
 
                 if (errDeleteCount < 30) {
                     LOGGER.error("[ControllerS3Operator]: Delete objects for key [{}] error code [{}] message [{}]",
-                            error.key(), error.code(), error.message());
+                        error.key(), error.code(), error.message());
                 }
 
                 if (!StringUtils.isEmpty(error.key())) {
@@ -524,7 +525,7 @@ public class DefaultS3Operator implements S3Operator {
         }
 
         LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, errCount: {}, cost: {}",
-                successDeleteKeys.size(), errDeleteCount, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            successDeleteKeys.size(), errDeleteCount, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
 
         if (!hasUnExpectedResponse) {
             S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
@@ -627,16 +628,19 @@ public class DefaultS3Operator implements S3Operator {
         if (retCf.isDone()) {
             return retCf;
         }
-        uploadPartCopy0(sourcePath, path, start, end, uploadId, partNumber, cf);
+        // TODO: get default timeout by latency baseline
+        uploadPartCopy0(sourcePath, path, start, end, uploadId, partNumber, cf, DEFAULT_UPLOAD_PART_COPY_TIMEOUT);
         return retCf;
     }
 
     private void uploadPartCopy0(String sourcePath, String path, long start, long end, String uploadId, int partNumber,
-        CompletableFuture<CompletedPart> cf) {
+        CompletableFuture<CompletedPart> cf, long apiCallAttemptTimeout) {
         TimerUtil timerUtil = new TimerUtil();
         long inclusiveEnd = end - 1;
         UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
-            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber).build();
+            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber)
+            .overrideConfiguration(AwsRequestOverrideConfiguration.builder().apiCallAttemptTimeout(Duration.ofMillis(apiCallAttemptTimeout)).apiCallTimeout(Duration.ofMillis(apiCallAttemptTimeout)).build())
+            .build();
         writeS3Client.uploadPartCopy(request).thenAccept(uploadPartCopyResponse -> {
             S3OperationStats.getInstance().uploadPartCopyStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             CompletedPart completedPart = CompletedPart.builder().partNumber(partNumber)
@@ -645,11 +649,12 @@ public class DefaultS3Operator implements S3Operator {
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().uploadPartCopyStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             if (isUnrecoverable(ex)) {
-                LOGGER.warn("UploadPartCopy for object {}-{} fail", path, partNumber, ex);
+                LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail", path, partNumber, start, end, ex);
                 cf.completeExceptionally(ex);
             } else {
-                LOGGER.warn("UploadPartCopy for object {}-{} fail, retry later", path, partNumber, ex);
-                scheduler.schedule(() -> uploadPartCopy0(sourcePath, path, start, end, uploadId, partNumber, cf), 100, TimeUnit.MILLISECONDS);
+                long nextApiCallAttemptTimeout = Math.min(ex.getCause() instanceof ApiCallTimeoutException ? apiCallAttemptTimeout * 2 : apiCallAttemptTimeout, TimeUnit.MINUTES.toMillis(10));
+                LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail, retry later with apiCallAttemptTimeout={}", path, partNumber, start, end, nextApiCallAttemptTimeout, ex);
+                scheduler.schedule(() -> uploadPartCopy0(sourcePath, path, start, end, uploadId, partNumber, cf, nextApiCallAttemptTimeout), 1000, TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -721,11 +726,11 @@ public class DefaultS3Operator implements S3Operator {
         List<String> path = List.of(path1, path2);
 
         return CompletableFuture.allOf(
-                        this.write(path1, Unpooled.wrappedBuffer(content)),
-                        this.write(path2, Unpooled.wrappedBuffer(content))
-                )
-                .thenCompose(__ -> deleteObjects(path)
-                        .thenApply(resp -> checkIfDeleteObjectsWillReturnSuccessDeleteKeys(path, resp)));
+                this.write(path1, Unpooled.wrappedBuffer(content)),
+                this.write(path2, Unpooled.wrappedBuffer(content))
+            )
+            .thenCompose(__ -> deleteObjects(path)
+                .thenApply(resp -> checkIfDeleteObjectsWillReturnSuccessDeleteKeys(path, resp)));
     }
 
     static boolean checkIfDeleteObjectsWillReturnSuccessDeleteKeys(List<String> path, DeleteObjectsResponse resp) {
@@ -755,9 +760,9 @@ public class DefaultS3Operator implements S3Operator {
         IllegalStateException exception = new IllegalStateException();
 
         LOGGER.error("error when check if delete objects will return success." +
-                        " delete keys {} resp {}, requestId {}，httpCode {} httpText {}",
-                path, resp, resp.responseMetadata().requestId(),
-                resp.sdkHttpResponse().statusCode(), resp.sdkHttpResponse().statusText(), exception);
+                " delete keys {} resp {}, requestId {}，httpCode {} httpText {}",
+            path, resp, resp.responseMetadata().requestId(),
+            resp.sdkHttpResponse().statusCode(), resp.sdkHttpResponse().statusText(), exception);
 
         throw exception;
     }
