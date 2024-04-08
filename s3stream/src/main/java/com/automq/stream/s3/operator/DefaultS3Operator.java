@@ -28,6 +28,7 @@ import com.automq.stream.utils.Utils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.handler.ssl.OpenSsl;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import java.net.URI;
@@ -826,6 +827,9 @@ public class DefaultS3Operator implements S3Operator {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
+        }
+        if (!OpenSsl.isAvailable()) {
+            LOGGER.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
         }
         SdkAsyncHttpClient httpClient = NettyNioAsyncHttpClient.builder()
             .maxConcurrency(maxConcurrency)
