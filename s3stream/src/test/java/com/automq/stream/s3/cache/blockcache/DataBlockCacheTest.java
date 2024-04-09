@@ -25,6 +25,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -37,6 +39,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,7 +58,7 @@ public class DataBlockCacheTest {
     }
 
     @Test
-    public void testGetBlock() throws ExecutionException, InterruptedException {
+    public void testGetBlock() throws ExecutionException, InterruptedException, TimeoutException {
         ObjectReader objectReader = mock(ObjectReader.class);
         when(objectReader.metadata()).thenReturn(new S3ObjectMetadata(233L, 100000, S3ObjectType.STREAM));
         DataBlockIndex idx1 = new DataBlockIndex(STREAM_ID, 0, 10, 1, 0, 100);
@@ -89,6 +92,7 @@ public class DataBlockCacheTest {
 
             readCf1.complete(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(idx1)));
         }).get();
+        cf1.get().get().freeFuture().get(1, TimeUnit.SECONDS);
         eventLoops[0].submit(() -> {
             assertTrue(cf1.get().isDone());
             try {
@@ -107,8 +111,8 @@ public class DataBlockCacheTest {
             readCf3.complete(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(idx3)));
 
         }).get();
+        verify(objectReader, timeout(1000).times(4)).read(any());
         eventLoops[0].submit(() -> {
-            verify(objectReader, times(4)).read(any());
             assertTrue(cf2.get().isDone());
             assertTrue(cf3.get().isDone());
             assertFalse(cf4.get().isDone());
@@ -128,7 +132,7 @@ public class DataBlockCacheTest {
     }
 
     @Test
-    public void testGetBlock_unread() throws ExecutionException, InterruptedException {
+    public void testGetBlock_unread() throws ExecutionException, InterruptedException, TimeoutException {
         ObjectReader objectReader = mock(ObjectReader.class);
         doAnswer(args -> {
             DataBlockIndex idx = args.getArgument(0);
@@ -140,9 +144,9 @@ public class DataBlockCacheTest {
         eventLoops[0].submit(() -> {
             cf1.set(cache.getBlock(objectReader, new DataBlockIndex(STREAM_ID, 0, 10, 1, 0, 100)).thenAccept(DataBlock::markUnread));
         }).get();
-        AtomicReference<CompletableFuture<?>> cf2 = new AtomicReference<>();
+        AtomicReference<CompletableFuture<DataBlock>> cf2 = new AtomicReference<>();
         eventLoops[0].submit(() -> {
-            cf2.set(cache.getBlock(objectReader, new DataBlockIndex(STREAM_ID, 100, 10, 1, 1000, 900)).thenAccept(b -> {
+            cf2.set(cache.getBlock(objectReader, new DataBlockIndex(STREAM_ID, 100, 10, 1, 1000, 900)).whenComplete((b, ex) -> {
                 b.markUnread();
                 b.markRead();
             }));
@@ -151,6 +155,7 @@ public class DataBlockCacheTest {
             assertEquals(2, cache.caches[0].blocks.size());
             cache.getBlock(objectReader, new DataBlockIndex(STREAM_ID, 0, 200, 1, 0, 100));
         }).get();
+        cf2.get().get().freeFuture().get(1, TimeUnit.SECONDS);
         eventLoops[0].submit(() -> {
             // expect idx2 is firstly evicted cause of idx2 is markRead
             DataBlockCache.Cache cache = this.cache.caches[0];
