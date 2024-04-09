@@ -260,8 +260,8 @@ public class BlockCache implements ByteBufAlloc.OOMHandler {
                 active.remove(cacheBlockKey);
                 inactive.put(cacheBlockKey, cacheBlock.size);
             } else {
-                if (!active.touch(cacheBlockKey)) {
-                    inactive.touch(cacheBlockKey);
+                if (!active.touchIfExist(cacheBlockKey)) {
+                    inactive.touchIfExist(cacheBlockKey);
                 }
             }
 

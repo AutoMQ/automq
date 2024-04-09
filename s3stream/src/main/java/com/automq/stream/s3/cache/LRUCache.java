@@ -25,13 +25,13 @@ public class LRUCache<K, V> {
         cacheEntrySet = cache.entrySet();
     }
 
-    public synchronized boolean touch(K key) {
+    public synchronized boolean touchIfExist(K key) {
         return cache.get(key) != null;
     }
 
     public synchronized void put(K key, V value) {
         if (cache.put(key, value) != null) {
-            touch(key);
+            touchIfExist(key);
         }
     }
 
