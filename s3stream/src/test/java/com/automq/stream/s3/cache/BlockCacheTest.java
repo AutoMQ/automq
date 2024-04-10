@@ -139,7 +139,7 @@ public class BlockCacheTest {
         lru.put(1L, true);
         lru.put(2L, true);
         lru.put(3L, true);
-        lru.touch(2L);
+        lru.touchIfExist(2L);
         assertEquals(1, lru.pop().getKey());
         assertEquals(3, lru.pop().getKey());
         assertEquals(2, lru.pop().getKey());

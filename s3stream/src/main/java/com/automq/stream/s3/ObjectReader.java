@@ -48,6 +48,10 @@ public class ObjectReader implements AutoCloseable {
         asyncGetBasicObjectInfo();
     }
 
+    public S3ObjectMetadata metadata() {
+        return metadata;
+    }
+
     public String objectKey() {
         return objectKey;
     }
@@ -114,6 +118,21 @@ public class ObjectReader implements AutoCloseable {
 
     public void close0() {
         basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        ObjectReader reader = (ObjectReader) o;
+        return Objects.equals(metadata.objectId(), reader.metadata.objectId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(metadata.objectId());
     }
 
     /**
@@ -428,8 +447,20 @@ public class ObjectReader implements AutoCloseable {
             return recordCount;
         }
 
+        public ByteBuf buf() {
+            return buf;
+        }
+
         @Override
         public void close() {
+            buf.release();
+        }
+
+        public void retain() {
+            buf.retain();
+        }
+
+        public void release() {
             buf.release();
         }
     }

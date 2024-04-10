@@ -62,7 +62,7 @@ public class ReadAheadManager implements BlockCache.CacheEvictListener {
                     return;
                 }
                 agent.updateReadProgress(startOffset);
-                readAheadAgentLRUCache.touch(agent);
+                readAheadAgentLRUCache.touchIfExist(agent);
             }
         }
     }
@@ -73,7 +73,7 @@ public class ReadAheadManager implements BlockCache.CacheEvictListener {
             synchronized (agentMap) {
                 ReadAheadAgent agent = agentMap.get(startOffset);
                 if (agent != null) {
-                    readAheadAgentLRUCache.touch(agent);
+                    readAheadAgentLRUCache.touchIfExist(agent);
                 }
                 return agent;
             }
