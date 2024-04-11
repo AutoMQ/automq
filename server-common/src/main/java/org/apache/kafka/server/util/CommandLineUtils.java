@@ -140,7 +140,9 @@ public class CommandLineUtils {
     }
 
     public static void printVersionAndExit() {
-        System.out.println(AppInfoParser.getVersion());
+        // AutoMQ inject start
+        System.out.println(AppInfoParser.getVersionString());
+        // AutoMQ inject end
         Exit.exit(0);
     }
 
