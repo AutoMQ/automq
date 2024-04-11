@@ -52,13 +52,6 @@ public class AnomalyDetectorTest {
 
     @Test
     public void testFilterAndMergeActions() {
-        List<Action> actions = List.of(
-                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
-                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 1),
-                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 1, 9),
-                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 9, 11, new TopicPartition("topic-1", 0)),
-                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 10),
-                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 10, 2));
         AnomalyDetector anomalyDetector = new AnomalyDetectorBuilder()
                 .clusterModel(Mockito.mock(ClusterModel.class))
                 .addGoal(Mockito.mock(Goal.class))
@@ -94,15 +87,15 @@ public class AnomalyDetectorTest {
                     }
                 })
                 .build();
-        List<Action> filteredActions = anomalyDetector.checkAndMergeActions(actions);
-        Assertions.assertEquals(4, filteredActions.size());
-        List<Action> expectedActions = List.of(
-                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
-                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 9),
-                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 9, 11, new TopicPartition("topic-1", 0)),
-                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 2));
 
-        Assertions.assertEquals(expectedActions, filteredActions);
+        List<Action> actions = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 1),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 1, 9),
+                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 9, 11, new TopicPartition("topic-1", 0)),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 10, 2));
+        Assertions.assertThrowsExactly(IllegalStateException.class, () -> anomalyDetector.checkAndMergeActions(actions));
 
         List<Action> actions1 = List.of(
                 new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
@@ -130,6 +123,21 @@ public class AnomalyDetectorTest {
                 new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 3, 10),
                 new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 10, 2));
         Assertions.assertThrowsExactly(IllegalStateException.class, () -> anomalyDetector.checkAndMergeActions(actions3));
+
+        List<Action> actions4 = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 0, 1),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 1, 9),
+                new Action(ActionType.SWAP, new TopicPartition("topic-2", 3), 9, 11, new TopicPartition("topic-1", 0)),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 11, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 9, 2),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 10, 0));
+        List<Action> mergedActions = anomalyDetector.checkAndMergeActions(actions4);
+        Assertions.assertEquals(1, mergedActions.size());
+        List<Action> expectedActions = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 2));
+
+        Assertions.assertEquals(expectedActions, mergedActions);
     }
 
     @Test

@@ -273,26 +273,25 @@ public class AnomalyDetector extends AbstractResumableService {
 
     List<Action> checkAndMergeActions(List<Action> actions) throws IllegalStateException {
         actions = actions.subList(0, Math.min(actions.size(), maxActionsNumPerExecution));
-        List<Action> filteredActions = new ArrayList<>();
+        List<Action> splitActions = new ArrayList<>();
+        List<Action> mergedActions = new ArrayList<>();
         Map<TopicPartition, Action> actionMergeMap = new HashMap<>();
+
         for (Action action : actions) {
             if (action.getType() == ActionType.SWAP) {
-                Action prevAction = actionMergeMap.remove(action.getSrcTopicPartition());
-                if (prevAction != null && prevAction.getDestBrokerId() != action.getSrcBrokerId()) {
-                    throw new IllegalStateException(String.format("Unmatched action chains for %s, prev: %s, next: %s",
-                            action.getSrcTopicPartition(), prevAction, action));
-                }
-                prevAction = actionMergeMap.remove(action.getDestTopicPartition());
-                if (prevAction != null && prevAction.getDestBrokerId() != action.getDestBrokerId()) {
-                    throw new IllegalStateException(String.format("Unmatched action chains for %s, prev: %s, next: %s",
-                            action.getSrcTopicPartition(), prevAction, action));
-                }
-                filteredActions.add(action);
-                continue;
+                Action moveAction0 = new Action(ActionType.MOVE, action.getSrcTopicPartition(), action.getSrcBrokerId(), action.getDestBrokerId());
+                Action moveAction1 = new Action(ActionType.MOVE, action.getDestTopicPartition(), action.getDestBrokerId(), action.getSrcBrokerId());
+                splitActions.add(moveAction0);
+                splitActions.add(moveAction1);
+            } else {
+                splitActions.add(action);
             }
+        }
+
+        for (Action action : splitActions) {
             Action prevAction = actionMergeMap.get(action.getSrcTopicPartition());
             if (prevAction == null) {
-                filteredActions.add(action);
+                mergedActions.add(action);
                 actionMergeMap.put(action.getSrcTopicPartition(), action);
                 continue;
             }
@@ -302,9 +301,9 @@ public class AnomalyDetector extends AbstractResumableService {
             }
             prevAction.setDestBrokerId(action.getDestBrokerId());
         }
-        filteredActions = filteredActions.stream().filter(action -> action.getSrcBrokerId() != action.getDestBrokerId())
+        mergedActions = mergedActions.stream().filter(action -> action.getSrcBrokerId() != action.getDestBrokerId())
                 .collect(Collectors.toList());
 
-        return filteredActions;
+        return mergedActions;
     }
 }
