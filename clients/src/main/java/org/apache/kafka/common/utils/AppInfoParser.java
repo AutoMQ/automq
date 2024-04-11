@@ -57,6 +57,12 @@ public class AppInfoParser {
         return COMMIT_ID;
     }
 
+    // AutoMQ inject start
+    public static String getVersionString() {
+        return String.format("%s (Commit:%s)", getVersion(), getCommitId());
+    }
+    // AutoMQ inject end
+
     public static synchronized void registerAppInfo(String prefix, String id, Metrics metrics, long nowMs) {
         try {
             ObjectName name = new ObjectName(prefix + ":type=app-info,id=" + Sanitizer.jmxSanitize(id));
