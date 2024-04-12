@@ -17,4 +17,4 @@
 if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
     export KAFKA_HEAP_OPTS="-Xmx1024M"
 fi
-exec "$(dirname "$0")/kafka-run-class.sh" org.apache.kafka.tools.PerformanceCommand "$@"
+exec "$(dirname "$0")/kafka-run-class.sh" org.apache.kafka.tools.automq.PerfCommand "$@"
