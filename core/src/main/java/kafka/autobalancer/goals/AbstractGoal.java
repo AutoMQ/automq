@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 
 public abstract class AbstractGoal implements Goal {
@@ -47,6 +48,29 @@ public abstract class AbstractGoal implements Goal {
             calculateCandidateActionScores(candidateActionScores, goalsByPriority, action, cluster);
         }
         LOGGER.debug("try move partition {} out for broker {}, all possible action score: {} on goal {}", replica.getTopicPartition(),
+                srcBroker.getBrokerId(), candidateActionScores, name());
+        return getAcceptableAction(candidateActionScores);
+    }
+
+    protected Optional<Action> trySwapPartitionOut(ClusterModelSnapshot cluster,
+                                                   TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica,
+                                                   BrokerUpdater.Broker srcBroker,
+                                                   List<BrokerUpdater.Broker> candidates,
+                                                   Collection<Goal> goalsByPriority,
+                                                   BiPredicate<TopicPartitionReplicaUpdater.TopicPartitionReplica,
+                                                           TopicPartitionReplicaUpdater.TopicPartitionReplica> replicaBiPredicate) {
+        List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
+        for (BrokerUpdater.Broker candidate : candidates) {
+            for (TopicPartitionReplicaUpdater.TopicPartitionReplica candidateReplica : cluster.replicasFor(candidate.getBrokerId())) {
+                if (!replicaBiPredicate.test(srcReplica, candidateReplica)) {
+                    continue;
+                }
+                Action action = new Action(ActionType.SWAP, srcReplica.getTopicPartition(), srcBroker.getBrokerId(),
+                        candidate.getBrokerId(), candidateReplica.getTopicPartition());
+                calculateCandidateActionScores(candidateActionScores, goalsByPriority, action, cluster);
+            }
+        }
+        LOGGER.debug("try swap partition {} out for broker {}, all possible action score: {} on goal {}", srcReplica.getTopicPartition(),
                 srcBroker.getBrokerId(), candidateActionScores, name());
         return getAcceptableAction(candidateActionScores);
     }
@@ -170,6 +194,9 @@ public abstract class AbstractGoal implements Goal {
     }
 
     protected abstract boolean moveReplica(Action action, ClusterModelSnapshot cluster, BrokerUpdater.Broker src, BrokerUpdater.Broker dest);
+    protected abstract boolean isBrokerAcceptable(BrokerUpdater.Broker broker);
+    protected abstract double brokerScore(BrokerUpdater.Broker broker);
+    protected abstract void onBalanceFailed(BrokerUpdater.Broker broker);
 
     @Override
     public Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {

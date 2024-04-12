@@ -20,25 +20,20 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class ClusterModelSnapshot {
-
-    private final Map<String, Integer> rackToBrokerMap;
     private final Map<Integer, BrokerUpdater.Broker> brokerMap;
     private final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater.TopicPartitionReplica>> brokerToReplicaMap;
 
     public ClusterModelSnapshot() {
-        rackToBrokerMap = new HashMap<>();
         brokerMap = new HashMap<>();
         brokerToReplicaMap = new HashMap<>();
     }
 
-    public void addBroker(int brokerId, String rack, BrokerUpdater.Broker broker) {
-        rackToBrokerMap.putIfAbsent(rack, brokerId);
-        brokerMap.putIfAbsent(brokerId, broker);
-        brokerToReplicaMap.putIfAbsent(brokerId, new HashMap<>());
+    public void addBroker(BrokerUpdater.Broker broker) {
+        brokerMap.putIfAbsent(broker.getBrokerId(), broker);
+        brokerToReplicaMap.putIfAbsent(broker.getBrokerId(), new HashMap<>());
     }
 
-    public void removeBroker(String rack, int brokerId) {
-        rackToBrokerMap.remove(rack);
+    public void removeBroker(int brokerId) {
         brokerMap.remove(brokerId);
         brokerToReplicaMap.remove(brokerId);
     }

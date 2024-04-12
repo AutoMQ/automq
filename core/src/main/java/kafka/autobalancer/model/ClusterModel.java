@@ -39,7 +39,6 @@ public class ClusterModel {
     private final Lock clusterLock = new ReentrantLock();
 
     /* cluster structure indices*/
-    private final Map<Integer, String> brokerIdToRackMap = new HashMap<>();
     private final Map<Integer, BrokerUpdater> brokerMap = new HashMap<>();
     private final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> brokerReplicaMap = new HashMap<>();
     private final Map<Uuid, String> idToTopicNameMap = new HashMap<>();
@@ -109,7 +108,7 @@ public class ClusterModel {
                     continue;
                 }
                 broker.processMetrics();
-                snapshot.addBroker(brokerId, brokerIdToRackMap.get(brokerId), broker);
+                snapshot.addBroker(broker);
             }
             for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> entry : brokerReplicaMap.entrySet()) {
                 int brokerId = entry.getKey();
@@ -124,7 +123,7 @@ public class ClusterModel {
                             (TopicPartitionReplicaUpdater.TopicPartitionReplica) tpEntry.getValue().get(now - maxToleratedMetricsDelay);
                     if (replica == null) {
                         logger.warn("Broker {} has out of sync topic-partition {}, will be ignored in this round", brokerId, tp);
-                        snapshot.removeBroker(brokerIdToRackMap.get(brokerId), brokerId);
+                        snapshot.removeBroker(brokerId);
                         break;
                     }
                     replica.processMetrics();
@@ -189,11 +188,10 @@ public class ClusterModel {
             if (brokerMap.containsKey(brokerId)) {
                 return;
             }
-            BrokerUpdater brokerUpdater = createBrokerUpdater(brokerId);
             if (Utils.isBlank(rackId)) {
                 rackId = DEFAULT_RACK_ID;
             }
-            brokerIdToRackMap.putIfAbsent(brokerId, rackId);
+            BrokerUpdater brokerUpdater = createBrokerUpdater(brokerId, rackId);
             brokerMap.putIfAbsent(brokerId, brokerUpdater);
             brokerReplicaMap.put(brokerId, new HashMap<>());
         } finally {
@@ -201,14 +199,13 @@ public class ClusterModel {
         }
     }
 
-    public BrokerUpdater createBrokerUpdater(int brokerId) {
-        return new BrokerUpdater(brokerId, true);
+    public BrokerUpdater createBrokerUpdater(int brokerId, String rack) {
+        return new BrokerUpdater(brokerId, rack, true);
     }
 
     public void unregisterBroker(int brokerId) {
         clusterLock.lock();
         try {
-            brokerIdToRackMap.remove(brokerId);
             brokerMap.remove(brokerId);
             brokerReplicaMap.remove(brokerId);
         } finally {

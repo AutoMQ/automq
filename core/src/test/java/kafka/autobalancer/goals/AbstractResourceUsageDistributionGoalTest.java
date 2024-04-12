@@ -57,14 +57,14 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         }
     }
 
-    private Goal getGoalByResource(Resource resource) {
-        Goal goal = null;
+    private AbstractGoal getGoalByResource(Resource resource) {
+        AbstractGoal goal = null;
         switch (resource) {
             case NW_IN:
-                goal = goalMap.get(NetworkInUsageDistributionGoal.class.getSimpleName());
+                goal = (AbstractGoal) goalMap.get(NetworkInUsageDistributionGoal.class.getSimpleName());
                 break;
             case NW_OUT:
-                goal = goalMap.get(NetworkOutUsageDistributionGoal.class.getSimpleName());
+                goal = (AbstractGoal) goalMap.get(NetworkOutUsageDistributionGoal.class.getSimpleName());
                 break;
             default:
                 break;
@@ -182,7 +182,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
     }
 
     private void testSingleResourceDistributionOptimizeOneMove(Resource resource) {
-        Goal goal = getGoalByResource(resource);
+        AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -220,7 +220,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
     }
 
     private void testSingleResourceDistributionOptimizeMultiMoveOut(Resource resource) {
-        Goal goal = getGoalByResource(resource);
+        AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -264,7 +264,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
     }
 
     private void testSingleResourceDistributionOptimizeMultiMoveIn(Resource resource) {
-        Goal goal = getGoalByResource(resource);
+        AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -322,7 +322,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
     }
 
     private void testMultiGoalOptimizeWithOneToOneReplicaSwap(Resource resource) {
-        Goal goal = getGoalByResource(resource);
+        AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
         ClusterModelSnapshot cluster = new ClusterModelSnapshot();
@@ -354,6 +354,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         Assertions.assertEquals(90, cluster.replicasFor(1).stream().mapToDouble(e -> e.load(Resource.NW_OUT)).sum());
 
         List<Action> actions = goal.optimize(cluster, goalMap.values());
+        System.out.printf("Actions: %s%n", actions);
         Assertions.assertNotEquals(0, actions.size());
         Assertions.assertNotNull(cluster);
         for (Broker broker : cluster.brokers()) {
