@@ -18,6 +18,7 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.utils.LogSuppressor;
 import io.netty.channel.EventLoop;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -40,6 +41,7 @@ public class StreamReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReader.class);
     private static final int DEFAULT_READAHEAD_SIZE = 1024 * 1024 / 2;
     private static final int MAX_READAHEAD_SIZE = 32 * 1024 * 1024;
+    private static final LogSuppressor LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 30000);
     // visible to test
     final NavigableMap<Long, Block> blocksMap = new TreeMap<>();
     final Readahead readahead;
@@ -51,6 +53,7 @@ public class StreamReader {
     long nextReadOffset;
     long loadedBlockIndexEndOffset = 0L;
     private CompletableFuture<Map<Long, Block>> inflightLoadIndexCf;
+    private long lastAccessTimestamp = System.currentTimeMillis();
 
     public StreamReader(
         long streamId, long nextReadOffset, EventLoop eventLoop,
@@ -69,14 +72,32 @@ public class StreamReader {
     }
 
     public CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes) {
-        // TODO: only allow one inflight read
+        lastAccessTimestamp = System.currentTimeMillis();
         ReadContext readContext = new ReadContext();
         read0(readContext, startOffset, endOffset, maxBytes);
-        readContext.cf.thenAccept(this::afterRead).exceptionally(ex -> {
-            readContext.records.forEach(StreamRecordBatch::release);
-            return null;
+        return readContext.cf.whenComplete((rst, ex) -> {
+            if (ex != null) {
+                readContext.records.forEach(StreamRecordBatch::release);
+            } else {
+                afterRead(rst);
+            }
         });
-        return readContext.cf;
+    }
+
+    public long nextReadOffset() {
+        return nextReadOffset;
+    }
+
+    public long lastAccessTimestamp() {
+        return lastAccessTimestamp;
+    }
+
+    public void close() {
+        blocksMap.forEach((k, v) -> {
+            if (v.data != null) {
+                v.data.markRead();
+            }
+        });
     }
 
     void read0(ReadContext ctx, long startOffset, long endOffset, int maxBytes) {
@@ -280,6 +301,7 @@ public class StreamReader {
         if (block == blockInMap) {
             // The unread block is evicted; It means the cache is full, we need to reset the readahead.
             readahead.reset();
+            LOG_SUPPRESSOR.warn("The unread block is evicted, please increase the block cache size");
         }
     }
 

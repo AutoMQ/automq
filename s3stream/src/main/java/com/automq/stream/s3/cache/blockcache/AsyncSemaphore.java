@@ -54,8 +54,8 @@ class AsyncSemaphore {
         }
     }
 
-    public synchronized boolean hasPermits() {
-        return permits > 0;
+    public synchronized boolean requiredRelease() {
+        return permits <= 0 || !tasks.isEmpty();
     }
 
     public synchronized long permits() {
