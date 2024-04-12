@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -34,27 +33,6 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
     private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     protected abstract Resource resource();
-
-    protected Optional<Action> trySwapPartitionOut(ClusterModelSnapshot cluster,
-                                                   TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica,
-                                                   BrokerUpdater.Broker srcBroker,
-                                                   List<BrokerUpdater.Broker> candidates,
-                                                   Collection<Goal> goalsByPriority) {
-        List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
-        for (BrokerUpdater.Broker candidate : candidates) {
-            for (TopicPartitionReplicaUpdater.TopicPartitionReplica candidateReplica : cluster.replicasFor(candidate.getBrokerId())) {
-                if (candidate.load(resource()) > srcReplica.load(resource())) {
-                    continue;
-                }
-                Action action = new Action(ActionType.SWAP, srcReplica.getTopicPartition(), srcBroker.getBrokerId(),
-                        candidate.getBrokerId(), candidateReplica.getTopicPartition());
-                calculateCandidateActionScores(candidateActionScores, goalsByPriority, action, cluster);
-            }
-        }
-        LOGGER.debug("try swap partition {} out for broker {}, all possible action score: {} on goal {}", srcReplica.getTopicPartition(),
-                srcBroker.getBrokerId(), candidateActionScores, name());
-        return getAcceptableAction(candidateActionScores);
-    }
 
     @Override
     protected boolean moveReplica(Action action, ClusterModelSnapshot cluster, BrokerUpdater.Broker src, BrokerUpdater.Broker dest) {
@@ -101,7 +79,8 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
             if (actionType == ActionType.MOVE) {
                 optionalAction = tryMovePartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority);
             } else {
-                optionalAction = trySwapPartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority);
+                optionalAction = trySwapPartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority,
+                        (src, candidate) -> src.load(resource()) > candidate.load(resource()));
             }
 
             if (optionalAction.isPresent()) {
@@ -145,7 +124,8 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                 if (actionType == ActionType.MOVE) {
                     optionalAction = tryMovePartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority);
                 } else {
-                    optionalAction = trySwapPartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority);
+                    optionalAction = trySwapPartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority,
+                            (src, candidate) -> src.load(resource()) > candidate.load(resource()));
                 }
 
                 if (optionalAction.isPresent()) {
