@@ -133,7 +133,7 @@ public class ControllerKVClient implements KVClient {
             }
         });
         this.requestSender.send(task);
-        return null;
+        return future;
     }
 
     @Override
