@@ -25,8 +25,8 @@ calculate_max_heap_kb() {
         # Return the smaller of 75% of the total memory or 32GB
         echo "$((mem_75_percent_kb < mem_32_gb_in_kb ? mem_75_percent_kb : mem_32_gb_in_kb))"
     else
-        # Use 6GB as the default heap size on other platforms
-        echo "$((6 * 1024 * 1024))"
+        # Use 1GB as the default heap size on other platforms for development purposes
+        echo "$((1 * 1024 * 1024))"
     fi
 }
 

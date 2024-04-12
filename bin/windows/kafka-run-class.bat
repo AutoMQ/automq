@@ -43,61 +43,39 @@ IF ["%SCALA_BINARY_VERSION%"] EQU [""] (
 )
 
 rem Classpath addition for kafka-core dependencies
-for %%i in ("%BASE_DIR%\core\build\dependant-libs-%SCALA_VERSION%\*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\core\build\dependant-libs-%SCALA_VERSION%\*"
 
 rem Classpath addition for kafka-examples
-for %%i in ("%BASE_DIR%\examples\build\libs\kafka-examples*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\examples\build\libs\*"
 
 rem Classpath addition for kafka-clients
-for %%i in ("%BASE_DIR%\clients\build\libs\kafka-clients*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\clients\build\libs\*"
 
 rem Classpath addition for kafka-streams
-for %%i in ("%BASE_DIR%\streams\build\libs\kafka-streams*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\streams\build\libs\*"
 
 rem Classpath addition for kafka-streams-examples
-for %%i in ("%BASE_DIR%\streams\examples\build\libs\kafka-streams-examples*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\streams\examples\build\libs\*"
 
-for %%i in ("%BASE_DIR%\streams\build\dependant-libs-%SCALA_VERSION%\rocksdb*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\streams\build\dependant-libs-%SCALA_VERSION%\*"
 
 rem Classpath addition for kafka tools
-for %%i in ("%BASE_DIR%\tools\build\libs\kafka-tools*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\tools\build\libs\*"
 
-for %%i in ("%BASE_DIR%\tools\build\dependant-libs-%SCALA_VERSION%\*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\tools\build\dependant-libs-%SCALA_VERSION%\*"
 
 for %%p in (api runtime file json tools) do (
-	for %%i in ("%BASE_DIR%\connect\%%p\build\libs\connect-%%p*.jar") do (
-		call :concat "%%i"
-	)
+	call :concat "%BASE_DIR%\connect\%%p\build\libs\*"
 	if exist "%BASE_DIR%\connect\%%p\build\dependant-libs\*" (
 		call :concat "%BASE_DIR%\connect\%%p\build\dependant-libs\*"
 	)
 )
 
 rem Classpath addition for release
-for %%i in ("%BASE_DIR%\libs\*") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\libs\*"
 
 rem Classpath addition for core
-for %%i in ("%BASE_DIR%\core\build\libs\kafka_%SCALA_BINARY_VERSION%*.jar") do (
-	call :concat "%%i"
-)
+call :concat "%BASE_DIR%\core\build\libs\*"
 
 rem JMX settings
 IF ["%KAFKA_JMX_OPTS%"] EQU [""] (

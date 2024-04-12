@@ -126,8 +126,15 @@ public class WALUtil {
         if (!new File(path).exists()) {
             return false;
         }
-        return POSIXFactory.getPOSIX()
-            .stat(path)
-            .isBlockDev();
+        boolean isBlockDevice;
+        try {
+            isBlockDevice = POSIXFactory.getPOSIX()
+                .stat(path)
+                .isBlockDev();
+        } catch (Exception e) {
+            // In some OS (like Windows), the isBlockDev() method may throw an IllegalStateException.
+            isBlockDevice = false;
+        }
+        return isBlockDevice;
     }
 }
