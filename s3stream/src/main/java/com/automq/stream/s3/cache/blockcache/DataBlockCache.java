@@ -14,7 +14,7 @@ package com.automq.stream.s3.cache.blockcache;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.LRUCache;
-import io.netty.channel.DefaultEventLoop;
+import io.netty.channel.EventLoop;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -35,7 +35,7 @@ public class DataBlockCache {
     final AsyncSemaphore sizeLimiter;
     private final long maxSize;
 
-    public DataBlockCache(long maxSize, DefaultEventLoop[] eventLoops) {
+    public DataBlockCache(long maxSize, EventLoop[] eventLoops) {
         this.maxSize = maxSize;
         this.sizeLimiter = new AsyncSemaphore(maxSize);
         this.caches = new Cache[eventLoops.length];
@@ -105,16 +105,13 @@ public class DataBlockCache {
         final Map<DataBlockGroupKey, DataBlock> blocks = new HashMap<>();
         final LRUCache<DataBlockGroupKey, DataBlock> lru = new LRUCache<>();
         final Map<DataBlockGroupKey, DataBlock> inactive = new HashMap<>();
-        private final DefaultEventLoop eventLoop;
+        private final EventLoop eventLoop;
 
-        public Cache(DefaultEventLoop eventLoop) {
+        public Cache(EventLoop eventLoop) {
             this.eventLoop = eventLoop;
         }
 
         public CompletableFuture<DataBlock> getBlock(ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
-            if (Thread.currentThread().getId() != eventLoop.threadProperties().id()) {
-                throw new IllegalStateException("getBlock must be invoked in the same eventLoop");
-            }
             long objectId = objectReader.metadata().objectId();
             DataBlockGroupKey key = new DataBlockGroupKey(objectId, dataBlockIndex);
             DataBlock dataBlock = blocks.get(key);
@@ -139,7 +136,7 @@ public class DataBlockCache {
             return cf;
         }
 
-        private void read(ObjectReader reader, DataBlock dataBlock, DefaultEventLoop eventLoop) {
+        private void read(ObjectReader reader, DataBlock dataBlock, EventLoop eventLoop) {
             reader.retain();
             boolean acquired = sizeLimiter.acquire(dataBlock.dataBlockIndex().size(), () -> {
                 reader.read(dataBlock.dataBlockIndex()).whenCompleteAsync((rst, ex) -> {
@@ -150,7 +147,7 @@ public class DataBlockCache {
                         dataBlock.complete(rst);
                     }
                     lru.put(new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex()), dataBlock);
-                    if (!sizeLimiter.hasPermits()) {
+                    if (sizeLimiter.requiredRelease()) {
                         // In the described scenario, with maxSize set to 1, upon the sequential arrival of requests #getBlock(size=2) and #getBlock(3),
                         // #getBlock(3) will wait in the queue until permits are available.
                         // If, after #getBlock(size=2) completes, permits are still lacking in the sizeLimiter, implying queued tasks,
@@ -175,7 +172,7 @@ public class DataBlockCache {
         }
 
         private void evict0() {
-            while (!sizeLimiter.hasPermits()) {
+            while (sizeLimiter.requiredRelease()) {
                 Map.Entry<DataBlockGroupKey, DataBlock> entry = null;
                 if (!inactive.isEmpty()) {
                     Iterator<Map.Entry<DataBlockGroupKey, DataBlock>> it = inactive.entrySet().iterator();

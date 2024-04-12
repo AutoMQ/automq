@@ -121,6 +121,8 @@ import java.util.concurrent.atomic.AtomicInteger;
                         break;
                     }
                     continue;
+                } else {
+                    recordBatch.release();
                 }
                 if (recordBatch.getBaseOffset() >= endOffset) {
                     break;
