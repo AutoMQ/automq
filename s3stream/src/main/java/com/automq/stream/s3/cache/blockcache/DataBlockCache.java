@@ -15,11 +15,11 @@ import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.LRUCache;
 import io.netty.channel.DefaultEventLoop;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The DataBlockCache, akin to Linux's Page Cache, has the following responsibilities:
@@ -102,9 +102,9 @@ public class DataBlockCache {
     }
 
     class Cache implements ReadStatusChangeListener {
-        final Map<DataBlockGroupKey, DataBlock> blocks = new ConcurrentHashMap<>();
+        final Map<DataBlockGroupKey, DataBlock> blocks = new HashMap<>();
         final LRUCache<DataBlockGroupKey, DataBlock> lru = new LRUCache<>();
-        final Map<DataBlockGroupKey, DataBlock> inactive = new ConcurrentHashMap<>();
+        final Map<DataBlockGroupKey, DataBlock> inactive = new HashMap<>();
         private final DefaultEventLoop eventLoop;
 
         public Cache(DefaultEventLoop eventLoop) {
