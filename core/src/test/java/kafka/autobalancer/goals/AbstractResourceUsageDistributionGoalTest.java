@@ -354,6 +354,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         Assertions.assertEquals(90, cluster.replicasFor(1).stream().mapToDouble(e -> e.load(Resource.NW_OUT)).sum());
 
         List<Action> actions = goal.optimize(cluster, goalMap.values());
+        System.out.printf("Actions: %s%n", actions);
         Assertions.assertNotEquals(0, actions.size());
         Assertions.assertNotNull(cluster);
         for (Broker broker : cluster.brokers()) {
