@@ -11,7 +11,9 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.helper.HelpScreenException;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
@@ -20,9 +22,9 @@ import net.sourceforge.argparse4j.inf.Namespace;
 
 public class PerfConfig {
     final String bootstrapServer;
-    final List<String> topicConfigs;
-    final List<String> producerConfigs;
-    final List<String> consumerConfigs;
+    final Map<String, String> topicConfigs;
+    final Map<String, String> producerConfigs;
+    final Map<String, String> consumerConfigs;
     final String topicPrefix;
     final int topics;
     final int partitionsPerTopic;
@@ -49,9 +51,9 @@ public class PerfConfig {
         }
 
         bootstrapServer = ns.getString("bootstrapServer");
-        topicConfigs = ns.getList("topicConfigs");
-        producerConfigs = ns.getList("producerConfigs");
-        consumerConfigs = ns.getList("consumerConfigs");
+        topicConfigs = parseConfigs(ns.getList("topicConfigs"));
+        producerConfigs = parseConfigs(ns.getList("producerConfigs"));
+        consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
         topicPrefix = ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
@@ -162,5 +164,30 @@ public class PerfConfig {
             .metavar("REPORTING_INTERVAL_SECONDS")
             .help("The reporting interval in seconds.");
         return parser;
+    }
+
+    public String bootstrapServer() {
+        return bootstrapServer;
+    }
+
+    public TopicService.TopicsConfig topicsConfig() {
+        return new TopicService.TopicsConfig(
+            topicPrefix,
+            topics,
+            partitionsPerTopic,
+            topicConfigs
+        );
+    }
+
+    private Map<String, String> parseConfigs(List<String> configs) {
+        Map<String, String> map = new HashMap<>();
+        for (String config : configs) {
+            String[] parts = config.split("=");
+            if (parts.length != 2) {
+                throw new IllegalArgumentException("Invalid config: " + config);
+            }
+            map.put(parts[0], parts[1]);
+        }
+        return map;
     }
 }

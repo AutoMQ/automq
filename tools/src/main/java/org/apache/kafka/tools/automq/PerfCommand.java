@@ -11,27 +11,39 @@
 
 package org.apache.kafka.tools.automq;
 
+import java.util.List;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
+import org.apache.kafka.tools.automq.perf.TopicService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class PerfCommand implements AutoCloseable {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(PerfCommand.class);
+    private final PerfConfig config;
+    private final TopicService topicService;
 
     public static void main(String[] args) throws Exception {
         PerfConfig config = new PerfConfig(args);
         try (PerfCommand command = new PerfCommand(config)) {
-            command.run(config);
+            command.run();
         }
     }
 
     private PerfCommand(PerfConfig config) {
-        // TODO
+        this.config = config;
+        this.topicService = new TopicService(config.bootstrapServer());
     }
 
-    private void run(PerfConfig config) {
+    private void run() {
+        LOGGER.info("Creating topics...");
+        List<String> topics = topicService.createTopics(config.topicsConfig());
+        LOGGER.info("Created {} topics", topics.size());
         // TODO
     }
 
     @Override
     public void close() {
-        // TODO
+        topicService.close();
     }
 }
