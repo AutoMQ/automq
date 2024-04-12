@@ -13,12 +13,15 @@ package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.utils.CloseableIterator;
 import io.netty.buffer.ByteBuf;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
-@EventLoopSafe
-public class DataBlock {
+@EventLoopSafe public class DataBlock {
     private static final int UNREAD_INIT = -1;
     private final long objectId;
     private final DataBlockIndex dataBlockIndex;
@@ -102,5 +105,33 @@ public class DataBlock {
 
     ByteBuf dataBuf() {
         return dataBlockGroup.buf();
+    }
+
+    public List<StreamRecordBatch> getRecords(long startOffset, long endOffset, int maxBytes) {
+        List<StreamRecordBatch> records = new ArrayList<>();
+        int remainingBytes = maxBytes;
+        // TODO: iterator from certain offset
+        try (CloseableIterator<StreamRecordBatch> it = dataBlockGroup.iterator()) {
+            while (it.hasNext()) {
+                StreamRecordBatch recordBatch = it.next();
+                if (recordBatch.getBaseOffset() < endOffset && recordBatch.getLastOffset() > startOffset) {
+                    records.add(recordBatch);
+                    remainingBytes -= recordBatch.size();
+                    if (remainingBytes <= 0) {
+                        break;
+                    }
+                    continue;
+                }
+                if (recordBatch.getBaseOffset() >= endOffset) {
+                    break;
+                }
+            }
+        }
+        return records;
+    }
+
+    @Override
+    public String toString() {
+        return "DataBlock{" + "objectId=" + objectId + ", index=" + dataBlockIndex + '}';
     }
 }

@@ -45,6 +45,7 @@ public class ObjectReader implements AutoCloseable {
         this.objectKey = metadata.key();
         this.s3Operator = s3Operator;
         this.basicObjectInfoCf = new CompletableFuture<>();
+        // TODO: lazy load index
         asyncGetBasicObjectInfo();
     }
 

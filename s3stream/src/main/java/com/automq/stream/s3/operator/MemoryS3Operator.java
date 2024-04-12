@@ -123,4 +123,11 @@ public class MemoryS3Operator implements S3Operator {
     public CompletableFuture<Void> completeMultipartUpload(String path, String uploadId, List<CompletedPart> parts) {
         return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
+
+    public ByteBuf get() {
+        if (storage.size() != 1) {
+            throw new IllegalStateException("expect only one object in storage");
+        }
+        return storage.values().iterator().next();
+    }
 }
