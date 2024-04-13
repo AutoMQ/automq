@@ -19,7 +19,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.utils.LogSuppressor;
-import io.netty.channel.EventLoop;
+import com.automq.stream.utils.threads.EventLoop;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;

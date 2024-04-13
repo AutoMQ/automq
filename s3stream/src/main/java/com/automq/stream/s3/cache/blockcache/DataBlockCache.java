@@ -14,7 +14,7 @@ package com.automq.stream.s3.cache.blockcache;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.LRUCache;
-import io.netty.channel.EventLoop;
+import com.automq.stream.utils.threads.EventLoop;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
