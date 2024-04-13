@@ -21,9 +21,7 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
-import com.automq.stream.utils.ThreadUtils;
-import io.netty.channel.DefaultEventLoop;
-import io.netty.channel.EventLoop;
+import com.automq.stream.utils.threads.EventLoop;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -54,7 +52,7 @@ public class StreamReaders implements S3BlockCache {
     public StreamReaders(long size, ObjectManager objectManager, S3Operator s3Operator, int concurrency) {
         EventLoop[] eventLoops = new EventLoop[concurrency];
         for (int i = 0; i < concurrency; i++) {
-            eventLoops[i] = new DefaultEventLoop(ThreadUtils.createThreadFactory("stream-reader-" + i, true));
+            eventLoops[i] = new EventLoop("stream-reader-" + i);
         }
         this.caches = new Cache[concurrency];
         for (int i = 0; i < concurrency; i++) {

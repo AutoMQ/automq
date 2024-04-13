@@ -19,8 +19,8 @@ import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.utils.threads.EventLoop;
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.DefaultEventLoop;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -48,12 +48,12 @@ import static org.mockito.Mockito.when;
 public class DataBlockCacheTest {
     static final long STREAM_ID = 233;
 
-    DefaultEventLoop[] eventLoops;
+    EventLoop[] eventLoops;
     DataBlockCache cache;
 
     @BeforeEach
     void setup() {
-        eventLoops = new DefaultEventLoop[] {new DefaultEventLoop()};
+        eventLoops = new EventLoop[] {new EventLoop("")};
         cache = new DataBlockCache(1024, eventLoops);
     }
 
