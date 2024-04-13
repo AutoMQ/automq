@@ -19,7 +19,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.utils.LogSuppressor;
-import io.netty.channel.EventLoop;
+import com.automq.stream.utils.threads.EventLoop;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -203,9 +203,8 @@ public class StreamReader {
                 if (firstBlock) {
                     firstBlock = false;
                 }
-                Block block = entry.getValue();
-                // after read the data will be return to the cache, so we need reload the data every time
-                block.loadData();
+                // after read the data will be return to the cache, so we need to reload the data every time
+                Block block = entry.getValue().newBlockWithData();
                 newBlocks.add(block);
                 if ((endOffset != -1L && index.endOffset() >= endOffset) || remainingSize <= 0) {
                     fulfill = true;
@@ -328,9 +327,13 @@ public class StreamReader {
             this.index = index;
         }
 
-        public void loadData() {
+        public Block newBlockWithData() {
+            // We need to create a new block with consistent data to avoid duplicated release or leak,
+            // cause of the loaded data maybe evicted and reloaded.
+            Block newBlock = new Block(metadata, index);
             ObjectReader objectReader = objectReaderFactory.apply(metadata);
             loadCf = dataBlockCache.getBlock(objectReader, index).thenAccept(db -> {
+                newBlock.data = db;
                 if (data != db) {
                     // the data block is first loaded or evict & reload
                     data = db;
@@ -339,8 +342,11 @@ public class StreamReader {
                 }
             }).exceptionally(ex -> {
                 exception = ex;
+                newBlock.exception = ex;
                 return null;
             }).whenComplete((nil, ex) -> objectReader.release());
+            newBlock.loadCf = loadCf;
+            return newBlock;
         }
 
         public void release() {

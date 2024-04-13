@@ -17,7 +17,7 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
-import io.netty.channel.DefaultEventLoop;
+import com.automq.stream.utils.threads.EventLoop;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +47,7 @@ public class StreamReaderTest {
     private static final long STREAM_ID = 233;
     private static final int BLOCK_SIZE_THRESHOLD = 1024;
     private Map<Long, MockObject> objects;
-    private DefaultEventLoop[] eventLoops;
+    private EventLoop[] eventLoops;
     private ObjectManager objectManager;
     private Function<S3ObjectMetadata, ObjectReader> objectReaderFactory;
     private DataBlockCache dataBlockCache;
@@ -91,8 +91,8 @@ public class StreamReaderTest {
             );
         }
 
-        eventLoops = new DefaultEventLoop[1];
-        eventLoops[0] = new DefaultEventLoop();
+        eventLoops = new EventLoop[1];
+        eventLoops[0] = new EventLoop("");
 
         objectManager = mock(ObjectManager.class);
         objectReaderFactory = m -> objects.get(m.objectId()).objectReader();

@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.cache.blockcache;
 
-import io.netty.channel.EventLoop;
+import com.automq.stream.utils.threads.EventLoop;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
