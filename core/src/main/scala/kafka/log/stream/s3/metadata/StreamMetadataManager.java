@@ -185,6 +185,10 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         }
     }
 
+    public boolean isObjectExist(long objectId) {
+        return objectsImage.getObjectMetadata(objectId) != null;
+    }
+
     // must access thread safe
     private CompletableFuture<Void> pendingFetch() {
         GetObjectsTask task = new GetObjectsTask();

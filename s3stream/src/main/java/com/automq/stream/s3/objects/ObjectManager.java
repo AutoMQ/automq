@@ -64,6 +64,13 @@ public interface ObjectManager {
     CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit);
 
     /**
+     * Verify object exist.
+     * @param objectId object id.
+     * @return true if object exist, otherwise false.
+     */
+    boolean isObjectExist(long objectId);
+
+    /**
      * Get current server stream set objects.
      * When server is starting, server need server stream set objects to recover.
      */
