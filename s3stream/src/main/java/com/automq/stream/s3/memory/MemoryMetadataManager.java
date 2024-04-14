@@ -183,6 +183,18 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
+    public boolean isObjectExist(long objectId) {
+        if (streamSetObjects.containsKey(objectId))
+            return true;
+        for (List<S3ObjectMetadata> list : streamObjects.values()) {
+            if (list.stream().anyMatch(m -> m.objectId() == objectId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
     public synchronized CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
         List<S3ObjectMetadata> result = streamSetObjects.values()
             .stream()

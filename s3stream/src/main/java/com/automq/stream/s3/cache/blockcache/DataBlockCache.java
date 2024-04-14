@@ -120,9 +120,9 @@ public class DataBlockCache {
             DataBlock dataBlock = blocks.get(key);
             if (dataBlock == null) {
                 DataBlock newDataBlock = new DataBlock(objectId, dataBlockIndex, this);
-                blocks.put(key, dataBlock);
-                read(objectReader, newDataBlock, eventLoop);
                 dataBlock = newDataBlock;
+                blocks.put(key, newDataBlock);
+                read(objectReader, newDataBlock, eventLoop);
             }
             lru.touchIfExist(key);
             CompletableFuture<DataBlock> cf = new CompletableFuture<>();
