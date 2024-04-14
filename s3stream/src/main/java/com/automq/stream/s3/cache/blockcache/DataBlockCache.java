@@ -20,6 +20,8 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The DataBlockCache, akin to Linux's Page Cache, has the following responsibilities:
@@ -28,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @EventLoopSafe
 public class DataBlockCache {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockCache.class);
     final Cache[] caches;
     /**
      * Limit the cache size, it real size may be slightly larger than the max size.
@@ -117,9 +120,9 @@ public class DataBlockCache {
             DataBlock dataBlock = blocks.get(key);
             if (dataBlock == null) {
                 DataBlock newDataBlock = new DataBlock(objectId, dataBlockIndex, this);
-                read(objectReader, newDataBlock, eventLoop);
-                put(key, newDataBlock);
                 dataBlock = newDataBlock;
+                blocks.put(key, newDataBlock);
+                read(objectReader, newDataBlock, eventLoop);
             }
             lru.touchIfExist(key);
             CompletableFuture<DataBlock> cf = new CompletableFuture<>();
@@ -144,9 +147,9 @@ public class DataBlockCache {
                     if (ex != null) {
                         dataBlock.completeExceptionally(ex);
                     } else {
+                        lru.put(new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex()), dataBlock);
                         dataBlock.complete(rst);
                     }
-                    lru.put(new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex()), dataBlock);
                     if (sizeLimiter.requiredRelease()) {
                         // In the described scenario, with maxSize set to 1, upon the sequential arrival of requests #getBlock(size=2) and #getBlock(3),
                         // #getBlock(3) will wait in the queue until permits are available.
@@ -161,10 +164,6 @@ public class DataBlockCache {
             if (!acquired) {
                 DataBlockCache.this.evict();
             }
-        }
-
-        private void put(DataBlockGroupKey key, DataBlock dataBlock) {
-            blocks.put(key, dataBlock);
         }
 
         void evict() {
@@ -190,19 +189,23 @@ public class DataBlockCache {
                 }
                 DataBlockGroupKey key = entry.getKey();
                 DataBlock dataBlock = entry.getValue();
-                dataBlock.free();
-                blocks.remove(key);
+                if (blocks.remove(key, dataBlock)) {
+                    dataBlock.free();
+                } else {
+                    LOGGER.error("[BUG] duplicated free data block {}", dataBlock);
+                }
             }
         }
 
         public void markUnread(DataBlock dataBlock) {
-            inactive.remove(new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex()));
+            DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());
+            inactive.remove(key, dataBlock);
         }
 
         public void markRead(DataBlock dataBlock) {
             DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());
-            if (blocks.containsKey(key)) {
-                inactive.put(new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex()), dataBlock);
+            if (dataBlock == blocks.get(key)) {
+                inactive.put(key, dataBlock);
             }
         }
 

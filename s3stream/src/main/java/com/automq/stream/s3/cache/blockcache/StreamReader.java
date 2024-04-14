@@ -15,9 +15,12 @@ import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.ReadDataBlock;
+import com.automq.stream.s3.exceptions.BlockNotContinuousException;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
 import com.automq.stream.utils.threads.EventLoop;
 import java.util.ArrayList;
@@ -34,6 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 @EventLoopSafe
 public class StreamReader {
@@ -44,6 +48,9 @@ public class StreamReader {
     private static final LogSuppressor LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 30000);
     // visible to test
     final NavigableMap<Long, Block> blocksMap = new TreeMap<>();
+    Block lastBlock = null;
+    long loadedBlockIndexEndOffset = 0L;
+
     final Readahead readahead;
     private final long streamId;
     private final EventLoop eventLoop;
@@ -51,7 +58,6 @@ public class StreamReader {
     private final Function<S3ObjectMetadata, ObjectReader> objectReaderFactory;
     private final DataBlockCache dataBlockCache;
     long nextReadOffset;
-    long loadedBlockIndexEndOffset = 0L;
     private CompletableFuture<Map<Long, Block>> inflightLoadIndexCf;
     private long lastAccessTimestamp = System.currentTimeMillis();
 
@@ -72,16 +78,33 @@ public class StreamReader {
     }
 
     public CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes) {
+        return read(startOffset, endOffset, maxBytes, 1);
+    }
+
+    CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes, int leftRetries) {
         lastAccessTimestamp = System.currentTimeMillis();
         ReadContext readContext = new ReadContext();
         read0(readContext, startOffset, endOffset, maxBytes);
-        return readContext.cf.whenComplete((rst, ex) -> {
+        CompletableFuture<ReadDataBlock> retCf = new CompletableFuture<>();
+        readContext.cf.whenComplete((rst, ex) -> {
+            ex = FutureUtil.cause(ex);
             if (ex != null) {
                 readContext.records.forEach(StreamRecordBatch::release);
+                if (leftRetries > 0) {
+                    if (ex instanceof ObjectNotExistException || ex instanceof NoSuchKeyException || ex instanceof BlockNotContinuousException) {
+                        // The cached blocks maybe invalid after object compaction, so we need to reset the blocks and retry read
+                        resetBlocks();
+                        FutureUtil.propagate(read(startOffset, endOffset, maxBytes, leftRetries - 1), retCf);
+                    }
+                } else {
+                    retCf.completeExceptionally(ex);
+                }
             } else {
                 afterRead(rst);
+                retCf.complete(rst);
             }
         });
+        return retCf;
     }
 
     public long nextReadOffset() {
@@ -139,10 +162,6 @@ public class StreamReader {
                 List<StreamRecordBatch> newRecords = block.data.getRecords(nextStartOffset, nextEndOffset, remainingSize);
                 nextStartOffset = nextEndOffset;
                 remainingSize -= newRecords.stream().mapToInt(StreamRecordBatch::size).sum();
-                if (nextStartOffset >= index.endOffset()) {
-                    // #getDataBlock will invoke DataBlock#markUnread
-                    block.data.markRead();
-                }
                 ctx.records.addAll(newRecords);
                 if (nextStartOffset >= endOffset || remainingSize <= 0) {
                     fulfill = true;
@@ -170,6 +189,8 @@ public class StreamReader {
         while (it.hasNext()) {
             Block block = it.next().getValue();
             if (block.index.endOffset() <= nextReadOffset) {
+                // #getDataBlock will invoke DataBlock#markUnread
+                block.data.markRead();
                 it.remove();
             } else {
                 break;
@@ -188,7 +209,6 @@ public class StreamReader {
     private void getBlocks0(GetBlocksContext ctx, long startOffset, long endOffset, int maxBytes) {
         Long floorKey = blocksMap.floorKey(startOffset);
         CompletableFuture<Map<Long, Block>> loadMoreBlocksCf;
-        List<Block> newBlocks = new ArrayList<>();
         int remainingSize = maxBytes;
         if (floorKey == null || startOffset >= loadedBlockIndexEndOffset) {
             loadMoreBlocksCf = loadMoreBlocksWithoutData();
@@ -196,7 +216,13 @@ public class StreamReader {
             boolean firstBlock = true;
             boolean fulfill = false;
             for (Map.Entry<Long, Block> entry : blocksMap.tailMap(floorKey).entrySet()) {
-                DataBlockIndex index = entry.getValue().index;
+                Block block = entry.getValue();
+                long objectId = block.metadata.objectId();
+                if (!objectManager.isObjectExist(objectId)) {
+                    // The cached block's object maybe deleted by the compaction. So we need to check the object exist.
+                    ctx.cf.completeExceptionally(new ObjectNotExistException(objectId));
+                }
+                DataBlockIndex index = block.index;
                 if (!firstBlock || index.startOffset() == startOffset) {
                     remainingSize -= index.size();
                 }
@@ -204,14 +230,13 @@ public class StreamReader {
                     firstBlock = false;
                 }
                 // after read the data will be return to the cache, so we need to reload the data every time
-                Block block = entry.getValue().newBlockWithData();
-                newBlocks.add(block);
+                block = block.newBlockWithData();
+                ctx.blocks.add(block);
                 if ((endOffset != -1L && index.endOffset() >= endOffset) || remainingSize <= 0) {
                     fulfill = true;
                     break;
                 }
             }
-            ctx.blocks.addAll(newBlocks);
             if (fulfill) {
                 ctx.cf.complete(ctx.blocks);
                 return;
@@ -264,7 +289,10 @@ public class StreamReader {
                                     findRst.streamDataBlocks().forEach(streamDataBlock -> {
                                         DataBlockIndex index = streamDataBlock.dataBlockIndex();
                                         Block block = new Block(objectMetadata, index);
-                                        blocksMap.put(index.startOffset(), block);
+                                        if (!putBlock(block)) {
+                                            // After object compaction, the blocks get from different objectManager#getObjects maybe not continuous.
+                                            throw new BlockNotContinuousException();
+                                        }
                                         newDataBlockIndex.put(objectMetadata.objectId(), block);
                                         nextFindStartOffset.set(streamDataBlock.getEndOffset());
                                     }),
@@ -279,7 +307,6 @@ public class StreamReader {
                 inflightLoadIndexCf.completeExceptionally(ex);
                 return;
             }
-            loadedBlockIndexEndOffset = calWindowBlocksEndOffset();
             CompletableFuture<Map<Long, Block>> cf = inflightLoadIndexCf;
             inflightLoadIndexCf = null;
             cf.complete(newDataBlockIndex);
@@ -302,6 +329,27 @@ public class StreamReader {
             readahead.reset();
             LOG_SUPPRESSOR.warn("The unread block is evicted, please increase the block cache size");
         }
+    }
+
+    private void resetBlocks() {
+        blocksMap.clear();
+        lastBlock = null;
+        loadedBlockIndexEndOffset = 0L;
+    }
+
+    /**
+     * Put block into the blocks
+     * @param block {@link Block}
+     * @return if the block is continuous to the last block, it will return true
+     */
+    private boolean putBlock(Block block) {
+        if (lastBlock != null && lastBlock.index.endOffset() != block.index.startOffset()) {
+            return false;
+        }
+        lastBlock = block;
+        blocksMap.put(block.index.startOffset(), block);
+        loadedBlockIndexEndOffset = block.index.endOffset();
+        return true;
     }
 
     static class GetBlocksContext {

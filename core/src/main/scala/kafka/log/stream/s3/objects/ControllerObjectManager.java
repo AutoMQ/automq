@@ -209,6 +209,11 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
+    public boolean isObjectExist(long objectId) {
+        return this.metadataManager.isObjectExist(objectId);
+    }
+
+    @Override
     public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
         try {
             return this.metadataManager.getStreamSetObjects();
