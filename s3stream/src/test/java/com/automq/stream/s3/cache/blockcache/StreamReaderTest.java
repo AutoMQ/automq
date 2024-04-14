@@ -95,6 +95,7 @@ public class StreamReaderTest {
         eventLoops[0] = new EventLoop("");
 
         objectManager = mock(ObjectManager.class);
+        when(objectManager.isObjectExist(anyLong())).thenReturn(true);
         objectReaderFactory = m -> objects.get(m.objectId()).objectReader();
         dataBlockCache = spy(new DataBlockCache(Long.MAX_VALUE, eventLoops));
         streamReader = new StreamReader(STREAM_ID, 0, eventLoops[0], objectManager, objectReaderFactory, dataBlockCache);
