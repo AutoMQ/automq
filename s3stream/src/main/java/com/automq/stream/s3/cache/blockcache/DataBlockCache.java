@@ -144,10 +144,10 @@ public class DataBlockCache {
             boolean acquired = sizeLimiter.acquire(dataBlock.dataBlockIndex().size(), () -> {
                 reader.read(dataBlock.dataBlockIndex()).whenCompleteAsync((rst, ex) -> {
                     reader.release();
-                    lru.put(new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex()), dataBlock);
                     if (ex != null) {
                         dataBlock.completeExceptionally(ex);
                     } else {
+                        lru.put(new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex()), dataBlock);
                         dataBlock.complete(rst);
                     }
                     if (sizeLimiter.requiredRelease()) {
