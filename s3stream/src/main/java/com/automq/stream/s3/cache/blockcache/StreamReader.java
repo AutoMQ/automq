@@ -39,6 +39,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
+import static com.automq.stream.utils.FutureUtil.exec;
+
 @EventLoopSafe
 public class StreamReader {
     public static final int GET_OBJECT_STEP = 4;
@@ -86,24 +88,24 @@ public class StreamReader {
         ReadContext readContext = new ReadContext();
         read0(readContext, startOffset, endOffset, maxBytes);
         CompletableFuture<ReadDataBlock> retCf = new CompletableFuture<>();
-        readContext.cf.whenComplete((rst, ex) -> {
-            ex = FutureUtil.cause(ex);
-            if (ex != null) {
+        readContext.cf.whenComplete((rst, ex) -> exec(() -> {
+            Throwable cause = FutureUtil.cause(ex);
+            if (cause != null) {
                 readContext.records.forEach(StreamRecordBatch::release);
                 if (leftRetries > 0) {
-                    if (ex instanceof ObjectNotExistException || ex instanceof NoSuchKeyException || ex instanceof BlockNotContinuousException) {
+                    if (cause instanceof ObjectNotExistException || cause instanceof NoSuchKeyException || cause instanceof BlockNotContinuousException) {
                         // The cached blocks maybe invalid after object compaction, so we need to reset the blocks and retry read
                         resetBlocks();
                         FutureUtil.propagate(read(startOffset, endOffset, maxBytes, leftRetries - 1), retCf);
                     }
                 } else {
-                    retCf.completeExceptionally(ex);
+                    retCf.completeExceptionally(cause);
                 }
             } else {
-                afterRead(rst);
+                afterRead(rst, readContext);
                 retCf.complete(rst);
             }
-        });
+        }, retCf, LOGGER, "read"));
         return retCf;
     }
 
@@ -146,6 +148,7 @@ public class StreamReader {
                 ctx.cf.completeExceptionally(failedBlock.get().exception);
                 return;
             }
+            ctx.blocks.addAll(blocks);
             int remainingSize = maxBytes;
             long nextStartOffset = startOffset;
             long nextEndOffset;
@@ -176,10 +179,15 @@ public class StreamReader {
                 // So we may need to retry read to fulfill the endOffset or maxBytes
                 read0(ctx, nextStartOffset, endOffset, remainingSize);
             }
-        }).whenComplete((nil, ex) -> blocks.forEach(Block::release));
+        }).whenComplete((nil, ex) -> {
+            blocks.forEach(Block::release);
+            if (ex != null) {
+                ctx.cf.completeExceptionally(ex);
+            }
+        });
     }
 
-    void afterRead(ReadDataBlock readDataBlock) {
+    void afterRead(ReadDataBlock readDataBlock, ReadContext ctx) {
         List<StreamRecordBatch> records = readDataBlock.getRecords();
         if (!records.isEmpty()) {
             nextReadOffset = records.get(records.size() - 1).getLastOffset();
@@ -189,20 +197,28 @@ public class StreamReader {
         while (it.hasNext()) {
             Block block = it.next().getValue();
             if (block.index.endOffset() <= nextReadOffset) {
-                // #getDataBlock will invoke DataBlock#markUnread
-                block.data.markRead();
                 it.remove();
             } else {
                 break;
             }
         }
+        // #getDataBlock will invoke DataBlock#markUnread
+        ctx.blocks.forEach(b -> b.data.markRead());
         // try readahead to accelerate the next read
         readahead.tryReadahead();
     }
 
     private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes) {
         GetBlocksContext context = new GetBlocksContext();
-        getBlocks0(context, startOffset, endOffset, maxBytes);
+        try {
+            getBlocks0(context, startOffset, endOffset, maxBytes);
+        } catch (Throwable ex) {
+            context.cf.completeExceptionally(ex);
+        }
+        context.cf.exceptionally(ex -> {
+            context.blocks.forEach(b -> b.loadCf.thenAccept(nil -> b.release()));
+            return null;
+        });
         return context.cf;
     }
 
@@ -359,6 +375,7 @@ public class StreamReader {
 
     static class ReadContext {
         List<StreamRecordBatch> records = new LinkedList<>();
+        List<Block> blocks = new ArrayList<>();
         CacheAccessType accessType = CacheAccessType.BLOCK_CACHE_HIT;
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
     }

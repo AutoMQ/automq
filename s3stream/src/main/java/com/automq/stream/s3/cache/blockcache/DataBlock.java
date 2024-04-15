@@ -77,6 +77,9 @@ import java.util.concurrent.atomic.AtomicInteger;
     }
 
     public void markUnread() {
+        if (dataBlockGroup == null) {
+            throw new IllegalStateException("DataBlock is not loaded yet.");
+        }
         if (unreadCnt.get() == UNREAD_INIT) {
             unreadCnt.set(1);
         } else {
@@ -89,6 +92,9 @@ import java.util.concurrent.atomic.AtomicInteger;
     }
 
     public void markRead() {
+        if (dataBlockGroup == null) {
+            throw new IllegalStateException("DataBlock is not loaded yet.");
+        }
         int unreadCnt = this.unreadCnt.decrementAndGet();
         if (unreadCnt <= 0) {
             listener.markRead(this);
