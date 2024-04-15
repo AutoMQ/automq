@@ -883,31 +883,41 @@ class ReplicaManager(val config: KafkaConfig,
     }
 
     // AutoMQ inject start
-    // 1. get verification handle
+    // Step 1. get verification handle
     val verification = verify(transactionalId, transactionalProducerInfo.head._1)
+
+    // Wrap the callback to be handled on an arbitrary request handler thread
+    // when transaction verification is complete. The request local passed in
+    // is only used when the callback is executed immediately.
+    //
+    // This wrapper has the following behavior:
+    // wrapAsyncCallback -> verifyTransactionCallbackWrapper -> postVerificationCallback
+    //
+    // 1. wrapAsyncCallback: run the next callbacks in the same request handler thread.
+    // 2. verifyTransactionCallbackWrapper: retrieve and execute the next "task" closure in the inflight request queue.
+    // 3. postVerificationCallback: the real callback, append records to log.
+    val callbackWrapper = KafkaRequestHandler.wrapAsyncCallback(
+      verifyTransactionCallbackWrapper(verification, postVerificationCallback),
+      requestLocal
+    )
+
     val task: () => Unit = () => {
       maybeStartTransactionVerificationForPartitions(
         topicPartitionBatchInfo,
         transactionalId,
         transactionalProducerInfo.head._1,
         transactionalProducerInfo.head._2,
-        // Wrap the callback to be handled on an arbitrary request handler thread
-        // when transaction verification is complete. The request local passed in
-        // is only used when the callback is executed immediately.
-        KafkaRequestHandler.wrapAsyncCallback(
-          // 4. wrap the callback: after real callback, set the hasInflight = false and re-run the pending tasks.
-          verifyTransactionCallbackWrapper(verification, postVerificationCallback),
-          requestLocal
-        ),
+        // Step 4. execute the callback to append records to log and and run the pending tasks.
+        callbackWrapper,
         supportedOperation
       )
     }
-    // 2. ensure only one request is verifying transaction
+    // Step 2. ensure only one request is verifying transaction
     val hasInflight = checkWaitingTransaction(verification, task)
     if (hasInflight) {
       return
     }
-    // 3. if there is no inflight request, directly run the task
+    // Step 3. if there is no inflight request, directly run the task
     task()
     // AutoMQ inject end
   }

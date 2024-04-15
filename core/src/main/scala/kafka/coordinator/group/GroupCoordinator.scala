@@ -934,6 +934,22 @@ private[group] class GroupCoordinator(
         // AutoMQ inject start
         val replicaManager = groupManager.replicaManager
         val verification = replicaManager.verify(transactionalId, producerId)
+
+        // Wrap the callback to be handled on an arbitrary request handler thread
+        // when transaction verification is complete. The request local passed in
+        // is only used when the callback is executed immediately.
+        //
+        // This wrapper has the following behavior:
+        // wrapAsyncCallback -> verifyTransactionCallbackWrapper -> postVerificationCallback
+        //
+        // 1. wrapAsyncCallback: run the next callbacks in the same request handler thread.
+        // 2. verifyTransactionCallbackWrapper: retrieve and execute the next "task" closure in the inflight request queue.
+        // 3. postVerificationCallback: the real callback, append records to log.
+        val callbackWrapper = KafkaRequestHandler.wrapAsyncCallback(
+          replicaManager.verifyTransactionCallbackWrapper(verification, postVerificationCallback),
+          requestLocal
+        )
+
         val task = () => {
           groupManager.replicaManager.maybeStartTransactionVerificationForPartition(
             topicPartition = offsetTopicPartition,
@@ -941,13 +957,7 @@ private[group] class GroupCoordinator(
             producerId,
             producerEpoch,
             RecordBatch.NO_SEQUENCE,
-            // Wrap the callback to be handled on an arbitrary request handler thread
-            // when transaction verification is complete. The request local passed in
-            // is only used when the callback is executed immediately.
-            KafkaRequestHandler.wrapAsyncCallback(
-              replicaManager.verifyTransactionCallbackWrapper(verification, postVerificationCallback),
-              requestLocal
-            ),
+            callbackWrapper,
             supportedOperation
           )
         }
