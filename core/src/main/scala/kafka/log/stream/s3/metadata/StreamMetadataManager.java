@@ -27,6 +27,7 @@ import org.apache.kafka.image.loader.LoaderManifest;
 import org.apache.kafka.image.publisher.MetadataPublisher;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
+import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.raft.OffsetAndEpoch;
 import org.slf4j.Logger;
@@ -186,7 +187,11 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     }
 
     public boolean isObjectExist(long objectId) {
-        return objectsImage.getObjectMetadata(objectId) != null;
+        S3Object object = objectsImage.getObjectMetadata(objectId);
+        if (object == null) {
+            return false;
+        }
+        return object.getS3ObjectState() == S3ObjectState.COMMITTED;
     }
 
     // must access thread safe
