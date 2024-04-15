@@ -52,6 +52,14 @@ public class LRUCache<K, V> {
         return entry;
     }
 
+    public synchronized Map.Entry<K, V> peek() {
+        Iterator<Map.Entry<K, V>> it = cacheEntrySet.iterator();
+        if (it.hasNext()) {
+            return it.next();
+        }
+        return null;
+    }
+
     public synchronized boolean remove(K key) {
         return cache.remove(key) != null;
     }
