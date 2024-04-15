@@ -171,6 +171,7 @@ public class DataBlockCache {
         }
 
         private void evict0() {
+            // TODO: avoid awake more tasks than necessary
             while (sizeLimiter.requiredRelease()) {
                 Map.Entry<DataBlockGroupKey, DataBlock> entry = null;
                 if (!inactive.isEmpty()) {

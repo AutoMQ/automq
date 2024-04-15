@@ -14,15 +14,20 @@ package com.automq.stream.s3.cache.blockcache;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.ReadDataBlock;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.threads.EventLoop;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,10 +36,12 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
@@ -102,7 +109,7 @@ public class StreamReaderTest {
     }
 
     @Test
-    public void testRead_withReadahead() throws ExecutionException, InterruptedException {
+    public void testRead_withReadahead() throws ExecutionException, InterruptedException, TimeoutException {
         // user read get objects
         when(objectManager.getObjects(eq(STREAM_ID), eq(0L), eq(-1L), eq(StreamReader.GET_OBJECT_STEP)))
             .thenReturn(CompletableFuture.completedFuture(List.of(objects.get(0L).metadata, objects.get(1L).metadata, objects.get(2L).metadata, objects.get(3L).metadata)));
@@ -182,6 +189,30 @@ public class StreamReaderTest {
         assertEquals(14L, streamReader.readahead.readaheadMarkOffset);
         assertEquals(1024L * 1024 * 2, streamReader.readahead.nextReadaheadSize);
         assertEquals(14, dataBlockCache.caches[0].inactive.size());
+
+
+        when(objectManager.isObjectExist(anyLong())).thenReturn(false);
+        eventLoops[0].submit(() -> readCf.set(streamReader.read(14L, 15L, Integer.MAX_VALUE))).get();
+        Throwable ex = null;
+        try {
+            readCf.get().get(1, TimeUnit.SECONDS);
+        } catch (Throwable e) {
+            ex = FutureUtil.cause(e);
+        }
+        assertInstanceOf(ObjectNotExistException.class, ex);
+
+        AtomicBoolean failed = new AtomicBoolean(false);
+        doAnswer(args -> {
+            if (failed.get()) {
+                return true;
+            } else {
+                failed.set(true);
+                return false;
+            }
+        }).when(objectManager).isObjectExist(anyLong());
+        eventLoops[0].submit(() -> readCf.set(streamReader.read(14L, 15L, Integer.MAX_VALUE))).get();
+        rst = readCf.get().get(1, TimeUnit.SECONDS);
+
     }
 
 }
