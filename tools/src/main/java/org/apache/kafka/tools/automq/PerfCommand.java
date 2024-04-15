@@ -11,7 +11,9 @@
 
 package org.apache.kafka.tools.automq;
 
+import com.automq.stream.s3.metrics.TimerUtil;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
 import org.apache.kafka.tools.automq.perf.TopicService;
 import org.slf4j.Logger;
@@ -36,9 +38,11 @@ public class PerfCommand implements AutoCloseable {
     }
 
     private void run() {
+        TimerUtil timer = new TimerUtil();
         LOGGER.info("Creating topics...");
         List<String> topics = topicService.createTopics(config.topicsConfig());
-        LOGGER.info("Created {} topics", topics.size());
+        LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+        
         // TODO
     }
 

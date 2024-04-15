@@ -61,7 +61,7 @@ public class TopicService implements AutoCloseable {
             throw new RuntimeException(e);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof TopicExistsException) {
-                LOGGER.info("Topic already exists. name={}", name);
+                LOGGER.debug("Topic already exists. name={}", name);
             } else {
                 LOGGER.error("Failed to create topic. name={}", name, e);
                 throw new RuntimeException(e);
