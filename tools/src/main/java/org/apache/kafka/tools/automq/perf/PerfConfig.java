@@ -179,6 +179,15 @@ public class PerfConfig {
         );
     }
 
+    public ConsumerService.ConsumersConfig consumersConfig() {
+        return new ConsumerService.ConsumersConfig(
+            bootstrapServer,
+            groupsPerTopic,
+            consumersPerGroup,
+            consumerConfigs
+        );
+    }
+
     private Map<String, String> parseConfigs(List<String> configs) {
         Map<String, String> map = new HashMap<>();
         for (String config : configs) {

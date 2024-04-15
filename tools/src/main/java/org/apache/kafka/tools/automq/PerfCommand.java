@@ -14,6 +14,7 @@ package org.apache.kafka.tools.automq;
 import com.automq.stream.s3.metrics.TimerUtil;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
 import org.apache.kafka.tools.automq.perf.TopicService;
 import org.slf4j.Logger;
@@ -24,6 +25,7 @@ public class PerfCommand implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(PerfCommand.class);
     private final PerfConfig config;
     private final TopicService topicService;
+    private final ConsumerService consumerService;
 
     public static void main(String[] args) throws Exception {
         PerfConfig config = new PerfConfig(args);
@@ -35,14 +37,21 @@ public class PerfCommand implements AutoCloseable {
     private PerfCommand(PerfConfig config) {
         this.config = config;
         this.topicService = new TopicService(config.bootstrapServer());
+        this.consumerService = new ConsumerService();
     }
 
     private void run() {
         TimerUtil timer = new TimerUtil();
+
         LOGGER.info("Creating topics...");
         List<String> topics = topicService.createTopics(config.topicsConfig());
         LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
-        
+
+        LOGGER.info("Creating consumers...");
+        int consumers = consumerService.createConsumers(topics, config.consumersConfig(), (record, timestamp) -> {
+            // TODO
+        });
+        LOGGER.info("Created {} consumers, took {} ms", consumers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
         // TODO
     }
 
