@@ -1267,11 +1267,14 @@ class ElasticReplicaManager(
       }
       if (verification != null) {
         verification.synchronized {
-          verification.hasInflight.set(false)
           verification.timestamp.set(time.milliseconds())
-          while (!verification.waitingRequests.isEmpty) {
+          if (!verification.waitingRequests.isEmpty) {
+            // Since the callback thread and task thread may be different, we need to ensure that the tasks are executed sequentially.
             val request = verification.waitingRequests.poll()
             request.task()
+          } else {
+            // If there are no tasks in the queue, set hasInflight to false
+            verification.hasInflight.set(false)
           }
         }
         val lastCleanTimestamp = lastTransactionCleanTimestamp.get();
