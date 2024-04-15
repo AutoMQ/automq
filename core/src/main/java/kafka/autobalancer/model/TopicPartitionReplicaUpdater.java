@@ -31,7 +31,7 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
-        return metricsMap.keySet().containsAll(RawMetricTypes.partitionMetrics());
+        return metricsMap.keySet().containsAll(RawMetricTypes.PARTITION_METRICS);
     }
 
     @Override
@@ -59,14 +59,14 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         @Override
         public void processMetrics() {
             for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
-                if (!RawMetricTypes.partitionMetrics().contains(entry.getKey())) {
+                if (!RawMetricTypes.PARTITION_METRICS.contains(entry.getKey())) {
                     continue;
                 }
                 switch (entry.getKey()) {
-                    case RawMetricTypes.TOPIC_PARTITION_BYTES_IN:
+                    case RawMetricTypes.PARTITION_BYTES_IN:
                         this.setLoad(Resource.NW_IN, entry.getValue());
                         break;
-                    case RawMetricTypes.TOPIC_PARTITION_BYTES_OUT:
+                    case RawMetricTypes.PARTITION_BYTES_OUT:
                         this.setLoad(Resource.NW_OUT, entry.getValue());
                         break;
                     default:

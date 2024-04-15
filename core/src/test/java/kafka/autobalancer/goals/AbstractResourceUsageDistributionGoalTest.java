@@ -25,6 +25,7 @@ import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
 import kafka.server.KafkaConfig;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -368,4 +369,52 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         testMultiGoalOptimizeWithOneToOneReplicaSwap(Resource.NW_OUT);
     }
 
+    private void setupCluster(Resource resource, ClusterModelSnapshot cluster, Broker broker0, Broker broker1) {
+        double load0 = 10;
+        double load1 = 90;
+        broker0.setLoad(resource, load0);
+        broker1.setLoad(resource, load1);
+
+        TopicPartitionReplica replica0 = createTopicPartition(cluster, 0, TOPIC_0, 0);
+        replica0.setLoad(resource, 10);
+        Assertions.assertEquals(load0, cluster.replicasFor(0).stream().mapToDouble(e -> e.load(resource)).sum());
+
+        TopicPartitionReplica replica1 = createTopicPartition(cluster, 1, TOPIC_0, 1);
+        TopicPartitionReplica replica2 = createTopicPartition(cluster, 1, TOPIC_0, 2);
+        TopicPartitionReplica replica3 = createTopicPartition(cluster, 1, TOPIC_0, 3);
+        replica1.setLoad(resource, 20);
+        replica2.setLoad(resource, 40);
+        replica3.setLoad(resource, 30);
+        Assertions.assertEquals(load1, cluster.replicasFor(1).stream().mapToDouble(e -> e.load(resource)).sum());
+    }
+
+    private void testNotIncreaseLoadForSlowBroker(Resource resource) {
+        AbstractGoal goal = getGoalByResource(resource);
+        Assertions.assertNotNull(goal);
+
+        // test with normal brokers
+        ClusterModelSnapshot cluster = new ClusterModelSnapshot();
+        Broker broker0 = createBroker(cluster, RACK, 0, true);
+        Broker broker1 = createBroker(cluster, RACK, 1, true);
+        setupCluster(resource, cluster, broker0, broker1);
+        List<Action> actions = goal.optimize(cluster, goalMap.values());
+        Assertions.assertEquals(1, actions.size());
+        Assertions.assertEquals(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 2), 1, 0), actions.get(0));
+        cluster.brokers().forEach(b -> Assertions.assertTrue(goal.isBrokerAcceptable(b)));
+
+        // test with broker0 marked as slow broker
+        cluster = new ClusterModelSnapshot();
+        broker0 = createBroker(cluster, RACK, 0, true);
+        broker0.setSlowBroker(true);
+        broker1 = createBroker(cluster, RACK, 1, true);
+        setupCluster(resource, cluster, broker0, broker1);
+        actions = goal.optimize(cluster, goalMap.values());
+        Assertions.assertTrue(actions.isEmpty());
+    }
+
+    @Test
+    public void testNotIncreaseLoadForSlowBroker() {
+        testNotIncreaseLoadForSlowBroker(Resource.NW_IN);
+        testNotIncreaseLoadForSlowBroker(Resource.NW_OUT);
+    }
 }

@@ -46,8 +46,8 @@ import java.util.Properties;
 import java.util.Set;
 
 import static kafka.autobalancer.common.types.RawMetricTypes.PARTITION_SIZE;
-import static kafka.autobalancer.common.types.RawMetricTypes.TOPIC_PARTITION_BYTES_IN;
-import static kafka.autobalancer.common.types.RawMetricTypes.TOPIC_PARTITION_BYTES_OUT;
+import static kafka.autobalancer.common.types.RawMetricTypes.PARTITION_BYTES_IN;
+import static kafka.autobalancer.common.types.RawMetricTypes.PARTITION_BYTES_OUT;
 
 @Tag("S3Unit")
 public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrationTestHarness {
@@ -94,8 +94,8 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
             consumer.subscribe(Collections.singleton(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME));
             long startMs = System.currentTimeMillis();
             Set<Byte> expectedTopicPartitionMetricTypes = new HashSet<>(Arrays.asList(
-                    TOPIC_PARTITION_BYTES_IN,
-                    TOPIC_PARTITION_BYTES_OUT,
+                    PARTITION_BYTES_IN,
+                    PARTITION_BYTES_OUT,
                     PARTITION_SIZE));
             Set<Byte> expectedMetricTypes = new HashSet<>(expectedTopicPartitionMetricTypes);
 

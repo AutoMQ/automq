@@ -51,6 +51,10 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
                 }
                 actions.addAll(brokerActions);
             } else if (requireMoreLoad(broker)) {
+                if (broker.isSlowBroker()) {
+                    // prevent scheduling more partitions to slow broker
+                    continue;
+                }
                 List<Action> brokerActions = tryIncreaseLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers, goalsByPriority);
                 if (!isBrokerAcceptable(broker)) {
                     brokerActions.addAll(tryIncreaseLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));

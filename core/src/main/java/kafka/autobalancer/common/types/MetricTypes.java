@@ -13,4 +13,5 @@ package kafka.autobalancer.common.types;
 
 public class MetricTypes {
     public static final byte TOPIC_PARTITION_METRIC = (byte) 0;
+    public static final byte BROKER_METRIC = (byte) 1;
 }

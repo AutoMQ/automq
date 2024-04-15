@@ -262,8 +262,8 @@ public class AnomalyDetectorTest {
 
     private Map<Byte, Double> generateRandomMetrics(Random r) {
         Map<Byte, Double> metrics = new HashMap<>();
-        metrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, r.nextDouble(0, 1024 * 1024));
-        metrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, r.nextDouble(0, 1024 * 1024));
+        metrics.put(RawMetricTypes.PARTITION_BYTES_OUT, r.nextDouble(0, 1024 * 1024));
+        metrics.put(RawMetricTypes.PARTITION_BYTES_IN, r.nextDouble(0, 1024 * 1024));
         metrics.put(RawMetricTypes.PARTITION_SIZE, 0.0);
         return metrics;
     }
