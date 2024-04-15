@@ -32,8 +32,9 @@ public class ConsumerService implements AutoCloseable {
     private final List<Consumer> consumers = new LinkedList<>();
 
     /**
-     * Create consumers for the given topics. NOT thread-safe.
+     * Create consumers for the given topics.
      * Note: the created consumers will start polling immediately.
+     * NOT thread-safe.
      *
      * @param topics   topic names
      * @param config   consumer configuration

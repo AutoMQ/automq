@@ -59,6 +59,9 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Creating producers...");
         int producers = producerService.createProducers(topics, config.producersConfig());
         LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+
+        LOGGER.info("Waiting for topics are ready...");
+        int sent = producerService.probeProducers();
         // TODO
     }
 

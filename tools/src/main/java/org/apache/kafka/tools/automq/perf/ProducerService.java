@@ -15,8 +15,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,7 +28,8 @@ public class ProducerService implements AutoCloseable {
     private final List<Producer> producers = new LinkedList<>();
 
     /**
-     * Create producers for the given topics. NOT thread-safe.
+     * Create producers for the given topics.
+     * NOT thread-safe.
      *
      * @param topics topic names
      * @param config producer configuration
@@ -53,9 +56,25 @@ public class ProducerService implements AutoCloseable {
         return new Producer(kafkaProducer, topic);
     }
 
+    /**
+     * Send a message to each producer to ensure they are all up and running.
+     * It throws an exception if any of the producers fail to send the message.
+     * NOT thread-safe.
+     *
+     * @return number of messages sent
+     */
+    public int probeProducers() {
+        CompletableFuture.allOf(
+            producers.stream()
+                .map(p -> p.sendAsync("key", new byte[42]))
+                .toArray(CompletableFuture[]::new)
+        ).join();
+        return producers.size();
+    }
+
     @Override
     public void close() {
-        // TODO
+        producers.forEach(Producer::close);
     }
 
     public static class ProducersConfig {
@@ -70,13 +89,34 @@ public class ProducerService implements AutoCloseable {
         }
     }
 
-    static class Producer {
+    static class Producer implements AutoCloseable {
         private final KafkaProducer<String, byte[]> producer;
         private final String topic;
 
         public Producer(KafkaProducer<String, byte[]> producer, String topic) {
             this.producer = producer;
             this.topic = topic;
+        }
+
+        /**
+         * Send a message to the topic. The key is optional.
+         */
+        public CompletableFuture<Void> sendAsync(String key, byte[] payload) {
+            ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic, key, payload);
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            producer.send(record, (metadata, exception) -> {
+                if (exception != null) {
+                    future.completeExceptionally(exception);
+                } else {
+                    future.complete(null);
+                }
+            });
+            return future;
+        }
+
+        @Override
+        public void close() {
+            producer.close();
         }
     }
 }
