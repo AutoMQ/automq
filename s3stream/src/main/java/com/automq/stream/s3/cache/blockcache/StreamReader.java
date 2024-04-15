@@ -33,6 +33,7 @@ import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -47,6 +48,7 @@ public class StreamReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReader.class);
     private static final int DEFAULT_READAHEAD_SIZE = 1024 * 1024 / 2;
     private static final int MAX_READAHEAD_SIZE = 32 * 1024 * 1024;
+    private static final long READAHEAD_RESET_COLD_DOWN_MILLS = TimeUnit.MINUTES.toMillis(1);
     private static final LogSuppressor LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 30000);
     // visible to test
     final NavigableMap<Long, Block> blocksMap = new TreeMap<>();
@@ -425,11 +427,16 @@ public class StreamReader {
         long nextReadaheadOffset;
         int nextReadaheadSize = DEFAULT_READAHEAD_SIZE;
         long readaheadMarkOffset;
+        long resetTimestamp;
         boolean requireReset;
         private CompletableFuture<Void> inflightReadaheadCf;
 
         public void tryReadahead() {
             if (inflightReadaheadCf != null) {
+                return;
+            }
+            if (System.currentTimeMillis() - resetTimestamp < READAHEAD_RESET_COLD_DOWN_MILLS) {
+                // skip readahead when readahead is in cold down
                 return;
             }
             if (requireReset) {
@@ -460,6 +467,7 @@ public class StreamReader {
 
         public void reset() {
             requireReset = true;
+            resetTimestamp = System.currentTimeMillis();
         }
     }
 
