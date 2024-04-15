@@ -179,6 +179,14 @@ public class PerfConfig {
         );
     }
 
+    public ProducerService.ProducersConfig producersConfig() {
+        return new ProducerService.ProducersConfig(
+            bootstrapServer,
+            producersPerTopic,
+            producerConfigs
+        );
+    }
+
     public ConsumerService.ConsumersConfig consumersConfig() {
         return new ConsumerService.ConsumersConfig(
             bootstrapServer,

@@ -12,7 +12,7 @@
 package org.apache.kafka.tools.automq.perf;
 
 import java.time.Duration;
-import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -29,10 +29,11 @@ import org.slf4j.LoggerFactory;
 public class ConsumerService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsumerService.class);
-    private final List<Consumer> consumers = new ArrayList<>();
+    private final List<Consumer> consumers = new LinkedList<>();
 
     /**
      * Create consumers for the given topics. NOT thread-safe.
+     * Note: the created consumers will start polling immediately.
      *
      * @param topics   topic names
      * @param config   consumer configuration
@@ -57,14 +58,20 @@ public class ConsumerService implements AutoCloseable {
     private static Consumer createConsumer(String topic, String groupId,
         ConsumersConfig config, ConsumerCallback callback) {
         Properties properties = new Properties();
-        config.consumerConfigs.forEach(properties::setProperty);
-        properties.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
-        properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        properties.putAll(config.consumerConfigs);
+        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
+        properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 
         KafkaConsumer<String, byte[]> kafkaConsumer = new KafkaConsumer<>(properties);
         kafkaConsumer.subscribe(List.of(topic));
         // start polling
         return new Consumer(kafkaConsumer, callback);
+    }
+
+    @Override
+    public void close() {
+        consumers.forEach(Consumer::preClose);
+        consumers.forEach(Consumer::close);
     }
 
     @FunctionalInterface
@@ -91,12 +98,6 @@ public class ConsumerService implements AutoCloseable {
             this.consumersPerGroup = consumersPerGroup;
             this.consumerConfigs = consumerConfigs;
         }
-    }
-
-    @Override
-    public void close() {
-        consumers.forEach(Consumer::preClose);
-        consumers.forEach(Consumer::close);
     }
 
     static class Consumer {
