@@ -24,6 +24,7 @@ import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -38,11 +39,13 @@ import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -70,7 +73,9 @@ public class S3Stream implements Stream {
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     private final ReentrantLock appendLock = new ReentrantLock();
     private final Set<CompletableFuture<?>> pendingAppends = ConcurrentHashMap.newKeySet();
+    private final Deque<Long> pendingAppendTimestamps = new ConcurrentLinkedDeque<>();
     private final Set<CompletableFuture<?>> pendingFetches = ConcurrentHashMap.newKeySet();
+    private final Deque<Long> pendingFetchTimestamps = new ConcurrentLinkedDeque<>();
     private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
     private long startOffset;
@@ -94,6 +99,20 @@ public class S3Stream implements Stream {
         this.streamManager = streamManager;
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
+        S3StreamMetricsManager.registerPendingStreamAppendLatencySupplier(streamId, () -> getHeadLatency(this.pendingAppendTimestamps));
+        S3StreamMetricsManager.registerPendingStreamFetchLatencySupplier(streamId, () -> getHeadLatency(this.pendingFetchTimestamps));
+    }
+
+    private long getHeadLatency(Deque<Long> timestamps) {
+        if (timestamps.isEmpty()) {
+            return 0L;
+        }
+        Long lastTimestamp = timestamps.peek();
+        if (lastTimestamp == null) {
+            LOGGER.error("head timestamp of pending request is null");
+            return 0L;
+        }
+        return System.nanoTime() - lastTimestamp;
     }
 
     public boolean isClosed() {
@@ -143,9 +162,11 @@ public class S3Stream implements Stream {
                 }
             }, LOGGER, "append");
             pendingAppends.add(cf);
+            pendingAppendTimestamps.push(timerUtil.lastAs(TimeUnit.NANOSECONDS));
             cf.whenComplete((nil, ex) -> {
                 StreamOperationStats.getInstance().appendStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
+                pendingAppendTimestamps.pop();
             });
             return cf;
         } finally {
@@ -203,6 +224,7 @@ public class S3Stream implements Stream {
                 return CompletableFuture.completedFuture(rs);
             });
             pendingFetches.add(retCf);
+            pendingFetchTimestamps.push(timerUtil.lastAs(TimeUnit.NANOSECONDS));
             retCf.whenComplete((rs, ex) -> {
                 if (ex != null) {
                     Throwable cause = FutureUtil.cause(ex);
@@ -220,6 +242,7 @@ public class S3Stream implements Stream {
                             startOffset, endOffset, totalSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 }
                 pendingFetches.remove(retCf);
+                pendingFetchTimestamps.pop();
             });
             return retCf;
         } finally {
@@ -324,6 +347,8 @@ public class S3Stream implements Stream {
                     LOGGER.info("{} closed", logIdent);
                     StreamOperationStats.getInstance().closeStreamStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 }
+                S3StreamMetricsManager.removePendingStreamAppendNumSupplier(streamId);
+                S3StreamMetricsManager.removePendingStreamFetchNumSupplier(streamId);
             });
 
             return closeCf;

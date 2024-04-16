@@ -16,7 +16,6 @@ import java.util.LinkedList;
 
 public class MetricValueSequence {
     private static final int DEFAULT_MAX_SIZE = 1024;
-    private static final int MIN_VALID_LENGTH = 30;
     private final Deque<Double> values;
     private final int maxSize;
     private Snapshot prev;
@@ -44,9 +43,6 @@ public class MetricValueSequence {
     }
 
     public Snapshot snapshot() {
-        if (values.size() < MIN_VALID_LENGTH) {
-            return null;
-        }
         Snapshot snapshot = new Snapshot(prev, values);
         this.prev = snapshot;
         return snapshot;

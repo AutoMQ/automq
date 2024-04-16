@@ -52,6 +52,8 @@ public class MetricSerde implements Serializer<AutoBalancerMetrics>, Deserialize
         switch (buffer.get()) {
             case MetricTypes.TOPIC_PARTITION_METRIC:
                 return TopicPartitionMetrics.fromBuffer(buffer);
+            case MetricTypes.BROKER_METRIC:
+                return BrokerMetrics.fromBuffer(buffer);
             default:
                 // This could happen when a new type of metric is added, but we are still running the old code.
                 // simply ignore the metric by returning a null.

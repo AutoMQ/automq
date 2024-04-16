@@ -35,9 +35,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 
 @Tag("S3Unit")
@@ -264,7 +262,10 @@ public class ClusterModelTest {
                 .setPartitionId(partition);
         clusterModel.onPartitionCreate(partitionRecord1);
         long now = System.currentTimeMillis();
-        clusterModel.updateBrokerMetrics(brokerId, new HashMap<>(), now);
+        clusterModel.updateBrokerMetrics(brokerId, Map.of(
+                RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), now);
 
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
@@ -318,7 +319,10 @@ public class ClusterModelTest {
 
         long now = System.currentTimeMillis();
 
-        Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerId, new HashMap<>(), now));
+        Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerId, Map.of(
+                RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), now));
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now - 1000, brokerId, "", topicName, partition);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
@@ -340,65 +344,78 @@ public class ClusterModelTest {
 
     @Test
     public void testSlowBroker() {
-        Random r = new Random();
         RecordClusterModel clusterModel = new RecordClusterModel();
 
         RegisterBrokerRecord registerBrokerRecord0 = new RegisterBrokerRecord().setBrokerId(0);
         clusterModel.onBrokerRegister(registerBrokerRecord0);
 
-        // APPEND_LATENCY_AVG_MS, APPEND_QUEUE_SIZE, FAST_READ_LATENCY_AVG_MS, SLOW_READ_QUEUE_SIZE
-
         // test not enough samples
-        for (int i = 0; i < 10; i++) {
+//        for (int i = 0; i < 10; i++) {
+//            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0, Double.MAX_VALUE,
+//                    Double.MAX_VALUE, Double.MAX_VALUE).getMetricValueMap(),
+//                    System.currentTimeMillis()));
+//        }
+//        ClusterModelSnapshot snapshot = clusterModel.snapshot();
+//        snapshot.markSlowBrokers();
+//        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
+//        clusterModel.unregisterBroker(0);
+
+        // test high append latency
+        clusterModel.onBrokerRegister(registerBrokerRecord0);
+        for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    999, 999, 999, 999).getMetricValueMap(),
-                    System.currentTimeMillis()));
+                    0, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
         }
         ClusterModelSnapshot snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
-        clusterModel.unregisterBroker(0);
-
-        // test abs high latency
-        clusterModel.onBrokerRegister(registerBrokerRecord0);
-        for (int i = 0; i < 100; i++) {
-            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    1, 0, 2, 0).getMetricValueMap(), System.currentTimeMillis()));
-        }
-        snapshot = clusterModel.snapshot();
-        snapshot.markSlowBrokers();
-        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                100, 0, 2, 0).getMetricValueMap(), System.currentTimeMillis()));
+                2000, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
         clusterModel.unregisterBroker(0);
 
-        // test large queue size
+        // test high pending append latency
         clusterModel.onBrokerRegister(registerBrokerRecord0);
         for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    1, 0, 2, 0).getMetricValueMap(), System.currentTimeMillis()));
+                    0, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
         }
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                1, 500, 2, 0).getMetricValueMap(), System.currentTimeMillis()));
+                0, 20000, 0).getMetricValueMap(), System.currentTimeMillis()));
+        snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
+        Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
+        clusterModel.unregisterBroker(0);
+
+        // test high pending fetch latency
+        clusterModel.onBrokerRegister(registerBrokerRecord0);
+        for (int i = 0; i < 100; i++) {
+            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                    0, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
+        }
+        snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
+        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
+        Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                0, 0, 20000).getMetricValueMap(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
         clusterModel.unregisterBroker(0);
     }
 
-    private BrokerMetrics createBrokerMetrics(int brokerId, double appendLatency, double appendQueueSize, double fastReadLatency, double slowReadQueueSize) {
+    private BrokerMetrics createBrokerMetrics(int brokerId, double appendLatency, double pendingAppendLatency,
+                                              double pendingFetchLatency) {
         long now = System.currentTimeMillis();
         BrokerMetrics brokerMetrics = new BrokerMetrics(now, brokerId, "");
         brokerMetrics.put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, appendLatency);
-        brokerMetrics.put(RawMetricTypes.BROKER_APPEND_QUEUE_SIZE, appendQueueSize);
-        brokerMetrics.put(RawMetricTypes.BROKER_FAST_READ_LATENCY_AVG_MS, fastReadLatency);
-        brokerMetrics.put(RawMetricTypes.BROKER_SLOW_READ_QUEUE_SIZE, slowReadQueueSize);
+        brokerMetrics.put(RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, pendingAppendLatency);
+        brokerMetrics.put(RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, pendingFetchLatency);
         return brokerMetrics;
     }
 }

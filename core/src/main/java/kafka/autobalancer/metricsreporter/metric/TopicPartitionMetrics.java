@@ -62,13 +62,9 @@ public class TopicPartitionMetrics extends AutoBalancerMetrics {
     }
 
     @Override
-    public AutoBalancerMetrics put(byte type, double value) {
-        if (!RawMetricTypes.PARTITION_METRICS.contains(type)) {
-            throw new IllegalArgumentException("Cannot put non partition metric type " + type + " into a partition metric.");
-        }
-        return super.put(type, value);
+    public boolean isValidMetric(byte type) {
+        return RawMetricTypes.PARTITION_METRICS.contains(type);
     }
-
 
     @Override
     public String key() {
