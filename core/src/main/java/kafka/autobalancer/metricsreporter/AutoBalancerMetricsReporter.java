@@ -358,8 +358,10 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         context.merge(new BrokerMetrics(context.time(), brokerId, brokerRack)
                 .put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS,
                         TimeUnit.NANOSECONDS.toMillis((long) appendLatencyMetric.deltaRate(StreamOperationStats.getInstance().appendStreamStats)))
-                .put(RawMetricTypes.BROKER_APPEND_QUEUE_SIZE, S3StreamMetricsManager.totalPendingStreamAppendNum())
-                .put(RawMetricTypes.BROKER_FETCH_QUEUE_SIZE, S3StreamMetricsManager.totalPendingStreamFetchNum()));
+                .put(RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS,
+                        TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamAppendLatency()))
+                .put(RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS,
+                        TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamFetchLatency())));
     }
 
     protected void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {

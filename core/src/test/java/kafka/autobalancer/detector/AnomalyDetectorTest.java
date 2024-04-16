@@ -149,8 +149,8 @@ public class AnomalyDetectorTest {
             clusterModel.registerBroker(i, "");
             clusterModel.updateBrokerMetrics(i, Map.of(
                     RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
-                    RawMetricTypes.BROKER_APPEND_QUEUE_SIZE, 0.0,
-                    RawMetricTypes.BROKER_FETCH_QUEUE_SIZE, 0.0), System.currentTimeMillis());
+                    RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
+                    RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), System.currentTimeMillis());
         }
         int topicNum = 5000;
         int totalPartitionNum = 100000;

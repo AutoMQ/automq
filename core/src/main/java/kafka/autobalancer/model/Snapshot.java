@@ -15,44 +15,49 @@ import java.util.Arrays;
 import java.util.Collection;
 
 public class Snapshot {
+    public static final double INVALID = -1;
     private final Snapshot prev;
     private final double[] values;
     private final double latest;
-    private Double percentile90th;
 
     public Snapshot(Snapshot prev, Collection<Double> values) {
         this.prev = prev;
         this.values = values.stream().mapToDouble(Double::doubleValue).toArray();
-        this.latest = this.values.length > 0 ? this.values[this.values.length - 1] : 0.0;
+        this.latest = this.values.length > 0 ? this.values[this.values.length - 1] : INVALID;
         Arrays.sort(this.values);
     }
 
     public double getValue(double quantile) {
-        if (!(quantile < 0.0) && !(quantile > 1.0)) {
-            if (this.values.length == 0) {
-                return 0.0;
-            } else {
-                double pos = quantile * (double) (this.values.length + 1);
-                if (pos < 1.0) {
-                    return this.values[0];
-                } else if (pos >= (double) this.values.length) {
-                    return this.values[this.values.length - 1];
-                } else {
-                    double lower = this.values[(int) pos - 1];
-                    double upper = this.values[(int) pos];
-                    return lower + (pos - Math.floor(pos)) * (upper - lower);
-                }
-            }
+        if (quantile < 0.0 || quantile > 1.0) {
+            throw new IllegalArgumentException(quantile + " out of range. Should be in [0, 1]");
+        }
+        if (values.length < getMinValidLength(quantile)) {
+            return INVALID;
+        }
+        double pos = quantile * (double) (this.values.length + 1);
+        if (pos < 1.0) {
+            return this.values[0];
+        } else if (pos >= (double) this.values.length) {
+            return this.values[this.values.length - 1];
         } else {
-            throw new IllegalArgumentException(quantile + " is not in [0..1]");
+            double lower = this.values[(int) pos - 1];
+            double upper = this.values[(int) pos];
+            return lower + (pos - Math.floor(pos)) * (upper - lower);
         }
     }
 
-    public double get90thPercentile() {
-        if (this.percentile90th == null) {
-            this.percentile90th = this.getValue(0.9);
+    private int getMinValidLength(double quantile) {
+        if (quantile == 0.0 || quantile == 1.0) {
+            return 1;
         }
-        return this.percentile90th;
+        if (quantile < 0.5) {
+            return (int) Math.ceil(1.0 / quantile);
+        }
+        return (int) Math.ceil(1.0 / (1 - quantile));
+    }
+
+    public double get90thPercentile() {
+        return getValue(0.9);
     }
 
     public double getLatest() {

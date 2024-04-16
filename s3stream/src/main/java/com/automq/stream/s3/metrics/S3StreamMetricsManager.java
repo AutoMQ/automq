@@ -76,8 +76,8 @@ public class S3StreamMetricsManager {
     private static ObservableLongGauge inflightWALUploadTasksCount = new NoopObservableLongGauge();
     private static ObservableLongGauge allocatedMemorySize = new NoopObservableLongGauge();
     private static ObservableLongGauge usedMemorySize = new NoopObservableLongGauge();
-    private static ObservableLongGauge pendingStreamAppendNumMetrics = new NoopObservableLongGauge();
-    private static ObservableLongGauge pendingStreamFetchNumMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge pendingStreamAppendLatencyMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge pendingStreamFetchLatencyMetrics = new NoopObservableLongGauge();
     private static LongCounter compactionReadSizeInTotal = new NoopLongCounter();
     private static LongCounter compactionWriteSizeInTotal = new NoopLongCounter();
     private static Supplier<Long> networkInboundAvailableBandwidthSupplier = () -> 0L;
@@ -92,8 +92,8 @@ public class S3StreamMetricsManager {
     private static Map<Integer, Supplier<Integer>> availableInflightS3ReadQuotaSupplier = new ConcurrentHashMap<>();
     private static Map<Integer, Supplier<Integer>> availableInflightS3WriteQuotaSupplier = new ConcurrentHashMap<>();
     private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
-    private static Map<Long, Supplier<Integer>> pendingStreamAppendNumSupplier = new ConcurrentHashMap<>();
-    private static Map<Long, Supplier<Integer>> pendingStreamFetchNumSupplier = new ConcurrentHashMap<>();
+    private static Map<Long, Supplier<Long>> pendingStreamAppendLatencySupplier = new ConcurrentHashMap<>();
+    private static Map<Long, Supplier<Long>> pendingStreamFetchLatencySupplier = new ConcurrentHashMap<>();
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
     private static final MultiAttributes<String> ALLOC_TYPE_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
         S3StreamMetricsConstant.LABEL_TYPE);
@@ -293,20 +293,24 @@ public class S3StreamMetricsManager {
                     result.record(ByteBufAlloc.byteBufAllocMetric.getUsedMemory(), metricsConfig.getBaseAttributes());
                 }
             });
-        pendingStreamAppendNumMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_APPEND_NUM_METRIC_NAME)
-                .setDescription("The number of pending stream append requests")
+        pendingStreamAppendLatencyMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_APPEND_LATENCY_METRIC_NAME)
+                .setDescription("The maximum latency of pending stream append requests. NOTE: the minimum measurable " +
+                        "latency depends on the reporting interval of this metrics.")
                 .ofLongs()
+                .setUnit("nanoseconds")
                 .buildWithCallback(result -> {
                     if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
-                        result.record(totalPendingStreamAppendNum(), metricsConfig.getBaseAttributes());
+                        result.record(maxPendingStreamAppendLatency(), metricsConfig.getBaseAttributes());
                     }
                 });
-        pendingStreamFetchNumMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_FETCH_NUM_METRIC_NAME)
-                .setDescription("The number of pending stream fetch requests")
+        pendingStreamFetchLatencyMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_FETCH_LATENCY_METRIC_NAME)
+                .setDescription("The maximum latency of pending stream append requests. NOTE: the minimum measurable " +
+                        "latency depends on the reporting interval of this metrics.")
                 .ofLongs()
+                .setUnit("nanoseconds")
                 .buildWithCallback(result -> {
                     if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
-                        result.record(totalPendingStreamFetchNum(), metricsConfig.getBaseAttributes());
+                        result.record(maxPendingStreamFetchLatency(), metricsConfig.getBaseAttributes());
                     }
                 });
     }
@@ -557,27 +561,27 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static int totalPendingStreamAppendNum() {
-        return pendingStreamAppendNumSupplier.values().stream().mapToInt(Supplier::get).sum();
+    public static void registerPendingStreamAppendLatencySupplier(long streamId, Supplier<Long> pendingStreamAppendLatencySupplier) {
+        S3StreamMetricsManager.pendingStreamAppendLatencySupplier.put(streamId, pendingStreamAppendLatencySupplier);
     }
 
-    public static int totalPendingStreamFetchNum() {
-        return pendingStreamFetchNumSupplier.values().stream().mapToInt(Supplier::get).sum();
-    }
-
-    public static void registerPendingStreamAppendNumSupplier(long streamId, Supplier<Integer> pendingStreamAppendNumSupplier) {
-        S3StreamMetricsManager.pendingStreamAppendNumSupplier.put(streamId, pendingStreamAppendNumSupplier);
-    }
-
-    public static void registerPendingStreamFetchNumSupplier(long streamId, Supplier<Integer> pendingStreamFetchNumSupplier) {
-        S3StreamMetricsManager.pendingStreamFetchNumSupplier.put(streamId, pendingStreamFetchNumSupplier);
+    public static void registerPendingStreamFetchLatencySupplier(long streamId, Supplier<Long> pendingStreamFetchLatencySupplier) {
+        S3StreamMetricsManager.pendingStreamFetchLatencySupplier.put(streamId, pendingStreamFetchLatencySupplier);
     }
 
     public static void removePendingStreamAppendNumSupplier(long streamId) {
-        S3StreamMetricsManager.pendingStreamAppendNumSupplier.remove(streamId);
+        S3StreamMetricsManager.pendingStreamAppendLatencySupplier.remove(streamId);
     }
 
     public static void removePendingStreamFetchNumSupplier(long streamId) {
-        S3StreamMetricsManager.pendingStreamFetchNumSupplier.remove(streamId);
+        S3StreamMetricsManager.pendingStreamFetchLatencySupplier.remove(streamId);
+    }
+
+    public static long maxPendingStreamAppendLatency() {
+        return pendingStreamAppendLatencySupplier.values().stream().map(Supplier::get).max(Long::compareTo).orElse(0L);
+    }
+
+    public static long maxPendingStreamFetchLatency() {
+        return pendingStreamFetchLatencySupplier.values().stream().map(Supplier::get).max(Long::compareTo).orElse(0L);
     }
 }
