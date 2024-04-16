@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 import static com.automq.stream.s3.ByteBufAlloc.READ_INDEX_BLOCK;
 import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
@@ -71,7 +72,12 @@ public class ObjectReader implements AutoCloseable {
 
     public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
         CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.CATCH_UP);
-        return rangeReadCf.thenApply(DataBlockGroup::new);
+        return rangeReadCf.thenApply(buf -> {
+            ByteBuf pooled = ByteBufAlloc.byteBuffer(buf.readableBytes(), BLOCK_CACHE);
+            pooled.writeBytes(buf);
+            buf.release();
+            return new DataBlockGroup(pooled);
+        });
     }
 
     void asyncGetBasicObjectInfo() {
@@ -392,7 +398,7 @@ public class ObjectReader implements AutoCloseable {
         private final int recordCount;
 
         public DataBlockGroup(ByteBuf buf) {
-            this.buf = buf.duplicate();
+            this.buf = buf;
             this.recordCount = check(buf);
         }
 

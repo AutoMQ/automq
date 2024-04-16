@@ -14,9 +14,12 @@ package com.automq.stream.s3.cache.blockcache;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.LRUCache;
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.threads.EventLoop;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -45,6 +48,7 @@ public class DataBlockCache {
         for (int i = 0; i < eventLoops.length; i++) {
             caches[i] = new Cache(eventLoops[i]);
         }
+        S3StreamMetricsManager.registerBlockCacheSizeSupplier(() -> maxSize - sizeLimiter.permits());
     }
 
     /**
@@ -59,6 +63,10 @@ public class DataBlockCache {
     public CompletableFuture<DataBlock> getBlock(ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
         Cache cache = cache(dataBlockIndex.streamId());
         return cache.getBlock(objectReader, dataBlockIndex);
+    }
+
+    public long available() {
+        return sizeLimiter.permits();
     }
 
     @Override
@@ -107,7 +115,6 @@ public class DataBlockCache {
     class Cache implements ReadStatusChangeListener {
         final Map<DataBlockGroupKey, DataBlock> blocks = new HashMap<>();
         final LRUCache<DataBlockGroupKey, DataBlock> lru = new LRUCache<>();
-        final Map<DataBlockGroupKey, DataBlock> inactive = new HashMap<>();
         private final EventLoop eventLoop;
 
         public Cache(EventLoop eventLoop) {
@@ -115,6 +122,10 @@ public class DataBlockCache {
         }
 
         public CompletableFuture<DataBlock> getBlock(ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
+            return FutureUtil.exec(() -> getBlock0(objectReader, dataBlockIndex), LOGGER, "getBlock");
+        }
+
+        private CompletableFuture<DataBlock> getBlock0(ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
             long objectId = objectReader.metadata().objectId();
             DataBlockGroupKey key = new DataBlockGroupKey(objectId, dataBlockIndex);
             DataBlock dataBlock = blocks.get(key);
@@ -128,12 +139,18 @@ public class DataBlockCache {
             CompletableFuture<DataBlock> cf = new CompletableFuture<>();
             // if the data is already loaded, the listener will be invoked right now,
             // else the listener will be invoked immediately after data loaded in the same eventLoop.
+            if (dataBlock.dataFuture().isDone()) {
+                StorageOperationStats.getInstance().blockCacheBlockHitThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+            } else {
+                StorageOperationStats.getInstance().blockCacheBlockMissThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+            }
+            // DataBlock#retain should will before the complete the future to avoid the other read use #markRead to really free the data block.
+            dataBlock.retain();
             dataBlock.dataFuture().whenComplete((db, ex) -> {
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                     return;
                 }
-                db.retain();
                 cf.complete(db);
             });
             return cf;
@@ -143,11 +160,14 @@ public class DataBlockCache {
             reader.retain();
             boolean acquired = sizeLimiter.acquire(dataBlock.dataBlockIndex().size(), () -> {
                 reader.read(dataBlock.dataBlockIndex()).whenCompleteAsync((rst, ex) -> {
+                    StorageOperationStats.getInstance().blockCacheReadS3Throughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
                     reader.release();
+                    DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());
                     if (ex != null) {
                         dataBlock.completeExceptionally(ex);
+                        blocks.remove(key, dataBlock);
                     } else {
-                        lru.put(new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex()), dataBlock);
+                        lru.put(key, dataBlock);
                         dataBlock.complete(rst);
                     }
                     if (sizeLimiter.requiredRelease()) {
@@ -173,18 +193,8 @@ public class DataBlockCache {
         private void evict0() {
             // TODO: avoid awake more tasks than necessary
             while (sizeLimiter.requiredRelease()) {
-                Map.Entry<DataBlockGroupKey, DataBlock> entry = null;
-                if (!inactive.isEmpty()) {
-                    Iterator<Map.Entry<DataBlockGroupKey, DataBlock>> it = inactive.entrySet().iterator();
-                    if (it.hasNext()) {
-                        entry = it.next();
-                        it.remove();
-                        lru.remove(entry.getKey());
-                    }
-                }
-                if (entry == null) {
-                    entry = lru.pop();
-                }
+                Map.Entry<DataBlockGroupKey, DataBlock> entry;
+                entry = lru.pop();
                 if (entry == null) {
                     break;
                 }
@@ -192,6 +202,7 @@ public class DataBlockCache {
                 DataBlock dataBlock = entry.getValue();
                 if (blocks.remove(key, dataBlock)) {
                     dataBlock.free();
+                    StorageOperationStats.getInstance().blockCacheBlockEvictThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
                 } else {
                     LOGGER.error("[BUG] duplicated free data block {}", dataBlock);
                 }
@@ -199,14 +210,13 @@ public class DataBlockCache {
         }
 
         public void markUnread(DataBlock dataBlock) {
-            DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());
-            inactive.remove(key, dataBlock);
         }
 
         public void markRead(DataBlock dataBlock) {
             DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());
-            if (dataBlock == blocks.get(key)) {
-                inactive.put(key, dataBlock);
+            if (blocks.remove(key, dataBlock)) {
+                lru.remove(key);
+                dataBlock.free();
             }
         }
 
