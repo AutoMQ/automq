@@ -243,7 +243,7 @@ public final class MetricsUtils {
                                                        int brokerId, String brokerRack, double value) {
 
         if (topic != null && partition != -1) {
-            return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, value);
+            return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricTypes.PARTITION_BYTES_IN, value);
         }
         return null;
     }
@@ -252,12 +252,12 @@ public final class MetricsUtils {
                                                         int brokerId, String brokerRack, double value) {
 
         if (topic != null && partition != -1) {
-            return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, value);
+            return new TopicPartitionMetrics(nowMs, brokerId, brokerRack, topic, partition).put(RawMetricTypes.PARTITION_BYTES_OUT, value);
         }
         return null;
     }
 
     public static boolean sanityCheckTopicPartitionMetricsCompleteness(AutoBalancerMetrics metrics) {
-        return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.partitionMetrics());
+        return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.PARTITION_METRICS);
     }
 }

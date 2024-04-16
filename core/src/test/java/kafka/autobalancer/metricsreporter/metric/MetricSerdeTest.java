@@ -42,16 +42,16 @@ public class MetricSerdeTest {
     public void testPartitionMetricSerde() throws UnknownVersionException {
         AutoBalancerMetrics topicPartitionMetrics = new TopicPartitionMetrics(123L, 0, "", TOPIC, PARTITION)
                 .put(RawMetricTypes.PARTITION_SIZE, VALUE)
-                .put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, VALUE1);
+                .put(RawMetricTypes.PARTITION_BYTES_IN, VALUE1);
         AutoBalancerMetrics deserialized = MetricSerde.fromBytes(MetricSerde.toBytes(topicPartitionMetrics));
         assertNotNull(deserialized);
         assertEquals(MetricTypes.TOPIC_PARTITION_METRIC, deserialized.metricType());
         Map<Byte, Double> metricMap = deserialized.getMetricValueMap();
         assertEquals(2, metricMap.size());
         assertTrue(metricMap.containsKey(RawMetricTypes.PARTITION_SIZE));
-        assertTrue(metricMap.containsKey(RawMetricTypes.TOPIC_PARTITION_BYTES_IN));
+        assertTrue(metricMap.containsKey(RawMetricTypes.PARTITION_BYTES_IN));
         assertEquals(VALUE, metricMap.get(RawMetricTypes.PARTITION_SIZE), 0.000001);
-        assertEquals(VALUE1, metricMap.get(RawMetricTypes.TOPIC_PARTITION_BYTES_IN), 0.000001);
+        assertEquals(VALUE1, metricMap.get(RawMetricTypes.PARTITION_BYTES_IN), 0.000001);
         assertEquals(TIME, deserialized.time());
         assertEquals(BROKER_ID, deserialized.brokerId());
         assertEquals(TOPIC, ((TopicPartitionMetrics) deserialized).topic());

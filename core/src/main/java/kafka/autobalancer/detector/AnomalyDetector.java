@@ -243,6 +243,7 @@ public class AnomalyDetector extends AbstractResumableService {
         logger.info("Start detect");
         // The delay in processing kraft log could result in outdated cluster snapshot
         ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics, maxTolerateMetricsDelayMs);
+        snapshot.markSlowBrokers();
 
         for (BrokerUpdater.Broker broker : snapshot.brokers()) {
             logger.info("Broker status: {}", broker.shortString());

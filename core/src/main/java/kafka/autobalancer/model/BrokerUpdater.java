@@ -12,7 +12,9 @@
 package kafka.autobalancer.model;
 
 import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.RawMetricTypes;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -38,6 +40,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
+        // TODO: add broker metrics validation when reporting broker metrics is supported
         return true;
     }
 
@@ -54,12 +57,15 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     public static class Broker extends AbstractInstance {
         private final int brokerId;
         private final String rack;
+        private final Map<Byte, MetricValueSequence> metrics = new HashMap<>();
         private boolean active;
+        private boolean isSlowBroker;
 
         public Broker(int brokerId, String rack, boolean active) {
             this.brokerId = brokerId;
             this.rack = rack;
             this.active = active;
+            this.isSlowBroker = false;
         }
 
         public Broker(Broker other) {
@@ -67,6 +73,10 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
             this.brokerId = other.brokerId;
             this.rack = other.rack;
             this.active = other.active;
+            this.isSlowBroker = other.isSlowBroker;
+            for (Map.Entry<Byte, MetricValueSequence> entry : other.metrics.entrySet()) {
+                this.metrics.put(entry.getKey(), entry.getValue().copy());
+            }
         }
 
         public int getBrokerId() {
@@ -85,12 +95,36 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
             return this.active;
         }
 
+        public boolean isSlowBroker() {
+            return isSlowBroker;
+        }
+
+        public void setSlowBroker(boolean isSlowBroker) {
+            this.isSlowBroker = isSlowBroker;
+        }
+
         public void reduceLoad(Resource resource, double delta) {
             this.setLoad(resource, load(resource) - delta);
         }
 
         public void addLoad(Resource resource, double delta) {
             this.setLoad(resource, load(resource) + delta);
+        }
+
+        @Override
+        public void update(Map<Byte, Double> metricsMap, long timestamp) {
+            super.update(metricsMap, timestamp);
+            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
+                if (!RawMetricTypes.BROKER_METRICS.contains(entry.getKey())) {
+                    continue;
+                }
+                MetricValueSequence metric = metrics.computeIfAbsent(entry.getKey(), k -> new MetricValueSequence());
+                metric.append(entry.getValue());
+            }
+        }
+
+        public Map<Byte, MetricValueSequence> getMetrics() {
+            return metrics;
         }
 
         @Override
@@ -110,6 +144,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
             return "Broker{" +
                     "brokerId=" + brokerId +
                     ", active=" + active +
+                    ", slow=" + isSlowBroker +
                     ", " + timeString() +
                     ", " + loadString() +
                     "}";
@@ -135,6 +170,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
             return "Broker{" +
                     "brokerId=" + brokerId +
                     ", active=" + active +
+                    ", slow=" + isSlowBroker +
                     ", " + super.toString() +
                     "}";
         }

@@ -19,6 +19,7 @@ package kafka.autobalancer.model;
 
 import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
@@ -36,6 +37,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 @Tag("S3Unit")
@@ -207,8 +209,8 @@ public class ClusterModelTest {
         // update on non-exist topic
         long now = System.currentTimeMillis();
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition);
-        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 10);
-        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertFalse(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
                 new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
@@ -265,15 +267,15 @@ public class ClusterModelTest {
         clusterModel.updateBrokerMetrics(brokerId, new HashMap<>(), now);
 
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition);
-        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 10);
-        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
                 new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time());
 
         TopicPartitionMetrics topicPartitionMetrics1 = new TopicPartitionMetrics(now, brokerId, "", topicName1, partition);
-        topicPartitionMetrics1.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 60);
-        topicPartitionMetrics1.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 50);
+        topicPartitionMetrics1.put(RawMetricTypes.PARTITION_BYTES_IN, 60);
+        topicPartitionMetrics1.put(RawMetricTypes.PARTITION_BYTES_OUT, 50);
         topicPartitionMetrics1.put(RawMetricTypes.PARTITION_SIZE, 10);
         clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics1.brokerId(),
                 new TopicPartition(topicName1, partition), topicPartitionMetrics1.getMetricValueMap(), topicPartitionMetrics1.time());
@@ -318,15 +320,15 @@ public class ClusterModelTest {
 
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerId, new HashMap<>(), now));
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now - 1000, brokerId, "", topicName, partition);
-        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 10);
-        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
                 new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
 
         topicPartitionMetrics = new TopicPartitionMetrics(now - 2000, brokerId, "", topicName, partition1);
-        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 10);
-        topicPartitionMetrics.put(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
                 new TopicPartition(topicName, partition1), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
@@ -334,5 +336,69 @@ public class ClusterModelTest {
         Map<Integer, Long> metricsTimeMap = clusterModel.calculateBrokerLatestMetricsTime();
         Assertions.assertEquals(1, metricsTimeMap.size());
         Assertions.assertEquals(now - 2000, metricsTimeMap.get(brokerId));
+    }
+
+    @Test
+    public void testSlowBroker() {
+        Random r = new Random();
+        RecordClusterModel clusterModel = new RecordClusterModel();
+
+        RegisterBrokerRecord registerBrokerRecord0 = new RegisterBrokerRecord().setBrokerId(0);
+        clusterModel.onBrokerRegister(registerBrokerRecord0);
+
+        // APPEND_LATENCY_AVG_MS, APPEND_QUEUE_SIZE, FAST_READ_LATENCY_AVG_MS, SLOW_READ_QUEUE_SIZE
+
+        // test not enough samples
+        for (int i = 0; i < 10; i++) {
+            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                    999, 999, 999, 999).getMetricValueMap(),
+                    System.currentTimeMillis()));
+        }
+        ClusterModelSnapshot snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
+        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
+        clusterModel.unregisterBroker(0);
+
+        // test abs high latency
+        clusterModel.onBrokerRegister(registerBrokerRecord0);
+        for (int i = 0; i < 100; i++) {
+            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                    1, 0, 2, 0).getMetricValueMap(), System.currentTimeMillis()));
+        }
+        snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
+        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
+        Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                100, 0, 2, 0).getMetricValueMap(), System.currentTimeMillis()));
+        snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
+        Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
+        clusterModel.unregisterBroker(0);
+
+        // test large queue size
+        clusterModel.onBrokerRegister(registerBrokerRecord0);
+        for (int i = 0; i < 100; i++) {
+            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                    1, 0, 2, 0).getMetricValueMap(), System.currentTimeMillis()));
+        }
+        snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
+        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
+        Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                1, 500, 2, 0).getMetricValueMap(), System.currentTimeMillis()));
+        snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
+        Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
+        clusterModel.unregisterBroker(0);
+    }
+
+    private BrokerMetrics createBrokerMetrics(int brokerId, double appendLatency, double appendQueueSize, double fastReadLatency, double slowReadQueueSize) {
+        long now = System.currentTimeMillis();
+        BrokerMetrics brokerMetrics = new BrokerMetrics(now, brokerId, "");
+        brokerMetrics.put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, appendLatency);
+        brokerMetrics.put(RawMetricTypes.BROKER_APPEND_QUEUE_SIZE, appendQueueSize);
+        brokerMetrics.put(RawMetricTypes.BROKER_FAST_READ_LATENCY_AVG_MS, fastReadLatency);
+        brokerMetrics.put(RawMetricTypes.BROKER_SLOW_READ_QUEUE_SIZE, slowReadQueueSize);
+        return brokerMetrics;
     }
 }
