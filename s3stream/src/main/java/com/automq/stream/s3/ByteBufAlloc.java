@@ -45,6 +45,7 @@ public class ByteBufAlloc {
     public static final int STREAM_OBJECT_COMPACTION_WRITE = 8;
     public static final int STREAM_SET_OBJECT_COMPACTION_READ = 9;
     public static final int STREAM_SET_OBJECT_COMPACTION_WRITE = 10;
+    public static final int BLOCK_CACHE = 11;
     public static ByteBufAllocMetric byteBufAllocMetric = null;
 
     /**
@@ -68,7 +69,7 @@ public class ByteBufAlloc {
         registerAllocType(STREAM_OBJECT_COMPACTION_WRITE, "stream_object_compaction_write");
         registerAllocType(STREAM_SET_OBJECT_COMPACTION_READ, "stream_set_object_compaction_read");
         registerAllocType(STREAM_SET_OBJECT_COMPACTION_WRITE, "stream_set_object_compaction_write");
-
+        registerAllocType(BLOCK_CACHE, "block_cache");
     }
 
     /**

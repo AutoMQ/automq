@@ -142,7 +142,6 @@ public class StreamReaderTest {
         assertEquals(8L, streamReader.readahead.nextReadaheadOffset);
         assertEquals(3L, streamReader.readahead.readaheadMarkOffset);
         assertEquals(1024L * 1024, streamReader.readahead.nextReadaheadSize);
-        assertEquals(3, dataBlockCache.caches[0].inactive.size());
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(3L, 29L, 1))).get();
         rst = readCf.get().get();
@@ -158,7 +157,6 @@ public class StreamReaderTest {
         assertEquals(12L, streamReader.readahead.nextReadaheadOffset);
         assertEquals(8L, streamReader.readahead.readaheadMarkOffset);
         assertEquals(1024L * 1024, streamReader.readahead.nextReadaheadSize);
-        assertEquals(4, dataBlockCache.caches[0].inactive.size());
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(4L, 29L, 1))).get();
         rst = readCf.get().get();
@@ -174,7 +172,6 @@ public class StreamReaderTest {
         assertEquals(12L, streamReader.readahead.nextReadaheadOffset);
         assertEquals(8L, streamReader.readahead.readaheadMarkOffset);
         assertEquals(1024L * 1024, streamReader.readahead.nextReadaheadSize);
-        assertEquals(5, dataBlockCache.caches[0].inactive.size());
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(5L, 14L, Integer.MAX_VALUE))).get();
         rst = readCf.get().get();
@@ -188,7 +185,6 @@ public class StreamReaderTest {
         assertEquals(14L + 8, streamReader.readahead.nextReadaheadOffset);
         assertEquals(14L, streamReader.readahead.readaheadMarkOffset);
         assertEquals(1024L * 1024 * 2, streamReader.readahead.nextReadaheadSize);
-        assertEquals(14, dataBlockCache.caches[0].inactive.size());
 
 
         when(objectManager.isObjectExist(anyLong())).thenReturn(false);

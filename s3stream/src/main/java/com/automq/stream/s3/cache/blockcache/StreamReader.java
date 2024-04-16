@@ -18,6 +18,9 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.exceptions.BlockNotContinuousException;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.utils.FutureUtil;
@@ -49,7 +52,9 @@ public class StreamReader {
     private static final int DEFAULT_READAHEAD_SIZE = 1024 * 1024 / 2;
     private static final int MAX_READAHEAD_SIZE = 32 * 1024 * 1024;
     private static final long READAHEAD_RESET_COLD_DOWN_MILLS = TimeUnit.MINUTES.toMillis(1);
-    private static final LogSuppressor LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 30000);
+    private static final long READAHEAD_AVAILABLE_BYTES_THRESHOLD = 32L * 1024 * 1024;
+    private static final LogSuppressor READAHEAD_RESET_LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 30000);
+    private static final LogSuppressor BLOCKS_RESET_LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 30000);
     // visible to test
     final NavigableMap<Long, Block> blocksMap = new TreeMap<>();
     Block lastBlock = null;
@@ -64,6 +69,8 @@ public class StreamReader {
     long nextReadOffset;
     private CompletableFuture<Map<Long, Block>> inflightLoadIndexCf;
     private long lastAccessTimestamp = System.currentTimeMillis();
+
+    private boolean closed = false;
 
     public StreamReader(
         long streamId, long nextReadOffset, EventLoop eventLoop,
@@ -82,7 +89,11 @@ public class StreamReader {
     }
 
     public CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes) {
-        return read(startOffset, endOffset, maxBytes, 1);
+        try {
+            return read(startOffset, endOffset, maxBytes, 1);
+        } catch (Throwable e) {
+            return FutureUtil.failedFuture(e);
+        }
     }
 
     CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes, int leftRetries) {
@@ -94,17 +105,19 @@ public class StreamReader {
             Throwable cause = FutureUtil.cause(ex);
             if (cause != null) {
                 readContext.records.forEach(StreamRecordBatch::release);
-                if (leftRetries > 0) {
-                    if (cause instanceof ObjectNotExistException || cause instanceof NoSuchKeyException || cause instanceof BlockNotContinuousException) {
-                        // The cached blocks maybe invalid after object compaction, so we need to reset the blocks and retry read
-                        resetBlocks();
-                        FutureUtil.propagate(read(startOffset, endOffset, maxBytes, leftRetries - 1), retCf);
-                    }
+                if (leftRetries > 0 && (cause instanceof ObjectNotExistException || cause instanceof NoSuchKeyException || cause instanceof BlockNotContinuousException)) {
+                    // The cached blocks maybe invalid after object compaction, so we need to reset the blocks and retry read
+                    resetBlocks();
+                    FutureUtil.propagate(read(startOffset, endOffset, maxBytes, leftRetries - 1), retCf);
                 } else {
+                    for (Block block : readContext.blocks) {
+                        block.release();
+                    }
                     retCf.completeExceptionally(cause);
                 }
             } else {
                 afterRead(rst, readContext);
+                StorageOperationStats.getInstance().blockCacheReadStreamThroughput.add(MetricsLevel.INFO, rst.sizeInBytes());
                 retCf.complete(rst);
             }
         }, retCf, LOGGER, "read"));
@@ -120,6 +133,7 @@ public class StreamReader {
     }
 
     public void close() {
+        closed = true;
         blocksMap.forEach((k, v) -> {
             if (v.data != null) {
                 v.data.markRead();
@@ -182,7 +196,6 @@ public class StreamReader {
                 read0(ctx, nextStartOffset, endOffset, remainingSize);
             }
         }).whenComplete((nil, ex) -> {
-            blocks.forEach(Block::release);
             if (ex != null) {
                 ctx.cf.completeExceptionally(ex);
             }
@@ -205,7 +218,12 @@ public class StreamReader {
             }
         }
         // #getDataBlock will invoke DataBlock#markUnread
-        ctx.blocks.forEach(b -> b.data.markRead());
+        for (Block block : ctx.blocks) {
+            block.release();
+            if (block.index.endOffset() <= nextReadOffset) {
+                block.markRead();
+            }
+        }
         // try readahead to accelerate the next read
         readahead.tryReadahead();
     }
@@ -218,7 +236,7 @@ public class StreamReader {
             context.cf.completeExceptionally(ex);
         }
         context.cf.exceptionally(ex -> {
-            context.blocks.forEach(b -> b.loadCf.thenAccept(nil -> b.release()));
+            context.blocks.forEach(Block::release);
             return null;
         });
         return context.cf;
@@ -239,6 +257,7 @@ public class StreamReader {
                 if (!objectManager.isObjectExist(objectId)) {
                     // The cached block's object maybe deleted by the compaction. So we need to check the object exist.
                     ctx.cf.completeExceptionally(new ObjectNotExistException(objectId));
+                    return;
                 }
                 DataBlockIndex index = block.index;
                 if (!firstBlock || index.startOffset() == startOffset) {
@@ -290,10 +309,12 @@ public class StreamReader {
         long nextLoadingOffset = calWindowBlocksEndOffset();
         AtomicLong nextFindStartOffset = new AtomicLong(nextLoadingOffset);
         Map<Long, Block> newDataBlockIndex = new HashMap<>();
+        TimerUtil time = new TimerUtil();
         // 1. get objects
         CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, nextLoadingOffset, -1L, GET_OBJECT_STEP);
         // 2. get block indexes from objects
         CompletableFuture<Void> findBlockIndexesCf = getObjectsCf.thenComposeAsync(objects -> {
+            StorageOperationStats.getInstance().getIndicesTimeGetObjectStats.record(time.elapsedAndResetAs(TimeUnit.NANOSECONDS));
             CompletableFuture<Void> prevCf = CompletableFuture.completedFuture(null);
             for (S3ObjectMetadata objectMetadata : objects) {
                 ObjectReader objectReader = objectReaderFactory.apply(objectMetadata);
@@ -325,6 +346,7 @@ public class StreamReader {
                 inflightLoadIndexCf.completeExceptionally(ex);
                 return;
             }
+            StorageOperationStats.getInstance().getIndicesTimeFindIndexStats.record(time.elapsedAs(TimeUnit.NANOSECONDS));
             CompletableFuture<Map<Long, Block>> cf = inflightLoadIndexCf;
             inflightLoadIndexCf = null;
             cf.complete(newDataBlockIndex);
@@ -341,11 +363,14 @@ public class StreamReader {
     }
 
     private void handleBlockFree(Block block) {
+        if (closed) {
+            return;
+        }
         Block blockInMap = blocksMap.get(block.index.startOffset());
         if (block == blockInMap) {
             // The unread block is evicted; It means the cache is full, we need to reset the readahead.
             readahead.reset();
-            LOG_SUPPRESSOR.warn("The unread block is evicted, please increase the block cache size");
+            READAHEAD_RESET_LOG_SUPPRESSOR.warn("The unread block is evicted, please increase the block cache size");
         }
     }
 
@@ -353,10 +378,12 @@ public class StreamReader {
         blocksMap.clear();
         lastBlock = null;
         loadedBlockIndexEndOffset = 0L;
+        BLOCKS_RESET_LOG_SUPPRESSOR.info("The stream reader's blocks are reset, cause of the object compaction");
     }
 
     /**
      * Put block into the blocks
+     *
      * @param block {@link Block}
      * @return if the block is continuous to the last block, it will return true
      */
@@ -371,15 +398,15 @@ public class StreamReader {
     }
 
     static class GetBlocksContext {
-        List<Block> blocks = new ArrayList<>();
-        CompletableFuture<List<Block>> cf = new CompletableFuture<>();
+        final List<Block> blocks = new ArrayList<>();
+        final CompletableFuture<List<Block>> cf = new CompletableFuture<>();
     }
 
     static class ReadContext {
-        List<StreamRecordBatch> records = new LinkedList<>();
-        List<Block> blocks = new ArrayList<>();
+        final List<StreamRecordBatch> records = new LinkedList<>();
+        final List<Block> blocks = new ArrayList<>();
+        final CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         CacheAccessType accessType = CacheAccessType.BLOCK_CACHE_HIT;
-        CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
     }
 
     class Block {
@@ -388,6 +415,7 @@ public class StreamReader {
         DataBlock data;
         CompletableFuture<Void> loadCf;
         Throwable exception;
+        boolean released = false;
 
         public Block(S3ObjectMetadata metadata, DataBlockIndex index) {
             this.metadata = metadata;
@@ -417,8 +445,21 @@ public class StreamReader {
         }
 
         public void release() {
+            if (released) {
+                LOGGER.error("[BUG] duplicated release", new IllegalStateException());
+                return;
+            }
+            released = true;
+            loadCf.whenComplete((nil, ex) -> {
+                if (data != null) {
+                    data.release();
+                }
+            });
+        }
+
+        public void markRead() {
             if (data != null) {
-                data.release();
+                data.markRead();
             }
         }
     }
@@ -453,12 +494,13 @@ public class StreamReader {
                 // if the user read doesn't reach the readahead mark, we don't need to readahead
                 return;
             }
+            if (dataBlockCache.available() < nextReadaheadSize + READAHEAD_AVAILABLE_BYTES_THRESHOLD) {
+                return;
+            }
             readaheadMarkOffset = nextReadaheadOffset;
             inflightReadaheadCf = getBlocks(nextReadaheadOffset, -1L, nextReadaheadSize).thenAccept(blocks -> {
                 nextReadaheadOffset = blocks.isEmpty() ? nextReadaheadOffset : blocks.get(blocks.size() - 1).index.endOffset();
-                for (Block block : blocks) {
-                    block.loadCf.whenComplete((nil, ex) -> block.release());
-                }
+                blocks.forEach(Block::release);
             });
             // For get block indexes and load data block are sync success,
             // the whenComplete will invoke first before assign CompletableFuture to inflightReadaheadCf

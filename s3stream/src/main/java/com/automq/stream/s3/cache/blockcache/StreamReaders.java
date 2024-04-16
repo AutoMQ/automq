@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
 public class StreamReaders implements S3BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReaders.class);
     private static final int MAX_OBJECT_READER_SIZE = 100 * 1024 * 1024; // 100MB;
-    private static final long STREAM_READER_EXPIRED_MILLS = TimeUnit.MINUTES.toMillis(3);
+    private static final long STREAM_READER_EXPIRED_MILLS = TimeUnit.MINUTES.toMillis(1);
     private static final long STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS = TimeUnit.MINUTES.toMillis(1);
     private final Cache[] caches;
     private final DataBlockCache dataBlockCache;
