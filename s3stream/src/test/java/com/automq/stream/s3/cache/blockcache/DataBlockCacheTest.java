@@ -152,7 +152,7 @@ public class DataBlockCacheTest {
             }));
         }).get();
         eventLoops[0].submit(() -> {
-            assertEquals(2, cache.caches[0].blocks.size());
+            assertEquals(1, cache.caches[0].blocks.size());
             cache.getBlock(objectReader, new DataBlockIndex(STREAM_ID, 0, 200, 1, 0, 100));
         }).get();
         cf2.get().get().freeFuture().get(1, TimeUnit.SECONDS);
@@ -163,6 +163,7 @@ public class DataBlockCacheTest {
             assertEquals(2, cache.lru.size());
             assertTrue(cache.blocks.containsKey(new DataBlockCache.DataBlockGroupKey(233, new DataBlockIndex(STREAM_ID, 0, 10, 1, 0, 100))));
             assertTrue(cache.blocks.containsKey(new DataBlockCache.DataBlockGroupKey(233, new DataBlockIndex(STREAM_ID, 0, 200, 1, 0, 100))));
+            assertEquals(1024 - 100 - 100, this.cache.sizeLimiter.permits());
         }).get();
 
         AtomicReference<CompletableFuture<?>> cf3 = new AtomicReference<>();

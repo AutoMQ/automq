@@ -23,6 +23,7 @@ import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
@@ -89,6 +90,8 @@ public class S3StreamMetricsManager {
     private static Supplier<Long> deltaWalTrimmedOffsetSupplier = () -> 0L;
     private static Supplier<Long> deltaWALCacheSizeSupplier = () -> 0L;
     private static Supplier<Long> blockCacheSizeSupplier = () -> 0L;
+    private static LongCounter blockCacheOpsThroughput = new NoopLongCounter();
+
     private static Map<Integer, Supplier<Integer>> availableInflightS3ReadQuotaSupplier = new ConcurrentHashMap<>();
     private static Map<Integer, Supplier<Integer>> availableInflightS3WriteQuotaSupplier = new ConcurrentHashMap<>();
     private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
@@ -214,7 +217,7 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                     result.record(deltaWALCacheSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
@@ -223,7 +226,7 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .ofLongs()
             .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                     result.record(blockCacheSizeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
@@ -313,6 +316,10 @@ public class S3StreamMetricsManager {
                         result.record(maxPendingStreamFetchLatency(), metricsConfig.getBaseAttributes());
                     }
                 });
+        blockCacheOpsThroughput = meter.counterBuilder(prefix + S3StreamMetricsConstant.READ_BLOCK_CACHE_THROUGHPUT_METRIC_NAME)
+            .setDescription("Block cache operation throughput")
+            .setUnit("bytes")
+            .build();
     }
 
     public static void registerNetworkLimiterSupplier(AsyncNetworkBandwidthLimiter.Type type,
@@ -512,6 +519,16 @@ public class S3StreamMetricsManager {
                     AttributesUtils.buildStatusStageAttributes(status, stage));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             READ_BLOCK_CACHE_TIME_METRICS.add(metric);
+            return metric;
+        }
+    }
+
+    public static CounterMetric buildBlockCacheOpsThroughputMetric(String ops) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, Attributes.builder()
+                .put(AttributeKey.stringKey("ops"), ops)
+                .build(), blockCacheOpsThroughput);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
     }

@@ -16,12 +16,14 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.CloseableIterator;
 import io.netty.buffer.ByteBuf;
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
-@EventLoopSafe public class DataBlock {
+@EventLoopSafe public class DataBlock extends AbstractReferenceCounted {
     private static final int UNREAD_INIT = -1;
     private final long objectId;
     private final DataBlockIndex dataBlockIndex;
@@ -58,9 +60,7 @@ import java.util.concurrent.atomic.AtomicInteger;
     }
 
     public void free() {
-        if (dataBlockGroup != null) {
-            dataBlockGroup.release();
-        }
+        release();
         freeCf.complete(this);
     }
 
@@ -101,14 +101,19 @@ import java.util.concurrent.atomic.AtomicInteger;
         }
     }
 
-    public void retain() {
-        dataBlockGroup.retain();
+    @Override
+    public ReferenceCounted touch(Object hint) {
+        return null;
     }
 
-    public void release() {
-        dataBlockGroup.release();
+    @Override
+    protected void deallocate() {
+        if (dataBlockGroup != null) {
+            dataBlockGroup.release();
+        }
     }
 
+    // Only for test
     ByteBuf dataBuf() {
         return dataBlockGroup.buf();
     }

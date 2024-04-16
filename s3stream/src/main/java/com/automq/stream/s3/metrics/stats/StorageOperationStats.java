@@ -16,11 +16,15 @@ import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
+import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
 import com.yammer.metrics.core.MetricName;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import static com.automq.stream.s3.metrics.S3StreamMetricsConstant.GET_INDEX_TIME_METRIC_NAME;
+import static com.automq.stream.s3.metrics.S3StreamMetricsConstant.READ_BLOCK_CACHE_METRIC_NAME;
 
 public class StorageOperationStats {
     private volatile static StorageOperationStats instance = null;
@@ -93,14 +97,15 @@ public class StorageOperationStats {
             MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_PUT_BLOCK_CACHE);
 
     public final YammerHistogramMetric getIndicesTimeGetObjectStats = S3StreamMetricsManager.buildGetIndexTimeMetric(
-                new MetricName(StorageOperationStats.class, "GetIndexTime-" + S3StreamMetricsConstant.LABEL_STAGE_GET_OBJECTS),
+                new MetricName(StorageOperationStats.class, GET_INDEX_TIME_METRIC_NAME + S3StreamMetricsConstant.LABEL_STAGE_GET_OBJECTS),
             MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_GET_OBJECTS);
     public final YammerHistogramMetric getIndicesTimeFindIndexStats = S3StreamMetricsManager.buildGetIndexTimeMetric(
-            new MetricName(StorageOperationStats.class, "GetIndexTime-" + S3StreamMetricsConstant.LABEL_STAGE_FIND_INDEX),
+            new MetricName(StorageOperationStats.class, GET_INDEX_TIME_METRIC_NAME + S3StreamMetricsConstant.LABEL_STAGE_FIND_INDEX),
             MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_FIND_INDEX);
     public final YammerHistogramMetric getIndicesTimeComputeStats = S3StreamMetricsManager.buildGetIndexTimeMetric(
-            new MetricName(StorageOperationStats.class, "GetIndexTime-" + S3StreamMetricsConstant.LABEL_STAGE_COMPUTE),
+            new MetricName(StorageOperationStats.class, GET_INDEX_TIME_METRIC_NAME + S3StreamMetricsConstant.LABEL_STAGE_COMPUTE),
             MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_COMPUTE);
+
     private final Map<Integer, YammerHistogramMetric> readS3LimiterStatsMap = new ConcurrentHashMap<>();
     private final Map<Integer, YammerHistogramMetric> writeS3LimiterStatsMap = new ConcurrentHashMap<>();
     public final YammerHistogramMetric readAheadSyncSizeStats = S3StreamMetricsManager.buildReadAheadSizeMetric(
@@ -111,37 +116,43 @@ public class StorageOperationStats {
             MetricsLevel.INFO, S3StreamMetricsConstant.LABEL_STATUS_ASYNC);
 
     public final YammerHistogramMetric readBlockCacheStageMissWaitInflightTimeStats = S3StreamMetricsManager.buildReadBlockCacheStageTime(
-            new MetricName(StorageOperationStats.class, "ReadBlockStageTime" + S3StreamMetricsConstant.LABEL_STATUS_MISS
+            new MetricName(StorageOperationStats.class, READ_BLOCK_CACHE_METRIC_NAME + S3StreamMetricsConstant.LABEL_STATUS_MISS
             + S3StreamMetricsConstant.LABEL_STAGE_WAIT_INFLIGHT), MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_MISS,
             S3StreamMetricsConstant.LABEL_STAGE_WAIT_INFLIGHT);
     public final YammerHistogramMetric readBlockCacheStageMissReadCacheTimeStats = S3StreamMetricsManager.buildReadBlockCacheStageTime(
-            new MetricName(StorageOperationStats.class, "ReadBlockStageTime" + S3StreamMetricsConstant.LABEL_STATUS_MISS
+            new MetricName(StorageOperationStats.class, READ_BLOCK_CACHE_METRIC_NAME + S3StreamMetricsConstant.LABEL_STATUS_MISS
                     + S3StreamMetricsConstant.LABEL_STAGE_READ_CACHE), MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_MISS,
             S3StreamMetricsConstant.LABEL_STAGE_READ_CACHE);
     public final YammerHistogramMetric readBlockCacheStageMissReadAheadTimeStats = S3StreamMetricsManager.buildReadBlockCacheStageTime(
-            new MetricName(StorageOperationStats.class, "ReadBlockStageTime" + S3StreamMetricsConstant.LABEL_STATUS_MISS
+            new MetricName(StorageOperationStats.class, READ_BLOCK_CACHE_METRIC_NAME + S3StreamMetricsConstant.LABEL_STATUS_MISS
                     + S3StreamMetricsConstant.LABEL_STAGE_READ_AHEAD), MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_MISS,
             S3StreamMetricsConstant.LABEL_STAGE_READ_AHEAD);
     public final YammerHistogramMetric readBlockCacheStageMissReadS3TimeStats = S3StreamMetricsManager.buildReadBlockCacheStageTime(
-            new MetricName(StorageOperationStats.class, "ReadBlockStageTime" + S3StreamMetricsConstant.LABEL_STATUS_MISS
+            new MetricName(StorageOperationStats.class, READ_BLOCK_CACHE_METRIC_NAME + S3StreamMetricsConstant.LABEL_STATUS_MISS
                     + S3StreamMetricsConstant.LABEL_STAGE_READ_S3), MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_MISS,
             S3StreamMetricsConstant.LABEL_STAGE_READ_S3);
     public final YammerHistogramMetric readBlockCacheStageHitWaitInflightTimeStats = S3StreamMetricsManager.buildReadBlockCacheStageTime(
-            new MetricName(StorageOperationStats.class, "ReadBlockStageTime" + S3StreamMetricsConstant.LABEL_STATUS_HIT
+            new MetricName(StorageOperationStats.class, READ_BLOCK_CACHE_METRIC_NAME + S3StreamMetricsConstant.LABEL_STATUS_HIT
                     + S3StreamMetricsConstant.LABEL_STAGE_WAIT_INFLIGHT), MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_HIT,
             S3StreamMetricsConstant.LABEL_STAGE_WAIT_INFLIGHT);
     public final YammerHistogramMetric readBlockCacheStageHitReadCacheTimeStats = S3StreamMetricsManager.buildReadBlockCacheStageTime(
-            new MetricName(StorageOperationStats.class, "ReadBlockStageTime" + S3StreamMetricsConstant.LABEL_STATUS_HIT
+            new MetricName(StorageOperationStats.class, READ_BLOCK_CACHE_METRIC_NAME + S3StreamMetricsConstant.LABEL_STATUS_HIT
                     + S3StreamMetricsConstant.LABEL_STAGE_READ_CACHE), MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_HIT,
             S3StreamMetricsConstant.LABEL_STAGE_READ_CACHE);
     public final YammerHistogramMetric readBlockCacheStageHitReadAheadTimeStats = S3StreamMetricsManager.buildReadBlockCacheStageTime(
-            new MetricName(StorageOperationStats.class, "ReadBlockStageTime" + S3StreamMetricsConstant.LABEL_STATUS_HIT
+            new MetricName(StorageOperationStats.class, READ_BLOCK_CACHE_METRIC_NAME + S3StreamMetricsConstant.LABEL_STATUS_HIT
                     + S3StreamMetricsConstant.LABEL_STAGE_READ_AHEAD), MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_HIT,
             S3StreamMetricsConstant.LABEL_STAGE_READ_AHEAD);
     public final YammerHistogramMetric readBlockCacheStageHitReadS3TimeStats = S3StreamMetricsManager.buildReadBlockCacheStageTime(
-            new MetricName(StorageOperationStats.class, "ReadBlockStageTime" + S3StreamMetricsConstant.LABEL_STATUS_HIT
+            new MetricName(StorageOperationStats.class, READ_BLOCK_CACHE_METRIC_NAME + S3StreamMetricsConstant.LABEL_STATUS_HIT
                     + S3StreamMetricsConstant.LABEL_STAGE_READ_S3), MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_HIT,
             S3StreamMetricsConstant.LABEL_STAGE_READ_S3);
+
+    public final CounterMetric blockCacheReadS3Throughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("read_s3");
+    public final CounterMetric blockCacheBlockHitThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("block_hit");
+    public final CounterMetric blockCacheBlockMissThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("block_miss");
+    public final CounterMetric blockCacheBlockEvictThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("block_evict");
+    public final CounterMetric blockCacheReadStreamThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("read_stream");
 
     private StorageOperationStats() {
     }
