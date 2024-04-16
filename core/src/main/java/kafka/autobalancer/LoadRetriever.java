@@ -17,6 +17,7 @@ import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
+import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import kafka.autobalancer.model.ClusterModel;
@@ -476,10 +477,17 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         switch (metrics.metricType()) {
             case MetricTypes.TOPIC_PARTITION_METRIC:
                 TopicPartitionMetrics partitionMetrics = (TopicPartitionMetrics) metrics;
+
+                // TODO: remove this when reporting broker metrics is supported
                 clusterModel.updateBrokerMetrics(partitionMetrics.brokerId(), new HashMap<>(), partitionMetrics.time());
+
                 clusterModel.updateTopicPartitionMetrics(partitionMetrics.brokerId(),
                         new TopicPartition(partitionMetrics.topic(), partitionMetrics.partition()),
                         partitionMetrics.getMetricValueMap(), partitionMetrics.time());
+                break;
+            case MetricTypes.BROKER_METRIC:
+                BrokerMetrics brokerMetrics = (BrokerMetrics) metrics;
+                clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricValueMap(), brokerMetrics.time());
                 break;
             default:
                 logger.error("Not supported metrics version {}", metrics.metricType());

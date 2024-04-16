@@ -358,8 +358,8 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         for (AutoBalancerMetrics metrics : context.getMetricMap().values()) {
             if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC
                     && !MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics)) {
-                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.TOPIC_PARTITION_BYTES_IN, 0.0);
-                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.TOPIC_PARTITION_BYTES_OUT, 0.0);
+                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.PARTITION_BYTES_IN, 0.0);
+                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.PARTITION_BYTES_OUT, 0.0);
                 metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.PARTITION_SIZE, 0.0);
             }
         }

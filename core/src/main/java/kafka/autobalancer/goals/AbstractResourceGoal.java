@@ -68,6 +68,10 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                  List<BrokerUpdater.Broker> candidateBrokers,
                                                  Collection<Goal> goalsByPriority) {
         List<Action> actionList = new ArrayList<>();
+        candidateBrokers = candidateBrokers.stream().filter(b -> !b.isSlowBroker()).collect(Collectors.toList());
+        if (candidateBrokers.isEmpty()) {
+            return actionList;
+        }
         List<TopicPartitionReplicaUpdater.TopicPartitionReplica> srcReplicas = cluster
                 .replicasFor(srcBroker.getBrokerId())
                 .stream()

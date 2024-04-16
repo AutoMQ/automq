@@ -13,6 +13,8 @@ package kafka.autobalancer.model;
 
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
+import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.common.types.metrics.AbnormalMetric;
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.Collection;
@@ -80,6 +82,38 @@ public class ClusterModelSnapshot {
             ModelUtils.moveReplicaLoad(destBroker, srcBroker, destReplica);
             brokerToReplicaMap.get(action.getDestBrokerId()).remove(action.getDestTopicPartition());
             brokerToReplicaMap.get(action.getSrcBrokerId()).put(action.getDestTopicPartition(), destReplica);
+        }
+    }
+
+    public void markSlowBrokers() {
+        Map<BrokerUpdater.Broker, Map<Byte, Snapshot>> brokerMetricsValues = new HashMap<>();
+        Map<Byte, Map<BrokerUpdater.Broker, Snapshot>> metricsValues = new HashMap<>();
+        for (BrokerUpdater.Broker broker : brokerMap.values()) {
+            Map<Byte, Snapshot> metricsValue = brokerMetricsValues.computeIfAbsent(broker, k -> new HashMap<>());
+            for (Map.Entry<Byte, MetricValueSequence> entry : broker.getMetrics().entrySet()) {
+                Snapshot snapshot = entry.getValue().snapshot();
+                if (snapshot == null) {
+                    continue;
+                }
+                Map<BrokerUpdater.Broker, Snapshot> brokerMetric = metricsValues.computeIfAbsent(entry.getKey(), k -> new HashMap<>());
+                brokerMetric.put(broker, snapshot);
+                metricsValue.put(entry.getKey(), snapshot);
+            }
+        }
+        for (Map.Entry<BrokerUpdater.Broker, Map<Byte, Snapshot>> entry : brokerMetricsValues.entrySet()) {
+            BrokerUpdater.Broker broker = entry.getKey();
+            Map<Byte, Snapshot> metricsValue = entry.getValue();
+            for (Map.Entry<Byte, Snapshot> metricEntry : metricsValue.entrySet()) {
+                Byte metricType = metricEntry.getKey();
+                Snapshot snapshot = metricEntry.getValue();
+                AbnormalMetric abnormalMetric = RawMetricTypes.ofAbnormalType(metricType);
+                if (abnormalMetric == null) {
+                    continue;
+                }
+                if (abnormalMetric.isAbnormal(snapshot, metricsValues.get(metricType))) {
+                    broker.setSlowBroker(true);
+                }
+            }
         }
     }
 
