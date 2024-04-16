@@ -24,6 +24,7 @@ import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -94,6 +95,8 @@ public class S3Stream implements Stream {
         this.streamManager = streamManager;
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
+        S3StreamMetricsManager.registerPendingStreamAppendNumSupplier(streamId, pendingAppends::size);
+        S3StreamMetricsManager.registerPendingStreamFetchNumSupplier(streamId, pendingFetches::size);
     }
 
     public boolean isClosed() {
@@ -324,6 +327,8 @@ public class S3Stream implements Stream {
                     LOGGER.info("{} closed", logIdent);
                     StreamOperationStats.getInstance().closeStreamStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 }
+                S3StreamMetricsManager.removePendingStreamAppendNumSupplier(streamId);
+                S3StreamMetricsManager.removePendingStreamFetchNumSupplier(streamId);
             });
 
             return closeCf;

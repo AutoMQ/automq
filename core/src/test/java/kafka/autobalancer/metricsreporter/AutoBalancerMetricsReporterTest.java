@@ -17,6 +17,8 @@
 
 package kafka.autobalancer.metricsreporter;
 
+import kafka.autobalancer.common.types.MetricTypes;
+import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
@@ -37,17 +39,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-
-import static kafka.autobalancer.common.types.RawMetricTypes.PARTITION_SIZE;
-import static kafka.autobalancer.common.types.RawMetricTypes.PARTITION_BYTES_IN;
-import static kafka.autobalancer.common.types.RawMetricTypes.PARTITION_BYTES_OUT;
 
 @Tag("S3Unit")
 public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrationTestHarness {
@@ -93,24 +90,33 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
         try (Consumer<String, AutoBalancerMetrics> consumer = new KafkaConsumer<>(props)) {
             consumer.subscribe(Collections.singleton(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME));
             long startMs = System.currentTimeMillis();
-            Set<Byte> expectedTopicPartitionMetricTypes = new HashSet<>(Arrays.asList(
-                    PARTITION_BYTES_IN,
-                    PARTITION_BYTES_OUT,
-                    PARTITION_SIZE));
-            Set<Byte> expectedMetricTypes = new HashSet<>(expectedTopicPartitionMetricTypes);
+            Set<Byte> expectedBrokerMetricTypes = new HashSet<>(RawMetricTypes.BROKER_METRICS);
+            Set<Byte> expectedPartitionMetricTypes = new HashSet<>(RawMetricTypes.PARTITION_METRICS);
+            Set<Byte> expectedMetricTypes = new HashSet<>();
+            expectedMetricTypes.addAll(expectedBrokerMetricTypes);
+            expectedMetricTypes.addAll(expectedPartitionMetricTypes);
 
             Set<Byte> metricTypes = new HashSet<>();
             ConsumerRecords<String, AutoBalancerMetrics> records;
-            while (metricTypes.size() < expectedTopicPartitionMetricTypes.size() && System.currentTimeMillis() < startMs + 15000) {
+            while (metricTypes.size() < expectedMetricTypes.size() && System.currentTimeMillis() < startMs + 15000) {
                 records = consumer.poll(Duration.ofMillis(10L));
                 for (ConsumerRecord<String, AutoBalancerMetrics> record : records) {
                     Set<Byte> localMetricTypes = new HashSet<>();
-                    for (Byte type : record.value().getMetricValueMap().keySet()) {
+                    AutoBalancerMetrics metrics = record.value();
+                    Assertions.assertNotNull(metrics);
+                    for (Byte type : metrics.getMetricValueMap().keySet()) {
                         metricTypes.add(type);
                         localMetricTypes.add(type);
                     }
-                    Assertions.assertEquals(expectedTopicPartitionMetricTypes, localMetricTypes,
-                            "Expected " + expectedTopicPartitionMetricTypes + ", but saw " + localMetricTypes);
+                    if (metrics.metricType() == MetricTypes.BROKER_METRIC) {
+                        Assertions.assertEquals(expectedBrokerMetricTypes, localMetricTypes,
+                                "Expected " + expectedBrokerMetricTypes + ", but saw " + localMetricTypes);
+                    } else if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC) {
+                        Assertions.assertEquals(expectedPartitionMetricTypes, localMetricTypes,
+                                "Expected " + expectedPartitionMetricTypes + ", but saw " + localMetricTypes);
+                    } else {
+                        Assertions.fail("Unexpected metric type: " + metrics.metricType());
+                    }
                 }
             }
             Assertions.assertEquals(expectedMetricTypes, metricTypes, "Expected " + expectedMetricTypes + ", but saw " + metricTypes);

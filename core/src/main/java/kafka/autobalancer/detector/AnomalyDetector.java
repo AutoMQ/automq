@@ -26,6 +26,7 @@ import kafka.autobalancer.services.AbstractResumableService;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -54,6 +55,7 @@ public class AnomalyDetector extends AbstractResumableService {
     private volatile long maxTolerateMetricsDelayMs;
     private volatile long coolDownIntervalPerActionMs;
     private volatile boolean isLeader = false;
+    private volatile Map<Integer, Boolean> slowBrokers = new HashMap<>();
 
     AnomalyDetector(LogContext logContext, int maxActionsNumPerDetect, long detectIntervalMs, long maxTolerateMetricsDelayMs,
                     long coolDownIntervalPerActionMs, ClusterModel clusterModel, ActionExecutorService actionExecutor,
@@ -72,6 +74,7 @@ public class AnomalyDetector extends AbstractResumableService {
         this.excludedBrokers = excludedBrokers;
         this.excludedTopics = excludedTopics;
         this.executorService.schedule(this::detect, detectInterval, TimeUnit.MILLISECONDS);
+        S3StreamKafkaMetricsManager.setSlowBrokerSupplier(() -> this.slowBrokers);
         logger.info("maxActionsNumPerDetect: {}, detectInterval: {}ms, coolDownIntervalPerAction: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
                 this.maxActionsNumPerExecution, this.detectInterval, this.coolDownIntervalPerActionMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
     }
@@ -245,14 +248,18 @@ public class AnomalyDetector extends AbstractResumableService {
         ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics, maxTolerateMetricsDelayMs);
         snapshot.markSlowBrokers();
 
+        Map<Integer, Boolean> slowBrokers = new HashMap<>();
         for (BrokerUpdater.Broker broker : snapshot.brokers()) {
-            logger.info("Broker status: {}", broker.shortString());
+            String brokerStr = logger.isDebugEnabled() ? broker.toString() : broker.shortString();
+            slowBrokers.put(broker.getBrokerId(), broker.isSlowBroker());
+            logger.info("Broker status: {}", brokerStr);
             if (logger.isDebugEnabled()) {
                 for (TopicPartitionReplicaUpdater.TopicPartitionReplica replica : snapshot.replicasFor(broker.getBrokerId())) {
                     logger.debug("Replica status {}", replica.shortString());
                 }
             }
         }
+        this.slowBrokers = slowBrokers;
 
         List<Action> totalActions = new ArrayList<>();
         for (Goal goal : goals) {

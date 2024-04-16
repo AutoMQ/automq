@@ -115,12 +115,11 @@ public abstract class AutoBalancerMetrics {
 
     public String buildKVString() {
         StringBuilder builder = new StringBuilder();
-        for (Map.Entry<Byte, Double> entry : metricValueMap.entrySet()) {
-            builder.append(entry.getKey());
-            builder.append(":");
-            builder.append(String.format("%.4f", entry.getValue()));
+        metricValueMap.forEach((k, v) -> builder.append(k).append(":").append(v).append(","));
+        if (builder.length() == 0) {
+            return "";
         }
-        return builder.toString();
+        return builder.substring(0, builder.length() - 1);
     }
 
     @Override

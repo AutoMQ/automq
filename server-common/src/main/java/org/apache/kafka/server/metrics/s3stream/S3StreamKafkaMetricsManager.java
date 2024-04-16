@@ -60,6 +60,8 @@ public class S3StreamKafkaMetricsManager {
     private static ObservableLongGauge fetchPendingTaskNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier = Collections::emptyMap;
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
+    private static ObservableLongGauge slowBrokerMetrics = new NoopObservableLongGauge();
+    private static Supplier<Map<Integer, Boolean>> slowBrokerSupplier = Collections::emptyMap;
 
     public static void configure(MetricsConfig metricsConfig) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
@@ -82,12 +84,23 @@ public class S3StreamKafkaMetricsManager {
                 .setUnit("ms")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (shouldRecordMetrics()) {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get()) {
                         Map<Integer, Long> metricsTimeDelayMap = autoBalancerMetricsTimeMapSupplier.get();
                         for (Map.Entry<Integer, Long> entry : metricsTimeDelayMap.entrySet()) {
                             long timestamp = entry.getValue();
                             long delay = timestamp == 0 ? -1 : System.currentTimeMillis() - timestamp;
                             result.record(delay, BROKER_ATTRIBUTES.get(String.valueOf(entry.getKey())));
+                        }
+                    }
+                });
+        slowBrokerMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.SLOW_BROKER_METRIC_NAME)
+                .setDescription("The metrics to indicate whether the broker is slow or not")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get()) {
+                        Map<Integer, Boolean> slowBrokerMap = slowBrokerSupplier.get();
+                        for (Map.Entry<Integer, Boolean> entry : slowBrokerMap.entrySet()) {
+                            result.record(entry.getValue() ? 1 : 0, BROKER_ATTRIBUTES.get(String.valueOf(entry.getKey())));
                         }
                     }
                 });
@@ -98,7 +111,7 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The total count of s3 objects in different states")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (shouldRecordMetrics()) {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get()) {
                         Map<String, Integer> s3ObjectCountMap = s3ObjectCountMapSupplier.get();
                         for (Map.Entry<String, Integer> entry : s3ObjectCountMap.entrySet()) {
                             result.record(entry.getValue(), S3_OBJECT_ATTRIBUTES.get(entry.getKey()));
@@ -110,7 +123,7 @@ public class S3StreamKafkaMetricsManager {
                 .setUnit("bytes")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (shouldRecordMetrics()) {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get()) {
                         result.record(s3ObjectSizeSupplier.get(), metricsConfig.getBaseAttributes());
                     }
                 });
@@ -118,7 +131,7 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The total number of stream set objects")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (shouldRecordMetrics()) {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get()) {
                         Map<String, Integer> streamSetObjectNumMap = streamSetObjectNumSupplier.get();
                         for (Map.Entry<String, Integer> entry : streamSetObjectNumMap.entrySet()) {
                             result.record(entry.getValue(), BROKER_ATTRIBUTES.get(entry.getKey()));
@@ -129,7 +142,7 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The total number of stream objects")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (shouldRecordMetrics()) {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get()) {
                         result.record(streamObjectNumSupplier.get(), metricsConfig.getBaseAttributes());
                     }
                 });
@@ -140,7 +153,7 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The number of permits in fetch limiters")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (shouldRecordMetrics()) {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                         Map<String, Integer> fetchLimiterPermitNumMap = fetchLimiterPermitNumSupplier.get();
                         for (Map.Entry<String, Integer> entry : fetchLimiterPermitNumMap.entrySet()) {
                             result.record(entry.getValue(), FETCH_LIMITER_ATTRIBUTES.get(entry.getKey()));
@@ -151,17 +164,13 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The number of pending tasks in fetch executors")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (shouldRecordMetrics()) {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                         Map<String, Integer> fetchPendingTaskNumMap = fetchPendingTaskNumSupplier.get();
                         for (Map.Entry<String, Integer> entry : fetchPendingTaskNumMap.entrySet()) {
                             result.record(entry.getValue(), FETCH_EXECUTOR_ATTRIBUTES.get(entry.getKey()));
                         }
                     }
                 });
-    }
-
-    private static boolean shouldRecordMetrics() {
-        return MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get();
     }
 
     public static void setIsActiveSupplier(Supplier<Boolean> isActiveSupplier) {
@@ -194,5 +203,9 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setFetchPendingTaskNumSupplier(Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier) {
         S3StreamKafkaMetricsManager.fetchPendingTaskNumSupplier = fetchPendingTaskNumSupplier;
+    }
+
+    public static void setSlowBrokerSupplier(Supplier<Map<Integer, Boolean>> slowBrokerSupplier) {
+        S3StreamKafkaMetricsManager.slowBrokerSupplier = slowBrokerSupplier;
     }
 }

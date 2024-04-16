@@ -79,6 +79,8 @@ public class S3StreamMetricsConstant {
     public static final String NETWORK_OUTBOUND_LIMITER_QUEUE_TIME_METRIC_NAME = "network_outbound_limiter_queue_time";
     public static final String READ_AHEAD_SIZE_METRIC_NAME = "read_ahead_size";
     public static final String READ_AHEAD_STAGE_TIME_METRIC_NAME = "read_ahead_stage_time";
+    public static final String PENDING_STREAM_APPEND_NUM_METRIC_NAME = "pending_stream_append_num";
+    public static final String PENDING_STREAM_FETCH_NUM_METRIC_NAME = "pending_stream_fetch_num";
     public static final String SUM_METRIC_NAME_SUFFIX = "_sum";
     public static final String COUNT_METRIC_NAME_SUFFIX = "_count";
     public static final String P50_METRIC_NAME_SUFFIX = "_50p";

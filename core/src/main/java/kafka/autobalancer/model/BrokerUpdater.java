@@ -40,8 +40,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
-        // TODO: add broker metrics validation when reporting broker metrics is supported
-        return true;
+        return metricsMap.keySet().containsAll(RawMetricTypes.BROKER_METRICS);
     }
 
     @Override

@@ -17,12 +17,13 @@ import java.util.Collection;
 public class Snapshot {
     private final Snapshot prev;
     private final double[] values;
-    private Double latest;
+    private final double latest;
     private Double percentile90th;
 
     public Snapshot(Snapshot prev, Collection<Double> values) {
         this.prev = prev;
         this.values = values.stream().mapToDouble(Double::doubleValue).toArray();
+        this.latest = this.values.length > 0 ? this.values[this.values.length - 1] : 0.0;
         Arrays.sort(this.values);
     }
 
@@ -55,9 +56,6 @@ public class Snapshot {
     }
 
     public double getLatest() {
-        if (this.latest == null) {
-            this.latest = this.values[this.values.length - 1];
-        }
         return latest;
     }
 
