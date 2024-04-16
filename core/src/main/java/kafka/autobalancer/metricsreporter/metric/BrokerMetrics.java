@@ -48,11 +48,8 @@ public class BrokerMetrics extends AutoBalancerMetrics {
     }
 
     @Override
-    public AutoBalancerMetrics put(byte type, double value) {
-        if (!RawMetricTypes.BROKER_METRICS.contains(type)) {
-            throw new IllegalArgumentException("Cannot put non broker metric type " + type + " into a partition metric.");
-        }
-        return super.put(type, value);
+    public boolean isValidMetric(byte type) {
+        return RawMetricTypes.BROKER_METRICS.contains(type);
     }
 
     @Override

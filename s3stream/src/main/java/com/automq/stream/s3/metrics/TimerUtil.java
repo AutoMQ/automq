@@ -25,6 +25,10 @@ public class TimerUtil {
         last.set(System.nanoTime());
     }
 
+    public long lastAs(TimeUnit timeUnit) {
+        return timeUnit.convert(last.get(), TimeUnit.NANOSECONDS);
+    }
+
     public long elapsedAs(TimeUnit timeUnit) {
         return timeUnit.convert(System.nanoTime() - last.get(), TimeUnit.NANOSECONDS);
     }

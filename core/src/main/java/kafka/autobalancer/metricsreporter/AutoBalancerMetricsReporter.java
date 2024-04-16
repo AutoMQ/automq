@@ -11,6 +11,8 @@
 
 package kafka.autobalancer.metricsreporter;
 
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
@@ -19,6 +21,8 @@ import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
+import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
+import kafka.autobalancer.metricsreporter.metric.DeltaHistogram;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
 import kafka.autobalancer.metricsreporter.metric.YammerMetricProcessor;
@@ -49,6 +53,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.CruiseControlMetricsReporter.
@@ -60,6 +65,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoBalancerMetricsReporter.class);
     private final Map<MetricName, Metric> interestedMetrics = new ConcurrentHashMap<>();
     private final MetricsRegistry metricsRegistry = KafkaYammerMetrics.defaultRegistry();
+    protected final DeltaHistogram appendLatencyMetric = new DeltaHistogram();
     protected YammerMetricProcessor yammerMetricProcessor;
     private KafkaThread metricsReporterRunner;
     private KafkaProducer<String, AutoBalancerMetrics> producer;
@@ -344,7 +350,18 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
     protected void processMetrics(YammerMetricProcessor.Context context) throws Exception {
         processYammerMetrics(context);
+        addBrokerMetrics(context);
         addMandatoryMetrics(context);
+    }
+
+    protected void addBrokerMetrics(YammerMetricProcessor.Context context) {
+        context.merge(new BrokerMetrics(context.time(), brokerId, brokerRack)
+                .put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS,
+                        TimeUnit.NANOSECONDS.toMillis((long) appendLatencyMetric.deltaRate(StreamOperationStats.getInstance().appendStreamStats)))
+                .put(RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS,
+                        TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamAppendLatency()))
+                .put(RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS,
+                        TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamFetchLatency())));
     }
 
     protected void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {

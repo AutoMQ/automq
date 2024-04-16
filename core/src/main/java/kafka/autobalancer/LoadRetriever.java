@@ -477,10 +477,6 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         switch (metrics.metricType()) {
             case MetricTypes.TOPIC_PARTITION_METRIC:
                 TopicPartitionMetrics partitionMetrics = (TopicPartitionMetrics) metrics;
-
-                // TODO: remove this when reporting broker metrics is supported
-                clusterModel.updateBrokerMetrics(partitionMetrics.brokerId(), new HashMap<>(), partitionMetrics.time());
-
                 clusterModel.updateTopicPartitionMetrics(partitionMetrics.brokerId(),
                         new TopicPartition(partitionMetrics.topic(), partitionMetrics.partition()),
                         partitionMetrics.getMetricValueMap(), partitionMetrics.time());

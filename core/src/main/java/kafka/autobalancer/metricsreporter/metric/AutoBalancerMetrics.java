@@ -51,7 +51,12 @@ public abstract class AutoBalancerMetrics {
         return metricsMap;
     }
 
+    public abstract boolean isValidMetric(byte type);
+
     public AutoBalancerMetrics put(byte type, double value) {
+        if (!isValidMetric(type)) {
+            throw new IllegalArgumentException(String.format("Cannot put metric type %d into a %s metric.", type, this.getClass().getSimpleName()));
+        }
         this.metricValueMap.put(type, value);
         return this;
     }
@@ -115,12 +120,11 @@ public abstract class AutoBalancerMetrics {
 
     public String buildKVString() {
         StringBuilder builder = new StringBuilder();
-        for (Map.Entry<Byte, Double> entry : metricValueMap.entrySet()) {
-            builder.append(entry.getKey());
-            builder.append(":");
-            builder.append(String.format("%.4f", entry.getValue()));
+        metricValueMap.forEach((k, v) -> builder.append(k).append(":").append(v).append(","));
+        if (builder.length() == 0) {
+            return "";
         }
-        return builder.toString();
+        return builder.substring(0, builder.length() - 1);
     }
 
     @Override
