@@ -586,11 +586,11 @@ public class S3StreamMetricsManager {
         S3StreamMetricsManager.pendingStreamFetchLatencySupplier.put(streamId, pendingStreamFetchLatencySupplier);
     }
 
-    public static void removePendingStreamAppendNumSupplier(long streamId) {
+    public static void removePendingStreamAppendLatencySupplier(long streamId) {
         S3StreamMetricsManager.pendingStreamAppendLatencySupplier.remove(streamId);
     }
 
-    public static void removePendingStreamFetchNumSupplier(long streamId) {
+    public static void removePendingStreamFetchLatencySupplier(long streamId) {
         S3StreamMetricsManager.pendingStreamFetchLatencySupplier.remove(streamId);
     }
 
