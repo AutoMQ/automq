@@ -143,7 +143,7 @@ public class StreamReader {
 
     void read0(ReadContext ctx, long startOffset, long endOffset, int maxBytes) {
         // 1. get blocks
-        CompletableFuture<List<Block>> getBlocksCf = getBlocks(startOffset, endOffset, maxBytes);
+        CompletableFuture<List<Block>> getBlocksCf = getBlocks(startOffset, endOffset, maxBytes, false);
 
         // 2. wait block's data loaded
         List<Block> blocks = new ArrayList<>();
@@ -228,8 +228,8 @@ public class StreamReader {
         readahead.tryReadahead();
     }
 
-    private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes) {
-        GetBlocksContext context = new GetBlocksContext();
+    private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes, boolean readahead) {
+        GetBlocksContext context = new GetBlocksContext(readahead);
         try {
             getBlocks0(context, startOffset, endOffset, maxBytes);
         } catch (Throwable ex) {
@@ -267,7 +267,7 @@ public class StreamReader {
                     firstBlock = false;
                 }
                 // after read the data will be return to the cache, so we need to reload the data every time
-                block = block.newBlockWithData();
+                block = block.newBlockWithData(ctx.readahead);
                 ctx.blocks.add(block);
                 if ((endOffset != -1L && index.endOffset() >= endOffset) || remainingSize <= 0) {
                     fulfill = true;
@@ -400,6 +400,15 @@ public class StreamReader {
     static class GetBlocksContext {
         final List<Block> blocks = new ArrayList<>();
         final CompletableFuture<List<Block>> cf = new CompletableFuture<>();
+        final boolean readahead;
+
+        public GetBlocksContext() {
+            this(false);
+        }
+
+        public GetBlocksContext(boolean readahead) {
+            this.readahead = readahead;
+        }
     }
 
     static class ReadContext {
@@ -422,12 +431,13 @@ public class StreamReader {
             this.index = index;
         }
 
-        public Block newBlockWithData() {
+        public Block newBlockWithData(boolean readahead) {
             // We need to create a new block with consistent data to avoid duplicated release or leak,
             // cause of the loaded data maybe evicted and reloaded.
             Block newBlock = new Block(metadata, index);
             ObjectReader objectReader = objectReaderFactory.apply(metadata);
-            loadCf = dataBlockCache.getBlock(objectReader, index).thenAccept(db -> {
+            DataBlockCache.GetOptions getOptions = DataBlockCache.GetOptions.builder().readahead(readahead).build();
+            loadCf = dataBlockCache.getBlock(getOptions, objectReader, index).thenAccept(db -> {
                 newBlock.data = db;
                 if (data != db) {
                     // the data block is first loaded or evict & reload
@@ -498,7 +508,7 @@ public class StreamReader {
                 return;
             }
             readaheadMarkOffset = nextReadaheadOffset;
-            inflightReadaheadCf = getBlocks(nextReadaheadOffset, -1L, nextReadaheadSize).thenAccept(blocks -> {
+            inflightReadaheadCf = getBlocks(nextReadaheadOffset, -1L, nextReadaheadSize, true).thenAccept(blocks -> {
                 nextReadaheadOffset = blocks.isEmpty() ? nextReadaheadOffset : blocks.get(blocks.size() - 1).index.endOffset();
                 blocks.forEach(Block::release);
             });

@@ -118,6 +118,7 @@ public class StorageOperationStats {
     public final CounterMetric blockCacheBlockMissThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("block_miss");
     public final CounterMetric blockCacheBlockEvictThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("block_evict");
     public final CounterMetric blockCacheReadStreamThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("read_stream");
+    public final CounterMetric blockCacheReadaheadThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("readahead");
 
     private StorageOperationStats() {
     }
