@@ -1,5 +1,5 @@
 <h1 align="center">
-AutoMQ: Truly serverless Kafka solution that maximizes the benefits of cloud
+AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 </h1>
 <h3 align="center">
 
@@ -8,7 +8,6 @@ AutoMQ: Truly serverless Kafka solution that maximizes the benefits of cloud
 ![GitHub release (with filter)](https://img.shields.io/github/v/release/AutoMQ/automq-for-kafka)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/AutoMQ/automq-for-kafka)
 ![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/AutoMQ/automq-for-kafka)
-![GitHub all releases](https://img.shields.io/github/downloads/AutoMQ/automq-for-kafka/total)
 ![](https://img.shields.io/badge/Java%20-%20JDK17-green)
 
 ---
