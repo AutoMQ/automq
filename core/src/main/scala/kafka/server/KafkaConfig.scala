@@ -1417,7 +1417,7 @@ object KafkaConfig {
       .define(S3WALIOPSProp, INT, 3000, MEDIUM, S3WALIOPSDoc)
       .define(S3WALUploadThresholdProp, LONG, -1L, MEDIUM, S3WALUploadThresholdDoc)
       .define(S3StreamSplitSizeProp, INT, 8388608, MEDIUM, S3StreamSplitSizeDoc)
-      .define(S3ObjectBlockSizeProp, INT, 1048576, MEDIUM, S3ObjectBlockSizeDoc)
+      .define(S3ObjectBlockSizeProp, INT, 524288, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
       .define(S3ObjectTaggingProp, BOOLEAN, false, MEDIUM, S3ObjectTaggingDoc)
       .define(S3BlockCacheSizeProp, LONG, -1L, MEDIUM, S3BlockCacheSizeDoc)
