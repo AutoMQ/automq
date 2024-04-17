@@ -347,8 +347,8 @@ public class S3Stream implements Stream {
                     LOGGER.info("{} closed", logIdent);
                     StreamOperationStats.getInstance().closeStreamStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 }
-                S3StreamMetricsManager.removePendingStreamAppendNumSupplier(streamId);
-                S3StreamMetricsManager.removePendingStreamFetchNumSupplier(streamId);
+                S3StreamMetricsManager.removePendingStreamAppendLatencySupplier(streamId);
+                S3StreamMetricsManager.removePendingStreamFetchLatencySupplier(streamId);
             });
 
             return closeCf;
