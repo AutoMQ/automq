@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 18,
+  "id": 2,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -1016,8 +1016,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1118,8 +1117,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1233,8 +1231,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1335,8 +1332,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1454,8 +1450,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1573,8 +1568,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1675,8 +1669,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1777,8 +1770,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1896,8 +1888,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2015,8 +2006,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2168,8 +2158,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2334,8 +2323,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2435,8 +2423,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2578,8 +2565,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2692,8 +2678,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2795,8 +2780,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -2899,8 +2883,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3045,8 +3028,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3160,8 +3142,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3261,8 +3242,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3404,8 +3384,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3532,8 +3511,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3650,8 +3628,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3768,8 +3745,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -3899,8 +3875,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4000,8 +3975,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4143,8 +4117,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4271,8 +4244,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4372,8 +4344,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4515,8 +4486,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4597,7 +4567,7 @@
             },
             "insertNulls": false,
             "lineInterpolation": "linear",
-            "lineWidth": 2,
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -4617,109 +4587,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "reqps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 8,
-        "x": 0,
-        "y": 170
-      },
-      "id": 29,
-      "interval": "30s",
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(job, instance, operation_name, status) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Read Ahead Request Throughput",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -4732,270 +4600,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 12,
-        "w": 8,
-        "x": 8,
-        "y": 170
-      },
-      "id": 31,
-      "interval": "30s",
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(job, instance) (rate(kafka_stream_read_ahead_size_sum_bytes{job=\"$cluster_id\", instance=~\"$node_id\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Read Ahead Throughput",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ns"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Node-${__field.labels.instance}#${__field.labels.operation_name}-${__field.labels.status}"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 8,
-        "x": 16,
-        "y": 170
-      },
-      "id": 30,
-      "interval": "30s",
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "avg by(instance, operation_name, status) (rate(kafka_stream_operation_latency_sum_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": true,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "avg by(instance, operation_name, status) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"}[$__rate_interval]))",
-          "fullMetaSearch": false,
-          "hide": true,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
-          "range": true,
-          "refId": "B",
-          "useBackend": false
-        },
-        {
-          "datasource": {
-            "name": "Expression",
-            "type": "__expr__",
-            "uid": "__expr__"
-          },
-          "expression": "$A / $B",
-          "hide": false,
-          "refId": "C",
-          "type": "math"
-        }
-      ],
-      "title": "Read Ahead Latency (Avg)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ns"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Node-${__field.labels.instance}#${__field.labels.operation_name}-${__field.labels.status}"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
+        "h": 11,
         "w": 8,
         "x": 0,
-        "y": 182
+        "y": 170
       },
-      "id": 90,
-      "interval": "30s",
+      "id": 95,
       "options": {
         "legend": {
           "calcs": [],
@@ -5012,239 +4622,21 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "PBFA97CFB590B2093"
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "avg by(instance, operation_name, status) (kafka_stream_operation_latency_99p_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_ahead\", operation_type=\"S3Storage\"})",
+          "expr": "rate(kafka_stream_block_cache_ops_throughput_bytes_total{job=\"$cluster_id\", instance=\"$node_id\"}[$__rate_interval])",
           "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": false,
+          "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
+          "legendFormat": "{{instance}}-{{ops}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Read Ahead Latency (P99)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "D"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Node-${__field.labels.instance}"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 8,
-        "x": 8,
-        "y": 182
-      },
-      "id": 55,
-      "interval": "30s",
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "avg by(instance) (kafka_stream_read_ahead_size_mean_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
-          "fullMetaSearch": false,
-          "hide": false,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Read Ahead Size Avg",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 8,
-        "x": 16,
-        "y": 182
-      },
-      "id": 32,
-      "interval": "30s",
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sum by(job, instance) (kafka_stream_available_inflight_read_ahead_size_bytes{job=\"$cluster_id\", instance=~\"$node_id\"})",
-          "fullMetaSearch": false,
-          "includeNullMetadata": false,
-          "instant": false,
-          "legendFormat": "Node-{{instance}}",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Available Inflight Read Ahead Size",
+      "title": "Ops Throughput",
       "type": "timeseries"
     },
     {
@@ -5253,7 +4645,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 194
+        "y": 181
       },
       "id": 34,
       "panels": [],
@@ -5311,8 +4703,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -5328,7 +4719,7 @@
         "h": 12,
         "w": 8,
         "x": 0,
-        "y": 195
+        "y": 182
       },
       "id": 35,
       "interval": "30s",
@@ -5433,8 +4824,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -5450,7 +4840,7 @@
         "h": 12,
         "w": 8,
         "x": 8,
-        "y": 195
+        "y": 182
       },
       "id": 92,
       "interval": "30s",
@@ -5555,8 +4945,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -5572,7 +4961,7 @@
         "h": 12,
         "w": 8,
         "x": 16,
-        "y": 195
+        "y": 182
       },
       "id": 36,
       "interval": "30s",
@@ -5712,8 +5101,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -5742,7 +5130,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 207
+        "y": 194
       },
       "id": 38,
       "interval": "30s",
@@ -5859,8 +5247,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -5889,7 +5276,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 207
+        "y": 194
       },
       "id": 93,
       "interval": "30s",
@@ -6006,8 +5393,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6023,7 +5409,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 219
+        "y": 206
       },
       "id": 91,
       "interval": "30s",
@@ -6112,8 +5498,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6129,7 +5514,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 219
+        "y": 206
       },
       "id": 94,
       "interval": "30s",
@@ -6173,7 +5558,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 231
+        "y": 218
       },
       "id": 39,
       "panels": [],
@@ -6227,8 +5612,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6243,7 +5627,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 232
+        "y": 219
       },
       "id": 48,
       "interval": "30s",
@@ -6327,8 +5711,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6344,7 +5727,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 232
+        "y": 219
       },
       "id": 49,
       "interval": "30s",
@@ -6428,8 +5811,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6444,7 +5826,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 244
+        "y": 231
       },
       "id": 50,
       "interval": "30s",
@@ -6528,8 +5910,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6544,7 +5925,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 244
+        "y": 231
       },
       "id": 51,
       "interval": "30s",
@@ -6628,8 +6009,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6645,7 +6025,7 @@
         "h": 13,
         "w": 8,
         "x": 0,
-        "y": 256
+        "y": 243
       },
       "id": 73,
       "interval": "30s",
@@ -6729,8 +6109,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6759,7 +6138,7 @@
         "h": 13,
         "w": 8,
         "x": 8,
-        "y": 256
+        "y": 243
       },
       "id": 56,
       "interval": "30s",
@@ -6872,8 +6251,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6889,7 +6267,7 @@
         "h": 13,
         "w": 8,
         "x": 16,
-        "y": 256
+        "y": 243
       },
       "id": 41,
       "interval": "30s",
@@ -6973,8 +6351,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -6990,7 +6367,7 @@
         "h": 13,
         "w": 8,
         "x": 0,
-        "y": 269
+        "y": 256
       },
       "id": 72,
       "interval": "30s",
@@ -7074,8 +6451,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -7104,7 +6480,7 @@
         "h": 13,
         "w": 8,
         "x": 8,
-        "y": 269
+        "y": 256
       },
       "id": 71,
       "interval": "30s",
@@ -7217,8 +6593,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -7234,7 +6609,7 @@
         "h": 13,
         "w": 8,
         "x": 16,
-        "y": 269
+        "y": 256
       },
       "id": 43,
       "interval": "30s",
@@ -7277,7 +6652,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 282
+        "y": 269
       },
       "id": 44,
       "panels": [],
@@ -7331,8 +6706,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -7344,7 +6718,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 283
+        "y": 270
       },
       "id": 45,
       "interval": "30s",
@@ -7404,7 +6778,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 297
+        "y": 284
       },
       "id": 46,
       "panels": [],
@@ -7458,8 +6832,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -7475,7 +6848,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 298
+        "y": 285
       },
       "id": 47,
       "interval": "30s",
@@ -7513,8 +6886,8 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "5s",
-  "schemaVersion": 38,
+  "refresh": "30s",
+  "schemaVersion": 39,
   "tags": [],
   "templating": {
     "list": [
@@ -7539,8 +6912,8 @@
       {
         "current": {
           "selected": false,
-          "text": "jfPcM5qpSSuRENMXefpl3w",
-          "value": "jfPcM5qpSSuRENMXefpl3w"
+          "text": "p1VdjERXQhqXuy7fzbjU6g",
+          "value": "p1VdjERXQhqXuy7fzbjU6g"
         },
         "datasource": {
           "type": "prometheus",
@@ -7600,12 +6973,12 @@
         "current": {
           "selected": true,
           "text": [
-            "Fetch",
-            "Produce"
+            "Produce",
+            "Fetch"
           ],
           "value": [
-            "Fetch",
-            "Produce"
+            "Produce",
+            "Fetch"
           ]
         },
         "datasource": {
@@ -7664,7 +7037,7 @@
       },
       {
         "current": {
-          "selected": true,
+          "selected": false,
           "text": [
             "All"
           ],

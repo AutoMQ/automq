@@ -43,13 +43,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
+import static com.automq.stream.s3.cache.CacheAccessType.BLOCK_CACHE_HIT;
+import static com.automq.stream.s3.cache.CacheAccessType.BLOCK_CACHE_MISS;
 import static com.automq.stream.utils.FutureUtil.exec;
 
 @EventLoopSafe
 public class StreamReader {
     public static final int GET_OBJECT_STEP = 4;
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReader.class);
-    private static final int DEFAULT_READAHEAD_SIZE = 1024 * 1024 / 2;
+    static final int READAHEAD_SIZE_UNIT = 1024 * 1024 / 2;
     private static final int MAX_READAHEAD_SIZE = 32 * 1024 * 1024;
     private static final long READAHEAD_RESET_COLD_DOWN_MILLS = TimeUnit.MINUTES.toMillis(1);
     private static final long READAHEAD_AVAILABLE_BYTES_THRESHOLD = 32L * 1024 * 1024;
@@ -143,7 +145,7 @@ public class StreamReader {
 
     void read0(ReadContext ctx, long startOffset, long endOffset, int maxBytes) {
         // 1. get blocks
-        CompletableFuture<List<Block>> getBlocksCf = getBlocks(startOffset, endOffset, maxBytes);
+        CompletableFuture<List<Block>> getBlocksCf = getBlocks(startOffset, endOffset, maxBytes, false);
 
         // 2. wait block's data loaded
         List<Block> blocks = new ArrayList<>();
@@ -156,6 +158,11 @@ public class StreamReader {
                         .toArray(CompletableFuture[]::new));
                 }
             );
+
+        // if the cache is hit, the loadBlocks will be done immediately
+        if (!loadBlocksCf.isDone()) {
+            ctx.accessType = BLOCK_CACHE_MISS;
+        }
 
         // 3. extract records from blocks
         loadBlocksCf.thenAccept(nil -> {
@@ -188,8 +195,8 @@ public class StreamReader {
                 }
             }
             if (fulfill) {
-                // TODO: propagate the cache access type
-                ctx.cf.complete(new ReadDataBlock(ctx.records, CacheAccessType.BLOCK_CACHE_HIT));
+                ctx.cf.complete(new ReadDataBlock(ctx.records, ctx.accessType));
+                StorageOperationStats.getInstance().readBlockCacheStats(ctx.accessType == BLOCK_CACHE_HIT).record(ctx.start.elapsedAs(TimeUnit.NANOSECONDS));
             } else {
                 // The DataBlockIndex#size is not precise cause of the data block contains record header and data block header.
                 // So we may need to retry read to fulfill the endOffset or maxBytes
@@ -225,11 +232,11 @@ public class StreamReader {
             }
         }
         // try readahead to accelerate the next read
-        readahead.tryReadahead();
+        readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS);
     }
 
-    private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes) {
-        GetBlocksContext context = new GetBlocksContext();
+    private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes, boolean readahead) {
+        GetBlocksContext context = new GetBlocksContext(readahead);
         try {
             getBlocks0(context, startOffset, endOffset, maxBytes);
         } catch (Throwable ex) {
@@ -267,7 +274,7 @@ public class StreamReader {
                     firstBlock = false;
                 }
                 // after read the data will be return to the cache, so we need to reload the data every time
-                block = block.newBlockWithData();
+                block = block.newBlockWithData(ctx.readahead);
                 ctx.blocks.add(block);
                 if ((endOffset != -1L && index.endOffset() >= endOffset) || remainingSize <= 0) {
                     fulfill = true;
@@ -317,8 +324,10 @@ public class StreamReader {
             StorageOperationStats.getInstance().getIndicesTimeGetObjectStats.record(time.elapsedAndResetAs(TimeUnit.NANOSECONDS));
             CompletableFuture<Void> prevCf = CompletableFuture.completedFuture(null);
             for (S3ObjectMetadata objectMetadata : objects) {
-                ObjectReader objectReader = objectReaderFactory.apply(objectMetadata);
-                // TODO: warm up the lazy objectReader
+                // the object reader will be release in the whenComplete
+                @SuppressWarnings("resource") ObjectReader objectReader = objectReaderFactory.apply(objectMetadata);
+                // invoke basicObjectInfo to warm up the objectReader
+                objectReader.basicObjectInfo();
                 prevCf = prevCf.thenCompose(
                     nil ->
                         objectReader
@@ -400,13 +409,19 @@ public class StreamReader {
     static class GetBlocksContext {
         final List<Block> blocks = new ArrayList<>();
         final CompletableFuture<List<Block>> cf = new CompletableFuture<>();
+        final boolean readahead;
+
+        public GetBlocksContext(boolean readahead) {
+            this.readahead = readahead;
+        }
     }
 
     static class ReadContext {
         final List<StreamRecordBatch> records = new LinkedList<>();
         final List<Block> blocks = new ArrayList<>();
         final CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
-        CacheAccessType accessType = CacheAccessType.BLOCK_CACHE_HIT;
+        CacheAccessType accessType = BLOCK_CACHE_HIT;
+        final TimerUtil start = new TimerUtil();
     }
 
     class Block {
@@ -422,12 +437,13 @@ public class StreamReader {
             this.index = index;
         }
 
-        public Block newBlockWithData() {
+        public Block newBlockWithData(boolean readahead) {
             // We need to create a new block with consistent data to avoid duplicated release or leak,
             // cause of the loaded data maybe evicted and reloaded.
             Block newBlock = new Block(metadata, index);
             ObjectReader objectReader = objectReaderFactory.apply(metadata);
-            loadCf = dataBlockCache.getBlock(objectReader, index).thenAccept(db -> {
+            DataBlockCache.GetOptions getOptions = DataBlockCache.GetOptions.builder().readahead(readahead).build();
+            loadCf = dataBlockCache.getBlock(getOptions, objectReader, index).thenAccept(db -> {
                 newBlock.data = db;
                 if (data != db) {
                     // the data block is first loaded or evict & reload
@@ -466,30 +482,32 @@ public class StreamReader {
 
     class Readahead {
         long nextReadaheadOffset;
-        int nextReadaheadSize = DEFAULT_READAHEAD_SIZE;
+        int nextReadaheadSize = READAHEAD_SIZE_UNIT;
         long readaheadMarkOffset;
         long resetTimestamp;
         boolean requireReset;
-        private CompletableFuture<Void> inflightReadaheadCf;
+        CompletableFuture<Void> inflightReadaheadCf;
+        private int cacheMissCount;
 
-        public void tryReadahead() {
-            if (inflightReadaheadCf != null) {
-                return;
-            }
+        public void tryReadahead(boolean cacheMiss) {
             if (System.currentTimeMillis() - resetTimestamp < READAHEAD_RESET_COLD_DOWN_MILLS) {
                 // skip readahead when readahead is in cold down
                 return;
             }
+            cacheMissCount += cacheMiss ? 1 : 0;
+            if (inflightReadaheadCf != null) {
+                return;
+            }
+            nextReadaheadSize = Math.min(nextReadaheadSize + cacheMissCount * READAHEAD_SIZE_UNIT, MAX_READAHEAD_SIZE);
+            cacheMissCount = 0;
             if (requireReset) {
                 nextReadaheadOffset = 0L;
-                nextReadaheadSize = DEFAULT_READAHEAD_SIZE;
+                nextReadaheadSize = READAHEAD_SIZE_UNIT;
                 readaheadMarkOffset = 0L;
                 requireReset = false;
             }
             if (nextReadOffset >= nextReadaheadOffset) {
-                // if the user read is beyond the readahead, we need to increase the readahead size
                 nextReadaheadOffset = nextReadOffset;
-                nextReadaheadSize = Math.min(nextReadaheadSize * 2, MAX_READAHEAD_SIZE);
             } else if (nextReadOffset <= readaheadMarkOffset) {
                 // if the user read doesn't reach the readahead mark, we don't need to readahead
                 return;
@@ -498,7 +516,7 @@ public class StreamReader {
                 return;
             }
             readaheadMarkOffset = nextReadaheadOffset;
-            inflightReadaheadCf = getBlocks(nextReadaheadOffset, -1L, nextReadaheadSize).thenAccept(blocks -> {
+            inflightReadaheadCf = getBlocks(nextReadaheadOffset, -1L, nextReadaheadSize, true).thenAccept(blocks -> {
                 nextReadaheadOffset = blocks.isEmpty() ? nextReadaheadOffset : blocks.get(blocks.size() - 1).index.endOffset();
                 blocks.forEach(Block::release);
             });
