@@ -113,12 +113,13 @@ public class StorageOperationStats {
     public final YammerHistogramMetric readBlockCacheStageHitReadS3TimeStats = S3StreamMetricsManager
             .buildReadBlockCacheStageTime(MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STATUS_HIT, S3StreamMetricsConstant.LABEL_STAGE_READ_S3);
 
+
     public final CounterMetric blockCacheReadS3Throughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("read_s3");
-    public final CounterMetric blockCacheBlockHitThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("block_hit");
     public final CounterMetric blockCacheBlockMissThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("block_miss");
     public final CounterMetric blockCacheBlockEvictThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("block_evict");
     public final CounterMetric blockCacheReadStreamThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("read_stream");
     public final CounterMetric blockCacheReadaheadThroughput = S3StreamMetricsManager.buildBlockCacheOpsThroughputMetric("readahead");
+
 
     private StorageOperationStats() {
     }

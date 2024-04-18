@@ -144,11 +144,7 @@ public class DataBlockCache {
             CompletableFuture<DataBlock> cf = new CompletableFuture<>();
             // if the data is already loaded, the listener will be invoked right now,
             // else the listener will be invoked immediately after data loaded in the same eventLoop.
-            if (dataBlock.dataFuture().isDone()) {
-                if (!options.isReadahead()) {
-                    StorageOperationStats.getInstance().blockCacheBlockHitThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
-                }
-            } else {
+            if (!dataBlock.dataFuture().isDone()) {
                 if (options.isReadahead()) {
                     StorageOperationStats.getInstance().blockCacheReadaheadThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
                 } else {
