@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 2,
+  "id": 176,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -1016,7 +1016,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1117,7 +1118,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1231,7 +1233,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1332,7 +1335,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1450,7 +1454,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1568,7 +1573,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1669,7 +1675,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1770,7 +1777,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -1888,7 +1896,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2006,7 +2015,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2158,7 +2168,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2323,7 +2334,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2423,7 +2435,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2565,7 +2578,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2678,7 +2692,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2780,7 +2795,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -2883,7 +2899,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3028,7 +3045,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3142,7 +3160,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3242,7 +3261,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3384,7 +3404,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3511,7 +3532,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3628,7 +3650,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3638,7 +3661,32 @@
           },
           "unit": "ns"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Node-${__field.labels.instance}#${__field.operation_name}"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "F"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Node-${__field.labels.instance}#${__field.labels.operation_name}-${__field.labels.status}"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 12,
@@ -3668,8 +3716,9 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "avg by(instance, operation_name) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache\", operation_type=\"S3Storage\"})",
+          "expr": "avg by(instance, operation_name) (rate(kafka_stream_operation_latency_sum_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
+          "hide": true,
           "includeNullMetadata": false,
           "instant": false,
           "legendFormat": "Node-{{instance}}#{{operation_name}}",
@@ -3684,15 +3733,71 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "avg by(instance, operation_name, status) (kafka_stream_operation_latency_mean_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_log_cache\", operation_type=\"S3Storage\"})",
+          "expr": "avg by(instance, operation_name, status) (rate(kafka_stream_operation_latency_sum_nanoseconds{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval]))",
           "fullMetaSearch": false,
-          "hide": false,
+          "hide": true,
           "includeNullMetadata": false,
           "instant": false,
           "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
           "range": true,
           "refId": "B",
           "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=~\"append_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "fullMetaSearch": false,
+          "hide": true,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}",
+          "range": true,
+          "refId": "C",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "name": "Expression",
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "$A / $C",
+          "hide": false,
+          "refId": "D",
+          "type": "math"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "avg by(instance, operation_name, status) (rate(kafka_stream_operation_latency_count{job=\"$cluster_id\", instance=~\"$node_id\", operation_name=\"read_log_cache\", operation_type=\"S3Storage\"}[$__rate_interval]))",
+          "fullMetaSearch": false,
+          "hide": true,
+          "includeNullMetadata": false,
+          "instant": false,
+          "legendFormat": "Node-{{instance}}#{{operation_name}}-{{status}}",
+          "range": true,
+          "refId": "E",
+          "useBackend": false
+        },
+        {
+          "datasource": {
+            "name": "Expression",
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "$B / $E",
+          "hide": false,
+          "refId": "F",
+          "type": "math"
         }
       ],
       "title": "Request Latency (Avg)",
@@ -3745,7 +3850,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3875,7 +3981,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -3975,7 +4082,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -4117,7 +4225,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -4244,7 +4353,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -4344,7 +4454,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -4486,7 +4597,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -4587,7 +4699,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -4703,7 +4816,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -4824,7 +4938,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -4945,7 +5060,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5101,7 +5217,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5247,7 +5364,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5393,7 +5511,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5498,7 +5617,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5612,7 +5732,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5651,7 +5772,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "sum by(state) (kafka_stream_s3_object_count{job=\"$cluster_id\"})",
+          "expr": "sum by(state) (kafka_stream_s3_object_count{job=\"$cluster_id\", instance=\"$active_controller\"})",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -5711,7 +5832,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5751,7 +5873,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_stream_s3_object_size_bytes{job=\"$cluster_id\"}",
+          "expr": "kafka_stream_s3_object_size_bytes{job=\"$cluster_id\", instance=\"$active_controller\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -5759,9 +5881,22 @@
           "range": true,
           "refId": "A",
           "useBackend": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "sum(max by(topic, partition) (kafka_log_size{job=\"$cluster_id\"}))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "S3 Object Size Total",
+      "title": "S3 Object Size vs Msg Size",
       "type": "timeseries"
     },
     {
@@ -5811,7 +5946,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5910,7 +6046,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -5949,7 +6086,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "kafka_stream_stream_object_num{job=\"$cluster_id\"}",
+          "expr": "kafka_stream_stream_object_num{job=\"$cluster_id\", instance=\"$active_controller\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
@@ -6009,7 +6146,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -6109,7 +6247,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -6251,7 +6390,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -6351,7 +6491,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -6451,7 +6592,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -6593,7 +6735,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -6706,7 +6849,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               }
             ]
           },
@@ -6832,7 +6976,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -6895,7 +7040,7 @@
         "current": {
           "selected": false,
           "text": "Prometheus",
-          "value": "PBFA97CFB590B2093"
+          "value": "prometheus"
         },
         "hide": 0,
         "includeAll": false,
@@ -6912,8 +7057,8 @@
       {
         "current": {
           "selected": false,
-          "text": "p1VdjERXQhqXuy7fzbjU6g",
-          "value": "p1VdjERXQhqXuy7fzbjU6g"
+          "text": "Marathon_long-running_",
+          "value": "Marathon_long-running_"
         },
         "datasource": {
           "type": "prometheus",
@@ -6973,12 +7118,12 @@
         "current": {
           "selected": true,
           "text": [
-            "Produce",
-            "Fetch"
+            "Fetch",
+            "Produce"
           ],
           "value": [
-            "Produce",
-            "Fetch"
+            "Fetch",
+            "Produce"
           ]
         },
         "datasource": {
@@ -7037,7 +7182,7 @@
       },
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": [
             "All"
           ],
@@ -7066,6 +7211,30 @@
         "skipUrlSync": false,
         "sort": 0,
         "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "1",
+          "value": "1"
+        },
+        "definition": "query_result(kafka_controller_active_count{job=\"$cluster_id\"} > 0)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Active Controller",
+        "multi": false,
+        "name": "active_controller",
+        "options": [],
+        "query": {
+          "qryType": 3,
+          "query": "query_result(kafka_controller_active_count{job=\"$cluster_id\"} > 0)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "/instance=\"(?<text>[^\"]+)/g",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   },
@@ -7077,6 +7246,6 @@
   "timezone": "",
   "title": "Detailed  Metrics",
   "uid": "d8550a59-02cf-4749-8c16-b32e370ba280",
-  "version": 5,
+  "version": 4,
   "weekStart": ""
 }
