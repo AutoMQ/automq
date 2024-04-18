@@ -29,7 +29,6 @@ public class HistogramInstrument {
     private final ObservableLongGauge sum;
     private final ObservableDoubleGauge histP50Value;
     private final ObservableDoubleGauge histP99Value;
-    private final ObservableDoubleGauge histMeanValue;
     private final ObservableDoubleGauge histMaxValue;
 
     public HistogramInstrument(Meter meter, String name, String desc, String unit, Supplier<List<YammerHistogramMetric>> histogramsSupplier) {
@@ -75,17 +74,6 @@ public class HistogramInstrument {
                 histograms.forEach(histogram -> {
                     if (histogram.shouldRecord()) {
                         result.record(histogram.p99(), histogram.attributes);
-                    }
-                });
-            });
-        this.histMeanValue = meter.gaugeBuilder(name + S3StreamMetricsConstant.MEAN_METRIC_NAME_SUFFIX)
-            .setDescription(desc + " (mean)")
-            .setUnit(unit)
-            .buildWithCallback(result -> {
-                List<YammerHistogramMetric> histograms = histogramsSupplier.get();
-                histograms.forEach(histogram -> {
-                    if (histogram.shouldRecord()) {
-                        result.record(histogram.mean(), histogram.attributes);
                     }
                 });
             });

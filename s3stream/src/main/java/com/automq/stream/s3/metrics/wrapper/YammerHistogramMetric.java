@@ -13,54 +13,61 @@ package com.automq.stream.s3.metrics.wrapper;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.yammer.metrics.core.Histogram;
-import com.yammer.metrics.core.MetricName;
 import io.opentelemetry.api.common.Attributes;
 
 public class YammerHistogramMetric extends ConfigurableMetrics {
-    private final Histogram histogram;
+    private final DeltaHistogram deltaHistogram;
     private final MetricsLevel currentMetricsLevel;
 
-    public YammerHistogramMetric(MetricName metricName, MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig) {
-        this(metricName, currentMetricsLevel, metricsConfig, Attributes.empty());
+    public YammerHistogramMetric(MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig) {
+        this(currentMetricsLevel, metricsConfig, Attributes.empty());
     }
 
-    public YammerHistogramMetric(MetricName metricName, MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig, Attributes extraAttributes) {
+    public YammerHistogramMetric(MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig, Attributes extraAttributes) {
         super(metricsConfig, extraAttributes);
-        this.histogram = S3StreamMetricsManager.METRICS_REGISTRY.newHistogram(metricName, true);
+        this.deltaHistogram = new DeltaHistogram();
         this.currentMetricsLevel = currentMetricsLevel;
     }
 
     public long count() {
-        return histogram.count();
+        return deltaHistogram.count();
     }
 
     public long sum() {
-        return (long) histogram.sum();
+        return deltaHistogram.sum();
     }
 
     public double p50() {
-        return histogram.getSnapshot().getMedian();
+        return deltaHistogram.p50();
     }
 
     public double p99() {
-        return histogram.getSnapshot().get99thPercentile();
-    }
-
-    public double mean() {
-        return histogram.mean();
+        return deltaHistogram.p99();
     }
 
     public double max() {
-        return histogram.max();
+        return deltaHistogram.max();
+    }
+
+    public double min() {
+        return deltaHistogram.min();
     }
 
     public void record(long value) {
-        histogram.update(value);
+        deltaHistogram.record(value);
     }
 
     public boolean shouldRecord() {
         return currentMetricsLevel.isWithin(metricsLevel);
+    }
+
+    @Override
+    public void onConfigChange(MetricsConfig metricsConfig) {
+        super.onConfigChange(metricsConfig);
+        deltaHistogram.setSnapshotInterval(metricsConfig.getMetricsReportIntervalMs());
+    }
+
+    DeltaHistogram getDeltaHistogram() {
+        return deltaHistogram;
     }
 }

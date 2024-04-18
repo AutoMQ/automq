@@ -14,17 +14,23 @@ package com.automq.stream.s3.metrics;
 import io.opentelemetry.api.common.Attributes;
 
 public class MetricsConfig {
+    private static final long DEFAULT_METRICS_REPORT_INTERVAL_MS = 5000;
     private MetricsLevel metricsLevel;
     private Attributes baseAttributes;
+    private long metricsReportIntervalMs;
 
     public MetricsConfig() {
-        this.metricsLevel = MetricsLevel.INFO;
-        this.baseAttributes = Attributes.empty();
+        this(MetricsLevel.INFO, Attributes.empty());
     }
 
     public MetricsConfig(MetricsLevel metricsLevel, Attributes baseAttributes) {
+        this(metricsLevel, baseAttributes, DEFAULT_METRICS_REPORT_INTERVAL_MS);
+    }
+
+    public MetricsConfig(MetricsLevel metricsLevel, Attributes baseAttributes, long interval) {
         this.metricsLevel = metricsLevel;
         this.baseAttributes = baseAttributes;
+        this.metricsReportIntervalMs = interval;
     }
 
     public MetricsLevel getMetricsLevel() {
@@ -35,11 +41,19 @@ public class MetricsConfig {
         return baseAttributes;
     }
 
+    public long getMetricsReportIntervalMs() {
+        return metricsReportIntervalMs;
+    }
+
     public void setMetricsLevel(MetricsLevel metricsLevel) {
         this.metricsLevel = metricsLevel;
     }
 
     public void setBaseAttributes(Attributes baseAttributes) {
         this.baseAttributes = baseAttributes;
+    }
+
+    public void setMetricsReportIntervalMs(long interval) {
+        this.metricsReportIntervalMs = interval;
     }
 }
