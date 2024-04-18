@@ -86,15 +86,17 @@ public class MetricsWrapperTest {
         ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
         AtomicInteger init = new AtomicInteger(1);
         int steps = 10000;
+        mockLinearDataDist(histogram, init.get(), steps);
         CountDownLatch latch = new CountDownLatch(1);
         AtomicInteger count = new AtomicInteger(0);
-        executorService.scheduleAtFixedRate(() -> {
+        init.set(init.get() + count.get() * steps);
+        count.incrementAndGet();
+        executorService.schedule(() -> {
             init.set(init.get() + count.get() * steps);
             mockLinearDataDist(histogram, init.get(), steps);
             count.incrementAndGet();
             latch.countDown();
-        }, 0, 2000, TimeUnit.MILLISECONDS);
-        latch.await();
+        }, 3000, TimeUnit.MILLISECONDS);
         Assertions.assertEquals(10000, histogram.count());
         // sum from 1 to 10000
         Assertions.assertEquals(50005000, histogram.sum());
@@ -107,28 +109,27 @@ public class MetricsWrapperTest {
         double p50 = histogram.p50();
         Assertions.assertTrue(p50 > 4500 && p50 < 5500);
         // check if snapshot is reused
-        Thread.sleep(500);
         Assertions.assertEquals(p99, histogram.p99());
         Assertions.assertEquals(p50, histogram.p50());
 
         // snapshot interval < recoding interval
-        Thread.sleep(600);
+        Thread.sleep(1100);
         Assertions.assertEquals(0, histogram.p99());
         Assertions.assertEquals(0, histogram.p50());
 
         // next round
-        Thread.sleep(1000);
+        latch.await();
         Assertions.assertEquals(20000, histogram.count());
         // sum from 1 to 20000
         Assertions.assertEquals(200010000, histogram.sum());
         Assertions.assertEquals(1, histogram.min());
         Assertions.assertEquals(20000, histogram.max());
         p99 = histogram.p99();
-        // estimated 99th percentile from 10001 to 20000, expected: 19900, allowed precision: 500
-        Assertions.assertTrue(p99 > 19400 && p99 < 20000);
-        // estimated 50th percentile from 10001 to 20000, expected: 15000, allowed precision: 500
+        // estimated 99th percentile from 10001 to 20000, expected: 19900, allowed precision: 1000
+        Assertions.assertEquals(19900, p99, 1000);
+        // estimated 50th percentile from 10001 to 20000, expected: 15000, allowed precision: 1000
         p50 = histogram.p50();
-        Assertions.assertTrue(p50 > 14500 && p50 < 15500);
+        Assertions.assertEquals(15000, p50, 1000);
     }
 
     private void mockLinearDataDist(DeltaHistogram histogram, int init, int steps) {

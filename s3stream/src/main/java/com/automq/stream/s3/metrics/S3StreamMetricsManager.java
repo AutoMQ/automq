@@ -21,7 +21,6 @@ import com.automq.stream.s3.metrics.wrapper.HistogramInstrument;
 import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
-import com.yammer.metrics.core.MetricsRegistry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -36,7 +35,6 @@ import java.util.function.Supplier;
 
 public class S3StreamMetricsManager {
     private static final List<ConfigListener> BASE_ATTRIBUTES_LISTENERS = new ArrayList<>();
-    public static final MetricsRegistry METRICS_REGISTRY = new MetricsRegistry();
     public static final List<YammerHistogramMetric> OPERATION_LATENCY_METRICS = new CopyOnWriteArrayList<>();
     public static final List<YammerHistogramMetric> OBJECT_STAGE_METRICS = new CopyOnWriteArrayList<>();
     public static final List<YammerHistogramMetric> NETWORK_INBOUND_LIMITER_QUEUE_TIME_METRICS = new CopyOnWriteArrayList<>();
