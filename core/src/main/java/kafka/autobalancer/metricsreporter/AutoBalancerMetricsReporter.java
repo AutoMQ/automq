@@ -22,7 +22,7 @@ import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
-import kafka.autobalancer.metricsreporter.metric.DeltaHistogram;
+import kafka.autobalancer.metricsreporter.metric.Delta;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
 import kafka.autobalancer.metricsreporter.metric.YammerMetricProcessor;
@@ -65,7 +65,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoBalancerMetricsReporter.class);
     private final Map<MetricName, Metric> interestedMetrics = new ConcurrentHashMap<>();
     private final MetricsRegistry metricsRegistry = KafkaYammerMetrics.defaultRegistry();
-    protected final DeltaHistogram appendLatencyMetric = new DeltaHistogram();
+    protected final Delta appendLatencyMetric = new Delta();
     protected YammerMetricProcessor yammerMetricProcessor;
     private KafkaThread metricsReporterRunner;
     private KafkaProducer<String, AutoBalancerMetrics> producer;

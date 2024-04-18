@@ -17,7 +17,6 @@ import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
-import com.yammer.metrics.core.MetricName;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,11 +51,7 @@ public class NetworkStats {
 
     public YammerHistogramMetric networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
         return type == AsyncNetworkBandwidthLimiter.Type.INBOUND
-                ? networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(
-                        new MetricName(NetworkStats.class, "NetworkInboundLimiterQueueTime-" + strategy.getName()),
-                        MetricsLevel.INFO, strategy))
-                : networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(
-                        new MetricName(NetworkStats.class, "NetworkOutboundLimiterQueueTime-" + strategy.getName()),
-                        MetricsLevel.INFO, strategy));
+                ? networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy))
+                : networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
     }
 }

@@ -19,12 +19,18 @@ package com.automq.stream.s3.metrics.wrapper;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.yammer.metrics.core.MetricName;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MetricsWrapperTest {
 
@@ -38,13 +44,18 @@ public class MetricsWrapperTest {
         Assertions.assertEquals(MetricsLevel.DEBUG, metric.metricsLevel);
         Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), metric.attributes);
 
-        YammerHistogramMetric yammerHistogramMetric = new YammerHistogramMetric(Mockito.mock(MetricName.class), MetricsLevel.INFO, new MetricsConfig(),
+        YammerHistogramMetric yammerHistogramMetric = new YammerHistogramMetric(MetricsLevel.INFO, new MetricsConfig(),
             Attributes.builder().put("extra", "v").build());
         Assertions.assertEquals(MetricsLevel.INFO, yammerHistogramMetric.metricsLevel);
 
         yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, Attributes.builder().put("base", "v2").build()));
         Assertions.assertEquals(MetricsLevel.DEBUG, yammerHistogramMetric.metricsLevel);
         Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), yammerHistogramMetric.attributes);
+
+        yammerHistogramMetric = new YammerHistogramMetric(MetricsLevel.INFO, new MetricsConfig());
+        Assertions.assertEquals(5000L, yammerHistogramMetric.getDeltaHistogram().getSnapshotInterval());
+        yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.INFO, Attributes.empty(), 30000L));
+        Assertions.assertEquals(30000L, yammerHistogramMetric.getDeltaHistogram().getSnapshotInterval());
     }
 
     @Test
@@ -56,15 +67,73 @@ public class MetricsWrapperTest {
         Assertions.assertTrue(metric.add(MetricsLevel.INFO, 1));
         Assertions.assertTrue(metric.add(MetricsLevel.DEBUG, 1));
 
-        YammerHistogramMetric yammerHistogramMetric = new YammerHistogramMetric(Mockito.mock(MetricName.class), MetricsLevel.INFO, new MetricsConfig(),
+        YammerHistogramMetric yammerHistogramMetric = new YammerHistogramMetric(MetricsLevel.INFO, new MetricsConfig(),
             Attributes.builder().put("extra", "v").build());
         Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
         yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
         Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
-        yammerHistogramMetric = new YammerHistogramMetric(Mockito.mock(MetricName.class), MetricsLevel.DEBUG, new MetricsConfig(),
+        yammerHistogramMetric = new YammerHistogramMetric(MetricsLevel.DEBUG, new MetricsConfig(),
             Attributes.builder().put("extra", "v").build());
         Assertions.assertFalse(yammerHistogramMetric.shouldRecord());
         yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
         Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
+    }
+
+    @Test
+    @Timeout(10)
+    public void testDeltaHistogram() throws InterruptedException {
+        DeltaHistogram histogram = new DeltaHistogram(1000);
+        ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+        AtomicInteger init = new AtomicInteger(1);
+        int steps = 10000;
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicInteger count = new AtomicInteger(0);
+        executorService.scheduleAtFixedRate(() -> {
+            init.set(init.get() + count.get() * steps);
+            mockLinearDataDist(histogram, init.get(), steps);
+            count.incrementAndGet();
+            latch.countDown();
+        }, 0, 2000, TimeUnit.MILLISECONDS);
+        latch.await();
+        Assertions.assertEquals(10000, histogram.count());
+        // sum from 1 to 10000
+        Assertions.assertEquals(50005000, histogram.sum());
+        Assertions.assertEquals(1, histogram.min());
+        Assertions.assertEquals(10000, histogram.max());
+        double p99 = histogram.p99();
+        // estimated 99th percentile from 1 to 10000, expected: 9900, allowed precision: 500
+        Assertions.assertTrue(p99 > 9400 && p99 < 10000);
+        // estimated 50th percentile from 1 to 10000, expected: 5000, allowed precision: 500
+        double p50 = histogram.p50();
+        Assertions.assertTrue(p50 > 4500 && p50 < 5500);
+        // check if snapshot is reused
+        Thread.sleep(500);
+        Assertions.assertEquals(p99, histogram.p99());
+        Assertions.assertEquals(p50, histogram.p50());
+
+        // snapshot interval < recoding interval
+        Thread.sleep(600);
+        Assertions.assertEquals(0, histogram.p99());
+        Assertions.assertEquals(0, histogram.p50());
+
+        // next round
+        Thread.sleep(1000);
+        Assertions.assertEquals(20000, histogram.count());
+        // sum from 1 to 20000
+        Assertions.assertEquals(200010000, histogram.sum());
+        Assertions.assertEquals(1, histogram.min());
+        Assertions.assertEquals(20000, histogram.max());
+        p99 = histogram.p99();
+        // estimated 99th percentile from 10001 to 20000, expected: 19900, allowed precision: 500
+        Assertions.assertTrue(p99 > 19400 && p99 < 20000);
+        // estimated 50th percentile from 10001 to 20000, expected: 15000, allowed precision: 500
+        p50 = histogram.p50();
+        Assertions.assertTrue(p50 > 14500 && p50 < 15500);
+    }
+
+    private void mockLinearDataDist(DeltaHistogram histogram, int init, int steps) {
+        for (int i = init; i < init + steps; i++) {
+            histogram.record(i);
+        }
     }
 }
