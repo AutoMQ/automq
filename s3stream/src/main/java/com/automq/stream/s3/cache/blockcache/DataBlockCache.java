@@ -56,13 +56,18 @@ public class DataBlockCache {
      * <p>
      * Note: the data block should invoke the {@link DataBlock#release()} after using.
      *
+     * @param options        the get options
      * @param objectReader   the object reader could be used read the data block when cache misses
      * @param dataBlockIndex the required data block's index
      * @return the future of {@link DataBlock}, the future will be completed in the same stream's eventLoop.
      */
-    public CompletableFuture<DataBlock> getBlock(ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
+    public CompletableFuture<DataBlock> getBlock(GetOptions options, ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
         Cache cache = cache(dataBlockIndex.streamId());
-        return cache.getBlock(objectReader, dataBlockIndex);
+        return cache.getBlock(options, objectReader, dataBlockIndex);
+    }
+
+    public CompletableFuture<DataBlock> getBlock(ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
+        return getBlock(GetOptions.DEFAULT, objectReader, dataBlockIndex);
     }
 
     public long available() {
@@ -121,11 +126,11 @@ public class DataBlockCache {
             this.eventLoop = eventLoop;
         }
 
-        public CompletableFuture<DataBlock> getBlock(ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
-            return FutureUtil.exec(() -> getBlock0(objectReader, dataBlockIndex), LOGGER, "getBlock");
+        public CompletableFuture<DataBlock> getBlock(GetOptions options, ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
+            return FutureUtil.exec(() -> getBlock0(options, objectReader, dataBlockIndex), LOGGER, "getBlock");
         }
 
-        private CompletableFuture<DataBlock> getBlock0(ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
+        private CompletableFuture<DataBlock> getBlock0(GetOptions options, ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
             long objectId = objectReader.metadata().objectId();
             DataBlockGroupKey key = new DataBlockGroupKey(objectId, dataBlockIndex);
             DataBlock dataBlock = blocks.get(key);
@@ -139,10 +144,12 @@ public class DataBlockCache {
             CompletableFuture<DataBlock> cf = new CompletableFuture<>();
             // if the data is already loaded, the listener will be invoked right now,
             // else the listener will be invoked immediately after data loaded in the same eventLoop.
-            if (dataBlock.dataFuture().isDone()) {
-                StorageOperationStats.getInstance().blockCacheBlockHitThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
-            } else {
-                StorageOperationStats.getInstance().blockCacheBlockMissThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+            if (!dataBlock.dataFuture().isDone()) {
+                if (options.isReadahead()) {
+                    StorageOperationStats.getInstance().blockCacheReadaheadThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+                } else {
+                    StorageOperationStats.getInstance().blockCacheBlockMissThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+                }
             }
             // DataBlock#retain should will before the complete the future to avoid the other read use #markRead to really free the data block.
             dataBlock.retain();
@@ -217,6 +224,37 @@ public class DataBlockCache {
             if (blocks.remove(key, dataBlock)) {
                 lru.remove(key);
                 dataBlock.free();
+            }
+        }
+    }
+
+    public static class GetOptions {
+        public static final GetOptions DEFAULT = new GetOptions(false);
+
+        final boolean readahead;
+
+        public GetOptions(boolean readahead) {
+            this.readahead = readahead;
+        }
+
+        public boolean isReadahead() {
+            return readahead;
+        }
+
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        public static class Builder {
+            private boolean readahead;
+
+            public Builder readahead(boolean readahead) {
+                this.readahead = readahead;
+                return this;
+            }
+
+            public GetOptions build() {
+                return new GetOptions(readahead);
             }
         }
 

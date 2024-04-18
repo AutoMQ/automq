@@ -18,10 +18,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 public class MemoryS3Operator implements S3Operator {
     private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
+    private long delay = 0;
 
     @Override
     public void close() {
@@ -34,7 +36,14 @@ public class MemoryS3Operator implements S3Operator {
             return FutureUtil.failedFuture(new IllegalArgumentException("object not exist"));
         }
         int length = (int) (end - start);
-        return CompletableFuture.completedFuture(value.retainedSlice(value.readerIndex() + (int) start, length));
+        ByteBuf rst = value.retainedSlice(value.readerIndex() + (int) start, length);
+        if (delay == 0) {
+            return CompletableFuture.completedFuture(rst);
+        } else {
+            CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+            CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS).execute(() -> cf.complete(rst));
+            return cf;
+        }
     }
 
     @Override
@@ -129,5 +138,9 @@ public class MemoryS3Operator implements S3Operator {
             throw new IllegalStateException("expect only one object in storage");
         }
         return storage.values().iterator().next();
+    }
+
+    public void setDelay(long delay) {
+        this.delay = delay;
     }
 }

@@ -23,8 +23,8 @@ import java.util.LinkedList;
 import java.util.List;
 
 public class MockObject {
-    S3ObjectMetadata metadata;
-    MemoryS3Operator operator;
+    final S3ObjectMetadata metadata;
+    final MemoryS3Operator operator;
 
     private MockObject(S3ObjectMetadata metadata, MemoryS3Operator operator) {
         this.metadata = metadata;
@@ -52,6 +52,11 @@ public class MockObject {
         public Builder(long objectId, int blockSizeThreshold) {
             this.objectId = objectId;
             this.writer = new ObjectWriter.DefaultObjectWriter(objectId, operator, blockSizeThreshold, Integer.MAX_VALUE);
+        }
+
+        public Builder mockDelay(long delay) {
+            operator.setDelay(delay);
+            return this;
         }
 
         public Builder write(long streamId, List<StreamRecordBatch> records) {

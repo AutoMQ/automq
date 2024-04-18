@@ -38,16 +38,13 @@ public class ObjectReader implements AutoCloseable {
     private final S3ObjectMetadata metadata;
     private final String objectKey;
     private final S3Operator s3Operator;
-    private final CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
+    private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
     private final AtomicInteger refCount = new AtomicInteger(1);
 
     public ObjectReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
         this.metadata = metadata;
         this.objectKey = metadata.key();
         this.s3Operator = s3Operator;
-        this.basicObjectInfoCf = new CompletableFuture<>();
-        // TODO: lazy load index
-        asyncGetBasicObjectInfo();
     }
 
     public S3ObjectMetadata metadata() {
@@ -58,7 +55,11 @@ public class ObjectReader implements AutoCloseable {
         return objectKey;
     }
 
-    public CompletableFuture<BasicObjectInfo> basicObjectInfo() {
+    public synchronized CompletableFuture<BasicObjectInfo> basicObjectInfo() {
+        if (basicObjectInfoCf == null) {
+            this.basicObjectInfoCf = new CompletableFuture<>();
+            asyncGetBasicObjectInfo();
+        }
         return basicObjectInfoCf;
     }
 
@@ -67,7 +68,7 @@ public class ObjectReader implements AutoCloseable {
     }
 
     public CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset, int maxBytes) {
-        return basicObjectInfoCf.thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
+        return basicObjectInfo().thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
     }
 
     public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
@@ -90,7 +91,7 @@ public class ObjectReader implements AutoCloseable {
         cf.thenAccept(buf -> {
             try {
                 BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata);
-                basicObjectInfoCf.complete(basicObjectInfo);
+                basicObjectInfo().complete(basicObjectInfo);
             } catch (IndexBlockParseException ex) {
                 asyncGetBasicObjectInfo0(ex.indexBlockPosition, false);
             }
@@ -100,7 +101,7 @@ public class ObjectReader implements AutoCloseable {
             if (firstAttempt) {
                 asyncGetBasicObjectInfo0(startPosition, false);
             } else {
-                basicObjectInfoCf.completeExceptionally(ex);
+                basicObjectInfo().completeExceptionally(ex);
             }
             return null;
         });
@@ -123,8 +124,10 @@ public class ObjectReader implements AutoCloseable {
         release();
     }
 
-    public void close0() {
-        basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
+    public synchronized void close0() {
+        if (basicObjectInfoCf != null) {
+            basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
+        }
     }
 
     @Override
