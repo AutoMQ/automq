@@ -13,7 +13,7 @@ package kafka.autobalancer.metricsreporter.metric;
 
 import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
 
-public class DeltaHistogram {
+public class Delta {
     private long count = 0;
     private long sum = 0;
 

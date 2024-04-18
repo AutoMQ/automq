@@ -85,7 +85,6 @@ public class S3StreamMetricsConstant {
     public static final String COUNT_METRIC_NAME_SUFFIX = "_count";
     public static final String P50_METRIC_NAME_SUFFIX = "_50p";
     public static final String P99_METRIC_NAME_SUFFIX = "_99p";
-    public static final String MEAN_METRIC_NAME_SUFFIX = "_mean";
     public static final String MAX_METRIC_NAME_SUFFIX = "_max";
     public static final String WAL_START_OFFSET = "wal_start_offset";
     public static final String WAL_TRIMMED_OFFSET = "wal_trimmed_offset";
