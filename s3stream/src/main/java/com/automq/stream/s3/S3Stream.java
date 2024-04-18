@@ -104,15 +104,11 @@ public class S3Stream implements Stream {
     }
 
     private long getHeadLatency(Deque<Long> timestamps) {
-        if (timestamps.isEmpty()) {
-            return 0L;
+        Long timestamp = timestamps.peek();
+        if (timestamp == null) {
+            return 0;
         }
-        Long lastTimestamp = timestamps.peek();
-        if (lastTimestamp == null) {
-            LOGGER.error("head timestamp of pending request is null");
-            return 0L;
-        }
-        return System.nanoTime() - lastTimestamp;
+        return System.nanoTime() - timestamp;
     }
 
     public boolean isClosed() {
