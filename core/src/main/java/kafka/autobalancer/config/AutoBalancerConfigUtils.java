@@ -15,6 +15,7 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.SaslConfigs;
+import org.apache.kafka.common.config.types.Password;
 
 import java.util.Properties;
 
@@ -48,7 +49,10 @@ public class AutoBalancerConfigUtils {
 
     private static void setPasswordConfigIfExists(AutoBalancerConfig configs, Properties props, String name, String originalName) {
         try {
-            props.put(originalName, configs.getPassword(name));
+            Password pwd = configs.getPassword(name);
+            if (pwd != null) {
+                props.put(originalName, pwd);
+            }
         } catch (ConfigException ce) {
             // let it go.
         }
