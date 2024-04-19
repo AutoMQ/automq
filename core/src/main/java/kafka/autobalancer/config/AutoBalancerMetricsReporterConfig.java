@@ -116,7 +116,7 @@ public class AutoBalancerMetricsReporterConfig extends AutoBalancerConfig {
     public static Properties parseProducerConfigs(Map<String, ?> configMap) {
         Properties props = new Properties();
         for (Map.Entry<String, ?> entry : configMap.entrySet()) {
-            if (entry.getKey().startsWith(PREFIX)) {
+            if (entry.getKey().startsWith(PREFIX) && CONFIGS.contains(entry.getKey())) {
                 props.put(entry.getKey().replace(PREFIX, ""), entry.getValue());
             }
         }

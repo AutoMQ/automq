@@ -17,6 +17,7 @@ import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.config.AutoBalancerConfigUtils;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
@@ -48,6 +49,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.CruiseControlMetricsReporter.
+ * Copyright 2020 LinkedIn Corp. Licensed under the BSD 2-Clause License (the "License").
  */
 public class AutoBalancerMetricsReporter implements MetricsRegistryListener, MetricsReporter, Runnable {
     public static final String DEFAULT_BOOTSTRAP_SERVERS_HOST = "localhost";
@@ -185,6 +187,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         setIfAbsent(producerProps, ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         setIfAbsent(producerProps, ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         setIfAbsent(producerProps, ProducerConfig.ACKS_CONFIG, "all");
+        AutoBalancerConfigUtils.addSslConfigs(producerProps, reporterConfig);
 
         metricsReporterCreateRetries = reporterConfig.getInt(
                 AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES_CONFIG);
