@@ -15,6 +15,10 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 &nbsp;
 [![](https://img.shields.io/badge/official%20document-blue?style=for-the-badge)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
 &nbsp;
+[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow?style=for-the-badge)]([https://www.automq.com](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison))
+&nbsp;
+[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange?style=for-the-badge)]([https://www.automq.com](https://docs.automq.com/docs/automq-s3kafka/CYxlwqDBHitThCkxSl2cePxrnBc))
+&nbsp;
 <a href="https://twitter.com/AutoMQ_Lab" target="_blank"><img src="https://img.shields.io/badge/- @AutoMQ_Lab -424549?style=social&logo=twitter" height=25></a>
 &nbsp;
 <a href="docs/images/automq-wechat.png" target="_blank"><img src="https://img.shields.io/badge/- Wechat -red?style=social&logo=discourse" height=25></a>
