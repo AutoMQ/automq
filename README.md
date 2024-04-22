@@ -40,7 +40,7 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 | Scale in/out | In seconds | In hours/days | In hours | In hours(scale-in);<br> In seconds(scale-out) | In hours | In seconds |
 | Spot Instance Support | Yes | No | No | No | No | Yes |
 | Partition Reassignment | In seconds | In hours/days | In hours | In seconds | In hours | In seconds |
-| Component  | Broker<br> Controller | Broker<br>Controller | Broker<br>Controller | Broker<br>Controller<br>Zookeeper<br>Bookkeeper<br>Proxy | Broker<br>Controller | Agent<br>MetadataServer |
+| Component  | Broker<br> Controller | Broker<br>Controller<br>Zookeeper(Non-Kraft) | Broker<br>Controller<br>Zookeeper(Non-Kraft) | Broker<br>Controller<br>Zookeeper<br>Bookkeeper<br>Proxy | Broker<br>Controller | Agent<br>MetadataServer |
 
 > Tips: Apache Kafka Compatibility's definition is comming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
