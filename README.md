@@ -25,16 +25,24 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 <img src="https://img.shields.io/badge/aws%20cloud-supported-lightgreen?style=for-the-badge&logo=amazonaws" height="18"><img src="https://img.shields.io/badge/google%20cloud-todo-lightyellow?style=for-the-badge&logo=googlecloud" height="18"><img src="https://img.shields.io/badge/Azure%20cloud-todo-lightyellow?style=for-the-badge&logo=microsoftazure" height="18"><img src="https://img.shields.io/badge/aliyun%20cloud-supported-lightgreen?style=for-the-badge&logo=alibabacloud" height="18"><img src="https://img.shields.io/badge/huawei%20cloud-supported-lightgreen?style=for-the-badge&logo=huawei" height="18"><img src="https://img.shields.io/badge/baidu%20cloud-supported-lightgreen?style=for-the-badge&logo=baidu" height="18"><img src="https://img.shields.io/badge/tencent%20cloud-supported-lightgreen?style=for-the-badge&logo=tencentqq" height="18">
 
 
-
-![image](./docs/images/banner-readme.jpeg)
-
-
-
 [//]: # ([![E2E_TEST]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml/badge.svg&#41;]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml&#41;)
 
-## 🍵What is AutoMQ
+## 🍵 AutoMQ vs Other Streaming Platforms
 
-AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, manage-less and cost-effective.
+
+| Feature | AutoMQ | Apache Kafka | Confluent | Apache Pulsar | Redpanda | Warpstream |
+|---|---|---|---|---|---|---|
+| Apache Kafka Compatibility | Native Kafka | Native Kafka | Native Kafka | Non-Kafka | Kafka Protocol | Kafka Protocol |
+| Source Code Availability | Yes | Yes | No | Yes | Yes | No |
+| Stateless Broker | Yes | No | No | Yes | No | Yes |
+| P99 Latency | Single-digit ms latency | Single-digit ms latency | Single-digit ms latency | Single-digit ms latency | Single-digit ms latency | [> 400ms](https://www.warpstream.com/blog/kafka-is-dead-long-live-kafka)	|
+| Continuous Self-Balancing | Yes | No | Yes | Yes | Yes | Yes |
+| Scale in/out | In seconds | In hours/days | In hours | In hours(scale-in);<br> In seconds(scale-out) | In hours | In seconds |
+| Spot Instance Support | Yes | No | No | No | No | Yes |
+| Partition Reassignment | In seconds | In hours/days | In hours | In seconds | In hours | In seconds |
+| Component  | Broker<br> Controller | Broker<br>Controller | Broker<br>Controller | Broker<br>Controller<br>Zookeeper<br>Bookkeeper<br>Proxy | Broker<br>Controller | Agent<br>MetadataServer |
+
+> Tips: Apache Kafka Compatibility's definition is comming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
 
 ## 🔶Why AutoMQ
