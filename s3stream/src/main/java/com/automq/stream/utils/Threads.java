@@ -21,8 +21,12 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Threads {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Threads.class);
+
+    public static final ScheduledExecutorService COMMON_SCHEDULER = newSingleThreadScheduledExecutor("automq-common-scheduler", true, LOGGER);
 
     public static ExecutorService newFixedThreadPool(int nThreads, ThreadFactory threadFactory, Logger logger) {
         return new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), threadFactory) {

@@ -16,6 +16,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.CloseableIterator;
+import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
 import io.netty.buffer.ByteBuf;
 import java.util.Iterator;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +37,8 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
 public class ObjectReader implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
+    private static final int MAX_RETRY_TIMES = 10;
+    private static final long RETRY_INTERVAL_MILLS = TimeUnit.SECONDS.toMillis(3);
     private final S3ObjectMetadata metadata;
     private final String objectKey;
     private final S3Operator s3Operator;
@@ -83,24 +87,30 @@ public class ObjectReader implements AutoCloseable {
 
     void asyncGetBasicObjectInfo() {
         int guessIndexBlockSize = 1024 + (int) (metadata.objectSize() / (1024 * 1024 /* 1MB */) * 36 /* index unit size*/);
-        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - guessIndexBlockSize), true);
+        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - guessIndexBlockSize), true, MAX_RETRY_TIMES);
     }
 
-    private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt) {
+    private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt, int leftRetryTimes) {
         CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize());
         cf.thenAccept(buf -> {
             try {
                 BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata);
                 basicObjectInfo().complete(basicObjectInfo);
             } catch (IndexBlockParseException ex) {
-                asyncGetBasicObjectInfo0(ex.indexBlockPosition, false);
+                if (!firstAttempt) {
+                    basicObjectInfo().completeExceptionally(ex);
+                    return;
+                }
+                // the first attempt get index data is not enough,
+                asyncGetBasicObjectInfo0(ex.indexBlockPosition, false, leftRetryTimes);
             }
         }).exceptionally(ex -> {
-            LOGGER.warn("s3 range read from {} [{}, {}) failed", objectKey, startPosition, metadata.objectSize(), ex);
-            // TODO: delay retry.
-            if (firstAttempt) {
-                asyncGetBasicObjectInfo0(startPosition, false);
+            // The object might be invisible after put for a few seconds, so we need to retry get index later.
+            if (leftRetryTimes > 0) {
+                LOGGER.warn("[GET_OBJECT_INDEX_FAIL] s3 range read from {} [{}, {}) failed, leftRetryTimes={}", objectKey, startPosition, metadata.objectSize(), leftRetryTimes, ex);
+                Threads.COMMON_SCHEDULER.schedule(() -> asyncGetBasicObjectInfo0(startPosition, firstAttempt, leftRetryTimes - 1), RETRY_INTERVAL_MILLS, TimeUnit.MILLISECONDS);
             } else {
+                LOGGER.error("[GET_OBJECT_INDEX_FAIL] s3 range read from {} [{}, {}) failed, leftRetryTimes={}", objectKey, startPosition, metadata.objectSize(), leftRetryTimes, ex);
                 basicObjectInfo().completeExceptionally(ex);
             }
             return null;

@@ -38,7 +38,7 @@ import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-@Timeout(30)
+@Timeout(60)
 @Tag("S3Unit")
 public class CompactionAnalyzerTest extends CompactionTestBase {
 
