@@ -143,7 +143,7 @@ public class FileCache {
             if (entry.getKey() + entry.getValue().dataLength < position + length) {
                 return Optional.empty();
             }
-            lru.touch(new Key(filePath, cacheStartPosition));
+            lru.touchIfExist(new Key(filePath, cacheStartPosition));
             MappedByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
             long nextPosition = position;
             int remaining = length;

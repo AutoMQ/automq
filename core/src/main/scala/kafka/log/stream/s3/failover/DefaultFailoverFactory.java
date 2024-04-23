@@ -84,6 +84,11 @@ public class DefaultFailoverFactory implements FailoverFactory {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
+            @Override
+            public boolean isObjectExist(long l) {
+                throw new UnsupportedOperationException();
+            }
+
             public CompletableFuture<List<S3ObjectMetadata>> getServerObjects() {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
