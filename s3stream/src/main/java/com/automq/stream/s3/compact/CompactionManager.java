@@ -439,7 +439,7 @@ public class CompactionManager {
                         DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
                         CompletableFuture<Void> cf = CompactionUtils.chainWriteDataBlock(writer, blocks, forceSplitThreadPool);
                         long finalObjectId = objectId;
-                        cfs.add(cf.thenAccept(nil -> writer.close()).whenComplete((ret, ex) -> {
+                        cfs.add(cf.thenCompose(nil -> writer.close()).whenComplete((ret, ex) -> {
                             if (ex != null) {
                                 logger.error("write to stream object {} failed", finalObjectId, ex);
                                 writer.release();
