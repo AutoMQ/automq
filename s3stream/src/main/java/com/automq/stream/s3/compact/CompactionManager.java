@@ -86,6 +86,7 @@ public class CompactionManager {
     private volatile CompletableFuture<Void> forceSplitCf = null;
     private volatile CompletableFuture<Void> compactionCf = null;
     private Bucket compactionBucket = null;
+    private boolean hasRemainingObjects = false;
 
     public CompactionManager(Config config, ObjectManager objectManager, StreamManager streamManager,
         S3Operator s3Operator) {
@@ -144,6 +145,10 @@ public class CompactionManager {
                 logger.error("Error while compacting objects ", ex);
             }
             long nextDelay = Math.max(MIN_COMPACTION_DELAY_MS, (long) this.compactionInterval * 60 * 1000 - timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+            if (hasRemainingObjects) {
+                nextDelay = MIN_COMPACTION_DELAY_MS;
+                hasRemainingObjects = false;
+            }
             scheduleNextCompaction(nextDelay);
         }, delayMillis, TimeUnit.MILLISECONDS);
     }
@@ -286,11 +291,13 @@ public class CompactionManager {
         }
         // sort by S3 object data time in descending order
         objectsToCompact.sort((o1, o2) -> Long.compare(o2.dataTimeInMs(), o1.dataTimeInMs()));
-        if (maxObjectNumToCompact < objectsToCompact.size()) {
+        int totalSize = objectsToCompact.size();
+        if (maxObjectNumToCompact < totalSize) {
             // compact latest S3 objects first when number of objects to compact exceeds maxObjectNumToCompact
             objectsToCompact = objectsToCompact.subList(0, maxObjectNumToCompact);
+            hasRemainingObjects = true;
         }
-        logger.info("Compact {} stream set objects", objectsToCompact.size());
+        logger.info("Compact {} stream set objects, total {} objects to compact", objectsToCompact.size(), totalSize);
         TimerUtil timerUtil = new TimerUtil();
         CommitStreamSetObjectRequest request = buildCompactRequest(streamMetadataList, objectsToCompact);
         if (!running.get()) {
