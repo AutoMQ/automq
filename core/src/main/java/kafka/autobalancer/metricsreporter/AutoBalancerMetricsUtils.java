@@ -11,16 +11,11 @@
 
 package kafka.autobalancer.metricsreporter;
 
-import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.common.config.SaslConfigs;
-import org.apache.kafka.common.config.SslConfigs;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 
 import java.util.Map;
 import java.util.Properties;
@@ -30,6 +25,7 @@ import java.util.function.Supplier;
 
 /**
  * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.CruiseControlMetricsUtils.
+ * Copyright 2020 LinkedIn Corp. Licensed under the BSD 2-Clause License (the "License").
  */
 public final class AutoBalancerMetricsUtils {
 
@@ -89,57 +85,6 @@ public final class AutoBalancerMetricsUtils {
                 throw new IllegalStateException("Failed to close the Admin Client.", e);
             }
         }, timeoutMs);
-    }
-
-    /**
-     * Parse AdminClient configs based on the given {@link AutoBalancerMetricsReporterConfig configs}.
-     *
-     * @param adminClientConfigs Configs that will be return with SSL configs.
-     * @param configs            Configs to be used for parsing AdminClient SSL configs.
-     * @return AdminClient configs.
-     */
-    public static Properties addSslConfigs(Properties adminClientConfigs, AutoBalancerMetricsReporterConfig configs) {
-        // Add security protocol (if specified).
-        try {
-            String securityProtocol = configs.getString(AdminClientConfig.SECURITY_PROTOCOL_CONFIG);
-            adminClientConfigs.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, securityProtocol);
-            setStringConfigIfExists(configs, adminClientConfigs, SaslConfigs.SASL_MECHANISM);
-            setPasswordConfigIfExists(configs, adminClientConfigs, SaslConfigs.SASL_JAAS_CONFIG);
-
-            // Configure SSL configs (if security protocol is SSL or SASL_SSL)
-            if (securityProtocol.equals(SecurityProtocol.SSL.name) || securityProtocol.equals(SecurityProtocol.SASL_SSL.name)) {
-                setStringConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_TRUSTMANAGER_ALGORITHM_CONFIG);
-                setStringConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_KEYMANAGER_ALGORITHM_CONFIG);
-                setStringConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_KEYSTORE_TYPE_CONFIG);
-                setStringConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG);
-                setStringConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG);
-                setStringConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG);
-                setStringConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG);
-                setPasswordConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG);
-                setPasswordConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_KEY_PASSWORD_CONFIG);
-                setPasswordConfigIfExists(configs, adminClientConfigs, SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG);
-            }
-        } catch (ConfigException ce) {
-            // let it go.
-        }
-
-        return adminClientConfigs;
-    }
-
-    private static void setPasswordConfigIfExists(AutoBalancerMetricsReporterConfig configs, Properties props, String name) {
-        try {
-            props.put(name, configs.getPassword(name));
-        } catch (ConfigException ce) {
-            // let it go.
-        }
-    }
-
-    private static void setStringConfigIfExists(AutoBalancerMetricsReporterConfig configs, Properties props, String name) {
-        try {
-            props.put(name, configs.getString(name));
-        } catch (ConfigException ce) {
-            // let it go.
-        }
     }
 
     /**
