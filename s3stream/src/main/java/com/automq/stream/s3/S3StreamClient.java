@@ -45,6 +45,10 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.CLEANUP;
+import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.MAJOR;
+import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.MINOR;
+
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
     private static final long STREAM_OBJECT_COMPACTION_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1);
@@ -121,8 +125,8 @@ public class S3StreamClient implements StreamClient {
     private void startStreamObjectsCompactions() {
         scheduledCompactionTaskFuture = streamObjectCompactionScheduler.scheduleWithFixedDelay(() -> {
             List<StreamWrapper> operationStreams = new ArrayList<>(openedStreams.values());
-            operationStreams.forEach(StreamWrapper::compactStreamObject);
-        }, config.streamObjectCompactionIntervalMinutes(), config.streamObjectCompactionIntervalMinutes(), TimeUnit.MINUTES);
+            operationStreams.forEach(StreamWrapper::compact);
+        }, 1, 1, TimeUnit.MINUTES);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
@@ -220,6 +224,7 @@ public class S3StreamClient implements StreamClient {
         private final S3Stream stream;
         private final Semaphore trimCompactionSemaphore = new Semaphore(1);
         private volatile long lastCompactionTimestamp = 0;
+        private volatile long lastMajorCompactionTimestamp = System.currentTimeMillis();
 
         public StreamWrapper(S3Stream stream) {
             this.stream = stream;
@@ -271,7 +276,7 @@ public class S3StreamClient implements StreamClient {
                 streamObjectCompactionScheduler.execute(() -> {
                     try {
                         // trigger compaction after trim to clean up the expired stream objects.
-                        this.cleanupStreamObject();
+                        this.compact(CLEANUP);
                     } finally {
                         trimCompactionSemaphore.release();
                     }
@@ -310,15 +315,16 @@ public class S3StreamClient implements StreamClient {
             return stream.isClosed();
         }
 
-        public void cleanupStreamObject() {
-            compactStreamObject0(true);
+        public void compact() {
+            if (System.currentTimeMillis() - lastMajorCompactionTimestamp > TimeUnit.MINUTES.toMillis(config.streamObjectCompactionIntervalMinutes())) {
+                compact(MAJOR);
+                lastMajorCompactionTimestamp = System.currentTimeMillis();
+            } else {
+                compact(MINOR);
+            }
         }
 
-        public void compactStreamObject() {
-            compactStreamObject0(false);
-        }
-
-        public void compactStreamObject0(boolean onlyCleanup) {
+        public void compact(StreamObjectCompactor.CompactionType compactionType) {
             if (isClosed()) {
                 // the compaction task may be taking a long time,
                 // so we need to check if the stream is closed before starting the compaction.
@@ -330,11 +336,7 @@ public class S3StreamClient implements StreamClient {
             }
             StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(this)
                 .s3Operator(s3Operator).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
-            if (onlyCleanup) {
-                task.cleanup();
-            } else {
-                task.compact();
-            }
+            task.compact(compactionType);
             lastCompactionTimestamp = System.currentTimeMillis();
         }
     }

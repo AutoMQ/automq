@@ -33,6 +33,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.CLEANUP;
+import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.MAJOR;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
@@ -131,7 +133,7 @@ class StreamObjectCompactorTest {
 
         StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
-        task.compact();
+        task.compact(MAJOR);
 
         ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
         verify(objectManager, times(2)).compactStreamObject(ac.capture());
@@ -223,18 +225,16 @@ class StreamObjectCompactorTest {
 
         StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
-        task.compact();
+        task.compact(MAJOR);
 
         ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
-        verify(objectManager, times(3)).compactStreamObject(ac.capture());
+        verify(objectManager, times(2)).compactStreamObject(ac.capture());
         CompactStreamObjectRequest clean = ac.getAllValues().get(0);
         assertEquals(ObjectUtils.NOOP_OBJECT_ID, clean.getObjectId());
         assertEquals(List.of(1L), clean.getSourceObjectIds());
 
         CompactStreamObjectRequest compact0 = ac.getAllValues().get(1);
         assertEquals(5, compact0.getObjectId());
-        CompactStreamObjectRequest compact1 = ac.getAllValues().get(2);
-        assertEquals(6, compact1.getObjectId());
     }
 
     @Test
@@ -326,7 +326,7 @@ class StreamObjectCompactorTest {
 
         StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
-        task.cleanup();
+        task.compact(CLEANUP);
 
         ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
         verify(objectManager, times(2)).compactStreamObject(ac.capture());
