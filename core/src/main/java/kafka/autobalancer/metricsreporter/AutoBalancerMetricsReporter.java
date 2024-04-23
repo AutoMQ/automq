@@ -37,6 +37,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.errors.OutOfOrderSequenceException;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsReporter;
@@ -334,7 +335,11 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
                 numMetricSendFailure++;
                 if (System.currentTimeMillis() - lastErrorReportTime > 10000) {
                     lastErrorReportTime = System.currentTimeMillis();
-                    LOGGER.error("Failed to send auto balancer metric", e);
+                    if (e instanceof OutOfOrderSequenceException) {
+                        LOGGER.warn("Failed to send auto balancer metric", e);
+                    } else {
+                        LOGGER.error("Failed to send auto balancer metric", e);
+                    }
                 }
             }
         });
