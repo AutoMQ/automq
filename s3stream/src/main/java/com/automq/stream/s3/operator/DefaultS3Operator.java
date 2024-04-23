@@ -66,7 +66,6 @@ import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvide
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
-import software.amazon.awssdk.core.exception.ApiCallTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
@@ -653,7 +652,7 @@ public class DefaultS3Operator implements S3Operator {
                 LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail", path, partNumber, start, end, ex);
                 cf.completeExceptionally(ex);
             } else {
-                long nextApiCallAttemptTimeout = Math.min(ex.getCause() instanceof ApiCallTimeoutException ? apiCallAttemptTimeout * 2 : apiCallAttemptTimeout, TimeUnit.MINUTES.toMillis(10));
+                long nextApiCallAttemptTimeout = Math.min(apiCallAttemptTimeout * 2, TimeUnit.MINUTES.toMillis(10));
                 LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail, retry later with apiCallAttemptTimeout={}", path, partNumber, start, end, nextApiCallAttemptTimeout, ex);
                 scheduler.schedule(() -> uploadPartCopy0(sourcePath, path, start, end, uploadId, partNumber, cf, nextApiCallAttemptTimeout), 1000, TimeUnit.MILLISECONDS);
             }
