@@ -19,8 +19,8 @@ import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.S3StreamClient;
+import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.S3BlockCache;
-import com.automq.stream.s3.cache.blockcache.StreamReaders;
 import com.automq.stream.s3.compact.CompactionManager;
 import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.failover.FailoverRequest;
@@ -95,7 +95,7 @@ public class DefaultS3Client implements Client {
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = new ControllerStreamManager(this.metadataManager, this.requestSender, kafkaConfig);
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
-        this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, s3Operator);
+        this.blockCache = new DefaultS3BlockCache(this.config, objectManager, s3Operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionS3Operator);
         this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, s3Operator);
