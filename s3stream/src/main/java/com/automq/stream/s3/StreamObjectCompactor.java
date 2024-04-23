@@ -45,6 +45,7 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
  */
 public class StreamObjectCompactor {
     public static final int EXPIRED_OBJECTS_CLEAN_UP_STEP = 1000;
+    public static final long MINOR_COMPACTION_SIZE_THRESHOLD = 128 * 1024 * 1024; // 128MiB
 
     /**
      * max object count in one group, the group count will limit the compact request size to kraft and multipart object
@@ -72,34 +73,23 @@ public class StreamObjectCompactor {
         this.dataBlockGroupSizeThreshold = dataBlockGroupSizeThreshold;
     }
 
-    public void compact() {
+    public void compact(CompactionType compactionType) {
         try {
-            compact0(false);
+            compact0(compactionType);
         } catch (Throwable e) {
-            handleCompactException(false, e);
+            handleCompactException(compactionType, e);
         }
     }
 
-    /**
-     * Cleanup expired stream objects
-     */
-    public void cleanup() {
-        try {
-            compact0(true);
-        } catch (Throwable e) {
-            handleCompactException(true, e);
-        }
-    }
-
-    private void handleCompactException(boolean onlyCleanup, Throwable e) {
+    private void handleCompactException(CompactionType compactionType, Throwable e) {
         if (stream instanceof S3StreamClient.StreamWrapper && ((S3StreamClient.StreamWrapper) stream).isClosed()) {
-            LOGGER.warn("[STREAM_OBJECT_COMPACT_FAIL],[STREAM_CLOSED],{},onlyCleanup={},req={}", stream.streamId(), onlyCleanup, request, e);
+            LOGGER.warn("[STREAM_OBJECT_COMPACT_FAIL],[STREAM_CLOSED],{},type={},req={}", stream.streamId(), compactionType, request, e);
         } else {
-            LOGGER.error("[STREAM_OBJECT_COMPACT_FAIL],[UNEXPECTED],{},onlyCleanup={},req={}", stream.streamId(), onlyCleanup, request, e);
+            LOGGER.error("[STREAM_OBJECT_COMPACT_FAIL],[UNEXPECTED],{},type={},req={}", stream.streamId(), compactionType, request, e);
         }
     }
 
-    void compact0(boolean onlyCleanup) throws ExecutionException, InterruptedException {
+    void compact0(CompactionType compactionType) throws ExecutionException, InterruptedException {
         long streamId = stream.streamId();
         long startOffset = stream.startOffset();
 
@@ -133,15 +123,17 @@ public class StreamObjectCompactor {
 
         }
 
-        if (onlyCleanup) {
+        if (CompactionType.CLEANUP.equals(compactionType)) {
             return;
         }
 
         // compact the living objects
+        long maxStreamObjectSize = CompactionType.MINOR.equals(compactionType) ? MINOR_COMPACTION_SIZE_THRESHOLD : this.maxStreamObjectSize;
+        maxStreamObjectSize = Math.min(maxStreamObjectSize, this.maxStreamObjectSize);
         List<List<S3ObjectMetadata>> objectGroups = group0(livingObjects, maxStreamObjectSize);
         for (List<S3ObjectMetadata> objectGroup : objectGroups) {
-            // the object group is single object and there is no data block need to be removed.
-            if (objectGroup.size() == 1 && objectGroup.get(0).startOffset() >= startOffset) {
+            if (objectGroup.size() == 1) {
+                // TODO: find a better way to cleanup the single head object
                 continue;
             }
             long objectId = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60)).get();
@@ -337,5 +329,14 @@ public class StreamObjectCompactor {
         public StreamObjectCompactor build() {
             return new StreamObjectCompactor(objectManager, s3Operator, stream, maxStreamObjectSize, dataBlockGroupSizeThreshold);
         }
+    }
+
+    public enum CompactionType {
+        // cleanup: only remove the expired objects.
+        CLEANUP,
+        // minor: limit the max compaction size to MINOR_COMPACTION_SIZE_THRESHOLD to quick compact the small objects.
+        MINOR,
+        // major: full compact the objects.
+        MAJOR
     }
 }
