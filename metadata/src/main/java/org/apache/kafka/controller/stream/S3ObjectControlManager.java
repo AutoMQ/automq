@@ -27,10 +27,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
-import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -86,8 +84,7 @@ public class S3ObjectControlManager {
 
     private final TimelineHashSet<Long /* objectId */> preparedObjects;
 
-    // TODO: support different deletion policies, based on time dimension or space dimension?
-    private final Queue<Long/*objectId*/> markDestroyedObjects;
+    private final TimelineHashSet<Long/*objectId*/> markDestroyedObjects;
 
     private final S3Operator operator;
 
@@ -115,7 +112,7 @@ public class S3ObjectControlManager {
         this.nextAssignedObjectId = new TimelineLong(snapshotRegistry);
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.preparedObjects = new TimelineHashSet<>(snapshotRegistry, 0);
-        this.markDestroyedObjects = new LinkedBlockingDeque<>();
+        this.markDestroyedObjects = new TimelineHashSet<>(snapshotRegistry, 0);
         this.operator = operator;
         this.lifecycleListeners = new ArrayList<>();
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor(
