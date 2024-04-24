@@ -126,7 +126,7 @@ public class S3StreamClient implements StreamClient {
         scheduledCompactionTaskFuture = streamObjectCompactionScheduler.scheduleWithFixedDelay(() -> {
             List<StreamWrapper> operationStreams = new ArrayList<>(openedStreams.values());
             operationStreams.forEach(StreamWrapper::compact);
-        }, 1, 1, TimeUnit.MINUTES);
+        }, 5, 5, TimeUnit.MINUTES);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch) {

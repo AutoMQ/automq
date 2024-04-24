@@ -14,6 +14,7 @@ package com.automq.stream.s3;
 import com.automq.stream.api.Stream;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -136,6 +137,7 @@ public class StreamObjectCompactor {
                 // TODO: find a better way to cleanup the single head object
                 continue;
             }
+            TimerUtil start = new TimerUtil();
             long objectId = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60)).get();
             Optional<CompactStreamObjectRequest> requestOpt = new StreamObjectGroupCompactor(streamId, stream.streamEpoch(),
                 startOffset, objectGroup, objectId, dataBlockGroupSizeThreshold, s3Operator).compact();
@@ -143,7 +145,7 @@ public class StreamObjectCompactor {
                 request = requestOpt.get();
                 objectManager.compactStreamObject(request).get();
                 if (s3ObjectLogger.isTraceEnabled()) {
-                    s3ObjectLogger.trace("{}", request);
+                    s3ObjectLogger.trace("{} cost {}ms", request, start.elapsedAs(TimeUnit.MILLISECONDS));
                 }
             }
         }
