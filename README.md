@@ -11,13 +11,17 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 ![](https://img.shields.io/badge/Java%20-%20JDK17-green)
 
 ---
-[![](https://img.shields.io/badge/official%20website-20B2AA?style=for-the-badge)](https://www.automq.com)
+[![](https://img.shields.io/badge/Official%20Website-20B2AA)](https://www.automq.com)
 &nbsp;
-[![](https://img.shields.io/badge/official%20document-blue?style=for-the-badge)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
+[![](https://img.shields.io/badge/Document-blue)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
 &nbsp;
-<a href="https://twitter.com/AutoMQ_Lab" target="_blank"><img src="https://img.shields.io/badge/- @AutoMQ_Lab -424549?style=social&logo=twitter" height=25></a>
+[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)]([https://www.automq.com](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison))
 &nbsp;
-<a href="docs/images/automq-wechat.png" target="_blank"><img src="https://img.shields.io/badge/- Wechat -red?style=social&logo=discourse" height=25></a>
+[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)]([https://www.automq.com](https://docs.automq.com/docs/automq-s3kafka/CYxlwqDBHitThCkxSl2cePxrnBc))
+&nbsp;
+[![Twitter URL](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)</a>
+&nbsp;
+<a href="docs/images/automq-wechat.png" target="_blank"><img src="https://img.shields.io/badge/- Wechat -red?style=social&logo=discourse" height=20></a>
 &nbsp;
 
 ---
@@ -25,16 +29,24 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 <img src="https://img.shields.io/badge/aws%20cloud-supported-lightgreen?style=for-the-badge&logo=amazonaws" height="18"><img src="https://img.shields.io/badge/google%20cloud-todo-lightyellow?style=for-the-badge&logo=googlecloud" height="18"><img src="https://img.shields.io/badge/Azure%20cloud-todo-lightyellow?style=for-the-badge&logo=microsoftazure" height="18"><img src="https://img.shields.io/badge/aliyun%20cloud-supported-lightgreen?style=for-the-badge&logo=alibabacloud" height="18"><img src="https://img.shields.io/badge/huawei%20cloud-supported-lightgreen?style=for-the-badge&logo=huawei" height="18"><img src="https://img.shields.io/badge/baidu%20cloud-supported-lightgreen?style=for-the-badge&logo=baidu" height="18"><img src="https://img.shields.io/badge/tencent%20cloud-supported-lightgreen?style=for-the-badge&logo=tencentqq" height="18">
 
 
-
-![image](./docs/images/banner-readme.jpeg)
-
-
-
 [//]: # ([![E2E_TEST]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml/badge.svg&#41;]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml&#41;)
 
-## 🍵What is AutoMQ
+## 🍵 AutoMQ vs Other Streaming Platforms
 
-AutoMQ is a cloud-native, serverless reinvented Kafka that is easily scalable, manage-less and cost-effective.
+
+| Feature | AutoMQ | Apache Kafka | Confluent | Apache Pulsar | Redpanda | Warpstream |
+|---|---|---|---|---|---|---|
+| Apache Kafka Compatibility | Native Kafka | Native Kafka | Native Kafka | Non-Kafka | Kafka Protocol | Kafka Protocol |
+| Source Code Availability | Yes | Yes | No | Yes | Yes | No |
+| Stateless Broker | Yes | No | No | Yes | No | Yes |
+| P99 Latency | Single-digit<br> ms latency | Single-digit<br> ms latency | Single-digit<br> ms latency | Single-digit<br> ms latency | Single-digit<br> ms latency | [> 400ms](https://www.warpstream.com/blog/kafka-is-dead-long-live-kafka)	|
+| Continuous Self-Balancing | Yes | No | Yes | Yes | Yes | Yes |
+| Scale in/out | In seconds | In hours/days | In hours | In hours<br>(scale-in);<br> In seconds<br>(scale-out) | In hours | In seconds |
+| Spot Instance Support | Yes | No | No | No | No | Yes |
+| Partition Reassignment | In seconds | In hours/days | In hours | In seconds | In hours | In seconds |
+| Component  | Broker<br> Controller | Broker<br>Controller<br>Zookeeper<br>(Non-Kraft) | Broker<br>Controller<br>Zookeeper<br>(Non-Kraft) | Broker<br>Controller<br>Zookeeper<br>Bookkeeper<br>Proxy | Broker<br>Controller | Agent<br>MetadataServer |
+
+> Tips: Apache Kafka Compatibility's definition is comming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
 
 ## 🔶Why AutoMQ
