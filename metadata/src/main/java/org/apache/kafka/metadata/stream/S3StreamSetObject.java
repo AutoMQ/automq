@@ -26,22 +26,29 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.Weigher;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     private static final Cache<Long, List<StreamOffsetRange>> RANGES_CACHE = CacheBuilder.newBuilder()
-            .expireAfterAccess(Duration.ofMinutes(1))
-            .maximumWeight(2500000) // expected max heap occupied size is 75MiB
-            .weigher((Weigher<Long, List<StreamOffsetRange>>) (key, value) -> value.size())
-            .build();
+        .expireAfterAccess(Duration.ofMinutes(1))
+        .maximumWeight(500000) // expected max heap occupied size is 15MiB
+        .weigher((Weigher<Long, List<StreamOffsetRange>>) (key, value) -> value.size())
+        .build();
+    private static final Cache<Long, Map<Long, StreamOffsetRange>> RANGE_MAP_CACHE = CacheBuilder.newBuilder()
+        .expireAfterAccess(Duration.ofMinutes(1))
+        .maximumWeight(2500000) // expected max heap occupied size is 75MiB
+        .weigher((Weigher<Long, Map<Long, StreamOffsetRange>>) (key, value) -> value.size())
+        .build();
     public static final byte MAGIC = 0x01;
     public static final byte ZSTD_COMPRESSED = 1 << 1;
     private static final int COMPRESSION_THRESHOLD = 50;
@@ -60,11 +67,13 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     private final long dataTimeInMs;
 
     // Only used for testing
-    public S3StreamSetObject(long objectId, int nodeId, final List<StreamOffsetRange> streamOffsetRanges, long orderId) {
+    public S3StreamSetObject(long objectId, int nodeId, final List<StreamOffsetRange> streamOffsetRanges,
+        long orderId) {
         this(objectId, nodeId, sortAndEncode(objectId, streamOffsetRanges), orderId, S3StreamConstant.INVALID_TS);
     }
 
-    public S3StreamSetObject(long objectId, int nodeId, final List<StreamOffsetRange> streamOffsetRanges, long orderId, long dateTimeInMs) {
+    public S3StreamSetObject(long objectId, int nodeId, final List<StreamOffsetRange> streamOffsetRanges, long orderId,
+        long dateTimeInMs) {
         this(objectId, nodeId, sortAndEncode(objectId, streamOffsetRanges), orderId, dateTimeInMs);
     }
 
@@ -84,18 +93,33 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         }
     }
 
+    public Optional<StreamOffsetRange> find(long streamId) {
+        try {
+            return Optional.ofNullable(RANGE_MAP_CACHE.get(objectId, () -> {
+                Map<Long, StreamOffsetRange> rangeMap = new HashMap<>();
+                List<StreamOffsetRange> rangeList = decode(ranges);
+                for (StreamOffsetRange range : rangeList) {
+                    rangeMap.put(range.streamId(), range);
+                }
+                return rangeMap;
+            }).get(streamId));
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public ApiMessageAndVersion toRecord() {
         return new ApiMessageAndVersion(new S3StreamSetObjectRecord()
-                .setObjectId(objectId)
-                .setNodeId(nodeId)
-                .setOrderId(orderId)
-                .setDataTimeInMs(dataTimeInMs)
-                .setRanges(ranges), (short) 0);
+            .setObjectId(objectId)
+            .setNodeId(nodeId)
+            .setOrderId(orderId)
+            .setDataTimeInMs(dataTimeInMs)
+            .setRanges(ranges), (short) 0);
     }
 
     public static S3StreamSetObject of(S3StreamSetObjectRecord record) {
         return new S3StreamSetObject(record.objectId(), record.nodeId(),
-                record.ranges(), record.orderId(), record.dataTimeInMs());
+            record.ranges(), record.orderId(), record.dataTimeInMs());
     }
 
     public Integer nodeId() {
@@ -138,11 +162,11 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     @Override
     public String toString() {
         return "S3StreamSetObject{" +
-                "objectId=" + objectId +
-                ", orderId=" + orderId +
-                ", nodeId=" + nodeId +
-                ", dataTimeInMs=" + dataTimeInMs +
-                '}';
+            "objectId=" + objectId +
+            ", orderId=" + orderId +
+            ", nodeId=" + nodeId +
+            ", dataTimeInMs=" + dataTimeInMs +
+            '}';
     }
 
     @Override
@@ -209,5 +233,11 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
             ranges.add(new StreamOffsetRange(streamId, startOffset, startOffset + count));
         }
         return ranges;
+    }
+
+    // Only used for testing
+    public static void cleanCache() {
+        RANGES_CACHE.invalidateAll();
+        RANGE_MAP_CACHE.invalidateAll();
     }
 }
