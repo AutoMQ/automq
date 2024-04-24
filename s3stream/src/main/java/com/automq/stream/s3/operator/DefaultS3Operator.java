@@ -73,7 +73,6 @@ import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
-import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
@@ -408,9 +407,7 @@ public class DefaultS3Operator implements S3Operator {
         if (null != tagging) {
             builder.tagging(tagging);
         }
-        PutObjectRequest request = builder
-            .checksumAlgorithm(ChecksumAlgorithm.CRC32_C)
-            .build();
+        PutObjectRequest request = builder.build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
@@ -556,7 +553,7 @@ public class DefaultS3Operator implements S3Operator {
         if (null != tagging) {
             builder.tagging(tagging);
         }
-        CreateMultipartUploadRequest request = builder.checksumAlgorithm(ChecksumAlgorithm.CRC32_C).build();
+        CreateMultipartUploadRequest request = builder.build();
         writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
             S3OperationStats.getInstance().createMultiPartUploadStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(createMultipartUploadResponse.uploadId());
@@ -600,13 +597,8 @@ public class DefaultS3Operator implements S3Operator {
         TimerUtil timerUtil = new TimerUtil();
         int size = part.readableBytes();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
-        UploadPartRequest request = UploadPartRequest.builder()
-            .bucket(bucket)
-            .key(path)
-            .uploadId(uploadId)
-            .partNumber(partNumber)
-            .checksumAlgorithm(ChecksumAlgorithm.CRC32_C)
-            .build();
+        UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
+            .partNumber(partNumber).build();
         CompletableFuture<UploadPartResponse> uploadPartCf = writeS3Client.uploadPart(request, body);
         uploadPartCf.thenAccept(uploadPartResponse -> {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, size);
