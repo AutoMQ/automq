@@ -300,8 +300,13 @@ public class S3ObjectControlManager {
         }
         // check the mark destroyed objects
         List<String> requiredDeleteKeys = new LinkedList<>();
+        List<Long> notExistObjects = new LinkedList<>();
         for (Long objectId : this.markDestroyedObjects) {
             S3Object object = this.objectsMetadata.get(objectId);
+            if (object == null) {
+                notExistObjects.add(objectId);
+                continue;
+            }
             if (object.getMarkDestroyedTimeInMs() + (this.config.objectRetentionTimeInSecond() * 1000L) < System.currentTimeMillis()) {
                 // exceed delete retention time, trigger the truly deletion
                 requiredDeleteKeys.add(object.getObjectKey());
@@ -310,6 +315,9 @@ public class S3ObjectControlManager {
                 break;
             }
         }
+        // markDestroyedObjects isn't Timeline structure, so it may contains dirty / duplicated objectId
+        notExistObjects.forEach(this.markDestroyedObjects::remove);
+
         if (!requiredDeleteKeys.isEmpty()) {
             this.lastCleanStartTimestamp = System.currentTimeMillis();
             this.lastCleanCf = this.objectCleaner.clean(requiredDeleteKeys);
