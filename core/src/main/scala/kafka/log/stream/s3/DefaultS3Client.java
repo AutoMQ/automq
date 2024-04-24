@@ -80,9 +80,9 @@ public class DefaultS3Client implements Client {
         String region = kafkaConfig.s3Region();
         String bucket = kafkaConfig.s3Bucket();
         networkInboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND,
-                config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
+                config.networkBaselineBandwidth(), config.refillPeriodMs());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
-                config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
+                config.networkBaselineBandwidth(), config.refillPeriodMs());
         List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
         boolean forcePathStyle = this.config.forcePathStyle();
         S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
