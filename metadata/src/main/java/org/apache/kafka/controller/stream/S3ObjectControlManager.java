@@ -257,7 +257,6 @@ public class S3ObjectControlManager {
         if (object != null) {
             s3ObjectSize.addAndGet(-object.getObjectSize());
         }
-        markDestroyedObjects.remove(record.objectId());
         preparedObjects.remove(record.objectId());
     }
 
@@ -300,14 +299,19 @@ public class S3ObjectControlManager {
         }
         // check the mark destroyed objects
         List<String> requiredDeleteKeys = new LinkedList<>();
-        List<Long> notExistObjects = new LinkedList<>();
-        for (Long objectId : this.markDestroyedObjects) {
+        while (true) {
+            Long objectId = this.markDestroyedObjects.peek();
+            if (objectId == null) {
+                break;
+            }
             S3Object object = this.objectsMetadata.get(objectId);
             if (object == null) {
-                notExistObjects.add(objectId);
+                // markDestroyedObjects isn't Timeline structure, so it may contains dirty / duplicated objectId
+                this.markDestroyedObjects.poll();
                 continue;
             }
             if (object.getMarkDestroyedTimeInMs() + (this.config.objectRetentionTimeInSecond() * 1000L) < System.currentTimeMillis()) {
+                this.markDestroyedObjects.poll();
                 // exceed delete retention time, trigger the truly deletion
                 requiredDeleteKeys.add(object.getObjectKey());
             } else {
@@ -315,8 +319,6 @@ public class S3ObjectControlManager {
                 break;
             }
         }
-        // markDestroyedObjects isn't Timeline structure, so it may contains dirty / duplicated objectId
-        notExistObjects.forEach(this.markDestroyedObjects::remove);
 
         if (!requiredDeleteKeys.isEmpty()) {
             this.lastCleanStartTimestamp = System.currentTimeMillis();
@@ -332,9 +334,10 @@ public class S3ObjectControlManager {
      * @return the result of the generation, contains the records which should be applied to the raft.
      */
     public ControllerResult<Void> notifyS3ObjectDeleted(List<Long> deletedObjectIds) {
-        List<ApiMessageAndVersion> records = deletedObjectIds.stream().filter(markDestroyedObjects::contains)
-                .map(objectId -> new ApiMessageAndVersion(new RemoveS3ObjectRecord()
-                        .setObjectId(objectId), (short) 0)).collect(Collectors.toList());
+        List<ApiMessageAndVersion> records = deletedObjectIds
+            .stream()
+            .map(objectId -> new ApiMessageAndVersion(new RemoveS3ObjectRecord().setObjectId(objectId), (short) 0))
+            .collect(Collectors.toList());
         return ControllerResult.of(records, null);
     }
 
