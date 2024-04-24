@@ -42,11 +42,15 @@ public class AsyncNetworkBandwidthLimiter {
     private long availableExtraTokens;
 
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs) {
+        this(type, tokenSize, refillIntervalMs, tokenSize);
+    }
+
+    public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokens) {
         this.type = type;
         this.extraTokenSize = (long) (tokenSize * DEFAULT_EXTRA_TOKEN_RATIO);
         this.tokenSize = tokenSize - extraTokenSize;
         this.availableTokens = this.tokenSize;
-        this.maxTokens = tokenSize;
+        this.maxTokens = maxTokens;
         this.queuedCallbacks = new PriorityQueue<>();
         this.refillThreadPool = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"));
         this.callbackThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("callback-thread"));
