@@ -136,11 +136,7 @@ public class StreamReader {
 
     public void close() {
         closed = true;
-        blocksMap.forEach((k, v) -> {
-            if (v.data != null) {
-                v.data.markRead();
-            }
-        });
+        blocksMap.forEach((k, v) -> v.markRead());
     }
 
     void read0(ReadContext ctx, long startOffset, long endOffset, int maxBytes) {
@@ -320,8 +316,9 @@ public class StreamReader {
         // 1. get objects
         CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, nextLoadingOffset, -1L, GET_OBJECT_STEP);
         // 2. get block indexes from objects
-        CompletableFuture<Void> findBlockIndexesCf = getObjectsCf.thenComposeAsync(objects -> {
+        CompletableFuture<Void> findBlockIndexesCf = getObjectsCf.whenComplete((rst, ex) -> {
             StorageOperationStats.getInstance().getIndicesTimeGetObjectStats.record(time.elapsedAndResetAs(TimeUnit.NANOSECONDS));
+        }).thenComposeAsync(objects -> {
             CompletableFuture<Void> prevCf = CompletableFuture.completedFuture(null);
             for (S3ObjectMetadata objectMetadata : objects) {
                 // the object reader will be release in the whenComplete
@@ -384,6 +381,7 @@ public class StreamReader {
     }
 
     private void resetBlocks() {
+        blocksMap.forEach((k, v) -> v.markRead());
         blocksMap.clear();
         lastBlock = null;
         loadedBlockIndexEndOffset = 0L;
