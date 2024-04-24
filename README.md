@@ -26,7 +26,8 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 
 ---
 
-<img src="https://img.shields.io/badge/aws%20cloud-supported-lightgreen?style=for-the-badge&logo=amazonaws" height="18"><img src="https://img.shields.io/badge/google%20cloud-todo-lightyellow?style=for-the-badge&logo=googlecloud" height="18"><img src="https://img.shields.io/badge/Azure%20cloud-todo-lightyellow?style=for-the-badge&logo=microsoftazure" height="18"><img src="https://img.shields.io/badge/aliyun%20cloud-supported-lightgreen?style=for-the-badge&logo=alibabacloud" height="18"><img src="https://img.shields.io/badge/huawei%20cloud-supported-lightgreen?style=for-the-badge&logo=huawei" height="18"><img src="https://img.shields.io/badge/baidu%20cloud-supported-lightgreen?style=for-the-badge&logo=baidu" height="18"><img src="https://img.shields.io/badge/tencent%20cloud-supported-lightgreen?style=for-the-badge&logo=tencentqq" height="18">
+
+<img src="https://img.shields.io/badge/aws%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=amazonaws" height="18"> <img src="https://img.shields.io/badge/google%20cloud-%F0%9F%9A%A7-lightyellow?style=for-the-badge&logo=googlecloud" height="18"> <img src="https://img.shields.io/badge/Azure%20cloud-%F0%9F%9A%A7-lightyellow?style=for-the-badge&logo=microsoftazure" height="18"> <img src="https://img.shields.io/badge/aliyun%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=alibabacloud" height="18"> <img src="https://img.shields.io/badge/huawei%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=huawei" height="18"> <img src="https://img.shields.io/badge/baidu%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=baidu" height="18"> <img src="https://img.shields.io/badge/tencent%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=tencentqq" height="18">
 
 
 [//]: # ([![E2E_TEST]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml/badge.svg&#41;]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml&#41;)
@@ -34,17 +35,94 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 ## 🍵 AutoMQ vs Other Streaming Platforms
 
 
-| Feature | AutoMQ | Apache Kafka | Confluent | Apache Pulsar | Redpanda | Warpstream |
-|---|---|---|---|---|---|---|
-| Apache Kafka Compatibility | Native Kafka | Native Kafka | Native Kafka | Non-Kafka | Kafka Protocol | Kafka Protocol |
-| Source Code Availability | Yes | Yes | No | Yes | Yes | No |
-| Stateless Broker | Yes | No | No | Yes | No | Yes |
-| P99 Latency | Single-digit<br> ms latency | Single-digit<br> ms latency | Single-digit<br> ms latency | Single-digit<br> ms latency | Single-digit<br> ms latency | [> 400ms](https://www.warpstream.com/blog/kafka-is-dead-long-live-kafka)	|
-| Continuous Self-Balancing | Yes | No | Yes | Yes | Yes | Yes |
-| Scale in/out | In seconds | In hours/days | In hours | In hours<br>(scale-in);<br> In seconds<br>(scale-out) | In hours | In seconds |
-| Spot Instance Support | Yes | No | No | No | No | Yes |
-| Partition Reassignment | In seconds | In hours/days | In hours | In seconds | In hours | In seconds |
-| Component  | Broker<br> Controller | Broker<br>Controller<br>Zookeeper<br>(Non-Kraft) | Broker<br>Controller<br>Zookeeper<br>(Non-Kraft) | Broker<br>Controller<br>Zookeeper<br>Bookkeeper<br>Proxy | Broker<br>Controller | Agent<br>MetadataServer |
+<table>
+  <tr>
+    <th>Feature</th>
+    <th>AutoMQ</th>
+    <th>Apache Kafka</th>
+    <th>Confluent</th>
+    <th>Apache Pulsar</th>
+    <th>Redpanda</th>
+    <th>Warpstream</th>
+  </tr>
+  <tr>
+    <td>Apache Kafka Compatibility</td>
+    <td>Native Kafka</td>
+    <td>Native Kafka</td>
+    <td>Native Kafka</td>
+    <td>Non-Kafka</td>
+    <td>Kafka Protocol</td>
+    <td>Kafka Protocol</td>
+  </tr>
+  <tr>
+    <td>Source Code Availability</td>
+    <td>Yes</td>
+    <td>Yes</td>
+    <td>No</td>
+    <td>Yes</td>
+    <td>Yes</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>Stateless Broker</td>
+    <td>Yes</td>
+    <td>No</td>
+    <td>No</td>
+    <td>Yes</td>
+    <td>No</td>
+    <td>Yes</td>
+  </tr>
+  <tr>
+    <td>P99 Latency</td>
+    <td colspan="5">Single-digit<br> ms latency</td>
+    <td><a href="https://www.warpstream.com/blog/kafka-is-dead-long-live-kafka">> 400ms</a></td>
+  </tr>
+  <tr>
+    <td>Continuous Self-Balancing</td>
+    <td>Yes</td>
+    <td>No</td>
+    <td>Yes</td>
+    <td>Yes</td>
+    <td>Yes</td>
+    <td>Yes</td>
+  </tr>
+  <tr>
+    <td>Scale in/out</td>
+    <td>In seconds</td>
+    <td>In hours/days</td>
+    <td>In hours</td>
+    <td>In hours<br>(scale-in);<br> In seconds<br>(scale-out)</td>
+    <td>In hours</td>
+    <td>In seconds</td>
+  </tr>
+  <tr>
+    <td>Spot Instance Support</td>
+    <td>Yes</td>
+    <td>No</td>
+    <td>No</td>
+    <td>No</td>
+    <td>No</td>
+    <td>Yes</td>
+  </tr>
+  <tr>
+    <td>Partition Reassignment</td>
+    <td>In seconds</td>
+    <td>In hours/days</td>
+    <td>In hours</td>
+    <td>In seconds</td>
+    <td>In hours</td>
+    <td>In seconds</td>
+  </tr>
+  <tr>
+    <td>Component</td>
+    <td>Broker<br> Controller</td>
+    <td colspan="2">Broker<br>Controller<br>Zookeeper<br>(Non-Kraft)</td>
+    <td>Broker<br>Controller<br>Zookeeper<br>Bookkeeper<br>Proxy</td>
+    <td>Broker<br>Controller</td>
+    <td>Agent<br>MetadataServer</td>
+  </tr>
+</table>
+
 
 > Tips: Apache Kafka Compatibility's definition is comming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
