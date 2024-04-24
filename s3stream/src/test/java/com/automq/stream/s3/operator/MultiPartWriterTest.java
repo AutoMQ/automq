@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -48,6 +50,7 @@ class MultiPartWriterTest {
     private S3AsyncClient s3;
     private DefaultS3Operator operator;
     private MultiPartWriter writer;
+    private Lock lock;
 
     @BeforeEach
     void setUp() {
@@ -55,6 +58,7 @@ class MultiPartWriterTest {
         operator = new DefaultS3Operator(s3, "unit-test-bucket");
         CreateMultipartUploadResponse.Builder builder = CreateMultipartUploadResponse.builder();
         when(s3.createMultipartUpload(any(CreateMultipartUploadRequest.class))).thenReturn(CompletableFuture.completedFuture(builder.build()));
+        lock = new ReentrantLock();
     }
 
     @Test
@@ -132,9 +136,14 @@ class MultiPartWriterTest {
 
         when(s3.uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation -> {
             UploadPartRequest request = invocation.getArgument(0);
-            uploadPartRequests.add(request);
-            AsyncRequestBody body = invocation.getArgument(1);
-            writeContentLengths.add(body.contentLength().orElse(0L));
+            lock.lock();
+            try {
+                uploadPartRequests.add(request);
+                AsyncRequestBody body = invocation.getArgument(1);
+                writeContentLengths.add(body.contentLength().orElse(0L));
+            } finally {
+                lock.unlock();
+            }
             return CompletableFuture.completedFuture(builder.build());
         });
 
