@@ -33,6 +33,7 @@ import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.MetadataResponse
 import org.apache.kafka.image.MetadataImage
 import org.apache.kafka.metadata.{BrokerRegistration, PartitionRegistration, Replicas}
+import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{Features, MetadataVersion}
 
 import java.util
@@ -546,5 +547,12 @@ class KRaftMetadataCache(val brokerId: Int) extends MetadataCache with Logging w
       image.highestOffsetAndEpoch().offset,
       true)
   }
+
+  // AutoMQ inject start
+  override def autoMQVersion(): AutoMQVersion = {
+    _currentImage.features().autoMQVersion()
+  }
+  // AutoMQ inject end
+
 }
 

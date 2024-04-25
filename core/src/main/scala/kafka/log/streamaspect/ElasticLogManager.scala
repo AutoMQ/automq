@@ -29,7 +29,7 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
-class ElasticLogManager(val client: Client) extends Logging {
+class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChecker) extends Logging {
     this.logIdent = s"[ElasticLogManager] "
     private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
 
@@ -70,7 +70,8 @@ class ElasticLogManager(val client: Client) extends Logging {
                     leaderEpoch,
                     logOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
                     client,
-                    NAMESPACE
+                    NAMESPACE,
+                    openStreamChecker
                 )
             }
         }, s"Failed to create elastic log for $topicPartition", this)
@@ -139,7 +140,7 @@ object ElasticLogManager {
         val context = new Context()
         context.config = config
         context.brokerServer = broker
-        INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context)))
+        INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context), new DefaultOpenStreamChecker(broker.metadataCache)))
         INSTANCE.foreach(_.startup())
         ElasticLogSegment.txnCache = new FileCache(config.logDirs.head + "/" + "txnindex-cache", 100 * 1024 * 1024)
         ElasticLogSegment.timeCache = new FileCache(config.logDirs.head + "/" + "timeindex-cache", 100 * 1024 * 1024)
@@ -176,7 +177,19 @@ object ElasticLogManager {
         logDirFailureChannel: LogDirFailureChannel,
         topicId: Option[Uuid],
         leaderEpoch: Long = 0): ElasticUnifiedLog = {
-        INSTANCE.get.getOrCreateLog(dir, config, scheduler, time, maxTransactionTimeoutMs, producerStateManagerConfig, brokerTopicStats, producerIdExpirationCheckIntervalMs, logDirFailureChannel, topicId, leaderEpoch)
+        INSTANCE.get.getOrCreateLog(
+            dir,
+            config,
+            scheduler,
+            time,
+            maxTransactionTimeoutMs,
+            producerStateManagerConfig,
+            brokerTopicStats,
+            producerIdExpirationCheckIntervalMs,
+            logDirFailureChannel,
+            topicId,
+            leaderEpoch
+        )
     }
 
     def shutdown(): Unit = {

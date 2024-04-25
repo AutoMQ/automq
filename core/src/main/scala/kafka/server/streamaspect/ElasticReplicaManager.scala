@@ -192,8 +192,11 @@ class ElasticReplicaManager(
                 // instead of delete the partition.
                 val start = System.currentTimeMillis()
                 hostedPartition.partition.close().get()
-                info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms, trigger leader election")
-                alterPartitionManager.tryElectLeader(topicPartition)
+                info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms")
+                if (!metadataCache.autoMQVersion().isReassignmentV1Supported) {
+                  // TODO: https://github.com/AutoMQ/automq/issues/1153 add schedule check when leader isn't successfully set
+                  alterPartitionManager.tryElectLeader(topicPartition)
+                }
               } else {
                 // Logs are not deleted here. They are deleted in a single batch later on.
                 // This is done to avoid having to checkpoint for every deletions.
@@ -900,6 +903,7 @@ class ElasticReplicaManager(
           throw new IllegalStateException(s"Topic $tp exists, but its ID is " +
             s"${partition.topicId.get}, not $topicId as expected")
         }
+        createHook.accept(partition)
         Some(partition, false)
 
       case HostedPartition.None =>
@@ -1019,8 +1023,8 @@ class ElasticReplicaManager(
 
         def doPartitionLeadingOrFollowing(onlyLeaderChange: Boolean): Unit = {
           stateChangeLogger.info(s"Transitioning partition(s) info: $localChanges")
-          if (!localChanges.leaders.isEmpty) {
-            localChanges.leaders.forEach((tp, info) => {
+          for (replicas <- Seq(localChanges.leaders, localChanges.followers)) {
+            replicas.forEach((tp, info) => {
               val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
               val opCf = new CompletableFuture[Void]()
               opCfList.add(opCf)
@@ -1032,6 +1036,10 @@ class ElasticReplicaManager(
                     val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
                     leader += (tp -> info)
                     applyLocalLeadersDelta(leaderChangedPartitions, newImage, delta, lazyOffsetCheckpoints, leader, directoryIds)
+                    // Elect the leader to let client can find the partition by metadata.
+                    if (info.partition().leader < 0) {
+                      alterPartitionManager.tryElectLeader(tp)
+                    }
                   } catch {
                     case t: Throwable => stateChangeLogger.error(s"Transitioning partition(s) fail: $localChanges", t)
                   } finally {
@@ -1042,7 +1050,6 @@ class ElasticReplicaManager(
                 })
               })
             })
-
           }
           // skip becoming follower or adding log dir
           if (!onlyLeaderChange) {
@@ -1075,7 +1082,7 @@ class ElasticReplicaManager(
 
         if (!opCfList.isEmpty) {
           val elapsedMs = System.currentTimeMillis() - start
-          info(s"open ${localChanges.leaders.size()} / close ${localChanges.deletes.size()} partitions cost ${elapsedMs}ms")
+          info(s"open ${localChanges.followers().size()} / make leader ${localChanges.leaders.size()} / close ${localChanges.deletes.size()} partitions cost ${elapsedMs}ms")
         }
       })
     }

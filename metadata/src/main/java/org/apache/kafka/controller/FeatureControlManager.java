@@ -39,6 +39,7 @@ import org.apache.kafka.metadata.VersionRange;
 import org.apache.kafka.metadata.migration.ZkMigrationState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
@@ -151,6 +152,10 @@ public class FeatureControlManager {
      */
     private final ClusterFeatureSupportDescriber clusterSupportDescriber;
 
+    // AutoMQ inject start
+    private final TimelineObject<AutoMQVersion> autoMQVersion;
+    // AutoMQ inject end
+
     private FeatureControlManager(
         LogContext logContext,
         QuorumFeatures quorumFeatures,
@@ -166,6 +171,10 @@ public class FeatureControlManager {
         this.minimumBootstrapVersion = minimumBootstrapVersion;
         this.migrationControlState = new TimelineObject<>(snapshotRegistry, ZkMigrationState.NONE);
         this.clusterSupportDescriber = clusterSupportDescriber;
+
+        // AutoMQ inject start
+        this.autoMQVersion = new TimelineObject<>(snapshotRegistry, AutoMQVersion.V0);
+        // AutoMQ inject end
     }
 
     ControllerResult<Map<String, ApiError>> updateFeatures(
@@ -406,8 +415,20 @@ public class FeatureControlManager {
                 finalizedVersions.put(record.name(), record.featureLevel());
                 log.info("Replayed a FeatureLevelRecord setting feature {} to {}",
                         record.name(), record.featureLevel());
+
             }
         }
+
+        // AutoMQ inject start
+        if (record.name().equals(AutoMQVersion.FEATURE_NAME)) {
+            if (record.featureLevel() == 0) {
+                autoMQVersion.set(AutoMQVersion.V0);
+            } else {
+                autoMQVersion.set(AutoMQVersion.from(record.featureLevel()));
+            }
+        }
+        // AutoMQ inject end
+
     }
 
     public void replay(ZkMigrationStateRecord record) {
@@ -426,4 +447,11 @@ public class FeatureControlManager {
     boolean isControllerId(int nodeId) {
         return quorumFeatures.isControllerId(nodeId);
     }
+
+    // AutoMQ inject start
+    public AutoMQVersion autoMQVersion() {
+        return autoMQVersion.get();
+    }
+    // AutoMQ inject end
+
 }

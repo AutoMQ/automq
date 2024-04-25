@@ -22,6 +22,7 @@ import org.apache.kafka.admin.BrokerMetadata
 import org.apache.kafka.common.message.{MetadataResponseData, UpdateMetadataRequestData}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.{Cluster, Node, TopicPartition, Uuid}
+import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{Features, MetadataVersion}
 
 import java.util
@@ -110,6 +111,8 @@ trait MetadataCache {
   def getRandomAliveBrokerId: Option[Int]
 
   def features(): Features
+
+  def autoMQVersion(): AutoMQVersion
 }
 
 object MetadataCache {
