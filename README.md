@@ -92,7 +92,7 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
     <td>In hours/days</td>
     <td>In hours</td>
     <td>In hours<br>(scale-in);<br> In seconds<br>(scale-out)</td>
-    <td>In hours</td>
+    <td>In seconds</td>
     <td>In seconds</td>
   </tr>
   <tr>
@@ -110,7 +110,7 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
     <td>In hours/days</td>
     <td>In hours</td>
     <td>In seconds</td>
-    <td>In hours</td>
+    <td>In seconds</td>
     <td>In seconds</td>
   </tr>
   <tr>
