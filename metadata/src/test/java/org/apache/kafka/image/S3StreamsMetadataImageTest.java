@@ -31,6 +31,7 @@ import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -66,6 +67,11 @@ public class S3StreamsMetadataImageTest {
         IMAGE1 = S3StreamsMetadataImage.EMPTY;
         DELTA1_RECORDS = List.of();
         IMAGE2 = S3StreamsMetadataImage.EMPTY;
+    }
+
+    @AfterEach
+    public void cleanup() {
+        S3StreamSetObject.cleanCache();
     }
 
     @Test
