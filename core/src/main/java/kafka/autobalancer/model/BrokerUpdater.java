@@ -67,14 +67,16 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
             this.isSlowBroker = false;
         }
 
-        public Broker(Broker other) {
-            super(other);
+        public Broker(Broker other, boolean deepCopy) {
+            super(other, deepCopy);
             this.brokerId = other.brokerId;
             this.rack = other.rack;
             this.active = other.active;
             this.isSlowBroker = other.isSlowBroker;
-            for (Map.Entry<Byte, MetricValueSequence> entry : other.metrics.entrySet()) {
-                this.metrics.put(entry.getKey(), entry.getValue().copy());
+            if (deepCopy) {
+                for (Map.Entry<Byte, MetricValueSequence> entry : other.metrics.entrySet()) {
+                    this.metrics.put(entry.getKey(), entry.getValue().copy());
+                }
             }
         }
 
@@ -150,8 +152,8 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         }
 
         @Override
-        public Broker copy() {
-            return new Broker(this);
+        public Broker copy(boolean deepCopy) {
+            return new Broker(this, deepCopy);
         }
 
         @Override
