@@ -146,7 +146,7 @@ public final class S3StreamsMetadataImage {
 
             for (; streamSetObjectIndex < streamSetObjects.size(); streamSetObjectIndex++) {
                 S3StreamSetObject streamSetObject = streamSetObjects.get(streamSetObjectIndex);
-                StreamOffsetRange streamOffsetRange = search(streamSetObject.offsetRangeList(), streamId);
+                StreamOffsetRange streamOffsetRange = streamSetObject.find(streamId).orElse(null);
                 // skip the stream set object not containing the stream or the range is before the nextStartOffset
                 if (streamOffsetRange == null || streamOffsetRange.endOffset() <= nextStartOffset) {
                     continue;
@@ -249,14 +249,6 @@ public final class S3StreamsMetadataImage {
     @Override
     public String toString() {
         return "S3StreamsMetadataImage{nextAssignedStreamId=" + nextAssignedStreamId + '}';
-    }
-
-    public static StreamOffsetRange search(List<StreamOffsetRange> ranges, long streamId) {
-        int index = new StreamOffsetRanges(ranges).search(streamId);
-        if (index < 0) {
-            return null;
-        }
-        return ranges.get(index);
     }
 
     static class StreamOffsetRanges extends AbstractOrderedCollection<Long> {
