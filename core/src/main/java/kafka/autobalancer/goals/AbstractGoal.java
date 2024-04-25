@@ -183,8 +183,8 @@ public abstract class AbstractGoal implements Goal {
         }
         BrokerUpdater.Broker srcBrokerBefore = cluster.broker(action.getSrcBrokerId());
         BrokerUpdater.Broker destBrokerBefore = cluster.broker(action.getDestBrokerId());
-        BrokerUpdater.Broker srcBrokerAfter = srcBrokerBefore.copy();
-        BrokerUpdater.Broker destBrokerAfter = destBrokerBefore.copy();
+        BrokerUpdater.Broker srcBrokerAfter = srcBrokerBefore.copy(false);
+        BrokerUpdater.Broker destBrokerAfter = destBrokerBefore.copy(false);
 
         if (!moveReplica(action, cluster, srcBrokerAfter, destBrokerAfter)) {
             return 0.0;
