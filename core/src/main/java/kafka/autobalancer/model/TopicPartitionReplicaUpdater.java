@@ -51,8 +51,8 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
             this.tp = tp;
         }
 
-        public TopicPartitionReplica(TopicPartitionReplica other) {
-            super(other);
+        public TopicPartitionReplica(TopicPartitionReplica other, boolean deepCopy) {
+            super(other, true);
             this.tp = new TopicPartition(other.tp.topic(), other.tp.partition());
         }
 
@@ -101,8 +101,8 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         }
 
         @Override
-        public AbstractInstance copy() {
-            return new TopicPartitionReplica(this);
+        public AbstractInstance copy(boolean deepCopy) {
+            return new TopicPartitionReplica(this, deepCopy);
         }
 
         @Override

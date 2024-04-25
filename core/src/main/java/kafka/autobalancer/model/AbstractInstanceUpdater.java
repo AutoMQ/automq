@@ -83,14 +83,20 @@ public abstract class AbstractInstanceUpdater {
 
         }
 
-        public AbstractInstance(AbstractInstance other) {
+        public AbstractInstance(AbstractInstance other, boolean deepCopy) {
             System.arraycopy(other.loads, 0, this.loads, 0, loads.length);
             this.resources.addAll(other.resources);
-            this.metricsMap.putAll(other.metricsMap);
             this.timestamp = other.timestamp;
+            if (deepCopy) {
+                this.metricsMap.putAll(other.metricsMap);
+            }
         }
 
-        public abstract AbstractInstance copy();
+        public abstract AbstractInstance copy(boolean deepCopy);
+
+        public AbstractInstance copy() {
+            return copy(true);
+        }
 
         public abstract void processMetrics();
 
