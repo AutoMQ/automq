@@ -146,10 +146,10 @@ public class GenerateS3UrlCmd {
     }
 
     public String run() {
-        System.out.println("####################################  S3 PRECHECK #################################");
+        System.out.println("############  Ping s3 ####################");
         System.out.println();
 
-        //precheck
+        // precheck
         var context = S3Utils.S3Context.builder()
             .setEndpoint(parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint)
             .setCredentialsProviders(List.of(() -> AwsBasicCredentials.create(parameter.s3AccessKey, parameter.s3SecretKey)))
@@ -160,22 +160,21 @@ public class GenerateS3UrlCmd {
         S3Utils.checkS3Access(context);
 
         String s3Url = buildS3Url();
-        System.out.println("##########  S3 URL RESULT ############");
+        System.out.println("############  string of s3url ############");
         System.out.println();
-        System.out.println("Your S3 URL is: \n");
+        System.out.println("Your s3url is: \n");
         System.out.println(s3Url);
         System.out.println("\n");
 
-        System.out.println("############  S3 URL USAGE ##############");
-        System.out.println("You can use s3url to generate start command to start AutoMQ");
-        System.out.println("------------------------ COPY ME ------------------");
+        System.out.println("############  s3url usage ################");
+        System.out.println("To start AutoMQ, generate the start commandline using s3url.");
         //tips: Not add whitespace after \\
         System.out.println(String.format("bin/automq-kafka-admin.sh %s \\%n"
             + "--s3-url=\"%s\" \\%n"
             + "--controller-list=\"192.168.0.1:9093;192.168.0.2:9093;192.168.0.3:9093\"  \\%n"
             + "--broker-list=\"192.168.0.4:9092;192.168.0.5:9092\"   %n", GENERATE_START_COMMAND_CMD, s3Url
         ));
-        System.out.println("TIPS: Replace the controller-list and broker-list with your real ip list.");
+        System.out.println("TIPS: Please replace the controller-list and broker-list with your actual IP addresses.");
 
         return s3Url;
     }
