@@ -140,7 +140,12 @@ object ElasticLogManager {
         val context = new Context()
         context.config = config
         context.brokerServer = broker
-        INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context), new DefaultOpenStreamChecker(broker.metadataCache)))
+        val openStreamChecker = if (broker != null) {
+            new DefaultOpenStreamChecker(broker.metadataCache)
+        } else {
+            OpenStreamChecker.NOOP
+        }
+        INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context), openStreamChecker))
         INSTANCE.foreach(_.startup())
         ElasticLogSegment.txnCache = new FileCache(config.logDirs.head + "/" + "txnindex-cache", 100 * 1024 * 1024)
         ElasticLogSegment.timeCache = new FileCache(config.logDirs.head + "/" + "timeindex-cache", 100 * 1024 * 1024)

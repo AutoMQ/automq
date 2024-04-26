@@ -723,7 +723,7 @@ class ZkMetadataCache(
 
   // AutoMQ inject start
   override def autoMQVersion(): AutoMQVersion = {
-    throw new UnsupportedOperationException("AutoMQVersion is not supported in ZkMetadataCache")
+    AutoMQVersion.LATEST
   }
   // AutoMQ inject end
 
