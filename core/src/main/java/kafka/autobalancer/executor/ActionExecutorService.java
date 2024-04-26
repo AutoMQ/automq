@@ -12,10 +12,9 @@
 package kafka.autobalancer.executor;
 
 import kafka.autobalancer.common.Action;
-import org.apache.kafka.common.config.ConfigException;
 
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 public interface ActionExecutorService {
 
@@ -23,11 +22,5 @@ public interface ActionExecutorService {
 
     void shutdown();
 
-    void execute(Action action);
-
-    void execute(List<Action> actions);
-
-    void validateReconfiguration(Map<String, Object> configs) throws ConfigException;
-
-    void reconfigure(Map<String, Object> configs);
+    CompletableFuture<Void> execute(List<Action> actions);
 }

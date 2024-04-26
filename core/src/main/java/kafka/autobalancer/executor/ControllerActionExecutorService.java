@@ -15,17 +15,16 @@ import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.AutoBalancerConstants;
-import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
+import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
-import org.apache.kafka.common.utils.ConfigUtils;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.KafkaThread;
-import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
@@ -33,36 +32,34 @@ import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ControllerActionExecutorService implements ActionExecutorService, Runnable, BrokerStatusListener {
-    private final BlockingQueue<Action> actionQueue = new ArrayBlockingQueue<>(1000);
+    private final BlockingQueue<Task> actionQueue = new ArrayBlockingQueue<>(1000);
     private final Set<Integer> fencedBrokers = ConcurrentHashMap.newKeySet();
-    private Logger logger;
-    private Controller controller;
-    private volatile long executionInterval;
-    private KafkaThread dispatchThread;
-    // TODO: optimize to per-broker concurrency control
-    private long lastExecutionTime = 0L;
+    private final Logger logger;
+    private final Controller controller;
+    private final KafkaThread dispatchThread;
     private volatile boolean shutdown;
 
-    public ControllerActionExecutorService(AutoBalancerControllerConfig config, Controller controller) {
-        this(config, controller, null);
+    public ControllerActionExecutorService(Controller controller) {
+        this(controller, null);
     }
 
-    public ControllerActionExecutorService(AutoBalancerControllerConfig config, Controller controller, LogContext logContext) {
+    public ControllerActionExecutorService(Controller controller, LogContext logContext) {
         if (logContext == null) {
             logContext = new LogContext("[ExecutionManager] ");
         }
         this.logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
         this.controller = controller;
-        this.executionInterval = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
         this.dispatchThread = KafkaThread.daemon("executor-dispatcher", this);
     }
 
@@ -81,97 +78,93 @@ public class ControllerActionExecutorService implements ActionExecutorService, R
     }
 
     @Override
-    public void execute(Action action) {
+    public CompletableFuture<Void> execute(List<Action> actions) {
+        CompletableFuture<Void> cf = new CompletableFuture<>();
         try {
-            this.actionQueue.put(action);
-        } catch (InterruptedException ignored) {
-
+            actionQueue.put(new Task(actions, cf));
+        } catch (InterruptedException e) {
+            logger.error("Failed to put actions into queue", e);
+            cf.completeExceptionally(e);
         }
-    }
-
-    @Override
-    public void execute(List<Action> actions) {
-        for (Action action : actions) {
-            execute(action);
-        }
-    }
-
-    @Override
-    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
-        try {
-            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS)) {
-                long interval = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
-                if (interval < 0) {
-                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, interval);
-                }
-            }
-        } catch (ConfigException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new ConfigException("Reconfiguration validation error " + e.getMessage());
-        }
-    }
-
-    @Override
-    public void reconfigure(Map<String, Object> configs) {
-        if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS)) {
-            this.executionInterval = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
-        }
+        return cf;
     }
 
     @Override
     public void run() {
         while (!shutdown) {
             try {
-                Action action = actionQueue.take();
-                if (fencedBrokers.contains(action.getDestBrokerId())) {
-                    logger.info("Broker {} is fenced, skip action {}", action.getDestBrokerId(), action);
-                    continue;
-                }
-                long now = System.currentTimeMillis();
-                long nextExecutionTime = lastExecutionTime + executionInterval;
-                while (!shutdown && lastExecutionTime != 0 && now < nextExecutionTime) {
-                    try {
-                        Thread.sleep(nextExecutionTime - now);
-                    } catch (InterruptedException ignored) {
-                        break;
-                    }
-                    now = System.currentTimeMillis();
-                }
-                if (shutdown) {
-                    break;
-                }
-                doReassign(action);
-                lastExecutionTime = Time.SYSTEM.milliseconds();
-                logger.info("Executing {}", action.prettyString());
+                doReassign(actionQueue.take());
             } catch (InterruptedException ignored) {
 
             }
         }
     }
 
-    private void doReassign(Action action) {
+    private void doReassign(Task task) {
         ControllerRequestContext context = new ControllerRequestContext(null, null, OptionalLong.empty());
         AlterPartitionReassignmentsRequestData request = new AlterPartitionReassignmentsRequestData();
         List<AlterPartitionReassignmentsRequestData.ReassignableTopic> topicList = new ArrayList<>();
-        topicList.add(buildTopic(action.getSrcTopicPartition(), action.getDestBrokerId()));
-        if (action.getType() == ActionType.SWAP) {
-            topicList.add(buildTopic(action.getDestTopicPartition(), action.getSrcBrokerId()));
+
+        Map<String, List<AlterPartitionReassignmentsRequestData.ReassignablePartition>> topicPartitionMap = new HashMap<>();
+
+        for (Action action : task.actions) {
+            if (fencedBrokers.contains(action.getDestBrokerId())) {
+                logger.info("Broker {} is fenced, skip action {}", action.getDestBrokerId(), action);
+                continue;
+            }
+            addTopicPartition(topicPartitionMap, action.getSrcTopicPartition(), action.getDestBrokerId());
+            if (action.getType() == ActionType.SWAP) {
+                addTopicPartition(topicPartitionMap, action.getDestTopicPartition(), action.getSrcBrokerId());
+            }
+        }
+        for (Map.Entry<String, List<AlterPartitionReassignmentsRequestData.ReassignablePartition>> entry : topicPartitionMap.entrySet()) {
+            AlterPartitionReassignmentsRequestData.ReassignableTopic topic = new AlterPartitionReassignmentsRequestData.ReassignableTopic()
+                    .setName(entry.getKey());
+            topic.setPartitions(entry.getValue());
+            topicList.add(topic);
         }
         request.setTopics(topicList);
-        this.controller.alterPartitionReassignments(context, request);
+        this.controller.alterPartitionReassignments(context, request).whenComplete((response, exception) -> {
+            if (exception != null) {
+                logger.error("Failed to alter partition reassignments", exception);
+                task.getFuture().completeExceptionally(exception);
+            } else {
+                handleResponse(response, task.getFuture());
+            }
+        });
     }
 
-    private AlterPartitionReassignmentsRequestData.ReassignableTopic buildTopic(TopicPartition tp, int brokerId) {
-        String topicName = tp.topic();
-        AlterPartitionReassignmentsRequestData.ReassignableTopic topic = new AlterPartitionReassignmentsRequestData.ReassignableTopic()
-                .setName(topicName)
-                .setPartitions(new ArrayList<>());
+    private void handleResponse(AlterPartitionReassignmentsResponseData response, CompletableFuture<Void> future) {
+        Errors topLevelError = Errors.forCode(response.errorCode());
+        if (topLevelError != Errors.NONE) {
+            future.completeExceptionally(new ApiException("Failed to alter partition reassignments", topLevelError.exception()));
+        } else {
+            for (AlterPartitionReassignmentsResponseData.ReassignableTopicResponse topicResponse : response.responses()) {
+                for (AlterPartitionReassignmentsResponseData.ReassignablePartitionResponse partitionResponse : topicResponse.partitions()) {
+                    Errors partitionError = Errors.forCode(partitionResponse.errorCode());
+                    if (partitionError != Errors.NONE) {
+                        future.completeExceptionally(new ApiException(String.format("Failed to alter partition %s-%d reassignments",
+                                topicResponse.name(), partitionResponse.partitionIndex()), partitionError.exception()));
+                    }
+                }
+
+            }
+            future.complete(null);
+        }
+    }
+
+    private void addTopicPartition(Map<String, List<AlterPartitionReassignmentsRequestData.ReassignablePartition>> topicPartitionMap,
+                                   TopicPartition tp, int brokerId) {
+        List<AlterPartitionReassignmentsRequestData.ReassignablePartition> partitions = topicPartitionMap
+                .computeIfAbsent(tp.topic(), k -> new ArrayList<>());
+        partitions.add(buildPartition(tp.partition(), brokerId));
+    }
+
+    private AlterPartitionReassignmentsRequestData.ReassignablePartition buildPartition(int partitionIndex, int brokerId) {
         AlterPartitionReassignmentsRequestData.ReassignablePartition partition = new AlterPartitionReassignmentsRequestData.ReassignablePartition();
-        partition.setPartitionIndex(tp.partition());
+        partition.setPartitionIndex(partitionIndex);
         partition.setReplicas(List.of(brokerId));
-        topic.setPartitions(List.of(partition));
-        return topic;
+        return partition;
     }
 
     @Override
@@ -192,6 +185,24 @@ public class ControllerActionExecutorService implements ActionExecutorService, R
             fencedBrokers.add(record.brokerId());
         } else {
             fencedBrokers.remove(record.brokerId());
+        }
+    }
+
+    private static class Task {
+        private final List<Action> actions;
+        private final CompletableFuture<Void> future;
+
+        public Task(List<Action> actions, CompletableFuture<Void> future) {
+            this.actions = actions;
+            this.future = future;
+        }
+
+        public List<Action> getActions() {
+            return actions;
+        }
+
+        public CompletableFuture<Void> getFuture() {
+            return future;
         }
     }
 }

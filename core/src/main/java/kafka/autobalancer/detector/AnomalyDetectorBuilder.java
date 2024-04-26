@@ -29,10 +29,10 @@ public class AnomalyDetectorBuilder {
     private LogContext logContext = null;
     private ClusterModel clusterModel = null;
     private ActionExecutorService executor = null;
-    private int maxActionsNumPerDetect = Integer.MAX_VALUE;
     private long detectIntervalMs = 60000;
     private long maxTolerateMetricsDelayMs = 30000;
-    private long coolDownIntervalPerActionMs = 100;
+    private int executionConcurrency = 50;
+    private long executionIntervalMs = 5000;
 
     public AnomalyDetectorBuilder() {
 
@@ -83,11 +83,6 @@ public class AnomalyDetectorBuilder {
         return this;
     }
 
-    public AnomalyDetectorBuilder maxActionsNumPerExecution(int maxActionsNumPerExecution) {
-        this.maxActionsNumPerDetect = maxActionsNumPerExecution;
-        return this;
-    }
-
     public AnomalyDetectorBuilder detectIntervalMs(long detectIntervalMs) {
         this.detectIntervalMs = detectIntervalMs;
         return this;
@@ -98,8 +93,13 @@ public class AnomalyDetectorBuilder {
         return this;
     }
 
-    public AnomalyDetectorBuilder coolDownIntervalPerActionMs(long coolDownIntervalPerActionMs) {
-        this.coolDownIntervalPerActionMs = coolDownIntervalPerActionMs;
+    public AnomalyDetectorBuilder executionConcurrency(int executionConcurrency) {
+        this.executionConcurrency = executionConcurrency;
+        return this;
+    }
+
+    public AnomalyDetectorBuilder executionIntervalMs(long executionIntervalMs) {
+        this.executionIntervalMs = executionIntervalMs;
         return this;
     }
 
@@ -116,7 +116,7 @@ public class AnomalyDetectorBuilder {
         if (goalsByPriority.isEmpty()) {
             throw new IllegalArgumentException("At least one goal must be set");
         }
-        return new AnomalyDetector(logContext, maxActionsNumPerDetect, detectIntervalMs, maxTolerateMetricsDelayMs,
-                coolDownIntervalPerActionMs, clusterModel, executor, goalsByPriority, excludedBrokers, excludedTopics);
+        return new AnomalyDetector(logContext, detectIntervalMs, maxTolerateMetricsDelayMs, executionConcurrency,
+                executionIntervalMs, clusterModel, executor, goalsByPriority, excludedBrokers, excludedTopics);
     }
 }
