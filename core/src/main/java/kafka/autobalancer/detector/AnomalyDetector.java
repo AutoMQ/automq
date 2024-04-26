@@ -43,6 +43,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 public class AnomalyDetector extends AbstractResumableService {
+    private static final double MAX_PARTITION_REASSIGNMENT_RATIO = 0.5;
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
     private final ActionExecutorService actionExecutor;
@@ -50,22 +51,22 @@ public class AnomalyDetector extends AbstractResumableService {
     private volatile List<Goal> goalsByPriority;
     private volatile Set<Integer> excludedBrokers;
     private volatile Set<String> excludedTopics;
-    private volatile int maxActionsNumPerExecution;
     private volatile long detectInterval;
     private volatile long maxTolerateMetricsDelayMs;
-    private volatile long coolDownIntervalPerActionMs;
+    private volatile int executionConcurrency;
+    private volatile long executionIntervalMs;
     private volatile boolean isLeader = false;
     private volatile Map<Integer, Boolean> slowBrokers = new HashMap<>();
 
-    AnomalyDetector(LogContext logContext, int maxActionsNumPerDetect, long detectIntervalMs, long maxTolerateMetricsDelayMs,
-                    long coolDownIntervalPerActionMs, ClusterModel clusterModel, ActionExecutorService actionExecutor,
+    AnomalyDetector(LogContext logContext, long detectIntervalMs, long maxTolerateMetricsDelayMs, int executionConcurrency,
+                    long executionIntervalMs, ClusterModel clusterModel, ActionExecutorService actionExecutor,
                     List<Goal> goals, Set<Integer> excludedBrokers, Set<String> excludedTopics) {
         super(logContext);
         this.configChangeLock = new ReentrantLock();
-        this.maxActionsNumPerExecution = maxActionsNumPerDetect;
         this.detectInterval = detectIntervalMs;
         this.maxTolerateMetricsDelayMs = maxTolerateMetricsDelayMs;
-        this.coolDownIntervalPerActionMs = coolDownIntervalPerActionMs;
+        this.executionConcurrency = executionConcurrency;
+        this.executionIntervalMs = executionIntervalMs;
         this.clusterModel = clusterModel;
         this.actionExecutor = actionExecutor;
         this.executorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("anomaly-detector"));
@@ -75,8 +76,8 @@ public class AnomalyDetector extends AbstractResumableService {
         this.excludedTopics = excludedTopics;
         this.executorService.schedule(this::detect, detectInterval, TimeUnit.MILLISECONDS);
         S3StreamKafkaMetricsManager.setSlowBrokerSupplier(() -> this.slowBrokers);
-        logger.info("maxActionsNumPerDetect: {}, detectInterval: {}ms, coolDownIntervalPerAction: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
-                this.maxActionsNumPerExecution, this.detectInterval, this.coolDownIntervalPerActionMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
+        logger.info("detectInterval: {}ms, executionConcurrency: {}, executionIntervalMs: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
+                this.detectInterval, this.executionConcurrency, this.executionIntervalMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
     }
 
     @Override
@@ -127,10 +128,10 @@ public class AnomalyDetector extends AbstractResumableService {
                     throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, detectInterval);
                 }
             }
-            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS)) {
-                long steps = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS);
-                if (steps < 0) {
-                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT, steps);
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY)) {
+                long concurrency = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY);
+                if (concurrency < 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY, concurrency);
                 }
             }
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS)) {
@@ -145,9 +146,9 @@ public class AnomalyDetector extends AbstractResumableService {
                 tmp.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS);
             }
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS)) {
-                long coolDownInterval = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
-                if (coolDownInterval < 0) {
-                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, coolDownInterval);
+                long interval = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
+                if (interval < 0) {
+                    throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, interval);
                 }
             }
             validateGoalsReconfiguration(configs);
@@ -173,8 +174,8 @@ public class AnomalyDetector extends AbstractResumableService {
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS)) {
                 this.detectInterval = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS);
             }
-            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS)) {
-                this.maxActionsNumPerExecution = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS);
+            if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY)) {
+                this.executionConcurrency = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY);
             }
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS)) {
                 AutoBalancerControllerConfig tmp = new AutoBalancerControllerConfig(configs, false);
@@ -186,7 +187,7 @@ public class AnomalyDetector extends AbstractResumableService {
                 this.excludedTopics = new HashSet<>(tmp.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS));
             }
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS)) {
-                this.coolDownIntervalPerActionMs = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
+                this.executionIntervalMs = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
             }
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS)) {
                 reconfigureGoals(configs);
@@ -221,12 +222,13 @@ public class AnomalyDetector extends AbstractResumableService {
         return this.running.get() && this.isLeader;
     }
 
-    long detect0() {
+    long detect0() throws Exception {
         long detectInterval;
         Set<Integer> excludedBrokers;
         Set<String> excludedTopics;
         long maxTolerateMetricsDelayMs;
-        long coolDownIntervalPerActionMs;
+        int maxExecutionConcurrency;
+        long executionIntervalMs;
         List<Goal> goals;
         configChangeLock.lock();
         try {
@@ -234,7 +236,8 @@ public class AnomalyDetector extends AbstractResumableService {
             excludedBrokers = new HashSet<>(this.excludedBrokers);
             excludedTopics = new HashSet<>(this.excludedTopics);
             maxTolerateMetricsDelayMs = this.maxTolerateMetricsDelayMs;
-            coolDownIntervalPerActionMs = this.coolDownIntervalPerActionMs;
+            maxExecutionConcurrency = this.executionConcurrency;
+            executionIntervalMs = this.executionIntervalMs;
             goals = new ArrayList<>(this.goalsByPriority);
         } finally {
             configChangeLock.unlock();
@@ -272,15 +275,64 @@ public class AnomalyDetector extends AbstractResumableService {
             return detectInterval;
         }
         int totalActionSize = totalActions.size();
-        List<Action> actionsToExecute = checkAndMergeActions(totalActions);
-        logger.info("Total actions num: {}, executable num: {}", totalActionSize, actionsToExecute.size());
-        this.actionExecutor.execute(actionsToExecute);
+        List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency, getTopicPartitionCount(snapshot));
+        logger.info("Total actions num: {}, split to {} batches", totalActionSize, actionsToExecute.size());
 
-        return actionsToExecute.size() * coolDownIntervalPerActionMs + detectInterval;
+        for (List<Action> batch : actionsToExecute) {
+            this.actionExecutor.execute(batch).get();
+            Thread.sleep(executionIntervalMs);
+        }
+
+        return detectInterval;
+    }
+
+    Map<String, Integer> getTopicPartitionCount(ClusterModelSnapshot snapshot) {
+        Map<String, Integer> topicPartitionNumMap = new HashMap<>();
+        for (BrokerUpdater.Broker broker : snapshot.brokers()) {
+            for (TopicPartitionReplicaUpdater.TopicPartitionReplica replica : snapshot.replicasFor(broker.getBrokerId())) {
+                topicPartitionNumMap.put(replica.getTopicPartition().topic(), topicPartitionNumMap
+                        .getOrDefault(replica.getTopicPartition().topic(), 0) + 1);
+            }
+        }
+        return topicPartitionNumMap;
+    }
+
+    List<List<Action>> checkAndGroupActions(List<Action> actions, int maxExecutionConcurrency, Map<String, Integer> topicPartitionNumMap) {
+        List<Action> mergedActions = checkAndMergeActions(actions);
+        List<List<Action>> groupedActions = new ArrayList<>();
+        List<Action> batch = new ArrayList<>();
+
+        Map<String, Integer> topicPartitionCountMap = new HashMap<>();
+        Map<Integer, Integer> brokerActionConcurrencyMap = new HashMap<>();
+        for (Action action : mergedActions) {
+            int expectedPartitionCount = topicPartitionCountMap.getOrDefault(action.getSrcTopicPartition().topic(), 0) + 1;
+            int expectedSrcBrokerConcurrency = brokerActionConcurrencyMap.getOrDefault(action.getSrcBrokerId(), 0) + 1;
+            int expectedDestBrokerConcurrency = brokerActionConcurrencyMap.getOrDefault(action.getDestBrokerId(), 0) + 1;
+            int partitionLimit = (int) Math.ceil(topicPartitionNumMap
+                    .getOrDefault(action.getSrcTopicPartition().topic(), 0) * MAX_PARTITION_REASSIGNMENT_RATIO);
+            if (expectedPartitionCount > partitionLimit || expectedSrcBrokerConcurrency > maxExecutionConcurrency
+                    || expectedDestBrokerConcurrency > maxExecutionConcurrency) {
+                groupedActions.add(batch);
+                batch = new ArrayList<>();
+                topicPartitionCountMap.clear();
+                brokerActionConcurrencyMap.clear();
+                expectedPartitionCount = 1;
+                expectedSrcBrokerConcurrency = 1;
+                expectedDestBrokerConcurrency = 1;
+            }
+            batch.add(action);
+            topicPartitionCountMap.put(action.getSrcTopicPartition().topic(), expectedPartitionCount);
+            brokerActionConcurrencyMap.put(action.getSrcBrokerId(), expectedSrcBrokerConcurrency);
+            brokerActionConcurrencyMap.put(action.getDestBrokerId(), expectedDestBrokerConcurrency);
+        }
+        if (!batch.isEmpty()) {
+            groupedActions.add(batch);
+        }
+
+        return groupedActions;
     }
 
     List<Action> checkAndMergeActions(List<Action> actions) throws IllegalStateException {
-        actions = actions.subList(0, Math.min(actions.size(), maxActionsNumPerExecution));
         List<Action> splitActions = new ArrayList<>();
         List<Action> mergedActions = new ArrayList<>();
         Map<TopicPartition, Action> actionMergeMap = new HashMap<>();

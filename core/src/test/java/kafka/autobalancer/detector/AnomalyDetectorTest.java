@@ -33,9 +33,9 @@ import kafka.autobalancer.model.ClusterModelSnapshot;
 import org.apache.commons.math3.distribution.PoissonDistribution;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.config.ConfigException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.StringJoiner;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class AnomalyDetectorTest {
@@ -67,23 +68,8 @@ public class AnomalyDetectorTest {
                     }
 
                     @Override
-                    public void execute(Action action) {
-
-                    }
-
-                    @Override
-                    public void execute(List<Action> actions) {
-
-                    }
-
-                    @Override
-                    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
-
-                    }
-
-                    @Override
-                    public void reconfigure(Map<String, Object> configs) {
-
+                    public CompletableFuture<Void> execute(List<Action> actions) {
+                        return CompletableFuture.completedFuture(null);
                     }
                 })
                 .build();
@@ -141,6 +127,75 @@ public class AnomalyDetectorTest {
     }
 
     @Test
+    public void testGroupActions() {
+        AnomalyDetector anomalyDetector = new AnomalyDetectorBuilder()
+                .clusterModel(Mockito.mock(ClusterModel.class))
+                .addGoal(Mockito.mock(Goal.class))
+                .executor(new ActionExecutorService() {
+                    @Override
+                    public void start() {
+
+                    }
+
+                    @Override
+                    public void shutdown() {
+
+                    }
+
+                    @Override
+                    public CompletableFuture<Void> execute(List<Action> actions) {
+                        return CompletableFuture.completedFuture(null);
+                    }
+                })
+                .build();
+
+        List<Action> actions = List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 0, 1),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 1), 0, 2),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 2), 0, 3),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 3), 0, 4),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 0), 1, 5),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 1), 2, 6),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 2), 3, 7),
+                new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 4, 8),
+                new Action(ActionType.MOVE, new TopicPartition("topic-3", 0), 11, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-3", 1), 22, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-3", 2), 33, 10),
+                new Action(ActionType.MOVE, new TopicPartition("topic-3", 3), 44, 10));
+        List<List<Action>> groupedActions = anomalyDetector.checkAndGroupActions(actions, 2, Map.of(
+                "topic-1", 10,
+                "topic-2", 5,
+                "topic-3", 5
+        ));
+        Assertions.assertEquals(4, groupedActions.size());
+        List<List<Action>> expectedActions = List.of(
+                List.of(
+                        new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 0, 1),
+                        new Action(ActionType.MOVE, new TopicPartition("topic-1", 1), 0, 2)
+                ),
+                List.of(
+                        new Action(ActionType.MOVE, new TopicPartition("topic-1", 2), 0, 3),
+                        new Action(ActionType.MOVE, new TopicPartition("topic-1", 3), 0, 4),
+                        new Action(ActionType.MOVE, new TopicPartition("topic-2", 0), 1, 5),
+                        new Action(ActionType.MOVE, new TopicPartition("topic-2", 1), 2, 6),
+                        new Action(ActionType.MOVE, new TopicPartition("topic-2", 2), 3, 7)
+                ),
+                List.of(
+                        new Action(ActionType.MOVE, new TopicPartition("topic-2", 3), 4, 8),
+                        new Action(ActionType.MOVE, new TopicPartition("topic-3", 0), 11, 10),
+                        new Action(ActionType.MOVE, new TopicPartition("topic-3", 1), 22, 10)
+                ),
+                List.of(
+                        new Action(ActionType.MOVE, new TopicPartition("topic-3", 2), 33, 10),
+                        new Action(ActionType.MOVE, new TopicPartition("topic-3", 3), 44, 10)
+                )
+        );
+
+        Assertions.assertEquals(expectedActions, groupedActions);
+    }
+
+    @Test
+    @Timeout(10)
     public void testSchedulingTimeCost() {
         ClusterModel clusterModel = new ClusterModel();
 
@@ -186,6 +241,8 @@ public class AnomalyDetectorTest {
         AnomalyDetector detector = new AnomalyDetectorBuilder()
                 .clusterModel(clusterModel)
                 .detectIntervalMs(Long.MAX_VALUE)
+                .executionIntervalMs(0)
+                .executionConcurrency(100)
                 .addGoal(goal0)
                 .addGoal(goal1)
                 .executor(new ActionExecutorService() {
@@ -200,23 +257,9 @@ public class AnomalyDetectorTest {
                     }
 
                     @Override
-                    public void execute(Action action) {
-                        actionList.add(action);
-                    }
-
-                    @Override
-                    public void execute(List<Action> actions) {
+                    public CompletableFuture<Void> execute(List<Action> actions) {
                         actionList.addAll(actions);
-                    }
-
-                    @Override
-                    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
-
-                    }
-
-                    @Override
-                    public void reconfigure(Map<String, Object> configs) {
-
+                        return CompletableFuture.completedFuture(null);
                     }
                 })
                 .build();
@@ -224,7 +267,7 @@ public class AnomalyDetectorTest {
         TimerUtil timerUtil = new TimerUtil();
         detector.onLeaderChanged(true);
         detector.run();
-        detector.detect0();
+        Assertions.assertDoesNotThrow(detector::detect0);
         System.out.printf("Detect cost: %d ms, %d actions detected%n", timerUtil.elapsedAs(TimeUnit.MILLISECONDS), actionList.size());
         Assertions.assertFalse(actionList.isEmpty());
 

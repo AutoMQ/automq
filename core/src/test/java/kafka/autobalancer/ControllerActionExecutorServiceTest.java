@@ -19,7 +19,6 @@ package kafka.autobalancer;
 
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ControllerActionExecutorService;
 import kafka.test.MockController;
 import org.apache.kafka.common.TopicPartition;
@@ -33,23 +32,21 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 @Tag("S3Unit")
 public class ControllerActionExecutorServiceTest {
 
     private boolean checkTopicPartition(AlterPartitionReassignmentsRequestData.ReassignableTopic topic,
-                                        String name, int partitionId, int nodeId) {
+                                        String name, int partitionIndex, int partitionId, int nodeId) {
         if (!topic.name().equals(name)) {
             return false;
         }
-        if (topic.partitions().size() != 1) {
+        if (topic.partitions().size() <= partitionIndex) {
             return false;
         }
-        AlterPartitionReassignmentsRequestData.ReassignablePartition partition = topic.partitions().get(0);
+        AlterPartitionReassignmentsRequestData.ReassignablePartition partition = topic.partitions().get(partitionIndex);
         if (partition.partitionIndex() != partitionId) {
             return false;
         }
@@ -58,10 +55,6 @@ public class ControllerActionExecutorServiceTest {
 
     @Test
     public void testExecuteActions() throws Exception {
-        Map<String, Long> props = new HashMap<>();
-        props.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, 100L);
-        AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(props, false);
-
         Controller controller = Mockito.mock(MockController.class);
 
         final ArgumentCaptor<ControllerRequestContext> ctxCaptor = ArgumentCaptor.forClass(ControllerRequestContext.class);
@@ -70,7 +63,7 @@ public class ControllerActionExecutorServiceTest {
         Mockito.doAnswer(answer -> CompletableFuture.completedFuture(new AlterPartitionReassignmentsResponseData()))
                 .when(controller).alterPartitionReassignments(ctxCaptor.capture(), reqCaptor.capture());
 
-        ControllerActionExecutorService controllerActionExecutorService = new ControllerActionExecutorService(config, controller);
+        ControllerActionExecutorService controllerActionExecutorService = new ControllerActionExecutorService(controller);
         controllerActionExecutorService.start();
 
         List<Action> actionList = List.of(
@@ -80,22 +73,16 @@ public class ControllerActionExecutorServiceTest {
 
         TestUtils.waitForCondition(() -> {
             List<AlterPartitionReassignmentsRequestData> reqs = reqCaptor.getAllValues();
-            if (reqs.size() != 2) {
+            if (reqs.size() != 1) {
                 return false;
             }
             AlterPartitionReassignmentsRequestData reqMove = reqs.get(0);
-            if (reqMove.topics().size() != 1) {
+            if (reqMove.topics().size() != 2) {
                 return false;
             }
-            if (!checkTopicPartition(reqMove.topics().get(0), "topic1", 0, 1)) {
-                return false;
-            }
-            AlterPartitionReassignmentsRequestData reqSwap = reqs.get(1);
-            if (reqSwap.topics().size() != 2) {
-                return false;
-            }
-            return checkTopicPartition(reqSwap.topics().get(0), "topic2", 0, 1)
-                    && checkTopicPartition(reqSwap.topics().get(1), "topic1", 1, 0);
+            return checkTopicPartition(reqMove.topics().get(0), "topic1", 0, 0, 1) &&
+                    checkTopicPartition(reqMove.topics().get(0), "topic1", 1, 1, 0) &&
+                    checkTopicPartition(reqMove.topics().get(1), "topic2", 0, 0, 1);
         }, 5000L, 1000L, () -> "failed to meet reassign");
 
         controllerActionExecutorService.shutdown();
