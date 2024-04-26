@@ -15,6 +15,8 @@ import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
+import kafka.autobalancer.config.StaticAutoBalancerConfig;
+import kafka.autobalancer.config.StaticAutoBalancerConfigUtils;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
@@ -79,6 +81,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
     private final ScheduledExecutorService mainExecutorService;
     private final Set<Integer> brokerIdsInUse;
     private final Set<TopicPartition> currentAssignment = new HashSet<>();
+    private final StaticAutoBalancerConfig staticConfig;
     private volatile boolean leaderEpochInitialized;
     private volatile boolean isLeader;
     private volatile Consumer<String, AutoBalancerMetrics> consumer;
@@ -97,6 +100,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         this.cond = lock.newCondition();
         this.mainExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-main"));
         leaderEpochInitialized = false;
+        staticConfig = new StaticAutoBalancerConfig(config.originals(), false);
         metricReporterTopicPartition = config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
         metricReporterTopicRetentionTime = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_RETENTION_MS_CONFIG);
         consumerPollTimeout = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
@@ -145,6 +149,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         consumerProps.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         consumerProps.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
+        StaticAutoBalancerConfigUtils.addSslConfigs(consumerProps, this.staticConfig);
         return new KafkaConsumer<>(consumerProps);
     }
 
