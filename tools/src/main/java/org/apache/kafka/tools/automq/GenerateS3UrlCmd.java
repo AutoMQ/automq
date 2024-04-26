@@ -146,7 +146,7 @@ public class GenerateS3UrlCmd {
     }
 
     public String run() {
-        System.out.println("############  Ping s3 ####################");
+        System.out.println("############  Ping s3 ########################");
         System.out.println();
 
         // precheck
@@ -160,13 +160,13 @@ public class GenerateS3UrlCmd {
         S3Utils.checkS3Access(context);
 
         String s3Url = buildS3Url();
-        System.out.println("############  string of s3url ############");
+        System.out.println("############  String of s3url ################");
         System.out.println();
         System.out.println("Your s3url is: \n");
         System.out.println(s3Url);
         System.out.println("\n");
 
-        System.out.println("############  s3url usage ################");
+        System.out.println("############  Usage of s3url  ################");
         System.out.println("To start AutoMQ, generate the start commandline using s3url.");
         //tips: Not add whitespace after \\
         System.out.println(String.format("bin/automq-kafka-admin.sh %s \\%n"
