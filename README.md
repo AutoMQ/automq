@@ -92,7 +92,7 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
     <td>In hours/days</td>
     <td>In hours</td>
     <td>In hours<br>(scale-in);<br> In seconds<br>(scale-out)</td>
-    <td>In hours</td>
+    <td>In hours/In seconds (Enterprise Only)</td>
     <td>In seconds</td>
   </tr>
   <tr>
@@ -110,7 +110,7 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
     <td>In hours/days</td>
     <td>In hours</td>
     <td>In seconds</td>
-    <td>In hours</td>
+    <td>In hours/In seconds (Enterprise Only)</td>
     <td>In seconds</td>
   </tr>
   <tr>
@@ -121,11 +121,26 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
     <td>Broker<br>Controller</td>
     <td>Agent<br>MetadataServer</td>
   </tr>
+  <tr>
+    <td>Durability</td>
+    <td>Guaranteed by S3/EBS[1]</td>
+    <td colspan="2">Guaranteed by ISR </td>
+    <td>Guaranteed by Bookkeeper</td>
+    <td>Guaranteed by Raft</td>
+    <td>Guaranteed by S3</td>
+  </tr>
+  <tr>
+    <td>Inter-AZ Networking Fees</td>
+    <td>No</td>
+    <td colspan="4">Yes</td>
+    <td>No</td>
+  </tr>
 </table>
 
 
 > Tips: Apache Kafka Compatibility's definition is comming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
+> [1] EBS Durability: On Azure, GCP, and Alibaba Cloud, Regional EBS replicas span multiple AZs. On AWS, ensure durability by double writing to EBS and S3 Express One Zone in different AZs.
 
 ## 🔶Why AutoMQ
 
