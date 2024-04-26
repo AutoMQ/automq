@@ -125,8 +125,7 @@ public class GenerateConfigFileCmd {
         ServerGroupConfig brokerGroupConfig = ConfigParserUtil.genBrokerConfig(parameter.brokerAddress, controllerGroupConfig);
         brokerPropsFileNameList = processGroupConfig(brokerGroupConfig, BROKER_PROPS_PATH, "broker", s3Url);
 
-        System.out.println("####################################  GENERATED PROPERTIES #################################");
-
+        System.out.println("############  Generated configuration properties");
         System.out.println("Generated controller or server properties under current directory:");
         for (String propFileName : controllerPropFileNameList) {
             System.out.println(propFileName);
