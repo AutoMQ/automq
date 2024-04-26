@@ -27,7 +27,7 @@ import org.apache.kafka.common.utils.Exit;
 public class AutoMQKafkaAdminTool {
     public static final String GENERATE_S3_URL_CMD = "generate-s3-url";
     public static final String GENERATE_START_COMMAND_CMD = "generate-start-command";
-    public static final String GENERATE_CONFIG_PROPERTIES_CMD = "generate-config-properties";
+    public static final String GENERATE_CONFIG_PROPERTIES_CMD = "generate-configuration-properties";
 
     public static void main(String[] args) {
         // suppress slf4j inner warning log
@@ -36,9 +36,9 @@ public class AutoMQKafkaAdminTool {
             .newFor("automq-admin-tool")
             .build()
             .defaultHelp(true)
-            .description("This AutoMQ admin tool contains several tools to help user init and manage AutoMQ cluster easily.");
+            .description("The AutoMQ admin tool provides several tools to assist users in initializing and managing an AutoMQ cluster efficiently.");
         if (args.length == 0) {
-            System.out.println("Please pass valid arguments. Check usage first.");
+            System.out.println("Please ensure that you provide valid arguments and refer to the usage guidelines before proceeding.");
             parser.printHelp();
             Exit.exit(0);
         }
@@ -47,17 +47,17 @@ public class AutoMQKafkaAdminTool {
 
         Subparser generateS3UrlCmdParser = subparsers.addParser(GENERATE_S3_URL_CMD)
             .help("generate s3url for AutoMQ")
-            .description(String.format("This cmd is used to generate s3url for AutoMQ that is used to connect to s3 or other cloud object storage service. Execute '%s -h' to check its usage.", GENERATE_S3_URL_CMD));
+            .description(String.format("The command generates an s3url for AutoMQ, enabling connectivity to S3 or other cloud object storage services. To review its usage, run '%s -h'.", GENERATE_S3_URL_CMD));
         GenerateS3UrlCmd.addArguments(generateS3UrlCmdParser);
 
         Subparser generateStartCommandCmdParser = subparsers.addParser(GENERATE_START_COMMAND_CMD)
-            .help("generate config file and local start command")
-            .description(String.format("This cmd is used to generate config file and local start command. Execute '%s -h' to check its usage.", GENERATE_START_COMMAND_CMD));
+            .help("generate the start commandline with server properties")
+            .description(String.format("The command is used to generate start commandline with server properties. To review its usage, run '%s -h'.", GENERATE_START_COMMAND_CMD));
         GenerateStartCmdCmd.addArguments(generateStartCommandCmdParser);
 
         Subparser generateConfigPropertiesCmdParser = subparsers.addParser(GENERATE_CONFIG_PROPERTIES_CMD)
-            .help("generate multi config properties")
-            .description(String.format("This cmd is used to generate multi config properties depend on your arguments. Execute '%s -h' to check its usage.", GENERATE_CONFIG_PROPERTIES_CMD));
+            .help("generate configuration properties")
+            .description(String.format("The command is used to generate configuration properties for brokers or controllers. To review its usage, run '%s -h'.", GENERATE_CONFIG_PROPERTIES_CMD));
         GenerateConfigFileCmd.addArguments(generateConfigPropertiesCmdParser);
 
         switch (args[0]) {
