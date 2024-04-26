@@ -15,6 +15,11 @@ import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 
+import java.util.Collection;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 public class GoalUtils {
 
     public static boolean isValidAction(Action action, ClusterModelSnapshot cluster) {
@@ -39,5 +44,9 @@ public class GoalUtils {
             return 1 - ((value - min) / (max - min));
         }
         return (value - min) / (max - min);
+    }
+
+    public static Map<String, Set<String>> groupGoals(Collection<Goal> goals) {
+        return goals.stream().collect(Collectors.groupingBy(Goal::group, Collectors.mapping(Goal::name, Collectors.toSet())));
     }
 }
