@@ -140,7 +140,7 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 
 > Tips: Apache Kafka Compatibility's definition is comming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
-> [1] EBS Durability: EBS offers regional disaster recovery capabilities on Azure, GCP, and Alibaba Cloud. On AWS, leveraging S3 Express One provides an extra replica guarantee.
+> [1] EBS Durability: On Azure, GCP, and Alibaba Cloud, Regional EBS replicas span multiple AZs. On AWS, ensure durability by double writing to EBS and S3 Express One Zone in different AZs.
 
 ## 🔶Why AutoMQ
 
