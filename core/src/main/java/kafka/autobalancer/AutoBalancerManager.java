@@ -63,16 +63,16 @@ public class AutoBalancerManager extends AutoBalancerService {
         RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
         this.loadRetriever = new LoadRetriever(config, quorumController, clusterModel,
                 new LogContext(String.format("[LoadRetriever id=%d] ", quorumController.nodeId())));
-        this.actionExecutorService = new ControllerActionExecutorService(config, quorumController,
+        this.actionExecutorService = new ControllerActionExecutorService(quorumController,
                 new LogContext(String.format("[ExecutionManager id=%d] ", quorumController.nodeId())));
         this.actionExecutorService.start();
 
         this.anomalyDetector = new AnomalyDetectorBuilder()
                 .logContext(new LogContext(String.format("[AnomalyDetector id=%d] ", quorumController.nodeId())))
-                .maxActionsNumPerExecution(config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_STEPS))
                 .detectIntervalMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS))
                 .maxTolerateMetricsDelayMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS))
-                .coolDownIntervalPerActionMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS))
+                .executionConcurrency(config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY))
+                .executionIntervalMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS))
                 .clusterModel(clusterModel)
                 .executor(this.actionExecutorService)
                 .addGoals(config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class))
@@ -125,7 +125,6 @@ public class AutoBalancerManager extends AutoBalancerService {
                 ConfigUtils.getBoolean(objectConfigs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE);
             }
             this.anomalyDetector.validateReconfiguration(objectConfigs);
-            this.actionExecutorService.validateReconfiguration(objectConfigs);
         } catch (ConfigException e) {
             throw e;
         } catch (Exception e) {
@@ -149,7 +148,6 @@ public class AutoBalancerManager extends AutoBalancerService {
             }
         }
         this.anomalyDetector.reconfigure(objectConfigs);
-        this.actionExecutorService.reconfigure(objectConfigs);
     }
 
     @Override
