@@ -27,11 +27,10 @@ public class DefaultOpenStreamChecker implements OpenStreamChecker {
     public boolean check(long streamId, long epoch) throws StreamFencedException {
         S3StreamMetadataImage stream = metadataCache.currentImage().streamsMetadata().getStreamMetadata(streamId);
         if (stream == null) {
-            throw new StreamFencedException("streamId=" + streamId + " cannot be found, it may be deleted or not created yet");
+            throw new StreamFencedException(String.format("streamId=%d cannot be found, it may be deleted or not created yet", streamId));
         }
-        if (stream.getEpoch() > epoch) {
-            throw new StreamFencedException("streamId=" + streamId + " with epoch=" + epoch + " is fenced by new epoch=" + stream.getEpoch());
-        }
+        if (stream.getEpoch() > epoch)
+            throw new StreamFencedException(String.format("streamId=%d with epoch=%d is fenced by new epoch=%d", streamId, epoch, stream.getEpoch()));
         return StreamState.CLOSED.equals(stream.state());
     }
 }
