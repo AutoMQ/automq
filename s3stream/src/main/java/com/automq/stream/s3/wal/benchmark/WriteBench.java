@@ -218,10 +218,8 @@ public class WriteBench implements AutoCloseable {
 
         static ArgumentParser parser() {
             ArgumentParser parser = ArgumentParsers
-                .newFor("WriteBench")
-                .build()
-                .defaultHelp(true)
-                .description("Benchmark write performance of BlockWALService");
+                .newArgumentParser("WriteBench")
+                 .description("Benchmark write performance of BlockWALService");
             parser.addArgument("-p", "--path")
                 .required(true)
                 .help("Path of the WAL file");

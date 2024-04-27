@@ -54,13 +54,9 @@ object KafkaDockerWrapper {
   import Constants._
 
   private def parseArguments(args: Array[String]): Namespace = {
-    val parser = ArgumentParsers
-      .newFor("kafka-docker-wrapper")
-      .prefixChars("-")
-      .fromFilePrefix("@")
-      .build()
-      .defaultHelp(true)
-      .description("The Kafka docker wrapper.")
+    val parser = ArgumentParsers.
+      newArgumentParser("kafka-docker-wrapper", true, "-", "@").
+      description("The Kafka docker wrapper.")
 
     val subparsers = parser.addSubparsers().dest("command")
 

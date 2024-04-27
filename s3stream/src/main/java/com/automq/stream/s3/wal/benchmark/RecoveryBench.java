@@ -107,10 +107,8 @@ public class RecoveryBench implements AutoCloseable {
 
         static ArgumentParser parser() {
             ArgumentParser parser = ArgumentParsers
-                .newFor("RecoveryBench")
-                .build()
-                .defaultHelp(true)
-                .description("Benchmark the recovery performance of BlockWALService");
+                .newArgumentParser("RecoveryBench")
+                 .description("Benchmark the recovery performance of BlockWALService");
             parser.addArgument("-p", "--path")
                 .required(true)
                 .help("Path of the WAL file");

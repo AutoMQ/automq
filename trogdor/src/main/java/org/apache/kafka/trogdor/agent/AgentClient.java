@@ -199,10 +199,8 @@ public class AgentClient {
 
     public static void main(String[] args) throws Exception {
         ArgumentParser rootParser = ArgumentParsers
-            .newFor("trogdor-agent-client")
-            .build()
-            .defaultHelp(true)
-            .description("The Trogdor agent client.");
+                .newArgumentParser("trogdor-agent-client")
+                .description("The Trogdor agent client.");
         Subparsers subParsers = rootParser.addSubparsers().
             dest("command");
         Subparser uptimeParser = subParsers.addParser("uptime")

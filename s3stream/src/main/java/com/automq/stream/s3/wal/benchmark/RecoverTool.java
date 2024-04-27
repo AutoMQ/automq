@@ -112,10 +112,8 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
 
         static ArgumentParser parser() {
             ArgumentParser parser = ArgumentParsers
-                .newFor("RecoverTool")
-                .build()
-                .defaultHelp(true)
-                .description("Recover records in a WAL file");
+                .newArgumentParser("RecoverTool")
+                 .description("Recover records in a WAL file");
             parser.addArgument("-p", "--path")
                 .required(true)
                 .help("Path of the WAL file");
