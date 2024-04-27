@@ -138,26 +138,26 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 </table>
 
 
-> Tips: Apache Kafka Compatibility's definition is comming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
+> Tips: Apache Kafka Compatibility's definition is coming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
 > [1] EBS Durability: On Azure, GCP, and Alibaba Cloud, Regional EBS replicas span multiple AZs. On AWS, ensure durability by double writing to EBS and S3 Express One Zone in different AZs.
 
 ## 🔶Why AutoMQ
 
-- **Cloud Native**: Built on cloud service. Every system design decision take cloud service's feature and billing items into consideration to offer best low-latency, scalable, reliable and cost-effective Kafka service on cloud.
+- **Cloud Native**: Built on cloud service. Every system design decision takes the cloud service's feature and billing items into consideration to offer the best low-latency, scalable, reliable, and cost-effective Kafka service on the cloud.
 - **High Reliability**: Leverage the features of cloud service to offer RPO of 0 and RTO in seconds. 
-  - AWS: Use S3 express one zone and S3 to offer AZ level disaster recovery. 
-  - GCP: Use regional SSD and cloud storage to offer AZ level disaster recovery. 
-  - Azure: Use zone-redundant storage and blob storage to offer AZ level disaster recovery.
+  - AWS: Use S3 express one zone and S3 to offer AZ-level disaster recovery. 
+  - GCP: Use regional SSD and cloud storage to offer AZ-level disaster recovery. 
+  - Azure: Use zone-redundant storage and blob storage to offer AZ-level disaster recovery.
 - **Serverless**:
-    - Auto Scaling: Watch key metrics of cluster and scale in/out automatically to match you workload and achieve pay-as-you-go.
-    - Scaling in seconds: Computing layer (broker) is stateless and could scale in/out in seconds, which make AutoMQ true serverless. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
-    - Infinite scalable: Use cloud's object storage as the main storage, never worry about storage capacity.
+    - Auto Scaling: Watch key metrics of cluster and scale in/out automatically to match your workload and achieve pay-as-you-go.
+    - Scaling in seconds: The computing layer (broker) is stateless and can scale in/out in seconds, which makes AutoMQ truly serverless. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
+    - Infinite scalable: Use the cloud's object storage as the main storage, never worry about storage capacity.
 - **Manage-less**: Built-in auto-balancer component balance partition and network traffic across brokers automatically. Never worry about partition re-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GSN2wZjeWiR70YkZiRsc6Hqsneh)
-- **Cost effective**: Use object storage as the main storage, take billing items into consideration when design system, fully utilize the cloud service, all of them contribute to AutoMQ and make it 10x cheaper than Apache Kafka. Refer to [this report](https://docs.automq.com/docs/automq-s3kafka/EJBvwM3dNic6uYkZAWwc7nmrnae) to see how we cut Apache Kafka billing by 90% on the cloud.
+- **Cost effective**: Leveraging object storage as the primary storage solution, incorporating billing considerations into the system design, and maximizing the use of cloud services collectively enable AutoMQ to be 10x more cost-effective than Apache Kafka. Refer to [this report](https://docs.automq.com/docs/automq-s3kafka/EJBvwM3dNic6uYkZAWwc7nmrnae) to see how we cut Apache Kafka billing by 90% on the cloud.
 - **High performance**:
-    - Low latency: Use cloud block storage like AWS EBS as the durable cache layer to accelerate write.
-    - High throughput: Use pre-fetching, batch processing and parallel to achieve high throughput.
+    - Low latency: Use cloud block storage like AWS EBS as the WAL(Write Ahead Log) to accelerate writing.
+    - High throughput: Use pre-fetching, batch processing, and parallel to achieve high throughput.
   > Refer to the [AutoMQ Performance White Paper](https://docs.automq.com/docs/automq-s3kafka/CYxlwqDBHitThCkxSl2cePxrnBc) to see how we achieve this.
 - **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka greater than 0.9.x and not lose any good features of it, but cheaper and better.
 
@@ -168,13 +168,12 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 
 ![image](./docs/images/automq-architecture.png)
 
-AutoMQ use logSegment as a code aspect of Apache Kafka to weave into our features. The architecture including the following main components:
+AutoMQ uses logSegment as a coding aspect of Apache Kafka to weave into our features. The architecture includes the following main components:
 - **S3Stream**: A streaming library based on object storage offered by AutoMQ. It is the core component of AutoMQ and is responsible for reading and writing data to object storage. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d).
-- **Stream**: Stream is an abstraction to mapping the logSegment of Apache Kafka. LogSegment's data, index and other meta will mapping to different type of stream. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GUk7w0ZxniPwN7kUgiicIlHkn9d)
-- **Durable Cache Layer**: AutoMQ use a small size cloud block storage like AWS EBS as the durable cache layer to accelerate write. Pay attention that this is not tiered storage and AutoMQ broker can decoupled from the durable cache layer completely. [Learn more](https://docs.automq.com/docs/automq-s3kafka/X1DBwDdzWiCMmYkglGHcKdjqn9f)
-- **Stream Object**: AutoMQ's data is organized by stream object. Data is read by stream object id through index. One stream have one stream object. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
-- **Stream set object**: Stream set object is a collection of small stream object that aimed to decrease API invoke times and metadata size. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
-
+- **Stream**: Stream is an abstraction for mapping the logSegment of Apache Kafka. LogSegment's data, index, and other metadata will map to different types of streams. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GUk7w0ZxniPwN7kUgiicIlHkn9d)
+- **WAL**: AutoMQ uses a small-size cloud block storage like AWS EBS as the WAL(Write Ahead Log) to accelerate writing. Pay attention that this is not tiered storage and the AutoMQ broker can decoupled from the WAL completely. [Learn more](https://docs.automq.com/docs/automq-s3kafka/X1DBwDdzWiCMmYkglGHcKdjqn9f)
+- **Stream set object**: A Stream Set Object aggregates data from multiple streams into individual segments, significantly cutting down on object storage API usage and metadata size. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
+- **Stream Object**: A Stream Object contains data from a single stream, typically separated when compacting Stream Set Objects for streams with larger data volumes. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
 
 ## ⛄Get started with AutoMQ
 
@@ -183,17 +182,17 @@ AutoMQ use logSegment as a code aspect of Apache Kafka to weave into our feature
 curl https://download.automq.com/install.sh | sh
 ```
 
-The easiest way to run AutoMQ. You can experience the feature like **Partition Reassignment in Seconds** and **Continuous Self-Balancing** in your local machine. [Learn more](https://docs.automq.com/docs/automq-s3kafka/SMKbwchB3i0Y0ykFm75c0ftAnCc)
+The easiest way to run AutoMQ. You can experience features like **Partition Reassignment in Seconds** and **Continuous Self-Balancing** in your local machine. [Learn more](https://docs.automq.com/docs/automq-s3kafka/SMKbwchB3i0Y0ykFm75c0ftAnCc)
 
-> Attention: Local mode mock object storage locally and is not a production ready deployment. It is only for demo and test purpose.
+> Attention: Local mode mock object storage locally and is not a production-ready deployment. It is only for demo and test purposes.
 
 
-### Run AutoMQ on cloud manually
-Deploy AutoMQ manually with released tgz files on cloud, currently compatible with AWS, Aliyun Cloud, Tencent Cloud, Huawei Cloud and Baidu Cloud. [Learn more]( https://docs.automq.com/docs/automq-s3kafka/NBo6wwth3iWUIkkNAbYcPg0mnae)
+### Run AutoMQ on the cloud manually
+Deploy AutoMQ manually with released tgz files on the cloud, currently compatible with AWS, Aliyun Cloud, Tencent Cloud, Huawei Cloud, and Baidu Cloud. [Learn more]( https://docs.automq.com/docs/automq-s3kafka/NBo6wwth3iWUIkkNAbYcPg0mnae)
 
 ## 💬Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
-- Ask questions or report bug by [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka)
+- Ask questions or report a bug by [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka)
 - Discuss about AutoMQ or Kafka by [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA) or [Wechat Group](https://www.automq.com/img/----------------------------1.png)
 
 
