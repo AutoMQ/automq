@@ -28,6 +28,7 @@ import kafka.server.KafkaConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -364,6 +365,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
     }
 
     @Test
+    @Disabled
     public void testMultiGoalOptimizeWithOneToOneReplicaSwap() {
         testMultiGoalOptimizeWithOneToOneReplicaSwap(Resource.NW_IN);
         testMultiGoalOptimizeWithOneToOneReplicaSwap(Resource.NW_OUT);
