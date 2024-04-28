@@ -22,6 +22,7 @@ import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{DirectoryId, Node, TopicPartition, Uuid}
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, MetaPropertiesVersion, PropertiesUtils}
+import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{DirectoryEventHandler, OffsetAndEpoch}
 import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
 import org.apache.kafka.server.util.timer.MockTimer
@@ -152,6 +153,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
     when(metadataCache.topicNamesToIds()).thenReturn(topicIds.asJava)
     when(metadataCache.topicIdsToNames()).thenReturn(topicNames.asJava)
     when(metadataCache.metadataVersion()).thenReturn(config.interBrokerProtocolVersion)
+    when(metadataCache.autoMQVersion()).thenReturn(AutoMQVersion.LATEST)
     mockGetAliveBrokerFunctions(metadataCache, aliveBrokers)
     val mockProducePurgatory = new DelayedOperationPurgatory[DelayedProduce](
       purgatoryName = "Produce", timer, reaperEnabled = false)
@@ -361,6 +363,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
       thenReturn(Map(leaderBrokerId -> new Node(leaderBrokerId, "host1", 9092, "rack-a"),
         followerBrokerId -> new Node(followerBrokerId, "host2", 9092, "rack-b")).toMap)
     when(metadataCache.metadataVersion()).thenReturn(config.interBrokerProtocolVersion)
+    when(metadataCache.autoMQVersion()).thenReturn(AutoMQVersion.LATEST)
     val mockProducePurgatory = new DelayedOperationPurgatory[DelayedProduce](
       purgatoryName = "Produce", timer, reaperEnabled = false)
     val mockFetchPurgatory = new DelayedOperationPurgatory[DelayedFetch](

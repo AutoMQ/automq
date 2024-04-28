@@ -64,6 +64,7 @@ class ElasticLogCleanerTest extends LogCleanerTest {
             logOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
             client,
             "test_namespace",
+            OpenStreamChecker.NOOP,
         )
     }
 }

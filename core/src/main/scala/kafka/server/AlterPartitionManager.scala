@@ -407,6 +407,7 @@ class DefaultAlterPartitionManager(
     controllerChannelManager.sendRequest(request, new ControllerRequestCompletionHandler {
       override def onTimeout(): Unit = {
         inflightElectLeadersRequest.set(false)
+        unsentElectLeaders.addAll(topicPartitions)
         tryElectLeader(null)
         throw new IllegalStateException("Encountered unexpected timeout when sending AlterPartition to the controller")
       }

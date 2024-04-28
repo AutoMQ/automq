@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * A holder class of the local node's supported feature flags as well as the quorum node IDs.
@@ -61,6 +62,7 @@ public final class QuorumFeatures {
                 enableUnstable ?
                     MetadataVersion.latestTesting().featureLevel() :
                     MetadataVersion.latestProduction().featureLevel()));
+        features.put(AutoMQVersion.FEATURE_NAME, VersionRange.of(AutoMQVersion.V0.featureLevel(), AutoMQVersion.LATEST.featureLevel()));
         return features;
     }
 

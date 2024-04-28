@@ -618,7 +618,8 @@ class ElasticLogTest {
             maxTransactionTimeoutMs = 5 * 60 * 1000,
             producerStateManagerConfig = producerStateManagerConfig,
             topicId = Some(Uuid.ZERO_UUID),
-            leaderEpoch = 0
+            leaderEpoch = 0,
+            openStreamChecker = OpenStreamChecker.NOOP,
         )
     }
 }

@@ -19,11 +19,11 @@ import kafka.log._
 import kafka.log.streamaspect.ElasticLogFileRecords.{BatchIteratorRecordsAdaptor, PooledMemoryRecords}
 import kafka.metrics.KafkaMetricsUtil
 import kafka.utils.{CoreUtils, Logging}
-import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.common.errors.{KafkaStorageException, OffsetOutOfRangeException}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpointFile
@@ -610,7 +610,9 @@ object ElasticLog extends Logging {
         maxTransactionTimeoutMs: Int,
         producerStateManagerConfig: ProducerStateManagerConfig,
         topicId: Option[Uuid],
-        leaderEpoch: Long): ElasticLog = {
+        leaderEpoch: Long,
+        openStreamChecker: OpenStreamChecker
+    ): ElasticLog = {
         // TODO: better error mark for elastic log
         logDirFailureChannel.clearOfflineLogDirRecord(dir.getPath)
         val logIdent = s"[ElasticLog partition=$topicPartition epoch=$leaderEpoch] "
@@ -634,6 +636,7 @@ object ElasticLog extends Logging {
                 stream
             } else {
                 val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
+                awaitStreamReadyForOpen(openStreamChecker, metaStreamId, leaderEpoch, logIdent = logIdent)
                 // open partition meta stream
                 val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.builder().epoch(leaderEpoch).build())
                     .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
@@ -861,5 +864,19 @@ object ElasticLog extends Logging {
             }
         })
         resultCf
+    }
+
+    private def awaitStreamReadyForOpen(checker: OpenStreamChecker, streamId: Long, epoch: Long, logIdent: String): Unit = {
+      var round = 0
+      while(true) {
+        if (checker.check(streamId, epoch)) {
+          return
+        }
+        round += 1
+        if (round % 10 == 0) {
+          info(s"$logIdent streamId=$streamId is not ready for open, epoch=$epoch")
+        }
+        Thread.sleep(100)
+      }
     }
 }

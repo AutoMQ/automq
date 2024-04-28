@@ -32,7 +32,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
-
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * Represents the feature levels in the metadata image.
@@ -51,6 +51,11 @@ public final class FeaturesImage {
     private final MetadataVersion metadataVersion;
 
     private final ZkMigrationState zkMigrationState;
+
+    // AutoMQ inject start
+    // lazy load from finalizedVersions
+    private AutoMQVersion autoMQVersion;
+    // AutoMQ inject end
 
     public FeaturesImage(
         Map<String, Short> finalizedVersions,
@@ -149,4 +154,13 @@ public final class FeaturesImage {
     public String toString() {
         return new FeaturesImageNode(this).stringify();
     }
+
+    // AutoMQ inject start
+    public AutoMQVersion autoMQVersion() {
+        if (autoMQVersion == null) {
+            autoMQVersion = AutoMQVersion.from(finalizedVersion(AutoMQVersion.FEATURE_NAME).orElse((short) 0));
+        }
+        return autoMQVersion;
+    }
+    // AutoMQ inject end
 }

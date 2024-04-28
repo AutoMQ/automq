@@ -68,6 +68,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
 
             client,
             "test_namespace",
+            OpenStreamChecker.NOOP,
         )
     }
 

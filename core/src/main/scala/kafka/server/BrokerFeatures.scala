@@ -20,6 +20,7 @@ package kafka.server
 import kafka.utils.Logging
 import org.apache.kafka.common.feature.{Features, SupportedVersionRange}
 import org.apache.kafka.server.common.MetadataVersion
+import org.apache.kafka.server.common.automq.AutoMQVersion
 
 import java.util
 import scala.jdk.CollectionConverters._
@@ -75,16 +76,17 @@ object BrokerFeatures extends Logging {
   }
 
   def defaultSupportedFeatures(unstableMetadataVersionsEnabled: Boolean): Features[SupportedVersionRange] = {
-    Features.supportedFeatures(
-      java.util.Collections.singletonMap(MetadataVersion.FEATURE_NAME,
-        new SupportedVersionRange(
-          MetadataVersion.MINIMUM_KRAFT_VERSION.featureLevel(),
-          if (unstableMetadataVersionsEnabled) {
-            MetadataVersion.latestTesting.featureLevel
-          } else {
-            MetadataVersion.latestProduction.featureLevel
-          }
-        )))
+    val features = new util.HashMap[String, SupportedVersionRange]()
+    features.put(MetadataVersion.FEATURE_NAME, new SupportedVersionRange(
+      MetadataVersion.MINIMUM_KRAFT_VERSION.featureLevel(),
+      if (unstableMetadataVersionsEnabled) {
+        MetadataVersion.latestTesting.featureLevel
+      } else {
+        MetadataVersion.latestProduction.featureLevel
+      }
+    ))
+    features.put(AutoMQVersion.FEATURE_NAME, new SupportedVersionRange(AutoMQVersion.V0.featureLevel(), AutoMQVersion.LATEST.featureLevel()))
+    Features.supportedFeatures(features)
   }
 
   def createEmpty(): BrokerFeatures = {
