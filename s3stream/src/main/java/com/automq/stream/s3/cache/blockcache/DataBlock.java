@@ -15,6 +15,7 @@ import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.CloseableIterator;
+import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
@@ -30,13 +31,18 @@ import java.util.concurrent.atomic.AtomicInteger;
     private final CompletableFuture<DataBlock> loadCf = new CompletableFuture<>();
     private final CompletableFuture<DataBlock> freeCf = new CompletableFuture<>();
     private final AtomicInteger unreadCnt = new AtomicInteger(UNREAD_INIT);
-    private final ReadStatusChangeListener listener;
     private ObjectReader.DataBlockGroup dataBlockGroup;
+    private long lastAccessTimestamp;
 
-    public DataBlock(long objectId, DataBlockIndex dataBlockIndex, ReadStatusChangeListener observeListener) {
+    private final ReadStatusChangeListener listener;
+    private final Time time;
+
+    public DataBlock(long objectId, DataBlockIndex dataBlockIndex, ReadStatusChangeListener observeListener, Time time) {
         this.objectId = objectId;
         this.dataBlockIndex = dataBlockIndex;
         this.listener = observeListener;
+        this.lastAccessTimestamp = time.milliseconds();
+        this.time = time;
     }
 
     /**
@@ -80,6 +86,7 @@ import java.util.concurrent.atomic.AtomicInteger;
         if (dataBlockGroup == null) {
             throw new IllegalStateException("DataBlock is not loaded yet.");
         }
+        lastAccessTimestamp = time.milliseconds();
         if (unreadCnt.get() == UNREAD_INIT) {
             unreadCnt.set(1);
         } else {
@@ -99,6 +106,10 @@ import java.util.concurrent.atomic.AtomicInteger;
         if (unreadCnt <= 0) {
             listener.markRead(this);
         }
+    }
+
+    public boolean isExpired(long expiredTimestamp) {
+        return lastAccessTimestamp < expiredTimestamp;
     }
 
     @Override
