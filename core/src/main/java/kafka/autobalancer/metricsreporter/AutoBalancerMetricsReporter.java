@@ -335,11 +335,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
                 numMetricSendFailure++;
                 if (System.currentTimeMillis() - lastErrorReportTime > 10000) {
                     lastErrorReportTime = System.currentTimeMillis();
-                    if (e instanceof OutOfOrderSequenceException) {
-                        LOGGER.warn("Failed to send auto balancer metric", e);
-                    } else {
-                        LOGGER.error("Failed to send auto balancer metric", e);
-                    }
+                    LOGGER.warn("Failed to send auto balancer metric", e);
                 }
             }
         });
