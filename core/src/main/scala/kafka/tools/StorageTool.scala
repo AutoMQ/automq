@@ -35,6 +35,7 @@ import org.apache.kafka.common.security.scram.internals.ScramMechanism
 import org.apache.kafka.common.security.scram.internals.ScramFormatter
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble.VerificationFlag
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, MetaPropertiesVersion, PropertiesUtils}
+import org.apache.kafka.server.common.automq.AutoMQVersion
 
 import java.util
 import java.util.Base64
@@ -396,6 +397,14 @@ object StorageTool extends Logging {
     metadataOptionalArguments.foreach { metadataArguments =>
       for (record <- metadataArguments) metadataRecords.add(record)
     }
+
+    // AutoMQ inject start
+    metadataRecords.add(new ApiMessageAndVersion(
+      new FeatureLevelRecord().setName(AutoMQVersion.FEATURE_NAME).setFeatureLevel(AutoMQVersion.LATEST.featureLevel()),
+      0.toShort
+    ))
+    // AutoMQ inject end
+
 
     BootstrapMetadata.fromRecords(metadataRecords, source)
   }

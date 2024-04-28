@@ -1715,6 +1715,13 @@ public class ReplicationControlManager {
      * @return All of the election records and if there may be more available preferred replicas to elect as leader
      */
     ControllerResult<Boolean> maybeBalancePartitionLeaders() {
+        // AutoMQ inject start
+        if (featureControl.autoMQVersion().isReassignmentV1Supported()) {
+            // AutoMQ isr/replica only has a single node
+            return ControllerResult.of(Collections.emptyList(), false);
+        }
+        // AutoMQ inject end
+
         List<ApiMessageAndVersion> records = new ArrayList<>();
 
         boolean rescheduleImmediately = false;
@@ -2500,6 +2507,9 @@ public class ReplicationControlManager {
      * @param topicPartition the topic partition that needs to be re-elected
      */
     private void addPartitionToReElectTimeouts(TopicPartition topicPartition) {
+        if (featureControl.autoMQVersion().isReassignmentV1Supported()) {
+            return;
+        }
         Timeout timeout =  timer.newTimeout(t -> {
             partitionReElectTimeouts.remove(topicPartition);
             if (quorumController != null) {

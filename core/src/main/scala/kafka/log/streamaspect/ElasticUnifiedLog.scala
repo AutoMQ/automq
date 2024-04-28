@@ -262,13 +262,14 @@ object ElasticUnifiedLog extends Logging {
 
         client: Client,
         namespace: String,
+        openStreamChecker: OpenStreamChecker,
     ): ElasticUnifiedLog = {
         val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
         val partitionLogDirFailureChannel = new PartitionLogDirFailureChannel(logDirFailureChannel, dir.getPath);
         LocalLog.maybeHandleIOException(partitionLogDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
             val start = System.currentTimeMillis()
             val localLog = ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition, partitionLogDirFailureChannel,
-                new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch)
+                new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker)
             val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
             // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
             // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.

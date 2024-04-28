@@ -215,6 +215,10 @@ public final class S3StreamsMetadataImage {
         return wal.orderList();
     }
 
+    public S3StreamMetadataImage getStreamMetadata(long streamId) {
+        return streamsMetadata.get(streamId);
+    }
+
     @Override
     public boolean equals(Object obj) {
         if (this == obj) {
