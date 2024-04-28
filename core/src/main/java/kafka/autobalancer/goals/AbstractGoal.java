@@ -20,7 +20,6 @@ import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.slf4j.Logger;
 
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -45,7 +44,10 @@ public abstract class AbstractGoal implements Goal {
         List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
         for (BrokerUpdater.Broker candidate : candidates) {
             Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), srcBroker.getBrokerId(), candidate.getBrokerId());
-            calculateCandidateActionScores(candidateActionScores, goalsByPriority, action, cluster);
+            double score = calculateCandidateActionScores(goalsByPriority, action, cluster);
+            if (score > POSITIVE_ACTION_SCORE_THRESHOLD) {
+                candidateActionScores.add(Map.entry(action, score));
+            }
         }
         LOGGER.debug("try move partition {} out for broker {}, all possible action score: {} on goal {}", replica.getTopicPartition(),
                 srcBroker.getBrokerId(), candidateActionScores, name());
@@ -57,26 +59,33 @@ public abstract class AbstractGoal implements Goal {
                                                    BrokerUpdater.Broker srcBroker,
                                                    List<BrokerUpdater.Broker> candidates,
                                                    Collection<Goal> goalsByPriority,
+                                                   Comparator<TopicPartitionReplicaUpdater.TopicPartitionReplica> replicaComparator,
                                                    BiPredicate<TopicPartitionReplicaUpdater.TopicPartitionReplica,
                                                            TopicPartitionReplicaUpdater.TopicPartitionReplica> replicaBiPredicate) {
-        List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
         for (BrokerUpdater.Broker candidate : candidates) {
-            for (TopicPartitionReplicaUpdater.TopicPartitionReplica candidateReplica : cluster.replicasFor(candidate.getBrokerId())) {
+            List<TopicPartitionReplicaUpdater.TopicPartitionReplica> candidateReplicas = cluster
+                    .replicasFor(candidate.getBrokerId())
+                    .stream()
+                    .sorted(replicaComparator)
+                    .collect(Collectors.toList());
+            for (TopicPartitionReplicaUpdater.TopicPartitionReplica candidateReplica : candidateReplicas) {
                 if (!replicaBiPredicate.test(srcReplica, candidateReplica)) {
-                    continue;
+                    break;
                 }
                 Action action = new Action(ActionType.SWAP, srcReplica.getTopicPartition(), srcBroker.getBrokerId(),
                         candidate.getBrokerId(), candidateReplica.getTopicPartition());
-                calculateCandidateActionScores(candidateActionScores, goalsByPriority, action, cluster);
+                double score = calculateCandidateActionScores(goalsByPriority, action, cluster);
+                if (score > POSITIVE_ACTION_SCORE_THRESHOLD) {
+                    LOGGER.debug("try swap partition {} out for broker {} with {}, action score: {}", srcReplica.getTopicPartition(),
+                            srcBroker.getBrokerId(), candidateReplica.getTopicPartition(), score);
+                    return Optional.of(action);
+                }
             }
         }
-        LOGGER.debug("try swap partition {} out for broker {}, all possible action score: {} on goal {}", srcReplica.getTopicPartition(),
-                srcBroker.getBrokerId(), candidateActionScores, name());
-        return getAcceptableAction(candidateActionScores);
+        return Optional.empty();
     }
 
-    protected void calculateCandidateActionScores(List<Map.Entry<Action, Double>> candidateActionScores,
-                                                  Collection<Goal> goalsByPriority, Action action, ClusterModelSnapshot cluster) {
+    protected double calculateCandidateActionScores(Collection<Goal> goalsByPriority, Action action, ClusterModelSnapshot cluster) {
         Map<Goal, Double> scoreMap = new HashMap<>();
         boolean isHardGoalViolated = false;
         for (Goal goal : goalsByPriority) {
@@ -89,9 +98,11 @@ public abstract class AbstractGoal implements Goal {
         }
 
         if (!isHardGoalViolated) {
-            LOGGER.debug("action {} scores on each goal: {}", action, scoreMap);
-            candidateActionScores.add(new AbstractMap.SimpleEntry<>(action, normalizeGoalsScore(scoreMap)));
+            double overallScore = normalizeGoalsScore(scoreMap);
+            LOGGER.debug("action {} overall score: {}, scores on each goal: {}", action, overallScore, scoreMap);
+            return overallScore;
         }
+        return 0.0;
     }
 
     /**
