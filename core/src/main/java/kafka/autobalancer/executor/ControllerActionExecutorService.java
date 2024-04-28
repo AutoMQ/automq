@@ -116,6 +116,7 @@ public class ControllerActionExecutorService implements ActionExecutorService, R
             if (action.getType() == ActionType.SWAP) {
                 addTopicPartition(topicPartitionMap, action.getDestTopicPartition(), action.getSrcBrokerId());
             }
+            logger.info("Executing: {}", action.prettyString());
         }
         for (Map.Entry<String, List<AlterPartitionReassignmentsRequestData.ReassignablePartition>> entry : topicPartitionMap.entrySet()) {
             AlterPartitionReassignmentsRequestData.ReassignableTopic topic = new AlterPartitionReassignmentsRequestData.ReassignableTopic()
