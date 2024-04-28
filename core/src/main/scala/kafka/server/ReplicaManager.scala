@@ -2657,6 +2657,7 @@ class ReplicaManager(val config: KafkaConfig,
           throw new IllegalStateException(s"Topic $tp exists, but its ID is " +
             s"${partition.topicId.get}, not $topicId as expected")
         }
+        createHook.accept(partition)
         Some(partition, false)
 
       case HostedPartition.None =>
