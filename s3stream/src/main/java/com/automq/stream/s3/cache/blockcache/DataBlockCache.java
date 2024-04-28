@@ -18,11 +18,13 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,16 +36,24 @@ import org.slf4j.LoggerFactory;
 @EventLoopSafe
 public class DataBlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockCache.class);
+    static final long DATA_TTL = TimeUnit.MINUTES.toMillis(1);
+    static final long CHECK_EXPIRED_DATA_INTERVAL = TimeUnit.MINUTES.toMillis(1);
     final Cache[] caches;
     /**
      * Limit the cache size, it real size may be slightly larger than the max size.
      */
     final AsyncSemaphore sizeLimiter;
     private final long maxSize;
+    private final Time time;
 
     public DataBlockCache(long maxSize, EventLoop[] eventLoops) {
+        this(maxSize, eventLoops, Time.SYSTEM);
+    }
+
+    public DataBlockCache(long maxSize, EventLoop[] eventLoops, Time time) {
         this.maxSize = maxSize;
         this.sizeLimiter = new AsyncSemaphore(maxSize);
+        this.time = time;
         this.caches = new Cache[eventLoops.length];
         for (int i = 0; i < eventLoops.length; i++) {
             caches[i] = new Cache(eventLoops[i]);
@@ -61,7 +71,8 @@ public class DataBlockCache {
      * @param dataBlockIndex the required data block's index
      * @return the future of {@link DataBlock}, the future will be completed in the same stream's eventLoop.
      */
-    public CompletableFuture<DataBlock> getBlock(GetOptions options, ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
+    public CompletableFuture<DataBlock> getBlock(GetOptions options, ObjectReader objectReader,
+        DataBlockIndex dataBlockIndex) {
         Cache cache = cache(dataBlockIndex.streamId());
         return cache.getBlock(options, objectReader, dataBlockIndex);
     }
@@ -121,21 +132,24 @@ public class DataBlockCache {
         final Map<DataBlockGroupKey, DataBlock> blocks = new HashMap<>();
         final LRUCache<DataBlockGroupKey, DataBlock> lru = new LRUCache<>();
         private final EventLoop eventLoop;
+        private long lastEvictExpiredDataTimestamp = time.milliseconds();
 
         public Cache(EventLoop eventLoop) {
             this.eventLoop = eventLoop;
         }
 
-        public CompletableFuture<DataBlock> getBlock(GetOptions options, ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
+        public CompletableFuture<DataBlock> getBlock(GetOptions options, ObjectReader objectReader,
+            DataBlockIndex dataBlockIndex) {
             return FutureUtil.exec(() -> getBlock0(options, objectReader, dataBlockIndex), LOGGER, "getBlock");
         }
 
-        private CompletableFuture<DataBlock> getBlock0(GetOptions options, ObjectReader objectReader, DataBlockIndex dataBlockIndex) {
+        private CompletableFuture<DataBlock> getBlock0(GetOptions options, ObjectReader objectReader,
+            DataBlockIndex dataBlockIndex) {
             long objectId = objectReader.metadata().objectId();
             DataBlockGroupKey key = new DataBlockGroupKey(objectId, dataBlockIndex);
             DataBlock dataBlock = blocks.get(key);
             if (dataBlock == null) {
-                DataBlock newDataBlock = new DataBlock(objectId, dataBlockIndex, this);
+                DataBlock newDataBlock = new DataBlock(objectId, dataBlockIndex, this, time);
                 dataBlock = newDataBlock;
                 blocks.put(key, newDataBlock);
                 read(objectReader, newDataBlock, eventLoop);
@@ -160,6 +174,7 @@ public class DataBlockCache {
                 }
                 cf.complete(db);
             });
+            tryEvictExpired();
             return cf;
         }
 
@@ -197,16 +212,29 @@ public class DataBlockCache {
             eventLoop.execute(this::evict0);
         }
 
+        void tryEvictExpired() {
+            long now = time.milliseconds();
+            if (now - lastEvictExpiredDataTimestamp > CHECK_EXPIRED_DATA_INTERVAL) {
+                lastEvictExpiredDataTimestamp = now;
+                this.evict0();
+            }
+        }
+
         private void evict0() {
             // TODO: avoid awake more tasks than necessary
-            while (sizeLimiter.requiredRelease()) {
+            long expiredTimestamp = time.milliseconds() - DATA_TTL;
+            while (true) {
                 Map.Entry<DataBlockGroupKey, DataBlock> entry;
-                entry = lru.pop();
+                entry = lru.peek();
                 if (entry == null) {
                     break;
                 }
                 DataBlockGroupKey key = entry.getKey();
                 DataBlock dataBlock = entry.getValue();
+                if (!dataBlock.isExpired(expiredTimestamp) && !sizeLimiter.requiredRelease()) {
+                    break;
+                }
+                lru.pop();
                 if (blocks.remove(key, dataBlock)) {
                     dataBlock.free();
                     StorageOperationStats.getInstance().blockCacheBlockEvictThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
