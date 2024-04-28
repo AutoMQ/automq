@@ -84,7 +84,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                 optionalAction = tryMovePartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority);
             } else {
                 optionalAction = trySwapPartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority,
-                        (src, candidate) -> src.load(resource()) > candidate.load(resource()));
+                        Comparator.comparingDouble(p -> p.load(resource())), (src, candidate) -> src.load(resource()) > candidate.load(resource()));
             }
 
             if (optionalAction.isPresent()) {
@@ -129,7 +129,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                     optionalAction = tryMovePartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority);
                 } else {
                     optionalAction = trySwapPartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority,
-                            (src, candidate) -> src.load(resource()) > candidate.load(resource()));
+                            Comparator.comparingDouble(p -> p.load(resource())), (src, candidate) -> src.load(resource()) > candidate.load(resource()));
                 }
 
                 if (optionalAction.isPresent()) {

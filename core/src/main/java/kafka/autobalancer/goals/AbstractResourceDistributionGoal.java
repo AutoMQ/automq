@@ -46,9 +46,9 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
                     eligibleBrokers.stream().filter(b -> b.getBrokerId() != broker.getBrokerId()).collect(Collectors.toList());
             if (requireLessLoad(broker)) {
                 List<Action> brokerActions = tryReduceLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers, goalsByPriority);
-                if (!isBrokerAcceptable(broker)) {
-                    brokerActions.addAll(tryReduceLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
-                }
+//                if (!isBrokerAcceptable(broker)) {
+//                    brokerActions.addAll(tryReduceLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
+//                }
                 actions.addAll(brokerActions);
             } else if (requireMoreLoad(broker)) {
                 if (broker.isSlowBroker()) {
@@ -56,9 +56,9 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
                     continue;
                 }
                 List<Action> brokerActions = tryIncreaseLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers, goalsByPriority);
-                if (!isBrokerAcceptable(broker)) {
-                    brokerActions.addAll(tryIncreaseLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
-                }
+//                if (!isBrokerAcceptable(broker)) {
+//                    brokerActions.addAll(tryIncreaseLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
+//                }
                 actions.addAll(brokerActions);
             }
 
