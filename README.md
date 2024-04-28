@@ -46,7 +46,7 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
     <th>Warpstream</th>
   </tr>
   <tr>
-    <td>Apache Kafka Compatibility</td>
+    <td>Apache Kafka Compatibility[1]</td>
     <td>Native Kafka</td>
     <td>Native Kafka</td>
     <td>Native Kafka</td>
@@ -123,7 +123,7 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
   </tr>
   <tr>
     <td>Durability</td>
-    <td>Guaranteed by S3/EBS[1]</td>
+    <td>Guaranteed by S3/EBS[2]</td>
     <td colspan="2">Guaranteed by ISR </td>
     <td>Guaranteed by Bookkeeper</td>
     <td>Guaranteed by Raft</td>
@@ -138,9 +138,9 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 </table>
 
 
-> Tips: Apache Kafka Compatibility's definition is coming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
+> [1] Apache Kafka Compatibility's definition is coming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
-> [1] EBS Durability: On Azure, GCP, and Alibaba Cloud, Regional EBS replicas span multiple AZs. On AWS, ensure durability by double writing to EBS and S3 Express One Zone in different AZs.
+> [2] EBS Durability: On Azure, GCP, and Alibaba Cloud, Regional EBS replicas span multiple AZs. On AWS, ensure durability by double writing to EBS and S3 Express One Zone in different AZs.
 
 ## 🔶Why AutoMQ
 
