@@ -24,6 +24,7 @@ import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
+import org.apache.kafka.metadata.stream.StreamTags.{PARTITION_TAG_KEY, TOPIC_UUID_TAG_KEY}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpointFile
@@ -32,6 +33,7 @@ import org.apache.kafka.storage.internals.log._
 import java.io.{File, IOException}
 import java.nio.ByteBuffer
 import java.nio.file.Files
+import java.util
 import java.util.Optional
 import java.util.concurrent._
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
@@ -619,6 +621,7 @@ object ElasticLog extends Logging {
 
         val key = formatStreamKey(namespace, topicPartition, topicId)
         val value = client.kvClient().getKV(KeyValue.Key.of(key)).get()
+        val topicIdStr: String = topicId.map(u => u.toString).getOrElse(topicPartition.topic())
 
         var partitionMeta: ElasticPartitionMeta = null
 
@@ -629,9 +632,13 @@ object ElasticLog extends Logging {
         var logStreamManager: ElasticLogStreamManager = null
         val replicationFactor = 1
 
+        val streamTags = new util.HashMap[String, String]()
+        streamTags.put(TOPIC_UUID_TAG_KEY, topicIdStr)
+        streamTags.put(PARTITION_TAG_KEY, topicPartition.partition().toHexString)
+
         try {
             metaStream = if (metaNotExists) {
-                val stream = createMetaStream(client, key, replicationFactor, leaderEpoch, logIdent = logIdent)
+                val stream = createMetaStream(client, key, replicationFactor, leaderEpoch, streamTags, logIdent = logIdent)
                 info(s"${logIdent}created a new meta stream: stream_id=${stream.streamId()}")
                 stream
             } else {
@@ -670,7 +677,7 @@ object ElasticLog extends Logging {
                 maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, kv => metaStream.append(kv).thenApply(_ => null))
 
             val logMeta: ElasticLogMeta = metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
-            logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), replicationFactor, leaderEpoch)
+            logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), replicationFactor, leaderEpoch, streamTags)
             val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
 
             val logSegmentManager = new ElasticLogSegmentManager(metaStream, logStreamManager, logIdent)
@@ -796,12 +803,12 @@ object ElasticLog extends Logging {
             .join()
     }
 
-    private[streamaspect] def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long,
+    private[streamaspect] def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long, streamTags: util.Map[String, String],
         logIdent: String): MetaStream = {
-        val metaStream = client.streamClient().createAndOpenStream(CreateStreamOptions.builder()
-                .replicaCount(replicaCount)
-                .epoch(leaderEpoch).build()
-            ).thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
+        val options = CreateStreamOptions.builder().replicaCount(replicaCount).epoch(leaderEpoch)
+        streamTags.forEach((k, v) => options.tag(k, v))
+        val metaStream = client.streamClient().createAndOpenStream(options.build())
+            .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
             .get()
         // save partition meta stream id relation to PM
         val streamId = metaStream.streamId()

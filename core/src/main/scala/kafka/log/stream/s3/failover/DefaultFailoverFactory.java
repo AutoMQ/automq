@@ -19,6 +19,7 @@ import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.streams.StreamManager;
+import java.util.Map;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
 
@@ -44,7 +45,7 @@ public class DefaultFailoverFactory implements FailoverFactory {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
-            public CompletableFuture<Long> createStream() {
+            public CompletableFuture<Long> createStream(Map<String, String> tags) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 

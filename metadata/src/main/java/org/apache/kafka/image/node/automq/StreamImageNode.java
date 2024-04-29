@@ -33,7 +33,11 @@ public class StreamImageNode implements MetadataNode {
     public void print(MetadataNodePrinter printer) {
         StringBuilder sb = new StringBuilder();
         sb.append("[streamId=").append(image.getStreamId()).append(", epoch=").append(image.getEpoch()).append(", startOffset=")
-            .append(image.getStartOffset()).append(", state=").append(image.state().toString()).append("]");
+            .append(image.getStartOffset()).append(", state=").append(image.state().toString());
+        sb.append(", tags={");
+        StringBuilder finalSb = sb;
+        image.tags().forEach(tag -> finalSb.append(tag.key()).append("=").append(tag.value()).append(", "));
+        sb.append("}]");
         printer.output(sb.toString());
         // ranges: index={nodeId, epoch, start, end} ...
         sb = new StringBuilder();
