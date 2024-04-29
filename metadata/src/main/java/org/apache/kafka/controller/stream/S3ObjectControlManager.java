@@ -33,7 +33,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
@@ -96,7 +95,7 @@ public class S3ObjectControlManager {
     private final ScheduledExecutorService lifecycleCheckTimer;
 
     private final ObjectCleaner objectCleaner;
-    private final AtomicLong s3ObjectSize = new AtomicLong(0);
+    private final TimelineLong s3ObjectSize;
 
     private long lastCleanStartTimestamp = 0;
     private CompletableFuture<Void> lastCleanCf = CompletableFuture.completedFuture(null);
@@ -115,6 +114,7 @@ public class S3ObjectControlManager {
         this.nextAssignedObjectId = new TimelineLong(snapshotRegistry);
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.preparedObjects = new TimelineHashSet<>(snapshotRegistry, 0);
+        this.s3ObjectSize = new TimelineLong(snapshotRegistry);
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
         this.operator = operator;
         this.lifecycleListeners = new ArrayList<>();
@@ -247,7 +247,7 @@ public class S3ObjectControlManager {
                 markDestroyedObjects.add(object.getObjectId());
             } else {
                 // object committed
-                s3ObjectSize.addAndGet(record.objectSize());
+                s3ObjectSize.set(s3ObjectSize.get() + record.objectSize());
             }
         }
     }
@@ -255,7 +255,7 @@ public class S3ObjectControlManager {
     public void replay(RemoveS3ObjectRecord record) {
         S3Object object = objectsMetadata.remove(record.objectId());
         if (object != null) {
-            s3ObjectSize.addAndGet(-object.getObjectSize());
+            s3ObjectSize.set(s3ObjectSize.get() - object.getObjectSize());
         }
         preparedObjects.remove(record.objectId());
     }
