@@ -18,6 +18,7 @@ import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.goals.Goal;
+import kafka.autobalancer.goals.GoalUtils;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
@@ -265,11 +266,14 @@ public class AnomalyDetector extends AbstractResumableService {
         this.slowBrokers = slowBrokers;
 
         List<Action> totalActions = new ArrayList<>();
+        Map<String, Set<String>> goalsByGroup = GoalUtils.groupGoals(goals);
+        List<Goal> optimizedGoals = new ArrayList<>();
         for (Goal goal : goals) {
             if (!isRunnable()) {
                 break;
             }
-            totalActions.addAll(goal.optimize(snapshot, goals));
+            totalActions.addAll(goal.optimize(snapshot, goals, optimizedGoals, goalsByGroup));
+            optimizedGoals.add(goal);
         }
         if (!isRunnable()) {
             return detectInterval;

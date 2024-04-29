@@ -14,17 +14,14 @@ package kafka.autobalancer.common;
 import java.util.List;
 
 public enum Resource {
-    CPU("CPU", 0, 0.001),
-    NW_IN("NWIn", 1, 10),
-    NW_OUT("NWOut", 2, 10),
-    UNKNOWN("UNKNOWN", 999, 0);
+    CPU("CPU", 0),
+    NW_IN("NWIn", 1),
+    NW_OUT("NWOut", 2),
+    QPS_IN("QPSIn", 3),
+    QPS_OUT("QPSOut", 4),
+    UNKNOWN("UNKNOWN", 999);
 
     public static final Double IGNORED_VALUE = -1.0;
-    // EPSILON_PERCENT defines the acceptable nuance when comparing the utilization of the resource.
-    // This nuance is generated due to precision loss when summing up float type utilization value.
-    // In stress test we find that for cluster of around 800,000 replicas, the summed up nuance can be
-    // more than 0.1% of sum value.
-    private static final double EPSILON_PERCENT = 0.0008;
     private static final List<Resource> CACHED_VALUES = List.of(
             Resource.CPU,
             Resource.NW_IN,
@@ -32,12 +29,10 @@ public enum Resource {
     );
     private final String resource;
     private final int id;
-    private final double epsilon;
 
-    Resource(String resource, int id, double epsilon) {
+    Resource(String resource, int id) {
         this.resource = resource;
         this.id = id;
-        this.epsilon = epsilon;
     }
 
     public static Resource of(int id) {
@@ -48,7 +43,7 @@ public enum Resource {
     }
 
     public String resourceString(double value) {
-        String valueStr = "";
+        String valueStr = String.valueOf(value);
         if (value == IGNORED_VALUE) {
             valueStr = "ignored";
         } else {
@@ -58,7 +53,11 @@ public enum Resource {
                     break;
                 case NW_IN:
                 case NW_OUT:
-                    valueStr = String.format("%.2fKB/s", value / 1024);
+                    valueStr = Utils.formatDataSize((long) value) + "/s";
+                    break;
+                case QPS_IN:
+                case QPS_OUT:
+                    valueStr = String.format("%.2f/s", value);
                     break;
                 default:
                     break;
@@ -88,17 +87,6 @@ public enum Resource {
      */
     public int id() {
         return id;
-    }
-
-    /**
-     * The epsilon value used in comparing the given values.
-     *
-     * @param value1 The first value used in comparison.
-     * @param value2 The second value used in comparison.
-     * @return The epsilon value used in comparing the given values.
-     */
-    public double epsilon(double value1, double value2) {
-        return Math.max(epsilon, EPSILON_PERCENT * (value1 + value2));
     }
 
     @Override

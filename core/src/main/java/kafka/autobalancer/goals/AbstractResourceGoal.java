@@ -26,7 +26,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public abstract class AbstractResourceGoal extends AbstractGoal {
@@ -66,7 +68,9 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                  ClusterModelSnapshot cluster,
                                                  BrokerUpdater.Broker srcBroker,
                                                  List<BrokerUpdater.Broker> candidateBrokers,
-                                                 Collection<Goal> goalsByPriority) {
+                                                 Collection<Goal> goalsByPriority,
+                                                 Collection<Goal> optimizedGoals,
+                                                 Map<String, Set<String>> goalsByGroup) {
         List<Action> actionList = new ArrayList<>();
         candidateBrokers = candidateBrokers.stream().filter(b -> !b.isSlowBroker()).collect(Collectors.toList());
         if (candidateBrokers.isEmpty()) {
@@ -81,10 +85,12 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
             candidateBrokers.sort(lowLoadComparator()); // lower load first
             Optional<Action> optionalAction;
             if (actionType == ActionType.MOVE) {
-                optionalAction = tryMovePartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority);
+                optionalAction = tryMovePartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority,
+                        optimizedGoals, goalsByGroup);
             } else {
                 optionalAction = trySwapPartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority,
-                        Comparator.comparingDouble(p -> p.load(resource())), (src, candidate) -> src.load(resource()) > candidate.load(resource()));
+                        optimizedGoals, goalsByGroup, Comparator.comparingDouble(p -> p.load(resource())),
+                        (src, candidate) -> src.load(resource()) > candidate.load(resource()));
             }
 
             if (optionalAction.isPresent()) {
@@ -114,7 +120,9 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                    ClusterModelSnapshot cluster,
                                                    BrokerUpdater.Broker srcBroker,
                                                    List<BrokerUpdater.Broker> candidateBrokers,
-                                                   Collection<Goal> goalsByPriority) {
+                                                   Collection<Goal> goalsByPriority,
+                                                   Collection<Goal> optimizedGoals,
+                                                   Map<String, Set<String>> goalsByGroup) {
         List<Action> actionList = new ArrayList<>();
         candidateBrokers.sort(highLoadComparator()); // higher load first
         for (BrokerUpdater.Broker candidateBroker : candidateBrokers) {
@@ -126,10 +134,12 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
             for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : candidateReplicas) {
                 Optional<Action> optionalAction;
                 if (actionType == ActionType.MOVE) {
-                    optionalAction = tryMovePartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority);
+                    optionalAction = tryMovePartitionOut(cluster, tp, candidateBroker, List.of(srcBroker),
+                            goalsByPriority, optimizedGoals, goalsByGroup);
                 } else {
                     optionalAction = trySwapPartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority,
-                            Comparator.comparingDouble(p -> p.load(resource())), (src, candidate) -> src.load(resource()) > candidate.load(resource()));
+                            optimizedGoals, goalsByGroup, Comparator.comparingDouble(p -> p.load(resource())),
+                            (src, candidate) -> src.load(resource()) > candidate.load(resource()));
                 }
 
                 if (optionalAction.isPresent()) {
