@@ -13,7 +13,6 @@ package kafka.autobalancer.model;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
-import kafka.autobalancer.common.Resource;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
@@ -116,7 +115,7 @@ public class ClusterModel {
                 if (broker == null) {
                     continue;
                 }
-                Map<Resource, Double> totalLoads = new HashMap<>();
+                Map<Byte, Double> totalLoads = new HashMap<>();
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
                     TopicPartition tp = tpEntry.getKey();
                     TopicPartitionReplicaUpdater.TopicPartitionReplica replica =
@@ -127,16 +126,16 @@ public class ClusterModel {
                         break;
                     }
                     replica.processMetrics();
-                    for (Resource resource : Resource.cachedValues()) {
-                        double load = replica.load(resource);
-                        totalLoads.put(resource, totalLoads.getOrDefault(resource, 0.0) + load);
+                    for (Map.Entry<Byte, Double> load : replica.getLoads().entrySet()) {
+                        byte resource = load.getKey();
+                        totalLoads.put(resource, totalLoads.getOrDefault(resource, 0.0) + load.getValue());
                     }
                     if (excludedTopics.contains(tp.topic())) {
                         continue;
                     }
                     snapshot.addTopicPartition(brokerId, tp, replica);
                 }
-                for (Map.Entry<Resource, Double> loadEntry : totalLoads.entrySet()) {
+                for (Map.Entry<Byte, Double> loadEntry : totalLoads.entrySet()) {
                     broker.setLoad(loadEntry.getKey(), loadEntry.getValue());
                 }
             }

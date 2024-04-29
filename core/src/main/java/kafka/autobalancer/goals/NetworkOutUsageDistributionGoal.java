@@ -13,7 +13,7 @@ package kafka.autobalancer.goals;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
-import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater;
 import org.apache.kafka.common.config.ConfigException;
@@ -32,7 +32,7 @@ public class NetworkOutUsageDistributionGoal extends AbstractNetworkUsageDistrib
     }
 
     @Override
-    protected Resource resource() {
+    protected byte resource() {
         return Resource.NW_OUT;
     }
 

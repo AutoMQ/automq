@@ -14,13 +14,11 @@ package kafka.autobalancer.model;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
-import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.Resource;
 import org.slf4j.Logger;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -74,8 +72,7 @@ public abstract class AbstractInstanceUpdater {
     protected abstract boolean isValidInstance();
 
     public static abstract class AbstractInstance {
-        protected final double[] loads = new double[Resource.cachedValues().size()];
-        protected final Set<Resource> resources = new HashSet<>();
+        protected final Map<Byte, Double> loads = new HashMap<>();
         protected Map<Byte, Double> metricsMap = new HashMap<>();
         protected long timestamp = 0L;
 
@@ -84,8 +81,7 @@ public abstract class AbstractInstanceUpdater {
         }
 
         public AbstractInstance(AbstractInstance other, boolean deepCopy) {
-            System.arraycopy(other.loads, 0, this.loads, 0, loads.length);
-            this.resources.addAll(other.resources);
+            this.loads.putAll(other.loads);
             this.timestamp = other.timestamp;
             if (deepCopy) {
                 this.metricsMap.putAll(other.metricsMap);
@@ -98,22 +94,24 @@ public abstract class AbstractInstanceUpdater {
             return copy(true);
         }
 
-        public abstract void processMetrics();
-
-        public void setLoad(Resource resource, double value) {
-            this.resources.add(resource);
-            this.loads[resource.id()] = value;
-        }
-
-        public double load(Resource resource) {
-            if (!this.resources.contains(resource)) {
-                return 0.0;
+        public void processMetrics() {
+            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
+                processMetric(entry.getKey(), entry.getValue());
             }
-            return this.loads[resource.id()];
         }
 
-        public Set<Resource> getResources() {
-            return this.resources;
+        public abstract void processMetric(byte metricType, double value);
+
+        public void setLoad(byte resource, double value) {
+            this.loads.put(resource, value);
+        }
+
+        public double load(byte resource) {
+            return this.loads.getOrDefault(resource, 0.0);
+        }
+
+        public Map<Byte, Double> getLoads() {
+            return this.loads;
         }
 
         public void update(Map<Byte, Double> metricsMap, long timestamp) {
@@ -142,9 +140,10 @@ public abstract class AbstractInstanceUpdater {
         protected String loadString() {
             StringBuilder builder = new StringBuilder();
             builder.append("Loads={");
-            for (int i = 0; i < loads.length; i++) {
-                builder.append(Resource.of(i).resourceString(loads[i]));
-                if (i != loads.length - 1) {
+            int index = 0;
+            for (Map.Entry<Byte, Double> entry : loads.entrySet()) {
+                builder.append(Resource.resourceString(entry.getKey(), entry.getValue()));
+                if (index++ != loads.size() - 1) {
                     builder.append(", ");
                 }
             }

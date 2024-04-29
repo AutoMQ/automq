@@ -51,12 +51,7 @@ public abstract class AutoBalancerMetrics {
         return metricsMap;
     }
 
-    public abstract boolean isValidMetric(byte type);
-
     public AutoBalancerMetrics put(byte type, double value) {
-        if (!isValidMetric(type)) {
-            throw new IllegalArgumentException(String.format("Cannot put metric type %d into a %s metric.", type, this.getClass().getSimpleName()));
-        }
         this.metricValueMap.put(type, value);
         return this;
     }

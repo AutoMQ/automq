@@ -282,9 +282,11 @@ public class AnomalyDetector extends AbstractResumableService {
         List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency, getTopicPartitionCount(snapshot));
         logger.info("Total actions num: {}, split to {} batches", totalActionSize, actionsToExecute.size());
 
-        for (List<Action> batch : actionsToExecute) {
-            this.actionExecutor.execute(batch).get();
-            Thread.sleep(executionIntervalMs);
+        for (int i = 0; i < actionsToExecute.size(); i++) {
+            if (i != 0) {
+                Thread.sleep(executionIntervalMs);
+            }
+            this.actionExecutor.execute(actionsToExecute.get(i)).get();
         }
 
         return detectInterval;

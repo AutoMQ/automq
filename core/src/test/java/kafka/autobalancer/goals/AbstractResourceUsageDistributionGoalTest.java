@@ -19,7 +19,6 @@ package kafka.autobalancer.goals;
 
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
@@ -38,6 +37,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
+
+import static kafka.autobalancer.common.types.Resource.NW_IN;
+import static kafka.autobalancer.common.types.Resource.NW_OUT;
 
 @Tag("S3Unit")
 public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
@@ -60,7 +62,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         }
     }
 
-    private AbstractGoal getGoalByResource(Resource resource) {
+    private AbstractGoal getGoalByResource(byte resource) {
         AbstractGoal goal = null;
         switch (resource) {
             case NW_IN:
@@ -75,9 +77,9 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         return goal;
     }
 
-    private void testSingleResourceGoalScore(Resource resource) {
+    private void testSingleResourceGoalScore(byte resource) {
         AbstractNetworkUsageDistributionGoal goal;
-        if (resource == Resource.NW_IN) {
+        if (resource == NW_IN) {
             goal = new NetworkInUsageDistributionGoal();
         } else {
             goal = new NetworkOutUsageDistributionGoal();
@@ -180,11 +182,11 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
 
     @Test
     public void testGoalScore() {
-        testSingleResourceGoalScore(Resource.NW_IN);
-        testSingleResourceGoalScore(Resource.NW_OUT);
+        testSingleResourceGoalScore(NW_IN);
+        testSingleResourceGoalScore(NW_OUT);
     }
 
-    private void testSingleResourceDistributionOptimizeOneMove(Resource resource) {
+    private void testSingleResourceDistributionOptimizeOneMove(byte resource) {
         AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
@@ -222,7 +224,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         }
     }
 
-    private void testSingleResourceDistributionOptimizeMultiMoveOut(Resource resource) {
+    private void testSingleResourceDistributionOptimizeMultiMoveOut(byte resource) {
         AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
@@ -266,7 +268,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         }
     }
 
-    private void testSingleResourceDistributionOptimizeMultiMoveIn(Resource resource) {
+    private void testSingleResourceDistributionOptimizeMultiMoveIn(byte resource) {
         AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
@@ -312,19 +314,19 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
 
     @Test
     public void testSingleResourceDistributionOptimizeOneMove() {
-        testSingleResourceDistributionOptimizeOneMove(Resource.NW_IN);
-        testSingleResourceDistributionOptimizeOneMove(Resource.NW_OUT);
+        testSingleResourceDistributionOptimizeOneMove(NW_IN);
+        testSingleResourceDistributionOptimizeOneMove(NW_OUT);
     }
 
     @Test
     public void testSingleResourceDistributionOptimizeMultiMoveOut() {
-        testSingleResourceDistributionOptimizeMultiMoveOut(Resource.NW_IN);
-        testSingleResourceDistributionOptimizeMultiMoveOut(Resource.NW_OUT);
-        testSingleResourceDistributionOptimizeMultiMoveIn(Resource.NW_IN);
-        testSingleResourceDistributionOptimizeMultiMoveIn(Resource.NW_OUT);
+        testSingleResourceDistributionOptimizeMultiMoveOut(NW_IN);
+        testSingleResourceDistributionOptimizeMultiMoveOut(NW_OUT);
+        testSingleResourceDistributionOptimizeMultiMoveIn(NW_IN);
+        testSingleResourceDistributionOptimizeMultiMoveIn(NW_OUT);
     }
 
-    private void testMultiGoalOptimizeWithOneToOneReplicaSwap(Resource resource) {
+    private void testMultiGoalOptimizeWithOneToOneReplicaSwap(byte resource) {
         AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
@@ -332,29 +334,29 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         Broker broker0 = createBroker(cluster, RACK, 0, true);
         Broker broker1 = createBroker(cluster, RACK, 1, true);
 
-        broker0.setLoad(Resource.NW_IN, 90);
-        broker0.setLoad(Resource.NW_OUT, 50);
+        broker0.setLoad(NW_IN, 90);
+        broker0.setLoad(NW_OUT, 50);
 
-        broker1.setLoad(Resource.NW_IN, 20);
-        broker1.setLoad(Resource.NW_OUT, 90);
+        broker1.setLoad(NW_IN, 20);
+        broker1.setLoad(NW_OUT, 90);
 
         TopicPartitionReplica replica0 = createTopicPartition(cluster, 0, TOPIC_0, 0);
         TopicPartitionReplica replica1 = createTopicPartition(cluster, 0, TOPIC_1, 0);
-        replica0.setLoad(Resource.NW_IN, 40);
-        replica0.setLoad(Resource.NW_OUT, 30);
-        replica1.setLoad(Resource.NW_IN, 50);
-        replica1.setLoad(Resource.NW_OUT, 20);
-        Assertions.assertEquals(90, cluster.replicasFor(0).stream().mapToDouble(e -> e.load(Resource.NW_IN)).sum());
-        Assertions.assertEquals(50, cluster.replicasFor(0).stream().mapToDouble(e -> e.load(Resource.NW_OUT)).sum());
+        replica0.setLoad(NW_IN, 40);
+        replica0.setLoad(NW_OUT, 30);
+        replica1.setLoad(NW_IN, 50);
+        replica1.setLoad(NW_OUT, 20);
+        Assertions.assertEquals(90, cluster.replicasFor(0).stream().mapToDouble(e -> e.load(NW_IN)).sum());
+        Assertions.assertEquals(50, cluster.replicasFor(0).stream().mapToDouble(e -> e.load(NW_OUT)).sum());
 
         TopicPartitionReplica replica2 = createTopicPartition(cluster, 1, TOPIC_0, 1);
         TopicPartitionReplica replica3 = createTopicPartition(cluster, 1, TOPIC_1, 1);
-        replica2.setLoad(Resource.NW_IN, 5);
-        replica2.setLoad(Resource.NW_OUT, 50);
-        replica3.setLoad(Resource.NW_IN, 15);
-        replica3.setLoad(Resource.NW_OUT, 40);
-        Assertions.assertEquals(20, cluster.replicasFor(1).stream().mapToDouble(e -> e.load(Resource.NW_IN)).sum());
-        Assertions.assertEquals(90, cluster.replicasFor(1).stream().mapToDouble(e -> e.load(Resource.NW_OUT)).sum());
+        replica2.setLoad(NW_IN, 5);
+        replica2.setLoad(NW_OUT, 50);
+        replica3.setLoad(NW_IN, 15);
+        replica3.setLoad(NW_OUT, 40);
+        Assertions.assertEquals(20, cluster.replicasFor(1).stream().mapToDouble(e -> e.load(NW_IN)).sum());
+        Assertions.assertEquals(90, cluster.replicasFor(1).stream().mapToDouble(e -> e.load(NW_OUT)).sum());
 
         List<Action> actions = goal.optimize(cluster, goalMap.values(), Collections.emptyList());
         System.out.printf("Actions: %s%n", actions);
@@ -368,11 +370,11 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
     @Test
     @Disabled
     public void testMultiGoalOptimizeWithOneToOneReplicaSwap() {
-        testMultiGoalOptimizeWithOneToOneReplicaSwap(Resource.NW_IN);
-        testMultiGoalOptimizeWithOneToOneReplicaSwap(Resource.NW_OUT);
+        testMultiGoalOptimizeWithOneToOneReplicaSwap(NW_IN);
+        testMultiGoalOptimizeWithOneToOneReplicaSwap(NW_OUT);
     }
 
-    private void setupCluster(Resource resource, ClusterModelSnapshot cluster, Broker broker0, Broker broker1) {
+    private void setupCluster(byte resource, ClusterModelSnapshot cluster, Broker broker0, Broker broker1) {
         double load0 = 10;
         double load1 = 90;
         broker0.setLoad(resource, load0);
@@ -391,7 +393,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
         Assertions.assertEquals(load1, cluster.replicasFor(1).stream().mapToDouble(e -> e.load(resource)).sum());
     }
 
-    private void testNotIncreaseLoadForSlowBroker(Resource resource) {
+    private void testNotIncreaseLoadForSlowBroker(byte resource) {
         AbstractGoal goal = getGoalByResource(resource);
         Assertions.assertNotNull(goal);
 
@@ -417,7 +419,7 @@ public class AbstractResourceUsageDistributionGoalTest extends GoalTestBase {
 
     @Test
     public void testNotIncreaseLoadForSlowBroker() {
-        testNotIncreaseLoadForSlowBroker(Resource.NW_IN);
-        testNotIncreaseLoadForSlowBroker(Resource.NW_OUT);
+        testNotIncreaseLoadForSlowBroker(NW_IN);
+        testNotIncreaseLoadForSlowBroker(NW_OUT);
     }
 }

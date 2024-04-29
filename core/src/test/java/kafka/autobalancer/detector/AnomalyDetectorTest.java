@@ -20,7 +20,7 @@ package kafka.autobalancer.detector;
 import com.automq.stream.s3.metrics.TimerUtil;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;

@@ -11,7 +11,6 @@
 
 package kafka.autobalancer.model;
 
-import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
 
 import java.util.HashMap;
@@ -104,14 +103,6 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
             this.isSlowBroker = isSlowBroker;
         }
 
-        public void reduceLoad(Resource resource, double delta) {
-            this.setLoad(resource, load(resource) - delta);
-        }
-
-        public void addLoad(Resource resource, double delta) {
-            this.setLoad(resource, load(resource) + delta);
-        }
-
         @Override
         public void update(Map<Byte, Double> metricsMap, long timestamp) {
             super.update(metricsMap, timestamp);
@@ -157,7 +148,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         }
 
         @Override
-        public void processMetrics() {
+        public void processMetric(byte metricType, double value) {
             // do nothing
         }
 
