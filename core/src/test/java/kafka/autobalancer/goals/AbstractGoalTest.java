@@ -30,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -99,7 +100,7 @@ public class AbstractGoalTest extends GoalTestBase {
         Assertions.assertEquals(0.608, goal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 4), 2, 0), cluster), 0.001);
         Assertions.assertEquals(0.5, goal.actionAcceptanceScore(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 4), 2, 1), cluster), 0.001);
 
-        List<Action> actions = goal.optimize(cluster, List.of(goal));
+        List<Action> actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
         Assertions.assertFalse(actions.isEmpty());
         Assertions.assertEquals(1, actions.size());
         Assertions.assertEquals(2, actions.get(0).getSrcBrokerId());

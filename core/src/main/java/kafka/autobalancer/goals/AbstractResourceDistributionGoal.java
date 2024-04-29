@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -29,7 +30,14 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
     private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     @Override
-    public List<Action> doOptimize(Set<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority) {
+    public boolean isHardGoal() {
+        return false;
+    }
+
+    @Override
+    public List<Action> doOptimize(Set<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster,
+                                   Collection<Goal> goalsByPriority, Collection<Goal> optimizedGoals,
+                                   Map<String, Set<String>> goalsByGroup) {
         List<Action> actions = new ArrayList<>();
         List<BrokerUpdater.Broker> brokersToOptimize = new ArrayList<>();
         for (BrokerUpdater.Broker broker : eligibleBrokers) {
@@ -45,7 +53,8 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
             List<BrokerUpdater.Broker> candidateBrokers =
                     eligibleBrokers.stream().filter(b -> b.getBrokerId() != broker.getBrokerId()).collect(Collectors.toList());
             if (requireLessLoad(broker)) {
-                List<Action> brokerActions = tryReduceLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers, goalsByPriority);
+                List<Action> brokerActions = tryReduceLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers,
+                        goalsByPriority, optimizedGoals, goalsByGroup);
 //                if (!isBrokerAcceptable(broker)) {
 //                    brokerActions.addAll(tryReduceLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
 //                }
@@ -55,7 +64,8 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
                     // prevent scheduling more partitions to slow broker
                     continue;
                 }
-                List<Action> brokerActions = tryIncreaseLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers, goalsByPriority);
+                List<Action> brokerActions = tryIncreaseLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers,
+                        goalsByPriority, optimizedGoals, goalsByGroup);
 //                if (!isBrokerAcceptable(broker)) {
 //                    brokerActions.addAll(tryIncreaseLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
 //                }

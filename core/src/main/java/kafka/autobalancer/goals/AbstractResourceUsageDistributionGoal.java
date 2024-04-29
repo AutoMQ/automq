@@ -17,11 +17,9 @@ import kafka.autobalancer.common.Resource;
 import kafka.autobalancer.common.normalizer.Normalizer;
 import kafka.autobalancer.common.normalizer.StepNormalizer;
 import kafka.autobalancer.model.BrokerUpdater;
-import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 
 import java.util.Comparator;
-import java.util.Map;
 import java.util.Set;
 
 public abstract class AbstractResourceUsageDistributionGoal extends AbstractResourceDistributionGoal {
@@ -29,8 +27,6 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     private final Comparator<BrokerUpdater.Broker> highLoadComparator = Comparator.comparingDouble(b -> -b.load(resource()));
     private final Comparator<BrokerUpdater.Broker> lowLoadComparator = Comparator.comparingDouble(b -> b.load(resource()));
     protected Normalizer normalizer;
-
-    protected long maxNormalizedLoadBytes = 100 * 1024 * 1024;
     protected volatile long usageDetectThreshold;
     protected volatile double usageAvgDeviationRatio;
     protected double usageAvg;
@@ -45,29 +41,9 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
         usageAvgDeviation = usageAvg * usageAvgDeviationRatio;
         usageDistLowerBound = Math.max(0, usageAvg * (1 - this.usageAvgDeviationRatio));
         usageDistUpperBound = usageAvg * (1 + this.usageAvgDeviationRatio);
-        normalizer = new StepNormalizer(usageAvgDeviation, usageAvgDeviation + maxNormalizedLoadBytes, 0.9);
-        LOGGER.info("{} expected dist bound: {}", name(), String.format("%.2fKB/s-%.2fKB/s", usageDistLowerBound / 1024, usageDistUpperBound / 1024));
-    }
-
-    @Override
-    public void configure(Map<String, ?> configs) {
-        if (configs.containsKey(KafkaConfig.S3NetworkBaselineBandwidthProp())) {
-            Object nwBandwidth = configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp());
-            try {
-                if (nwBandwidth instanceof Long) {
-                    this.maxNormalizedLoadBytes = (Long) nwBandwidth;
-                } else if (nwBandwidth instanceof Integer) {
-                    this.maxNormalizedLoadBytes = (Integer) nwBandwidth;
-                } else if (nwBandwidth instanceof String) {
-                    this.maxNormalizedLoadBytes = Long.parseLong((String) nwBandwidth);
-                } else {
-                    LOGGER.error("Failed to parse max normalized load bytes from config {}, using default value", nwBandwidth);
-                }
-            } catch (Exception e) {
-                LOGGER.error("Failed to parse max normalized load bytes from config {}, using default value", nwBandwidth, e);
-            }
-        }
-        LOGGER.info("{} using maxNormalizedLoadBytes: {}", name(), this.maxNormalizedLoadBytes);
+        normalizer = new StepNormalizer(usageAvgDeviation, usageAvgDeviation + linearNormalizerThreshold(), 0.9);
+        LOGGER.info("{} expected dist bound: {}", name(), String.format("%s-%s", resource.resourceString(usageDistLowerBound),
+                resource.resourceString(usageDistUpperBound)));
     }
 
     @Override
@@ -115,4 +91,6 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     public double getUsageAvgDeviationRatio() {
         return usageAvgDeviationRatio;
     }
+
+    public abstract double linearNormalizerThreshold();
 }

@@ -34,17 +34,20 @@ import java.util.stream.Collectors;
 
 public abstract class AbstractGoal implements Goal {
     private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
-    protected static final double POSITIVE_ACTION_SCORE_THRESHOLD = 0.5;
+    public static final Double NOT_ACCEPTABLE = -1.0;
+    public static final double POSITIVE_ACTION_SCORE_THRESHOLD = 0.5;
 
     protected Optional<Action> tryMovePartitionOut(ClusterModelSnapshot cluster,
-                                                 TopicPartitionReplicaUpdater.TopicPartitionReplica replica,
-                                                 BrokerUpdater.Broker srcBroker,
-                                                 List<BrokerUpdater.Broker> candidates,
-                                                 Collection<Goal> goalsByPriority) {
+                                                   TopicPartitionReplicaUpdater.TopicPartitionReplica replica,
+                                                   BrokerUpdater.Broker srcBroker,
+                                                   List<BrokerUpdater.Broker> candidates,
+                                                   Collection<Goal> goalsByPriority,
+                                                   Collection<Goal> optimizedGoals,
+                                                   Map<String, Set<String>> goalsByGroup) {
         List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
         for (BrokerUpdater.Broker candidate : candidates) {
             Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), srcBroker.getBrokerId(), candidate.getBrokerId());
-            double score = calculateCandidateActionScores(goalsByPriority, action, cluster);
+            double score = calculateCandidateActionScores(goalsByPriority, action, cluster, optimizedGoals, goalsByGroup);
             if (score > POSITIVE_ACTION_SCORE_THRESHOLD) {
                 candidateActionScores.add(Map.entry(action, score));
             }
@@ -59,6 +62,8 @@ public abstract class AbstractGoal implements Goal {
                                                    BrokerUpdater.Broker srcBroker,
                                                    List<BrokerUpdater.Broker> candidates,
                                                    Collection<Goal> goalsByPriority,
+                                                   Collection<Goal> optimizedGoals,
+                                                   Map<String, Set<String>> goalsByGroup,
                                                    Comparator<TopicPartitionReplicaUpdater.TopicPartitionReplica> replicaComparator,
                                                    BiPredicate<TopicPartitionReplicaUpdater.TopicPartitionReplica,
                                                            TopicPartitionReplicaUpdater.TopicPartitionReplica> replicaBiPredicate) {
@@ -74,7 +79,7 @@ public abstract class AbstractGoal implements Goal {
                 }
                 Action action = new Action(ActionType.SWAP, srcReplica.getTopicPartition(), srcBroker.getBrokerId(),
                         candidate.getBrokerId(), candidateReplica.getTopicPartition());
-                double score = calculateCandidateActionScores(goalsByPriority, action, cluster);
+                double score = calculateCandidateActionScores(goalsByPriority, action, cluster, optimizedGoals, goalsByGroup);
                 if (score > POSITIVE_ACTION_SCORE_THRESHOLD) {
                     LOGGER.debug("try swap partition {} out for broker {} with {}, action score: {}", srcReplica.getTopicPartition(),
                             srcBroker.getBrokerId(), candidateReplica.getTopicPartition(), score);
@@ -85,24 +90,36 @@ public abstract class AbstractGoal implements Goal {
         return Optional.empty();
     }
 
-    protected double calculateCandidateActionScores(Collection<Goal> goalsByPriority, Action action, ClusterModelSnapshot cluster) {
-        Map<Goal, Double> scoreMap = new HashMap<>();
-        boolean isHardGoalViolated = false;
+    protected double calculateCandidateActionScores(Collection<Goal> goalsByPriority, Action action,
+                                                  ClusterModelSnapshot cluster, Collection<Goal> optimizedGoals,
+                                                  Map<String, Set<String>> goalsByGroup) {
+        Map<String, Map<Goal, Double>> goalScoreMapByGroup = new HashMap<>();
         for (Goal goal : goalsByPriority) {
             double score = goal.actionAcceptanceScore(action, cluster);
-            if (goal.type() == GoalType.HARD && score == 0) {
-                isHardGoalViolated = true;
-                break;
+            if (score == NOT_ACCEPTABLE) {
+                return NOT_ACCEPTABLE;
             }
-            scoreMap.put(goal, score);
+            goalScoreMapByGroup.compute(goal.group(), (k, v) -> v == null ? new HashMap<>() : v).put(goal, score);
         }
 
-        if (!isHardGoalViolated) {
-            double overallScore = normalizeGoalsScore(scoreMap);
-            LOGGER.debug("action {} overall score: {}, scores on each goal: {}", action, overallScore, scoreMap);
-            return overallScore;
+        LOGGER.debug("action {} scores on each goal: {}", action, goalScoreMapByGroup);
+        Map<String, Double> groupScoreMap = weightedGoalsScoreByGroup(goalScoreMapByGroup);
+        for (Map.Entry<String, Double> entry : groupScoreMap.entrySet()) {
+            String group = entry.getKey();
+            if (entry.getValue() < POSITIVE_ACTION_SCORE_THRESHOLD) {
+                Set<String> goalMembers = goalsByGroup.get(group);
+                if (goalMembers != null) {
+                    for (Goal goal : optimizedGoals) {
+                        if (goalMembers.contains(goal.name())) {
+                            // action that makes the optimized goal group worse is not acceptable
+                            return NOT_ACCEPTABLE;
+                        }
+                    }
+                }
+            }
         }
-        return 0.0;
+
+        return groupScoreMap.get(group());
     }
 
     /**
@@ -129,13 +146,13 @@ public abstract class AbstractGoal implements Goal {
      * @param destBrokerBefore dest broker before action
      * @param srcBrokerAfter   source broker after action
      * @param destBrokerAfter  dest broker after action
-     * @return normalized score. 0 means not allowed action
+     * @return normalized score. -1.0 means not allowed action
      * > 0 means permitted action, but can be positive or negative for this goal
      */
     protected double calculateAcceptanceScore(BrokerUpdater.Broker srcBrokerBefore, BrokerUpdater.Broker destBrokerBefore, BrokerUpdater.Broker srcBrokerAfter, BrokerUpdater.Broker destBrokerAfter) {
         double score = scoreDelta(srcBrokerBefore, destBrokerBefore, srcBrokerAfter, destBrokerAfter);
 
-        if (type() != GoalType.HARD) {
+        if (!isHardGoal()) {
             return score;
         }
 
@@ -145,30 +162,37 @@ public abstract class AbstractGoal implements Goal {
         boolean isDestBrokerAcceptedAfter = isBrokerAcceptable(destBrokerAfter);
 
         if (isSrcBrokerAcceptedBefore && !isSrcBrokerAcceptedAfter) {
-            return 0.0;
+            return NOT_ACCEPTABLE;
         } else if (isDestBrokerAcceptedBefore && !isDestBrokerAcceptedAfter) {
-            return 0.0;
+            return NOT_ACCEPTABLE;
         }
 
         if (!isSrcBrokerAcceptedBefore && !isSrcBrokerAcceptedAfter) {
-            return score < POSITIVE_ACTION_SCORE_THRESHOLD ? 0.0 : score;
+            return score < POSITIVE_ACTION_SCORE_THRESHOLD ? NOT_ACCEPTABLE : score;
         } else if (!isDestBrokerAcceptedBefore && !isDestBrokerAcceptedAfter) {
-            return score < POSITIVE_ACTION_SCORE_THRESHOLD ? 0.0 : score;
+            return score < POSITIVE_ACTION_SCORE_THRESHOLD ? NOT_ACCEPTABLE : score;
         }
         return score;
     }
 
     /**
-     * Calculate the weighted score of an action based on its scores from all goals.
+     * Calculate the weighted score of an action based on its scores from goals from same group.
      *
-     * @param scoreMap score map from all goals
-     * @return the final score
+     * @param scoreMap score map from all goals by group
+     * @return the sum of weighted score by group
      */
-    protected double normalizeGoalsScore(Map<Goal, Double> scoreMap) {
-        int totalWeight = scoreMap.keySet().stream().mapToInt(e -> e.type().priority()).sum();
-        return scoreMap.entrySet().stream()
-                .mapToDouble(entry -> entry.getValue() * (double) entry.getKey().type().priority() / totalWeight)
-                .sum();
+    protected Map<String, Double> weightedGoalsScoreByGroup(Map<String, Map<Goal, Double>> scoreMap) {
+        Map<String, Double> groupScoreMap = new HashMap<>();
+        for (Map.Entry<String, Map<Goal, Double>> entry : scoreMap.entrySet()) {
+            String group = entry.getKey();
+            Map<Goal, Double> goalScoreMap = entry.getValue();
+            double totalWeight = goalScoreMap.keySet().stream().mapToDouble(Goal::weight).sum();
+            double weightedScore = goalScoreMap.entrySet().stream()
+                    .mapToDouble(e -> e.getValue() * e.getKey().weight() / totalWeight)
+                    .sum();
+            groupScoreMap.put(group, weightedScore);
+        }
+        return groupScoreMap;
     }
 
     /**
@@ -190,7 +214,7 @@ public abstract class AbstractGoal implements Goal {
     @Override
     public double actionAcceptanceScore(Action action, ClusterModelSnapshot cluster) {
         if (!GoalUtils.isValidAction(action, cluster)) {
-            return 0.0;
+            return NOT_ACCEPTABLE;
         }
         BrokerUpdater.Broker srcBrokerBefore = cluster.broker(action.getSrcBrokerId());
         BrokerUpdater.Broker destBrokerBefore = cluster.broker(action.getDestBrokerId());
@@ -198,7 +222,7 @@ public abstract class AbstractGoal implements Goal {
         BrokerUpdater.Broker destBrokerAfter = destBrokerBefore.copy(false);
 
         if (!moveReplica(action, cluster, srcBrokerAfter, destBrokerAfter)) {
-            return 0.0;
+            return NOT_ACCEPTABLE;
         }
 
         return calculateAcceptanceScore(srcBrokerBefore, destBrokerBefore, srcBrokerAfter, destBrokerAfter);

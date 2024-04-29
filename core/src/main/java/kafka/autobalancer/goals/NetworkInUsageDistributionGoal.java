@@ -23,7 +23,7 @@ import org.slf4j.Logger;
 import java.util.HashMap;
 import java.util.Map;
 
-public class NetworkInUsageDistributionGoal extends AbstractResourceUsageDistributionGoal {
+public class NetworkInUsageDistributionGoal extends AbstractNetworkUsageDistributionGoal {
     private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     @Override
@@ -51,8 +51,8 @@ public class NetworkInUsageDistributionGoal extends AbstractResourceUsageDistrib
     }
 
     @Override
-    public GoalType type() {
-        return GoalType.SOFT;
+    public double weight() {
+        return 1.0;
     }
 
     @Override

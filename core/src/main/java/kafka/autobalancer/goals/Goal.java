@@ -21,20 +21,35 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public interface Goal extends Configurable, Comparable<Goal> {
 
-    List<Action> doOptimize(Set<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority);
+    List<Action> doOptimize(Set<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster,
+                            Collection<Goal> goalsByPriority, Collection<Goal> optimizedGoals,
+                            Map<String, Set<String>> goalsByGroup);
 
-    default List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority) {
+    default List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority,
+                                  Collection<Goal> optimizedGoal) {
+        Map<String, Set<String>> goalsByGroup = goalsByPriority.stream()
+                .collect(Collectors.groupingBy(Goal::group, Collectors.mapping(Goal::name, Collectors.toSet())));
+        return optimize(cluster, goalsByPriority, optimizedGoal, goalsByGroup);
+    }
+
+    default List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority,
+                                  Collection<Goal> optimizedGoal, Map<String, Set<String>> goalsByGroup) {
         Set<BrokerUpdater.Broker> eligibleBrokers = getEligibleBrokers(cluster);
         goalsByPriority.forEach(e -> e.initialize(eligibleBrokers));
-        return doOptimize(eligibleBrokers, cluster, goalsByPriority);
+        return doOptimize(eligibleBrokers, cluster, goalsByPriority, optimizedGoal, goalsByGroup);
     }
 
     void initialize(Set<BrokerUpdater.Broker> brokers);
 
-    GoalType type();
+    boolean isHardGoal();
+
+    String group();
+
+    double weight();
 
     Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster);
 
@@ -51,7 +66,7 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     @Override
     default int compareTo(Goal other) {
-        return Integer.compare(other.type().priority(), this.type().priority());
+        return Boolean.compare(other.isHardGoal(), this.isHardGoal());
     }
 
     void validateReconfiguration(Map<String, ?> configs) throws ConfigException;
