@@ -115,10 +115,10 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
   </tr>
   <tr>
     <td>Component</td>
-    <td>Broker<br> Controller</td>
-    <td colspan="2">Broker<br>Controller<br>Zookeeper<br>(Non-Kraft)</td>
-    <td>Broker<br>Controller<br>Zookeeper<br>Bookkeeper<br>Proxy</td>
-    <td>Broker<br>Controller</td>
+    <td>Broker</td>
+    <td colspan="2">Broker<br>Zookeeper<br>(Non-KRaft)</td>
+    <td>Broker<br>Zookeeper<br>Bookkeeper<br>Proxy(Optional)</td>
+    <td>Broker</td>
     <td>Agent<br>MetadataServer</td>
   </tr>
   <tr>
