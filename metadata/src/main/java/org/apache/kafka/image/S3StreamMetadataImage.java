@@ -20,6 +20,7 @@ package org.apache.kafka.image;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamState;
 import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord.TagCollection;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.RangeMetadata;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.TreeMap;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 public class S3StreamMetadataImage {
     public static final S3StreamMetadataImage EMPTY =
@@ -45,6 +47,8 @@ public class S3StreamMetadataImage {
     private final long startOffset;
 
     private final StreamState state;
+
+    private final TagCollection tags;
 
     private final List<RangeMetadata> ranges;
 
@@ -62,6 +66,7 @@ public class S3StreamMetadataImage {
         this.streamId = streamId;
         this.epoch = epoch;
         this.state = state;
+        this.tags = new TagCollection();
         this.startOffset = startOffset;
         this.ranges = ranges;
         DeltaMap<Long, S3StreamObject> streamObjectsMap = new DeltaMap<>(new int[]{10});
@@ -71,25 +76,31 @@ public class S3StreamMetadataImage {
     }
 
     public S3StreamMetadataImage(
-            long streamId, long epoch, StreamState state,
+            long streamId, long epoch, StreamState state, TagCollection tags,
             long startOffset,
             List<RangeMetadata> ranges,
             DeltaMap<Long, S3StreamObject> streamObjectsMap) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.state = state;
+        this.tags = tags;
         this.startOffset = startOffset;
         this.ranges = ranges;
         this.streamObjectsMap = streamObjectsMap;
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        writer.write(0, new S3StreamRecord()
-                .setStreamId(streamId)
-                .setRangeIndex(currentRangeIndex())
-                .setStreamState(state.toByte())
-                .setEpoch(epoch)
-                .setStartOffset(startOffset));
+        AutoMQVersion version = options.metadataVersion().autoMQVersion();
+        S3StreamRecord record = new S3StreamRecord()
+            .setStreamId(streamId)
+            .setRangeIndex(currentRangeIndex())
+            .setStreamState(state.toByte())
+            .setEpoch(epoch)
+            .setStartOffset(startOffset);
+        if (version.isStreamTagsSupported()) {
+            record.setTags(tags);
+        }
+        writer.write(version.streamRecordVersion(), record);
         ranges.forEach(rangeMetadata -> writer.write(rangeMetadata.toRecord()));
         streamObjectsMap.forEach((id, obj) -> writer.write(obj.toRecord()));
     }
@@ -189,6 +200,10 @@ public class S3StreamMetadataImage {
 
     public StreamState state() {
         return state;
+    }
+
+    public TagCollection tags() {
+        return tags;
     }
 
     @Override

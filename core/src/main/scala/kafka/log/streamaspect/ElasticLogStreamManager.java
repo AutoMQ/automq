@@ -29,6 +29,7 @@ public class ElasticLogStreamManager {
     private final StreamClient streamClient;
     private final int replicaCount;
     private final long epoch;
+    private final Map<String, String> tags;
     /**
      * inner listener for created LazyStream
      */
@@ -38,14 +39,15 @@ public class ElasticLogStreamManager {
      */
     private ElasticStreamEventListener outerListener;
 
-    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount, long epoch) throws IOException {
+    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount, long epoch, Map<String, String> tags) throws IOException {
         this.streamClient = streamClient;
         this.replicaCount = replicaCount;
         this.epoch = epoch;
+        this.tags = tags;
         for (Map.Entry<String, Long> entry : streams.entrySet()) {
             String name = entry.getKey();
             long streamId = entry.getValue();
-            LazyStream stream = new LazyStream(name, streamId, streamClient, replicaCount, epoch);
+            LazyStream stream = new LazyStream(name, streamId, streamClient, replicaCount, epoch, tags);
             stream.setListener(innerListener);
             streamMap.put(name, stream);
         }
@@ -55,7 +57,7 @@ public class ElasticLogStreamManager {
         if (streamMap.containsKey(name)) {
             return streamMap.get(name);
         }
-        LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount, epoch);
+        LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount, epoch, tags);
         lazyStream.setListener(innerListener);
         // pre-create log and tim stream cause of their high frequency of use.
         boolean warmUp = "log".equals(name) || "tim".equals(name);

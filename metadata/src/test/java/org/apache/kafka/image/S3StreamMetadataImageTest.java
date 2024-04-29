@@ -30,6 +30,8 @@ import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -181,7 +183,9 @@ public class S3StreamMetadataImageTest {
 
     private void testToImageAndBack(S3StreamMetadataImage image) {
         RecordListWriter writer = new RecordListWriter();
-        ImageWriterOptions options = new ImageWriterOptions.Builder().build();
+        MetadataVersion metadataVersion = MetadataVersion.LATEST_PRODUCTION;
+        metadataVersion.setAutoMQVersion(AutoMQVersion.LATEST);
+        ImageWriterOptions options = new ImageWriterOptions.Builder().setMetadataVersion(metadataVersion).build();
         image.write(writer, options);
         S3StreamMetadataDelta delta = new S3StreamMetadataDelta(S3StreamMetadataImage.EMPTY);
         RecordTestUtils.replayAll(delta, writer.records());

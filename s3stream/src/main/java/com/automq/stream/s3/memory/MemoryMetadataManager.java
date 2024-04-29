@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -225,7 +226,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public synchronized CompletableFuture<Long> createStream() {
+    public synchronized CompletableFuture<Long> createStream(Map<String, String> tags) {
         long streamId = streamIdAlloc.getAndIncrement();
         streams.put(streamId, new StreamMetadata(streamId, -1, 0, 0, StreamState.CLOSED));
         return CompletableFuture.completedFuture(streamId);

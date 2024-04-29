@@ -21,6 +21,7 @@ import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.utils.FutureUtil;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,14 +42,16 @@ public class LazyStream implements Stream {
     private final StreamClient client;
     private final int replicaCount;
     private final long epoch;
+    private final Map<String, String> tags;
     private volatile Stream inner = NOOP_STREAM;
     private ElasticStreamEventListener eventListener;
 
-    public LazyStream(String name, long streamId, StreamClient client, int replicaCount, long epoch) throws IOException {
+    public LazyStream(String name, long streamId, StreamClient client, int replicaCount, long epoch, Map<String, String> tags) throws IOException {
         this.name = name;
         this.client = client;
         this.replicaCount = replicaCount;
         this.epoch = epoch;
+        this.tags = tags;
         if (streamId != NOOP_STREAM_ID) {
             try {
                 // open exist stream
@@ -69,8 +72,10 @@ public class LazyStream implements Stream {
     public void warmUp() throws IOException {
         if (this.inner == NOOP_STREAM) {
             try {
-                this.inner = client.createAndOpenStream(CreateStreamOptions.builder().replicaCount(replicaCount)
-                        .epoch(epoch).build()).get();
+                CreateStreamOptions.Builder options = CreateStreamOptions.builder().replicaCount(replicaCount)
+                    .epoch(epoch);
+                tags.forEach(options::tag);
+                this.inner = client.createAndOpenStream(options.build()).get();
                 LOGGER.info("warmup, created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
                 notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
             } catch (Throwable e) {

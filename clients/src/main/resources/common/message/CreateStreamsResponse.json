@@ -17,7 +17,7 @@
   "apiKey": 501,
   "type": "response",
   "name": "CreateStreamsResponse",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {

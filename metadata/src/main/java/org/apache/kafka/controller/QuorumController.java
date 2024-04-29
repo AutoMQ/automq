@@ -2100,7 +2100,7 @@ public final class QuorumController implements Controller {
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
-                this.s3ObjectControlManager, clusterControl);
+                this.s3ObjectControlManager, clusterControl, featureControl);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
         // AutoMQ for Kafka inject end
 

@@ -65,6 +65,9 @@ public final class FeaturesImage {
         this.finalizedVersions = Collections.unmodifiableMap(finalizedVersions);
         this.metadataVersion = metadataVersion;
         this.zkMigrationState = zkMigrationState;
+        // AutoMQ inject start
+        this.metadataVersion.setAutoMQVersion(autoMQVersion());
+        // AutoMQ inject end
     }
 
     public boolean isEmpty() {
