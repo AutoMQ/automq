@@ -12,10 +12,13 @@
 package com.automq.stream.api;
 
 import com.automq.stream.utils.Arguments;
+import java.util.HashMap;
+import java.util.Map;
 
 public class CreateStreamOptions {
     private int replicaCount;
     private long epoch;
+    private Map<String, String> tags = new HashMap<>();
 
     private CreateStreamOptions() {
     }
@@ -32,6 +35,10 @@ public class CreateStreamOptions {
         return epoch;
     }
 
+    public Map<String, String> tags() {
+        return tags;
+    }
+
     public static class Builder {
         private final CreateStreamOptions options = new CreateStreamOptions();
 
@@ -43,6 +50,11 @@ public class CreateStreamOptions {
 
         public Builder epoch(long epoch) {
             options.epoch = epoch;
+            return this;
+        }
+
+        public Builder tag(String key, String value) {
+            options.tags.put(key, value);
             return this;
         }
 

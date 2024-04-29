@@ -92,7 +92,7 @@ public class DefaultS3Client implements Client {
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(kafkaConfig.s3ControllerRequestRetryMaxCount(),
                 kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
-        this.streamManager = new ControllerStreamManager(this.metadataManager, this.requestSender, kafkaConfig);
+        this.streamManager = new ControllerStreamManager(this.metadataManager, this.requestSender, kafkaConfig, () -> brokerServer.metadataCache().autoMQVersion());
         this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, s3Operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionS3Operator);

@@ -14,6 +14,8 @@ package kafka.log.stream.s3.streams;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.streams.StreamManager;
+import java.util.Map;
+import java.util.function.Supplier;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
@@ -48,6 +50,7 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,17 +62,20 @@ public class ControllerStreamManager implements StreamManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerStreamManager.class);
     private final StreamMetadataManager streamMetadataManager;
-    private final KafkaConfig config;
-    private final ControllerRequestSender requestSender;
     private final int nodeId;
     private final long nodeEpoch;
 
-    public ControllerStreamManager(StreamMetadataManager streamMetadataManager, ControllerRequestSender requestSender, KafkaConfig config) {
+    private final KafkaConfig config;
+    private final ControllerRequestSender requestSender;
+    private final Supplier<AutoMQVersion> version;
+
+    public ControllerStreamManager(StreamMetadataManager streamMetadataManager, ControllerRequestSender requestSender, KafkaConfig config, Supplier<AutoMQVersion> version) {
         this.streamMetadataManager = streamMetadataManager;
         this.config = config;
-        this.requestSender = requestSender;
         this.nodeId = config.brokerId();
         this.nodeEpoch = config.nodeEpoch();
+        this.requestSender = requestSender;
+        this.version = version;
     }
 
     @Override
@@ -122,8 +128,13 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
-    public CompletableFuture<Long> createStream() {
+    public CompletableFuture<Long> createStream(Map<String, String> tags) {
         CreateStreamRequest request = new CreateStreamRequest().setNodeId(nodeId);
+        if (version.get().isStreamTagsSupported() && tags != null && !tags.isEmpty()) {
+            CreateStreamsRequestData.TagCollection tagCollection = new CreateStreamsRequestData.TagCollection();
+            tags.forEach((k, v) -> tagCollection.add(new CreateStreamsRequestData.Tag().setKey(k).setValue(v)));
+            request.setTags(tagCollection);
+        }
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {

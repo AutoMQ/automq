@@ -47,6 +47,18 @@ public enum AutoMQVersion {
         return isAtLeast(V1);
     }
 
+    public boolean isStreamTagsSupported() {
+        return isAtLeast(V1);
+    }
+
+    public short streamRecordVersion() {
+        if (isReassignmentV1Supported()) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
     public boolean isAtLeast(AutoMQVersion otherVersion) {
         return this.compareTo(otherVersion) >= 0;
     }

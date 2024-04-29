@@ -96,7 +96,7 @@ public class S3StreamClient implements StreamClient {
         return runInLock(() -> {
             checkState();
             TimerUtil timerUtil = new TimerUtil();
-            return FutureUtil.exec(() -> streamManager.createStream().thenCompose(streamId -> {
+            return FutureUtil.exec(() -> streamManager.createStream(options.tags()).thenCompose(streamId -> {
                 StreamOperationStats.getInstance().createStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 return openStream0(streamId, options.epoch());
             }), LOGGER, "createAndOpenStream");

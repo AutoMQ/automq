@@ -59,6 +59,7 @@ import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -106,6 +107,7 @@ public class StreamControlManagerTest {
     private StreamControlManager manager;
     private S3ObjectControlManager objectControlManager;
     private ClusterControlManager clusterControlManager;
+    private FeatureControlManager featureControlManager;
 
     @BeforeEach
     public void setUp() {
@@ -114,8 +116,10 @@ public class StreamControlManagerTest {
         quorumController = mock(QuorumController.class);
         objectControlManager = mock(S3ObjectControlManager.class);
         clusterControlManager = mock(ClusterControlManager.class);
+        featureControlManager = mock(FeatureControlManager.class);
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.LATEST);
 
-        manager = new StreamControlManager(quorumController, registry, context, objectControlManager, clusterControlManager);
+        manager = new StreamControlManager(quorumController, registry, context, objectControlManager, clusterControlManager, featureControlManager);
     }
 
     @Test

@@ -12,7 +12,9 @@
 package com.automq.stream.s3.streams;
 
 import com.automq.stream.s3.metadata.StreamMetadata;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public interface StreamManager {
@@ -33,12 +35,16 @@ public interface StreamManager {
      */
     CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds);
 
+    default CompletableFuture<Long> createStream() {
+        return createStream(Collections.emptyMap());
+    }
+
     /**
-     * Create a new stream.
-     *
+     * Create stream with tags
+     * @param tags key value tags
      * @return stream id.
      */
-    CompletableFuture<Long> createStream();
+    CompletableFuture<Long> createStream(Map<String, String> tags);
 
     /**
      * Open stream with newer epoch. The controller will:

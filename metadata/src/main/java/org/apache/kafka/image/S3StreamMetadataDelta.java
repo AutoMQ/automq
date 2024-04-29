@@ -23,6 +23,7 @@ import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord.TagCollection;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 
@@ -43,6 +44,7 @@ public class S3StreamMetadataDelta {
     private long newStartOffset;
     private long newEpoch;
     private StreamState currentState;
+    private TagCollection tags;
 
     private final Map<Integer/*rangeIndex*/, RangeMetadata> changedRanges = new HashMap<>();
     private final Set<Integer/*rangeIndex*/> removedRanges = new HashSet<>();
@@ -54,6 +56,7 @@ public class S3StreamMetadataDelta {
         this.newEpoch = image.getEpoch();
         this.streamId = image.getStreamId();
         this.newStartOffset = image.getStartOffset();
+        this.tags = image.tags();
         this.currentState = image.state();
     }
 
@@ -62,6 +65,9 @@ public class S3StreamMetadataDelta {
         this.newEpoch = record.epoch();
         this.newStartOffset = record.startOffset();
         this.currentState = StreamState.fromByte(record.streamState());
+        if (!record.tags().isEmpty()) {
+            this.tags = record.tags();
+        }
     }
 
     public void replay(RangeRecord record) {
@@ -110,7 +116,7 @@ public class S3StreamMetadataDelta {
             newS3StreamObjects.putAll(changedS3StreamObjects);
             newS3StreamObjects.removeAll(removedS3StreamObjectIds);
         }
-        return new S3StreamMetadataImage(streamId, newEpoch, currentState, newStartOffset, newRanges, newS3StreamObjects);
+        return new S3StreamMetadataImage(streamId, newEpoch, currentState, tags, newStartOffset, newRanges, newS3StreamObjects);
     }
 
 }

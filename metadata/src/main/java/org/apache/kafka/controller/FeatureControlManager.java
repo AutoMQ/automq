@@ -405,6 +405,9 @@ public class FeatureControlManager {
         }
         if (record.name().equals(MetadataVersion.FEATURE_NAME)) {
             MetadataVersion mv = MetadataVersion.fromFeatureLevel(record.featureLevel());
+            // AutoMQ inject start
+            mv.setAutoMQVersion(autoMQVersion.get());
+            // AutoMQ inject end
             metadataVersion.set(mv);
             log.info("Replayed a FeatureLevelRecord setting metadata version to {}", mv);
         } else {
@@ -425,6 +428,10 @@ public class FeatureControlManager {
                 autoMQVersion.set(AutoMQVersion.V0);
             } else {
                 autoMQVersion.set(AutoMQVersion.from(record.featureLevel()));
+            }
+            MetadataVersion mv = metadataVersion.get();
+            if (mv != null) {
+                mv.setAutoMQVersion(autoMQVersion.get());
             }
         }
         // AutoMQ inject end

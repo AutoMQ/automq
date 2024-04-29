@@ -70,11 +70,13 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.ControllerResult;
+import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
@@ -110,28 +112,30 @@ public class StreamControlManager {
 
     private final ClusterControlManager clusterControlManager;
 
-    private final ScheduledExecutorService cleanupScheduler;
+    private final FeatureControlManager featureControlManager;
 
     public StreamControlManager(
         QuorumController quorumController,
         SnapshotRegistry snapshotRegistry,
         LogContext logContext,
         S3ObjectControlManager s3ObjectControlManager,
-        ClusterControlManager clusterControlManager) {
+        ClusterControlManager clusterControlManager,
+        FeatureControlManager featureControlManager) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(StreamControlManager.class);
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.nodesMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
 
-        this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(
+        ScheduledExecutorService cleanupScheduler = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("stream-cleanup-scheduler", true));
 
         this.quorumController = quorumController;
         this.s3ObjectControlManager = s3ObjectControlManager;
         this.clusterControlManager = clusterControlManager;
+        this.featureControlManager = featureControlManager;
 
-        this.cleanupScheduler.scheduleWithFixedDelay(this::triggerCleanupScaleInNodes, 30, 30, TimeUnit.MINUTES);
+        cleanupScheduler.scheduleWithFixedDelay(this::triggerCleanupScaleInNodes, 30, 30, TimeUnit.MINUTES);
 
         S3StreamKafkaMetricsManager.setStreamSetObjectNumSupplier(() -> {
             Map<String, Integer> numMap = new HashMap<>();
@@ -140,15 +144,12 @@ public class StreamControlManager {
             }
             return numMap;
         });
-        S3StreamKafkaMetricsManager.setStreamObjectNumSupplier(() -> {
-            return streamsMetadata.values().stream().mapToInt(it -> it.streamObjects().size()).sum();
-        });
+        S3StreamKafkaMetricsManager.setStreamObjectNumSupplier(() -> streamsMetadata.values().stream().mapToInt(it -> it.streamObjects().size()).sum());
     }
 
     public ControllerResult<CreateStreamResponse> createStream(int nodeId, long nodeEpoch,
         CreateStreamRequest request) {
         CreateStreamResponse resp = new CreateStreamResponse();
-
         // verify node epoch
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
@@ -163,11 +164,18 @@ public class StreamControlManager {
         ApiMessageAndVersion record0 = new ApiMessageAndVersion(new AssignedStreamIdRecord()
             .setAssignedStreamId(streamId), (short) 0);
         // create stream
-        ApiMessageAndVersion record = new ApiMessageAndVersion(new S3StreamRecord()
+        S3StreamRecord s3StreamRecord = new S3StreamRecord()
             .setStreamId(streamId)
             .setEpoch(S3StreamConstant.INIT_EPOCH)
             .setStartOffset(S3StreamConstant.INIT_START_OFFSET)
-            .setRangeIndex(S3StreamConstant.INIT_RANGE_INDEX), (short) 0);
+            .setRangeIndex(S3StreamConstant.INIT_RANGE_INDEX);
+        AutoMQVersion autoMQVersion = featureControlManager.autoMQVersion();
+        if (autoMQVersion.isStreamTagsSupported()) {
+            S3StreamRecord.TagCollection tags = new S3StreamRecord.TagCollection();
+            request.tags().forEach(tag -> tags.add(new S3StreamRecord.Tag().setKey(tag.key()).setValue(tag.value())));
+            s3StreamRecord.setTags(tags);
+        }
+        ApiMessageAndVersion record = new ApiMessageAndVersion(s3StreamRecord, autoMQVersion.streamRecordVersion());
         resp.setStreamId(streamId);
         log.info("[CreateStream] successfully create a stream. streamId={}, nodeId={}, nodeEpoch={}", streamId, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
@@ -210,6 +218,8 @@ public class StreamControlManager {
         OpenStreamResponse resp = new OpenStreamResponse();
         long streamId = request.streamId();
         long epoch = request.streamEpoch();
+
+        AutoMQVersion version = featureControlManager.autoMQVersion();
 
         // verify node epoch
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
@@ -261,12 +271,12 @@ public class StreamControlManager {
                     .setEpoch(epoch)
                     .setRangeIndex(streamMetadata.currentRangeIndex())
                     .setStartOffset(streamMetadata.startOffset())
-                    .setStreamState(StreamState.OPENED.toByte()), (short) 0));
+                    .setStreamState(StreamState.OPENED.toByte()), version.streamRecordVersion()));
             }
             return ControllerResult.of(records, resp);
         }
         if (streamMetadata.currentState() == StreamState.OPENED) {
-            // stream still in opened state, can't open until it is closed
+            // the stream still in opened state, so it can't open until it is closed
             log.warn("[OpenStream] stream still in opened state. streamId={}, streamEpoch={}, ownerId={}, nodeId={}, nodeEpoch={}",
                 streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeOwner(), nodeId, nodeEpoch);
             resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
@@ -281,7 +291,7 @@ public class StreamControlManager {
             .setEpoch(epoch)
             .setRangeIndex(newRangeIndex)
             .setStartOffset(streamMetadata.startOffset())
-            .setStreamState(StreamState.OPENED.toByte()), (short) 0));
+            .setStreamState(StreamState.OPENED.toByte()), version.streamRecordVersion()));
         // get new range's start offset
         // default regard this range is the first range in stream, use 0 as start offset
         long startOffset = 0;
@@ -362,7 +372,7 @@ public class StreamControlManager {
         }
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
         if (streamMetadata.currentState() == StreamState.CLOSED) {
-            // regard it as redundant close operation, just return success
+            // regard it as a redundant close operation, just return success
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         // now the request in valid, update the stream's state
@@ -373,7 +383,8 @@ public class StreamControlManager {
                 .setEpoch(epoch)
                 .setRangeIndex(streamMetadata.currentRangeIndex())
                 .setStartOffset(streamMetadata.startOffset())
-                .setStreamState(StreamState.CLOSED.toByte()), (short) 0));
+                .setStreamState(StreamState.CLOSED.toByte()),
+                featureControlManager.autoMQVersion().streamRecordVersion()));
         log.info("[CloseStream] successfully close the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
             streamId, epoch, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
@@ -414,7 +425,7 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (streamMetadata.startOffset() == newStartOffset) {
-            // regard it as redundant trim operation, just return success
+            // regard it as a redundant trim operation, just return success
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         // now the request is valid
@@ -425,21 +436,21 @@ public class StreamControlManager {
             .setEpoch(epoch)
             .setRangeIndex(streamMetadata.currentRangeIndex())
             .setStartOffset(newStartOffset)
-            .setStreamState(streamMetadata.currentState().toByte()), (short) 0));
+            .setStreamState(streamMetadata.currentState().toByte()), featureControlManager.autoMQVersion().streamRecordVersion()));
         // remove range or update range's start offset
-        streamMetadata.ranges().entrySet().stream().forEach(it -> {
-            Integer rangeIndex = it.getKey();
-            RangeMetadata range = it.getValue();
+        for (Map.Entry<Integer, RangeMetadata> entry : streamMetadata.ranges().entrySet()) {
+            Integer rangeIndex = entry.getKey();
+            RangeMetadata range = entry.getValue();
             if (newStartOffset <= range.startOffset()) {
-                return;
+                continue;
             }
             if (rangeIndex == streamMetadata.currentRangeIndex()) {
                 // current range, update start offset
                 // if current range is [50, 100)
-                // 1. try to trim to 60, then current range will be [60, 100)
-                // 2. try to trim to 100, then current range will be [100, 100)
+                // 1. try to trim to 60, then the current range will be [60, 100)
+                // 2. try to trim to 100, then the current range will be [100, 100)
                 // 3. try to trim to 110, then current range will be [100, 100)
-                long newRangeStartOffset = newStartOffset < range.endOffset() ? newStartOffset : range.endOffset();
+                long newRangeStartOffset = Math.min(newStartOffset, range.endOffset());
                 records.add(new ApiMessageAndVersion(new RangeRecord()
                     .setStreamId(streamId)
                     .setRangeIndex(rangeIndex)
@@ -447,14 +458,14 @@ public class StreamControlManager {
                     .setEpoch(range.epoch())
                     .setStartOffset(newRangeStartOffset)
                     .setEndOffset(range.endOffset()), (short) 0));
-                return;
+                continue;
             }
             if (newStartOffset >= range.endOffset()) {
                 // remove range
                 records.add(new ApiMessageAndVersion(new RemoveRangeRecord()
                     .setStreamId(streamId)
                     .setRangeIndex(rangeIndex), (short) 0));
-                return;
+                continue;
             }
             // update range's start offset
             records.add(new ApiMessageAndVersion(new RangeRecord()
@@ -464,7 +475,7 @@ public class StreamControlManager {
                 .setEndOffset(range.endOffset())
                 .setEpoch(range.epoch())
                 .setRangeIndex(rangeIndex), (short) 0));
-        });
+        }
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -506,7 +517,7 @@ public class StreamControlManager {
         records.add(new ApiMessageAndVersion(new RemoveS3StreamRecord()
             .setStreamId(streamId), (short) 0));
         // generate stream objects destroy records
-        List<Long> streamObjectIds = streamMetadata.streamObjects().keySet().stream().collect(Collectors.toList());
+        List<Long> streamObjectIds = new ArrayList<>(streamMetadata.streamObjects().keySet());
         ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(streamObjectIds);
         if (!markDestroyResult.response()) {
             log.error("[DeleteStream]: failed to mark destroy stream objects. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, objects={}",
@@ -576,7 +587,7 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (commitResult.response() == Errors.REDUNDANT_OPERATION) {
-            // regard it as redundant commit operation, just return success
+            // regard it as redundant commit operation, return success
             log.warn("[CommitStreamSetObject] stream set object already committed. streamSetObjectId={}, nodeId={}, nodeEpoch={}", objectId, nodeId, nodeEpoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -615,7 +626,7 @@ public class StreamControlManager {
                     ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
                         streamObject.objectSize(), committedTs);
                     if (streamObjectCommitResult.response() == Errors.REDUNDANT_OPERATION) {
-                        // regard it as redundant commit operation, just return success
+                        // regard it as redundant commit operation, return success
                         log.warn("[CommitStreamSetObject]: stream object already committed. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
                             streamObject.objectId(), objectId, nodeId, nodeEpoch);
                         return ControllerResult.of(Collections.emptyList(), resp);
@@ -723,7 +734,7 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (commitResult.response() == Errors.REDUNDANT_OPERATION) {
-            // regard it as redundant commit operation, just return success
+            // regard it as a redundant commit operation, return success
             log.warn("[CommitStreamObject]: stream object already committed. streamObjectId={}, req={}", streamObjectId, data);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -946,9 +957,7 @@ public class StreamControlManager {
         if (!quorumController.isActive()) {
             return;
         }
-        quorumController.appendWriteEvent("cleanupScaleInNodes", OptionalLong.empty(), () -> {
-            return cleanupScaleInNodes();
-        });
+        quorumController.appendWriteEvent("cleanupScaleInNodes", OptionalLong.empty(), this::cleanupScaleInNodes);
     }
 
     public ControllerResult<Void> cleanupScaleInNodes() {
@@ -997,7 +1006,7 @@ public class StreamControlManager {
 
     public void replay(S3StreamRecord record) {
         long streamId = record.streamId();
-        // already exist, update the stream's self metadata
+        // already exist, update the stream's metadata
         if (this.streamsMetadata.containsKey(streamId)) {
             S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
             streamMetadata.startOffset(record.startOffset());
@@ -1042,7 +1051,7 @@ public class StreamControlManager {
     public void replay(NodeWALMetadataRecord record) {
         int nodeId = record.nodeId();
         long nodeEpoch = record.nodeEpoch();
-        // already exist, update the node's self metadata
+        // already exist, update the node's metadata
         if (this.nodesMetadata.containsKey(nodeId)) {
             NodeMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
             nodeMetadata.setNodeEpoch(nodeEpoch);

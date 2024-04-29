@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.apache.kafka.common.record.RecordVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * This class contains the different Kafka versions.
@@ -632,4 +633,18 @@ public enum MetadataVersion {
     public String toString() {
         return ibpVersion;
     }
+
+    // AutoMQ inject start
+    private AutoMQVersion autoMQVersion;
+
+    public void setAutoMQVersion(AutoMQVersion autoMQVersion) {
+        if (autoMQVersion != null) {
+            this.autoMQVersion = autoMQVersion;
+        }
+    }
+
+    public AutoMQVersion autoMQVersion() {
+        return this.autoMQVersion;
+    }
+    // AutoMQ inject end
 }
