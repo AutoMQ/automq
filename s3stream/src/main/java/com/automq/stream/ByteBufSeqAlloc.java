@@ -37,7 +37,6 @@ public class ByteBufSeqAlloc {
             return ByteBufAlloc.byteBuffer(capacity, allocType);
         }
         int bufIndex = Math.abs(Thread.currentThread().hashCode() % hugeBufArray.length);
-
         AtomicReference<HugeBuf> bufRef = hugeBufArray[bufIndex];
         //noinspection SynchronizationOnLocalVariableOrMethodParameter
         synchronized (bufRef) {
