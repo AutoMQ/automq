@@ -1,11 +1,12 @@
 name: Docker Release
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+    branches:
+      - feat-docker-release
 
 jobs:
   docker-release:
@@ -45,7 +46,7 @@ jobs:
         id: image_tags
         run: |
           LATEST_TAG=$(git fetch --tags && git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
-          
+          echo "LATEST_TAG=${LATEST_TAG}"
           if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
             echo "::set-output name=tags::${{ secrets.DOCKERHUB_USERNAME }}/kafka:${{ github.ref_name }}, ${{ secrets.DOCKERHUB_USERNAME }}/kafka:latest"
           else
