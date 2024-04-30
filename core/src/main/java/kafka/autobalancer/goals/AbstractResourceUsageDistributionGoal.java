@@ -13,7 +13,7 @@ package kafka.autobalancer.goals;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
-import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.normalizer.Normalizer;
 import kafka.autobalancer.common.normalizer.StepNormalizer;
 import kafka.autobalancer.model.BrokerUpdater;
@@ -36,14 +36,14 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
 
     @Override
     public void initialize(Set<BrokerUpdater.Broker> brokers) {
-        Resource resource = resource();
+        byte resource = resource();
         usageAvg = brokers.stream().mapToDouble(e -> e.load(resource)).sum() / brokers.size();
         usageAvgDeviation = usageAvg * usageAvgDeviationRatio;
         usageDistLowerBound = Math.max(0, usageAvg * (1 - this.usageAvgDeviationRatio));
         usageDistUpperBound = usageAvg * (1 + this.usageAvgDeviationRatio);
         normalizer = new StepNormalizer(usageAvgDeviation, usageAvgDeviation + linearNormalizerThreshold(), 0.9);
-        LOGGER.info("{} expected dist bound: {}", name(), String.format("%s-%s", resource.resourceString(usageDistLowerBound),
-                resource.resourceString(usageDistUpperBound)));
+        LOGGER.info("{} expected dist bound: {}", name(), String.format("%s-%s", Resource.resourceString(resource, usageDistLowerBound),
+                Resource.resourceString(resource, usageDistUpperBound)));
     }
 
     @Override

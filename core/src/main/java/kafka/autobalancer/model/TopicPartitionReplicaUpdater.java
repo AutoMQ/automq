@@ -11,7 +11,7 @@
 
 package kafka.autobalancer.model;
 
-import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import org.apache.kafka.common.TopicPartition;
 
@@ -22,11 +22,15 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     private final TopicPartitionReplica replica;
 
     public TopicPartitionReplicaUpdater(TopicPartition tp) {
-        this.replica = new TopicPartitionReplica(tp);
+        this.replica = createTopicpartitionReplica(tp);
     }
 
     public TopicPartition topicPartition() {
         return this.replica.getTopicPartition();
+    }
+
+    protected TopicPartitionReplica createTopicpartitionReplica(TopicPartition tp) {
+        return new TopicPartitionReplica(tp);
     }
 
     @Override
@@ -57,21 +61,19 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         }
 
         @Override
-        public void processMetrics() {
-            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
-                if (!RawMetricTypes.PARTITION_METRICS.contains(entry.getKey())) {
-                    continue;
-                }
-                switch (entry.getKey()) {
-                    case RawMetricTypes.PARTITION_BYTES_IN:
-                        this.setLoad(Resource.NW_IN, entry.getValue());
-                        break;
-                    case RawMetricTypes.PARTITION_BYTES_OUT:
-                        this.setLoad(Resource.NW_OUT, entry.getValue());
-                        break;
-                    default:
-                        break;
-                }
+        public void processMetric(byte metricType, double value) {
+            if (!RawMetricTypes.PARTITION_METRICS.contains(metricType)) {
+                return;
+            }
+            switch (metricType) {
+                case RawMetricTypes.PARTITION_BYTES_IN:
+                    this.setLoad(Resource.NW_IN, value);
+                    break;
+                case RawMetricTypes.PARTITION_BYTES_OUT:
+                    this.setLoad(Resource.NW_OUT, value);
+                    break;
+                default:
+                    break;
             }
         }
 

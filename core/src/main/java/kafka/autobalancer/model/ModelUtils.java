@@ -11,14 +11,15 @@
 
 package kafka.autobalancer.model;
 
-import kafka.autobalancer.common.Resource;
+import java.util.Map;
 
 public class ModelUtils {
 
     public static void moveReplicaLoad(BrokerUpdater.Broker src, BrokerUpdater.Broker dest,
                                        TopicPartitionReplicaUpdater.TopicPartitionReplica replica) {
-        for (Resource resource : replica.getResources()) {
-            double delta = replica.load(resource);
+        for (Map.Entry<Byte, Double> load : replica.getLoads().entrySet()) {
+            byte resource = load.getKey();
+            double delta = load.getValue();
             src.setLoad(resource, src.load(resource) - delta);
             dest.setLoad(resource, dest.load(resource) + delta);
         }

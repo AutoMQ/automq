@@ -12,7 +12,6 @@
 package kafka.autobalancer.metricsreporter.metric;
 
 import kafka.autobalancer.common.types.MetricTypes;
-import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.metricsreporter.exception.UnknownVersionException;
 
 import java.nio.ByteBuffer;
@@ -45,11 +44,6 @@ public class BrokerMetrics extends AutoBalancerMetrics {
         }
         Map<Byte, Double> metricsMap = parseMetricsMap(buffer);
         return new BrokerMetrics(time, brokerId, brokerRack, metricsMap);
-    }
-
-    @Override
-    public boolean isValidMetric(byte type) {
-        return RawMetricTypes.BROKER_METRICS.contains(type);
     }
 
     @Override
