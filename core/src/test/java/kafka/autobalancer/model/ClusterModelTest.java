@@ -17,7 +17,7 @@
 
 package kafka.autobalancer.model;
 
-import kafka.autobalancer.common.Resource;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;

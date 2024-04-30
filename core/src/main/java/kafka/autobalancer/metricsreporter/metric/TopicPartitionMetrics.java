@@ -12,7 +12,6 @@
 package kafka.autobalancer.metricsreporter.metric;
 
 import kafka.autobalancer.common.types.MetricTypes;
-import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.metricsreporter.exception.UnknownVersionException;
 import org.apache.kafka.common.TopicPartition;
 
@@ -59,11 +58,6 @@ public class TopicPartitionMetrics extends AutoBalancerMetrics {
         int partition = buffer.getInt();
         Map<Byte, Double> metricsMap = parseMetricsMap(buffer);
         return new TopicPartitionMetrics(time, brokerId, brokerRack, topic, partition, metricsMap);
-    }
-
-    @Override
-    public boolean isValidMetric(byte type) {
-        return RawMetricTypes.PARTITION_METRICS.contains(type);
     }
 
     @Override
