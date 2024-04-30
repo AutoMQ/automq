@@ -56,17 +56,17 @@ class CheckCreatePathResolver(object):
         """Check expected path resolution without any version specified."""
         resolver = create_path_resolver(DummyContext())
 
-        assert resolver.home() == "/opt/kafka-dev"
-        assert resolver.bin() == "/opt/kafka-dev/bin"
-        assert resolver.script("kafka-run-class.sh") == "/opt/kafka-dev/bin/kafka-run-class.sh"
+        assert resolver.home() == "/opt/automq/kafka-dev"
+        assert resolver.bin() == "/opt/automq/kafka-dev/bin"
+        assert resolver.script("kafka-run-class.sh") == "/opt/automq/kafka-dev/bin/kafka-run-class.sh"
 
     def check_versioned_source_paths(self):
         """Check expected paths when using versions."""
         resolver = create_path_resolver(DummyContext())
 
-        assert resolver.home(V_0_9_0_1) == "/opt/kafka-0.9.0.1"
-        assert resolver.bin(V_0_9_0_1) == "/opt/kafka-0.9.0.1/bin"
-        assert resolver.script("kafka-run-class.sh", V_0_9_0_1) == "/opt/kafka-0.9.0.1/bin/kafka-run-class.sh"
+        assert resolver.home(V_0_9_0_1) == "/opt/automq/kafka-0.9.0.1"
+        assert resolver.bin(V_0_9_0_1) == "/opt/automq/kafka-0.9.0.1/bin"
+        assert resolver.script("kafka-run-class.sh", V_0_9_0_1) == "/opt/automq/kafka-0.9.0.1/bin/kafka-run-class.sh"
 
     def check_node_or_version_helper(self):
         """KafkaSystemTestPathResolver has a helper method which can take a node or version, and returns the version.

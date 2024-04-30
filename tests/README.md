@@ -117,7 +117,7 @@ REBUILD="t" bash tests/docker/run_tests.sh
 
     > $ export KAFKA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"
     
-    > $ /opt/kafka-dev/bin/kafka-topics.sh --bootstrap-server ducker03:9095 --topic __consumer_offsets --describe
+    > $ /opt/automq/kafka-dev/bin/kafka-topics.sh --bootstrap-server ducker03:9095 --topic __consumer_offsets --describe
 
     This will run the TopicCommand to describe the __consumer-offset topic. The java process
     will stop and wait for debugger to attach as `suspend=y` option was specified. Now starting

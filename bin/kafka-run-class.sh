@@ -80,7 +80,7 @@ if [ -z "$UPGRADE_KAFKA_STREAMS_TEST_VERSION" ]; then
   streams_lib_dir=$(dirname $0)/../streams/build/libs
   streams_dependant_clients_lib_dir=$(dirname $0)/../streams/build/dependant-libs-${SCALA_VERSION}
 else
-  clients_lib_dir=/opt/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs
+  clients_lib_dir=/opt/automq/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs
   streams_lib_dir=$clients_lib_dir
   streams_dependant_clients_lib_dir=$streams_lib_dir
 fi
@@ -117,12 +117,12 @@ else
     fi
   done
   if [ "$SHORT_VERSION_NO_DOTS" = "0100" ]; then
-    CLASSPATH="/opt/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs/zkclient-0.8.jar":"$CLASSPATH"
-    CLASSPATH="/opt/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs/zookeeper-3.4.6.jar":"$CLASSPATH"
+    CLASSPATH="/opt/automq/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs/zkclient-0.8.jar":"$CLASSPATH"
+    CLASSPATH="/opt/automq/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs/zookeeper-3.4.6.jar":"$CLASSPATH"
   fi
   if [ "$SHORT_VERSION_NO_DOTS" = "0101" ]; then
-    CLASSPATH="/opt/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs/zkclient-0.9.jar":"$CLASSPATH"
-    CLASSPATH="/opt/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs/zookeeper-3.4.8.jar":"$CLASSPATH"
+    CLASSPATH="/opt/automq/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs/zkclient-0.9.jar":"$CLASSPATH"
+    CLASSPATH="/opt/automq/kafka-$UPGRADE_KAFKA_STREAMS_TEST_VERSION/libs/zookeeper-3.4.8.jar":"$CLASSPATH"
   fi
 fi
 

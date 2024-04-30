@@ -46,15 +46,15 @@ else
 fi
 
 # We will first use CDS for storage to format storage
-export KAFKA_JVM_PERFORMANCE_OPTS="${KAFKA_JVM_PERFORMANCE_OPTS-} -XX:SharedArchiveFile=/opt/kafka/storage.jsa"
+export KAFKA_JVM_PERFORMANCE_OPTS="${KAFKA_JVM_PERFORMANCE_OPTS-} -XX:SharedArchiveFile=/opt/automq/kafka/storage.jsa"
 
 echo "===> Using provided cluster id $CLUSTER_ID ..."
 
 # Invoke the docker wrapper to setup property files and format storage
-result=$(/opt/kafka/bin/kafka-run-class.sh kafka.docker.KafkaDockerWrapper setup \
+result=$(/opt/automq/kafka/bin/kafka-run-class.sh kafka.docker.KafkaDockerWrapper setup \
       --default-configs-dir /etc/kafka/docker \
       --mounted-configs-dir /mnt/shared/config \
-      --final-configs-dir /opt/kafka/config 2>&1) || \
+      --final-configs-dir /opt/automq/kafka/config 2>&1) || \
       echo $result | grep -i "already formatted" || \
       { echo $result && (exit 1) }
 
@@ -62,7 +62,7 @@ result=$(/opt/kafka/bin/kafka-run-class.sh kafka.docker.KafkaDockerWrapper setup
 export KAFKA_JVM_PERFORMANCE_OPTS="$TEMP_KAFKA_JVM_PERFORMANCE_OPTS"
 
 # Now we will use CDS for kafka to start kafka server
-export KAFKA_JVM_PERFORMANCE_OPTS="$KAFKA_JVM_PERFORMANCE_OPTS -XX:SharedArchiveFile=/opt/kafka/kafka.jsa"
+export KAFKA_JVM_PERFORMANCE_OPTS="$KAFKA_JVM_PERFORMANCE_OPTS -XX:SharedArchiveFile=/opt/automq/kafka/kafka.jsa"
 
 # Start kafka broker
-exec /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+exec /opt/automq/kafka/bin/kafka-server-start.sh /opt/automq/kafka/config/server.properties

@@ -62,7 +62,7 @@ then
   KAFKA_LISTENERS=$(echo "$KAFKA_ADVERTISED_LISTENERS" | sed -e 's|://[^:]*:|://0.0.0.0:|g')
 fi
 
-path /opt/kafka/config/ writable
+path /opt/automq/kafka/config/ writable
 
 # Set if ADVERTISED_LISTENERS has SSL:// or SASL_SSL:// endpoints.
 if [[ -n "${KAFKA_ADVERTISED_LISTENERS-}" ]] && [[ $KAFKA_ADVERTISED_LISTENERS == *"SSL://"* ]]

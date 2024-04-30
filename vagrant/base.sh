@@ -62,22 +62,22 @@ if [ -z `which javac` ]; then
 fi
 
 chmod a+rw /opt
-if [ -h /opt/kafka-dev ]; then
+if [ -h /opt/automq/kafka-dev ]; then
     # reset symlink
-    rm /opt/kafka-dev
+    rm /opt/automq/kafka-dev
 fi
-ln -s /vagrant /opt/kafka-dev
+ln -s /vagrant /opt/automq/kafka-dev
 
 
 get_kafka() {
     version=$1
     scala_version=$2
 
-    kafka_dir=/opt/kafka-$version
+    kafka_dir=/opt/automq/kafka-$version
     url=https://s3-us-west-2.amazonaws.com/kafka-packages/kafka_$scala_version-$version.tgz
     # the .tgz above does not include the streams test jar hence we need to get it separately
     url_streams_test=https://s3-us-west-2.amazonaws.com/kafka-packages/kafka-streams-$version-test.jar
-    if [ ! -d /opt/kafka-$version ]; then
+    if [ ! -d /opt/automq/kafka-$version ]; then
         pushd /tmp
         curl --retry 5 -O $url
         curl --retry 5 -O $url_streams_test || true
@@ -115,55 +115,55 @@ apt-get install -y iperf traceroute
 # Previously we could not pull in Scala 2.12 builds, because Scala 2.12 requires Java 8 and we were running the system
 # tests with Java 7. We have since switched to Java 8, so 2.0.0 and later use Scala 2.12.
 get_kafka 0.8.2.2 2.11
-chmod a+rw /opt/kafka-0.8.2.2
+chmod a+rw /opt/automq/kafka-0.8.2.2
 get_kafka 0.9.0.1 2.11
-chmod a+rw /opt/kafka-0.9.0.1
+chmod a+rw /opt/automq/kafka-0.9.0.1
 get_kafka 0.10.0.1 2.11
-chmod a+rw /opt/kafka-0.10.0.1
+chmod a+rw /opt/automq/kafka-0.10.0.1
 get_kafka 0.10.1.1 2.11
-chmod a+rw /opt/kafka-0.10.1.1
+chmod a+rw /opt/automq/kafka-0.10.1.1
 get_kafka 0.10.2.2 2.11
-chmod a+rw /opt/kafka-0.10.2.2
+chmod a+rw /opt/automq/kafka-0.10.2.2
 get_kafka 0.11.0.3 2.11
-chmod a+rw /opt/kafka-0.11.0.3
+chmod a+rw /opt/automq/kafka-0.11.0.3
 get_kafka 1.0.2 2.11
-chmod a+rw /opt/kafka-1.0.2
+chmod a+rw /opt/automq/kafka-1.0.2
 get_kafka 1.1.1 2.11
-chmod a+rw /opt/kafka-1.1.1
+chmod a+rw /opt/automq/kafka-1.1.1
 get_kafka 2.0.1 2.12
-chmod a+rw /opt/kafka-2.0.1
+chmod a+rw /opt/automq/kafka-2.0.1
 get_kafka 2.1.1 2.12
-chmod a+rw /opt/kafka-2.1.1
+chmod a+rw /opt/automq/kafka-2.1.1
 get_kafka 2.2.2 2.12
-chmod a+rw /opt/kafka-2.2.2
+chmod a+rw /opt/automq/kafka-2.2.2
 get_kafka 2.3.1 2.12
-chmod a+rw /opt/kafka-2.3.1
+chmod a+rw /opt/automq/kafka-2.3.1
 get_kafka 2.4.1 2.12
-chmod a+rw /opt/kafka-2.4.1
+chmod a+rw /opt/automq/kafka-2.4.1
 get_kafka 2.5.1 2.12
-chmod a+rw /opt/kafka-2.5.1
+chmod a+rw /opt/automq/kafka-2.5.1
 get_kafka 2.6.3 2.12
-chmod a+rw /opt/kafka-2.6.3
+chmod a+rw /opt/automq/kafka-2.6.3
 get_kafka 2.7.2 2.12
-chmod a+rw /opt/kafka-2.7.2
+chmod a+rw /opt/automq/kafka-2.7.2
 get_kafka 2.8.2 2.12
-chmod a+rw /opt/kafka-2.8.2
+chmod a+rw /opt/automq/kafka-2.8.2
 get_kafka 3.0.2 2.12
-chmod a+rw /opt/kafka-3.0.2
+chmod a+rw /opt/automq/kafka-3.0.2
 get_kafka 3.1.2 2.12
-chmod a+rw /opt/kafka-3.1.2
+chmod a+rw /opt/automq/kafka-3.1.2
 get_kafka 3.2.3 2.12
-chmod a+rw /opt/kafka-3.2.3
+chmod a+rw /opt/automq/kafka-3.2.3
 get_kafka 3.3.2 2.12
-chmod a+rw /opt/kafka-3.3.2
+chmod a+rw /opt/automq/kafka-3.3.2
 get_kafka 3.4.1 2.12
-chmod a+rw /opt/kafka-3.4.1
+chmod a+rw /opt/automq/kafka-3.4.1
 get_kafka 3.5.2 2.12
-chmod a+rw /opt/kafka-3.5.2
+chmod a+rw /opt/automq/kafka-3.5.2
 get_kafka 3.6.1 2.12
-chmod a+rw /opt/kafka-3.6.1
+chmod a+rw /opt/automq/kafka-3.6.1
 get_kafka 3.7.0 2.12
-chmod a+rw /opt/kafka-3.7.0
+chmod a+rw /opt/automq/kafka-3.7.0
 
 
 # For EC2 nodes, we want to use /mnt, which should have the local disk. On local

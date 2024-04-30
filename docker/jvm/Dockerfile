@@ -29,10 +29,10 @@ RUN set -eux ; \
     apk update ; \
     apk upgrade ; \
     apk add --no-cache wget gcompat gpg gpg-agent procps netcat-openbsd bash; \
-    mkdir opt/kafka; \
+    mkdir opt/automq/kafka; \
     wget -nv -O kafka.tgz "$kafka_url"; \
     wget -nv -O kafka.tgz.asc "$kafka_url.asc"; \
-    tar xfz kafka.tgz -C /opt/kafka --strip-components 1; \
+    tar xfz kafka.tgz -C /opt/automq/kafka --strip-components 1; \
     wget -nv -O KEYS https://downloads.apache.org/kafka/KEYS; \
     gpg --import KEYS; \
     gpg --batch --verify kafka.tgz.asc kafka.tgz
@@ -63,28 +63,28 @@ RUN set -eux ; \
     apk update ; \
     apk upgrade ; \
     apk add --no-cache wget gpg gpg-agent gcompat bash; \
-    mkdir opt/kafka; \
+    mkdir opt/automq/kafka; \
     wget -nv -O kafka.tgz "$kafka_url"; \
     wget -nv -O kafka.tgz.asc "$kafka_url.asc"; \
-    tar xfz kafka.tgz -C /opt/kafka --strip-components 1; \
+    tar xfz kafka.tgz -C /opt/automq/kafka --strip-components 1; \
     wget -nv -O KEYS https://downloads.apache.org/kafka/KEYS; \
     gpg --import KEYS; \
     gpg --batch --verify kafka.tgz.asc kafka.tgz; \
     mkdir -p /var/lib/kafka/data /etc/kafka/secrets; \
     mkdir -p /etc/kafka/docker /usr/logs /mnt/shared/config; \
     adduser -h /home/appuser -D --shell /bin/bash appuser; \
-    chown appuser:appuser -R /usr/logs /opt/kafka /mnt/shared/config; \
+    chown appuser:appuser -R /usr/logs /opt/automq/kafka /mnt/shared/config; \
     chown appuser:root -R /var/lib/kafka /etc/kafka/secrets /etc/kafka; \
     chmod -R ug+w /etc/kafka /var/lib/kafka /etc/kafka/secrets; \
-    cp /opt/kafka/config/log4j.properties /etc/kafka/docker/log4j.properties; \
-    cp /opt/kafka/config/tools-log4j.properties /etc/kafka/docker/tools-log4j.properties; \
-    cp /opt/kafka/config/kraft/server.properties /etc/kafka/docker/server.properties; \
+    cp /opt/automq/kafka/config/log4j.properties /etc/kafka/docker/log4j.properties; \
+    cp /opt/automq/kafka/config/tools-log4j.properties /etc/kafka/docker/tools-log4j.properties; \
+    cp /opt/automq/kafka/config/kraft/server.properties /etc/kafka/docker/server.properties; \
     rm kafka.tgz kafka.tgz.asc KEYS; \
     apk del wget gpg gpg-agent; \
     apk cache clean;
 
-COPY --from=build-jsa kafka.jsa /opt/kafka/kafka.jsa
-COPY --from=build-jsa storage.jsa /opt/kafka/storage.jsa
+COPY --from=build-jsa kafka.jsa /opt/automq/kafka/kafka.jsa
+COPY --from=build-jsa storage.jsa /opt/automq/kafka/storage.jsa
 COPY --chown=appuser:appuser resources/common-scripts /etc/kafka/docker
 COPY --chown=appuser:appuser launch /etc/kafka/docker/launch
 

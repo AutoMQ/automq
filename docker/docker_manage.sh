@@ -26,7 +26,7 @@ kafka_dir="$(cd "${start_dir}/.." && pwd)"
 kafka_version="3.4.0"
 skip_pkg="0"
 
-docker_kafka_base_dir="/opt/kafka"
+docker_kafka_base_dir="/opt/automq/kafka"
 docker_kafka_data_dir="/data/kafka"
 
 

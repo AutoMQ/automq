@@ -108,9 +108,9 @@ class KafkaPathResolverMixin(object):
 class KafkaSystemTestPathResolver(object):
     """Path resolver for Kafka system tests which assumes the following layout:
 
-        /opt/kafka-dev          # Current version of kafka under test
-        /opt/kafka-0.9.0.1      # Example of an older version of kafka installed from tarball
-        /opt/kafka-<version>    # Other previous versions of kafka
+        /opt/automq/kafka-dev          # Current version of kafka under test
+        /opt/automq/kafka-0.9.0.1      # Example of an older version of kafka installed from tarball
+        /opt/automq/kafka-<version>    # Other previous versions of kafka
         ...
     """
     def __init__(self, context, project="kafka"):

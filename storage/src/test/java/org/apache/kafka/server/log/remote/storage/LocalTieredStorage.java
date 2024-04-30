@@ -278,8 +278,8 @@ public final class LocalTieredStorage implements RemoteStorageManager {
             // In mode-2, if the commented-out #L284 is enabled, then it creates the storageDirectory from the present
             // kafka working directory which can cause confusion:
             //
-            // (eg) Kafka is installed on /opt/kafka and storageDirectory is configured as /tmp/kafka-tiered-storage,
-            // then it will create it the directory in /opt/kafka/kafka-tiered-storage/tmp/kafka-tiered-storage instead
+            // (eg) Kafka is installed on /opt/automq/kafka and storageDirectory is configured as /tmp/kafka-tiered-storage,
+            // then it will create it the directory in /opt/automq/kafka/kafka-tiered-storage/tmp/kafka-tiered-storage instead
             //  of /tmp/kafka-tiered-storage.
             //
             // storageDirectory = new File(new File("."), ROOT_STORAGES_DIR_NAME + "/" + storageDir);
