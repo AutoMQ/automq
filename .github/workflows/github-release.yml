@@ -36,7 +36,9 @@ jobs:
                   echo "Find latest tgz file: $file"
                   cp "$file" core/build/distributions/latest/automq-kafka-latest.tgz
                   break
-              fi
+              else
+                  echo "Skip and remove site-docs file: $file"
+                  rm "$file"
           done
 
       - uses: jakejarvis/s3-sync-action@master
