@@ -215,8 +215,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[OpenStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult);
+            log.warn("[OpenStream] invalid node epoch. streamId={}, nodeId={}, nodeEpoch={}, error={}",
+                streamId, nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -349,8 +349,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, false);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CloseStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult);
+            log.warn("[CloseStream] invalid node epoch. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, error={}",
+                streamId, epoch, nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -389,8 +389,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[TrimStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult);
+            log.warn("[TrimStream] invalid node epoch. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, error={}",
+                streamId, epoch, nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -487,8 +487,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[DeleteStream] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult);
+            log.warn("[DeleteStream] invalid node epoch. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, error={}",
+                streamId, epoch, nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -558,8 +558,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, !data.failoverMode());
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CommitStreamSetObject] invalid node epoch. nodeId={}, nodeEpoch={}, error={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult);
+            log.warn("[CommitStreamSetObject] invalid node epoch. streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
+                objectId, nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
@@ -700,8 +700,8 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CommitStreamObject]: invalid node epoch. nodeId={}, nodeEpoch={}, error={}, req={}",
-                nodeId, nodeEpoch, nodeEpochCheckResult, data);
+            log.warn("[CommitStreamObject]: invalid node epoch. streamObjectId={}, nodeId={}, nodeEpoch={}, error={}, req={}",
+                streamObjectId, nodeId, nodeEpoch, nodeEpochCheckResult, data);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
