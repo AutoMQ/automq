@@ -153,6 +153,8 @@ class ElasticReplicaManager(
    */
   private val partitionOpMap = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
 
+  private var fenced: Boolean = false
+
   override def startup(): Unit = {
     super.startup()
     val haltBrokerOnFailure = metadataCache.metadataVersion().isLessThan(MetadataVersion.IBP_1_0_IV0)
@@ -1067,8 +1069,12 @@ class ElasticReplicaManager(
         }
 
         if (ElasticLogManager.enabled()) {
-          // applyDelta must sync operate, cause of BrokerMetadataPublisher#updateCoordinator will rely on log created.
-          doPartitionLeadingOrFollowing(true)
+          // When the brokers scale into zero, there isr/replica will set to the last broker.
+          // We use fenced state to prevent the last broker re-open partition when the broker shutting down.
+          if (!this.fenced) {
+            // applyDelta must sync operate, cause of BrokerMetadataPublisher#updateCoordinator will rely on log created.
+            doPartitionLeadingOrFollowing(true)
+          }
         } else {
           doPartitionLeadingOrFollowing(false)
         }
@@ -1178,6 +1184,7 @@ class ElasticReplicaManager(
   def awaitAllPartitionShutdown(): Unit = {
     val start = System.currentTimeMillis()
     replicaStateChangeLock.synchronized {
+      this.fenced = true
       // When there are any other alive brokers, partitions will be transferred to them and deleted in the method [[asyncApplyDelta]].
       // However when there are no other alive brokers, we need to delete partitions by ourselves here.
       // In summary, a partition may be deleted twice during shutdown. But it is safe as the method [[stopPartitions]]
