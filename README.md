@@ -146,9 +146,10 @@ AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 
 - **Cloud Native**: Built on cloud service. Every system design decision takes the cloud service's feature and billing items into consideration to offer the best low-latency, scalable, reliable, and cost-effective Kafka service on the cloud.
 - **High Reliability**: Leverage the features of cloud service to offer RPO of 0 and RTO in seconds. 
-  - AWS: Use S3 express one zone and S3 to offer AZ-level disaster recovery. 
+  - AWS: Double writing to EBS and S3 Express One Zone in different AZs.
   - GCP: Use regional SSD and cloud storage to offer AZ-level disaster recovery. 
   - Azure: Use zone-redundant storage and blob storage to offer AZ-level disaster recovery.
+  - Alibaba Cloud: Use regional Disk and OSS to offer AZ-level disaster recovery.
 - **Serverless**:
     - Auto Scaling: Watch key metrics of cluster and scale in/out automatically to match your workload and achieve pay-as-you-go.
     - Scaling in seconds: The computing layer (broker) is stateless and can scale in/out in seconds, which makes AutoMQ truly serverless. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
@@ -193,17 +194,13 @@ Deploy AutoMQ manually with released tgz files on the cloud, currently compatibl
 ## 💬Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
 - Ask questions or report a bug by [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka)
-- Discuss about AutoMQ or Kafka by [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA) or [Wechat Group](https://www.automq.com/img/----------------------------1.png)
+- Discuss about AutoMQ or Kafka by [Wechat Group](https://www.automq.com/img/----------------------------1.png)
 
 
 ## 👥How to contribute
 If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka).
 To contribute to AutoMQ please see [Code of Conduct](CODE_OF_CONDUCT.md) and [Contributing Guide](CONTRIBUTING_GUIDE.md).
 We have a list of [good first issues](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process.
-
-## 🌈Roadmap
-
-Coming soon...
 
 ## ⭐License
 AutoMQ is released under [Business Source License 1.1](BSL.md). When contributing to AutoMQ, you can find the relevant license header in each file.
