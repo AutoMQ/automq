@@ -47,12 +47,12 @@ jobs:
         with:
           args: --follow-symlinks --delete
         env:
-          AWS_S3_BUCKET:  automq-download-center
+          AWS_S3_BUCKET:  ${{ secrets.AWS_CN_PROD_BUCKET }}
           AWS_ACCESS_KEY_ID:  ${{ secrets.AWS_CN_PROD_AK }}
           AWS_SECRET_ACCESS_KEY:  ${{ secrets.AWS_CN_PROD_SK }}
           AWS_REGION: 'cn-northwest-1'
           SOURCE_DIR: 'core/build/distributions/latest'
-          DEST_DIR: 'automq-for-kafka/tgz/latest'
+          DEST_DIR: 'community_edition/artifacts'
 
       - name: GitHub Release
         uses: softprops/action-gh-release@v1
