@@ -488,29 +488,21 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
-    public ControllerResult<DeleteStreamResponse> deleteStream(int nodeId, long nodeEpoch,
-        DeleteStreamRequest request) {
-        long epoch = request.streamEpoch();
-        long streamId = request.streamId();
+    public ControllerResult<DeleteStreamResponse> deleteStream(DeleteStreamRequest request) {
         DeleteStreamResponse resp = new DeleteStreamResponse();
 
-        // verify node epoch
-        Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
-        if (nodeEpochCheckResult != Errors.NONE) {
-            resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[DeleteStream] invalid node epoch. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, error={}",
-                streamId, epoch, nodeId, nodeEpoch, nodeEpochCheckResult);
-            return ControllerResult.of(Collections.emptyList(), resp);
-        }
-
-        // verify ownership
-        Errors authResult = streamOwnershipCheck(streamId, epoch, nodeId, "DeleteStream");
-        if (authResult != Errors.NONE) {
-            resp.setErrorCode(authResult.code());
-            return ControllerResult.of(Collections.emptyList(), resp);
-        }
+        long streamId = request.streamId();
 
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
+        if (streamMetadata == null) {
+            log.warn("[DELETE_STREAM],[FAIL]: stream not exist. streamId={}", streamId);
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        if (streamMetadata.currentState() != StreamState.CLOSED) {
+            log.warn("[DELETE_STREAM],[FAIL]: stream is not closed. streamId={}", streamId);
+            resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
 
         // generate remove stream record
         List<ApiMessageAndVersion> records = new ArrayList<>();
@@ -520,8 +512,7 @@ public class StreamControlManager {
         List<Long> streamObjectIds = new ArrayList<>(streamMetadata.streamObjects().keySet());
         ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(streamObjectIds);
         if (!markDestroyResult.response()) {
-            log.error("[DeleteStream]: failed to mark destroy stream objects. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, objects={}",
-                streamId, epoch, nodeId, nodeEpoch, streamObjectIds);
+            log.error("[DELETE_STREAM],[FAIL]: failed to mark destroy stream objects. streamId={}, objects={}", streamId, streamObjectIds);
             resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -530,8 +521,7 @@ public class StreamControlManager {
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        log.info("[DeleteStream]: successfully delete the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
-            streamId, epoch, nodeId, nodeEpoch);
+        log.info("[DELETE_STREAM]: successfully delete the stream. streamId={}", streamId);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -1015,9 +1005,11 @@ public class StreamControlManager {
             streamMetadata.currentState(StreamState.fromByte(record.streamState()));
             return;
         }
+        Map<String, String> tags = new HashMap<>();
+        record.tags().forEach(tag -> tags.put(tag.key(), tag.value()));
         // not exist, create a new stream
         S3StreamMetadata streamMetadata = new S3StreamMetadata(record.epoch(), record.rangeIndex(),
-            record.startOffset(), StreamState.fromByte(record.streamState()), this.snapshotRegistry);
+            record.startOffset(), StreamState.fromByte(record.streamState()), tags, this.snapshotRegistry);
         this.streamsMetadata.put(streamId, streamMetadata);
     }
 
@@ -1137,7 +1129,7 @@ public class StreamControlManager {
         this.nodesMetadata.remove(nodeId);
     }
 
-    public Map<Long, S3StreamMetadata> streamsMetadata() {
+    public TimelineHashMap<Long, S3StreamMetadata> streamsMetadata() {
         return streamsMetadata;
     }
 

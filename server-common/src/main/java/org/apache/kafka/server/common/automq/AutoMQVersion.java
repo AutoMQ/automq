@@ -51,6 +51,10 @@ public enum AutoMQVersion {
         return isAtLeast(V1);
     }
 
+    public boolean isTopicCleanupByControllerSupported() {
+        return isAtLeast(V1);
+    }
+
     public short streamRecordVersion() {
         if (isReassignmentV1Supported()) {
             return 1;

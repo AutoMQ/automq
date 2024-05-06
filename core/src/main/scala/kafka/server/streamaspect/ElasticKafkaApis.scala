@@ -124,13 +124,15 @@ class ElasticKafkaApis(
           requestHelper.sendForwardedResponse(request, response)
           response.asInstanceOf[DeleteTopicsResponse].data().responses().forEach(result => {
             if (result.errorCode() == Errors.NONE.code()) {
-              asyncHandleExecutor.submit(new Runnable {
-                override def run(): Unit = {
-                  topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
-                    ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), result.topicId(), partitionEpochs._2)
-                  })
-                }
-              })
+              if (!metadataCache.autoMQVersion().isTopicCleanupByControllerSupported) {
+                asyncHandleExecutor.submit(new Runnable {
+                  override def run(): Unit = {
+                    topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
+                      ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), result.topicId(), partitionEpochs._2)
+                    })
+                  }
+                })
+              }
             }
           })
         case None => handleInvalidVersionsDuringForwarding(request)

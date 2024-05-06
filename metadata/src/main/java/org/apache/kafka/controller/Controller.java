@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller;
 
+import java.util.OptionalLong;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
@@ -593,5 +594,17 @@ public interface Controller extends AclMutator, AutoCloseable {
         ControllerRequestContext context,
         DeleteKVsRequestData request
     );
+
+    default <T> CompletableFuture<T> appendWriteEvent(
+        String name,
+        OptionalLong deadlineNs,
+        QuorumController.ControllerWriteOperation<T> op
+    ) {
+        throw new UnsupportedOperationException();
+    }
+
+    default long lastStableOffset() {
+        throw new UnsupportedOperationException();
+    }
     // AutoMQ for Kafka inject end
 }

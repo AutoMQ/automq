@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
+import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
 import java.util.OptionalLong;
 import java.util.concurrent.ConcurrentHashMap;
@@ -80,6 +81,7 @@ import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.On
 import org.apache.kafka.common.message.ListPartitionReassignmentsResponseData.OngoingTopicReassignment;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
+import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
@@ -95,6 +97,7 @@ import org.apache.kafka.controller.es.CreatePartitionPolicy;
 import org.apache.kafka.controller.es.ElasticCreatePartitionPolicy;
 import org.apache.kafka.controller.es.PartitionLeaderSelector;
 import org.apache.kafka.controller.es.RandomPartitionLeaderSelector;
+import org.apache.kafka.controller.stream.TopicDeletion;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistration;
@@ -1055,6 +1058,20 @@ public class ReplicationControlManager {
         }
         records.add(new ApiMessageAndVersion(new RemoveTopicRecord().
             setTopicId(id), (short) 0));
+
+        // AutoMQ inject start
+        if (featureControl.autoMQVersion().isTopicCleanupByControllerSupported()) {
+            records.add(new ApiMessageAndVersion(
+                new KVRecord().setKeyValues(
+                    List.of(new KVRecord.KeyValue()
+                        .setKey(TopicDeletion.TOPIC_DELETION_PREFIX + id.toString())
+                        .setValue(Integer.toString(TopicDeletion.Status.PENDING.value()).getBytes(StandardCharsets.UTF_8))
+                    )
+                ),
+                (short) 0));
+        }
+        // AutoMQ inject end
+
     }
 
     // VisibleForTesting

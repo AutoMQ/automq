@@ -1088,41 +1088,27 @@ public class StreamControlManagerTest {
     public void testDelete() {
         mockData0();
 
-        // 1. delete with invalid stream owner
+        // 1. delete with valid request
         DeleteStreamRequest req = new DeleteStreamRequest()
                 .setStreamId(STREAM0)
                 .setStreamEpoch(EPOCH1);
-        ControllerResult<DeleteStreamResponse> result = manager.deleteStream(BROKER0, BROKER_EPOCH0, req);
-        assertEquals(Errors.STREAM_FENCED.code(), result.response().errorCode());
-        assertTrue(result.records().isEmpty());
-
-        // 2. delete with invalid stream epoch
-        req = new DeleteStreamRequest()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH0);
-        result = manager.deleteStream(BROKER1, BROKER_EPOCH0, req);
-        assertEquals(Errors.STREAM_FENCED.code(), result.response().errorCode());
-        replay(manager, result.records());
-
-        // 3. delete with valid request
-        req = new DeleteStreamRequest()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH1);
-        result = manager.deleteStream(BROKER1, BROKER_EPOCH0, req);
+        ControllerResult<DeleteStreamResponse> result = manager.deleteStream(req);
         assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(1, result.records().size());
         replay(manager, result.records());
 
-        // 4. verify
+        // 2. verify
         assertNull(manager.streamsMetadata().get(STREAM0));
 
         assertEquals(2, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
 
-        // 5. delete again
+        // 3. delete again
         req = new DeleteStreamRequest()
                 .setStreamId(STREAM0)
                 .setStreamEpoch(EPOCH1);
-        result = manager.deleteStream(BROKER1, BROKER_EPOCH0, req);
-        assertEquals(Errors.STREAM_NOT_EXIST.code(), result.response().errorCode());
+        result = manager.deleteStream(req);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(0, result.records().size());
     }
 
     @Test
