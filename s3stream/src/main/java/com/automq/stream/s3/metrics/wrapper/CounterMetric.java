@@ -16,7 +16,7 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
 
-public class CounterMetric extends ConfigurableMetrics {
+public class CounterMetric extends ConfigurableMetric {
     private final LongCounter longCounter;
 
     public CounterMetric(MetricsConfig metricsConfig, LongCounter longCounter) {

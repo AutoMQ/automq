@@ -62,7 +62,7 @@ public class TopicPartitionMetrics extends AutoBalancerMetrics {
 
     @Override
     public String key() {
-        return topic + "-" + partition;
+        return MetricsUtils.topicPartitionKey(topic, partition);
     }
 
     @Override

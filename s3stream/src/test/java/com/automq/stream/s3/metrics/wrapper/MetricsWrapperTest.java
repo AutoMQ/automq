@@ -44,18 +44,18 @@ public class MetricsWrapperTest {
         Assertions.assertEquals(MetricsLevel.DEBUG, metric.metricsLevel);
         Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), metric.attributes);
 
-        YammerHistogramMetric yammerHistogramMetric = new YammerHistogramMetric(MetricsLevel.INFO, new MetricsConfig(),
+        HistogramMetric histogramMetric = new HistogramMetric(MetricsLevel.INFO, new MetricsConfig(),
             Attributes.builder().put("extra", "v").build());
-        Assertions.assertEquals(MetricsLevel.INFO, yammerHistogramMetric.metricsLevel);
+        Assertions.assertEquals(MetricsLevel.INFO, histogramMetric.metricsLevel);
 
-        yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, Attributes.builder().put("base", "v2").build()));
-        Assertions.assertEquals(MetricsLevel.DEBUG, yammerHistogramMetric.metricsLevel);
-        Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), yammerHistogramMetric.attributes);
+        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, Attributes.builder().put("base", "v2").build()));
+        Assertions.assertEquals(MetricsLevel.DEBUG, histogramMetric.metricsLevel);
+        Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), histogramMetric.attributes);
 
-        yammerHistogramMetric = new YammerHistogramMetric(MetricsLevel.INFO, new MetricsConfig());
-        Assertions.assertEquals(5000L, yammerHistogramMetric.getDeltaHistogram().getSnapshotInterval());
-        yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.INFO, Attributes.empty(), 30000L));
-        Assertions.assertEquals(30000L, yammerHistogramMetric.getDeltaHistogram().getSnapshotInterval());
+        histogramMetric = new HistogramMetric(MetricsLevel.INFO, new MetricsConfig());
+        Assertions.assertEquals(5000L, histogramMetric.getDeltaHistogram().getSnapshotInterval());
+        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.INFO, Attributes.empty(), 30000L));
+        Assertions.assertEquals(30000L, histogramMetric.getDeltaHistogram().getSnapshotInterval());
     }
 
     @Test
@@ -67,16 +67,16 @@ public class MetricsWrapperTest {
         Assertions.assertTrue(metric.add(MetricsLevel.INFO, 1));
         Assertions.assertTrue(metric.add(MetricsLevel.DEBUG, 1));
 
-        YammerHistogramMetric yammerHistogramMetric = new YammerHistogramMetric(MetricsLevel.INFO, new MetricsConfig(),
+        HistogramMetric histogramMetric = new HistogramMetric(MetricsLevel.INFO, new MetricsConfig(),
             Attributes.builder().put("extra", "v").build());
-        Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
-        yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
-        Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
-        yammerHistogramMetric = new YammerHistogramMetric(MetricsLevel.DEBUG, new MetricsConfig(),
+        Assertions.assertTrue(histogramMetric.shouldRecord());
+        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
+        Assertions.assertTrue(histogramMetric.shouldRecord());
+        histogramMetric = new HistogramMetric(MetricsLevel.DEBUG, new MetricsConfig(),
             Attributes.builder().put("extra", "v").build());
-        Assertions.assertFalse(yammerHistogramMetric.shouldRecord());
-        yammerHistogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
-        Assertions.assertTrue(yammerHistogramMetric.shouldRecord());
+        Assertions.assertFalse(histogramMetric.shouldRecord());
+        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
+        Assertions.assertTrue(histogramMetric.shouldRecord());
     }
 
     @Test
