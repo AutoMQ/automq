@@ -12,6 +12,7 @@
 package kafka.log.stream.s3.objects;
 
 
+import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
@@ -202,7 +203,8 @@ public class ControllerObjectManager implements ObjectManager {
     public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit) {
         return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
             if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
-                return Collections.emptyList();
+                LOGGER.error("Unexpect getObjects result={} from streamId={} [{}, {}) limit={}", inRangeObjects, streamId, startOffset, endOffset, limit);
+                throw new AutoMQException("Unexpect getObjects result");
             }
             return inRangeObjects.objects();
         });
