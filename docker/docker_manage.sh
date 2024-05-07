@@ -119,7 +119,7 @@ docker_push() {
     done
     prepare
     echo_and_do docker buildx build --platform linux/amd64,linux/arm64 \
-          -t "automqinc/kafka:${kafka_version}" \
+          -t "automqinc/automq:${kafka_version}" \
           . --push
 }
 
@@ -131,7 +131,7 @@ docker_build() {
         esac
     done
     prepare
-    echo_and_do docker build -t "automqinc/kafka:${kafka_version}" .
+    echo_and_do docker build -t "automqinc/automq:${kafka_version}" .
 #        --build-arg "general_mirror_url=mirrors.ustc.edu.cn" .
 
 }
