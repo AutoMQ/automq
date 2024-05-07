@@ -1,0 +1,145 @@
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+package org.apache.kafka.controller.stream;
+
+import com.automq.stream.s3.metadata.StreamState;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.message.DeleteStreamsRequestData;
+import org.apache.kafka.common.message.DeleteStreamsResponseData;
+import org.apache.kafka.common.metadata.KVRecord;
+import org.apache.kafka.common.metadata.MetadataRecordType;
+import org.apache.kafka.common.metadata.RemoveKVRecord;
+import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.controller.Controller;
+import org.apache.kafka.controller.ControllerResult;
+import org.apache.kafka.metadata.stream.StreamTags;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.timeline.SnapshotRegistry;
+import org.apache.kafka.timeline.TimelineHashMap;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.mockito.ArgumentCaptor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@Timeout(value = 40)
+@Tag("S3Unit")
+public class TopicDeletionManagerTest {
+    final Uuid topicId = new Uuid(1, 2);
+    SnapshotRegistry registry;
+    Controller quorumController;
+    TimelineHashMap<Long, S3StreamMetadata> streams;
+    StreamControlManager streamControlManager;
+    TopicDeletionManager topicDeletionManager;
+
+    @BeforeEach
+    public void setup() {
+        registry = new SnapshotRegistry(new LogContext());
+        registry.getOrCreateSnapshot(0L);
+        quorumController = mock(Controller.class);
+        streams = new TimelineHashMap<>(registry, 0);
+        streamControlManager = mock(StreamControlManager.class);
+        when(streamControlManager.streamsMetadata()).thenReturn(streams);
+        topicDeletionManager = new TopicDeletionManager(registry, quorumController, streamControlManager);
+    }
+
+    @Test
+    public void testCleanup() {
+        registry.getOrCreateSnapshot(0L);
+        when(quorumController.lastStableOffset()).thenReturn(1L);
+        DeleteStreamsResponseData deleteStreamsResp = new DeleteStreamsResponseData();
+        when(quorumController.deleteStreams(any(), any())).thenReturn(CompletableFuture.completedFuture(deleteStreamsResp));
+        when(quorumController.isActive()).thenReturn(true);
+        when(quorumController.appendWriteEvent(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        streams.put(1L, new S3StreamMetadata(0, 0, 0,
+            StreamState.CLOSED, Collections.emptyMap(), registry));
+        Map<String, String> tags = new HashMap<>();
+        tags.put(StreamTags.TOPIC_UUID_TAG_KEY, topicId.toString());
+        streams.put(2L, new S3StreamMetadata(0, 0, 0,
+            StreamState.OPENED, tags, registry));
+        streams.put(3L, new S3StreamMetadata(0, 0, 0,
+            StreamState.CLOSED, tags, registry));
+
+        topicDeletionManager.replay(
+            new KVRecord().setKeyValues(List.of(
+                new KVRecord.KeyValue()
+                    .setKey(TopicDeletion.TOPIC_DELETION_PREFIX + topicId)
+                    .setValue(Integer.toString(TopicDeletion.Status.PENDING.value()).getBytes(StandardCharsets.UTF_8))
+            ))
+        );
+
+        assertEquals(TopicDeletion.Status.PENDING, topicDeletionManager.waitingCleanupTopics.get(topicId));
+        registry.getOrCreateSnapshot(1L);
+
+        // streamId=2 is not closed, so it should not be deleted
+        topicDeletionManager.cleanupDeletedTopics();
+        verify(quorumController, times(0)).deleteStreams(any(), any());
+
+        // close streamId=2, expect delete streamId=2/3
+        streams.put(2L, new S3StreamMetadata(0, 0, 0,
+            StreamState.CLOSED, tags, registry));
+
+        registry.getOrCreateSnapshot(2L);
+        when(quorumController.lastStableOffset()).thenReturn(2L);
+
+        replay(topicDeletionManager.cleanupDeletedTopics0(), topicDeletionManager);
+        ArgumentCaptor<DeleteStreamsRequestData> ac = ArgumentCaptor.forClass(DeleteStreamsRequestData.class);
+        verify(quorumController, times(2)).deleteStreams(any(), ac.capture());
+        assertEquals(List.of(2L, 3L), ac.getAllValues().stream().map(r -> r.deleteStreamRequests().get(0).streamId()).sorted().collect(Collectors.toList()));
+        // The topic will be removed in the next cleanup round
+        assertEquals(1, topicDeletionManager.waitingCleanupTopics.size());
+
+        registry.getOrCreateSnapshot(3L);
+        when(quorumController.lastStableOffset()).thenReturn(3L);
+
+        streams.remove(2L);
+        streams.remove(3L);
+
+        registry.getOrCreateSnapshot(4L);
+        when(quorumController.lastStableOffset()).thenReturn(4L);
+
+        replay(topicDeletionManager.cleanupDeletedTopics0(), topicDeletionManager);
+        verify(quorumController, times(2)).deleteStreams(any(), any());
+        assertEquals(0, topicDeletionManager.waitingCleanupTopics.size());
+    }
+
+    private void replay(ControllerResult<Void> rst, TopicDeletionManager manager) {
+        for (ApiMessageAndVersion record : rst.records()) {
+            switch (MetadataRecordType.fromId(record.message().apiKey())) {
+                case KVRECORD:
+                    manager.replay((KVRecord) record.message());
+                    break;
+                case REMOVE_KVRECORD:
+                    manager.replay((RemoveKVRecord) record.message());
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unexpected record type " + MetadataRecordType.fromId(record.message().apiKey()));
+            }
+        }
+    }
+
+}
