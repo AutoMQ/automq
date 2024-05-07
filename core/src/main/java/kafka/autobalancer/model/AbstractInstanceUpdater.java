@@ -25,29 +25,47 @@ import java.util.concurrent.locks.ReentrantLock;
 public abstract class AbstractInstanceUpdater {
     protected static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     protected final Lock lock = new ReentrantLock();
-
-    protected abstract boolean validateMetrics(Map<Byte, Double> metricsMap);
-
-    protected abstract AbstractInstance instance();
+    protected Map<Byte, Double> metricsMap = new HashMap<>();
+    protected long timestamp = 0L;
 
     public boolean update(Map<Byte, Double> metricsMap, long time) {
         if (!validateMetrics(metricsMap)) {
-            LOGGER.error("Metrics validation failed for: {}, metrics: {}", this.instance().name(), metricsMap.keySet());
+            LOGGER.error("Metrics validation failed for: {}, metrics: {}", name(), metricsMap.keySet());
             return false;
         }
 
         lock.lock();
         try {
-            if (time < this.instance().getTimestamp()) {
-                LOGGER.warn("Metrics for {} is outdated at {}, last updated time {}", this.instance().name(), time,
-                        this.instance().getTimestamp());
+            if (time < timestamp) {
+                LOGGER.warn("Metrics for {} is outdated at {}, last updated time {}", name(), time, timestamp);
                 return false;
             }
-            this.instance().update(metricsMap, time);
+            update0(metricsMap, time);
         } finally {
             lock.unlock();
         }
         return true;
+    }
+
+    protected void update0(Map<Byte, Double> metricsMap, long timestamp) {
+        lock.lock();
+        try {
+            this.metricsMap = metricsMap;
+            this.timestamp = timestamp;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public long getTimestamp() {
+        long timestamp;
+        lock.lock();
+        try {
+            timestamp = this.timestamp;
+        } finally {
+            lock.unlock();
+        }
+        return timestamp;
     }
 
     public AbstractInstance get() {
@@ -57,50 +75,35 @@ public abstract class AbstractInstanceUpdater {
     public AbstractInstance get(long timeSince) {
         lock.lock();
         try {
-            if (this.instance().getTimestamp() < timeSince) {
+            if (timestamp < timeSince) {
                 return null;
             }
             if (!isValidInstance()) {
                 return null;
             }
-            return this.instance().copy();
+            return createInstance();
         } finally {
             lock.unlock();
         }
     }
 
+    protected abstract String name();
+
+    protected abstract boolean validateMetrics(Map<Byte, Double> metricsMap);
+
+    protected abstract AbstractInstance createInstance();
+
     protected abstract boolean isValidInstance();
 
     public static abstract class AbstractInstance {
         protected final Map<Byte, Double> loads = new HashMap<>();
-        protected Map<Byte, Double> metricsMap = new HashMap<>();
-        protected long timestamp = 0L;
+        protected final long timestamp;
 
-        public AbstractInstance() {
-
+        public AbstractInstance(long timestamp) {
+            this.timestamp = timestamp;
         }
 
-        public AbstractInstance(AbstractInstance other, boolean deepCopy) {
-            this.loads.putAll(other.loads);
-            this.timestamp = other.timestamp;
-            if (deepCopy) {
-                this.metricsMap.putAll(other.metricsMap);
-            }
-        }
-
-        public abstract AbstractInstance copy(boolean deepCopy);
-
-        public AbstractInstance copy() {
-            return copy(true);
-        }
-
-        public void processMetrics() {
-            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
-                processMetric(entry.getKey(), entry.getValue());
-            }
-        }
-
-        public abstract void processMetric(byte metricType, double value);
+        public abstract AbstractInstance copy();
 
         public void setLoad(byte resource, double value) {
             this.loads.put(resource, value);
@@ -114,24 +117,9 @@ public abstract class AbstractInstanceUpdater {
             return this.loads;
         }
 
-        public void update(Map<Byte, Double> metricsMap, long timestamp) {
-            this.metricsMap = metricsMap;
-            this.timestamp = timestamp;
+        protected void copyLoads(AbstractInstance other) {
+            this.loads.putAll(other.loads);
         }
-
-        public Map<Byte, Double> getMetricsMap() {
-            return this.metricsMap;
-        }
-
-        public double ofValue(Byte metricType) {
-            return this.metricsMap.getOrDefault(metricType, 0.0);
-        }
-
-        public long getTimestamp() {
-            return this.timestamp;
-        }
-
-        protected abstract String name();
 
         protected String timeString() {
             return "timestamp=" + timestamp;
@@ -151,30 +139,9 @@ public abstract class AbstractInstanceUpdater {
             return builder.toString();
         }
 
-        protected String metricsString() {
-            StringBuilder builder = new StringBuilder();
-            builder.append("Metrics={");
-            int i = 0;
-            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
-                builder.append(entry.getKey())
-                        .append("=")
-                        .append(entry.getValue());
-                if (i != metricsMap.size() - 1) {
-                    builder.append(", ");
-                }
-                i++;
-            }
-            builder.append("}");
-            return builder.toString();
-        }
-
         @Override
         public String toString() {
-            return timeString() +
-                    ", " +
-                    loadString() +
-                    ", " +
-                    metricsString();
+            return timeString() + ", " + loadString();
         }
     }
 }

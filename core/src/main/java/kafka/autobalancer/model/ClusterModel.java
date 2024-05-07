@@ -64,7 +64,7 @@ public class ClusterModel {
                 int brokerId = entry.getKey();
                 BrokerUpdater brokerUpdater = entry.getValue();
                 if (brokerUpdater.isValidInstance()) {
-                    metricsTimeMap.put(brokerId, brokerUpdater.instance().getTimestamp());
+                    metricsTimeMap.put(brokerId, brokerUpdater.getTimestamp());
                 }
             }
             // Record minimum latest topic partition metric time
@@ -77,7 +77,7 @@ public class ClusterModel {
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : replicaMap.entrySet()) {
                     TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
                     if (replicaUpdater.isValidInstance()) {
-                        metricsTimeMap.put(brokerId, Math.min(metricsTimeMap.get(brokerId), replicaUpdater.instance().getTimestamp()));
+                        metricsTimeMap.put(brokerId, Math.min(metricsTimeMap.get(brokerId), replicaUpdater.getTimestamp()));
                     }
                 }
             }
@@ -106,7 +106,6 @@ public class ClusterModel {
                 if (excludedBrokerIds.contains(brokerId)) {
                     continue;
                 }
-                broker.processMetrics();
                 snapshot.addBroker(broker);
             }
             for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> entry : brokerReplicaMap.entrySet()) {
@@ -125,7 +124,6 @@ public class ClusterModel {
                         snapshot.removeBroker(brokerId);
                         break;
                     }
-                    replica.processMetrics();
                     for (Map.Entry<Byte, Double> load : replica.getLoads().entrySet()) {
                         byte resource = load.getKey();
                         totalLoads.put(resource, totalLoads.getOrDefault(resource, 0.0) + load.getValue());

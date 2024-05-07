@@ -34,17 +34,17 @@ public class GoalTestBase {
 
     protected Broker createBroker(ClusterModelSnapshot cluster, String rack,
                                   int brokerId, boolean active) {
-        Broker broker = new Broker(brokerId, rack, active);
+        Broker broker = new Broker(brokerId, rack, active, System.currentTimeMillis(), null);
         cluster.addBroker(broker);
         return broker;
     }
 
     protected TopicPartitionReplica createTopicPartition(ClusterModelSnapshot cluster,
-                                                                                      int brokerId,
-                                                                                      String topic,
-                                                                                      int partition) {
+                                                         int brokerId,
+                                                         String topic,
+                                                         int partition) {
         TopicPartition tp = new TopicPartition(topic, partition);
-        TopicPartitionReplica replica = new TopicPartitionReplica(tp);
+        TopicPartitionReplica replica = new TopicPartitionReplica(tp, System.currentTimeMillis());
         cluster.addTopicPartition(brokerId, tp, replica);
         return replica;
     }
