@@ -26,6 +26,7 @@ import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
@@ -160,7 +161,7 @@ public class S3Stream implements Stream {
             pendingAppends.add(cf);
             pendingAppendTimestamps.push(timerUtil.lastAs(TimeUnit.NANOSECONDS));
             cf.whenComplete((nil, ex) -> {
-                StreamOperationStats.getInstance().appendStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                StreamOperationStats.getInstance().appendStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
                 pendingAppendTimestamps.pop();
             });
@@ -211,10 +212,15 @@ public class S3Stream implements Stream {
                     for (RecordBatch recordBatch : rs.recordBatchList()) {
                         totalSize += recordBatch.rawPayload().remaining();
                     }
+                    final long finalSize = totalSize;
                     if (context.readOptions().fastRead()) {
                         networkOutboundLimiter.forceConsume(totalSize);
+                        NetworkStats.getInstance().fastReadBytesStats(streamId).inc(finalSize);
                     } else {
-                        return networkOutboundLimiter.consume(ThrottleStrategy.CATCH_UP, totalSize).thenApply(nil -> rs);
+                        return networkOutboundLimiter.consume(ThrottleStrategy.CATCH_UP, totalSize).thenApply(nil -> {
+                            NetworkStats.getInstance().slowReadBytesStats(streamId).inc(finalSize);
+                            return rs;
+                        });
                     }
                 }
                 return CompletableFuture.completedFuture(rs);
@@ -228,7 +234,7 @@ public class S3Stream implements Stream {
                         LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
                     }
                 }
-                StreamOperationStats.getInstance().fetchStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                StreamOperationStats.getInstance().fetchStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 if (LOGGER.isDebugEnabled()) {
                     long totalSize = 0L;
                     for (RecordBatch recordBatch : rs.recordBatchList()) {
@@ -287,7 +293,7 @@ public class S3Stream implements Stream {
                 CompletableFuture<Void> cf = new CompletableFuture<>();
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));
                 this.lastPendingTrim = cf;
-                cf.whenComplete((nil, ex) -> StreamOperationStats.getInstance().trimStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+                cf.whenComplete((nil, ex) -> StreamOperationStats.getInstance().trimStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
                 return cf;
             }, LOGGER, "trim");
         } finally {
@@ -343,6 +349,7 @@ public class S3Stream implements Stream {
                     LOGGER.info("{} closed", logIdent);
                     StreamOperationStats.getInstance().closeStreamStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 }
+                NetworkStats.getInstance().removeStreamReadBytesStats(streamId);
                 S3StreamMetricsManager.removePendingStreamAppendLatencySupplier(streamId);
                 S3StreamMetricsManager.removePendingStreamFetchLatencySupplier(streamId);
             });

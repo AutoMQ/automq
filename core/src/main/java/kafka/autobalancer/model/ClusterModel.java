@@ -33,7 +33,7 @@ public class ClusterModel {
     private static final long DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS = 60000L;
 
     /*
-     * Guard the change on cluster structure (add/remove for brokers, replicas)
+     * Guard the access on cluster structure (read/add/remove for brokers, replicas)
      */
     private final Lock clusterLock = new ReentrantLock();
 

@@ -31,12 +31,12 @@ public class HistogramInstrument {
     private final ObservableDoubleGauge histP99Value;
     private final ObservableDoubleGauge histMaxValue;
 
-    public HistogramInstrument(Meter meter, String name, String desc, String unit, Supplier<List<YammerHistogramMetric>> histogramsSupplier) {
+    public HistogramInstrument(Meter meter, String name, String desc, String unit, Supplier<List<HistogramMetric>> histogramsSupplier) {
         this.count = meter.gaugeBuilder(name + S3StreamMetricsConstant.COUNT_METRIC_NAME_SUFFIX)
             .setDescription(desc + " (count)")
             .ofLongs()
             .buildWithCallback(result -> {
-                List<YammerHistogramMetric> histograms = histogramsSupplier.get();
+                List<HistogramMetric> histograms = histogramsSupplier.get();
                 histograms.forEach(histogram -> {
                     if (histogram.shouldRecord()) {
                         result.record(histogram.count(), histogram.attributes);
@@ -48,7 +48,7 @@ public class HistogramInstrument {
             .ofLongs()
             .setUnit(unit)
             .buildWithCallback(result -> {
-                List<YammerHistogramMetric> histograms = histogramsSupplier.get();
+                List<HistogramMetric> histograms = histogramsSupplier.get();
                 histograms.forEach(histogram -> {
                     if (histogram.shouldRecord()) {
                         result.record(histogram.sum(), histogram.attributes);
@@ -59,7 +59,7 @@ public class HistogramInstrument {
             .setDescription(desc + " (50th percentile)")
             .setUnit(unit)
             .buildWithCallback(result -> {
-                List<YammerHistogramMetric> histograms = histogramsSupplier.get();
+                List<HistogramMetric> histograms = histogramsSupplier.get();
                 histograms.forEach(histogram -> {
                     if (histogram.shouldRecord()) {
                         result.record(histogram.p50(), histogram.attributes);
@@ -70,7 +70,7 @@ public class HistogramInstrument {
             .setDescription(desc + " (99th percentile)")
             .setUnit(unit)
             .buildWithCallback(result -> {
-                List<YammerHistogramMetric> histograms = histogramsSupplier.get();
+                List<HistogramMetric> histograms = histogramsSupplier.get();
                 histograms.forEach(histogram -> {
                     if (histogram.shouldRecord()) {
                         result.record(histogram.p99(), histogram.attributes);
@@ -81,7 +81,7 @@ public class HistogramInstrument {
             .setDescription(desc + " (max)")
             .setUnit(unit)
             .buildWithCallback(result -> {
-                List<YammerHistogramMetric> histograms = histogramsSupplier.get();
+                List<HistogramMetric> histograms = histogramsSupplier.get();
                 histograms.forEach(histogram -> {
                     if (histogram.shouldRecord()) {
                         result.record(histogram.max(), histogram.attributes);

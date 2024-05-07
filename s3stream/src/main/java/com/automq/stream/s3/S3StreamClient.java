@@ -97,7 +97,7 @@ public class S3StreamClient implements StreamClient {
             checkState();
             TimerUtil timerUtil = new TimerUtil();
             return FutureUtil.exec(() -> streamManager.createStream(options.tags()).thenCompose(streamId -> {
-                StreamOperationStats.getInstance().createStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                StreamOperationStats.getInstance().createStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 return openStream0(streamId, options.epoch());
             }), LOGGER, "createAndOpenStream");
         });
@@ -136,7 +136,7 @@ public class S3StreamClient implements StreamClient {
                 thenApply(metadata -> {
                     StreamWrapper stream = new StreamWrapper(newStream(metadata));
                     runInLock(() -> openedStreams.put(streamId, stream));
-                    StreamOperationStats.getInstance().openStreamStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    StreamOperationStats.getInstance().openStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                     return stream;
                 });
             openingStreams.put(streamId, cf);

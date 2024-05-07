@@ -24,7 +24,7 @@ import kafka.autobalancer.config.StaticAutoBalancerConfigUtils;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
-import kafka.autobalancer.metricsreporter.metric.Delta;
+import kafka.autobalancer.metricsreporter.metric.Derivator;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
 import kafka.autobalancer.metricsreporter.metric.YammerMetricProcessor;
@@ -68,7 +68,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoBalancerMetricsReporter.class);
     private final Map<MetricName, Metric> interestedMetrics = new ConcurrentHashMap<>();
     private final MetricsRegistry metricsRegistry = KafkaYammerMetrics.defaultRegistry();
-    protected final Delta appendLatencyMetric = new Delta();
+    protected final Derivator appendLatencyAvg = new Derivator();
     protected YammerMetricProcessor yammerMetricProcessor;
     private KafkaThread metricsReporterRunner;
     private KafkaProducer<String, AutoBalancerMetrics> producer;
@@ -361,7 +361,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     protected void addBrokerMetrics(YammerMetricProcessor.Context context) {
         context.merge(new BrokerMetrics(context.time(), brokerId, brokerRack)
                 .put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS,
-                        TimeUnit.NANOSECONDS.toMillis((long) appendLatencyMetric.deltaRate(StreamOperationStats.getInstance().appendStreamStats)))
+                        TimeUnit.NANOSECONDS.toMillis((long) appendLatencyAvg.derive(
+                                StreamOperationStats.getInstance().appendStreamLatency.sum(),
+                                StreamOperationStats.getInstance().appendStreamLatency.count())))
                 .put(RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS,
                         TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamAppendLatency()))
                 .put(RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS,

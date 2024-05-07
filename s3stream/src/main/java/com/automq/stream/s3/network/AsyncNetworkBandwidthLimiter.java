@@ -168,7 +168,7 @@ public class AsyncNetworkBandwidthLimiter {
     }
 
     private void logMetrics(long size, ThrottleStrategy strategy) {
-        NetworkStats.getInstance().networkUsageStats(type, strategy).add(MetricsLevel.INFO, size);
+        NetworkStats.getInstance().networkUsageTotalStats(type, strategy).add(MetricsLevel.INFO, size);
     }
 
     public enum Type {
