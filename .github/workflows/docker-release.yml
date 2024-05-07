@@ -60,5 +60,5 @@ jobs:
         with:
           context: ./docker
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/automq:${{ github.ref_name }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/automq:0.0.1
           platforms: linux/amd64,linux/arm64
