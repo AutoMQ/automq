@@ -35,6 +35,7 @@ RUN chmod +x /opt/kafka/scripts/*.sh
 
 RUN mkdir -p /data/kafka
 
+RUN ln -s /opt/kafka /opt/automq
 WORKDIR /opt/kafka
 
 CMD tail -f /dev/null

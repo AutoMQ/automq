@@ -143,7 +143,7 @@ def do_release(tag, s3stream_tag):
     cmd(f"Checking out to release branch", f'git checkout --quiet -b {new_branch}')
 
     print("Updating docker compose")
-    regexReplace("docker/docker-compose.yaml", "image: automqinc/kafka:.*$", f"image: automqinc/kafka:{tag}")
+    regexReplace("docker/docker-compose.yaml", "image: automqinc/automq:.*$", f"image: automqinc/automq:{tag}")
     replace("gradle/dependencies.gradle", '    branch = "main"', f'    require "{s3stream_tag}"')
 
     cmd("Committing changes", ["git", "commit", "--all", "--gpg-sign", "--signoff", "--message", f"ci: bump version to {tag}"])
