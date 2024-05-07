@@ -46,9 +46,9 @@ jobs:
           LATEST_TAG=$(git fetch --tags && git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
           echo "LATEST_TAG=${LATEST_TAG}"
           if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
-            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/kafka:${{ github.ref_name }}, ${{ secrets.DOCKERHUB_USERNAME }}/kafka:latest" >> $GITHUB_OUTPUT
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/automq:${{ github.ref_name }}, ${{ secrets.DOCKERHUB_USERNAME }}/kafka:latest" >> $GITHUB_OUTPUT
           else
-            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/kafka:${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/automq:${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up QEMU
@@ -65,5 +65,5 @@ jobs:
         with:
           context: ./docker
           push: true
-          tags: ${{ steps.image_tags.outputs.tags }}"
+          tags: ${{ steps.image_tags.outputs.tags }}
           platforms: linux/amd64,linux/arm64
