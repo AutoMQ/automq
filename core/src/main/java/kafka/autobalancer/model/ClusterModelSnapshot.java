@@ -90,8 +90,8 @@ public class ClusterModelSnapshot {
         Map<Byte, Map<BrokerUpdater.Broker, Snapshot>> metricsValues = new HashMap<>();
         for (BrokerUpdater.Broker broker : brokerMap.values()) {
             Map<Byte, Snapshot> metricsValue = brokerMetricsValues.computeIfAbsent(broker, k -> new HashMap<>());
-            for (Map.Entry<Byte, MetricValueSequence> entry : broker.getMetrics().entrySet()) {
-                Snapshot snapshot = entry.getValue().snapshot();
+            for (Map.Entry<Byte, Snapshot> entry : broker.getMetricsSnapshot().entrySet()) {
+                Snapshot snapshot = entry.getValue();
                 if (snapshot == null) {
                     continue;
                 }
