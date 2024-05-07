@@ -13,21 +13,25 @@ package com.automq.stream.s3.metrics.stats;
 
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.wrapper.Counter;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
-import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
+import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class NetworkStats {
     private volatile static NetworkStats instance = null;
-
-    private final Map<ThrottleStrategy, CounterMetric> networkInboundUsageStats = new ConcurrentHashMap<>();
-    private final Map<ThrottleStrategy, CounterMetric> networkOutboundUsageStats = new ConcurrentHashMap<>();
-    private final Map<ThrottleStrategy, YammerHistogramMetric> networkInboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
-    private final Map<ThrottleStrategy, YammerHistogramMetric> networkOutboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
+    // <StreamId, <FastReadBytes, SlowReadBytes>>
+    private final Map<Long, Pair<Counter, Counter>> streamReadBytesStats = new ConcurrentHashMap<>();
+    private final Map<ThrottleStrategy, CounterMetric> networkInboundUsageTotalStats = new ConcurrentHashMap<>();
+    private final Map<ThrottleStrategy, CounterMetric> networkOutboundUsageTotalStats = new ConcurrentHashMap<>();
+    private final Map<ThrottleStrategy, HistogramMetric> networkInboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
+    private final Map<ThrottleStrategy, HistogramMetric> networkOutboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
 
     private NetworkStats() {
     }
@@ -43,13 +47,33 @@ public class NetworkStats {
         return instance;
     }
 
-    public CounterMetric networkUsageStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
+    public CounterMetric networkUsageTotalStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
         return type == AsyncNetworkBandwidthLimiter.Type.INBOUND
-                ? networkInboundUsageStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundUsageMetric(strategy))
-                : networkOutboundUsageStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundUsageMetric(strategy));
+                ? networkInboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundUsageMetric(strategy))
+                : networkOutboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundUsageMetric(strategy));
     }
 
-    public YammerHistogramMetric networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
+    public Counter fastReadBytesStats(long streamId) {
+        return getStreamReadBytesStats(streamId).getLeft();
+    }
+
+    public Counter slowReadBytesStats(long streamId) {
+        return getStreamReadBytesStats(streamId).getRight();
+    }
+
+    private Pair<Counter, Counter> getStreamReadBytesStats(long streamId) {
+        return streamReadBytesStats.computeIfAbsent(streamId, k -> new ImmutablePair<>(new Counter(), new Counter()));
+    }
+
+    public void removeStreamReadBytesStats(long streamId) {
+        streamReadBytesStats.remove(streamId);
+    }
+
+    public Map<Long, Pair<Counter, Counter>> allStreamReadBytesStats() {
+        return streamReadBytesStats;
+    }
+
+    public HistogramMetric networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
         return type == AsyncNetworkBandwidthLimiter.Type.INBOUND
                 ? networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy))
                 : networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));

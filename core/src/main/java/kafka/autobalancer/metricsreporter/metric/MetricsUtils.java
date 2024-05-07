@@ -260,4 +260,8 @@ public final class MetricsUtils {
     public static boolean sanityCheckTopicPartitionMetricsCompleteness(AutoBalancerMetrics metrics) {
         return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.PARTITION_METRICS);
     }
+
+    public static String topicPartitionKey(String topic, int partition) {
+        return topic + "-" + partition;
+    }
 }

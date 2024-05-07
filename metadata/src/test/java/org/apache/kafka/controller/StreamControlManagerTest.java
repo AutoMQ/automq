@@ -19,6 +19,11 @@ package org.apache.kafka.controller;
 
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3StreamConstant;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -66,12 +71,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
-
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -129,7 +128,7 @@ public class StreamControlManagerTest {
 
         // 1. create stream_0 success
         CreateStreamRequest request0 = new CreateStreamRequest()
-                .setNodeId(BROKER0);
+            .setNodeId(BROKER0);
         ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
         List<ApiMessageAndVersion> records0 = result0.records();
         CreateStreamResponse response0 = result0.response();
@@ -153,7 +152,7 @@ public class StreamControlManagerTest {
         manager.replay(streamRecord0);
         // verify the stream_0 is created
         Map<Long, S3StreamMetadata> streamsMetadata =
-                manager.streamsMetadata();
+            manager.streamsMetadata();
         assertEquals(1, streamsMetadata.size());
         verifyInitializedStreamMetadata(streamsMetadata.get(STREAM0));
         assertEquals(1, manager.nextAssignedStreamId());
@@ -183,7 +182,7 @@ public class StreamControlManagerTest {
         manager.replay(streamRecord1);
         // verify the stream_2 is created
         streamsMetadata =
-                manager.streamsMetadata();
+            manager.streamsMetadata();
         assertEquals(2, streamsMetadata.size());
         verifyInitializedStreamMetadata(streamsMetadata.get(STREAM1));
         assertEquals(2, manager.nextAssignedStreamId());
@@ -211,9 +210,9 @@ public class StreamControlManagerTest {
 
         // 2. node_0 open stream_0 and stream_1 with epoch0
         ControllerResult<OpenStreamResponse> result2 = manager.openStream(BROKER0, EPOCH0,
-                new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         ControllerResult<OpenStreamResponse> result3 = manager.openStream(BROKER0, EPOCH0,
-                new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
+            new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result2.response().errorCode());
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
         assertEquals(0L, result2.response().startOffset());
@@ -239,13 +238,13 @@ public class StreamControlManagerTest {
         // TODO: support write range record, then roll the range and verify
         // 3. node_1 try to open stream_0 with epoch0
         ControllerResult<OpenStreamResponse> result4 = manager.openStream(BROKER1, 0,
-                new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         assertEquals(Errors.STREAM_FENCED.code(), result4.response().errorCode());
         assertEquals(0, result4.records().size());
 
         // 4. node_0 try to open stream_1 with epoch0
         ControllerResult<OpenStreamResponse> result6 = manager.openStream(BROKER0, 0,
-                new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
+            new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result6.response().errorCode());
         assertEquals(0L, result6.response().startOffset());
         assertEquals(0L, result6.response().nextOffset());
@@ -253,44 +252,44 @@ public class StreamControlManagerTest {
 
         // 5. node_0 try to open stream_1 with epoch1
         ControllerResult<OpenStreamResponse> result7 = manager.openStream(BROKER0, 0,
-                new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
+            new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
         assertEquals(Errors.STREAM_NOT_CLOSED.code(), result7.response().errorCode());
 
         // 6. node_1 try to open stream_1 with epoch0
         ControllerResult<OpenStreamResponse> result8 = manager.openStream(BROKER1, 0,
-                new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
+            new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.STREAM_FENCED.code(), result8.response().errorCode());
         assertEquals(0, result8.records().size());
 
         // 7. node_1 try to open stream_1 with epoch1
         ControllerResult<OpenStreamResponse> result9 = manager.openStream(BROKER1, 0,
-                new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
+            new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
         assertEquals(Errors.STREAM_NOT_CLOSED.code(), result9.response().errorCode());
 
         // 8. node_1 try to close stream_1 with epoch0
         ControllerResult<CloseStreamResponse> result10 = manager.closeStream(BROKER1, BROKER_EPOCH0,
-                new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
+            new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.STREAM_FENCED.code(), result10.response().errorCode());
 
         // 9. node_0 try to close stream_1 with epoch1
         ControllerResult<CloseStreamResponse> result11 = manager.closeStream(BROKER0, BROKER_EPOCH0,
-                new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
+            new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
         assertEquals(Errors.STREAM_INNER_ERROR.code(), result11.response().errorCode());
 
         // 10. node_0 try to close stream_1 with epoch0
         ControllerResult<CloseStreamResponse> result12 = manager.closeStream(BROKER0, BROKER_EPOCH0,
-                new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
+            new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result12.response().errorCode());
         replay(manager, result12.records());
 
         // 11. node_0 try to close stream_1 with epoch0 again
         ControllerResult<CloseStreamResponse> result13 = manager.closeStream(BROKER0, BROKER_EPOCH0,
-                new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
+            new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result13.response().errorCode());
 
         // 12. node_1 try to open stream_1 with epoch1
         ControllerResult<OpenStreamResponse> result14 = manager.openStream(BROKER1, 0,
-                new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
+            new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(EPOCH1));
         assertEquals(Errors.NONE.code(), result14.response().errorCode());
         replay(manager, result14.records());
 
@@ -319,20 +318,20 @@ public class StreamControlManagerTest {
         ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
         replay(manager, result0.records());
         ControllerResult<OpenStreamResponse> result2 = manager.openStream(BROKER0, 0,
-                new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         verifyFirstTimeOpenStreamResult(result2, EPOCH0, BROKER0);
         replay(manager, result2.records());
         // 2. commit valid stream set object
         List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH0)
-                .setStartOffset(0L)
-                .setEndOffset(100L));
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(0L)
+            .setEndOffset(100L));
         CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
-                .setObjectId(0L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges0);
+            .setObjectId(0L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0);
         ControllerResult<CommitStreamSetObjectResponseData> result3 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
         replay(manager, result3.records());
@@ -345,39 +344,39 @@ public class StreamControlManagerTest {
         assertEquals(1, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
         // 3. commit a stream set object that doesn't exist
         List<ObjectStreamRange> streamRanges1 = List.of(new ObjectStreamRange()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH0)
-                .setStartOffset(100)
-                .setEndOffset(200));
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(100)
+            .setEndOffset(200));
         CommitStreamSetObjectRequestData commitRequest1 = new CommitStreamSetObjectRequestData()
-                .setObjectId(1L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges1);
+            .setObjectId(1L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges1);
         ControllerResult<CommitStreamSetObjectResponseData> result4 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.OBJECT_NOT_EXIST.code(), result4.response().errorCode());
         // 4. node_0 close stream_0 with epoch_0 and node_1 open stream_0 with epoch_1
         ControllerResult<CloseStreamResponse> result7 = manager.closeStream(BROKER0, BROKER_EPOCH0,
-                new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         assertEquals(Errors.NONE.code(), result7.response().errorCode());
         replay(manager, result7.records());
         ControllerResult<OpenStreamResponse> result8 = manager.openStream(BROKER1, 0,
-                new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH1));
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH1));
         assertEquals(Errors.NONE.code(), result8.response().errorCode());
         assertEquals(0L, result8.response().startOffset());
         assertEquals(100L, result8.response().nextOffset());
         replay(manager, result8.records());
         // 5. node_1 successfully commit stream set object which contains stream_0's data
         List<ObjectStreamRange> streamRanges6 = List.of(new ObjectStreamRange()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH1)
-                .setStartOffset(100)
-                .setEndOffset(300));
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setStartOffset(100)
+            .setEndOffset(300));
         CommitStreamSetObjectRequestData commitRequest6 = new CommitStreamSetObjectRequestData()
-                .setNodeId(BROKER1)
-                .setObjectId(6L)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges6);
+            .setNodeId(BROKER1)
+            .setObjectId(6L)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges6);
         ControllerResult<CommitStreamSetObjectResponseData> result10 = manager.commitStreamSetObject(commitRequest6);
         assertEquals(Errors.NONE.code(), result10.response().errorCode());
         replay(manager, result10.records());
@@ -393,7 +392,7 @@ public class StreamControlManagerTest {
 
         // 6. get stream's offset
         GetOpeningStreamsRequestData request = new GetOpeningStreamsRequestData()
-                .setNodeId(BROKER1).setNodeEpoch(0L);
+            .setNodeId(BROKER1).setNodeEpoch(0L);
         GetOpeningStreamsResponseData response = manager.getOpeningStreams(request).response();
         assertEquals(1, response.streamMetadataList().size());
         assertEquals(STREAM0, response.streamMetadataList().get(0).streamId());
@@ -401,7 +400,7 @@ public class StreamControlManagerTest {
         assertEquals(300L, response.streamMetadataList().get(0).endOffset());
 
         request = new GetOpeningStreamsRequestData()
-                .setNodeId(BROKER0).setNodeEpoch(0L);
+            .setNodeId(BROKER0).setNodeEpoch(0L);
         assertEquals(0, manager.getOpeningStreams(request).response().streamMetadataList().size());
     }
 
@@ -410,27 +409,27 @@ public class StreamControlManagerTest {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
             long objectId = args.getArgument(0);
             return ControllerResult.of(
-                    List.of(
-                            new ApiMessageAndVersion(
-                                    new S3ObjectRecord().setObjectId(objectId).setObjectState(S3ObjectState.COMMITTED.toByte()),
-                                    (short) 0
-                            )
-                    ),
-                    true);
+                List.of(
+                    new ApiMessageAndVersion(
+                        new S3ObjectRecord().setObjectId(objectId).setObjectState(S3ObjectState.COMMITTED.toByte()),
+                        (short) 0
+                    )
+                ),
+                true);
         });
         when(objectControlManager.markDestroyObjects(anyList())).then(args -> {
             List<Long> objectIds = args.getArgument(0);
             return ControllerResult.of(
-                    objectIds
-                            .stream()
-                            .map(id ->
-                                    new ApiMessageAndVersion(
-                                            new S3ObjectRecord().setObjectId(id).setObjectState(S3ObjectState.MARK_DESTROYED.toByte()),
-                                            (short) 0
-                                    )
-                            )
-                            .collect(Collectors.toList()),
-                    true);
+                objectIds
+                    .stream()
+                    .map(id ->
+                        new ApiMessageAndVersion(
+                            new S3ObjectRecord().setObjectId(id).setObjectState(S3ObjectState.MARK_DESTROYED.toByte()),
+                            (short) 0
+                        )
+                    )
+                    .collect(Collectors.toList()),
+                true);
         });
         registerAlwaysSuccessEpoch(BROKER0);
 
@@ -439,39 +438,38 @@ public class StreamControlManagerTest {
         ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
         replay(manager, result0.records());
         ControllerResult<OpenStreamResponse> result2 = manager.openStream(BROKER0, 0,
-                new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
         replay(manager, result2.records());
 
         // 2. setup compacted object
         for (int i = 0; i < 2; i++) {
             ControllerResult<CommitStreamSetObjectResponseData> rst = manager.commitStreamSetObject(new CommitStreamSetObjectRequestData()
-                    .setObjectId(i)
-                    .setNodeId(BROKER0)
-                    .setObjectSize(999)
-                    .setObjectStreamRanges(List.of(new ObjectStreamRange()
-                            .setStreamId(STREAM0)
-                            .setStreamEpoch(EPOCH0)
-                            .setStartOffset(i)
-                            .setEndOffset(i + 1))));
+                .setObjectId(i)
+                .setNodeId(BROKER0)
+                .setObjectSize(999)
+                .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                    .setStreamId(STREAM0)
+                    .setStreamEpoch(EPOCH0)
+                    .setStartOffset(i)
+                    .setEndOffset(i + 1))));
             replay(manager, rst.records());
         }
 
-
         // 2. compact stream set object
         List<ObjectStreamRange> streamRanges0 = List.of(new ObjectStreamRange()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH0)
-                .setStartOffset(0L)
-                .setEndOffset(2L));
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(0L)
+            .setEndOffset(2L));
         // STREAM1 is not exist
         List<StreamObject> streamObjects = List.of(new StreamObject().setStreamId(STREAM1).setObjectId(233).setObjectSize(111).setStartOffset(111).setEndOffset(200));
 
         CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
-                .setObjectId(2L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges0)
-                .setStreamObjects(streamObjects).setCompactedObjectIds(List.of(0L, 1L));
+            .setObjectId(2L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0)
+            .setStreamObjects(streamObjects).setCompactedObjectIds(List.of(0L, 1L));
         ControllerResult<CommitStreamSetObjectResponseData> result3 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
         replay(manager, result3.records());
@@ -597,14 +595,14 @@ public class StreamControlManagerTest {
 
     private void openStream(int nodeId, long epoch, long streamId) {
         ControllerResult<OpenStreamResponse> result1 = manager.openStream(nodeId, 0,
-                new OpenStreamRequest().setStreamId(streamId).setStreamEpoch(epoch));
+            new OpenStreamRequest().setStreamId(streamId).setStreamEpoch(epoch));
         replay(manager, result1.records());
     }
 
     private void closeStream(int nodeId, long epoch, long streamId) {
         ControllerResult<CloseStreamResponse> result = manager.closeStream(nodeId, BROKER_EPOCH0, new CloseStreamRequest()
-                .setStreamId(streamId)
-                .setStreamEpoch(epoch));
+            .setStreamId(streamId)
+            .setStreamEpoch(epoch));
         replay(manager, result.records());
     }
 
@@ -616,7 +614,7 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitWalCompacted() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
-                .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+            .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
 
@@ -626,22 +624,22 @@ public class StreamControlManagerTest {
 
         // 2. commit first level stream set object of stream_0 and stream_1
         List<ObjectStreamRange> streamRanges0 = List.of(
-                new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(0L)
-                        .setEndOffset(100L),
-                new ObjectStreamRange()
-                        .setStreamId(STREAM1)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(0L)
-                        .setEndOffset(200L));
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(100L),
+            new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(200L));
         CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
-                .setObjectId(0L)
-                .setOrderId(0L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges0);
+            .setObjectId(0L)
+            .setOrderId(0L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0);
         ControllerResult<CommitStreamSetObjectResponseData> result4 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result4.response().errorCode());
         replay(manager, result4.records());
@@ -660,22 +658,22 @@ public class StreamControlManagerTest {
 
         // 4. keep committing first level object of stream_0 and stream_1
         List<ObjectStreamRange> streamRanges1 = List.of(
-                new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(100L)
-                        .setEndOffset(200L),
-                new ObjectStreamRange()
-                        .setStreamId(STREAM1)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(200L)
-                        .setEndOffset(300L));
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(100L)
+                .setEndOffset(200L),
+            new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(200L)
+                .setEndOffset(300L));
         CommitStreamSetObjectRequestData commitRequest1 = new CommitStreamSetObjectRequestData()
-                .setObjectId(1L)
-                .setOrderId(1L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges1);
+            .setObjectId(1L)
+            .setOrderId(1L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges1);
         ControllerResult<CommitStreamSetObjectResponseData> result5 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result5.response().errorCode());
         replay(manager, result5.records());
@@ -694,23 +692,23 @@ public class StreamControlManagerTest {
         // 6. commit an invalid stream set object which contains the destroyed or not exist stream set object
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
         List<ObjectStreamRange> streamRanges2 = List.of(
-                new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(0L)
-                        .setEndOffset(200L),
-                new ObjectStreamRange()
-                        .setStreamId(STREAM1)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(0L)
-                        .setEndOffset(300L));
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(200L),
+            new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(300L));
         CommitStreamSetObjectRequestData commitRequest2 = new CommitStreamSetObjectRequestData()
-                .setObjectId(2L)
-                .setOrderId(0L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges2)
-                .setCompactedObjectIds(List.of(0L, 1L, 10L));
+            .setObjectId(2L)
+            .setOrderId(0L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges2)
+            .setCompactedObjectIds(List.of(0L, 1L, 10L));
         ControllerResult<CommitStreamSetObjectResponseData> result6 = manager.commitStreamSetObject(commitRequest2);
         assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result6.response().errorCode());
         assertEquals(0, result6.records().size());
@@ -718,12 +716,12 @@ public class StreamControlManagerTest {
 
         // 7. commit a second level stream set object which compact wal_0 and wal_1
         commitRequest2 = new CommitStreamSetObjectRequestData()
-                .setObjectId(2L)
-                .setOrderId(0L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges2)
-                .setCompactedObjectIds(List.of(0L, 1L));
+            .setObjectId(2L)
+            .setOrderId(0L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges2)
+            .setCompactedObjectIds(List.of(0L, 1L));
         result6 = manager.commitStreamSetObject(commitRequest2);
         assertEquals(Errors.NONE.code(), result6.response().errorCode());
         replay(manager, result6.records());
@@ -749,7 +747,7 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitWalWithStreamObject() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
-                .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+            .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
 
@@ -759,25 +757,25 @@ public class StreamControlManagerTest {
 
         // 2. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
         List<ObjectStreamRange> streamRanges0 = List.of(
-                new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(0L)
-                        .setEndOffset(100L));
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(100L));
         CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
-                .setObjectId(0L)
-                .setOrderId(0L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges0)
-                .setStreamObjects(List.of(
-                        new StreamObject()
-                                .setStreamId(STREAM1)
-                                .setObjectId(1L)
-                                .setObjectSize(999)
-                                .setStartOffset(0L)
-                                .setEndOffset(200L)
-                ));
+            .setObjectId(0L)
+            .setOrderId(0L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(1L)
+                    .setObjectSize(999)
+                    .setStartOffset(0L)
+                    .setEndOffset(200L)
+            ));
         ControllerResult<CommitStreamSetObjectResponseData> result4 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result4.response().errorCode());
         replay(manager, result4.records());
@@ -798,25 +796,25 @@ public class StreamControlManagerTest {
 
         // 5. commit stream set object with not continuous stream
         List<ObjectStreamRange> streamRanges1 = List.of(
-                new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(99L)
-                        .setEndOffset(200L));
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(99L)
+                .setEndOffset(200L));
         CommitStreamSetObjectRequestData commitRequest1 = new CommitStreamSetObjectRequestData()
-                .setObjectId(1L)
-                .setOrderId(1L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges1)
-                .setStreamObjects(List.of(
-                        new StreamObject()
-                                .setStreamId(STREAM1)
-                                .setObjectId(2L)
-                                .setObjectSize(999)
-                                .setStartOffset(200L)
-                                .setEndOffset(400L)
-                ));
+            .setObjectId(1L)
+            .setOrderId(1L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges1)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(2L)
+                    .setObjectSize(999)
+                    .setStartOffset(200L)
+                    .setEndOffset(400L)
+            ));
         ControllerResult<CommitStreamSetObjectResponseData> result5 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.OFFSET_NOT_MATCHED.code(), result5.response().errorCode());
     }
@@ -827,13 +825,13 @@ public class StreamControlManagerTest {
         long streamId = createStream();
         openStream(BROKER0, EPOCH1, streamId);
         CommitStreamObjectRequestData streamObjectRequest = new CommitStreamObjectRequestData()
-                .setObjectId(3L)
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH0)
-                .setStartOffset(0L)
-                .setEndOffset(400L)
-                .setObjectSize(999)
-                .setSourceObjectIds(List.of(1L, 2L));
+            .setObjectId(3L)
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(0L)
+            .setEndOffset(400L)
+            .setObjectSize(999)
+            .setSourceObjectIds(List.of(1L, 2L));
         ControllerResult<CommitStreamObjectResponseData> result = manager.commitStreamObject(streamObjectRequest);
         assertEquals(Errors.STREAM_FENCED.code(), result.response().errorCode());
     }
@@ -841,7 +839,7 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitStreamObject() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
-                .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+            .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
 
@@ -851,25 +849,25 @@ public class StreamControlManagerTest {
 
         // 2. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
         List<ObjectStreamRange> streamRanges0 = List.of(
-                new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(0L)
-                        .setEndOffset(100L));
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0L)
+                .setEndOffset(100L));
         CommitStreamSetObjectRequestData commitRequest0 = new CommitStreamSetObjectRequestData()
-                .setObjectId(0L)
-                .setOrderId(0L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges0)
-                .setStreamObjects(List.of(
-                        new StreamObject()
-                                .setStreamId(STREAM1)
-                                .setObjectId(1L)
-                                .setObjectSize(999)
-                                .setStartOffset(0L)
-                                .setEndOffset(200L)
-                ));
+            .setObjectId(0L)
+            .setOrderId(0L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges0)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(1L)
+                    .setObjectSize(999)
+                    .setStartOffset(0L)
+                    .setEndOffset(200L)
+            ));
         ControllerResult<CommitStreamSetObjectResponseData> result0 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
         replay(manager, result0.records());
@@ -877,25 +875,25 @@ public class StreamControlManagerTest {
 
         // 3. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
         List<ObjectStreamRange> streamRanges1 = List.of(
-                new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(100L)
-                        .setEndOffset(200L));
+            new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(100L)
+                .setEndOffset(200L));
         CommitStreamSetObjectRequestData commitRequest1 = new CommitStreamSetObjectRequestData()
-                .setObjectId(2L)
-                .setOrderId(1L)
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setObjectStreamRanges(streamRanges1)
-                .setStreamObjects(List.of(
-                        new StreamObject()
-                                .setStreamId(STREAM1)
-                                .setObjectId(3L)
-                                .setObjectSize(999)
-                                .setStartOffset(200L)
-                                .setEndOffset(400L)
-                ));
+            .setObjectId(2L)
+            .setOrderId(1L)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setObjectStreamRanges(streamRanges1)
+            .setStreamObjects(List.of(
+                new StreamObject()
+                    .setStreamId(STREAM1)
+                    .setObjectId(3L)
+                    .setObjectSize(999)
+                    .setStartOffset(200L)
+                    .setEndOffset(400L)
+            ));
         ControllerResult<CommitStreamSetObjectResponseData> result1 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
@@ -903,12 +901,12 @@ public class StreamControlManagerTest {
 
         // 4. compact these two stream objects
         CommitStreamObjectRequestData streamObjectRequest = new CommitStreamObjectRequestData()
-                .setObjectId(4L)
-                .setStreamId(STREAM1)
-                .setStartOffset(0L)
-                .setEndOffset(400L)
-                .setObjectSize(999)
-                .setSourceObjectIds(List.of(1L, 3L));
+            .setObjectId(4L)
+            .setStreamId(STREAM1)
+            .setStartOffset(0L)
+            .setEndOffset(400L)
+            .setObjectSize(999)
+            .setSourceObjectIds(List.of(1L, 3L));
         ControllerResult<CommitStreamObjectResponseData> result2 = manager.commitStreamObject(streamObjectRequest);
         assertEquals(Errors.NONE.code(), result2.response().errorCode());
         replay(manager, result2.records());
@@ -927,13 +925,13 @@ public class StreamControlManagerTest {
         // 6. compact a stream object from invalid source object
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
         streamObjectRequest = new CommitStreamObjectRequestData()
-                .setObjectId(5L)
-                .setStreamId(STREAM1)
-                .setStreamEpoch(EPOCH0)
-                .setStartOffset(400L)
-                .setEndOffset(1000L)
-                .setObjectSize(999)
-                .setSourceObjectIds(List.of(10L));
+            .setObjectId(5L)
+            .setStreamId(STREAM1)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(400L)
+            .setEndOffset(1000L)
+            .setObjectSize(999)
+            .setSourceObjectIds(List.of(10L));
         result2 = manager.commitStreamObject(streamObjectRequest);
         assertEquals(Errors.COMPACTED_OBJECTS_NOT_FOUND.code(), result2.response().errorCode());
         replay(manager, result2.records());
@@ -948,7 +946,7 @@ public class StreamControlManagerTest {
 
     private void mockData0() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
-                .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
+            .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
         registerAlwaysSuccessEpoch(BROKER1);
@@ -958,46 +956,46 @@ public class StreamControlManagerTest {
         createAndOpenStream(BROKER0, EPOCH0);
         // 2. commit stream set object with stream0-[0, 10)
         CommitStreamSetObjectRequestData requestData = new CommitStreamSetObjectRequestData()
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setOrderId(0)
-                .setObjectId(0)
-                .setObjectStreamRanges(List.of(new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(0)
-                        .setEndOffset(10)));
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setOrderId(0)
+            .setObjectId(0)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0)
+                .setEndOffset(10)));
         ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
         // 3. commit stream set object with stream0-[10, 20), and stream1-[0, 10)
         requestData = new CommitStreamSetObjectRequestData()
-                .setNodeId(BROKER0)
-                .setObjectSize(999)
-                .setOrderId(1)
-                .setObjectId(1)
-                .setObjectStreamRanges(List.of(new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(10)
-                        .setEndOffset(20), new ObjectStreamRange()
-                        .setStreamId(STREAM1)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(0)
-                        .setEndOffset(10)));
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setOrderId(1)
+            .setObjectId(1)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(10)
+                .setEndOffset(20), new ObjectStreamRange()
+                .setStreamId(STREAM1)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(0)
+                .setEndOffset(10)));
         result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
         // 4. commit with a stream object with stream0-[20, 40)
         requestData = new CommitStreamSetObjectRequestData()
-                .setNodeId(BROKER0)
+            .setNodeId(BROKER0)
+            .setObjectSize(999)
+            .setOrderId(S3StreamConstant.INVALID_ORDER_ID)
+            .setObjectId(ObjectUtils.NOOP_OBJECT_ID)
+            .setStreamObjects(List.of(new StreamObject()
+                .setStreamId(STREAM0)
                 .setObjectSize(999)
-                .setOrderId(S3StreamConstant.INVALID_ORDER_ID)
-                .setObjectId(ObjectUtils.NOOP_OBJECT_ID)
-                .setStreamObjects(List.of(new StreamObject()
-                        .setStreamId(STREAM0)
-                        .setObjectSize(999)
-                        .setObjectId(2)
-                        .setStartOffset(20)
-                        .setEndOffset(40)));
+                .setObjectId(2)
+                .setStartOffset(20)
+                .setEndOffset(40)));
         result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
         // 5. node0 close stream0 and node1 open stream0
@@ -1005,15 +1003,15 @@ public class StreamControlManagerTest {
         openStream(BROKER1, EPOCH1, STREAM0);
         // 6. commit stream set object with stream0-[40, 70)
         requestData = new CommitStreamSetObjectRequestData()
-                .setNodeId(BROKER1)
-                .setObjectSize(999)
-                .setObjectId(3)
-                .setOrderId(3)
-                .setObjectStreamRanges(List.of(new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH1)
-                        .setStartOffset(40)
-                        .setEndOffset(70)));
+            .setNodeId(BROKER1)
+            .setObjectSize(999)
+            .setObjectId(3)
+            .setOrderId(3)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH1)
+                .setStartOffset(40)
+                .setEndOffset(70)));
         result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
     }
@@ -1024,9 +1022,9 @@ public class StreamControlManagerTest {
 
         // 1. trim stream0 to [60, ..)
         TrimStreamRequest trimRequest = new TrimStreamRequest()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH1)
-                .setNewStartOffset(60);
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setNewStartOffset(60);
         ControllerResult<TrimStreamResponse> result1 = manager.trimStream(BROKER1, BROKER_EPOCH0, trimRequest);
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
@@ -1043,9 +1041,9 @@ public class StreamControlManagerTest {
 
         // 3. trim stream0 to [100, ..)
         trimRequest = new TrimStreamRequest()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH1)
-                .setNewStartOffset(100);
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1)
+            .setNewStartOffset(100);
         result1 = manager.trimStream(BROKER1, BROKER_EPOCH0, trimRequest);
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
@@ -1062,15 +1060,15 @@ public class StreamControlManagerTest {
 
         // 5. commit stream set object with stream0-[70, 100)
         CommitStreamSetObjectRequestData requestData = new CommitStreamSetObjectRequestData()
-                .setNodeId(BROKER1)
-                .setObjectSize(999)
-                .setObjectId(4)
-                .setOrderId(4)
-                .setObjectStreamRanges(List.of(new ObjectStreamRange()
-                        .setStreamId(STREAM0)
-                        .setStreamEpoch(EPOCH0)
-                        .setStartOffset(70)
-                        .setEndOffset(100)));
+            .setNodeId(BROKER1)
+            .setObjectSize(999)
+            .setObjectId(4)
+            .setOrderId(4)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(70)
+                .setEndOffset(100)));
         ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(requestData);
         replay(manager, result.records());
 
@@ -1088,55 +1086,50 @@ public class StreamControlManagerTest {
     public void testDelete() {
         mockData0();
 
-        // 1. delete with invalid stream owner
+        // 1. delete a OPEN status stream
         DeleteStreamRequest req = new DeleteStreamRequest()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH1);
-        ControllerResult<DeleteStreamResponse> result = manager.deleteStream(BROKER0, BROKER_EPOCH0, req);
-        assertEquals(Errors.STREAM_FENCED.code(), result.response().errorCode());
-        assertTrue(result.records().isEmpty());
-
-        // 2. delete with invalid stream epoch
-        req = new DeleteStreamRequest()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH0);
-        result = manager.deleteStream(BROKER1, BROKER_EPOCH0, req);
-        assertEquals(Errors.STREAM_FENCED.code(), result.response().errorCode());
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1);
+        ControllerResult<DeleteStreamResponse> result = manager.deleteStream(req);
+        assertEquals(Errors.STREAM_NOT_CLOSED.code(), result.response().errorCode());
         replay(manager, result.records());
 
-        // 3. delete with valid request
+        // 2. close the stream
+        replay(manager, manager.closeStream(BROKER1, EPOCH1, new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH1)).records());
+
         req = new DeleteStreamRequest()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH1);
-        result = manager.deleteStream(BROKER1, BROKER_EPOCH0, req);
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1);
+        result = manager.deleteStream(req);
         assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(1, result.records().size());
         replay(manager, result.records());
 
-        // 4. verify
         assertNull(manager.streamsMetadata().get(STREAM0));
 
         assertEquals(2, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
 
-        // 5. delete again
+        // 3. delete again
         req = new DeleteStreamRequest()
-                .setStreamId(STREAM0)
-                .setStreamEpoch(EPOCH1);
-        result = manager.deleteStream(BROKER1, BROKER_EPOCH0, req);
-        assertEquals(Errors.STREAM_NOT_EXIST.code(), result.response().errorCode());
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH1);
+        result = manager.deleteStream(req);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(0, result.records().size());
     }
 
     @Test
     public void testGetOpeningStreams() {
         // 1. create stream without register
         CreateStreamRequest request0 = new CreateStreamRequest()
-                .setNodeId(BROKER0);
+            .setNodeId(BROKER0);
         ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
         assertEquals(Errors.NODE_EPOCH_NOT_EXIST, Errors.forCode(result0.response().errorCode()));
 
         // 2. register
         GetOpeningStreamsRequestData request1 = new GetOpeningStreamsRequestData()
-                .setNodeId(BROKER0)
-                .setNodeEpoch(1);
+            .setNodeId(BROKER0)
+            .setNodeEpoch(1);
         ControllerResult<GetOpeningStreamsResponseData> result1 = manager.getOpeningStreams(request1);
         assertEquals(Errors.NONE, Errors.forCode(result1.response().errorCode()));
         assertEquals(0, result1.response().streamMetadataList().size());
@@ -1144,15 +1137,15 @@ public class StreamControlManagerTest {
 
         // 3. register with lower epoch again
         request1 = new GetOpeningStreamsRequestData()
-                .setNodeId(BROKER0)
-                .setNodeEpoch(0);
+            .setNodeId(BROKER0)
+            .setNodeEpoch(0);
         result1 = manager.getOpeningStreams(request1);
         assertEquals(Errors.NODE_EPOCH_EXPIRED, Errors.forCode(result1.response().errorCode()));
 
         // 4. register with higher epoch
         request1 = new GetOpeningStreamsRequestData()
-                .setNodeId(BROKER0)
-                .setNodeEpoch(2);
+            .setNodeId(BROKER0)
+            .setNodeEpoch(2);
         result1 = manager.getOpeningStreams(request1);
         assertEquals(Errors.NONE, Errors.forCode(result1.response().errorCode()));
         assertEquals(0, result1.response().streamMetadataList().size());
@@ -1163,13 +1156,13 @@ public class StreamControlManagerTest {
 
         // 6. create stream with lower epoch
         CreateStreamRequest request2 = new CreateStreamRequest()
-                .setNodeId(BROKER0);
+            .setNodeId(BROKER0);
         ControllerResult<CreateStreamResponse> result2 = manager.createStream(BROKER0, BROKER_EPOCH0, request2);
         assertEquals(Errors.NODE_EPOCH_EXPIRED, Errors.forCode(result2.response().errorCode()));
 
         // 7. create stream with matched epoch
         CreateStreamRequest request3 = new CreateStreamRequest()
-                .setNodeId(BROKER0);
+            .setNodeId(BROKER0);
         ControllerResult<CreateStreamResponse> result3 = manager.createStream(BROKER0, 2, request3);
         assertEquals(Errors.NONE, Errors.forCode(result3.response().errorCode()));
         replay(manager, result3.records());
@@ -1185,26 +1178,26 @@ public class StreamControlManagerTest {
         createAndOpenStream(BROKER0, 0);
         createAndOpenStream(BROKER0, 0);
         ControllerResult<?> rst = manager.commitStreamSetObject(new CommitStreamSetObjectRequestData().setNodeId(BROKER0).setObjectId(1L)
-                .setStreamObjects(Collections.emptyList())
-                .setObjectStreamRanges(List.of(
-                        new ObjectStreamRange().setStreamId(STREAM0).setStartOffset(0).setEndOffset(100),
-                        new ObjectStreamRange().setStreamId(STREAM1).setStartOffset(0).setEndOffset(100)
-                )));
+            .setStreamObjects(Collections.emptyList())
+            .setObjectStreamRanges(List.of(
+                new ObjectStreamRange().setStreamId(STREAM0).setStartOffset(0).setEndOffset(100),
+                new ObjectStreamRange().setStreamId(STREAM1).setStartOffset(0).setEndOffset(100)
+            )));
         replay(manager, rst.records());
 
         closeStream(BROKER0, 0, STREAM0);
         openStream(BROKER1, 1, STREAM0);
         rst = manager.commitStreamSetObject(new CommitStreamSetObjectRequestData().setNodeId(BROKER1).setObjectId(2L)
-                .setStreamObjects(Collections.emptyList())
-                .setObjectStreamRanges(List.of(
-                        new ObjectStreamRange().setStreamId(STREAM0).setStartOffset(100).setEndOffset(200)
-                )));
+            .setStreamObjects(Collections.emptyList())
+            .setObjectStreamRanges(List.of(
+                new ObjectStreamRange().setStreamId(STREAM0).setStartOffset(100).setEndOffset(200)
+            )));
         replay(manager, rst.records());
         rst = manager.commitStreamSetObject(new CommitStreamSetObjectRequestData().setNodeId(BROKER1).setObjectId(3L)
-                .setStreamObjects(Collections.emptyList())
-                .setObjectStreamRanges(List.of(
-                        new ObjectStreamRange().setStreamId(STREAM0).setStartOffset(200).setEndOffset(300)
-                )));
+            .setStreamObjects(Collections.emptyList())
+            .setObjectStreamRanges(List.of(
+                new ObjectStreamRange().setStreamId(STREAM0).setStartOffset(200).setEndOffset(300)
+            )));
         replay(manager, rst.records());
 
         rst = manager.trimStream(BROKER1, 0, new TrimStreamRequest().setStreamId(STREAM0).setNewStartOffset(200L).setStreamEpoch(1));
@@ -1227,15 +1220,15 @@ public class StreamControlManagerTest {
 
     private void registerAlwaysSuccessEpoch(int nodeId) {
         GetOpeningStreamsRequestData req = new GetOpeningStreamsRequestData()
-                .setNodeId(nodeId)
-                .setNodeEpoch(-1);
+            .setNodeId(nodeId)
+            .setNodeEpoch(-1);
         ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(req);
         replay(manager, result.records());
     }
 
     private void replay(StreamControlManager manager, List<ApiMessageAndVersion> records) {
         List<ApiMessage> messages = records.stream().map(x -> x.message())
-                .collect(Collectors.toList());
+            .collect(Collectors.toList());
         for (ApiMessage message : messages) {
             MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
             switch (type) {
@@ -1288,7 +1281,7 @@ public class StreamControlManagerTest {
     }
 
     private void verifyFirstTimeOpenStreamResult(ControllerResult<OpenStreamResponse> result,
-                                                 long expectedEpoch, int expectedNodeId) {
+        long expectedEpoch, int expectedNodeId) {
         assertEquals(0, result.response().errorCode());
         assertEquals(0, result.response().startOffset());
         assertEquals(2, result.records().size());

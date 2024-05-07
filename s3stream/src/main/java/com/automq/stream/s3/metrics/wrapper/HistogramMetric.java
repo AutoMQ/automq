@@ -15,15 +15,15 @@ import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import io.opentelemetry.api.common.Attributes;
 
-public class YammerHistogramMetric extends ConfigurableMetrics {
+public class HistogramMetric extends ConfigurableMetric {
     private final DeltaHistogram deltaHistogram;
     private final MetricsLevel currentMetricsLevel;
 
-    public YammerHistogramMetric(MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig) {
+    public HistogramMetric(MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig) {
         this(currentMetricsLevel, metricsConfig, Attributes.empty());
     }
 
-    public YammerHistogramMetric(MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig, Attributes extraAttributes) {
+    public HistogramMetric(MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig, Attributes extraAttributes) {
         super(metricsConfig, extraAttributes);
         this.deltaHistogram = new DeltaHistogram();
         this.currentMetricsLevel = currentMetricsLevel;

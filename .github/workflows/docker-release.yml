@@ -6,6 +6,7 @@ on:
       - '[0-9]+.[0-9]+.[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
 
+
 jobs:
   docker-release:
     name: Docker Image Release

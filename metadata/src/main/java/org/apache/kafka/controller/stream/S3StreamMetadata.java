@@ -41,11 +41,12 @@ public class S3StreamMetadata {
      */
     private final TimelineLong startOffset;
     private final TimelineObject<StreamState> currentState;
+    private final Map<String, String> tags;
     private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
     private final TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
 
     public S3StreamMetadata(long currentEpoch, int currentRangeIndex, long startOffset,
-                            StreamState currentState, SnapshotRegistry registry) {
+                            StreamState currentState, Map<String, String> tags, SnapshotRegistry registry) {
         this.currentEpoch = new TimelineLong(registry);
         this.currentEpoch.set(currentEpoch);
         this.currentRangeIndex = new TimelineInteger(registry);
@@ -53,6 +54,7 @@ public class S3StreamMetadata {
         this.startOffset = new TimelineLong(registry);
         this.startOffset.set(startOffset);
         this.currentState = new TimelineObject<StreamState>(registry, currentState);
+        this.tags = tags;
         this.ranges = new TimelineHashMap<>(registry, 0);
         this.streamObjects = new TimelineHashMap<>(registry, 0);
     }
@@ -94,6 +96,10 @@ public class S3StreamMetadata {
 
     public void currentState(StreamState state) {
         this.currentState.set(state);
+    }
+
+    public Map<String, String> tags() {
+        return tags;
     }
 
     public Map<Integer, RangeMetadata> ranges() {
