@@ -7,13 +7,9 @@ name: Docker Release
 #      - '[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
 
 on:
-  workflow_dispatch:
-    inputs:
-      is_release:
-        description: 'EnableTrigger'
-        required: true
-        default: false
-        type: boolean
+  push:
+    branches:
+      - fix/rename_image_repo
 
 
 jobs:
