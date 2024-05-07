@@ -40,12 +40,12 @@ jobs:
 
       - name: Build TarGz
         run: |
-          ./gradlew -Pprefix=automq-${{ github.ref_name }}_ --build-cache --refresh-dependencies clean releaseTarGz
+          ./gradlew -Pprefix=automq-0.0.1_ --build-cache --refresh-dependencies clean releaseTarGz
 
       # docker image release
       - name: Cp TarGz to Docker Path
         run: |
-          cp ./core/build/distributions/automq-${{ github.ref_name }}_kafka-${{ steps.get_project_version.outputs.PROJECT_VERSION }}.tgz ./docker/
+          cp ./core/build/distributions/automq-0.0.1_kafka-${{ steps.get_project_version.outputs.PROJECT_VERSION }}.tgz ./docker/
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
