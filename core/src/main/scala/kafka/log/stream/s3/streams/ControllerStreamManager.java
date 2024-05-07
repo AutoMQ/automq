@@ -216,8 +216,10 @@ public class ControllerStreamManager implements StreamManager {
                 case NODE_EPOCH_NOT_EXIST:
                     LOGGER.error("Node epoch expired or not exist, stream {}, epoch {}, code: {}", streamId, epoch, code);
                     throw code.exception();
-                case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
+                    LOGGER.warn("[STREAM_FENCED] open stream failed streamId={}, epoch {}, code: {}", streamId, epoch, code);
+                    throw code.exception();
+                case STREAM_NOT_EXIST:
                 case STREAM_INNER_ERROR:
                     LOGGER.error("Unexpected error while opening stream: {}, epoch {}, code: {}", streamId, epoch, code);
                     throw code.exception();

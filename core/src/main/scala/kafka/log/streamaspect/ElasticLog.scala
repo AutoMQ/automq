@@ -19,6 +19,7 @@ import kafka.log._
 import kafka.log.streamaspect.ElasticLogFileRecords.{BatchIteratorRecordsAdaptor, PooledMemoryRecords}
 import kafka.metrics.KafkaMetricsUtil
 import kafka.utils.{CoreUtils, Logging}
+import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.errors.{KafkaStorageException, OffsetOutOfRangeException}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.MemoryRecords
@@ -734,11 +735,18 @@ object ElasticLog extends Logging {
                     if (metaStream != null) {
                         metaStream.close().get
                     }
+                }, this)
+                CoreUtils.swallow({
                     if (logStreamManager != null) {
                         logStreamManager.close().get()
                     }
                 }, this)
-                error(s"${logIdent}failed to open elastic log, trying to close streams. Error msg: ${e.getMessage}")
+                val cause = FutureUtil.cause(e)
+                if (cause.isInstanceOf[StreamFencedException]) {
+                    warn(s"${logIdent}failed to open elastic log, trying to close streams.", e)
+                } else {
+                    error(s"${logIdent}failed to open elastic log, trying to close streams.", e)
+                }
                 throw e
         }
 

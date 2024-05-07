@@ -17,7 +17,6 @@ import kafka.log.UnifiedLog
 import kafka.log.streamaspect.ElasticLogManager.NAMESPACE
 import kafka.log.streamaspect.cache.FileCache
 import kafka.log.streamaspect.client.{ClientFactoryProxy, Context}
-import kafka.log.streamaspect.utils.ExceptionUtil
 import kafka.server.{BrokerServer, BrokerTopicStats, KafkaConfig}
 import kafka.utils.Logging
 import org.apache.kafka.common.{TopicPartition, Uuid}
@@ -53,29 +52,25 @@ class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChe
         var elasticLog: ElasticUnifiedLog = null
         // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
         // operate sequentially. So it's safe without lock
-        ExceptionUtil.maybeRecordThrowableAndRethrow(new Runnable {
-            override def run(): Unit = {
-                // ElasticLog new is a time cost operation.
-                elasticLog = ElasticUnifiedLog(
-                    dir,
-                    config,
-                    scheduler,
-                    time,
-                    maxTransactionTimeoutMs,
-                    producerStateManagerConfig,
-                    brokerTopicStats,
-                    producerIdExpirationCheckIntervalMs,
-                    logDirFailureChannel,
-                    topicId,
-                    leaderEpoch,
-                    logOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
-                    client,
-                    NAMESPACE,
-                    openStreamChecker
-                )
-            }
-        }, s"Failed to create elastic log for $topicPartition", this)
-        elasticLogs.putIfAbsent(topicPartition, elasticLog)
+        // ElasticLog new is a time cost operation.
+        elasticLog = ElasticUnifiedLog(
+            dir,
+            config,
+            scheduler,
+            time,
+            maxTransactionTimeoutMs,
+            producerStateManagerConfig,
+            brokerTopicStats,
+            producerIdExpirationCheckIntervalMs,
+            logDirFailureChannel,
+            topicId,
+            leaderEpoch,
+            logOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
+            client,
+            NAMESPACE,
+            openStreamChecker
+        )
+        elasticLogs.put(topicPartition, elasticLog)
         elasticLog
     }
 
