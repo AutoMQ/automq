@@ -15,6 +15,7 @@ import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.ReadDataBlock;
+import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.exceptions.BlockNotContinuousException;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -27,6 +28,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
 import com.automq.stream.utils.threads.EventLoop;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -231,7 +233,8 @@ public class StreamReader {
         readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS);
     }
 
-    private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes, boolean readahead) {
+    private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes,
+        boolean readahead) {
         GetBlocksContext context = new GetBlocksContext(readahead);
         try {
             getBlocks0(context, startOffset, endOffset, maxBytes);
@@ -250,7 +253,7 @@ public class StreamReader {
         CompletableFuture<Map<Long, Block>> loadMoreBlocksCf;
         int remainingSize = maxBytes;
         if (floorKey == null || startOffset >= loadedBlockIndexEndOffset) {
-            loadMoreBlocksCf = loadMoreBlocksWithoutData();
+            loadMoreBlocksCf = loadMoreBlocksWithoutData(endOffset);
         } else {
             boolean firstBlock = true;
             boolean fulfill = false;
@@ -281,14 +284,20 @@ public class StreamReader {
                 ctx.cf.complete(ctx.blocks);
                 return;
             } else {
-                loadMoreBlocksCf = loadMoreBlocksWithoutData();
+                loadMoreBlocksCf = loadMoreBlocksWithoutData(endOffset);
             }
         }
         int finalRemainingSize = remainingSize;
         loadMoreBlocksCf.thenAccept(rst -> {
             if (rst.isEmpty()) {
                 // it's already load to the end
-                ctx.cf.complete(ctx.blocks);
+                if (endOffset != -1L && endOffset > loadedBlockIndexEndOffset) {
+                    String errMsg = String.format("[BUG] streamId=%s expect load blocks to endOffset=%s, " +
+                        "current loadedBlockIndexEndOffset=%s", streamId, endOffset, loadedBlockIndexEndOffset);
+                    ctx.cf.completeExceptionally(new AutoMQException(errMsg));
+                } else {
+                    ctx.cf.complete(ctx.blocks);
+                }
             } else {
                 long nextStartOffset = ctx.blocks.isEmpty() ? startOffset : ctx.blocks.get(ctx.blocks.size() - 1).index.endOffset();
                 getBlocks0(ctx, nextStartOffset, endOffset, finalRemainingSize);
@@ -304,17 +313,21 @@ public class StreamReader {
      *
      * @return new block indexes
      */
-    private CompletableFuture<Map<Long, Block>> loadMoreBlocksWithoutData() {
+    private CompletableFuture<Map<Long, Block>> loadMoreBlocksWithoutData(long endOffset) {
         if (inflightLoadIndexCf != null) {
-            return inflightLoadIndexCf;
+            return inflightLoadIndexCf.thenCompose(rst -> loadMoreBlocksWithoutData(endOffset));
         }
+        if (endOffset != -1L && endOffset <= loadedBlockIndexEndOffset) {
+            return CompletableFuture.completedFuture(Collections.emptyMap());
+        }
+
         inflightLoadIndexCf = new CompletableFuture<>();
         long nextLoadingOffset = calWindowBlocksEndOffset();
         AtomicLong nextFindStartOffset = new AtomicLong(nextLoadingOffset);
         Map<Long, Block> newDataBlockIndex = new HashMap<>();
         TimerUtil time = new TimerUtil();
         // 1. get objects
-        CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, nextLoadingOffset, -1L, GET_OBJECT_STEP);
+        CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, nextLoadingOffset, endOffset, GET_OBJECT_STEP);
         // 2. get block indexes from objects
         CompletableFuture<Void> findBlockIndexesCf = getObjectsCf.whenComplete((rst, ex) -> {
             StorageOperationStats.getInstance().getIndicesTimeGetObjectStats.record(time.elapsedAndResetAs(TimeUnit.NANOSECONDS));
