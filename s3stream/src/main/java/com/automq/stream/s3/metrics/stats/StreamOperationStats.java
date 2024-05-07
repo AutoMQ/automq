@@ -15,23 +15,23 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
+import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 
 public class StreamOperationStats {
     private volatile static StreamOperationStats instance = null;
-    public final YammerHistogramMetric createStreamStats = S3StreamMetricsManager
+    public final HistogramMetric createStreamLatency = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.CREATE_STREAM);
-    public final YammerHistogramMetric openStreamStats = S3StreamMetricsManager
+    public final HistogramMetric openStreamLatency = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.OPEN_STREAM);
-    public final YammerHistogramMetric appendStreamStats = S3StreamMetricsManager
+    public final HistogramMetric appendStreamLatency = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STREAM);
-    public final YammerHistogramMetric fetchStreamStats = S3StreamMetricsManager
+    public final HistogramMetric fetchStreamLatency = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.FETCH_STREAM);
-    public final YammerHistogramMetric trimStreamStats = S3StreamMetricsManager
+    public final HistogramMetric trimStreamLatency = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.TRIM_STREAM);
-    private final YammerHistogramMetric closeStreamSuccessStats = S3StreamMetricsManager
+    private final HistogramMetric closeStreamSuccessLatency = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.CLOSE_STREAM, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
-    private final YammerHistogramMetric closeStreamFailStats = S3StreamMetricsManager
+    private final HistogramMetric closeStreamFailLatency = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.CLOSE_STREAM, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
 
     private StreamOperationStats() {
@@ -48,7 +48,7 @@ public class StreamOperationStats {
         return instance;
     }
 
-    public YammerHistogramMetric closeStreamStats(boolean isSuccess) {
-        return isSuccess ? closeStreamSuccessStats : closeStreamFailStats;
+    public HistogramMetric closeStreamStats(boolean isSuccess) {
+        return isSuccess ? closeStreamSuccessLatency : closeStreamFailLatency;
     }
 }

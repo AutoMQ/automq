@@ -17,7 +17,7 @@ import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
-import com.automq.stream.s3.metrics.wrapper.YammerHistogramMetric;
+import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,31 +25,31 @@ public class S3OperationStats {
     private volatile static S3OperationStats instance = null;
     public final CounterMetric uploadSizeTotalStats = S3StreamMetricsManager.buildS3UploadSizeMetric();
     public final CounterMetric downloadSizeTotalStats = S3StreamMetricsManager.buildS3DownloadSizeMetric();
-    private final Map<String, YammerHistogramMetric> getObjectSuccessStats = new ConcurrentHashMap<>();
-    private final Map<String, YammerHistogramMetric> getObjectFailedStats = new ConcurrentHashMap<>();
-    private final Map<String, YammerHistogramMetric> putObjectSuccessStats = new ConcurrentHashMap<>();
-    private final Map<String, YammerHistogramMetric> putObjectFailedStats = new ConcurrentHashMap<>();
-    private final YammerHistogramMetric deleteObjectSuccessStats = S3StreamMetricsManager.buildOperationMetric(
+    private final Map<String, HistogramMetric> getObjectSuccessStats = new ConcurrentHashMap<>();
+    private final Map<String, HistogramMetric> getObjectFailedStats = new ConcurrentHashMap<>();
+    private final Map<String, HistogramMetric> putObjectSuccessStats = new ConcurrentHashMap<>();
+    private final Map<String, HistogramMetric> putObjectFailedStats = new ConcurrentHashMap<>();
+    private final HistogramMetric deleteObjectSuccessStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.DELETE_OBJECT, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
-    private final YammerHistogramMetric deleteObjectFailedStats = S3StreamMetricsManager.buildOperationMetric(
+    private final HistogramMetric deleteObjectFailedStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.DELETE_OBJECT, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
-    private final YammerHistogramMetric deleteObjectsSuccessStats = S3StreamMetricsManager.buildOperationMetric(
+    private final HistogramMetric deleteObjectsSuccessStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.DELETE_OBJECTS, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
-    private final YammerHistogramMetric deleteObjectsFailedStats = S3StreamMetricsManager.buildOperationMetric(
+    private final HistogramMetric deleteObjectsFailedStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.DELETE_OBJECTS, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
-    private final YammerHistogramMetric createMultiPartUploadSuccessStats = S3StreamMetricsManager.buildOperationMetric(
+    private final HistogramMetric createMultiPartUploadSuccessStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.CREATE_MULTI_PART_UPLOAD, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
-    private final YammerHistogramMetric createMultiPartUploadFailedStats = S3StreamMetricsManager.buildOperationMetric(
+    private final HistogramMetric createMultiPartUploadFailedStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.CREATE_MULTI_PART_UPLOAD, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
-    private final Map<String, YammerHistogramMetric> uploadPartSuccessStats = new ConcurrentHashMap<>();
-    private final Map<String, YammerHistogramMetric> uploadPartFailedStats = new ConcurrentHashMap<>();
-    private final YammerHistogramMetric uploadPartCopySuccessStats = S3StreamMetricsManager.buildOperationMetric(
+    private final Map<String, HistogramMetric> uploadPartSuccessStats = new ConcurrentHashMap<>();
+    private final Map<String, HistogramMetric> uploadPartFailedStats = new ConcurrentHashMap<>();
+    private final HistogramMetric uploadPartCopySuccessStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.UPLOAD_PART_COPY, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
-    private final YammerHistogramMetric uploadPartCopyFailedStats = S3StreamMetricsManager.buildOperationMetric(
+    private final HistogramMetric uploadPartCopyFailedStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.UPLOAD_PART_COPY, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
-    private final YammerHistogramMetric completeMultiPartUploadSuccessStats = S3StreamMetricsManager.buildOperationMetric(
+    private final HistogramMetric completeMultiPartUploadSuccessStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.COMPLETE_MULTI_PART_UPLOAD, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
-    private final YammerHistogramMetric completeMultiPartUploadFailedStats = S3StreamMetricsManager.buildOperationMetric(
+    private final HistogramMetric completeMultiPartUploadFailedStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.COMPLETE_MULTI_PART_UPLOAD, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
 
     private S3OperationStats() {
@@ -66,7 +66,7 @@ public class S3OperationStats {
         return instance;
     }
 
-    public YammerHistogramMetric getObjectStats(long size, boolean isSuccess) {
+    public HistogramMetric getObjectStats(long size, boolean isSuccess) {
         String label = AttributesUtils.getObjectBucketLabel(size);
         if (isSuccess) {
             return getObjectSuccessStats.computeIfAbsent(label, name -> S3StreamMetricsManager.buildOperationMetric(
@@ -77,7 +77,7 @@ public class S3OperationStats {
         }
     }
 
-    public YammerHistogramMetric putObjectStats(long size, boolean isSuccess) {
+    public HistogramMetric putObjectStats(long size, boolean isSuccess) {
         String label = AttributesUtils.getObjectBucketLabel(size);
         if (isSuccess) {
             return putObjectSuccessStats.computeIfAbsent(label, name -> S3StreamMetricsManager.buildOperationMetric(
@@ -88,7 +88,7 @@ public class S3OperationStats {
         }
     }
 
-    public YammerHistogramMetric uploadPartStats(long size, boolean isSuccess) {
+    public HistogramMetric uploadPartStats(long size, boolean isSuccess) {
         String label = AttributesUtils.getObjectBucketLabel(size);
         if (isSuccess) {
             return uploadPartSuccessStats.computeIfAbsent(label, name -> S3StreamMetricsManager.buildOperationMetric(
@@ -99,23 +99,23 @@ public class S3OperationStats {
         }
     }
 
-    public YammerHistogramMetric deleteObjectStats(boolean isSuccess) {
+    public HistogramMetric deleteObjectStats(boolean isSuccess) {
         return isSuccess ? deleteObjectSuccessStats : deleteObjectFailedStats;
     }
 
-    public YammerHistogramMetric deleteObjectsStats(boolean isSuccess) {
+    public HistogramMetric deleteObjectsStats(boolean isSuccess) {
         return isSuccess ? deleteObjectsSuccessStats : deleteObjectsFailedStats;
     }
 
-    public YammerHistogramMetric uploadPartCopyStats(boolean isSuccess) {
+    public HistogramMetric uploadPartCopyStats(boolean isSuccess) {
         return isSuccess ? uploadPartCopySuccessStats : uploadPartCopyFailedStats;
     }
 
-    public YammerHistogramMetric createMultiPartUploadStats(boolean isSuccess) {
+    public HistogramMetric createMultiPartUploadStats(boolean isSuccess) {
         return isSuccess ? createMultiPartUploadSuccessStats : createMultiPartUploadFailedStats;
     }
 
-    public YammerHistogramMetric completeMultiPartUploadStats(boolean isSuccess) {
+    public HistogramMetric completeMultiPartUploadStats(boolean isSuccess) {
         return isSuccess ? completeMultiPartUploadSuccessStats : completeMultiPartUploadFailedStats;
     }
 }

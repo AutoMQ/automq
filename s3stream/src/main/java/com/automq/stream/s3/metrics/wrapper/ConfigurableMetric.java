@@ -15,12 +15,12 @@ import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import io.opentelemetry.api.common.Attributes;
 
-public class ConfigurableMetrics implements ConfigListener {
+public class ConfigurableMetric implements ConfigListener {
     private final Attributes extraAttributes;
     Attributes attributes;
     MetricsLevel metricsLevel;
 
-    public ConfigurableMetrics(MetricsConfig metricsConfig, Attributes extraAttributes) {
+    public ConfigurableMetric(MetricsConfig metricsConfig, Attributes extraAttributes) {
         this.metricsLevel = metricsConfig.getMetricsLevel();
         this.extraAttributes = extraAttributes;
         this.attributes = buildAttributes(metricsConfig.getBaseAttributes());
