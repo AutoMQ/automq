@@ -28,6 +28,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
 import com.automq.stream.utils.threads.EventLoop;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -316,6 +317,10 @@ public class StreamReader {
         if (inflightLoadIndexCf != null) {
             return inflightLoadIndexCf.thenCompose(rst -> loadMoreBlocksWithoutData(endOffset));
         }
+        if (endOffset != -1L && endOffset <= loadedBlockIndexEndOffset) {
+            return CompletableFuture.completedFuture(Collections.emptyMap());
+        }
+
         inflightLoadIndexCf = new CompletableFuture<>();
         long nextLoadingOffset = calWindowBlocksEndOffset();
         AtomicLong nextFindStartOffset = new AtomicLong(nextLoadingOffset);
