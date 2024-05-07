@@ -147,6 +147,7 @@ import org.apache.kafka.controller.metrics.QuorumControllerMetrics;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamControlManager;
+import org.apache.kafka.controller.stream.TopicDeletionManager;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
@@ -1036,6 +1037,7 @@ public final class QuorumController implements Controller {
         }
     }
 
+    @Override
     public <T> CompletableFuture<T> appendWriteEvent(
         String name,
         OptionalLong deadlineNs,
@@ -1696,12 +1698,18 @@ public final class QuorumController implements Controller {
             case REMOVE_NODE_WALMETADATA_RECORD:
                 streamControlManager.replay((RemoveNodeWALMetadataRecord) message);
                 break;
-            case KVRECORD:
-                kvControlManager.replay((KVRecord) message);
+            case KVRECORD: {
+                KVRecord record = (KVRecord) message;
+                kvControlManager.replay(record);
+                topicDeletionManager.replay(record);
                 break;
-            case REMOVE_KVRECORD:
-                kvControlManager.replay((RemoveKVRecord) message);
+            }
+            case REMOVE_KVRECORD: {
+                RemoveKVRecord record = (RemoveKVRecord) message;
+                kvControlManager.replay(record);
+                topicDeletionManager.replay(record);
                 break;
+            }
             case UPDATE_NEXT_NODE_ID_RECORD:
                 clusterControl.replay((UpdateNextNodeIdRecord) message);
                 break;
@@ -1937,6 +1945,10 @@ public final class QuorumController implements Controller {
      * This must be accessed only by the event queue thread.
      */
     private final KVControlManager kvControlManager;
+    /**
+     * Async clean up deleted topic's s3 objects.
+     */
+    private final TopicDeletionManager topicDeletionManager;
 
     private QuorumControllerExtension extension = QuorumControllerExtension.NOOP;
     // AutoMQ for Kafka inject end
@@ -2102,6 +2114,7 @@ public final class QuorumController implements Controller {
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
                 this.s3ObjectControlManager, clusterControl, featureControl);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
+        this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager);
         // AutoMQ for Kafka inject end
 
         log.info("Creating new QuorumController with clusterId {}.{}{}",
@@ -2618,11 +2631,9 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<DeleteStreamsResponseData> deleteStreams(ControllerRequestContext context, DeleteStreamsRequestData request) {
-        int nodeId = request.nodeId();
-        long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<DeleteStreamsResponseData.DeleteStreamResponse>> batchCf = request.deleteStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("deleteStream", context.deadlineNs(), () -> streamControlManager.deleteStream(nodeId, nodeEpoch, req)))
+            .map(req -> appendWriteEvent("deleteStream", context.deadlineNs(), () -> streamControlManager.deleteStream(req)))
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new DeleteStreamsResponseData().setDeleteStreamResponses(
@@ -2689,6 +2700,11 @@ public final class QuorumController implements Controller {
             new DeleteKVsResponseData().setDeleteKVResponses(
                 batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
         );
+    }
+
+    @Override
+    public long lastStableOffset() {
+        return offsetControl.lastStableOffset();
     }
 
     public void setExtension(QuorumControllerExtension extension) {
