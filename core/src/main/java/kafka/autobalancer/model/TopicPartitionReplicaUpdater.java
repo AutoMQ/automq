@@ -19,18 +19,14 @@ import java.util.Map;
 import java.util.Objects;
 
 public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
-    private final TopicPartitionReplica replica;
+    private final TopicPartition tp;
 
     public TopicPartitionReplicaUpdater(TopicPartition tp) {
-        this.replica = createTopicpartitionReplica(tp);
+        this.tp = tp;
     }
 
     public TopicPartition topicPartition() {
-        return this.replica.getTopicPartition();
-    }
-
-    protected TopicPartitionReplica createTopicpartitionReplica(TopicPartition tp) {
-        return new TopicPartitionReplica(tp);
+        return this.tp;
     }
 
     @Override
@@ -39,8 +35,8 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected AbstractInstance instance() {
-        return replica;
+    protected String name() {
+        return tp.toString();
     }
 
     @Override
@@ -48,33 +44,35 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         return true;
     }
 
-    public static class TopicPartitionReplica extends AbstractInstance {
-        private final TopicPartition tp;
-
-        public TopicPartitionReplica(TopicPartition tp) {
-            this.tp = tp;
-        }
-
-        public TopicPartitionReplica(TopicPartitionReplica other, boolean deepCopy) {
-            super(other, true);
-            this.tp = new TopicPartition(other.tp.topic(), other.tp.partition());
-        }
-
-        @Override
-        public void processMetric(byte metricType, double value) {
+    @Override
+    protected AbstractInstance createInstance() {
+        TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp);
+        for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
+            byte metricType = entry.getKey();
+            double value = entry.getValue();
             if (!RawMetricTypes.PARTITION_METRICS.contains(metricType)) {
-                return;
+                continue;
             }
             switch (metricType) {
                 case RawMetricTypes.PARTITION_BYTES_IN:
-                    this.setLoad(Resource.NW_IN, value);
+                    replica.setLoad(Resource.NW_IN, value);
                     break;
                 case RawMetricTypes.PARTITION_BYTES_OUT:
-                    this.setLoad(Resource.NW_OUT, value);
+                    replica.setLoad(Resource.NW_OUT, value);
                     break;
                 default:
                     break;
             }
+        }
+        return replica;
+    }
+
+    public static class TopicPartitionReplica extends AbstractInstance {
+        private final TopicPartition tp;
+
+        public TopicPartitionReplica(TopicPartition tp, long timestamp) {
+            super(timestamp);
+            this.tp = tp;
         }
 
         public TopicPartition getTopicPartition() {
@@ -103,13 +101,10 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         }
 
         @Override
-        public AbstractInstance copy(boolean deepCopy) {
-            return new TopicPartitionReplica(this, deepCopy);
-        }
-
-        @Override
-        protected String name() {
-            return tp.toString();
+        public AbstractInstance copy() {
+            TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp);
+            replica.copyLoads(this);
+            return replica;
         }
 
         @Override

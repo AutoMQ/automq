@@ -18,23 +18,40 @@ import java.util.Map;
 import java.util.Objects;
 
 public class BrokerUpdater extends AbstractInstanceUpdater {
-    private final Broker broker;
+    private final int brokerId;
+    private final String rack;
+    private final Map<Byte, MetricValueSequence> metricSequanceMap = new HashMap<>();
+    private boolean active;
 
     public BrokerUpdater(int brokerId, String rack, boolean active) {
-        this.broker = createBroker(brokerId, rack, active);
+        this.brokerId = brokerId;
+        this.rack = rack;
+        this.active = active;
+    }
+
+    public int brokerId() {
+        return this.brokerId;
+    }
+
+    public String rack() {
+        return this.rack;
+    }
+
+    public boolean isActive() {
+        return this.active;
+    }
+
+    public Map<Byte, MetricValueSequence> metricSequenceMap() {
+        return this.metricSequanceMap;
     }
 
     public void setActive(boolean active) {
         lock.lock();
         try {
-            this.broker.setActive(active);
+            this.active = active;
         } finally {
             lock.unlock();
         }
-    }
-
-    protected Broker createBroker(int brokerId, String rack, boolean active) {
-        return new Broker(brokerId, rack, active);
     }
 
     @Override
@@ -43,40 +60,50 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected AbstractInstance instance() {
-        return this.broker;
+    protected boolean isValidInstance() {
+        return active;
     }
 
     @Override
-    protected boolean isValidInstance() {
-        return broker.isActive();
+    protected void update0(Map<Byte, Double> metricsMap, long timestamp) {
+        super.update0(metricsMap, timestamp);
+        for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
+            if (!RawMetricTypes.BROKER_METRICS.contains(entry.getKey())) {
+                continue;
+            }
+            MetricValueSequence metric = metricSequanceMap.computeIfAbsent(entry.getKey(), k -> new MetricValueSequence());
+            metric.append(entry.getValue());
+        }
+    }
+
+    @Override
+    protected String name() {
+        return "broker-" + brokerId;
+    }
+
+    @Override
+    protected AbstractInstance createInstance() {
+        Map<Byte, Snapshot> snapshotMap = new HashMap<>();
+        for (Map.Entry<Byte, MetricValueSequence> entry : metricSequanceMap.entrySet()) {
+            snapshotMap.put(entry.getKey(), entry.getValue().snapshot());
+        }
+        return new Broker(brokerId, rack, active, timestamp, snapshotMap);
     }
 
     public static class Broker extends AbstractInstance {
         private final int brokerId;
         private final String rack;
-        private final Map<Byte, MetricValueSequence> metrics = new HashMap<>();
+        private final Map<Byte, Snapshot> metricsSnapshot;
         private boolean active;
         private boolean isSlowBroker;
 
-        public Broker(int brokerId, String rack, boolean active) {
+        public Broker(int brokerId, String rack, boolean active, long timestamp, Map<Byte, Snapshot> metricsSnapshot) {
+            super(timestamp);
             this.brokerId = brokerId;
             this.rack = rack;
             this.active = active;
+            this.metricsSnapshot = metricsSnapshot;
             this.isSlowBroker = false;
-        }
-
-        public Broker(Broker other, boolean deepCopy) {
-            super(other, deepCopy);
-            this.brokerId = other.brokerId;
-            this.rack = other.rack;
-            this.active = other.active;
-            this.isSlowBroker = other.isSlowBroker;
-            if (deepCopy) {
-                for (Map.Entry<Byte, MetricValueSequence> entry : other.metrics.entrySet()) {
-                    this.metrics.put(entry.getKey(), entry.getValue().copy());
-                }
-            }
         }
 
         public int getBrokerId() {
@@ -103,20 +130,8 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
             this.isSlowBroker = isSlowBroker;
         }
 
-        @Override
-        public void update(Map<Byte, Double> metricsMap, long timestamp) {
-            super.update(metricsMap, timestamp);
-            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
-                if (!RawMetricTypes.BROKER_METRICS.contains(entry.getKey())) {
-                    continue;
-                }
-                MetricValueSequence metric = metrics.computeIfAbsent(entry.getKey(), k -> new MetricValueSequence());
-                metric.append(entry.getValue());
-            }
-        }
-
-        public Map<Byte, MetricValueSequence> getMetrics() {
-            return metrics;
+        public Map<Byte, Snapshot> getMetricsSnapshot() {
+            return this.metricsSnapshot;
         }
 
         @Override
@@ -143,18 +158,10 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         }
 
         @Override
-        public Broker copy(boolean deepCopy) {
-            return new Broker(this, deepCopy);
-        }
-
-        @Override
-        public void processMetric(byte metricType, double value) {
-            // do nothing
-        }
-
-        @Override
-        protected String name() {
-            return "broker-" + brokerId;
+        public Broker copy() {
+            Broker broker = new Broker(brokerId, rack, active, timestamp, null);
+            broker.copyLoads(this);
+            return broker;
         }
 
         @Override
