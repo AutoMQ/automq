@@ -483,13 +483,22 @@ public class S3Storage implements Storage {
             }
             return new ReadDataBlock(rst, blockCacheRst.getCacheAccessType());
         }).whenComplete((rst, ex) -> {
-            timeout.cancel();
+            handleTimeout(timeout, streamId, startOffset, finalEndOffset, maxBytes);
             if (ex != null) {
                 LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
                     streamId, startOffset, finalEndOffset, maxBytes, ex);
                 logCacheRecords.forEach(StreamRecordBatch::release);
             }
         });
+    }
+
+    private void handleTimeout(Timeout timeout, long streamId, long startOffset, long finalEndOffset, int maxBytes) {
+        if (timeout.isExpired()) {
+            LOGGER.error("[POTENTIAL_BUG_RECOVERED] read from block cache completed, stream={}, [{},{}), maxBytes: {}",
+                    streamId, startOffset, finalEndOffset, maxBytes);
+        } else {
+            timeout.cancel();
+        }
     }
 
     private void continuousCheck(List<StreamRecordBatch> records) {
