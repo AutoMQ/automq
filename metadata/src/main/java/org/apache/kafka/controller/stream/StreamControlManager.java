@@ -308,6 +308,9 @@ public class StreamControlManager {
                 .setEpoch(lastRangeMetadata.epoch())
                 .setRangeIndex(lastRangeMetadata.rangeIndex()), (short) 0));
         }
+        // Fix https://github.com/AutoMQ/automq/issues/1222
+        // Handle the case: trim offset beyond the range end offset
+        startOffset = Math.max(streamMetadata.startOffset(), startOffset);
         // range create record
         records.add(new ApiMessageAndVersion(new RangeRecord()
             .setStreamId(streamId)
