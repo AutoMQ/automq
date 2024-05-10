@@ -814,6 +814,24 @@ public class BlockWALService implements WriteAheadLog {
         public String detail() {
             return detail;
         }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            }
+            if (obj == null || obj.getClass() != this.getClass()) {
+                return false;
+            }
+            var that = (InvalidRecoverResult) obj;
+            return Objects.equals(this.detail, that.detail) &&
+                super.equals(obj);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(detail, super.hashCode());
+        }
     }
 
     static class ReadRecordException extends Exception {
