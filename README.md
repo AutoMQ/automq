@@ -31,12 +31,9 @@
   </tr>
   <tr>
     <td>Apache Kafka Compatibility[1]</td>
-    <td>Native Kafka</td>
-    <td>Native Kafka</td>
-    <td>Native Kafka</td>
+    <td colspan="3">Native Kafka</td>
     <td>Non-Kafka</td>
-    <td>Kafka Protocol</td>
-    <td>Kafka Protocol</td>
+    <td colspan="2">Kafka Protocol</td>
   </tr>
   <tr>
     <td>Source Code Availability</td>
@@ -58,8 +55,8 @@
   </tr>
   <tr>
     <td>P99 Latency</td>
-    <td colspan="5">Single-digit<br> ms latency</td>
-    <td><a href="https://www.warpstream.com/blog/kafka-is-dead-long-live-kafka">> 400ms</a></td>
+    <td colspan="5">Single-digit ms latency</td>
+    <td><a href="https://www.warpstream.com/blog/warpstream-benchmarks-and-tco">> 1200ms</a></td>
   </tr>
   <tr>
     <td>Continuous Self-Balancing</td>
@@ -76,7 +73,7 @@
     <td>In hours/days</td>
     <td>In hours</td>
     <td>In hours<br>(scale-in);<br> In seconds<br>(scale-out)</td>
-    <td>In hours/In seconds (Enterprise Only)</td>
+    <td>In hours<br>In seconds (Enterprise Only)</td>
     <td>In seconds</td>
   </tr>
   <tr>
@@ -94,7 +91,7 @@
     <td>In hours/days</td>
     <td>In hours</td>
     <td>In seconds</td>
-    <td>In hours/In seconds (Enterprise Only)</td>
+    <td>In hours<br>In seconds (Enterprise Only)</td>
     <td>In seconds</td>
   </tr>
   <tr>
@@ -128,63 +125,52 @@
 
 ## 🔶Why AutoMQ
 
-- **Cloud Native**: Built on cloud service. Every system design decision takes the cloud service's feature and billing items into consideration to offer the best low-latency, scalable, reliable, and cost-effective Kafka service on the cloud.
-- **High Reliability**: Leverage the features of cloud service to offer RPO of 0 and RTO in seconds. 
-  - AWS: Double writing to EBS and S3 Express One Zone in different AZs.
-  - GCP: Use regional SSD and cloud storage to offer AZ-level disaster recovery. 
-  - Azure: Use zone-redundant storage and blob storage to offer AZ-level disaster recovery.
-  - Alibaba Cloud: Use regional Disk and OSS to offer AZ-level disaster recovery.
+- **Cost effective**: The first true cloud-native streaming storage system, designed for optimal cost and efficiency on the cloud. Refer to [this report](https://docs.automq.com/docs/automq-opensource/EV6mwoC95ihwRckMsUKcppnqnJb) to see how we cut Apache Kafka billing by 90% on the cloud.
+- **High Reliability**: Leverage cloud-shared storage services(EBS and S3) to achieve zero RPO, RTO in seconds and 99.999999999% durability.
 - **Serverless**:
-    - Auto Scaling: Watch key metrics of cluster and scale in/out automatically to match your workload and achieve pay-as-you-go.
-    - Scaling in seconds: The computing layer (broker) is stateless and can scale in/out in seconds, which makes AutoMQ truly serverless. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Eo4Bweg4eiPegykLpAycED1yn7g)
-    - Infinite scalable: Use the cloud's object storage as the main storage, never worry about storage capacity.
-- **Manage-less**: Built-in auto-balancer component balance partition and network traffic across brokers automatically. Never worry about partition re-balance. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GSN2wZjeWiR70YkZiRsc6Hqsneh)
-- **Cost effective**: Leveraging object storage as the primary storage solution, incorporating billing considerations into the system design, and maximizing the use of cloud services collectively enable AutoMQ to be 10x more cost-effective than Apache Kafka. Refer to [this report](https://docs.automq.com/docs/automq-s3kafka/EJBvwM3dNic6uYkZAWwc7nmrnae) to see how we cut Apache Kafka billing by 90% on the cloud.
+  - Auto Scaling: Monitor cluster metrics and automatically scale in/out to align with your workload, enabling a pay-as-you-go model.
+  - Scaling in seconds: The computing layer (broker) is stateless and can scale in/out within seconds, making AutoMQ a truly serverless solution.
+  - Infinite scalable: Utilize cloud object storage as the primary storage solution, eliminating concerns about storage capacity.
+- **Manage-less**: The built-in auto-balancer component automatically schedules partitions and network traffic between brokers, eliminating manual partition reassignment.
 - **High performance**:
-    - Low latency: Use cloud block storage like AWS EBS as the WAL(Write Ahead Log) to accelerate writing.
-    - High throughput: Use pre-fetching, batch processing, and parallel to achieve high throughput.
-  > Refer to the [AutoMQ Performance White Paper](https://docs.automq.com/docs/automq-s3kafka/CYxlwqDBHitThCkxSl2cePxrnBc) to see how we achieve this.
-- **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka greater than 0.9.x and not lose any good features of it, but cheaper and better.
-
-![image](./docs/images/automq-kafka-compare.png)
-
+  - Low latency: Accelerate writing with high-performance EBS as WAL, achieving single-digit millisecond latency.
+  - High throughput: Leverage pre-fetching, batch processing, and parallel technologies to maximize the capabilities of cloud object storage.
+  > Refer to the [AutoMQ Performance White Paper](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd) to see how we achieve this.
+- **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka and does not lose any key features, but cheaper and better.
 
 ## ✨Architecture
 
-![image](./docs/images/automq-architecture.png)
+![image](./docs/images/automq_vs_kafka.gif)
 
-AutoMQ uses logSegment as a coding aspect of Apache Kafka to weave into our features. The architecture includes the following main components:
-- **S3Stream**: A streaming library based on object storage offered by AutoMQ. It is the core component of AutoMQ and is responsible for reading and writing data to object storage. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d).
-- **Stream**: Stream is an abstraction for mapping the logSegment of Apache Kafka. LogSegment's data, index, and other metadata will map to different types of streams. [Learn more](https://docs.automq.com/docs/automq-s3kafka/GUk7w0ZxniPwN7kUgiicIlHkn9d)
-- **WAL**: AutoMQ uses a small-size cloud block storage like AWS EBS as the WAL(Write Ahead Log) to accelerate writing. Pay attention that this is not tiered storage and the AutoMQ broker can decoupled from the WAL completely. [Learn more](https://docs.automq.com/docs/automq-s3kafka/X1DBwDdzWiCMmYkglGHcKdjqn9f)
-- **Stream set object**: A Stream Set Object aggregates data from multiple streams into individual segments, significantly cutting down on object storage API usage and metadata size. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
-- **Stream Object**: A Stream Object contains data from a single stream, typically separated when compacting Stream Set Objects for streams with larger data volumes. [Learn more](https://docs.automq.com/docs/automq-s3kafka/Q8fNwoCDGiBOV6k8CDSccKKRn9d)
+AutoMQ adopts a Shared-Storage architecture, replacing the storage layer of Apache Kafka with a shared streaming storage library called [S3Stream](https://github.com/AutoMQ/automq/tree/main/s3stream) in a storage-compute separation manner, making the Broker completely stateless.
+
+Compared to the classic Kafka Shared-Nothing or Tiered-Storage architectures, AutoMQ's computing layer (Broker) is truly stateless, enabling features such as Auto-Scaling, Self-Balancing, and Partition Reassignment in Seconds that significantly reduce costs and improve efficiency.
 
 ## ⛄Get started with AutoMQ
 
-### Quick Start With A Single Line
+### Deploy Locally on a Single Host
 ```
-curl https://download.automq.com/install.sh | sh
+curl https://download.automq.com/community_edition/standalone_deployment/install_run.sh | bash
 ```
 
-The easiest way to run AutoMQ. You can experience features like **Partition Reassignment in Seconds** and **Continuous Self-Balancing** in your local machine. [Learn more](https://docs.automq.com/docs/automq-s3kafka/SMKbwchB3i0Y0ykFm75c0ftAnCc)
+The easiest way to run AutoMQ. You can experience features like **Partition Reassignment in Seconds** and **Continuous Self-Balancing** in your local machine. [Learn more](https://docs.automq.com/docs/automq-opensource/EsUBwQei4ilCDjkWb8WcbOZInwc)
 
-> Attention: Local mode mock object storage locally and is not a production-ready deployment. It is only for demo and test purposes.
-
-
-### Run AutoMQ on the cloud manually
-Deploy AutoMQ manually with released tgz files on the cloud, currently compatible with AWS, Aliyun Cloud, Tencent Cloud, Huawei Cloud, and Baidu Cloud. [Learn more]( https://docs.automq.com/docs/automq-s3kafka/NBo6wwth3iWUIkkNAbYcPg0mnae)
+There are more deployment options available:
+- [Deploy on Linux with 5 Nodes](https://docs.automq.com/docs/automq-opensource/IyXrw3lHriVPdQkQLDvcPGQdnNh)
+- [Deploy on Kubernetes(Enterprise Edition Only)](https://docs.automq.com/docs/automq-opensource/KJtLwvdaPi7oznkX3lkcCR7fnte)
+- [Try AutoMQ on Alibaba Cloud Marketplace](https://market.aliyun.com/products/55530001/cmgj00065841.html)
+- [Try AutoMQ on AWS Marketplace](https://docs.automq.com/docs/automq-onperm/LEGFwYWq7is3jnkLlUBceHYCnp3)
 
 ## 💬Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
-- Ask questions or report a bug by [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka)
-- Discuss about AutoMQ or Kafka by [Wechat Group](https://www.automq.com/img/----------------------------1.png)
+- Ask questions or report a bug by [GitHub Issues](https://github.com/AutoMQ/automq/issues)
+- Discuss about AutoMQ or Kafka by [Wechat Group](docs/images/automq-wechat.png)
 
 
 ## 👥How to contribute
-If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq-for-kafka).
+If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq/issues).
 To contribute to AutoMQ please see [Code of Conduct](CODE_OF_CONDUCT.md) and [Contributing Guide](CONTRIBUTING_GUIDE.md).
-We have a list of [good first issues](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process.
+We have a list of [good first issues](https://github.com/AutoMQ/automq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process.
 
 ## ⭐License
 AutoMQ is released under [Business Source License 1.1](BSL.md). When contributing to AutoMQ, you can find the relevant license header in each file.
