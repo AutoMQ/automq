@@ -22,6 +22,7 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class NetworkStats {
@@ -53,16 +54,18 @@ public class NetworkStats {
                 : networkOutboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundUsageMetric(strategy));
     }
 
-    public Counter fastReadBytesStats(long streamId) {
-        return getStreamReadBytesStats(streamId).getLeft();
+    public Optional<Counter> fastReadBytesStats(long streamId) {
+        Pair<Counter, Counter> pair = streamReadBytesStats.getOrDefault(streamId, null);
+        return pair == null ? Optional.empty() : Optional.of(pair.getLeft());
     }
 
-    public Counter slowReadBytesStats(long streamId) {
-        return getStreamReadBytesStats(streamId).getRight();
+    public Optional<Counter> slowReadBytesStats(long streamId) {
+        Pair<Counter, Counter> pair = streamReadBytesStats.getOrDefault(streamId, null);
+        return pair == null ? Optional.empty() : Optional.of(pair.getRight());
     }
 
-    private Pair<Counter, Counter> getStreamReadBytesStats(long streamId) {
-        return streamReadBytesStats.computeIfAbsent(streamId, k -> new ImmutablePair<>(new Counter(), new Counter()));
+    public void createStreamReadBytesStats(long streamId) {
+        streamReadBytesStats.putIfAbsent(streamId, new ImmutablePair<>(new Counter(), new Counter()));
     }
 
     public void removeStreamReadBytesStats(long streamId) {

@@ -93,8 +93,8 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
             return false;
         }
 
-        return testReplica.load(Resource.NW_IN) != 0
-                && testReplica.load(Resource.NW_OUT) == 0;
+        return testReplica.loadValue(Resource.NW_IN) != 0
+                && testReplica.loadValue(Resource.NW_OUT) == 0;
     }
 
     @Test

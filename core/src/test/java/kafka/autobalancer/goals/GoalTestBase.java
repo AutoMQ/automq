@@ -17,14 +17,25 @@
 
 package kafka.autobalancer.goals;
 
+import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Tag;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.StringJoiner;
+
+import static kafka.autobalancer.common.types.Resource.NW_IN;
+import static kafka.autobalancer.common.types.Resource.NW_OUT;
+
 @Tag("S3Unit")
 public class GoalTestBase {
+    private final Map<String, Goal> goalMap = new HashMap<>();
     protected static final String RACK = "default";
     protected static final String TOPIC_0 = "TestTopic0";
     protected static final String TOPIC_1 = "TestTopic1";
@@ -32,9 +43,43 @@ public class GoalTestBase {
     protected static final String TOPIC_3 = "TestTopic3";
     protected static final String TOPIC_4 = "TestTopic4";
 
-    protected Broker createBroker(ClusterModelSnapshot cluster, String rack,
-                                  int brokerId, boolean active) {
-        Broker broker = new Broker(brokerId, rack, active, System.currentTimeMillis(), null);
+    protected void setup() {
+        Map<String, Object> config = new HashMap<>();
+        config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, new StringJoiner(",")
+                .add(NetworkInUsageDistributionGoal.class.getName())
+                .add(NetworkOutUsageDistributionGoal.class.getName()).toString());
+        config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 0);
+        config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 0);
+        config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, 0.2);
+        config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION, 0.2);
+        AutoBalancerControllerConfig controllerConfig = new AutoBalancerControllerConfig(config, false);
+        List<AbstractGoal> goalList = controllerConfig.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, AbstractGoal.class);
+        for (AbstractGoal goal : goalList) {
+            goalMap.put(goal.name(), goal);
+        }
+    }
+
+    protected Goal getGoalByResource(byte resource) {
+        Goal goal = null;
+        switch (resource) {
+            case NW_IN:
+                goal = goalMap.get(NetworkInUsageDistributionGoal.class.getSimpleName());
+                break;
+            case NW_OUT:
+                goal = goalMap.get(NetworkOutUsageDistributionGoal.class.getSimpleName());
+                break;
+            default:
+                break;
+        }
+        return goal;
+    }
+
+    protected Collection<Goal> getGoals() {
+        return goalMap.values();
+    }
+
+    protected Broker createBroker(ClusterModelSnapshot cluster, String rack, int brokerId) {
+        Broker broker = new Broker(brokerId, rack, System.currentTimeMillis(), null);
         cluster.addBroker(broker);
         return broker;
     }

@@ -98,12 +98,16 @@ public class ClusterModel {
             long now = System.currentTimeMillis();
             for (Map.Entry<Integer, BrokerUpdater> entry : brokerMap.entrySet()) {
                 int brokerId = entry.getKey();
-                BrokerUpdater.Broker broker = (BrokerUpdater.Broker) entry.getValue().get(now - maxToleratedMetricsDelay);
-                if (broker == null) {
-                    logger.warn("Broker {} metrics is out of sync, will be ignored in this round", brokerId);
+                if (excludedBrokerIds.contains(brokerId)) {
                     continue;
                 }
-                if (excludedBrokerIds.contains(brokerId)) {
+                BrokerUpdater brokerUpdater = entry.getValue();
+                if (!brokerUpdater.isValidInstance()) {
+                    continue;
+                }
+                BrokerUpdater.Broker broker = (BrokerUpdater.Broker) brokerUpdater.get(now - maxToleratedMetricsDelay);
+                if (broker == null) {
+                    logger.warn("Broker {} metrics is out of sync, will be ignored in this round", brokerId);
                     continue;
                 }
                 snapshot.addBroker(broker);
@@ -114,26 +118,26 @@ public class ClusterModel {
                 if (broker == null) {
                     continue;
                 }
-                Map<Byte, Double> totalLoads = new HashMap<>();
+                Map<Byte, AbstractInstanceUpdater.Load> totalLoads = new HashMap<>();
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
                     TopicPartition tp = tpEntry.getKey();
+                    TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
+                    if (!replicaUpdater.isValidInstance()) {
+                        continue;
+                    }
                     TopicPartitionReplicaUpdater.TopicPartitionReplica replica =
-                            (TopicPartitionReplicaUpdater.TopicPartitionReplica) tpEntry.getValue().get(now - maxToleratedMetricsDelay);
+                            (TopicPartitionReplicaUpdater.TopicPartitionReplica) replicaUpdater.get(now - maxToleratedMetricsDelay);
                     if (replica == null) {
                         logger.warn("Broker {} has out of sync topic-partition {}, will be ignored in this round", brokerId, tp);
                         snapshot.removeBroker(brokerId);
                         break;
                     }
-                    for (Map.Entry<Byte, Double> load : replica.getLoads().entrySet()) {
-                        byte resource = load.getKey();
-                        totalLoads.put(resource, totalLoads.getOrDefault(resource, 0.0) + load.getValue());
+                    accumulateLoads(totalLoads, replica);
+                    if (!excludedTopics.contains(tp.topic())) {
+                        snapshot.addTopicPartition(brokerId, tp, replica);
                     }
-                    if (excludedTopics.contains(tp.topic())) {
-                        continue;
-                    }
-                    snapshot.addTopicPartition(brokerId, tp, replica);
                 }
-                for (Map.Entry<Byte, Double> loadEntry : totalLoads.entrySet()) {
+                for (Map.Entry<Byte, AbstractInstanceUpdater.Load> loadEntry : totalLoads.entrySet()) {
                     broker.setLoad(loadEntry.getKey(), loadEntry.getValue());
                 }
             }
@@ -142,6 +146,19 @@ public class ClusterModel {
         }
 
         return snapshot;
+    }
+
+    private void accumulateLoads(Map<Byte, AbstractInstanceUpdater.Load> totalLoads, TopicPartitionReplicaUpdater.TopicPartitionReplica replica) {
+        for (Map.Entry<Byte, AbstractInstanceUpdater.Load> load : replica.getLoads().entrySet()) {
+            byte resource = load.getKey();
+            totalLoads.compute(resource, (r, totalLoad) -> {
+                if (totalLoad == null) {
+                    return new AbstractInstanceUpdater.Load(load.getValue());
+                }
+                totalLoad.add(load.getValue());
+                return totalLoad;
+            });
+        }
     }
 
     protected ClusterModelSnapshot createSnapshot() {
