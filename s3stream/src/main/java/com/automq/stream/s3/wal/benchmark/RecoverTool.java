@@ -67,6 +67,9 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
         if (config.strict) {
             iterator.strictMode();
         }
+        if (config.showInvalid) {
+            iterator.reportError();
+        }
         return iterator;
     }
 
@@ -96,6 +99,13 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
 
         @Override
         public String toString() {
+            if (inner instanceof InvalidRecoverResult) {
+                InvalidRecoverResult invalid = (InvalidRecoverResult) inner;
+                return String.format("%s{", inner.getClass().getSimpleName())
+                    + "error=" + invalid.detail()
+                    + ", offset=" + invalid.recordOffset()
+                    + '}';
+            }
             return String.format("%s{", inner.getClass().getSimpleName())
                 + String.format("record=(%d)", inner.record().readableBytes()) + stringer.apply(inner.record())
                 + ", offset=" + inner.recordOffset()
@@ -108,12 +118,14 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
         final Long offset;
         final Long windowLength;
         final Boolean strict;
+        final Boolean showInvalid;
 
         Config(Namespace ns) {
             this.path = ns.getString("path");
             this.offset = ns.getLong("offset");
             this.windowLength = ns.getLong("windowLength");
             this.strict = ns.getBoolean("strict");
+            this.showInvalid = ns.getBoolean("showInvalid");
         }
 
         static ArgumentParser parser() {
@@ -138,6 +150,12 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
                 .action(Arguments.storeTrue())
                 .setDefault(false)
                 .help("Strict mode, which will stop when reaching the end of the window, default to false");
+            parser.addArgument("-i", "--show-invalid")
+                .dest("showInvalid")
+                .type(Boolean.class)
+                .action(Arguments.storeTrue())
+                .setDefault(false)
+                .help("Show invalid records, default to false");
             return parser;
         }
     }
