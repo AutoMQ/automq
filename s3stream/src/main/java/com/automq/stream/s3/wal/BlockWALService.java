@@ -823,11 +823,20 @@ public class BlockWALService implements WriteAheadLog {
         private long maybeFirstInvalidCycle = -1;
         private long maybeFirstInvalidOffset = -1;
         private RecoverResult next;
+        private boolean strictMode = false;
+        private long lastValidOffset = -1;
 
         public RecoverIterator(long nextRecoverOffset, long windowLength, long skipRecordAtOffset) {
             this.nextRecoverOffset = nextRecoverOffset;
             this.skipRecordAtOffset = skipRecordAtOffset;
             this.windowLength = windowLength;
+        }
+
+        /**
+         * Only used for testing purpose.
+         */
+        public void strictMode() {
+            this.strictMode = true;
         }
 
         @Override
@@ -861,22 +870,32 @@ public class BlockWALService implements WriteAheadLog {
             if (next != null) {
                 return true;
             }
-            while (maybeFirstInvalidOffset == -1 || nextRecoverOffset < maybeFirstInvalidOffset + windowLength) {
+            while (shouldContinue()) {
                 long cycle = WALUtil.calculateCycle(nextRecoverOffset, walHeader.getCapacity(), WAL_HEADER_TOTAL_CAPACITY);
                 boolean skip = nextRecoverOffset == skipRecordAtOffset;
                 try {
                     ByteBuf nextRecordBody = readRecord(nextRecoverOffset, offset -> WALUtil.recordOffsetToPosition(offset, walHeader.getCapacity(), WAL_HEADER_TOTAL_CAPACITY));
+                    if (isOutOfWindow(nextRecoverOffset)) {
+                        // should never happen, log it
+                        LOGGER.error("[BUG] record offset out of window, offset: {}, firstInvalidOffset: {}, window: {}",
+                            nextRecoverOffset, maybeFirstInvalidOffset, windowLength);
+                    }
                     RecoverResultImpl recoverResult = new RecoverResultImpl(nextRecordBody, nextRecoverOffset);
+                    lastValidOffset = nextRecoverOffset;
+
                     nextRecoverOffset += RECORD_HEADER_SIZE + nextRecordBody.readableBytes();
+
                     if (maybeFirstInvalidCycle != -1 && maybeFirstInvalidCycle != cycle) {
                         // we meet a valid record in the next cycle, so the "invalid" record we met before is not really invalid
                         maybeFirstInvalidOffset = -1;
                         maybeFirstInvalidCycle = -1;
                     }
+
                     if (skip) {
                         nextRecordBody.release();
                         continue;
                     }
+
                     next = recoverResult;
                     return true;
                 } catch (ReadRecordException e) {
@@ -891,6 +910,26 @@ public class BlockWALService implements WriteAheadLog {
                 }
             }
             return false;
+        }
+
+        private boolean shouldContinue() {
+            if (!isOutOfWindow(nextRecoverOffset)) {
+                // within the window
+                return true;
+            }
+            if (strictMode) {
+                // not in the window, and in strict mode, so we should stop
+                return false;
+            }
+            // allow to try to recover a little more records (no more than 4MiB)
+            return nextRecoverOffset < lastValidOffset + Math.min(windowLength, 1 << 22);
+        }
+
+        private boolean isOutOfWindow(long offset) {
+            if (maybeFirstInvalidOffset == -1) {
+                return false;
+            }
+            return offset >= maybeFirstInvalidOffset + windowLength;
         }
     }
 }
