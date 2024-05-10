@@ -1,39 +1,23 @@
-<h1 align="center">
-AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
-</h1>
-<h3 align="center">
+## AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
 
-</h3>
-
-![GitHub release (with filter)](https://img.shields.io/github/v/release/AutoMQ/automq-for-kafka)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/AutoMQ/automq-for-kafka)
-![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed/AutoMQ/automq-for-kafka)
-![](https://img.shields.io/badge/Java%20-%20JDK17-green)
-
----
-[![](https://img.shields.io/badge/Official%20Website-20B2AA)](https://www.automq.com)
-&nbsp;
+![GitHub release (with filter)](https://img.shields.io/github/v/release/AutoMQ/automq)
 [![](https://img.shields.io/badge/Document-blue)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
-&nbsp;
-[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)]([https://www.automq.com](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison))
-&nbsp;
-[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)]([https://www.automq.com](https://docs.automq.com/docs/automq-s3kafka/CYxlwqDBHitThCkxSl2cePxrnBc))
-&nbsp;
-[![Twitter URL](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)</a>
-&nbsp;
-<a href="docs/images/automq-wechat.png" target="_blank"><img src="https://img.shields.io/badge/- Wechat -red?style=social&logo=discourse" height=20></a>
-&nbsp;
+[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison)
+[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd)
+[![Twitter URL](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)
+[![](https://img.shields.io/badge/-%20Wechat%20-red?style=social&logo=discourse)](docs/images/automq-wechat.png)
 
 ---
 
-
-<img src="https://img.shields.io/badge/aws%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=amazonaws" height="18"> <img src="https://img.shields.io/badge/google%20cloud-%F0%9F%9A%A7-lightyellow?style=for-the-badge&logo=googlecloud" height="18"> <img src="https://img.shields.io/badge/Azure%20cloud-%F0%9F%9A%A7-lightyellow?style=for-the-badge&logo=microsoftazure" height="18"> <img src="https://img.shields.io/badge/aliyun%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=alibabacloud" height="18"> <img src="https://img.shields.io/badge/huawei%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=huawei" height="18"> <img src="https://img.shields.io/badge/baidu%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=baidu" height="18"> <img src="https://img.shields.io/badge/tencent%20cloud-%E2%9C%85-lightgray?style=for-the-badge&logo=tencentqq" height="18">
-
-
-[//]: # ([![E2E_TEST]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml/badge.svg&#41;]&#40;https://github.com/AutoMQ/automq-for-kafka/actions/workflows/nightly-e2e.yml&#41;)
+![](https://img.shields.io/badge/AWS-%E2%9C%85-lightgray?logo=amazonaws)
+![](https://img.shields.io/badge/Google-%F0%9F%9A%A7-lightyellow?logo=googlecloud)
+![](https://img.shields.io/badge/Azure-%F0%9F%9A%A7-lightyellow?logo=microsoftazure)
+![](https://img.shields.io/badge/Aliyun-%E2%9C%85-lightgray?logo=alibabacloud)
+![](https://img.shields.io/badge/Huawei-%E2%9C%85-lightgray?logo=huawei)
+![](https://img.shields.io/badge/Baidu-%E2%9C%85-lightgray?logo=baidu)
+![](https://img.shields.io/badge/Tencent-%E2%9C%85-lightgray?logo=tencentqq)
 
 ## 🍵 AutoMQ vs Other Streaming Platforms
-
 
 <table>
   <tr>
