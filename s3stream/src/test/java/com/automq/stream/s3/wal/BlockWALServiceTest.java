@@ -412,7 +412,7 @@ class BlockWALServiceTest {
                 WALUtil.BLOCK_SIZE + 1,
                 100L,
                 180L,
-                50L,
+                30L,
                 Arrays.asList(150L, 160L, 170L, 180L, 190L, 200L, 202L, 210L, 220L, 230L, 240L),
                 Arrays.asList(190L, 200L, 202L, 210L, 220L, 230L),
                 WALUtil.BLOCK_SIZE
