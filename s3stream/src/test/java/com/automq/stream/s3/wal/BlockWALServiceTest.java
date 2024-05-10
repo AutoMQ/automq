@@ -418,6 +418,15 @@ class BlockWALServiceTest {
                 WALUtil.BLOCK_SIZE
             ).toArguments("round robin"),
             new RecoverFromDisasterParam(
+                WALUtil.BLOCK_SIZE * 2 + 1,
+                100L,
+                192L,
+                3L,
+                Arrays.asList(192L, 195L, /* no place for 198L, */ 200L, 203L, 206L, 209L, 212L, 215L),
+                Arrays.asList(195L, 200L, 203L, 206L, 209L, 212L, 215L),
+                WALUtil.BLOCK_SIZE
+            ).toArguments("round robin - no place for the last record"),
+            new RecoverFromDisasterParam(
                 WALUtil.BLOCK_SIZE + 1,
                 100L,
                 210L,
