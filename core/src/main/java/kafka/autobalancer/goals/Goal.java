@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 
 public interface Goal extends Configurable, Comparable<Goal> {
 
-    List<Action> doOptimize(Set<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster,
+    List<Action> doOptimize(List<BrokerUpdater.Broker> brokersToOptimize, ClusterModelSnapshot cluster,
                             Collection<Goal> goalsByPriority, Collection<Goal> optimizedGoals,
                             Map<String, Set<String>> goalsByGroup);
 
@@ -38,12 +38,11 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     default List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority,
                                   Collection<Goal> optimizedGoal, Map<String, Set<String>> goalsByGroup) {
-        Set<BrokerUpdater.Broker> eligibleBrokers = getEligibleBrokers(cluster);
-        goalsByPriority.forEach(e -> e.initialize(eligibleBrokers));
-        return doOptimize(eligibleBrokers, cluster, goalsByPriority, optimizedGoal, goalsByGroup);
+        goalsByPriority.forEach(e -> e.initialize(cluster.brokers()));
+        return doOptimize(getBrokersToOptimize(cluster), cluster, goalsByPriority, optimizedGoal, goalsByGroup);
     }
 
-    void initialize(Set<BrokerUpdater.Broker> brokers);
+    void initialize(Collection<BrokerUpdater.Broker> brokers);
 
     boolean isHardGoal();
 
@@ -51,7 +50,7 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     double weight();
 
-    Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster);
+    List<BrokerUpdater.Broker> getBrokersToOptimize(ClusterModelSnapshot cluster);
 
     String name();
 

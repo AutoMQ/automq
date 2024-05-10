@@ -15,10 +15,13 @@ import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.AutoBalancerConstants;
+import kafka.autobalancer.common.types.Resource;
+import kafka.autobalancer.model.AbstractInstanceUpdater;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.ModelUtils;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -34,6 +37,24 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
     private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     protected abstract byte resource();
+
+    @Override
+    public List<BrokerUpdater.Broker> getBrokersToOptimize(ClusterModelSnapshot cluster) {
+        List<BrokerUpdater.Broker> brokersToOptimize = new ArrayList<>();
+        for (BrokerUpdater.Broker broker : cluster.brokers()) {
+            if (!isBrokerAcceptable(broker)) {
+                if (!broker.load(resource()).isTrusted()) {
+                    // do not balance broker with untrusted load
+                    LOGGER.warn("Broker {} has untrusted {} load, skip optimizing for {}", broker.getBrokerId(),
+                            Resource.HUMAN_READABLE_RESOURCE_NAMES.get(resource()), name());
+                    continue;
+                }
+                LOGGER.warn("Broker {} violates goal {}", broker.getBrokerId(), name());
+                brokersToOptimize.add(broker);
+            }
+        }
+        return brokersToOptimize;
+    }
 
     @Override
     protected boolean moveReplica(Action action, ClusterModelSnapshot cluster, BrokerUpdater.Broker src, BrokerUpdater.Broker dest) {
@@ -78,7 +99,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
         List<TopicPartitionReplicaUpdater.TopicPartitionReplica> srcReplicas = cluster
                 .replicasFor(srcBroker.getBrokerId())
                 .stream()
-                .sorted(Comparator.comparingDouble(r -> -r.load(resource()))) // higher load first
+                .sorted(Comparator.comparingDouble(r -> -r.loadValue(resource()))) // higher load first
                 .collect(Collectors.toList());
         for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : srcReplicas) {
             candidateBrokers.sort(lowLoadComparator()); // lower load first
@@ -88,8 +109,8 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                         optimizedGoals, goalsByGroup);
             } else {
                 optionalAction = trySwapPartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority,
-                        optimizedGoals, goalsByGroup, Comparator.comparingDouble(p -> p.load(resource())),
-                        (src, candidate) -> src.load(resource()) > candidate.load(resource()));
+                        optimizedGoals, goalsByGroup, Comparator.comparingDouble(p -> p.loadValue(resource())),
+                        (src, candidate) -> src.loadValue(resource()) > candidate.loadValue(resource()));
             }
 
             if (optionalAction.isPresent()) {
@@ -128,7 +149,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
             List<TopicPartitionReplicaUpdater.TopicPartitionReplica> candidateReplicas = cluster
                     .replicasFor(candidateBroker.getBrokerId())
                     .stream()
-                    .sorted(Comparator.comparingDouble(r -> -r.load(resource()))) // higher load first
+                    .sorted(Comparator.comparingDouble(r -> -r.loadValue(resource()))) // higher load first
                     .collect(Collectors.toList());
             for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : candidateReplicas) {
                 Optional<Action> optionalAction;
@@ -137,8 +158,8 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                             goalsByPriority, optimizedGoals, goalsByGroup);
                 } else {
                     optionalAction = trySwapPartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority,
-                            optimizedGoals, goalsByGroup, Comparator.comparingDouble(p -> p.load(resource())),
-                            (src, candidate) -> src.load(resource()) > candidate.load(resource()));
+                            optimizedGoals, goalsByGroup, Comparator.comparingDouble(p -> p.loadValue(resource())),
+                            (src, candidate) -> src.loadValue(resource()) > candidate.loadValue(resource()));
                 }
 
                 if (optionalAction.isPresent()) {
@@ -153,6 +174,28 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
             }
         }
         return actionList;
+    }
+
+    @Override
+    public double actionAcceptanceScore(Action action, ClusterModelSnapshot cluster) {
+        if (validateAction(action.getSrcBrokerId(), action.getDestBrokerId(), action.getSrcTopicPartition(), cluster)) {
+            return super.actionAcceptanceScore(action, cluster);
+        }
+        return NOT_ACCEPTABLE;
+    }
+
+    boolean validateAction(int srcBrokerId, int destBrokerId, TopicPartition tp, ClusterModelSnapshot cluster) {
+        BrokerUpdater.Broker destBroker = cluster.broker(destBrokerId);
+        BrokerUpdater.Broker srcBroker = cluster.broker(srcBrokerId);
+        TopicPartitionReplicaUpdater.TopicPartitionReplica replica = cluster.replica(srcBrokerId, tp);
+        AbstractInstanceUpdater.Load replicaLoad = replica.load(resource());
+        if (!replicaLoad.isTrusted()) {
+            return false;
+        }
+        if (replicaLoad.getValue() == 0) {
+            return true;
+        }
+        return destBroker.load(resource()).isTrusted() && srcBroker.load(resource()).isTrusted();
     }
 
     protected abstract Comparator<BrokerUpdater.Broker> highLoadComparator();

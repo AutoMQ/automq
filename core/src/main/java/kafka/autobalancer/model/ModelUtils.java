@@ -17,11 +17,10 @@ public class ModelUtils {
 
     public static void moveReplicaLoad(BrokerUpdater.Broker src, BrokerUpdater.Broker dest,
                                        TopicPartitionReplicaUpdater.TopicPartitionReplica replica) {
-        for (Map.Entry<Byte, Double> load : replica.getLoads().entrySet()) {
+        for (Map.Entry<Byte, AbstractInstanceUpdater.Load> load : replica.getLoads().entrySet()) {
             byte resource = load.getKey();
-            double delta = load.getValue();
-            src.setLoad(resource, src.load(resource) - delta);
-            dest.setLoad(resource, dest.load(resource) + delta);
+            src.reduceLoad(resource, load.getValue());
+            dest.addLoad(resource, load.getValue());
         }
     }
 

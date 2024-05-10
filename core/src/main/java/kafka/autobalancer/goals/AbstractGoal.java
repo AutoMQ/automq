@@ -97,6 +97,7 @@ public abstract class AbstractGoal implements Goal {
         for (Goal goal : goalsByPriority) {
             double score = goal.actionAcceptanceScore(action, cluster);
             if (score == NOT_ACCEPTABLE) {
+                LOGGER.debug("action {} is not acceptable for goal {}", action, goal);
                 return NOT_ACCEPTABLE;
             }
             goalScoreMapByGroup.compute(goal.group(), (k, v) -> v == null ? new HashMap<>() : v).put(goal, score);
@@ -228,15 +229,22 @@ public abstract class AbstractGoal implements Goal {
         return calculateAcceptanceScore(srcBrokerBefore, destBrokerBefore, srcBrokerAfter, destBrokerAfter);
     }
 
+    @Override
+    public List<BrokerUpdater.Broker> getBrokersToOptimize(ClusterModelSnapshot cluster) {
+        List<BrokerUpdater.Broker> brokersToOptimize = new ArrayList<>();
+        for (BrokerUpdater.Broker broker : cluster.brokers()) {
+            if (!isBrokerAcceptable(broker)) {
+                LOGGER.warn("Broker {} violates goal {}", broker.getBrokerId(), name());
+                brokersToOptimize.add(broker);
+            }
+        }
+        return brokersToOptimize;
+    }
+
     protected abstract boolean moveReplica(Action action, ClusterModelSnapshot cluster, BrokerUpdater.Broker src, BrokerUpdater.Broker dest);
     protected abstract boolean isBrokerAcceptable(BrokerUpdater.Broker broker);
     protected abstract double brokerScore(BrokerUpdater.Broker broker);
     protected abstract void onBalanceFailed(BrokerUpdater.Broker broker);
-
-    @Override
-    public Set<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {
-        return cluster.brokers().stream().filter(BrokerUpdater.Broker::isActive).collect(Collectors.toSet());
-    }
 
     @Override
     public int hashCode() {

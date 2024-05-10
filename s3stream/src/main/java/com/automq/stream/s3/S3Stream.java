@@ -102,6 +102,7 @@ public class S3Stream implements Stream {
         this.networkOutboundLimiter = networkOutboundLimiter;
         S3StreamMetricsManager.registerPendingStreamAppendLatencySupplier(streamId, () -> getHeadLatency(this.pendingAppendTimestamps));
         S3StreamMetricsManager.registerPendingStreamFetchLatencySupplier(streamId, () -> getHeadLatency(this.pendingFetchTimestamps));
+        NetworkStats.getInstance().createStreamReadBytesStats(streamId);
     }
 
     private long getHeadLatency(Deque<Long> timestamps) {
@@ -215,10 +216,10 @@ public class S3Stream implements Stream {
                     final long finalSize = totalSize;
                     if (context.readOptions().fastRead()) {
                         networkOutboundLimiter.forceConsume(totalSize);
-                        NetworkStats.getInstance().fastReadBytesStats(streamId).inc(finalSize);
+                        NetworkStats.getInstance().fastReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
                     } else {
                         return networkOutboundLimiter.consume(ThrottleStrategy.CATCH_UP, totalSize).thenApply(nil -> {
-                            NetworkStats.getInstance().slowReadBytesStats(streamId).inc(finalSize);
+                            NetworkStats.getInstance().slowReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
                             return rs;
                         });
                     }

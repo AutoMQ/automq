@@ -9,15 +9,16 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.autobalancer.model;
+package kafka.autobalancer.model.samples;
 
+import kafka.autobalancer.model.Snapshot;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-public class MetricValueSequenceTest {
+public class SnapshotSamplesTest {
     @Test
     public void testAppendAndSnapshot() {
-        MetricValueSequence sequence = new MetricValueSequence(512);
+        SnapshotSamples sequence = new SnapshotSamples(512);
         for (int i = 0; i < 1000; i++) {
             sequence.append(i);
         }
