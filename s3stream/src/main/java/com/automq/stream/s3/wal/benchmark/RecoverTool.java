@@ -15,6 +15,7 @@ import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WALHeader;
+import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.util.Iterator;
@@ -54,8 +55,9 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
         Iterable<RecoverResult> recordsSupplier = () -> recover(header, config);
         Function<ByteBuf, StreamRecordBatch> decoder = StreamRecordBatchCodec::decode;
         Function<ByteBuf, String> stringer = decoder.andThen(StreamRecordBatch::toString);
+        Function<Long, String> offsetStringer = offset -> readableOffset(offset, header.getCapacity());
         StreamSupport.stream(recordsSupplier.spliterator(), false)
-            .map(it -> new RecoverResultWrapper(it, stringer))
+            .map(it -> new RecoverResultWrapper(it, stringer, offsetStringer))
             .peek(System.out::println)
             .forEach(RecoverResultWrapper::release);
     }
@@ -73,6 +75,12 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
         return iterator;
     }
 
+    private String readableOffset(long offset, long capacity) {
+        long physical = WALUtil.recordOffsetToPosition(offset, capacity, WAL_HEADER_TOTAL_CAPACITY);
+        long mod = physical % 4096;
+        return String.format("Offset{logical=%d, physical=%d, mod=%d}", offset, physical, mod);
+    }
+
     @Override
     public void close() {
         super.shutdownGracefully();
@@ -87,10 +95,12 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
          * A function to convert {@link RecoverResult#record} to string
          */
         private final Function<ByteBuf, String> stringer;
+        private final Function<Long, String> offsetStringer;
 
-        public RecoverResultWrapper(RecoverResult inner, Function<ByteBuf, String> stringer) {
+        public RecoverResultWrapper(RecoverResult inner, Function<ByteBuf, String> stringer, Function<Long, String> offsetStringer) {
             this.inner = inner;
             this.stringer = stringer;
+            this.offsetStringer = offsetStringer;
         }
 
         public void release() {
@@ -99,16 +109,17 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
 
         @Override
         public String toString() {
+            String offset = offsetStringer.apply(inner.recordOffset());
             if (inner instanceof InvalidRecoverResult) {
                 InvalidRecoverResult invalid = (InvalidRecoverResult) inner;
                 return String.format("%s{", inner.getClass().getSimpleName())
-                    + "error=" + invalid.detail()
-                    + ", offset=" + invalid.recordOffset()
+                    + "offset=" + offset
+                    + ", error=" + invalid.detail()
                     + '}';
             }
             return String.format("%s{", inner.getClass().getSimpleName())
-                + String.format("record=(%d)", inner.record().readableBytes()) + stringer.apply(inner.record())
-                + ", offset=" + inner.recordOffset()
+                + "offset=" + offset
+                + String.format(", record=(%d)", inner.record().readableBytes()) + stringer.apply(inner.record())
                 + '}';
         }
     }
