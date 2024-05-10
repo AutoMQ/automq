@@ -820,7 +820,8 @@ public class BlockWALService implements WriteAheadLog {
         private final long windowLength;
         private final long skipRecordAtOffset;
         private long nextRecoverOffset;
-        private long firstInvalidOffset = -1;
+        private long maybeFirstInvalidCycle = -1;
+        private long maybeFirstInvalidOffset = -1;
         private RecoverResult next;
 
         public RecoverIterator(long nextRecoverOffset, long windowLength, long skipRecordAtOffset) {
@@ -860,12 +861,18 @@ public class BlockWALService implements WriteAheadLog {
             if (next != null) {
                 return true;
             }
-            while (firstInvalidOffset == -1 || nextRecoverOffset < firstInvalidOffset + windowLength) {
+            while (maybeFirstInvalidOffset == -1 || nextRecoverOffset < maybeFirstInvalidOffset + windowLength) {
+                long cycle = WALUtil.calculateCycle(nextRecoverOffset, walHeader.getCapacity(), WAL_HEADER_TOTAL_CAPACITY);
+                boolean skip = nextRecoverOffset == skipRecordAtOffset;
                 try {
-                    boolean skip = nextRecoverOffset == skipRecordAtOffset;
                     ByteBuf nextRecordBody = readRecord(nextRecoverOffset, offset -> WALUtil.recordOffsetToPosition(offset, walHeader.getCapacity(), WAL_HEADER_TOTAL_CAPACITY));
                     RecoverResultImpl recoverResult = new RecoverResultImpl(nextRecordBody, nextRecoverOffset);
                     nextRecoverOffset += RECORD_HEADER_SIZE + nextRecordBody.readableBytes();
+                    if (maybeFirstInvalidCycle != -1 && maybeFirstInvalidCycle != cycle) {
+                        // we meet a valid record in the next cycle, so the "invalid" record we met before is not really invalid
+                        maybeFirstInvalidOffset = -1;
+                        maybeFirstInvalidCycle = -1;
+                    }
                     if (skip) {
                         nextRecordBody.release();
                         continue;
@@ -873,11 +880,12 @@ public class BlockWALService implements WriteAheadLog {
                     next = recoverResult;
                     return true;
                 } catch (ReadRecordException e) {
-                    if (firstInvalidOffset == -1 && WALUtil.isAligned(nextRecoverOffset) && nextRecoverOffset != skipRecordAtOffset) {
-                        // first invalid offset
-                        LOGGER.info("meet the first invalid offset during recovery. offset: {}, window: {}, detail: '{}'",
-                            nextRecoverOffset, windowLength, e.getMessage());
-                        firstInvalidOffset = nextRecoverOffset;
+                    if (maybeFirstInvalidOffset == -1 && WALUtil.isAligned(nextRecoverOffset) && !skip) {
+                        maybeFirstInvalidCycle = cycle;
+                        maybeFirstInvalidOffset = nextRecoverOffset;
+                        // maybe the first invalid offset
+                        LOGGER.info("maybe meet the first invalid offset during recovery. cycle: {}, offset: {}, window: {}, detail: '{}'",
+                            maybeFirstInvalidCycle, maybeFirstInvalidOffset, windowLength, e.getMessage());
                     }
                     nextRecoverOffset = e.getJumpNextRecoverOffset();
                 }
