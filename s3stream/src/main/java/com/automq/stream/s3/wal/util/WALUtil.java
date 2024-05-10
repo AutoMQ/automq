@@ -54,6 +54,11 @@ public class WALUtil {
         return offset % capacity + headerSize;
     }
 
+    public static long calculateCycle(long offset, long physicalCapacity, long headerSize) {
+        long capacity = physicalCapacity - headerSize;
+        return offset / capacity;
+    }
+
     public static long alignLargeByBlockSize(long offset) {
         return offset % BLOCK_SIZE == 0 ? offset : offset + BLOCK_SIZE - offset % BLOCK_SIZE;
     }

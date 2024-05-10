@@ -62,6 +62,7 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
     private Iterator<RecoverResult> recover(WALHeader header, Config config) {
         long recoverOffset = config.offset != null ? config.offset : header.getTrimOffset();
         long windowLength = header.getSlidingWindowMaxLength();
+        // TODO: in this tool, we don't need to skip the record at the trimmed offset
         long skipRecordAtOffset = config.skipTrimmed ? header.getTrimOffset() : -1;
         return new RecoverIterator(recoverOffset, windowLength, skipRecordAtOffset);
     }
