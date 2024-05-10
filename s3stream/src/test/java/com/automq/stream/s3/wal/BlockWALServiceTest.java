@@ -13,6 +13,7 @@ package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.wal.BlockWALService.RecoverIterator;
 import com.automq.stream.s3.wal.benchmark.WriteBench;
 import com.automq.stream.s3.wal.util.WALBlockDeviceChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
@@ -292,8 +293,7 @@ class BlockWALServiceTest {
             .build()
             .start();
         try {
-            Iterator<RecoverResult> recover = wal.recover();
-            assertNotNull(recover);
+            Iterator<RecoverResult> recover = recover(wal);
 
             List<Long> recovered = new ArrayList<>(recordCount);
             while (recover.hasNext()) {
@@ -616,10 +616,22 @@ class BlockWALServiceTest {
     }
 
     /**
+     * Call {@link WriteAheadLog#recover()} and set to strict mode.
+     */
+    private static Iterator<RecoverResult> recover(WriteAheadLog wal) {
+        Iterator<RecoverResult> iterator = wal.recover();
+        assertNotNull(iterator);
+        if (iterator instanceof RecoverIterator) {
+            ((RecoverIterator) iterator).strictMode();
+        }
+        return iterator;
+    }
+
+    /**
      * Call {@link WriteAheadLog#recover()} {@link WriteAheadLog#reset()} and drop all records.
      */
     private static void recoverAndReset(WriteAheadLog wal) {
-        for (Iterator<RecoverResult> it = wal.recover(); it.hasNext(); ) {
+        for (Iterator<RecoverResult> it = recover(wal); it.hasNext(); ) {
             it.next().record().release();
         }
         wal.reset().join();
@@ -788,8 +800,9 @@ class BlockWALServiceTest {
             .build()
             .start();
         try {
-            Iterator<RecoverResult> recover = wal.recover();
+            Iterator<RecoverResult> recover = recover(wal);
             assertNotNull(recover);
+            ((RecoverIterator) recover).strictMode();
 
             List<Long> recovered = new ArrayList<>(recordCount);
             while (recover.hasNext()) {
@@ -864,8 +877,9 @@ class BlockWALServiceTest {
             .start();
         try {
             // Recover records
-            Iterator<RecoverResult> recover = wal.recover();
+            Iterator<RecoverResult> recover = recover(wal);
             assertNotNull(recover);
+            ((RecoverIterator) recover).strictMode();
 
             List<Long> recovered = new ArrayList<>();
             while (recover.hasNext()) {
@@ -986,8 +1000,9 @@ class BlockWALServiceTest {
             .start();
         try {
             // Recover records
-            Iterator<RecoverResult> recover = wal.recover();
+            Iterator<RecoverResult> recover = recover(wal);
             assertNotNull(recover);
+            ((RecoverIterator) recover).strictMode();
 
             List<Long> recovered = new ArrayList<>();
             while (recover.hasNext()) {
@@ -1037,7 +1052,7 @@ class BlockWALServiceTest {
             .direct(directIO)
             .build()
             .start();
-        Iterator<RecoverResult> recover = wal2.recover();
+        Iterator<RecoverResult> recover = recover(wal2);
         assertNotNull(recover);
         List<Long> recovered1 = new ArrayList<>(recordCount);
         while (recover.hasNext()) {
@@ -1056,7 +1071,7 @@ class BlockWALServiceTest {
             .direct(directIO)
             .build()
             .start();
-        recover = wal3.recover();
+        recover = recover(wal3);
         assertNotNull(recover);
         List<Long> recovered2 = new ArrayList<>(recordCount);
         while (recover.hasNext()) {
