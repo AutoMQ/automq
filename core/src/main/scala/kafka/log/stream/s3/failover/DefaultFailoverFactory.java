@@ -23,6 +23,7 @@ import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public class DefaultFailoverFactory implements FailoverFactory {
@@ -45,6 +46,10 @@ public class DefaultFailoverFactory implements FailoverFactory {
             }
 
             public CompletableFuture<Long> createStream() {
+                return CompletableFuture.failedFuture(new UnsupportedOperationException());
+            }
+
+            public CompletableFuture<Long> createStream(Map<String, String> map) {
                 return CompletableFuture.failedFuture(new UnsupportedOperationException());
             }
 
