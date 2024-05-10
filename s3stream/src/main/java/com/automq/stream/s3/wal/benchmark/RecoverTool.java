@@ -21,6 +21,7 @@ import java.util.Iterator;
 import java.util.function.Function;
 import java.util.stream.StreamSupport;
 import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.impl.Arguments;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 
@@ -62,7 +63,11 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
     private Iterator<RecoverResult> recover(WALHeader header, Config config) {
         long recoverOffset = config.offset != null ? config.offset : header.getTrimOffset();
         long windowLength = config.windowLength != -1 ? config.windowLength : header.getSlidingWindowMaxLength();
-        return new RecoverIterator(recoverOffset, windowLength, -1);
+        RecoverIterator iterator = new RecoverIterator(recoverOffset, windowLength, -1);
+        if (config.strict) {
+            iterator.strictMode();
+        }
+        return iterator;
     }
 
     @Override
@@ -102,11 +107,13 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
         final String path;
         final Long offset;
         final Long windowLength;
+        final Boolean strict;
 
         Config(Namespace ns) {
             this.path = ns.getString("path");
             this.offset = ns.getLong("offset");
             this.windowLength = ns.getLong("windowLength");
+            this.strict = ns.getBoolean("strict");
         }
 
         static ArgumentParser parser() {
@@ -126,6 +133,11 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
                 .type(Long.class)
                 .setDefault(-1L)
                 .help("Length of the sliding window, default to the value in the WAL header");
+            parser.addArgument("-s", "--strict")
+                .type(Boolean.class)
+                .action(Arguments.storeTrue())
+                .setDefault(false)
+                .help("Strict mode, which will stop when reaching the end of the window, default to false");
             return parser;
         }
     }
