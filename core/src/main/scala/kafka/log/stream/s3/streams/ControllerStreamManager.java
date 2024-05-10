@@ -52,6 +52,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -161,6 +162,11 @@ public class ControllerStreamManager implements StreamManager {
         });
         this.requestSender.send(task);
         return future;
+    }
+
+    @Override
+    public CompletableFuture<Long> createStream(Map<String, String> tags) {
+        return createStream();
     }
 
     @Override
