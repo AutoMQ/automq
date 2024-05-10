@@ -61,7 +61,7 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
 
     private Iterator<RecoverResult> recover(WALHeader header, Config config) {
         long recoverOffset = config.offset != null ? config.offset : header.getTrimOffset();
-        long windowLength = header.getSlidingWindowMaxLength();
+        long windowLength = config.windowLength != -1 ? config.windowLength : header.getSlidingWindowMaxLength();
         return new RecoverIterator(recoverOffset, windowLength, -1);
     }
 
@@ -101,10 +101,12 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
     public static class Config {
         final String path;
         final Long offset;
+        final Long windowLength;
 
         Config(Namespace ns) {
             this.path = ns.getString("path");
             this.offset = ns.getLong("offset");
+            this.windowLength = ns.getLong("windowLength");
         }
 
         static ArgumentParser parser() {
@@ -116,9 +118,14 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
             parser.addArgument("-p", "--path")
                 .required(true)
                 .help("Path of the WAL file");
-            parser.addArgument("--offset")
+            parser.addArgument("-o", "--offset")
                 .type(Long.class)
                 .help("Offset to start recovering, default to the trimmed offset in the WAL header");
+            parser.addArgument("-w", "--window-length")
+                .dest("windowLength")
+                .type(Long.class)
+                .setDefault(-1L)
+                .help("Length of the sliding window, default to the value in the WAL header");
             return parser;
         }
     }
