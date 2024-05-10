@@ -11,17 +11,18 @@
 
 package kafka.log.streamaspect;
 
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
 
 /**
  * Check whether a stream is ready for open.
  */
 public interface OpenStreamChecker {
-    OpenStreamChecker NOOP = (streamId, epoch) -> true;
+    OpenStreamChecker NOOP = (topicId, partition, streamId, epoch) -> true;
 
     /**
      * Check whether a stream is ready for open.
      */
-    boolean check(long streamId, long epoch) throws StreamFencedException;
+    boolean check(Uuid topicId, int partition, long streamId, long epoch) throws StreamFencedException;
 
 }

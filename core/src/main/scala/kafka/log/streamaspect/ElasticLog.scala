@@ -644,7 +644,7 @@ object ElasticLog extends Logging {
                 stream
             } else {
                 val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
-                awaitStreamReadyForOpen(openStreamChecker, metaStreamId, leaderEpoch, logIdent = logIdent)
+                awaitStreamReadyForOpen(openStreamChecker, topicId.get, topicPartition.partition(), metaStreamId, leaderEpoch, logIdent = logIdent)
                 // open partition meta stream
                 val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.builder().epoch(leaderEpoch).build())
                     .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
@@ -881,10 +881,10 @@ object ElasticLog extends Logging {
         resultCf
     }
 
-    private def awaitStreamReadyForOpen(checker: OpenStreamChecker, streamId: Long, epoch: Long, logIdent: String): Unit = {
+    private def awaitStreamReadyForOpen(checker: OpenStreamChecker, topicId: Uuid, partition: Int, streamId: Long, epoch: Long, logIdent: String): Unit = {
       var round = 0
       while(true) {
-        if (checker.check(streamId, epoch)) {
+        if (checker.check(topicId, partition, streamId, epoch)) {
           return
         }
         round += 1
