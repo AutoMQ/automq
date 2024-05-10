@@ -12,6 +12,7 @@
 package kafka.autobalancer.model;
 
 import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.model.samples.SnapshotSamples;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -20,7 +21,7 @@ import java.util.Objects;
 public class BrokerUpdater extends AbstractInstanceUpdater {
     private final int brokerId;
     private final String rack;
-    private final Map<Byte, MetricValueSequence> metricSequanceMap = new HashMap<>();
+    private final Map<Byte, SnapshotSamples> metricSequanceMap = new HashMap<>();
     private boolean active;
 
     public BrokerUpdater(int brokerId, String rack, boolean active) {
@@ -41,7 +42,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         return this.active;
     }
 
-    public Map<Byte, MetricValueSequence> metricSequenceMap() {
+    public Map<Byte, SnapshotSamples> metricSequenceMap() {
         return this.metricSequanceMap;
     }
 
@@ -71,7 +72,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
             if (!RawMetricTypes.BROKER_METRICS.contains(entry.getKey())) {
                 continue;
             }
-            MetricValueSequence metric = metricSequanceMap.computeIfAbsent(entry.getKey(), k -> new MetricValueSequence());
+            SnapshotSamples metric = metricSequanceMap.computeIfAbsent(entry.getKey(), k -> new SnapshotSamples());
             metric.append(entry.getValue());
         }
     }
@@ -83,25 +84,27 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected AbstractInstance createInstance() {
+        return new Broker(brokerId, rack, timestamp, getMetricsSnapshot());
+    }
+
+    protected Map<Byte, Snapshot> getMetricsSnapshot() {
         Map<Byte, Snapshot> snapshotMap = new HashMap<>();
-        for (Map.Entry<Byte, MetricValueSequence> entry : metricSequanceMap.entrySet()) {
+        for (Map.Entry<Byte, SnapshotSamples> entry : metricSequanceMap.entrySet()) {
             snapshotMap.put(entry.getKey(), entry.getValue().snapshot());
         }
-        return new Broker(brokerId, rack, active, timestamp, snapshotMap);
+        return snapshotMap;
     }
 
     public static class Broker extends AbstractInstance {
         private final int brokerId;
         private final String rack;
         private final Map<Byte, Snapshot> metricsSnapshot;
-        private boolean active;
         private boolean isSlowBroker;
 
-        public Broker(int brokerId, String rack, boolean active, long timestamp, Map<Byte, Snapshot> metricsSnapshot) {
+        public Broker(int brokerId, String rack, long timestamp, Map<Byte, Snapshot> metricsSnapshot) {
             super(timestamp);
             this.brokerId = brokerId;
             this.rack = rack;
-            this.active = active;
             this.metricsSnapshot = metricsSnapshot;
             this.isSlowBroker = false;
         }
@@ -112,14 +115,6 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
         public String getRack() {
             return this.rack;
-        }
-
-        public void setActive(boolean active) {
-            this.active = active;
-        }
-
-        public boolean isActive() {
-            return this.active;
         }
 
         public boolean isSlowBroker() {
@@ -150,7 +145,6 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         public String shortString() {
             return "Broker{" +
                     "brokerId=" + brokerId +
-                    ", active=" + active +
                     ", slow=" + isSlowBroker +
                     ", " + timeString() +
                     ", " + loadString() +
@@ -159,7 +153,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
         @Override
         public Broker copy() {
-            Broker broker = new Broker(brokerId, rack, active, timestamp, null);
+            Broker broker = new Broker(brokerId, rack, timestamp, null);
             broker.copyLoads(this);
             return broker;
         }
@@ -168,7 +162,6 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         public String toString() {
             return "Broker{" +
                     "brokerId=" + brokerId +
-                    ", active=" + active +
                     ", slow=" + isSlowBroker +
                     ", " + super.toString() +
                     "}";

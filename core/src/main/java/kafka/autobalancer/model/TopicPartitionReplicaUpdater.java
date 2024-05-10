@@ -13,6 +13,7 @@ package kafka.autobalancer.model;
 
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.model.samples.AbstractTimeWindowSamples;
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.Map;
@@ -47,24 +48,28 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     @Override
     protected AbstractInstance createInstance() {
         TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp);
-        for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
+        processRawMetrics(replica);
+        return replica;
+    }
+
+    protected void processRawMetrics(TopicPartitionReplica replica) {
+        for (Map.Entry<Byte, AbstractTimeWindowSamples> entry : metricSampleMap.entrySet()) {
             byte metricType = entry.getKey();
-            double value = entry.getValue();
+            AbstractTimeWindowSamples samples = entry.getValue();
             if (!RawMetricTypes.PARTITION_METRICS.contains(metricType)) {
                 continue;
             }
             switch (metricType) {
                 case RawMetricTypes.PARTITION_BYTES_IN:
-                    replica.setLoad(Resource.NW_IN, value);
+                    replica.setLoad(Resource.NW_IN, samples.ofLoad());
                     break;
                 case RawMetricTypes.PARTITION_BYTES_OUT:
-                    replica.setLoad(Resource.NW_OUT, value);
+                    replica.setLoad(Resource.NW_OUT, samples.ofLoad());
                     break;
                 default:
                     break;
             }
         }
-        return replica;
     }
 
     public static class TopicPartitionReplica extends AbstractInstance {

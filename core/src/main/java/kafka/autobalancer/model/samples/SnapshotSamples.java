@@ -9,28 +9,30 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.autobalancer.model;
+package kafka.autobalancer.model.samples;
+
+import kafka.autobalancer.model.Snapshot;
 
 import java.util.Deque;
 import java.util.LinkedList;
 
-public class MetricValueSequence {
+public class SnapshotSamples {
     private static final int DEFAULT_MAX_SIZE = 1024;
     private final Deque<Double> values;
     private final int maxSize;
     private Snapshot prev;
 
-    public MetricValueSequence() {
+    public SnapshotSamples() {
         this(DEFAULT_MAX_SIZE);
     }
 
-    public MetricValueSequence(int maxSize) {
+    public SnapshotSamples(int maxSize) {
         this.maxSize = maxSize;
         this.values = new LinkedList<>();
     }
 
-    public MetricValueSequence copy() {
-        MetricValueSequence copy = new MetricValueSequence(maxSize);
+    public SnapshotSamples copy() {
+        SnapshotSamples copy = new SnapshotSamples(maxSize);
         copy.values.addAll(values);
         return copy;
     }

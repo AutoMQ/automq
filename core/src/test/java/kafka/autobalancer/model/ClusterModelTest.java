@@ -23,12 +23,14 @@ import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -76,6 +78,41 @@ public class ClusterModelTest {
 
         Assertions.assertEquals(1, ((BrokerUpdater.Broker) clusterModel.brokerUpdater(1).get()).getBrokerId());
         Assertions.assertNull(clusterModel.brokerUpdater(2));
+    }
+
+    @Test
+    public void testFencedBroker() {
+        RecordClusterModel clusterModel = new RecordClusterModel();
+        RegisterBrokerRecord record1 = new RegisterBrokerRecord()
+                .setBrokerId(1);
+        RegisterBrokerRecord record2 = new RegisterBrokerRecord()
+                .setBrokerId(2);
+        clusterModel.onBrokerRegister(record1);
+        clusterModel.onBrokerRegister(record2);
+
+        Assertions.assertEquals(1, ((BrokerUpdater.Broker) clusterModel.brokerUpdater(1).get()).getBrokerId());
+        Assertions.assertEquals(2, ((BrokerUpdater.Broker) clusterModel.brokerUpdater(2).get()).getBrokerId());
+
+        BrokerRegistrationChangeRecord fencedRecord = new BrokerRegistrationChangeRecord()
+                .setBrokerId(2)
+                .setFenced(BrokerRegistrationFencingChange.FENCE.value());
+        clusterModel.onBrokerRegistrationChanged(fencedRecord);
+
+        Assertions.assertTrue(clusterModel.brokerUpdater(1).isActive());
+        Assertions.assertFalse(clusterModel.brokerUpdater(2).isActive());
+
+        clusterModel.updateBrokerMetrics(1, Map.of(
+                RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), System.currentTimeMillis());
+        clusterModel.updateBrokerMetrics(2, Map.of(
+                RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), System.currentTimeMillis());
+
+        ClusterModelSnapshot snapshot = clusterModel.snapshot();
+        Assertions.assertNotNull(snapshot.broker(1));
+        Assertions.assertNull(snapshot.broker(2));
     }
 
     @Test
@@ -286,8 +323,8 @@ public class ClusterModelTest {
         Assertions.assertEquals(1, replicas.size());
         Assertions.assertEquals(topicName, replicas.iterator().next().getTopicPartition().topic());
         Assertions.assertEquals(partition, replicas.iterator().next().getTopicPartition().partition());
-        Assertions.assertEquals(70, snapshot.broker(brokerId).load(Resource.NW_IN));
-        Assertions.assertEquals(60, snapshot.broker(brokerId).load(Resource.NW_OUT));
+        Assertions.assertEquals(70, snapshot.broker(brokerId).loadValue(Resource.NW_IN));
+        Assertions.assertEquals(60, snapshot.broker(brokerId).loadValue(Resource.NW_OUT));
     }
 
     @Test
@@ -407,6 +444,79 @@ public class ClusterModelTest {
         snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
         clusterModel.unregisterBroker(0);
+    }
+
+    @Test
+    public void testTrustedMetrics() {
+        RecordClusterModel clusterModel = new RecordClusterModel();
+        String topicName = "testTopic";
+        Uuid topicId = Uuid.randomUuid();
+        int partition = 0;
+        int partition1 = 1;
+        int brokerId = 1;
+
+        RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
+                .setBrokerId(brokerId);
+        clusterModel.onBrokerRegister(registerBrokerRecord);
+        TopicRecord topicRecord = new TopicRecord()
+                .setName(topicName)
+                .setTopicId(topicId);
+        clusterModel.onTopicCreate(topicRecord);
+        PartitionRecord partitionRecord = new PartitionRecord()
+                .setLeader(brokerId)
+                .setTopicId(topicId)
+                .setPartitionId(partition);
+        clusterModel.onPartitionCreate(partitionRecord);
+        PartitionRecord partitionRecord1 = new PartitionRecord()
+                .setLeader(brokerId)
+                .setTopicId(topicId)
+                .setPartitionId(partition1);
+        clusterModel.onPartitionCreate(partitionRecord1);
+
+        long now = System.currentTimeMillis();
+
+        Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerId, Map.of(
+                RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), now));
+
+        TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 15);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
+        Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+
+        topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition1);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 20);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 25);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
+        Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
+                new TopicPartition(topicName, partition1), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+
+        ClusterModelSnapshot snapshot = clusterModel.snapshot();
+        AbstractInstanceUpdater.Load brokerLoadIn = snapshot.broker(brokerId).load(Resource.NW_IN);
+        Assertions.assertTrue(brokerLoadIn.isTrusted());
+        Assertions.assertEquals(30, brokerLoadIn.getValue());
+
+        AbstractInstanceUpdater.Load brokerLoadOut = snapshot.broker(brokerId).load(Resource.NW_OUT);
+        Assertions.assertTrue(brokerLoadOut.isTrusted());
+        Assertions.assertEquals(40, brokerLoadOut.getValue());
+
+        Assertions.assertTrue(snapshot.broker(brokerId).load(Resource.NW_OUT).isTrusted());
+        AbstractInstanceUpdater.Load loadIn0 = snapshot.replica(brokerId, new TopicPartition(topicName, partition)).load(Resource.NW_IN);
+        Assertions.assertTrue(loadIn0.isTrusted());
+        Assertions.assertEquals(10, loadIn0.getValue());
+        AbstractInstanceUpdater.Load loadOut0 = snapshot.replica(brokerId, new TopicPartition(topicName, partition)).load(Resource.NW_OUT);
+        Assertions.assertTrue(loadOut0.isTrusted());
+        Assertions.assertEquals(15, loadOut0.getValue());
+
+        AbstractInstanceUpdater.Load loadIn1 = snapshot.replica(brokerId, new TopicPartition(topicName, partition1)).load(Resource.NW_IN);
+        Assertions.assertTrue(loadIn1.isTrusted());
+        Assertions.assertEquals(20, loadIn1.getValue());
+        AbstractInstanceUpdater.Load loadOut1 = snapshot.replica(brokerId, new TopicPartition(topicName, partition1)).load(Resource.NW_OUT);
+        Assertions.assertTrue(loadOut1.isTrusted());
+        Assertions.assertEquals(25, loadOut1.getValue());
     }
 
     private BrokerMetrics createBrokerMetrics(int brokerId, double appendLatency, double pendingAppendLatency,

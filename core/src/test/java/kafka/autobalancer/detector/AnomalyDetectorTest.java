@@ -273,13 +273,13 @@ public class AnomalyDetectorTest {
 
         ClusterModelSnapshot snapshot = clusterModel.snapshot();
 
-        double[] loadsBefore = snapshot.brokers().stream().map(b -> b.load(Resource.NW_IN)).mapToDouble(Double::doubleValue).toArray();
+        double[] loadsBefore = snapshot.brokers().stream().map(b -> b.loadValue(Resource.NW_IN)).mapToDouble(Double::doubleValue).toArray();
         double meanBefore = Arrays.stream(loadsBefore).sum() / loadsBefore.length;
         double stdDevBefore = calculateStdDev(meanBefore, loadsBefore);
         for (Action action : actionList) {
             snapshot.applyAction(action);
         }
-        double[] loadsAfter = snapshot.brokers().stream().map(b -> b.load(Resource.NW_IN)).mapToDouble(Double::doubleValue).toArray();
+        double[] loadsAfter = snapshot.brokers().stream().map(b -> b.loadValue(Resource.NW_IN)).mapToDouble(Double::doubleValue).toArray();
         double meanAfter = Arrays.stream(loadsBefore).sum() / loadsBefore.length;
         double stdDevAfter = calculateStdDev(meanAfter, loadsAfter);
         Assertions.assertEquals(meanBefore, meanAfter);

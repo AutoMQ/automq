@@ -19,13 +19,13 @@ import kafka.autobalancer.common.normalizer.StepNormalizer;
 import kafka.autobalancer.model.BrokerUpdater;
 import org.slf4j.Logger;
 
+import java.util.Collection;
 import java.util.Comparator;
-import java.util.Set;
 
 public abstract class AbstractResourceUsageDistributionGoal extends AbstractResourceDistributionGoal {
     private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
-    private final Comparator<BrokerUpdater.Broker> highLoadComparator = Comparator.comparingDouble(b -> -b.load(resource()));
-    private final Comparator<BrokerUpdater.Broker> lowLoadComparator = Comparator.comparingDouble(b -> b.load(resource()));
+    private final Comparator<BrokerUpdater.Broker> highLoadComparator = Comparator.comparingDouble(b -> -b.loadValue(resource()));
+    private final Comparator<BrokerUpdater.Broker> lowLoadComparator = Comparator.comparingDouble(b -> b.loadValue(resource()));
     protected Normalizer normalizer;
     protected volatile long usageDetectThreshold;
     protected volatile double usageAvgDeviationRatio;
@@ -35,9 +35,9 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     protected double usageDistUpperBound;
 
     @Override
-    public void initialize(Set<BrokerUpdater.Broker> brokers) {
+    public void initialize(Collection<BrokerUpdater.Broker> brokers) {
         byte resource = resource();
-        usageAvg = brokers.stream().mapToDouble(e -> e.load(resource)).sum() / brokers.size();
+        usageAvg = brokers.stream().mapToDouble(e -> e.loadValue(resource)).sum() / brokers.size();
         usageAvgDeviation = usageAvg * usageAvgDeviationRatio;
         usageDistLowerBound = Math.max(0, usageAvg * (1 - this.usageAvgDeviationRatio));
         usageDistUpperBound = usageAvg * (1 + this.usageAvgDeviationRatio);
@@ -48,17 +48,17 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
 
     @Override
     protected boolean requireLessLoad(BrokerUpdater.Broker broker) {
-        return broker.load(resource()) > usageDistUpperBound;
+        return broker.loadValue(resource()) > usageDistUpperBound;
     }
 
     @Override
     protected boolean requireMoreLoad(BrokerUpdater.Broker broker) {
-        return broker.load(resource()) < usageDistLowerBound;
+        return broker.loadValue(resource()) < usageDistLowerBound;
     }
 
     @Override
     public boolean isBrokerAcceptable(BrokerUpdater.Broker broker) {
-        double load = broker.load(resource());
+        double load = broker.loadValue(resource());
         if (load < this.usageDetectThreshold) {
             return true;
         }
@@ -67,7 +67,7 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
 
     @Override
     public double brokerScore(BrokerUpdater.Broker broker) {
-        double loadAvgDeviationAbs = Math.abs(usageAvg - broker.load(resource()));
+        double loadAvgDeviationAbs = Math.abs(usageAvg - broker.loadValue(resource()));
         if (loadAvgDeviationAbs < usageAvgDeviation) {
             return 1.0;
         }

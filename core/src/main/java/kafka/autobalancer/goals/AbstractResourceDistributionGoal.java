@@ -35,23 +35,17 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
     }
 
     @Override
-    public List<Action> doOptimize(Set<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster,
+    public List<Action> doOptimize(List<BrokerUpdater.Broker> brokersToOptimize, ClusterModelSnapshot cluster,
                                    Collection<Goal> goalsByPriority, Collection<Goal> optimizedGoals,
                                    Map<String, Set<String>> goalsByGroup) {
         List<Action> actions = new ArrayList<>();
-        List<BrokerUpdater.Broker> brokersToOptimize = new ArrayList<>();
-        for (BrokerUpdater.Broker broker : eligibleBrokers) {
-            if (!isBrokerAcceptable(broker)) {
-                LOGGER.warn("BrokerUpdater.Broker {} violates goal {}", broker.getBrokerId(), name());
-                brokersToOptimize.add(broker);
-            }
-        }
         for (BrokerUpdater.Broker broker : brokersToOptimize) {
             if (isBrokerAcceptable(broker)) {
                 continue;
             }
             List<BrokerUpdater.Broker> candidateBrokers =
-                    eligibleBrokers.stream().filter(b -> b.getBrokerId() != broker.getBrokerId()).collect(Collectors.toList());
+                    cluster.brokers().stream().filter(b -> b.getBrokerId() != broker.getBrokerId()
+                            && broker.load(resource()).isTrusted()).collect(Collectors.toList());
             if (requireLessLoad(broker)) {
                 List<Action> brokerActions = tryReduceLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers,
                         goalsByPriority, optimizedGoals, goalsByGroup);
