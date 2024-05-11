@@ -18,6 +18,7 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -262,17 +263,25 @@ public class S3Storage implements Storage {
      * Upload WAL to S3 and close opening streams.
      */
     public void recover() throws Throwable {
+        this.deltaWAL.start();
         recover0(this.deltaWAL, this.streamManager, this.objectManager, LOGGER);
     }
 
+    /**
+     * Be called by {@link Failover} to recover from crash.
+     * Note: {@link WriteAheadLog#start()} should be called before this method.
+     */
     public void recover(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         Logger logger) throws Throwable {
         recover0(deltaWAL, streamManager, objectManager, logger);
     }
 
+    /**
+     * Recover WAL, upload WAL to S3 and close opening streams.
+     * Note: {@link WriteAheadLog#start()} should be called before this method.
+     */
     void recover0(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         Logger logger) throws Throwable {
-        deltaWAL.start();
         List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
 
         LogCache.LogCacheBlock cacheBlock = recoverContinuousRecords(deltaWAL.recover(), streams, logger);
