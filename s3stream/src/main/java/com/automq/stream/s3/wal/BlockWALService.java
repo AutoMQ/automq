@@ -753,7 +753,7 @@ public class BlockWALService implements WriteAheadLog {
 
     }
 
-    static final class RecoverResultImpl implements RecoverResult {
+    static class RecoverResultImpl implements RecoverResult {
         private final ByteBuf record;
         private final long recordOffset;
 
@@ -800,6 +800,40 @@ public class BlockWALService implements WriteAheadLog {
 
     }
 
+    /**
+     * Only used for testing purpose.
+     */
+    protected static class InvalidRecoverResult extends RecoverResultImpl {
+        private final String detail;
+
+        InvalidRecoverResult(long recordOffset, String detail) {
+            super(ByteBufAlloc.byteBuffer(0), recordOffset);
+            this.detail = detail;
+        }
+
+        public String detail() {
+            return detail;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            }
+            if (obj == null || obj.getClass() != this.getClass()) {
+                return false;
+            }
+            var that = (InvalidRecoverResult) obj;
+            return Objects.equals(this.detail, that.detail) &&
+                super.equals(obj);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(detail, super.hashCode());
+        }
+    }
+
     static class ReadRecordException extends Exception {
         long jumpNextRecoverOffset;
 
@@ -825,6 +859,7 @@ public class BlockWALService implements WriteAheadLog {
         private RecoverResult next;
         private boolean strictMode = false;
         private long lastValidOffset = -1;
+        private boolean reportError = false;
 
         public RecoverIterator(long nextRecoverOffset, long windowLength, long skipRecordAtOffset) {
             this.nextRecoverOffset = nextRecoverOffset;
@@ -837,6 +872,13 @@ public class BlockWALService implements WriteAheadLog {
          */
         public void strictMode() {
             this.strictMode = true;
+        }
+
+        /**
+         * Only used for testing purpose.
+         */
+        public void reportError() {
+            this.reportError = true;
         }
 
         @Override
@@ -906,7 +948,14 @@ public class BlockWALService implements WriteAheadLog {
                         LOGGER.info("maybe meet the first invalid offset during recovery. cycle: {}, offset: {}, window: {}, detail: '{}'",
                             maybeFirstInvalidCycle, maybeFirstInvalidOffset, windowLength, e.getMessage());
                     }
+
+                    if (reportError) {
+                        next = new InvalidRecoverResult(nextRecoverOffset, e.getMessage());
+                    }
                     nextRecoverOffset = e.getJumpNextRecoverOffset();
+                    if (reportError) {
+                        return true;
+                    }
                 }
             }
             return false;
