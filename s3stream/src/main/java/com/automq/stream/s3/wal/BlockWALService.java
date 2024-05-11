@@ -263,6 +263,10 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public WriteAheadLog start() throws IOException {
+        if (started.get()) {
+            LOGGER.warn("block WAL service already started");
+            return this;
+        }
         StopWatch stopWatch = StopWatch.createStarted();
 
         walChannel.open(channel -> Optional.ofNullable(tryReadWALHeader(walChannel))
