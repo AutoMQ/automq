@@ -381,6 +381,7 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public WALMetadata metadata() {
+        checkStarted();
         return new WALMetadata(walHeader.getNodeId(), walHeader.getEpoch());
     }
 
