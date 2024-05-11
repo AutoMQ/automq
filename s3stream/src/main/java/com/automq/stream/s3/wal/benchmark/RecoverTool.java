@@ -15,12 +15,14 @@ import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WALHeader;
+import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.function.Function;
 import java.util.stream.StreamSupport;
 import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.impl.Arguments;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 
@@ -53,18 +55,30 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
         Iterable<RecoverResult> recordsSupplier = () -> recover(header, config);
         Function<ByteBuf, StreamRecordBatch> decoder = StreamRecordBatchCodec::decode;
         Function<ByteBuf, String> stringer = decoder.andThen(StreamRecordBatch::toString);
+        Function<Long, String> offsetStringer = offset -> readableOffset(offset, header.getCapacity());
         StreamSupport.stream(recordsSupplier.spliterator(), false)
-            .map(it -> new RecoverResultWrapper(it, stringer))
+            .map(it -> new RecoverResultWrapper(it, stringer, offsetStringer))
             .peek(System.out::println)
             .forEach(RecoverResultWrapper::release);
     }
 
     private Iterator<RecoverResult> recover(WALHeader header, Config config) {
         long recoverOffset = config.offset != null ? config.offset : header.getTrimOffset();
-        long windowLength = header.getSlidingWindowMaxLength();
-        // TODO: in this tool, we don't need to skip the record at the trimmed offset
-        long skipRecordAtOffset = config.skipTrimmed ? header.getTrimOffset() : -1;
-        return new RecoverIterator(recoverOffset, windowLength, skipRecordAtOffset);
+        long windowLength = config.windowLength != -1 ? config.windowLength : header.getSlidingWindowMaxLength();
+        RecoverIterator iterator = new RecoverIterator(recoverOffset, windowLength, -1);
+        if (config.strict) {
+            iterator.strictMode();
+        }
+        if (config.showInvalid) {
+            iterator.reportError();
+        }
+        return iterator;
+    }
+
+    private String readableOffset(long offset, long capacity) {
+        long physical = WALUtil.recordOffsetToPosition(offset, capacity, WAL_HEADER_TOTAL_CAPACITY);
+        long mod = physical % 4096;
+        return String.format("Offset{logical=%d, physical=%d, mod=%d}", offset, physical, mod);
     }
 
     @Override
@@ -81,10 +95,12 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
          * A function to convert {@link RecoverResult#record} to string
          */
         private final Function<ByteBuf, String> stringer;
+        private final Function<Long, String> offsetStringer;
 
-        public RecoverResultWrapper(RecoverResult inner, Function<ByteBuf, String> stringer) {
+        public RecoverResultWrapper(RecoverResult inner, Function<ByteBuf, String> stringer, Function<Long, String> offsetStringer) {
             this.inner = inner;
             this.stringer = stringer;
+            this.offsetStringer = offsetStringer;
         }
 
         public void release() {
@@ -93,9 +109,17 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
 
         @Override
         public String toString() {
+            String offset = offsetStringer.apply(inner.recordOffset());
+            if (inner instanceof InvalidRecoverResult) {
+                InvalidRecoverResult invalid = (InvalidRecoverResult) inner;
+                return String.format("%s{", inner.getClass().getSimpleName())
+                    + "offset=" + offset
+                    + ", error=" + invalid.detail()
+                    + '}';
+            }
             return String.format("%s{", inner.getClass().getSimpleName())
-                + String.format("record=(%d)", inner.record().readableBytes()) + stringer.apply(inner.record())
-                + ", offset=" + inner.recordOffset()
+                + "offset=" + offset
+                + String.format(", record=(%d)", inner.record().readableBytes()) + stringer.apply(inner.record())
                 + '}';
         }
     }
@@ -103,12 +127,16 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
     public static class Config {
         final String path;
         final Long offset;
-        final Boolean skipTrimmed;
+        final Long windowLength;
+        final Boolean strict;
+        final Boolean showInvalid;
 
         Config(Namespace ns) {
             this.path = ns.getString("path");
             this.offset = ns.getLong("offset");
-            this.skipTrimmed = ns.getBoolean("skipTrimmed");
+            this.windowLength = ns.getLong("windowLength");
+            this.strict = ns.getBoolean("strict");
+            this.showInvalid = ns.getBoolean("showInvalid");
         }
 
         static ArgumentParser parser() {
@@ -120,14 +148,25 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
             parser.addArgument("-p", "--path")
                 .required(true)
                 .help("Path of the WAL file");
-            parser.addArgument("--offset")
+            parser.addArgument("-o", "--offset")
                 .type(Long.class)
                 .help("Offset to start recovering, default to the trimmed offset in the WAL header");
-            parser.addArgument("--skip-trimmed")
-                .dest("skipTrimmed")
+            parser.addArgument("-w", "--window-length")
+                .dest("windowLength")
+                .type(Long.class)
+                .setDefault(-1L)
+                .help("Length of the sliding window, default to the value in the WAL header");
+            parser.addArgument("-s", "--strict")
                 .type(Boolean.class)
-                .setDefault(true)
-                .help("Whether to skip the record at the trimmed offset");
+                .action(Arguments.storeTrue())
+                .setDefault(false)
+                .help("Strict mode, which will stop when reaching the end of the window, default to false");
+            parser.addArgument("-i", "--show-invalid")
+                .dest("showInvalid")
+                .type(Boolean.class)
+                .action(Arguments.storeTrue())
+                .setDefault(false)
+                .help("Show invalid records, default to false");
             return parser;
         }
     }
