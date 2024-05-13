@@ -31,10 +31,13 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.PingS3Helper;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+
 import kafka.log.stream.s3.failover.DefaultFailoverFactory;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
@@ -85,6 +88,17 @@ public class DefaultS3Client implements Client {
                 config.networkBaselineBandwidth(), config.refillPeriodMs());
         List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
         boolean forcePathStyle = this.config.forcePathStyle();
+        // check s3 availability
+        PingS3Helper pingS3Helper = PingS3Helper.builder()
+                .endpoint(endpoint)
+                .bucket(bucket)
+                .region(region)
+                .credentialsProviders(credentialsProviders)
+                .isForcePathStyle(forcePathStyle)
+                .tagging(config.objectTagging())
+                .needPrintToConsole(false)
+                .build();
+        pingS3Helper.pingS3();
         S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).forcePathStyle(forcePathStyle).build();
         S3Operator compactionS3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
