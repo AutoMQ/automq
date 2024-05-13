@@ -78,7 +78,7 @@ public class TopicDeletionManagerTest {
         streams.put(1L, new S3StreamMetadata(0, 0, 0,
             StreamState.CLOSED, Collections.emptyMap(), registry));
         Map<String, String> tags = new HashMap<>();
-        tags.put(StreamTags.TOPIC_UUID_TAG_KEY, topicId.toString());
+        tags.put(StreamTags.Topic.KEY, StreamTags.Topic.encode(topicId));
         streams.put(2L, new S3StreamMetadata(0, 0, 0,
             StreamState.OPENED, tags, registry));
         streams.put(3L, new S3StreamMetadata(0, 0, 0,
