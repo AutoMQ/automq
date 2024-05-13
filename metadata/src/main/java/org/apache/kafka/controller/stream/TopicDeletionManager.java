@@ -88,7 +88,7 @@ public class TopicDeletionManager {
         for (Map.Entry<Long, S3StreamMetadata> entry : streams.entrySet(lastStableOffset)) {
             Long streamId = entry.getKey();
             S3StreamMetadata metadata = entry.getValue();
-            if (topicId.equals(metadata.tags().get(StreamTags.TOPIC_UUID_TAG_KEY))) {
+            if (topicId.equals(metadata.tags().get(StreamTags.Topic.KEY))) {
                 if (metadata.currentState() == StreamState.CLOSED) {
                     streamsToDelete.add(streamId);
                 } else {
