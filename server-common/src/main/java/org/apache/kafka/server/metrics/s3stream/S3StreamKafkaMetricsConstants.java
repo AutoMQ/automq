@@ -38,4 +38,7 @@ public class S3StreamKafkaMetricsConstants {
     public static final String FETCH_EXECUTOR_FAST_NAME = "fast";
     public static final String FETCH_EXECUTOR_SLOW_NAME = "slow";
     public static final String FETCH_EXECUTOR_DELAYED_NAME = "delayed";
+
+    public static final String PARTITION_STATUS_STATISTICS_METRIC_NAME = "partition_status_statistics";
+    public static final AttributeKey<String> LABEL_STATUS = AttributeKey.stringKey("status");
 }

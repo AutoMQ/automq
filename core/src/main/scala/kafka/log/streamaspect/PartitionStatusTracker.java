@@ -14,19 +14,27 @@ package kafka.log.streamaspect;
 import com.automq.stream.utils.Threads;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class PartitionStatusTracker {
     private static final Logger LOGGER = LoggerFactory.getLogger(PartitionStatusTracker.class);
     private static final long UNEXPECTED_STATUS_TIMEOUT_MS = 60000;
+    private static final String UNEXPECTED_STATUS = "UNEXPECTED";
     private final Map<TopicPartition, Tracker> trackers = new ConcurrentHashMap<>();
+    private Statistics statistics = new Statistics();
+
     private final Time time;
     private final Consumer<TopicPartition> tryElectLeaderFunc;
 
@@ -40,6 +48,7 @@ public class PartitionStatusTracker {
                 LOGGER.error("Error in partition status tracker check", t);
             }
         }, 30, 30, TimeUnit.SECONDS);
+        S3StreamKafkaMetricsManager.setPartitionStatusStatisticsSupplier(Statistics.statusNames(), n -> PartitionStatusTracker.this.statistics.get(n));
     }
 
     public Tracker tracker(TopicPartition tp) {
@@ -50,15 +59,19 @@ public class PartitionStatusTracker {
 
     void check() {
         long now = time.milliseconds();
+        Statistics statistics = new Statistics();
         trackers.forEach((tp, tracker) -> {
             //noinspection SynchronizationOnLocalVariableOrMethodParameter
             synchronized (tracker) {
+                statistics.statusCount.merge(tracker.currentStatus.name(), 1, Integer::sum);
+
                 if (now - tracker.lastUpdateMs <= UNEXPECTED_STATUS_TIMEOUT_MS) {
                     return;
                 }
                 if (tracker.expectedStatus != tracker.currentStatus || tracker.expectedLeaderEpoch != tracker.currentLeaderEpoch) {
+                    statistics.statusCount.merge(UNEXPECTED_STATUS, 1, Integer::sum);
                     LOGGER.error("The partition={} status is unexpected. Expected ({}, {}), but current is ({}, {})",
-                        tp, tracker.expectedStatus, tracker.currentStatus, tracker.expectedLeaderEpoch, tracker.currentLeaderEpoch);
+                        tp, tracker.expectedStatus, tracker.expectedLeaderEpoch, tracker.currentStatus, tracker.currentLeaderEpoch);
 
                     if (tracker.expectedStatus == Status.LEADER && tracker.currentStatus == Status.OPENED) {
                         tryElectLeaderFunc.accept(tp);
@@ -66,13 +79,14 @@ public class PartitionStatusTracker {
                 }
             }
         });
+        this.statistics = statistics;
     }
 
     public class Tracker extends AbstractReferenceCounted {
         private final TopicPartition tp;
         private Status expectedStatus;
         private int expectedLeaderEpoch;
-        private Status currentStatus;
+        private Status currentStatus = Status.UNKNOWN;
         private int currentLeaderEpoch;
         private long lastUpdateMs;
 
@@ -141,5 +155,19 @@ public class PartitionStatusTracker {
         CLOSING,
         CLOSED,
         FAILED,
+    }
+
+    static class Statistics {
+        final Map<String, Integer> statusCount = new HashMap<>();
+
+        public static List<String> statusNames() {
+            List<String> rst = Arrays.stream(Status.values()).map(Enum::name).collect(Collectors.toList());
+            rst.add(UNEXPECTED_STATUS);
+            return rst;
+        }
+
+        public Integer get(String status) {
+            return statusCount.getOrDefault(status, 0);
+        }
     }
 }
