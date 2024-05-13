@@ -11,7 +11,32 @@
 
 package org.apache.kafka.metadata.stream;
 
+import org.apache.kafka.common.Uuid;
+
 public class StreamTags {
-    public static final String TOPIC_UUID_TAG_KEY = "0";
-    public static final String PARTITION_TAG_KEY = "1";
+
+    public static class Topic {
+        public static final String KEY = "0";
+
+        public static String encode(Uuid topicId) {
+            return topicId.toString();
+        }
+
+        public static Uuid decode(String tag) {
+            return Uuid.fromString(tag);
+        }
+    }
+
+    public static class Partition {
+        public static final String KEY = "1";
+
+        public static String encode(int partition) {
+            return Integer.toHexString(partition);
+        }
+
+        public static int decode(String tag) {
+            return Integer.parseInt(tag, 16);
+        }
+
+    }
 }

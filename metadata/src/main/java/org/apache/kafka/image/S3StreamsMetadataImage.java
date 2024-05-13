@@ -29,7 +29,9 @@ import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
@@ -42,7 +44,8 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 public final class S3StreamsMetadataImage {
 
     public static final S3StreamsMetadataImage EMPTY =
-        new S3StreamsMetadataImage(-1, new DeltaMap<>(new int[] {1000, 10000}), new DeltaMap<>(new int[] {1000, 10000}));
+        new S3StreamsMetadataImage(-1, new DeltaMap<>(new int[] {1000, 10000}), new DeltaMap<>(new int[] {1000, 10000}),
+            new DeltaMap<>(new int[] {1000, 10000}), new DeltaMap<>(new int[] {1000, 10000}));
 
     private final long nextAssignedStreamId;
 
@@ -50,13 +53,31 @@ public final class S3StreamsMetadataImage {
 
     private final DeltaMap<Integer/*nodeId*/, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata;
 
+    // Partition <-> Streams mapping in memory
+    private final DeltaMap<TopicIdPartition, Set<Long>> partition2streams;
+    private final DeltaMap<Long, TopicIdPartition> stream2partition;
+
     public S3StreamsMetadataImage(
         long assignedStreamId,
         DeltaMap<Long, S3StreamMetadataImage> streamsMetadata,
-        DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata) {
+        DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata
+    ) {
+        this(assignedStreamId, streamsMetadata, nodeStreamSetObjectMetadata, new DeltaMap<>(), new DeltaMap<>());
+    }
+
+    public S3StreamsMetadataImage(
+        long assignedStreamId,
+        DeltaMap<Long, S3StreamMetadataImage> streamsMetadata,
+        DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata,
+
+        DeltaMap<TopicIdPartition, Set<Long>> partition2streams,
+        DeltaMap<Long, TopicIdPartition> stream2partition
+    ) {
         this.nextAssignedStreamId = assignedStreamId + 1;
         this.streamsMetadata = streamsMetadata;
         this.nodeStreamSetObjectMetadata = nodeStreamSetObjectMetadata;
+        this.partition2streams = partition2streams;
+        this.stream2partition = stream2partition;
     }
 
     boolean isEmpty() {
@@ -219,6 +240,14 @@ public final class S3StreamsMetadataImage {
         return streamsMetadata.get(streamId);
     }
 
+    public Set<Long> getTopicPartitionStreams(Uuid topicId, int partition) {
+        return partition2streams.getOrDefault(new TopicIdPartition(topicId, partition), Collections.emptySet());
+    }
+
+    public TopicIdPartition getStreamTopicPartition(long streamId) {
+        return stream2partition.get(streamId);
+    }
+
     @Override
     public boolean equals(Object obj) {
         if (this == obj) {
@@ -248,6 +277,14 @@ public final class S3StreamsMetadataImage {
 
     public long nextAssignedStreamId() {
         return nextAssignedStreamId;
+    }
+
+    DeltaMap<TopicIdPartition, Set<Long>> partition2streams() {
+        return partition2streams;
+    }
+
+    DeltaMap<Long, TopicIdPartition> stream2partition() {
+        return stream2partition;
     }
 
     @Override
@@ -282,6 +319,6 @@ public final class S3StreamsMetadataImage {
                 }
             };
         }
-
     }
+
 }

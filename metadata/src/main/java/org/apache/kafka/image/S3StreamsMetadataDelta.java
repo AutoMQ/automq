@@ -17,6 +17,13 @@
 
 package org.apache.kafka.image;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
@@ -28,11 +35,7 @@ import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
-
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import org.apache.kafka.metadata.stream.StreamTags;
 
 public final class S3StreamsMetadataDelta {
 
@@ -44,6 +47,7 @@ public final class S3StreamsMetadataDelta {
 
     private final Map<Integer, NodeS3WALMetadataDelta> changedNodes = new HashMap<>();
 
+    private final Set<Long> newStreams = new HashSet<>();
     private final Set<Long> deletedStreams = new HashSet<>();
     // TODO: when we recycle the node's memory data structure
     // We don't use pair of specify NodeCreateRecord and NodeRemoveRecord to create or remove nodes, and
@@ -69,6 +73,7 @@ public final class S3StreamsMetadataDelta {
         // add the streamId to the deletedStreams
         deletedStreams.add(record.streamId());
         changedStreams.remove(record.streamId());
+        newStreams.remove(record.streamId());
     }
 
     public void replay(NodeWALMetadataRecord record) {
@@ -111,6 +116,9 @@ public final class S3StreamsMetadataDelta {
         if (delta == null) {
             delta = new S3StreamMetadataDelta(image.streamsMetadata().getOrDefault(streamId, S3StreamMetadataImage.EMPTY));
             changedStreams.put(streamId, delta);
+            if (!image.streamsMetadata().containsKey(streamId)) {
+                newStreams.add(streamId);
+            }
         }
         return delta;
     }
@@ -119,8 +127,8 @@ public final class S3StreamsMetadataDelta {
         NodeS3WALMetadataDelta delta = changedNodes.get(nodeId);
         if (delta == null) {
             delta = new NodeS3WALMetadataDelta(
-                    image.nodeWALMetadata().
-                            getOrDefault(nodeId, NodeS3StreamSetObjectMetadataImage.EMPTY));
+                image.nodeWALMetadata().
+                    getOrDefault(nodeId, NodeS3StreamSetObjectMetadataImage.EMPTY));
             changedNodes.put(nodeId, delta);
         }
         return delta;
@@ -136,18 +144,56 @@ public final class S3StreamsMetadataDelta {
         this.changedNodes.forEach((nodeId, delta) -> nodes.put(nodeId, delta.apply()));
         // remove the deleted nodes
         nodes.removeAll(deletedNodes);
-        return new S3StreamsMetadataImage(currentAssignedStreamId, streams, nodes);
+
+        Map<TopicIdPartition, Set<Long>> newPartition2streams = new HashMap<>();
+        DeltaMap<TopicIdPartition, Set<Long>> partition2streams = image.partition2streams().copy();
+        DeltaMap<Long, TopicIdPartition> stream2partition = image.stream2partition().copy();
+        Function<TopicIdPartition, Set<Long>> getPartitionStreams = k -> {
+            Set<Long> s = partition2streams.get(k);
+            s = new HashSet<>(s == null ? Collections.emptySet() : s);
+            partition2streams.put(k, s);
+            return s;
+        };
+        for (Long streamId : deletedStreams) {
+            TopicIdPartition tp = stream2partition.get(streamId);
+            stream2partition.remove(streamId);
+            Set<Long> partitionStreams = newPartition2streams.computeIfAbsent(tp, getPartitionStreams);
+            if (partitionStreams != null) {
+                partitionStreams.remove(streamId);
+            }
+        }
+        for (Long streamId : newStreams) {
+            S3StreamRecord.Tag topicTag = streams.get(streamId).tags().find(StreamTags.Topic.KEY);
+            S3StreamRecord.Tag partitionTag = streams.get(streamId).tags().find(StreamTags.Partition.KEY);
+            if (topicTag == null || partitionTag == null) {
+                continue;
+            }
+            try {
+                Uuid topicId = StreamTags.Topic.decode(topicTag.value());
+                int partition = StreamTags.Partition.decode(partitionTag.value());
+                TopicIdPartition tp = new TopicIdPartition(topicId, partition);
+                Set<Long> partitionStreams = newPartition2streams.computeIfAbsent(tp, getPartitionStreams);
+                if (partitionStreams != null) {
+                    partitionStreams.add(streamId);
+                }
+                stream2partition.put(streamId, tp);
+            } catch (Throwable e) {
+                // skip
+            }
+        }
+
+        return new S3StreamsMetadataImage(currentAssignedStreamId, streams, nodes, partition2streams, stream2partition);
     }
 
     @Override
     public String toString() {
         return "S3StreamsMetadataDelta{" +
-                "image=" + image +
-                ", currentAssignedStreamId=" + currentAssignedStreamId +
-                ", changedStreams=" + changedStreams +
-                ", changedNodes=" + changedNodes +
-                ", deletedStreams=" + deletedStreams +
-                ", deletedNodes=" + deletedNodes +
-                '}';
+            "image=" + image +
+            ", currentAssignedStreamId=" + currentAssignedStreamId +
+            ", changedStreams=" + changedStreams +
+            ", changedNodes=" + changedNodes +
+            ", deletedStreams=" + deletedStreams +
+            ", deletedNodes=" + deletedNodes +
+            '}';
     }
 }

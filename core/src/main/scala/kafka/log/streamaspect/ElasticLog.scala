@@ -25,7 +25,7 @@ import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
-import org.apache.kafka.metadata.stream.StreamTags.{PARTITION_TAG_KEY, TOPIC_UUID_TAG_KEY}
+import org.apache.kafka.metadata.stream.StreamTags
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpointFile
@@ -634,8 +634,8 @@ object ElasticLog extends Logging {
         val replicationFactor = 1
 
         val streamTags = new util.HashMap[String, String]()
-        streamTags.put(TOPIC_UUID_TAG_KEY, topicIdStr)
-        streamTags.put(PARTITION_TAG_KEY, topicPartition.partition().toHexString)
+        streamTags.put(StreamTags.Topic.KEY, topicIdStr)
+        streamTags.put(StreamTags.Partition.KEY, StreamTags.Partition.encode(topicPartition.partition()))
 
         try {
             metaStream = if (metaNotExists) {
