@@ -11,9 +11,9 @@ follow [Code of Conduct](../community/code-of-conduct.md).
 
 ## Code Contributions
 
-Most of the issues that are open for contributions are tagged with `good first issue`.
+Most of the issues open for contributions are tagged with 'good first issue.' To claim one, simply reply with 'pick up,' and the AutoMQ maintainers will assign the issue to you. If you have any questions about the 'good first issue,' please feel free to ask. We will do our best to clarify any doubts you may have.
 Start with
-this [tagged issue](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+this [tagged good first issue](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 
 The usual workflow of code contribution is:
 
