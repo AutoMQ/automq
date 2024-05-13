@@ -23,7 +23,7 @@ import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
-import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
+import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicDelta, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants
 import org.apache.kafka.server.common.{DirectoryEventHandler, MetadataVersion}
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants._
@@ -937,9 +937,8 @@ class ElasticReplicaManager(
    * @param delta    The delta to apply.
    * @param newImage The new metadata image.
    */
-  override def applyDelta(delta: TopicsDelta,
-    newImage: MetadataImage): Unit = {
-    asyncApplyDelta(delta, newImage).get()
+  override def applyDelta(delta: TopicsDelta, newImage: MetadataImage): Unit = {
+    asyncApplyDelta(delta, newImage, (_, _) => {}).get()
   }
 
   /**
@@ -983,13 +982,21 @@ class ElasticReplicaManager(
     opCf
   }
 
+  def getTopicDelta(topicName: String, newImage: MetadataImage, delta: TopicsDelta): Option[TopicDelta] = {
+    Option(newImage.topics().getTopic(topicName)).flatMap {
+      topicImage => Option(delta).flatMap {
+          topicDelta => Option(topicDelta.changedTopic(topicImage.id()))
+        }
+    }
+  }
+
   /**
    * Apply a KRaft topic change delta.
    *
    * @param delta    The delta to apply.
    * @param newImage The new metadata image.
    */
-  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage): CompletableFuture[Void] = {
+  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage, callback: (TopicDelta, Int) => Unit): CompletableFuture[Void] = {
     // Before taking the lock, compute the local changes
     val localChanges = delta.localChanges(config.nodeId)
     val metadataVersion = newImage.features().metadataVersion()
@@ -1015,6 +1022,7 @@ class ElasticReplicaManager(
           stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
           deletes.foreach(stopPartition => {
             val opCf = doPartitionDeletionAsyncLocked(stopPartition)
+            opCf.thenAccept(_ => getTopicDelta(stopPartition.topicPartition.topic(), newImage, delta).foreach(callback(_, stopPartition.topicPartition.partition())))
             opCfList.add(opCf)
           })
         }
@@ -1048,8 +1056,10 @@ class ElasticReplicaManager(
                     val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
                     leader += (tp -> info)
                     applyLocalLeadersDelta(leaderChangedPartitions, newImage, delta, lazyOffsetCheckpoints, leader, directoryIds)
-                    // Elect the leader to let client can find the partition by metadata.
                     tracker.opened()
+                    // Apply the delta before elect leader.
+                    getTopicDelta(tp.topic(), newImage, delta).foreach(callback(_, tp.partition()))
+                    // Elect the leader to let client can find the partition by metadata.
                     if (info.partition().leader < 0) {
                       // The tryElectLeader may be failed, tracker will check the partition status and elect leader if needed.
                       alterPartitionManager.tryElectLeader(tp)

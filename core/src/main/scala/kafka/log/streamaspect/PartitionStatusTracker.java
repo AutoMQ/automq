@@ -58,7 +58,7 @@ public class PartitionStatusTracker {
                 }
                 if (tracker.expectedStatus != tracker.currentStatus || tracker.expectedLeaderEpoch != tracker.currentLeaderEpoch) {
                     LOGGER.error("The partition={} status is unexpected. Expected ({}, {}), but current is ({}, {})",
-                        tp, tracker.expectedStatus, tracker.currentStatus, tracker.expectedLeaderEpoch, tracker.currentLeaderEpoch);
+                        tp, tracker.expectedStatus, tracker.expectedLeaderEpoch, tracker.currentStatus, tracker.currentLeaderEpoch);
 
                     if (tracker.expectedStatus == Status.LEADER && tracker.currentStatus == Status.OPENED) {
                         tryElectLeaderFunc.accept(tp);
