@@ -4,7 +4,7 @@ import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.utils.FutureUtil
 import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
-import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
+import kafka.log.streamaspect.{ElasticLogManager, PartitionStatusTracker, ReadHint}
 import kafka.log.{LogManager, UnifiedLog}
 import kafka.server.Limiter.Handler
 import kafka.server.QuotaFactory.QuotaManagers
@@ -125,6 +125,8 @@ class ElasticReplicaManager(
 
   private val transactionWaitingForValidationMap = new ConcurrentHashMap[Long, Verification]
   private val lastTransactionCleanTimestamp = new AtomicLong(time.milliseconds())
+
+  private val partitionStatusTracker = new PartitionStatusTracker(time, tp => alterPartitionManager.tryElectLeader(tp))
 
   private class ElasticLogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean)
     extends LogDirFailureHandler(name, haltBrokerOnDirFailure) {
@@ -950,11 +952,14 @@ class ElasticReplicaManager(
   private def doPartitionDeletionAsyncLocked(stopPartition: StopPartition): CompletableFuture[Void] = {
     val prevOp = partitionOpMap.getOrDefault(stopPartition.topicPartition, CompletableFuture.completedFuture(null))
     val opCf = new CompletableFuture[Void]()
+    val tracker = partitionStatusTracker.tracker(stopPartition.topicPartition)
+    tracker.expected(PartitionStatusTracker.Status.CLOSED)
     partitionOpMap.put(stopPartition.topicPartition, opCf)
     closingPartitions.put(stopPartition.topicPartition, opCf)
     prevOp.whenComplete((_, _) => {
       partitionOpExecutor.execute(() => {
         try {
+          tracker.closing()
           val delete = mutable.Set[StopPartition]()
           delete.add(stopPartition)
           stopPartitions(delete).forKeyValue { (topicPartition, e) =>
@@ -967,6 +972,8 @@ class ElasticReplicaManager(
             }
           }
         } finally {
+          tracker.release()
+          tracker.closed()
           opCf.complete(null)
           partitionOpMap.remove(stopPartition.topicPartition, opCf)
           closingPartitions.remove(stopPartition.topicPartition, opCf)
@@ -1027,6 +1034,8 @@ class ElasticReplicaManager(
           stateChangeLogger.info(s"Transitioning partition(s) info: $localChanges")
           for (replicas <- Seq(localChanges.leaders, localChanges.followers)) {
             replicas.forEach((tp, info) => {
+              val tracker = partitionStatusTracker.tracker(tp)
+              tracker.expected(PartitionStatusTracker.Status.LEADER, info.partition().leaderEpoch)
               val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
               val opCf = new CompletableFuture[Void]()
               opCfList.add(opCf)
@@ -1035,16 +1044,27 @@ class ElasticReplicaManager(
               prevOp.whenComplete((_, _) => {
                 partitionOpExecutor.execute(() => {
                   try {
+                    tracker.opening(info.partition().leaderEpoch)
                     val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
                     leader += (tp -> info)
                     applyLocalLeadersDelta(leaderChangedPartitions, newImage, delta, lazyOffsetCheckpoints, leader, directoryIds)
                     // Elect the leader to let client can find the partition by metadata.
+                    tracker.opened()
                     if (info.partition().leader < 0) {
+                      // The tryElectLeader may be failed, tracker will check the partition status and elect leader if needed.
                       alterPartitionManager.tryElectLeader(tp)
+                    } else {
+                      tracker.leader()
                     }
                   } catch {
-                    case t: Throwable => stateChangeLogger.error(s"Transitioning partition(s) fail: $localChanges", t)
+                    case t: Throwable => {
+                      // If it's a StreamFencedException failure, it's means the partition is reassigned to others.
+                      // Expect the tracker will be removed in the following #asyncApplyDelta(TopicsDelta).
+                      tracker.failed()
+                      stateChangeLogger.error(s"Transitioning partition(s) fail: $localChanges", t)
+                    }
                   } finally {
+                    tracker.release()
                     opCf.complete(null)
                     partitionOpMap.remove(tp, opCf)
                     openingPartitions.remove(tp, opCf)
