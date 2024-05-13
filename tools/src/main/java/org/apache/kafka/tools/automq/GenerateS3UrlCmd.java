@@ -17,7 +17,8 @@
 package org.apache.kafka.tools.automq;
 
 import com.automq.s3shell.sdk.model.EndpointProtocol;
-import com.automq.stream.utils.S3Utils;
+import com.automq.stream.utils.PingS3Helper;
+
 import java.util.List;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
@@ -150,14 +151,16 @@ public class GenerateS3UrlCmd {
         System.out.println();
 
         // precheck
-        var context = S3Utils.S3Context.builder()
-            .setEndpoint(parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint)
-            .setCredentialsProviders(List.of(() -> AwsBasicCredentials.create(parameter.s3AccessKey, parameter.s3SecretKey)))
-            .setBucketName(parameter.s3DataBucket)
-            .setRegion(parameter.s3Region)
-            .setForcePathStyle(parameter.s3PathStyle)
-            .build();
-        S3Utils.checkS3Access(context);
+        PingS3Helper pingS3Helper = PingS3Helper.builder()
+                .endpoint(parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint)
+                .bucket(parameter.s3DataBucket)
+                .region(parameter.s3Region)
+                .credentialsProviders(List.of(() -> AwsBasicCredentials.create(parameter.s3AccessKey, parameter.s3SecretKey)))
+                .isForcePathStyle(parameter.s3PathStyle)
+                .tagging(false)
+                .needPrintToConsole(true)
+                .build();
+        pingS3Helper.pingS3();
 
         String s3Url = buildS3Url();
         System.out.println("############  String of s3url ################");
