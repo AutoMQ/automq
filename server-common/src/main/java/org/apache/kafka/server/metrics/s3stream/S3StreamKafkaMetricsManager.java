@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class S3StreamKafkaMetricsManager {
@@ -36,6 +37,8 @@ public class S3StreamKafkaMetricsManager {
             S3StreamKafkaMetricsConstants.LABEL_FETCH_LIMITER_NAME);
     private static final MultiAttributes<String> FETCH_EXECUTOR_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
             S3StreamKafkaMetricsConstants.LABEL_FETCH_EXECUTOR_NAME);
+    private static final MultiAttributes<String> PARTITION_STATUS_STATISTICS_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
+            S3StreamKafkaMetricsConstants.LABEL_STATUS);
 
     static {
         BASE_ATTRIBUTES_LISTENERS.add(BROKER_ATTRIBUTES);
@@ -63,6 +66,10 @@ public class S3StreamKafkaMetricsManager {
     private static ObservableLongGauge slowBrokerMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<Integer, Boolean>> slowBrokerSupplier = Collections::emptyMap;
 
+    private static ObservableLongGauge partitionStatusStatisticsMetrics = new NoopObservableLongGauge();
+    private static List<String> partitionStatusList = Collections.emptyList();
+    private static Function<String, Integer> partitionStatusStatisticsSupplier = s -> 0;
+
     public static void configure(MetricsConfig metricsConfig) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             S3StreamKafkaMetricsManager.metricsConfig = metricsConfig;
@@ -76,6 +83,7 @@ public class S3StreamKafkaMetricsManager {
         initAutoBalancerMetrics(meter, prefix);
         initObjectMetrics(meter, prefix);
         initFetchMetrics(meter, prefix);
+        initPartitionStatusStatisticsMetrics(meter, prefix);
     }
 
     private static void initAutoBalancerMetrics(Meter meter, String prefix) {
@@ -173,6 +181,19 @@ public class S3StreamKafkaMetricsManager {
                 });
     }
 
+    private static void initPartitionStatusStatisticsMetrics(Meter meter, String prefix) {
+        partitionStatusStatisticsMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.PARTITION_STATUS_STATISTICS_METRIC_NAME)
+                .setDescription("The statistics of partition status")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        for (String partitionStatus : partitionStatusList) {
+                            result.record(partitionStatusStatisticsSupplier.apply(partitionStatus), PARTITION_STATUS_STATISTICS_ATTRIBUTES.get(partitionStatus));
+                        }
+                    }
+                });
+    }
+
     public static void setIsActiveSupplier(Supplier<Boolean> isActiveSupplier) {
         S3StreamKafkaMetricsManager.isActiveSupplier = isActiveSupplier;
     }
@@ -207,5 +228,10 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setSlowBrokerSupplier(Supplier<Map<Integer, Boolean>> slowBrokerSupplier) {
         S3StreamKafkaMetricsManager.slowBrokerSupplier = slowBrokerSupplier;
+    }
+
+    public static void setPartitionStatusStatisticsSupplier(List<String> partitionStatusList, Function<String, Integer> partitionStatusStatisticsSupplier) {
+        S3StreamKafkaMetricsManager.partitionStatusList = partitionStatusList;
+        S3StreamKafkaMetricsManager.partitionStatusStatisticsSupplier = partitionStatusStatisticsSupplier;
     }
 }
