@@ -950,6 +950,10 @@ class ElasticReplicaManager(
    * @return A future which completes when the partition has been deleted.
    */
   private def doPartitionDeletionAsyncLocked(stopPartition: StopPartition): CompletableFuture[Void] = {
+    doPartitionDeletionAsyncLocked(stopPartition, null, null, (_, _) => {})
+  }
+
+  private def doPartitionDeletionAsyncLocked(stopPartition: StopPartition, delta: TopicsDelta, newImage: MetadataImage, callback: (TopicDelta, Int) => Unit): CompletableFuture[Void] = {
     val prevOp = partitionOpMap.getOrDefault(stopPartition.topicPartition, CompletableFuture.completedFuture(null))
     val opCf = new CompletableFuture[Void]()
     val tracker = partitionStatusTracker.tracker(stopPartition.topicPartition)
@@ -970,6 +974,9 @@ class ElasticReplicaManager(
               stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
                 s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
             }
+          }
+          if (delta != null && newImage != null) {
+            getTopicDelta(stopPartition.topicPartition.topic(), newImage, delta).foreach(callback(_, stopPartition.topicPartition.partition()))
           }
         } finally {
           opCf.complete(null)
@@ -1022,8 +1029,7 @@ class ElasticReplicaManager(
         def doPartitionDeletion(): Unit = {
           stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
           deletes.foreach(stopPartition => {
-            val opCf = doPartitionDeletionAsyncLocked(stopPartition)
-            opCf.thenAccept(_ => getTopicDelta(stopPartition.topicPartition.topic(), newImage, delta).foreach(callback(_, stopPartition.topicPartition.partition())))
+            val opCf = doPartitionDeletionAsyncLocked(stopPartition, delta, newImage, callback)
             opCfList.add(opCf)
           })
         }
