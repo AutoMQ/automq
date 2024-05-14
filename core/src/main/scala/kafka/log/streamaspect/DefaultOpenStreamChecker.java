@@ -39,11 +39,11 @@ public class DefaultOpenStreamChecker implements OpenStreamChecker {
         }
         PartitionRegistration partitionImage = topicImage.partitions().get(partition);
         if (partitionImage == null) {
-            throw new StreamFencedException(String.format("partition=%d cannot be found, it may be deleted or not created yet", partition));
+            throw new StreamFencedException(String.format("partition=%s-%d cannot be found, it may be deleted or not created yet", topicId, partition));
         }
         int currentEpoch = partitionImage.leaderEpoch;
         if (currentEpoch > epoch) {
-            throw new StreamFencedException(String.format("partition=%d with epoch=%d is fenced by new leader epoch=%d", partition, epoch, currentEpoch));
+            throw new StreamFencedException(String.format("partition=%s-%d with epoch=%d is fenced by new leader epoch=%d", topicId, partition, epoch, currentEpoch));
         }
         S3StreamMetadataImage stream = metadataCache.currentImage().streamsMetadata().getStreamMetadata(streamId);
         if (stream == null) {
