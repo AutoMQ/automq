@@ -369,5 +369,5 @@
     <suppress checks="MethodLength"
               files="(S3StreamMetricsManager|BlockWALServiceTest).java"/>
     <suppress id="dontUseSystemExit"
-              files="(BenchTool|S3Utils).java"/>
+              files="(BenchTool|S3Utils|AutoMQCLI).java"/>
 </suppressions>
