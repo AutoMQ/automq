@@ -102,7 +102,8 @@ include 'clients',
     'transaction-coordinator',
     'trogdor',
     'kshell-sdk',
-    's3stream'
+    's3stream',
+    'cli'
 
 project(":storage:api").name = "storage-api"
 rootProject.name = 'kafka'
