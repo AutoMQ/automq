@@ -11,17 +11,17 @@
 
 package org.apache.kafka.cli;
 
-import java.util.concurrent.Callable;
+import org.apache.kafka.cli.command.Stream;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "automq-cli", mixinStandardHelpOptions = true, version = "automq-cli 1.0",
-    description = "Command line tool for maintain AutoMQ cluster(s).")
-public class AutoMQCLI implements Callable<Integer> {
-
-    @Override
-    public Integer call() {
-        return 0;
-    }
+    description = "Command line tool for maintain AutoMQ cluster(s).",
+    subcommands = {
+        Stream.class
+    })
+public class AutoMQCLI {
+    @CommandLine.Option(names = {"-b", "--bootstrap-server"}, description = "The Kafka server to connect to.", required = true)
+    public String bootstrapServer;
 
     public static void main(String... args) {
         int exitCode = new CommandLine(new AutoMQCLI()).execute(args);
