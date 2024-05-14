@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
@@ -32,8 +33,9 @@ public class PartitionStatusTracker {
     private static final Logger LOGGER = LoggerFactory.getLogger(PartitionStatusTracker.class);
     private static final long UNEXPECTED_STATUS_TIMEOUT_MS = 60000;
     private static final String UNEXPECTED_STATUS = "UNEXPECTED";
-    private final Map<TopicPartition, Tracker> trackers = new ConcurrentHashMap<>();
+    final Map<TopicPartition, Tracker> trackers = new ConcurrentHashMap<>();
     private Statistics statistics = new Statistics();
+    private final ReentrantLock lock = new ReentrantLock();
 
     private final Time time;
     private final Consumer<TopicPartition> tryElectLeaderFunc;
@@ -52,9 +54,23 @@ public class PartitionStatusTracker {
     }
 
     public Tracker tracker(TopicPartition tp) {
-        Tracker tracker = trackers.computeIfAbsent(tp, Tracker::new);
-        tracker.retain();
-        return tracker;
+        lock.lock();
+        try {
+            Tracker tracker = trackers.computeIfAbsent(tp, Tracker::new);
+            tracker.retain();
+            return tracker;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    void remove(TopicPartition tp, Tracker tracker) {
+        lock.lock();
+        try {
+            trackers.remove(tp, tracker);
+        } finally {
+            lock.unlock();
+        }
     }
 
     void check() {
@@ -123,7 +139,15 @@ public class PartitionStatusTracker {
 
         public synchronized void closed() {
             transition(Status.CLOSED);
-            release();
+            lock.lock();
+            try {
+                if (refCnt() == 1) {
+                    // cleanup the tracker if no one is using it
+                    release();
+                }
+            } finally {
+                lock.unlock();
+            }
         }
 
         public synchronized void failed() {
@@ -133,12 +157,32 @@ public class PartitionStatusTracker {
 
         @Override
         protected void deallocate() {
-            trackers.remove(tp, this);
+            remove(tp, this);
         }
 
         @Override
         public ReferenceCounted touch(Object o) {
             return this;
+        }
+
+        @Override
+        public ReferenceCounted retain() {
+            lock.lock();
+            try {
+                return super.retain();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        @Override
+        public boolean release() {
+            lock.lock();
+            try {
+                return super.release();
+            } finally {
+                lock.unlock();
+            }
         }
 
         void transition(Status status) {
