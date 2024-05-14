@@ -57,7 +57,7 @@ import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
-import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
+import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicDelta, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.server.common.MetadataVersion._
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager
@@ -2682,7 +2682,15 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   def applyDelta(delta: TopicsDelta, newImage: MetadataImage): Unit = {
-    asyncApplyDelta(delta, newImage).get()
+    asyncApplyDelta(delta, newImage, (_, _) => {}).get()
+  }
+
+  def getTopicDelta(topicName: String, newImage: MetadataImage, delta: TopicsDelta): Option[TopicDelta] = {
+    Option(newImage.topics().getTopic(topicName)).flatMap {
+      topicImage => Option(delta).flatMap {
+          topicDelta => Option(topicDelta.changedTopic(topicImage.id()))
+        }
+    }
   }
 
   // AutoMQ for Kafka inject start
@@ -2692,7 +2700,7 @@ class ReplicaManager(val config: KafkaConfig,
    * @param delta           The delta to apply.
    * @param newImage        The new metadata image.
    */
-  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage): CompletableFuture[Void] = {
+  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage, callback: (TopicDelta, Int) => Unit): CompletableFuture[Void] = {
     // Before taking the lock, compute the local changes
     val localChanges = delta.localChanges(config.nodeId)
 
@@ -2709,7 +2717,7 @@ class ReplicaManager(val config: KafkaConfig,
         def doPartitionDeletion(): Unit = {
           stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
           deletes.forKeyValue((tp, _) => {
-            val opCf = doPartitionDeletionAsyncLocked(tp)
+            val opCf = doPartitionDeletionAsyncLocked(tp, delta, newImage, callback)
             opCfList.add(opCf)
           })
         }
@@ -2738,6 +2746,8 @@ class ReplicaManager(val config: KafkaConfig,
                     val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
                     leader += (tp -> info)
                     applyLocalLeadersDelta(changedPartitions, delta, lazyOffsetCheckpoints, leader)
+                    // Apply the delta before elect leader.
+                    getTopicDelta(tp.topic(), newImage, delta).foreach(callback(_, tp.partition()))
                   } catch {
                     case t: Throwable => stateChangeLogger.error(s"Transitioning partition(s) fail: $localChanges", t)
                   } finally {
@@ -2788,6 +2798,10 @@ class ReplicaManager(val config: KafkaConfig,
    * @return A future which completes when the partition has been deleted.
    */
   private def doPartitionDeletionAsyncLocked(tp: TopicPartition): CompletableFuture[Void] = {
+    doPartitionDeletionAsyncLocked(tp, null, null, (_, _) => {})
+  }
+
+  private def doPartitionDeletionAsyncLocked(tp: TopicPartition, delta: TopicsDelta, newImage: MetadataImage, callback: (TopicDelta, Int) => Unit): CompletableFuture[Void] = {
     val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
     val opCf = new CompletableFuture[Void]()
     partitionOpMap.put(tp, opCf)
@@ -2805,6 +2819,9 @@ class ReplicaManager(val config: KafkaConfig,
               stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
                 s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
             }
+          }
+          if (newImage != null && delta != null) {
+            getTopicDelta(tp.topic(), newImage, delta).foreach(callback(_, tp.partition()))
           }
         } finally {
           opCf.complete(null)

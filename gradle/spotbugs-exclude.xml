@@ -97,6 +97,11 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
         </Or>
     </Match>
 
+    <Match>
+        <Class name="kafka.server.ReplicaManager"/>
+        <Bug pattern="UPM_UNCALLED_PRIVATE_METHOD"/>
+    </Match>
+
     <!-- false positive in Java 11, related to https://github.com/spotbugs/spotbugs/issues/756 but more complex -->
     <Match>
         <Class name="org.apache.kafka.common.compress.KafkaLZ4BlockOutputStream"/>
