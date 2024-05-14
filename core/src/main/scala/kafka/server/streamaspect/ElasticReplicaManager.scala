@@ -972,11 +972,11 @@ class ElasticReplicaManager(
             }
           }
         } finally {
-          tracker.release()
-          tracker.closed()
           opCf.complete(null)
           partitionOpMap.remove(stopPartition.topicPartition, opCf)
           closingPartitions.remove(stopPartition.topicPartition, opCf)
+          tracker.release()
+          tracker.closed()
         }
       })
     })
@@ -1052,10 +1052,10 @@ class ElasticReplicaManager(
               openingPartitions.putIfAbsent(tp, opCf)
               prevOp.whenComplete((_, _) => {
                 partitionOpenOpExecutor.execute(() => {
+                  val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
+                  leader += (tp -> info)
                   try {
                     tracker.opening(info.partition().leaderEpoch)
-                    val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
-                    leader += (tp -> info)
                     applyLocalLeadersDelta(leaderChangedPartitions, newImage, delta, lazyOffsetCheckpoints, leader, directoryIds)
                     tracker.opened()
                     // Apply the delta before elect leader.
@@ -1072,13 +1072,13 @@ class ElasticReplicaManager(
                       // If it's a StreamFencedException failure, it's means the partition is reassigned to others.
                       // Expect the tracker will be removed in the following #asyncApplyDelta(TopicsDelta).
                       tracker.failed()
-                      stateChangeLogger.error(s"Transitioning partition(s) fail: $localChanges", t)
+                      stateChangeLogger.error(s"Transitioning partition(s) fail: $leader", t)
                     }
                   } finally {
-                    tracker.release()
                     opCf.complete(null)
                     partitionOpMap.remove(tp, opCf)
                     openingPartitions.remove(tp, opCf)
+                    tracker.release()
                   }
                 })
               })
