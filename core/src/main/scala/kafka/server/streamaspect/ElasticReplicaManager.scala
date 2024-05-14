@@ -148,7 +148,8 @@ class ElasticReplicaManager(
   /**
    * Partition operation executor, used to execute partition operations in parallel.
    */
-  private val partitionOpExecutor = ThreadUtils.newCachedThread(256, "partition_op_%d", true)
+  private val partitionOpenOpExecutor = ThreadUtils.newCachedThread(128, "partition_open_op_%d", true)
+  private val partitionCloseOpExecutor = ThreadUtils.newCachedThread(128, "partition_close_op_%d", true)
   /**
    * Partition operation map, used to make sure that only one operation is executed for a partition at the same time.
    * It should be modified with [[replicaStateChangeLock]] held.
@@ -956,7 +957,7 @@ class ElasticReplicaManager(
     partitionOpMap.put(stopPartition.topicPartition, opCf)
     closingPartitions.put(stopPartition.topicPartition, opCf)
     prevOp.whenComplete((_, _) => {
-      partitionOpExecutor.execute(() => {
+      partitionCloseOpExecutor.execute(() => {
         try {
           tracker.closing()
           val delete = mutable.Set[StopPartition]()
@@ -1050,7 +1051,7 @@ class ElasticReplicaManager(
               partitionOpMap.put(tp, opCf)
               openingPartitions.putIfAbsent(tp, opCf)
               prevOp.whenComplete((_, _) => {
-                partitionOpExecutor.execute(() => {
+                partitionOpenOpExecutor.execute(() => {
                   try {
                     tracker.opening(info.partition().leaderEpoch)
                     val leader = mutable.Map[TopicPartition, LocalReplicaChanges.PartitionInfo]()
@@ -1229,7 +1230,8 @@ class ElasticReplicaManager(
     } else {
       info(s"all partitions are closed after ${System.currentTimeMillis() - start} ms")
     }
-    partitionOpExecutor.shutdown()
+    partitionOpenOpExecutor.shutdown()
+    partitionCloseOpExecutor.shutdown()
     CoreUtils.swallow(ElasticLogManager.shutdown(), this)
   }
 
