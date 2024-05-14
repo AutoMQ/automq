@@ -17,7 +17,7 @@
 
 package kafka.admin
 
-import com.automq.stream.utils.S3Utils
+import com.automq.stream.utils.PingS3Helper
 import joptsimple.OptionSpec
 import kafka.utils.{CommandDefaultOptions, CommandLineUtils, Exit, Logging}
 import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
@@ -52,16 +52,16 @@ object S3TestCommand extends Logging {
     val forcePathStyle = opts.has(opts.forcePathStyleOpt)
     val tagging = opts.has(opts.tagging)
 
-    val context = S3Utils.S3Context.builder()
-      .setEndpoint(s3Endpoint)
-      .setCredentialsProviders(util.List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3AccessKey, s3SecretKey))))
-      .setBucketName(s3Bucket)
-      .setRegion(s3Region)
-      .setForcePathStyle(forcePathStyle)
-      .setTagging(tagging)
+    val pingS3Helper = PingS3Helper.builder()
+      .endpoint(s3Endpoint)
+      .bucket(s3Bucket)
+      .region(s3Region)
+      .credentialsProviders(util.List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3AccessKey, s3SecretKey))))
+      .isForcePathStyle(forcePathStyle)
+      .tagging(tagging)
+      .needPrintToConsole(true)
       .build()
-
-    S3Utils.checkS3Access(context)
+    pingS3Helper.pingS3()
   }
 
 
