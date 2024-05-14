@@ -2717,8 +2717,7 @@ class ReplicaManager(val config: KafkaConfig,
         def doPartitionDeletion(): Unit = {
           stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
           deletes.forKeyValue((tp, _) => {
-            val opCf = doPartitionDeletionAsyncLocked(tp)
-            opCf.thenAccept(_ => getTopicDelta(tp.topic(), newImage, delta).foreach(callback(_, tp.partition())))
+            val opCf = doPartitionDeletionAsyncLocked(tp, delta, newImage, callback)
             opCfList.add(opCf)
           })
         }
@@ -2799,6 +2798,10 @@ class ReplicaManager(val config: KafkaConfig,
    * @return A future which completes when the partition has been deleted.
    */
   private def doPartitionDeletionAsyncLocked(tp: TopicPartition): CompletableFuture[Void] = {
+    doPartitionDeletionAsyncLocked(tp, null, null, (_, _) => {})
+  }
+
+  private def doPartitionDeletionAsyncLocked(tp: TopicPartition, delta: TopicsDelta, newImage: MetadataImage, callback: (TopicDelta, Int) => Unit): CompletableFuture[Void] = {
     val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
     val opCf = new CompletableFuture[Void]()
     partitionOpMap.put(tp, opCf)
@@ -2816,6 +2819,9 @@ class ReplicaManager(val config: KafkaConfig,
               stateChangeLogger.error(s"Unable to delete replica $topicPartition because " +
                 s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
             }
+          }
+          if (newImage != null && delta != null) {
+            getTopicDelta(tp.topic(), newImage, delta).foreach(callback(_, tp.partition()))
           }
         } finally {
           opCf.complete(null)
