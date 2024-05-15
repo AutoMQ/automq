@@ -1025,6 +1025,20 @@ class ElasticReplicaManager(
         }
 
         doPartitionDeletion()
+
+        // Clean up the consumption offset for the deleted partitions that do not belong to the current broker.
+        delta.deletedTopicIds().forEach { id =>
+          val topicImage = delta.image().getTopic(id)
+          topicImage.partitions().entrySet().forEach { entry => {
+            val partitionId = entry.getKey
+            val partition = entry.getValue
+            if (partition.leader != config.nodeId) {
+              callback(new TopicPartition(topicImage.name(), partitionId))
+            }
+          }
+          }
+        }
+
       }
 
       // Handle partitions which we are now the leader or follower for.
