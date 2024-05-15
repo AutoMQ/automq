@@ -97,9 +97,9 @@ public class MetricsWrapperTest {
             count.incrementAndGet();
             latch.countDown();
         }, 3000, TimeUnit.MILLISECONDS);
-        Assertions.assertEquals(10000, histogram.count());
+        Assertions.assertEquals(10000, histogram.cumulativeCount());
         // sum from 1 to 10000
-        Assertions.assertEquals(50005000, histogram.sum());
+        Assertions.assertEquals(50005000, histogram.cumulativeSum());
         Assertions.assertEquals(1, histogram.min());
         Assertions.assertEquals(10000, histogram.max());
         double p99 = histogram.p99();
@@ -119,10 +119,10 @@ public class MetricsWrapperTest {
 
         // next round
         latch.await();
-        Assertions.assertEquals(20000, histogram.count());
+        Assertions.assertEquals(20000, histogram.cumulativeCount());
         // sum from 1 to 20000
-        Assertions.assertEquals(200010000, histogram.sum());
-        Assertions.assertEquals(1, histogram.min());
+        Assertions.assertEquals(200010000, histogram.cumulativeSum());
+        Assertions.assertEquals(0, histogram.min());
         Assertions.assertEquals(20000, histogram.max());
         p99 = histogram.p99();
         // estimated 99th percentile from 10001 to 20000, expected: 19900, allowed precision: 1000

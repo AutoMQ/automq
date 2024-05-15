@@ -30,11 +30,11 @@ public class HistogramMetric extends ConfigurableMetric {
     }
 
     public long count() {
-        return deltaHistogram.count();
+        return deltaHistogram.cumulativeCount();
     }
 
     public long sum() {
-        return deltaHistogram.sum();
+        return deltaHistogram.cumulativeSum();
     }
 
     public double p50() {
