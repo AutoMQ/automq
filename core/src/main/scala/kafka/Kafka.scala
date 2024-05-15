@@ -17,8 +17,8 @@
 
 package kafka
 
-import com.automq.s3shell.sdk.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
-import com.automq.s3shell.sdk.model.S3Url
+import com.automq.shell.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
+import com.automq.shell.model.S3Url
 
 import java.util.Properties
 import com.automq.stream.s3.ByteBufAlloc

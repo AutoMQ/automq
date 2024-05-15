@@ -16,8 +16,8 @@
  */
 package org.apache.kafka.tools.automq;
 
-import com.automq.s3shell.sdk.model.S3Url;
-import com.automq.s3shell.sdk.util.S3PropUtil;
+import com.automq.shell.model.S3Url;
+import com.automq.shell.util.S3PropUtil;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -31,9 +31,9 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import static com.automq.s3shell.sdk.util.S3PropUtil.BROKER_PROPS_PATH;
-import static com.automq.s3shell.sdk.util.S3PropUtil.CONTROLLER_PROPS_PATH;
-import static com.automq.s3shell.sdk.util.S3PropUtil.SERVER_PROPS_PATH;
+import static com.automq.shell.util.S3PropUtil.BROKER_PROPS_PATH;
+import static com.automq.shell.util.S3PropUtil.CONTROLLER_PROPS_PATH;
+import static com.automq.shell.util.S3PropUtil.SERVER_PROPS_PATH;
 
 class GenerateConfigFileCmdTest {
 

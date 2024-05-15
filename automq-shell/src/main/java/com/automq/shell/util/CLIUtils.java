@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.cli;
+package com.automq.shell.util;
 
 import java.util.Collections;
 import org.apache.kafka.clients.ApiVersions;
@@ -25,7 +25,7 @@ import org.apache.kafka.common.network.Selector;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 
-public class Utils {
+public class CLIUtils {
     public static NetworkClient buildNetworkClient(
         String prefix,
         AdminClientConfig config,

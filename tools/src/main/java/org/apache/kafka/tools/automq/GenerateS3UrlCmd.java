@@ -16,7 +16,7 @@
  */
 package org.apache.kafka.tools.automq;
 
-import com.automq.s3shell.sdk.model.EndpointProtocol;
+import com.automq.shell.model.EndpointProtocol;
 import com.automq.stream.utils.PingS3Helper;
 
 import java.util.List;
