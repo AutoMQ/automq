@@ -288,7 +288,7 @@ public class Defaults {
     public static final int S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT = 10000;
     public static final long S3_OBJECT_DELETE_RETENTION_MINUTES = 5; // 5min
     public static final long S3_NETWORK_BASELINE_BANDWIDTH = 100 * 1024 * 1024; // 100MB/s
-    public static final int S3_REFILL_PERIOD_MS = 1000; // 1s
+    public static final int S3_REFILL_PERIOD_MS = 10; // 10ms
     public static final int S3_METRICS_EXPORTER_REPORT_INTERVAL_MS = 30000; // 30s
     public static final int S3_SPAN_SCHEDULED_DELAY_MS = 1000; // 1s
     public static final int S3_SPAN_MAX_QUEUE_SIZE = 5120;

@@ -82,10 +82,15 @@ public class DefaultS3Client implements Client {
         String endpoint = kafkaConfig.s3Endpoint();
         String region = kafkaConfig.s3Region();
         String bucket = kafkaConfig.s3Bucket();
+        long refillToken = (long) (config.networkBaselineBandwidth() * ((double) config.refillPeriodMs() / 1000));
+        if (refillToken <= 0) {
+            throw new IllegalArgumentException(String.format("refillToken must be greater than 0, bandwidth: %d, refill period: %dms",
+                    config.networkBaselineBandwidth(), config.refillPeriodMs()));
+        }
         networkInboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND,
-                config.networkBaselineBandwidth(), config.refillPeriodMs());
+                refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
-                config.networkBaselineBandwidth(), config.refillPeriodMs());
+                refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
         boolean forcePathStyle = this.config.forcePathStyle();
         // check s3 availability
