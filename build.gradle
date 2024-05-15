@@ -907,7 +907,7 @@ project(':core') {
     implementation project(':raft')
     implementation project(':storage')
     implementation project(':server')
-    implementation project(':kshell-sdk')
+    implementation project(':automq-shell')
 
     implementation libs.argparse4j
     implementation libs.commonsValidator
@@ -1168,8 +1168,8 @@ project(':core') {
     from(project(':tools').configurations.runtimeClasspath) { into("libs/") }
     from(project(':trogdor').jar) { into("libs/") }
     from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
-    from(project(':kshell-sdk').jar) { into("libs/") }
-    from(project(':kshell-sdk').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':automq-shell').jar) { into("libs/") }
+    from(project(':automq-shell').configurations.runtimeClasspath) { into("libs/") }
     from(project(':shell').jar) { into("libs/") }
     from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
     from(project(':connect:api').jar) { into("libs/") }
@@ -1260,7 +1260,7 @@ project(':metadata') {
     implementation project(':server-common')
     implementation project(':clients')
     implementation project(':raft')
-    implementation project(':kshell-sdk')
+    implementation project(':automq-shell')
 
     implementation libs.metrics
     implementation libs.nettyCommon
@@ -1958,18 +1958,6 @@ project(':storage') {
   }
 }
 
-project(':kshell-sdk') {
-  archivesBaseName = "kshell-sdk"
-
-  checkstyle {
-    configProperties = checkstyleConfigProperties("import-control-automq.xml")
-  }
-
-  dependencies {
-    compileOnly libs.awsSdkAuth
-  }
-}
-
 project(':s3stream') {
   archivesBaseName = "s3stream"
 
@@ -2098,7 +2086,7 @@ project(':tools') {
     implementation (project(':log4j-appender')){
       exclude group: 'org.slf4j', module: '*'
     }
-    implementation project(':kshell-sdk')
+    implementation project(':automq-shell')
 
     implementation project(':storage')
     implementation project(':connect:runtime')

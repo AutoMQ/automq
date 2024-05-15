@@ -9,16 +9,16 @@
  * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.cli.command;
+package com.automq.shell.command;
 
+import com.automq.shell.AutoMQCLI;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
-import org.apache.kafka.cli.AutoMQCLI;
-import org.apache.kafka.cli.Utils;
-import org.apache.kafka.cli.stream.ClientStreamManager;
+import com.automq.shell.util.CLIUtils;
+import com.automq.shell.stream.ClientStreamManager;
 import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -53,7 +53,7 @@ public class Stream {
             return 1;
         }
 
-        NetworkClient client = Utils.buildNetworkClient("automq-cli", new AdminClientConfig(new Properties()), new Metrics(), Time.SYSTEM, new LogContext());
+        NetworkClient client = CLIUtils.buildNetworkClient("automq-cli", new AdminClientConfig(new Properties()), new Metrics(), Time.SYSTEM, new LogContext());
         ClientStreamManager manager = new ClientStreamManager(client);
         List<StreamMetadata> metadataList = manager.getOpeningStreams(nodeOptional.get(), System.currentTimeMillis(), false);
         for (StreamMetadata metadata : metadataList) {

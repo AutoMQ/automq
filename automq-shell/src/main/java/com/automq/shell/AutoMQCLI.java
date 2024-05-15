@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.cli;
+package com.automq.shell;
 
-import org.apache.kafka.cli.command.Stream;
+import com.automq.shell.command.Stream;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "automq-cli", mixinStandardHelpOptions = true, version = "automq-cli 1.0",

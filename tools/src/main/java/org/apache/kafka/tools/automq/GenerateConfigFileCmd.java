@@ -16,9 +16,9 @@
  */
 package org.apache.kafka.tools.automq;
 
-import com.automq.s3shell.sdk.constant.ServerConfigKey;
-import com.automq.s3shell.sdk.model.S3Url;
-import com.automq.s3shell.sdk.util.S3PropUtil;
+import com.automq.shell.constant.ServerConfigKey;
+import com.automq.shell.model.S3Url;
+import com.automq.shell.util.S3PropUtil;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,9 +29,9 @@ import net.sourceforge.argparse4j.inf.Subparser;
 import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 import org.apache.kafka.tools.automq.util.ConfigParserUtil;
 
-import static com.automq.s3shell.sdk.util.S3PropUtil.BROKER_PROPS_PATH;
-import static com.automq.s3shell.sdk.util.S3PropUtil.CONTROLLER_PROPS_PATH;
-import static com.automq.s3shell.sdk.util.S3PropUtil.SERVER_PROPS_PATH;
+import static com.automq.shell.util.S3PropUtil.BROKER_PROPS_PATH;
+import static com.automq.shell.util.S3PropUtil.CONTROLLER_PROPS_PATH;
+import static com.automq.shell.util.S3PropUtil.SERVER_PROPS_PATH;
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_CONFIG_PROPERTIES_CMD;
 import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_S3_URL_CMD;

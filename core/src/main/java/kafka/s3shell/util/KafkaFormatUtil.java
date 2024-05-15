@@ -10,7 +10,7 @@
  */
 package kafka.s3shell.util;
 
-import com.automq.s3shell.sdk.util.S3PropUtil;
+import com.automq.shell.util.S3PropUtil;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

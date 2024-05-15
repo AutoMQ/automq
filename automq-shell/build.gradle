@@ -5,11 +5,20 @@ plugins {
 group = 'org.apache.kafka'
 version = '3.8.0-SNAPSHOT'
 
+project(':automq-shell') {
+    archivesBaseName = "automq-shell"
+}
+
+checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-automq.xml")
+}
+
 repositories {
     mavenCentral()
 }
 
 dependencies {
+    compileOnly libs.awsSdkAuth
     implementation 'info.picocli:picocli:4.7.6'
     implementation(project(':s3stream')) {
         exclude(group: 'io.opentelemetry', module: '*')
