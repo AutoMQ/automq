@@ -18,6 +18,7 @@ import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService;
 import org.apache.kafka.tools.automq.perf.TopicService;
+import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,7 +48,7 @@ public class PerfCommand implements AutoCloseable {
         TimerUtil timer = new TimerUtil();
 
         LOGGER.info("Creating topics...");
-        List<String> topics = topicService.createTopics(config.topicsConfig());
+        List<Topic> topics = topicService.createTopics(config.topicsConfig());
         LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating consumers...");
@@ -61,7 +62,7 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Waiting for topics are ready...");
-        int sent = producerService.probeProducers();
+        int sent = producerService.probe();
         // TODO
     }
 

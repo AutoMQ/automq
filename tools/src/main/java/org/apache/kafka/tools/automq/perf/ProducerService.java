@@ -11,14 +11,20 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.util.Base64;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,9 +41,9 @@ public class ProducerService implements AutoCloseable {
      * @param config producer configuration
      * @return number of producers created
      */
-    public int createProducers(List<String> topics, ProducersConfig config) {
+    public int createProducers(List<Topic> topics, ProducersConfig config) {
         int count = 0;
-        for (String topic : topics) {
+        for (Topic topic : topics) {
             for (int i = 0; i < config.producersPerTopic; i++) {
                 Producer producer = createProducer(topic, config);
                 producers.add(producer);
@@ -47,7 +53,7 @@ public class ProducerService implements AutoCloseable {
         return count;
     }
 
-    private Producer createProducer(String topic, ProducersConfig config) {
+    private Producer createProducer(Topic topic, ProducersConfig config) {
         Properties properties = new Properties();
         properties.putAll(config.producerConfigs);
         properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
@@ -57,19 +63,19 @@ public class ProducerService implements AutoCloseable {
     }
 
     /**
-     * Send a message to each producer to ensure they are all up and running.
+     * Send a message to each partition of each topic to ensure that the topic is created.
      * It throws an exception if any of the producers fail to send the message.
      * NOT thread-safe.
      *
      * @return number of messages sent
      */
-    public int probeProducers() {
-        CompletableFuture.allOf(
-            producers.stream()
-                .map(p -> p.sendAsync("key", new byte[42]))
-                .toArray(CompletableFuture[]::new)
-        ).join();
-        return producers.size();
+    public int probe() {
+        List<CompletableFuture<Void>> futures = producers.stream()
+            .map(Producer::probe)
+            .flatMap(List::stream)
+            .collect(Collectors.toList());
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        return futures.size();
     }
 
     @Override
@@ -90,19 +96,66 @@ public class ProducerService implements AutoCloseable {
     }
 
     static class Producer implements AutoCloseable {
-        private final KafkaProducer<String, byte[]> producer;
-        private final String topic;
 
-        public Producer(KafkaProducer<String, byte[]> producer, String topic) {
+        private static final String[] PRESET_KEYS = new String[16384];
+
+        static {
+            byte[] buffer = new byte[7];
+            Random random = new Random();
+            for (int i = 0; i < PRESET_KEYS.length; i++) {
+                random.nextBytes(buffer);
+                PRESET_KEYS[i] = Base64.getUrlEncoder().withoutPadding().encodeToString(buffer);
+            }
+        }
+
+        private final Random random = ThreadLocalRandom.current();
+
+        private final KafkaProducer<String, byte[]> producer;
+
+        private final Topic topic;
+
+        private int partitionIndex = 0;
+
+        public Producer(KafkaProducer<String, byte[]> producer, Topic topic) {
             this.producer = producer;
             this.topic = topic;
         }
 
         /**
-         * Send a message to the topic. The key is optional.
+         * Send the payload to a random partition with a random key.
+         * NOT thread-safe.
          */
-        public CompletableFuture<Void> sendAsync(String key, byte[] payload) {
-            ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic, key, payload);
+        public CompletableFuture<Void> sendAsync(byte[] payload) {
+            return sendAsync(nextKey(), payload, nextPartition());
+        }
+
+        private int nextPartition() {
+            return partitionIndex++ % topic.partitions;
+        }
+
+        private String nextKey() {
+            return PRESET_KEYS[random.nextInt(PRESET_KEYS.length)];
+        }
+
+        /**
+         * Send a message to each partition.
+         */
+        public List<CompletableFuture<Void>> probe() {
+            return IntStream.range(0, topic.partitions)
+                .mapToObj(i -> sendAsync("probe", new byte[42], i))
+                .collect(Collectors.toList());
+        }
+
+        /**
+         * Send a message to the topic.
+         *
+         * @param key       the key of the message, optional
+         * @param payload   the payload of the message
+         * @param partition the partition to send the message to, optional
+         * @return a future that completes when the message is sent
+         */
+        private CompletableFuture<Void> sendAsync(String key, byte[] payload, Integer partition) {
+            ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload);
             CompletableFuture<Void> future = new CompletableFuture<>();
             producer.send(record, (metadata, exception) -> {
                 if (exception != null) {

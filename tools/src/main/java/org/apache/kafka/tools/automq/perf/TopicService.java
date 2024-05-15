@@ -11,7 +11,6 @@
 
 package org.apache.kafka.tools.automq.perf;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -39,14 +38,16 @@ public class TopicService implements AutoCloseable {
      * Create topics with the given configuration.
      * Note: If the topic already exists, it will not be created again.
      */
-    public List<String> createTopics(TopicsConfig config) {
+    public List<Topic> createTopics(TopicsConfig config) {
         List<NewTopic> newTopics = IntStream.range(0, config.topics)
             .mapToObj(i -> generateTopicName(config.topicPrefix, config.partitionsPerTopic, i))
             .map(name -> new NewTopic(name, config.partitionsPerTopic, (short) 1).configs(config.topicConfigs))
             .collect(Collectors.toList());
         CreateTopicsResult topics = client.createTopics(newTopics);
         topics.values().forEach(this::waitTopicCreated);
-        return new ArrayList<>(topics.values().keySet());
+        return topics.values().keySet().stream()
+            .map(name -> new Topic(name, config.partitionsPerTopic))
+            .collect(Collectors.toList());
     }
 
     /**
@@ -84,6 +85,16 @@ public class TopicService implements AutoCloseable {
             this.topics = topics;
             this.partitionsPerTopic = partitionsPerTopic;
             this.topicConfigs = topicConfigs;
+        }
+    }
+
+    public static class Topic {
+        final String name;
+        final int partitions;
+
+        public Topic(String name, int partitions) {
+            this.name = name;
+            this.partitions = partitions;
         }
     }
 

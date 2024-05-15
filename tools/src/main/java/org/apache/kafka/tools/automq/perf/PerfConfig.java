@@ -19,6 +19,9 @@ import net.sourceforge.argparse4j.helper.HelpScreenException;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
+import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
+import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
+import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
 
 public class PerfConfig {
     final String bootstrapServer;
@@ -170,8 +173,8 @@ public class PerfConfig {
         return bootstrapServer;
     }
 
-    public TopicService.TopicsConfig topicsConfig() {
-        return new TopicService.TopicsConfig(
+    public TopicsConfig topicsConfig() {
+        return new TopicsConfig(
             topicPrefix,
             topics,
             partitionsPerTopic,
@@ -179,16 +182,16 @@ public class PerfConfig {
         );
     }
 
-    public ProducerService.ProducersConfig producersConfig() {
-        return new ProducerService.ProducersConfig(
+    public ProducersConfig producersConfig() {
+        return new ProducersConfig(
             bootstrapServer,
             producersPerTopic,
             producerConfigs
         );
     }
 
-    public ConsumerService.ConsumersConfig consumersConfig() {
-        return new ConsumerService.ConsumersConfig(
+    public ConsumersConfig consumersConfig() {
+        return new ConsumersConfig(
             bootstrapServer,
             groupsPerTopic,
             consumersPerGroup,

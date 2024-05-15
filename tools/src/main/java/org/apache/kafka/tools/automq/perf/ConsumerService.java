@@ -23,6 +23,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +42,9 @@ public class ConsumerService implements AutoCloseable {
      * @param callback callback to be called when a message is received
      * @return the number of consumers created
      */
-    public int createConsumers(List<String> topics, ConsumersConfig config, ConsumerCallback callback) {
+    public int createConsumers(List<Topic> topics, ConsumersConfig config, ConsumerCallback callback) {
         int count = 0;
-        for (String topic : topics) {
+        for (Topic topic : topics) {
             for (int g = 0; g < config.groupsPerTopic; g++) {
                 String groupId = String.format("sub-%s-%03d", topic, g);
                 for (int c = 0; c < config.consumersPerGroup; c++) {
@@ -56,7 +57,7 @@ public class ConsumerService implements AutoCloseable {
         return count;
     }
 
-    private static Consumer createConsumer(String topic, String groupId,
+    private static Consumer createConsumer(Topic topic, String groupId,
         ConsumersConfig config, ConsumerCallback callback) {
         Properties properties = new Properties();
         properties.putAll(config.consumerConfigs);
@@ -64,7 +65,7 @@ public class ConsumerService implements AutoCloseable {
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 
         KafkaConsumer<String, byte[]> kafkaConsumer = new KafkaConsumer<>(properties);
-        kafkaConsumer.subscribe(List.of(topic));
+        kafkaConsumer.subscribe(List.of(topic.name));
         // start polling
         return new Consumer(kafkaConsumer, callback);
     }
