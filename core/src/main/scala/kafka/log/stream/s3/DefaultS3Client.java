@@ -11,8 +11,8 @@
 
 package kafka.log.stream.s3;
 
-import com.automq.s3shell.sdk.auth.CredentialsProviderHolder;
-import com.automq.s3shell.sdk.auth.EnvVariableCredentialsProvider;
+import com.automq.shell.auth.CredentialsProviderHolder;
+import com.automq.shell.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.StreamClient;

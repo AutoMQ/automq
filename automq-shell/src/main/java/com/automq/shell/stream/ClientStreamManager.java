@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.cli.stream;
+package com.automq.shell.stream;
 
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;

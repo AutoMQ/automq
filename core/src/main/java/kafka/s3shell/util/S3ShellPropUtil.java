@@ -10,9 +10,9 @@
  */
 package kafka.s3shell.util;
 
-import com.automq.s3shell.sdk.constant.ServerConfigKey;
-import com.automq.s3shell.sdk.model.S3Url;
-import com.automq.s3shell.sdk.util.S3PropUtil;
+import com.automq.shell.constant.ServerConfigKey;
+import com.automq.shell.model.S3Url;
+import com.automq.shell.util.S3PropUtil;
 import java.io.IOException;
 import java.util.List;
 import java.util.Properties;

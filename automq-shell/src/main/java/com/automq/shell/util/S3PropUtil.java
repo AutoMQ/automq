@@ -8,7 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-package com.automq.s3shell.sdk.util;
+package com.automq.shell.util;
 
 import java.io.File;
 import java.io.IOException;

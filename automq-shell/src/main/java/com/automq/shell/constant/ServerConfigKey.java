@@ -8,7 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-package com.automq.s3shell.sdk.constant;
+package com.automq.shell.constant;
 
 public enum ServerConfigKey {
 
