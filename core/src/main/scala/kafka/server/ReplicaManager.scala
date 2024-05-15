@@ -60,8 +60,8 @@ import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicDelta, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.server.common.MetadataVersion._
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants._
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants.{FETCH_EXECUTOR_DELAYED_NAME, FETCH_EXECUTOR_FAST_NAME, FETCH_EXECUTOR_SLOW_NAME, FETCH_LIMITER_FAST_NAME, FETCH_LIMITER_SLOW_NAME}
 
 import java.io.File
 import java.nio.file.{Files, Paths}
@@ -69,7 +69,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import java.util.concurrent.locks.Lock
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent._
 import java.util.function.Consumer
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Map, Seq, Set, mutable}
@@ -2682,7 +2682,7 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   def applyDelta(delta: TopicsDelta, newImage: MetadataImage): Unit = {
-    asyncApplyDelta(delta, newImage, (_, _) => {}).get()
+    asyncApplyDelta(delta, newImage, _ => {}).get()
   }
 
   def getTopicDelta(topicName: String, newImage: MetadataImage, delta: TopicsDelta): Option[TopicDelta] = {
@@ -2700,7 +2700,7 @@ class ReplicaManager(val config: KafkaConfig,
    * @param delta           The delta to apply.
    * @param newImage        The new metadata image.
    */
-  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage, callback: (TopicDelta, Int) => Unit): CompletableFuture[Void] = {
+  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage, callback: TopicPartition => Unit): CompletableFuture[Void] = {
     // Before taking the lock, compute the local changes
     val localChanges = delta.localChanges(config.nodeId)
 
@@ -2717,7 +2717,7 @@ class ReplicaManager(val config: KafkaConfig,
         def doPartitionDeletion(): Unit = {
           stateChangeLogger.info(s"Deleting ${deletes.size} partition(s).")
           deletes.forKeyValue((tp, _) => {
-            val opCf = doPartitionDeletionAsyncLocked(tp, delta, newImage, callback)
+            val opCf = doPartitionDeletionAsyncLocked(tp, callback)
             opCfList.add(opCf)
           })
         }
@@ -2747,7 +2747,7 @@ class ReplicaManager(val config: KafkaConfig,
                     leader += (tp -> info)
                     applyLocalLeadersDelta(changedPartitions, delta, lazyOffsetCheckpoints, leader)
                     // Apply the delta before elect leader.
-                    getTopicDelta(tp.topic(), newImage, delta).foreach(callback(_, tp.partition()))
+                    callback(tp)
                   } catch {
                     case t: Throwable => stateChangeLogger.error(s"Transitioning partition(s) fail: $localChanges", t)
                   } finally {
@@ -2798,10 +2798,10 @@ class ReplicaManager(val config: KafkaConfig,
    * @return A future which completes when the partition has been deleted.
    */
   private def doPartitionDeletionAsyncLocked(tp: TopicPartition): CompletableFuture[Void] = {
-    doPartitionDeletionAsyncLocked(tp, null, null, (_, _) => {})
+    doPartitionDeletionAsyncLocked(tp, _ => {})
   }
 
-  private def doPartitionDeletionAsyncLocked(tp: TopicPartition, delta: TopicsDelta, newImage: MetadataImage, callback: (TopicDelta, Int) => Unit): CompletableFuture[Void] = {
+  private def doPartitionDeletionAsyncLocked(tp: TopicPartition, callback: TopicPartition => Unit): CompletableFuture[Void] = {
     val prevOp = partitionOpMap.getOrDefault(tp, CompletableFuture.completedFuture(null))
     val opCf = new CompletableFuture[Void]()
     partitionOpMap.put(tp, opCf)
@@ -2820,9 +2820,7 @@ class ReplicaManager(val config: KafkaConfig,
                 s"we got an unexpected ${e.getClass.getName} exception: ${e.getMessage}")
             }
           }
-          if (newImage != null && delta != null) {
-            getTopicDelta(tp.topic(), newImage, delta).foreach(callback(_, tp.partition()))
-          }
+          callback(tp)
         } finally {
           opCf.complete(null)
           partitionOpMap.remove(tp, opCf)
