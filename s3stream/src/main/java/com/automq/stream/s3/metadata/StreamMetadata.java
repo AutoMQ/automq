@@ -11,23 +11,32 @@
 
 package com.automq.stream.s3.metadata;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class StreamMetadata {
     private long streamId;
     private long epoch;
     private long startOffset;
     private long endOffset;
     private StreamState state;
+    private Map<String, String> tagMap;
 
     @SuppressWarnings("unused")
     public StreamMetadata() {
     }
 
     public StreamMetadata(long streamId, long epoch, long startOffset, long endOffset, StreamState state) {
+        new StreamMetadata(streamId, epoch, startOffset, endOffset, state, new HashMap<>());
+    }
+
+    public StreamMetadata(long streamId, long epoch, long startOffset, long endOffset, StreamState state, Map<String, String> tagMap) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
         this.state = state;
+        this.tagMap = tagMap;
     }
 
     public long streamId() {
@@ -68,6 +77,14 @@ public class StreamMetadata {
 
     public void state(StreamState state) {
         this.state = state;
+    }
+
+    public Map<String, String> tagMap() {
+        return tagMap;
+    }
+
+    public void setTagMap(Map<String, String> tagMap) {
+        this.tagMap = tagMap;
     }
 
     @Override

@@ -17,7 +17,7 @@
   "apiKey": 508,
   "type": "response",
   "name": "GetOpeningStreamsResponse",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -61,7 +61,14 @@
           "type": "int64",
           "versions": "0+",
           "about": "The end offset of the stream"
-        }
+        },
+        { "name": "Tags", "type": "[]Tag", "versions": "1+",
+          "about": "The stream tags.", "fields": [
+          { "name": "Key", "type": "string", "versions": "1+", "mapKey": true,
+            "about": "The tag key." },
+          { "name": "Value", "type": "string", "versions": "1+",
+            "about": "The tag value." }
+        ]}
       ]
     }
   ]

@@ -13,12 +13,9 @@ package com.automq.shell.stream;
 
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
-import com.automq.stream.s3.streams.StreamManager;
 import java.io.IOException;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
@@ -26,46 +23,46 @@ import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.NetworkClientUtils;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.errors.NetworkException;
+import org.apache.kafka.common.message.CloseStreamsRequestData;
+import org.apache.kafka.common.message.CloseStreamsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.utils.Time;
 
-public class ClientStreamManager implements StreamManager {
+public class ClientStreamManager {
 
     private final NetworkClient networkClient;
+    private final Node bootstrapServer;
 
-    public ClientStreamManager(NetworkClient networkClient) {
+    public ClientStreamManager(NetworkClient networkClient, Node bootstrapServer) throws IOException {
         this.networkClient = networkClient;
-    }
-
-    @Override
-    public CompletableFuture<List<StreamMetadata>> getOpeningStreams() {
-        return null;
+        this.bootstrapServer = bootstrapServer;
+        connect(bootstrapServer);
     }
 
     private void connect(Node node) throws IOException {
+        node = new Node(node.id(), node.host(), 9093);
         boolean ready = networkClient.isReady(node, Time.SYSTEM.milliseconds());
         if (ready) {
             return;
         }
 
-        ready = NetworkClientUtils.awaitReady(networkClient, new Node(1, "localhost", 9093), Time.SYSTEM, 1000);
+        ready = NetworkClientUtils.awaitReady(networkClient, node, Time.SYSTEM, 1000);
         if (!ready) {
             throw new NetworkException("Failed to connect to the broker.");
         }
     }
 
     public List<StreamMetadata> getOpeningStreams(Node node, long nodeEpoch, boolean failoverMode) throws IOException {
-        long now = System.currentTimeMillis();
-        connect(node);
-
+        long now = Time.SYSTEM.milliseconds();
         GetOpeningStreamsRequestData data = new GetOpeningStreamsRequestData()
             .setNodeId(node.id())
             .setNodeEpoch(nodeEpoch)
             .setFailoverMode(failoverMode);
-        ClientRequest clientRequest = networkClient.newClientRequest(String.valueOf(node.id()),
+        ClientRequest clientRequest = networkClient.newClientRequest(String.valueOf(bootstrapServer.id()),
             new GetOpeningStreamsRequest.Builder(data), now, true, 3000, null);
 
         ClientResponse response = NetworkClientUtils.sendAndReceive(networkClient, clientRequest, Time.SYSTEM);
@@ -74,40 +71,36 @@ public class ClientStreamManager implements StreamManager {
         Errors code = Errors.forCode(responseData.errorCode());
         if (Objects.requireNonNull(code) == Errors.NONE) {
             return responseData.streamMetadataList().stream()
-                .map(m -> new StreamMetadata(m.streamId(), m.epoch(), m.startOffset(), m.endOffset(), StreamState.OPENED))
+                .map(m -> new StreamMetadata(m.streamId(), m.epoch(), m.startOffset(), m.endOffset(), StreamState.OPENED,
+                    m.tags().stream().collect(Collectors.toMap(GetOpeningStreamsResponseData.Tag::key, GetOpeningStreamsResponseData.Tag::value))))
                 .collect(Collectors.toList());
         }
 
         throw code.exception();
     }
 
-    @Override
-    public CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+    public void closeStream(long streamId, long epoch, int nodeId) throws IOException {
+        long now = Time.SYSTEM.milliseconds();
+        CloseStreamsRequestData.CloseStreamRequest request = new CloseStreamsRequestData.CloseStreamRequest()
+            .setStreamId(streamId)
+            .setStreamEpoch(epoch);
 
-    @Override
-    public CompletableFuture<Long> createStream(Map<String, String> tags) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+        CloseStreamsRequestData data = new CloseStreamsRequestData()
+            .setNodeId(nodeId)
+            .setNodeEpoch(now)
+            .setCloseStreamRequests(List.of(request));
 
-    @Override
-    public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+        ClientRequest clientRequest = networkClient.newClientRequest(String.valueOf(bootstrapServer.id()),
+            new CloseStreamsRequest.Builder(data), now, true, 3000, null);
 
-    @Override
-    public CompletableFuture<Void> trimStream(long streamId, long epoch, long newStartOffset) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+        ClientResponse response = NetworkClientUtils.sendAndReceive(networkClient, clientRequest, Time.SYSTEM);
+        CloseStreamsResponseData responseData = (CloseStreamsResponseData) response.responseBody().data();
 
-    @Override
-    public CompletableFuture<Void> closeStream(long streamId, long epoch) {
-        throw new UnsupportedOperationException("Not implemented");
-    }
+        Errors code = Errors.forCode(responseData.errorCode());
+        if (Objects.requireNonNull(code) == Errors.NONE) {
+            return;
+        }
 
-    @Override
-    public CompletableFuture<Void> deleteStream(long streamId, long epoch) {
-        throw new UnsupportedOperationException("Not implemented");
+        throw code.exception();
     }
 }
