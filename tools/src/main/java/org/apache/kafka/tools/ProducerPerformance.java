@@ -26,14 +26,24 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Arrays;
 import java.util.SplittableRandom;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
+import net.sourceforge.argparse4j.impl.Arguments;
 import net.sourceforge.argparse4j.inf.MutuallyExclusiveGroup;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.DescribeTopicsResult;
+import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -42,11 +52,14 @@ import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
+import org.apache.kafka.common.Cluster;
+import org.apache.kafka.common.Node;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.server.util.ThroughputThrottler;
 import org.apache.kafka.common.utils.Utils;
 
 public class ProducerPerformance {
+    List<Integer> partitionsInBrokers;
 
     public static void main(String[] args) throws Exception {
         ProducerPerformance perf = new ProducerPerformance();
@@ -83,6 +96,35 @@ public class ProducerPerformance {
 
             Properties props = readProps(producerProps, producerConfig, transactionalId, transactionsEnabled);
 
+            boolean unbalance = res.getBoolean("unbalance");
+            if (unbalance) {
+                partitionsInBrokers = new ArrayList<>();
+                try (Admin adminClient = Admin.create(props)) {
+                    DescribeTopicsResult result = adminClient.describeTopics(Collections.singletonList(topicName));
+                    Map<String, TopicDescription> topicDescriptionMap = result.allTopicNames().get();
+                    TopicDescription topicDescription = topicDescriptionMap.get(topicName);
+                    if (!topicDescription.partitions().isEmpty()) {
+                        Node firstBroker = topicDescription.partitions().get(0).leader();
+                        String firstBrokerHostPort = firstBroker.host() + ":" + firstBroker.port();
+                        topicDescription.partitions().forEach(partitionInfo -> {
+                            boolean isInFirstBroker = partitionInfo.replicas().stream()
+                                .anyMatch(node -> (node.host() + ":" + node.port()).equals(firstBrokerHostPort) || node.idString().equals(firstBroker.idString()));
+                            if (isInFirstBroker) {
+                                partitionsInBrokers.add(partitionInfo.partition());
+                            }
+                        });
+                    }
+                } catch (ExecutionException | InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                if (!partitionsInBrokers.isEmpty()) {
+                    String partitionsInBrokersStr = partitionsInBrokers.stream()
+                        .map(String::valueOf)
+                        .collect(Collectors.joining(","));
+                    props.put("partitionsInBrokers", partitionsInBrokersStr);
+                    props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG, CreateUnbalancePartitioner.class.getName());
+                }
+            }
             KafkaProducer<byte[], byte[]> producer = createKafkaProducer(props);
 
             if (transactionsEnabled)
@@ -111,9 +153,12 @@ public class ProducerPerformance {
                     producer.beginTransaction();
                     transactionStartTime = System.currentTimeMillis();
                 }
-
-                record = new ProducerRecord<>(topicName, payload);
-
+                if (unbalance) {
+                    byte[] key = new Date().toString().getBytes(StandardCharsets.UTF_8);
+                    record = new ProducerRecord<>(topicName, key, payload);
+                } else {
+                    record = new ProducerRecord<>(topicName, payload);
+                }
                 long sendStartMs = System.currentTimeMillis();
                 cb = new PerfCallback(sendStartMs, payload.length, stats);
                 producer.send(record, cb);
@@ -332,6 +377,11 @@ public class ProducerPerformance {
                .setDefault(0L)
                .help("The max age of each transaction. The commitTransaction will be called after this time has elapsed. Transactions are only enabled if this value is positive.");
 
+        parser.addArgument("--verifySelfBalancing")
+            .required(false)
+            .dest("unbalance")
+            .action(Arguments.storeTrue())
+            .help("Enable unbalanced message sending. If set, messages will be sent to partitions on the first broker obtained from the topic description.");
 
         return parser;
     }
@@ -486,4 +536,33 @@ public class ProducerPerformance {
         }
     }
 
+    public static class CreateUnbalancePartitioner implements Partitioner {
+        private List<Integer> partitionsInBrokers;
+
+        @Override
+        public void configure(Map<String, ?> configs) {
+            String partitionsInBrokersStr = (String) configs.get("partitionsInBrokers");
+            if (partitionsInBrokersStr == null || partitionsInBrokersStr.isEmpty()) {
+                throw new IllegalArgumentException("The list of partitions in brokers cannot be null or empty.");
+            }
+
+            this.partitionsInBrokers = Arrays.stream(partitionsInBrokersStr.split(","))
+                .map(Integer::parseInt)
+                .collect(Collectors.toList());
+        }
+
+        @Override
+        public int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster) {
+            if (keyBytes == null) {
+                throw new IllegalArgumentException("Key cannot be null");
+            }
+            int numPartitionsInBrokers = partitionsInBrokers.size();
+            int index = Math.abs(key.hashCode()) % numPartitionsInBrokers;
+            return partitionsInBrokers.get(index);
+        }
+
+        @Override
+        public void close() {
+        }
+    }
 }
