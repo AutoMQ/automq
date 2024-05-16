@@ -18,17 +18,24 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
+import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.kafka.tools.automq.perf.UniformRateLimiter.uninterruptibleSleepNs;
 
 public class ProducerService implements AutoCloseable {
 
@@ -36,8 +43,10 @@ public class ProducerService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
 
     private final List<Producer> producers = new LinkedList<>();
+    private final ExecutorService executor = Executors.newCachedThreadPool(ThreadUtils.createThreadFactory("perf-producer", false));
 
-    private UniformRateLimiter rateLimiter;
+    private UniformRateLimiter rateLimiter = new UniformRateLimiter(1.0);
+    private volatile boolean closed = false;
 
     /**
      * Create producers for the given topics.
@@ -85,8 +94,64 @@ public class ProducerService implements AutoCloseable {
         return futures.size();
     }
 
+    /**
+     * Start sending messages using the given payloads at the given rate.
+     */
+    public void start(List<byte[]> payloads, double rate) {
+        adjustRate(rate);
+        int processors = Runtime.getRuntime().availableProcessors();
+        // shard producers across processors
+        int batchSize = Math.max(1, producers.size() / processors);
+        for (int i = 0; i < producers.size(); i += batchSize) {
+            int from = i;
+            int to = Math.min(i + batchSize, producers.size());
+            executor.submit(() -> start(producers.subList(from, to), payloads));
+        }
+    }
+
+    public void adjustRate(double rate) {
+        this.rateLimiter = new UniformRateLimiter(rate);
+    }
+
+    private void start(List<Producer> producers, List<byte[]> payloads) {
+        executor.submit(() -> {
+            try {
+                sendMessages(producers, payloads);
+            } catch (Exception e) {
+                LOGGER.error("Failed to send messages", e);
+            }
+        });
+    }
+
+    private void sendMessages(List<Producer> producers, List<byte[]> payloads) {
+        Random random = ThreadLocalRandom.current();
+        while (!closed) {
+            producers.forEach(
+                p -> sendMessage(p, payloads.get(random.nextInt(payloads.size())))
+            );
+        }
+    }
+
+    private void sendMessage(Producer producer, byte[] payload) {
+        long intendedSendTime = rateLimiter.acquire();
+        uninterruptibleSleepNs(intendedSendTime);
+        producer.sendAsync(payload).exceptionally(e -> {
+            LOGGER.warn("Failed to send message", e);
+            return null;
+        });
+    }
+
     @Override
     public void close() {
+        closed = true;
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+        }
         producers.forEach(Producer::close);
     }
 
@@ -181,14 +246,22 @@ public class ProducerService implements AutoCloseable {
             ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload, headers);
             int size = payload.length;
             CompletableFuture<Void> future = new CompletableFuture<>();
-            producer.send(record, (metadata, exception) -> {
-                callback.messageSent(size, sendTimeNanos, exception);
-                if (exception != null) {
-                    future.completeExceptionally(exception);
-                } else {
-                    future.complete(null);
-                }
-            });
+            try {
+                producer.send(record, (metadata, exception) -> {
+                    callback.messageSent(size, sendTimeNanos, exception);
+                    if (exception != null) {
+                        future.completeExceptionally(exception);
+                    } else {
+                        future.complete(null);
+                    }
+                });
+            } catch (InterruptException e) {
+                // ignore, as we are closing
+                future.completeExceptionally(e);
+            } catch (Exception e) {
+                callback.messageSent(size, sendTimeNanos, e);
+                future.completeExceptionally(e);
+            }
             return future;
         }
 

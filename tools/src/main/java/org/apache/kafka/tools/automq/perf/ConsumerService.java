@@ -23,6 +23,8 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -114,7 +116,7 @@ public class ConsumerService implements AutoCloseable {
 
         public Consumer(KafkaConsumer<String, byte[]> consumer, ConsumerCallback callback) {
             this.consumer = consumer;
-            this.executor = Executors.newSingleThreadExecutor();
+            this.executor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("perf-consumer", false));
             this.task = this.executor.submit(() -> pollRecords(consumer, callback));
         }
 
@@ -126,8 +128,10 @@ public class ConsumerService implements AutoCloseable {
                         long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value()));
                         callback.messageReceived(record.value(), sendTimeNanos);
                     }
+                } catch (InterruptException e) {
+                    // ignore, as we are closing
                 } catch (Exception e) {
-                    LOGGER.error("exception occur while consuming message", e);
+                    LOGGER.warn("exception occur while consuming message", e);
                 }
             }
         }

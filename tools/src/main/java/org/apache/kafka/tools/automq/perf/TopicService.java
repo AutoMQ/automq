@@ -59,7 +59,6 @@ public class TopicService implements AutoCloseable {
             future.get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof TopicExistsException) {
                 LOGGER.debug("Topic already exists. name={}", name);

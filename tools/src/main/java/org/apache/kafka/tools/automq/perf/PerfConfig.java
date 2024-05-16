@@ -24,21 +24,21 @@ import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
 import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
 
 public class PerfConfig {
-    final String bootstrapServer;
-    final Map<String, String> topicConfigs;
-    final Map<String, String> producerConfigs;
-    final Map<String, String> consumerConfigs;
-    final String topicPrefix;
-    final int topics;
-    final int partitionsPerTopic;
-    final int producersPerTopic;
-    final int groupsPerTopic;
-    final int consumersPerGroup;
-    final int recordSize;
-    final int sendRate;
-    final int warmupDurationMinutes;
-    final int testDurationMinutes;
-    final int reportingIntervalSeconds;
+    public final String bootstrapServer;
+    public final Map<String, String> topicConfigs;
+    public final Map<String, String> producerConfigs;
+    public final Map<String, String> consumerConfigs;
+    public final String topicPrefix;
+    public final int topics;
+    public final int partitionsPerTopic;
+    public final int producersPerTopic;
+    public final int groupsPerTopic;
+    public final int consumersPerGroup;
+    public final int recordSize;
+    public final int sendRate;
+    public final int warmupDurationMinutes;
+    public final int testDurationMinutes;
+    public final int reportingIntervalSeconds;
 
     public PerfConfig(String[] args) {
         ArgumentParser parser = parser();

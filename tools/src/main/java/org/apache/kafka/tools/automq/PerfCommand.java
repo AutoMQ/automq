@@ -65,6 +65,11 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Waiting for topics are ready...");
         waitTopicsReady();
         LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+
+        // TODO generate payload
+        List<byte[]> payloads = null;
+        producerService.start(payloads, config.sendRate);
+
         // TODO
     }
 
@@ -105,5 +110,7 @@ public class PerfCommand implements AutoCloseable {
     @Override
     public void close() {
         topicService.close();
+        producerService.close();
+        consumerService.close();
     }
 }
