@@ -90,7 +90,7 @@ s3.region=us-east-1
 # The bucket of S3 service to store data
 s3.bucket=ko3
 ```
-If you're using localstack, make sure to set the s3.endpoint to http://127.0.0.1:4566, not localhost. Set the region to us-east-1. The bucket should match the one created earlier.
+> Tips: If you're using localstack, make sure to set the s3.endpoint to http://127.0.0.1:4566, not localhost. Set the region to us-east-1. The bucket should match the one created earlier.
 
 ### Format
 Generated Cluster UUID:
@@ -110,7 +110,7 @@ bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properti
 | CLI Arguments | config/kraft/server.properties|
 | Environment | KAFKA_S3_ACCESS_KEY=test;KAFKA_S3_SECRET_KEY=test |
 
-> tips: If you are using localstack, just use any value of access key and secret key. If you are using real S3 service, set `KAFKA_S3_ACCESS_KEY` and `KAFKA_S3_SECRET_KEY` to the real access key and secret key that have read/write authority of S3 service.
+> tips: If you are using localstack, just use any value of access key and secret key. If you are using real S3 service, set `KAFKA_S3_ACCESS_KEY` and `KAFKA_S3_SECRET_KEY` to the real access key and secret key that have read/write permission of S3 service.
 
 
 ## Documentation
