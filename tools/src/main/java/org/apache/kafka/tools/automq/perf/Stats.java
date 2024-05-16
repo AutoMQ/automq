@@ -32,7 +32,9 @@ public class Stats {
 
     private static final LongAdder totalMessagesSent = new LongAdder();
     private static final LongAdder totalMessagesSendFailed = new LongAdder();
+    private static final LongAdder totalBytesSent = new LongAdder();
     private static final LongAdder totalMessagesReceived = new LongAdder();
+    private static final LongAdder totalBytesReceived = new LongAdder();
     private static final Histogram totalSendLatencyMicros = new Histogram(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
     private static final Histogram totalEndToEndLatencyMicros = new Histogram(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
 
@@ -42,6 +44,7 @@ public class Stats {
         bytesSent.add(bytes);
         sendLatencyMicros.recordValue(latencyMicros);
         totalMessagesSent.increment();
+        totalBytesSent.add(bytes);
         totalSendLatencyMicros.recordValue(latencyMicros);
     }
 
@@ -56,6 +59,7 @@ public class Stats {
         bytesReceived.add(bytes);
         endToEndLatencyMicros.recordValue(latencyMicros);
         totalMessagesReceived.increment();
+        totalBytesReceived.add(bytes);
         totalEndToEndLatencyMicros.recordValue(latencyMicros);
     }
 
@@ -74,7 +78,9 @@ public class Stats {
         periodStats.endToEndLatencyMicros = endToEndLatencyMicros.getIntervalHistogram();
         periodStats.totalMessagesSent = totalMessagesSent.sum();
         periodStats.totalMessagesSendFailed = totalMessagesSendFailed.sum();
+        periodStats.totalBytesSent = totalBytesSent.sum();
         periodStats.totalMessagesReceived = totalMessagesReceived.sum();
+        periodStats.totalBytesReceived = totalBytesReceived.sum();
         return periodStats;
     }
 
@@ -86,7 +92,9 @@ public class Stats {
         CumulativeStats cumulativeStats = new CumulativeStats();
         cumulativeStats.totalMessagesSent = totalMessagesSent.sum();
         cumulativeStats.totalMessagesSendFailed = totalMessagesSendFailed.sum();
+        cumulativeStats.totalBytesSent = totalBytesSent.sum();
         cumulativeStats.totalMessagesReceived = totalMessagesReceived.sum();
+        cumulativeStats.totalBytesReceived = totalBytesReceived.sum();
         cumulativeStats.totalSendLatencyMicros = totalSendLatencyMicros.copy();
         cumulativeStats.totalEndToEndLatencyMicros = totalEndToEndLatencyMicros.copy();
         return cumulativeStats;
@@ -106,7 +114,9 @@ public class Stats {
         endToEndLatencyMicros.reset();
         cumulativeStats.totalMessagesSent = totalMessagesSent.sumThenReset();
         cumulativeStats.totalMessagesSendFailed = totalMessagesSendFailed.sumThenReset();
+        cumulativeStats.totalBytesSent = totalBytesSent.sumThenReset();
         cumulativeStats.totalMessagesReceived = totalMessagesReceived.sumThenReset();
+        cumulativeStats.totalBytesReceived = totalBytesReceived.sumThenReset();
         cumulativeStats.totalSendLatencyMicros = totalSendLatencyMicros.copy();
         totalSendLatencyMicros.reset();
         cumulativeStats.totalEndToEndLatencyMicros = totalEndToEndLatencyMicros.copy();
@@ -126,13 +136,17 @@ public class Stats {
 
         public long totalMessagesSent;
         public long totalMessagesSendFailed;
+        public long totalBytesSent;
         public long totalMessagesReceived;
+        public long totalBytesReceived;
     }
 
     public static class CumulativeStats {
         public long totalMessagesSent;
         public long totalMessagesSendFailed;
+        public long totalBytesSent;
         public long totalMessagesReceived;
+        public long totalBytesReceived;
         public Histogram totalSendLatencyMicros;
         public Histogram totalEndToEndLatencyMicros;
     }

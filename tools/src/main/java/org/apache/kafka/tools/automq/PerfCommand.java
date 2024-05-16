@@ -13,6 +13,7 @@ package org.apache.kafka.tools.automq;
 
 import com.automq.stream.s3.metrics.TimerUtil;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
@@ -22,6 +23,8 @@ import org.apache.kafka.tools.automq.perf.TopicService;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.kafka.tools.automq.perf.PrintUtil.printAndCollectStats;
 
 public class PerfCommand implements AutoCloseable {
 
@@ -34,6 +37,8 @@ public class PerfCommand implements AutoCloseable {
     private final ProducerService producerService = new ProducerService();
     private final ConsumerService consumerService = new ConsumerService();
     private final Stats stats = new Stats();
+
+    private volatile boolean running = true;
 
     public static void main(String[] args) throws Exception {
         PerfConfig config = new PerfConfig(args);
@@ -66,11 +71,18 @@ public class PerfCommand implements AutoCloseable {
         waitTopicsReady();
         LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
-        // TODO generate payload
-        List<byte[]> payloads = null;
-        producerService.start(payloads, config.sendRate);
+        producerService.start(randomPayloads(config.recordSize), config.sendRate);
 
-        // TODO
+        if (config.warmupDurationMinutes > 0) {
+            LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
+            printAndCollectStats(stats, null, config.reportingIntervalSeconds, config.groupsPerTopic);
+            stats.reset();
+        }
+
+        LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
+        printAndCollectStats(stats, null, config.reportingIntervalSeconds, config.groupsPerTopic);
+
+        running = false;
     }
 
     private void messageSent(int size, long sendTimeNanos, Exception exception) {
@@ -98,13 +110,20 @@ public class PerfCommand implements AutoCloseable {
             try {
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
             }
         }
         if (!ready) {
             throw new RuntimeException("Timeout waiting for topics to be ready");
         }
+        stats.reset();
+    }
+
+    private List<byte[]> randomPayloads(int size) {
+        // TODO more realistic payloads
+        byte[] payload = new byte[size];
+        ThreadLocalRandom.current().nextBytes(payload);
+        return List.of(payload);
     }
 
     @Override
