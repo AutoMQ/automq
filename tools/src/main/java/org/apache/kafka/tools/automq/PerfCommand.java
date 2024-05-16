@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService;
+import org.apache.kafka.tools.automq.perf.Stats;
 import org.apache.kafka.tools.automq.perf.TopicService;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
@@ -27,8 +28,9 @@ public class PerfCommand implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(PerfCommand.class);
     private final PerfConfig config;
     private final TopicService topicService;
-    private final ProducerService producerService;
-    private final ConsumerService consumerService;
+    private final ProducerService producerService = new ProducerService();
+    private final ConsumerService consumerService = new ConsumerService();
+    private final Stats stats = new Stats();
 
     public static void main(String[] args) throws Exception {
         PerfConfig config = new PerfConfig(args);
@@ -40,8 +42,6 @@ public class PerfCommand implements AutoCloseable {
     private PerfCommand(PerfConfig config) {
         this.config = config;
         this.topicService = new TopicService(config.bootstrapServer());
-        this.producerService = new ProducerService();
-        this.consumerService = new ConsumerService();
     }
 
     private void run() {
@@ -52,18 +52,28 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating consumers...");
-        int consumers = consumerService.createConsumers(topics, config.consumersConfig(), (record, timestamp) -> {
-            // TODO
-        });
+        int consumers = consumerService.createConsumers(topics, config.consumersConfig(), this::messageReceived);
         LOGGER.info("Created {} consumers, took {} ms", consumers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating producers...");
-        int producers = producerService.createProducers(topics, config.producersConfig());
+        int producers = producerService.createProducers(topics, config.producersConfig(), this::messageSent);
         LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Waiting for topics are ready...");
         int sent = producerService.probe();
         // TODO
+    }
+
+    private void messageSent(byte[] payload, long sendTimeNanos, Exception exception) {
+        if (exception != null) {
+            stats.messageFailed();
+        } else {
+            stats.messageSent(payload.length, sendTimeNanos);
+        }
+    }
+
+    private void messageReceived(byte[] payload, long sendTimeNanos) {
+        stats.messageReceived(payload.length, sendTimeNanos);
     }
 
     @Override

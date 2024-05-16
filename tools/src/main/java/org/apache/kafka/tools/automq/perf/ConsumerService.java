@@ -27,9 +27,12 @@ import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_SEND_TIME_NANOS;
+
 public class ConsumerService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsumerService.class);
+
     private final List<Consumer> consumers = new LinkedList<>();
 
     /**
@@ -82,9 +85,9 @@ public class ConsumerService implements AutoCloseable {
          * Called when a message is received.
          *
          * @param payload       the received message payload
-         * @param publishTimeMs the time in milliseconds when the message was published
+         * @param sendTimeNanos the time in nanoseconds when the message was sent
          */
-        void messageReceived(byte[] payload, long publishTimeMs);
+        void messageReceived(byte[] payload, long sendTimeNanos);
     }
 
     public static class ConsumersConfig {
@@ -102,7 +105,7 @@ public class ConsumerService implements AutoCloseable {
         }
     }
 
-    static class Consumer {
+    private static class Consumer {
         private static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
         private final KafkaConsumer<String, byte[]> consumer;
         private final ExecutorService executor;
@@ -120,7 +123,8 @@ public class ConsumerService implements AutoCloseable {
                 try {
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
                     for (ConsumerRecord<String, byte[]> record : records) {
-                        callback.messageReceived(record.value(), record.timestamp());
+                        long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value()));
+                        callback.messageReceived(record.value(), sendTimeNanos);
                     }
                 } catch (Exception e) {
                     LOGGER.error("exception occur while consuming message", e);

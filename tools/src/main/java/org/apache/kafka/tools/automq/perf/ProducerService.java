@@ -24,28 +24,34 @@ import java.util.stream.IntStream;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ProducerService implements AutoCloseable {
 
+    public static final String HEADER_KEY_SEND_TIME_NANOS = "send_time_nanos";
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
+
     private final List<Producer> producers = new LinkedList<>();
 
     /**
      * Create producers for the given topics.
      * NOT thread-safe.
      *
-     * @param topics topic names
-     * @param config producer configuration
+     * @param topics   topic names
+     * @param config   producer configuration
+     * @param callback callback to be called when a message is sent
      * @return number of producers created
      */
-    public int createProducers(List<Topic> topics, ProducersConfig config) {
+    public int createProducers(List<Topic> topics, ProducersConfig config, ProducerCallback callback) {
         int count = 0;
         for (Topic topic : topics) {
             for (int i = 0; i < config.producersPerTopic; i++) {
-                Producer producer = createProducer(topic, config);
+                Producer producer = createProducer(topic, config, callback);
                 producers.add(producer);
                 count++;
             }
@@ -53,13 +59,13 @@ public class ProducerService implements AutoCloseable {
         return count;
     }
 
-    private Producer createProducer(Topic topic, ProducersConfig config) {
+    private Producer createProducer(Topic topic, ProducersConfig config, ProducerCallback callback) {
         Properties properties = new Properties();
         properties.putAll(config.producerConfigs);
         properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
 
         KafkaProducer<String, byte[]> kafkaProducer = new KafkaProducer<>(properties);
-        return new Producer(kafkaProducer, topic);
+        return new Producer(kafkaProducer, topic, callback);
     }
 
     /**
@@ -83,6 +89,18 @@ public class ProducerService implements AutoCloseable {
         producers.forEach(Producer::close);
     }
 
+    @FunctionalInterface
+    public interface ProducerCallback {
+        /**
+         * Called when a message is sent.
+         *
+         * @param payload       the sent message payload
+         * @param sendTimeNanos the time in nanoseconds when the message was sent
+         * @param exception     the exception if the message failed to send, or null
+         */
+        void messageSent(byte[] payload, long sendTimeNanos, Exception exception);
+    }
+
     public static class ProducersConfig {
         final String bootstrapServer;
         final int producersPerTopic;
@@ -95,7 +113,7 @@ public class ProducerService implements AutoCloseable {
         }
     }
 
-    static class Producer implements AutoCloseable {
+    private static class Producer implements AutoCloseable {
 
         private static final String[] PRESET_KEYS = new String[16384];
 
@@ -109,16 +127,16 @@ public class ProducerService implements AutoCloseable {
         }
 
         private final Random random = ThreadLocalRandom.current();
-
         private final KafkaProducer<String, byte[]> producer;
-
         private final Topic topic;
+        private final ProducerCallback callback;
 
         private int partitionIndex = 0;
 
-        public Producer(KafkaProducer<String, byte[]> producer, Topic topic) {
+        public Producer(KafkaProducer<String, byte[]> producer, Topic topic, ProducerCallback callback) {
             this.producer = producer;
             this.topic = topic;
+            this.callback = callback;
         }
 
         /**
@@ -155,9 +173,14 @@ public class ProducerService implements AutoCloseable {
          * @return a future that completes when the message is sent
          */
         private CompletableFuture<Void> sendAsync(String key, byte[] payload, Integer partition) {
-            ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload);
+            long sendTimeNanos = System.nanoTime();
+            List<Header> headers = List.of(
+                new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Long.toString(sendTimeNanos).getBytes())
+            );
+            ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload, headers);
             CompletableFuture<Void> future = new CompletableFuture<>();
             producer.send(record, (metadata, exception) -> {
+                callback.messageSent(payload, sendTimeNanos, exception);
                 if (exception != null) {
                     future.completeExceptionally(exception);
                 } else {

@@ -181,6 +181,7 @@ versions += [
   bucket4j:"8.5.0",
   jna:"5.2.0",
   guava:"32.0.1-jre",
+  hdrHistogram:"2.1.12",
   // AutoMQ inject end
 ]
 
@@ -305,4 +306,5 @@ libs += [
   bucket4j: "com.bucket4j:bucket4j-core:$versions.bucket4j",
   jna: "net.java.dev.jna:jna:$versions.jna",
   guava: "com.google.guava:guava:$versions.guava",
+  hdrHistogram: "org.hdrhistogram:HdrHistogram:$versions.hdrHistogram",
 ]
