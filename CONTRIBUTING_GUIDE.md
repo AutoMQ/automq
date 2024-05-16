@@ -54,6 +54,65 @@ Guidelines to common code contributions:
 | Compiling requirements | Scale 2.13 |
 | Running requirements   | JDK 17     |
 
+> Tips: You can refer the [document](https://www.scala-lang.org/download/2.13.12.html) to install Scale 2.13
+
+## Local Debug with IDEA
+
+### Gradle
+
+Build AutoMQ is the same with Apache Kafka. Kafka uses Gradle as its project management tool. The management of Gradle projects is based on scripts written in Groovy syntax, and within the Kafka project, the main project management configuration is found in the build.gradle file located in the root directory, which serves a similar function to the root POM in Maven projects. Gradle also supports configuring a build.gradle for each module separately, but Kafka does not do this; all modules are managed by the build.gradle file in the root directory.
+
+It is not recommended to manually install Gradle. The gradlew script in the root directory will automatically download Gradle for you, and the version is also specified by the gradlew script.
+
+### Build
+```
+./gradlew jar -x test
+```
+
+### Prepare S3 service
+Refer this [doc](https://docs.localstack.cloud/getting-started/installation/) to install localstack to mock a local s3 service or use AWS S3 service directly. 
+
+If you are using localstack then create a bucket with the following command:
+```
+aws s3api create-bucket --bucket ko3 --endpoint=http://127.0.0.1:4566
+```
+### Modify Configuration
+
+Modify the **config/kraft/server.properties** file. The following settings need to be changed:
+
+```
+s3.endpoint=https://s3.amazonaws.com
+
+# The region of S3 service
+# For Aliyun, you have to set the region to aws-global. See https://www.alibabacloud.com/help/zh/oss/developer-reference/use-amazon-s3-sdks-to-access-oss.
+s3.region=us-east-1
+
+# The bucket of S3 service to store data
+s3.bucket=ko3
+```
+If you're using localstack, make sure to set the s3.endpoint to http://127.0.0.1:4566, not localhost. Set the region to us-east-1. The bucket should match the one created earlier.
+
+### Format
+Generated Cluster UUID:
+```
+KAFKA_CLUSTER_ID="$(bin/kafka-storage.sh random-uuid)"
+```
+Format Metadata Catalog:
+```
+bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties
+```
+### IDEA Start Configuration
+| Item            | Value    |
+|------------------------|------------|
+| Main | core/src/main/scala/kafka/Kafka.scala     |
+| ClassPath | -cp automq-for-kafka.core.main |
+| VM Options   | -Xmx1 -Xms1G -server -XX:+UseZGC -XX:MaxDirectMemorySize=2G -Dkafka.logs.dir=logs/ -Dlog4j.configuration=file:config/log4j.properties -Dio.netty.leakDetection.level=paranoid    |
+| CLI Arguments | config/kraft/server.properties|
+| Environment | KAFKA_S3_ACCESS_KEY=test;KAFKA_S3_SECRET_KEY=test |
+
+> tips: If you are using localstack, just use any value of access key and secret key.
+
+
 ## Documentation
 
 We welcome Pull Requests that enhance the grammar, structure, or fix typos in our documentation.
