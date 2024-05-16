@@ -95,11 +95,11 @@ public class ProducerService implements AutoCloseable {
         /**
          * Called when a message is sent.
          *
-         * @param payload       the sent message payload
+         * @param size          the size of the sent message
          * @param sendTimeNanos the time in nanoseconds when the message was sent
          * @param exception     the exception if the message failed to send, or null
          */
-        void messageSent(byte[] payload, long sendTimeNanos, Exception exception);
+        void messageSent(int size, long sendTimeNanos, Exception exception);
     }
 
     public static class ProducersConfig {
@@ -179,9 +179,10 @@ public class ProducerService implements AutoCloseable {
                 new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Long.toString(sendTimeNanos).getBytes())
             );
             ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload, headers);
+            int size = payload.length;
             CompletableFuture<Void> future = new CompletableFuture<>();
             producer.send(record, (metadata, exception) -> {
-                callback.messageSent(payload, sendTimeNanos, exception);
+                callback.messageSent(size, sendTimeNanos, exception);
                 if (exception != null) {
                     future.completeExceptionally(exception);
                 } else {

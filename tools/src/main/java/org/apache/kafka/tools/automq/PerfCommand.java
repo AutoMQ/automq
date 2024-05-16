@@ -68,11 +68,11 @@ public class PerfCommand implements AutoCloseable {
         // TODO
     }
 
-    private void messageSent(byte[] payload, long sendTimeNanos, Exception exception) {
+    private void messageSent(int size, long sendTimeNanos, Exception exception) {
         if (exception != null) {
             stats.messageFailed();
         } else {
-            stats.messageSent(payload.length, sendTimeNanos);
+            stats.messageSent(size, sendTimeNanos);
         }
     }
 
