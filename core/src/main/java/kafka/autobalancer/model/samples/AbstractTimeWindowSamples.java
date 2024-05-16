@@ -56,7 +56,7 @@ public abstract class AbstractTimeWindowSamples {
         return new AbstractInstanceUpdater.Load(isTrusted(), getLatest());
     }
 
-    private Window rollNextWindow() {
+    protected Window rollNextWindow() {
         Window window = new Window(windowCapacity);
         windows.offer(window);
         return window;
@@ -75,10 +75,11 @@ public abstract class AbstractTimeWindowSamples {
     }
 
     protected static class Window {
-        private final double[] values;
-        private final int capacity;
-        private int size;
-        private double sum;
+        protected final double[] values;
+        protected final int capacity;
+        protected int size;
+        protected double sum;
+
         public Window(int capacity) {
             this.capacity = capacity;
             this.values = new double[capacity];
