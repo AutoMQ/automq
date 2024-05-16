@@ -14,7 +14,11 @@ package com.automq.stream.s3.network;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
+import com.automq.stream.utils.LogContext;
 import io.netty.util.concurrent.DefaultThreadFactory;
+import org.slf4j.Logger;
+
+import java.time.Duration;
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Queue;
@@ -28,6 +32,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class AsyncNetworkBandwidthLimiter {
+    private static final Logger LOGGER = new LogContext().logger(AsyncNetworkBandwidthLimiter.class);
     private static final float DEFAULT_EXTRA_TOKEN_RATIO = 0.1f;
     private final Lock lock = new ReentrantLock();
     private final Condition condition = lock.newCondition();
@@ -40,6 +45,8 @@ public class AsyncNetworkBandwidthLimiter {
     private final long extraTokenSize;
     private long availableTokens;
     private long availableExtraTokens;
+    private boolean tokenExhausted = false;
+    private long tokenExhaustedDuration = 0;
 
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs) {
         this(type, tokenSize, refillIntervalMs, tokenSize);
@@ -47,10 +54,10 @@ public class AsyncNetworkBandwidthLimiter {
 
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokens) {
         this.type = type;
-        this.extraTokenSize = (long) (tokenSize * DEFAULT_EXTRA_TOKEN_RATIO);
-        this.tokenSize = tokenSize - extraTokenSize;
+        this.extraTokenSize = (long) (maxTokens * DEFAULT_EXTRA_TOKEN_RATIO);
+        this.tokenSize = (long) (tokenSize * (1 - DEFAULT_EXTRA_TOKEN_RATIO));
         this.availableTokens = this.tokenSize;
-        this.maxTokens = maxTokens;
+        this.maxTokens = (long) (maxTokens * (1 - DEFAULT_EXTRA_TOKEN_RATIO));
         this.queuedCallbacks = new PriorityQueue<>();
         this.refillThreadPool = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"));
         this.callbackThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("callback-thread"));
@@ -63,8 +70,13 @@ public class AsyncNetworkBandwidthLimiter {
                     }
                     while (!queuedCallbacks.isEmpty() && (availableTokens > 0 || availableExtraTokens > 0)) {
                         BucketItem head = queuedCallbacks.poll();
-                        reduceToken(head.size);
-                        availableExtraTokens = Math.max(0, availableExtraTokens - head.size);
+                        if (availableExtraTokens > 0) {
+                            // consume extra tokens
+                            availableExtraTokens = Math.max(0, availableExtraTokens - head.size);
+                        } else {
+                            reduceToken(head.size);
+                        }
+
                         logMetrics(head.size, head.strategy);
                         head.cf.complete(null);
                     }
@@ -78,20 +90,27 @@ public class AsyncNetworkBandwidthLimiter {
         this.refillThreadPool.scheduleAtFixedRate(() -> {
             lock.lock();
             try {
-                availableTokens = Math.min(availableTokens + this.tokenSize, this.tokenSize);
-                if (availableTokens <= 0) {
-                    // provide extra tokens to prevent starvation when available tokens are exhausted
-                    availableExtraTokens = this.extraTokenSize;
+                availableTokens = Math.min(availableTokens + this.tokenSize, this.maxTokens);
+                boolean isExhausted = availableTokens <= 0;
+                if (tokenExhausted && isExhausted) {
+                    tokenExhaustedDuration += refillIntervalMs;
                 } else {
-                    // disable extra tokens when available tokens are sufficient
-                    availableExtraTokens = 0;
+                    tokenExhaustedDuration = 0;
                 }
+                tokenExhausted = isExhausted;
+                if (Duration.ofMillis(tokenExhaustedDuration).compareTo(Duration.ofSeconds(1)) >= 0) {
+                    availableExtraTokens = extraTokenSize;
+                    tokenExhaustedDuration = 0;
+                }
+
                 condition.signalAll();
             } finally {
                 lock.unlock();
             }
         }, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerNetworkLimiterSupplier(type, this::getAvailableTokens, this::getQueueSize);
+        LOGGER.info("AsyncNetworkBandwidthLimiter initialized, type: {}, tokenSize: {}, maxTokens: {}, refillIntervalMs: {}",
+            type.getName(), tokenSize, maxTokens, refillIntervalMs);
     }
 
     public void shutdown() {
@@ -164,7 +183,7 @@ public class AsyncNetworkBandwidthLimiter {
     }
 
     private void reduceToken(long size) {
-        this.availableTokens = Math.max(-tokenSize, availableTokens - size);
+        this.availableTokens = Math.max(-maxTokens, availableTokens - size);
     }
 
     private void logMetrics(long size, ThrottleStrategy strategy) {

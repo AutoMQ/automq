@@ -52,7 +52,7 @@ public class Config {
     private boolean objectLogEnable = false;
     // 100MB/s
     private long networkBaselineBandwidth = 100 * 1024 * 1024;
-    private int refillPeriodMs = 1000;
+    private int refillPeriodMs = 10;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
 
