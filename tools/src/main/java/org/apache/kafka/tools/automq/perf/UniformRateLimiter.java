@@ -71,7 +71,7 @@ public class UniformRateLimiter {
 
     public static void uninterruptibleSleepNs(final long intendedTime) {
         long sleepNs;
-        while ((sleepNs = (intendedTime - System.nanoTime())) > 0) {
+        while ((sleepNs = intendedTime - System.nanoTime()) > 0) {
             LockSupport.parkNanos(sleepNs);
         }
     }

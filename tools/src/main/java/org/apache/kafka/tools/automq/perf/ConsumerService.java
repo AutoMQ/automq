@@ -29,6 +29,7 @@ import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_CHARSET;
 import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_SEND_TIME_NANOS;
 
 public class ConsumerService implements AutoCloseable {
@@ -125,7 +126,7 @@ public class ConsumerService implements AutoCloseable {
                 try {
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
                     for (ConsumerRecord<String, byte[]> record : records) {
-                        long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value()));
+                        long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value(), HEADER_KEY_CHARSET));
                         callback.messageReceived(record.value(), sendTimeNanos);
                     }
                 } catch (InterruptException e) {

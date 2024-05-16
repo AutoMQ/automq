@@ -48,4 +48,21 @@ public class PaddingDecimalFormat extends DecimalFormat {
         }
         return toAppendTo;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null || getClass() != obj.getClass()) {
+            return false;
+        }
+        PaddingDecimalFormat that = (PaddingDecimalFormat) obj;
+        return minimumLength == that.minimumLength;
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * super.hashCode() + minimumLength;
+    }
 }

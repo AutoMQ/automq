@@ -21,22 +21,22 @@ public class Stats {
     private static final long HIGHEST_TRACKABLE_VALUE_MICROS = TimeUnit.SECONDS.toMicros(180);
     private static final int NUMBER_OF_SIGNIFICANT_VALUE_DIGITS = 5;
 
-    private static final LongAdder messagesSent = new LongAdder();
-    private static final LongAdder messagesSendFailed = new LongAdder();
-    private static final LongAdder bytesSent = new LongAdder();
-    private static final Recorder sendLatencyMicros = new Recorder(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+    private final LongAdder messagesSent = new LongAdder();
+    private final LongAdder messagesSendFailed = new LongAdder();
+    private final LongAdder bytesSent = new LongAdder();
+    private final Recorder sendLatencyMicros = new Recorder(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
 
-    private static final LongAdder messagesReceived = new LongAdder();
-    private static final LongAdder bytesReceived = new LongAdder();
-    private static final Recorder endToEndLatencyMicros = new Recorder(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+    private final LongAdder messagesReceived = new LongAdder();
+    private final LongAdder bytesReceived = new LongAdder();
+    private final Recorder endToEndLatencyMicros = new Recorder(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
 
-    private static final LongAdder totalMessagesSent = new LongAdder();
-    private static final LongAdder totalMessagesSendFailed = new LongAdder();
-    private static final LongAdder totalBytesSent = new LongAdder();
-    private static final LongAdder totalMessagesReceived = new LongAdder();
-    private static final LongAdder totalBytesReceived = new LongAdder();
-    private static final Histogram totalSendLatencyMicros = new Histogram(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
-    private static final Histogram totalEndToEndLatencyMicros = new Histogram(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+    private final LongAdder totalMessagesSent = new LongAdder();
+    private final LongAdder totalMessagesSendFailed = new LongAdder();
+    private final LongAdder totalBytesSent = new LongAdder();
+    private final LongAdder totalMessagesReceived = new LongAdder();
+    private final LongAdder totalBytesReceived = new LongAdder();
+    private final Histogram totalSendLatencyMicros = new Histogram(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+    private final Histogram totalEndToEndLatencyMicros = new Histogram(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
 
     public void messageSent(long bytes, long sendTimeNanos) {
         long latencyMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - sendTimeNanos);
@@ -77,10 +77,7 @@ public class Stats {
         periodStats.bytesReceived = bytesReceived.sumThenReset();
         periodStats.endToEndLatencyMicros = endToEndLatencyMicros.getIntervalHistogram();
         periodStats.totalMessagesSent = totalMessagesSent.sum();
-        periodStats.totalMessagesSendFailed = totalMessagesSendFailed.sum();
-        periodStats.totalBytesSent = totalBytesSent.sum();
         periodStats.totalMessagesReceived = totalMessagesReceived.sum();
-        periodStats.totalBytesReceived = totalBytesReceived.sum();
         return periodStats;
     }
 
@@ -135,10 +132,7 @@ public class Stats {
         public Histogram endToEndLatencyMicros;
 
         public long totalMessagesSent;
-        public long totalMessagesSendFailed;
-        public long totalBytesSent;
         public long totalMessagesReceived;
-        public long totalBytesReceived;
     }
 
     public static class CumulativeStats {

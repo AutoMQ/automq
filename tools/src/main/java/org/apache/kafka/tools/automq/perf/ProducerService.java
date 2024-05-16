@@ -11,6 +11,8 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedList;
 import java.util.List;
@@ -39,6 +41,7 @@ import static org.apache.kafka.tools.automq.perf.UniformRateLimiter.uninterrupti
 
 public class ProducerService implements AutoCloseable {
 
+    public static final Charset HEADER_KEY_CHARSET = StandardCharsets.UTF_8;
     public static final String HEADER_KEY_SEND_TIME_NANOS = "send_time_nanos";
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
 
@@ -185,7 +188,7 @@ public class ProducerService implements AutoCloseable {
 
         static {
             byte[] buffer = new byte[7];
-            Random random = new Random();
+            Random random = ThreadLocalRandom.current();
             for (int i = 0; i < PRESET_KEYS.length; i++) {
                 random.nextBytes(buffer);
                 PRESET_KEYS[i] = Base64.getUrlEncoder().withoutPadding().encodeToString(buffer);
@@ -241,7 +244,7 @@ public class ProducerService implements AutoCloseable {
         private CompletableFuture<Void> sendAsync(String key, byte[] payload, Integer partition) {
             long sendTimeNanos = System.nanoTime();
             List<Header> headers = List.of(
-                new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Long.toString(sendTimeNanos).getBytes())
+                new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Long.toString(sendTimeNanos).getBytes(HEADER_KEY_CHARSET))
             );
             ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload, headers);
             int size = payload.length;

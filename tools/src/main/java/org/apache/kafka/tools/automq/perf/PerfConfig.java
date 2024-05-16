@@ -19,6 +19,7 @@ import net.sourceforge.argparse4j.helper.HelpScreenException;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
+import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
 import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
@@ -47,10 +48,10 @@ public class PerfConfig {
         try {
             ns = parser.parseArgs(args);
         } catch (HelpScreenException e) {
-            System.exit(0);
+            Exit.exit(0);
         } catch (ArgumentParserException e) {
             parser.handleError(e);
-            System.exit(1);
+            Exit.exit(1);
         }
 
         bootstrapServer = ns.getString("bootstrapServer");
