@@ -27,7 +27,7 @@ public class StreamMetadata {
     }
 
     public StreamMetadata(long streamId, long epoch, long startOffset, long endOffset, StreamState state) {
-        new StreamMetadata(streamId, epoch, startOffset, endOffset, state, new HashMap<>());
+       this(streamId, epoch, startOffset, endOffset, state, new HashMap<>());
     }
 
     public StreamMetadata(long streamId, long epoch, long startOffset, long endOffset, StreamState state, Map<String, String> tagMap) {
