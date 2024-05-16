@@ -25,7 +25,10 @@ import org.slf4j.LoggerFactory;
 
 public class PerfCommand implements AutoCloseable {
 
+    private static final long TOPIC_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(2);
+
     private static final Logger LOGGER = LoggerFactory.getLogger(PerfCommand.class);
+
     private final PerfConfig config;
     private final TopicService topicService;
     private final ProducerService producerService = new ProducerService();
@@ -60,7 +63,8 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Waiting for topics are ready...");
-        int sent = producerService.probe();
+        waitTopicsReady();
+        LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
         // TODO
     }
 
@@ -74,6 +78,28 @@ public class PerfCommand implements AutoCloseable {
 
     private void messageReceived(byte[] payload, long sendTimeNanos) {
         stats.messageReceived(payload.length, sendTimeNanos);
+    }
+
+    private void waitTopicsReady() {
+        int sent = producerService.probe();
+        long start = System.nanoTime();
+        boolean ready = false;
+        while (System.nanoTime() < start + TOPIC_READY_TIMEOUT_NANOS) {
+            long received = stats.toCumulativeStats().totalMessagesReceived;
+            if (received >= sent) {
+                ready = true;
+                break;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        }
+        if (!ready) {
+            throw new RuntimeException("Timeout waiting for topics to be ready");
+        }
     }
 
     @Override

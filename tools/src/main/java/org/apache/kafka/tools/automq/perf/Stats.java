@@ -61,7 +61,7 @@ public class Stats {
 
     /**
      * Get period stats.
-     * Note: This method resets the internal counters.
+     * Note: This method resets the period counters.
      */
     public PeriodStats toPeriodStats() {
         PeriodStats periodStats = new PeriodStats();
@@ -80,7 +80,7 @@ public class Stats {
 
     /**
      * Get cumulative stats.
-     * Note: There is no side effect on the internal counters.
+     * Note: There is no side effect on any counters.
      */
     public CumulativeStats toCumulativeStats() {
         CumulativeStats cumulativeStats = new CumulativeStats();
@@ -89,6 +89,28 @@ public class Stats {
         cumulativeStats.totalMessagesReceived = totalMessagesReceived.sum();
         cumulativeStats.totalSendLatencyMicros = totalSendLatencyMicros.copy();
         cumulativeStats.totalEndToEndLatencyMicros = totalEndToEndLatencyMicros.copy();
+        return cumulativeStats;
+    }
+
+    /**
+     * Reset all counters and return the cumulative stats.
+     */
+    public CumulativeStats reset() {
+        CumulativeStats cumulativeStats = new CumulativeStats();
+        messagesSent.reset();
+        messagesSendFailed.reset();
+        bytesSent.reset();
+        sendLatencyMicros.reset();
+        messagesReceived.reset();
+        bytesReceived.reset();
+        endToEndLatencyMicros.reset();
+        cumulativeStats.totalMessagesSent = totalMessagesSent.sumThenReset();
+        cumulativeStats.totalMessagesSendFailed = totalMessagesSendFailed.sumThenReset();
+        cumulativeStats.totalMessagesReceived = totalMessagesReceived.sumThenReset();
+        cumulativeStats.totalSendLatencyMicros = totalSendLatencyMicros.copy();
+        totalSendLatencyMicros.reset();
+        cumulativeStats.totalEndToEndLatencyMicros = totalEndToEndLatencyMicros.copy();
+        totalEndToEndLatencyMicros.reset();
         return cumulativeStats;
     }
 
