@@ -33,10 +33,11 @@ import org.slf4j.LoggerFactory;
 public class ProducerService implements AutoCloseable {
 
     public static final String HEADER_KEY_SEND_TIME_NANOS = "send_time_nanos";
-
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
 
     private final List<Producer> producers = new LinkedList<>();
+
+    private UniformRateLimiter rateLimiter;
 
     /**
      * Create producers for the given topics.
