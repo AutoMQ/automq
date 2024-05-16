@@ -27,10 +27,11 @@ public class StreamMetadata {
     }
 
     public StreamMetadata(long streamId, long epoch, long startOffset, long endOffset, StreamState state) {
-       this(streamId, epoch, startOffset, endOffset, state, new HashMap<>());
+        this(streamId, epoch, startOffset, endOffset, state, new HashMap<>());
     }
 
-    public StreamMetadata(long streamId, long epoch, long startOffset, long endOffset, StreamState state, Map<String, String> tagMap) {
+    public StreamMetadata(long streamId, long epoch, long startOffset, long endOffset, StreamState state,
+        Map<String, String> tagMap) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -90,11 +91,11 @@ public class StreamMetadata {
     @Override
     public String toString() {
         return "StreamMetadata{" +
-            "streamId=" + streamId +
-            ", epoch=" + epoch +
-            ", startOffset=" + startOffset +
-            ", endOffset=" + endOffset +
-            ", state=" + state +
-            '}';
+               "streamId=" + streamId +
+               ", epoch=" + epoch +
+               ", startOffset=" + startOffset +
+               ", endOffset=" + endOffset +
+               ", state=" + state +
+               '}';
     }
 }
