@@ -200,6 +200,9 @@ public class PerfConfig {
     }
 
     private Map<String, String> parseConfigs(List<String> configs) {
+        if (configs == null) {
+            return new HashMap<>();
+        }
         Map<String, String> map = new HashMap<>();
         for (String config : configs) {
             String[] parts = config.split("=");
