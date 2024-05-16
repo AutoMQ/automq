@@ -78,7 +78,7 @@ aws s3api create-bucket --bucket ko3 --endpoint=http://127.0.0.1:4566
 ```
 ### Modify Configuration
 
-Modify the **config/kraft/server.properties** file. The following settings need to be changed:
+Modify the `config/kraft/server.properties` file. The following settings need to be changed:
 
 ```
 s3.endpoint=https://s3.amazonaws.com
