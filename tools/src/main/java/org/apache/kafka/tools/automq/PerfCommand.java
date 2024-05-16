@@ -17,6 +17,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
+import org.apache.kafka.tools.automq.perf.PrintUtil.StopOnDuration;
 import org.apache.kafka.tools.automq.perf.ProducerService;
 import org.apache.kafka.tools.automq.perf.Stats;
 import org.apache.kafka.tools.automq.perf.TopicService;
@@ -75,12 +76,12 @@ public class PerfCommand implements AutoCloseable {
 
         if (config.warmupDurationMinutes > 0) {
             LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
-            printAndCollectStats(stats, null, config.reportingIntervalSeconds, config.groupsPerTopic);
+            printAndCollectStats(stats, new StopOnDuration(config.warmupDurationMinutes), config.reportingIntervalSeconds, config.groupsPerTopic);
             stats.reset();
         }
 
         LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
-        printAndCollectStats(stats, null, config.reportingIntervalSeconds, config.groupsPerTopic);
+        printAndCollectStats(stats, new StopOnDuration(config.testDurationMinutes), config.reportingIntervalSeconds, config.groupsPerTopic);
 
         running = false;
     }

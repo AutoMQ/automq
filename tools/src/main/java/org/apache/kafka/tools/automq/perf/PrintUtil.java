@@ -192,4 +192,17 @@ public class PrintUtil {
          */
         boolean shouldStop(long startNanos, long nowNanos);
     }
+
+    public static class StopOnDuration implements StopCondition {
+        private final long durationNanos;
+
+        public StopOnDuration(long durationNanos) {
+            this.durationNanos = durationNanos;
+        }
+
+        @Override
+        public boolean shouldStop(long startNanos, long nowNanos) {
+            return nowNanos - startNanos >= durationNanos;
+        }
+    }
 }
