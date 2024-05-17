@@ -12,12 +12,13 @@
 package org.apache.kafka.tools.automq;
 
 import com.automq.stream.s3.metrics.TimerUtil;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
-import org.apache.kafka.tools.automq.perf.PrintUtil.StopOnDuration;
+import org.apache.kafka.tools.automq.perf.PrintUtil.StopCondition;
 import org.apache.kafka.tools.automq.perf.ProducerService;
 import org.apache.kafka.tools.automq.perf.Stats;
 import org.apache.kafka.tools.automq.perf.TopicService;
@@ -68,7 +69,7 @@ public class PerfCommand implements AutoCloseable {
         int producers = producerService.createProducers(topics, config.producersConfig(), this::messageSent);
         LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
-        LOGGER.info("Waiting for topics are ready...");
+        LOGGER.info("Waiting for topics to be ready...");
         waitTopicsReady();
         LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
@@ -76,12 +77,12 @@ public class PerfCommand implements AutoCloseable {
 
         if (config.warmupDurationMinutes > 0) {
             LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
-            printAndCollectStats(stats, new StopOnDuration(config.warmupDurationMinutes), config.reportingIntervalSeconds, config.groupsPerTopic);
+            printStats(Duration.ofMinutes(config.warmupDurationMinutes));
             stats.reset();
         }
 
         LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
-        printAndCollectStats(stats, new StopOnDuration(config.testDurationMinutes), config.reportingIntervalSeconds, config.groupsPerTopic);
+        printStats(Duration.ofMinutes(config.testDurationMinutes));
 
         running = false;
     }
@@ -125,6 +126,16 @@ public class PerfCommand implements AutoCloseable {
         byte[] payload = new byte[size];
         ThreadLocalRandom.current().nextBytes(payload);
         return List.of(payload);
+    }
+
+    private String printStats(Duration duration) {
+        StopCondition condition = (startNanos, nowNanos) -> Duration.ofNanos(nowNanos - startNanos).compareTo(duration) >= 0;
+        return printStats(condition);
+    }
+
+    private String printStats(StopCondition condition) {
+        long intervalNanos = TimeUnit.SECONDS.toNanos(config.reportingIntervalSeconds);
+        return printAndCollectStats(stats, condition, intervalNanos, config.groupsPerTopic);
     }
 
     @Override

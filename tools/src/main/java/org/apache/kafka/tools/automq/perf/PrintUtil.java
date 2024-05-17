@@ -12,6 +12,7 @@
 package org.apache.kafka.tools.automq.perf;
 
 import java.text.DecimalFormat;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.Stats.PeriodStats;
 import org.apache.kafka.tools.automq.perf.Stats.CumulativeStats;
@@ -191,18 +192,5 @@ public class PrintUtil {
          * @return true if the loop should stop
          */
         boolean shouldStop(long startNanos, long nowNanos);
-    }
-
-    public static class StopOnDuration implements StopCondition {
-        private final long durationNanos;
-
-        public StopOnDuration(long durationNanos) {
-            this.durationNanos = durationNanos;
-        }
-
-        @Override
-        public boolean shouldStop(long startNanos, long nowNanos) {
-            return nowNanos - startNanos >= durationNanos;
-        }
     }
 }
