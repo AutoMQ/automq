@@ -17,16 +17,21 @@
 
 package org.apache.kafka.controller;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.OptionalLong;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.message.AllocateProducerIdsRequestData;
 import org.apache.kafka.common.message.AllocateProducerIdsResponseData;
-import org.apache.kafka.common.message.AlterPartitionRequestData;
-import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.AlterPartitionRequestData;
+import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
@@ -52,10 +57,12 @@ import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
-import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
-import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
+import org.apache.kafka.common.message.DescribeStreamsRequestData;
+import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
+import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
+import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
 import org.apache.kafka.common.message.GetKVsRequestData;
 import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetNextNodeIdRequestData;
@@ -82,12 +89,6 @@ import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
 import org.apache.kafka.metadata.authorizer.AclMutator;
-
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 
 
 public interface Controller extends AclMutator, AutoCloseable {
@@ -564,7 +565,15 @@ public interface Controller extends AclMutator, AutoCloseable {
     );
 
     /**
-     * Broker trys to get the offset:<code> [startOffset, endOffset) </code> of the stream.
+     * Retrieve the metadata for the streams.
+     */
+    CompletableFuture<DescribeStreamsResponseData> describeStreams(
+        ControllerRequestContext context,
+        DescribeStreamsRequestData request
+    );
+
+    /**
+     * The broker attempts to obtain their own streams.
      */
     CompletableFuture<GetOpeningStreamsResponseData> getOpeningStreams(
         ControllerRequestContext context,

@@ -29,12 +29,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -47,6 +49,8 @@ import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequ
 import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
 import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
 import org.apache.kafka.common.message.DeleteStreamsResponseData.DeleteStreamResponse;
+import org.apache.kafka.common.message.DescribeStreamsRequestData;
+import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData.StreamMetadata;
@@ -72,9 +76,11 @@ import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.controller.QuorumController;
+import org.apache.kafka.controller.ReplicationControlManager;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
+import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
@@ -113,6 +119,7 @@ public class StreamControlManager {
     private final ClusterControlManager clusterControlManager;
 
     private final FeatureControlManager featureControlManager;
+    private final ReplicationControlManager replicationControlManager;
 
     public StreamControlManager(
         QuorumController quorumController,
@@ -120,7 +127,8 @@ public class StreamControlManager {
         LogContext logContext,
         S3ObjectControlManager s3ObjectControlManager,
         ClusterControlManager clusterControlManager,
-        FeatureControlManager featureControlManager) {
+        FeatureControlManager featureControlManager,
+        ReplicationControlManager replicationControlManager) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(StreamControlManager.class);
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
@@ -134,6 +142,7 @@ public class StreamControlManager {
         this.s3ObjectControlManager = s3ObjectControlManager;
         this.clusterControlManager = clusterControlManager;
         this.featureControlManager = featureControlManager;
+        this.replicationControlManager = replicationControlManager;
 
         cleanupScheduler.scheduleWithFixedDelay(this::triggerCleanupScaleInNodes, 30, 30, TimeUnit.MINUTES);
 
@@ -282,7 +291,7 @@ public class StreamControlManager {
             resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        // now the request in valid, update the stream's epoch and create a new range for this node
+        // now the request is valid, update the stream's epoch and create a new range for this node
         List<ApiMessageAndVersion> records = new ArrayList<>();
         int newRangeIndex = streamMetadata.currentRangeIndex() + 1;
         // stream update record
@@ -378,7 +387,7 @@ public class StreamControlManager {
             // regard it as a redundant close operation, just return success
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        // now the request in valid, update the stream's state
+        // now the request is valid, update the stream's state
         // stream update record
         List<ApiMessageAndVersion> records = List.of(
             new ApiMessageAndVersion(new S3StreamRecord()
@@ -773,6 +782,115 @@ public class StreamControlManager {
         return ControllerResult.atomicOf(records, resp);
     }
 
+    private DescribeStreamsResponseData bulidDescribeStreamsResponseData(List<S3StreamMetadata> s3StreamMetadataList) {
+        List<DescribeStreamsResponseData.StreamMetadata> metadataList = s3StreamMetadataList.stream()
+            .map(streamMetadata -> {
+                List<DescribeStreamsResponseData.Tag> tagList = streamMetadata.tags().entrySet().stream()
+                    .map(entry -> {
+                        DescribeStreamsResponseData.Tag tag = new DescribeStreamsResponseData.Tag();
+                        tag.setKey(entry.getKey());
+                        tag.setValue(entry.getValue());
+                        return tag;
+                    })
+                    .collect(Collectors.toList());
+
+                int nodeId = -1;
+                long endOffset = -1;
+                if (streamMetadata.currentRangeIndex() >= 0) {
+                    RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
+                    nodeId = rangeMetadata.nodeId();
+                    endOffset = rangeMetadata.endOffset();
+                }
+
+                Uuid topicId = StreamTags.Topic.decode(streamMetadata.tags().get(StreamTags.Topic.KEY));
+                String topicName = "";
+                ReplicationControlManager.TopicControlInfo topicInfo = replicationControlManager.getTopic(topicId);
+                if (topicInfo != null) {
+                    topicName = topicInfo.name();
+                }
+                int partition = StreamTags.Partition.decode(streamMetadata.tags().get(StreamTags.Partition.KEY));
+
+                return new DescribeStreamsResponseData.StreamMetadata()
+                    .setStreamId(streamMetadata.streamId())
+                    .setNodeId(nodeId)
+                    .setState(streamMetadata.currentState().name())
+                    .setTopicId(topicId)
+                    .setTopicName(topicName)
+                    .setPartitionIndex(partition)
+                    .setEpoch(streamMetadata.currentEpoch())
+                    .setStartOffset(streamMetadata.startOffset())
+                    .setEndOffset(endOffset)
+                    .setTags(new DescribeStreamsResponseData.TagCollection(tagList.iterator()));
+            }).collect(Collectors.toList());
+
+        DescribeStreamsResponseData data = new DescribeStreamsResponseData();
+        data.setStreamMetadataList(metadataList);
+        return data;
+    }
+
+    public DescribeStreamsResponseData describeStreams(DescribeStreamsRequestData data) {
+        long streamId = data.streamId();
+        if (streamId > 0) {
+            S3StreamMetadata metadata = streamsMetadata.get(streamId);
+            return bulidDescribeStreamsResponseData(List.of(metadata));
+        }
+
+        int nodeId = data.nodeId();
+        if (nodeId > 0) {
+            List<S3StreamMetadata> metadataList = streamsMetadata.values().stream()
+                .filter(metadata -> {
+                    int rangeIndex = metadata.currentRangeIndex();
+                    if (rangeIndex < 0) {
+                        return false;
+                    }
+                    RangeMetadata rangeMetadata = metadata.ranges().get(rangeIndex);
+                    return rangeMetadata.nodeId() == nodeId;
+                })
+                .collect(Collectors.toList());
+            return bulidDescribeStreamsResponseData(metadataList);
+        }
+
+        List<DescribeStreamsRequestData.TopicPartitionData> topicPartitionDataList = data.topicPartitions();
+        if (topicPartitionDataList.isEmpty()) {
+            // No stream id, node id and topic partition data, return invalid request
+            DescribeStreamsResponseData response = new DescribeStreamsResponseData();
+            response.setErrorCode(Errors.INVALID_REQUEST.code());
+            return response;
+        }
+
+        Map<String, Set<Integer>> topicPartitionMap = topicPartitionDataList.stream()
+            .map(topicData -> {
+                String topicName = topicData.topicName();
+                Set<Integer> partitions = topicData.partitions()
+                    .stream()
+                    .mapToInt(DescribeStreamsRequestData.PartitionData::partitionIndex)
+                    .boxed()
+                    .collect(Collectors.toSet());
+                return Map.entry(topicName, partitions);
+            })
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        List<S3StreamMetadata> metadataList = streamsMetadata.values().stream()
+            .filter(metadata -> {
+                Uuid topicId = StreamTags.Topic.decode(metadata.tags().get(StreamTags.Topic.KEY));
+                ReplicationControlManager.TopicControlInfo topicInfo = replicationControlManager.getTopic(topicId);
+                if (topicInfo == null) {
+                    return false;
+                }
+                String topicName = topicInfo.name();
+                int partition = StreamTags.Partition.decode(metadata.tags().get(StreamTags.Partition.KEY));
+
+                if (topicPartitionMap.containsKey(topicName)) {
+                    Set<Integer> partitionSet = topicPartitionMap.get(topicName);
+                    return partitionSet.isEmpty() || partitionSet.contains(partition);
+                }
+
+                return false;
+            })
+            .collect(Collectors.toList());
+        return bulidDescribeStreamsResponseData(metadataList);
+    }
+
     public ControllerResult<GetOpeningStreamsResponseData> getOpeningStreams(GetOpeningStreamsRequestData data) {
         GetOpeningStreamsResponseData resp = new GetOpeningStreamsResponseData();
         int nodeId = data.nodeId();
@@ -1011,7 +1129,7 @@ public class StreamControlManager {
         Map<String, String> tags = new HashMap<>();
         record.tags().forEach(tag -> tags.put(tag.key(), tag.value()));
         // not exist, create a new stream
-        S3StreamMetadata streamMetadata = new S3StreamMetadata(record.epoch(), record.rangeIndex(),
+        S3StreamMetadata streamMetadata = new S3StreamMetadata(record.streamId(), record.epoch(), record.rangeIndex(),
             record.startOffset(), StreamState.fromByte(record.streamState()), tags, this.snapshotRegistry);
         this.streamsMetadata.put(streamId, streamMetadata);
     }
@@ -1147,11 +1265,11 @@ public class StreamControlManager {
     @Override
     public String toString() {
         return "StreamControlManager{" +
-            "snapshotRegistry=" + snapshotRegistry +
-            ", s3ObjectControlManager=" + s3ObjectControlManager +
-            ", streamsMetadata=" + streamsMetadata +
-            ", nodesMetadata=" + nodesMetadata +
-            '}';
+               "snapshotRegistry=" + snapshotRegistry +
+               ", s3ObjectControlManager=" + s3ObjectControlManager +
+               ", streamsMetadata=" + streamsMetadata +
+               ", nodesMetadata=" + nodesMetadata +
+               '}';
     }
 
 }

@@ -14,28 +14,18 @@ package com.automq.shell.command;
 import com.automq.shell.AutoMQCLI;
 import com.automq.shell.stream.ClientStreamManager;
 import com.automq.shell.util.CLIUtils;
-import com.automq.stream.s3.metadata.StreamMetadata;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
+import com.automq.stream.s3.metadata.StreamState;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.stream.Collectors;
 import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.DescribeClusterResult;
-import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.QuorumInfo;
-import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.TopicPartitionInfo;
-import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -53,14 +43,17 @@ public class ForceClose implements Callable<Integer> {
     Exclusive exclusive;
 
     static class TopicPartition {
-        @Option(names = {"-t", "--topic"}, description = "The topic you want to close.", required = true)
-        String topic;
+        @Option(names = {"-t", "--topic-name"}, description = "The topic you want to close.", required = true)
+        String topicName;
 
         @Option(names = {"-p", "--partition"}, description = "The partition you want to close.", required = true)
         List<Integer> partitionList;
     }
 
     static class Exclusive {
+        @Option(names = {"-s", "--stream"}, description = "The stream id.")
+        int streamId = -1;
+
         @Option(names = {"-n", "--node-id"}, description = "The Kafka node id.")
         int nodeId = -1;
 
@@ -89,23 +82,36 @@ public class ForceClose implements Callable<Integer> {
         NetworkClient client = CLIUtils.buildNetworkClient("automq-cli", new AdminClientConfig(new Properties()), new Metrics(), Time.SYSTEM, new LogContext());
         ClientStreamManager manager = new ClientStreamManager(client, controllerOptional.get());
 
-        Map<Integer, List<StreamMetadata>> map;
-        if (exclusive.topicPartition == null) {
-            map = getStreamMetadataByNode(admin, manager, exclusive.nodeId);
+        List<DescribeStreamsResponseData.StreamMetadata> list;
+        if (exclusive.streamId > 0) {
+            list = manager.describeStreamsByStream(exclusive.streamId);
+        } else if (exclusive.nodeId > 0) {
+            list = manager.describeStreamsByNode(exclusive.nodeId);
         } else {
-            map = getStreamMetadataByTopicPartition(admin, manager, exclusive.topicPartition.topic, exclusive.topicPartition.partitionList);
+            list = manager.describeStreamsByTopicPartition(Map.of(exclusive.topicPartition.topicName, exclusive.topicPartition.partitionList));
         }
 
-        for (Map.Entry<Integer, List<StreamMetadata>> entry : map.entrySet()) {
-            int nodeId = entry.getKey();
-            List<StreamMetadata> streamMetadataList = entry.getValue();
+        if (list.isEmpty()) {
+            System.out.println("No stream found.");
+            return 0;
+        }
 
-            for (StreamMetadata metadata : streamMetadataList) {
-                if (dryRun) {
-                    System.out.println("Node: " + nodeId + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch());
-                } else {
-                    manager.closeStream(metadata.streamId(), metadata.epoch(), nodeId);
-                    System.out.println("Node: " + nodeId + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch() + " closed.");
+        list = list.subList(0, Math.min(maxCount, list.size()));
+
+        if (dryRun) {
+            System.out.println("Dry run mode, no stream will be closed.");
+            System.out.println("Found following stream(s):");
+        } else {
+            System.out.println("Force close " + list.size() + " stream(s)...");
+        }
+
+        for (DescribeStreamsResponseData.StreamMetadata metadata : list) {
+            if (dryRun) {
+                System.out.println(metadata);
+            } else {
+                if (StreamState.valueOf(metadata.state()) == StreamState.OPENED) {
+                    manager.closeStream(metadata.streamId(), metadata.epoch(), metadata.nodeId());
+                    System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch() + " closed.");
                 }
             }
         }
@@ -118,50 +124,5 @@ public class ForceClose implements Callable<Integer> {
         int controllerLeaderId = info.leaderId();
         return admin.describeCluster().nodes().get()
             .stream().filter(node -> node.id() == controllerLeaderId).findFirst();
-    }
-
-    private Map<Integer, List<StreamMetadata>> getStreamMetadataByNode(Admin admin, ClientStreamManager manager,
-        int nodeId) throws Exception {
-        DescribeClusterResult result = admin.describeCluster();
-        Collection<Node> nodes = result.nodes().get();
-
-        Optional<Node> nodeOptional = nodes.stream().filter(node -> node.id() == nodeId).findFirst();
-        if (nodeOptional.isEmpty()) {
-            return Map.of();
-        }
-
-        return Map.of(nodeId, manager.getOpeningStreams(nodeOptional.get(), System.currentTimeMillis(), false));
-    }
-
-    private Map<Integer, List<StreamMetadata>> getStreamMetadataByTopicPartition(Admin admin,
-        ClientStreamManager manager,
-        String topic, List<Integer> partitionList) throws Exception {
-        DescribeTopicsResult result = admin.describeTopics(List.of(topic));
-        Map<Uuid, TopicDescription> map = result.allTopicIds().get();
-        if (map.isEmpty()) {
-            return Map.of();
-        }
-
-        String topicId = map.keySet().stream().findFirst().get().toString();
-        TopicDescription topicDescription = map.values().stream().findFirst().get();
-        Set<Integer> partitionSet = new HashSet<>(partitionList);
-
-        List<Node> nodeList = topicDescription.partitions()
-            .stream()
-            .filter(partition -> partitionSet.contains(partition.partition()))
-            .map(TopicPartitionInfo::leader)
-            .collect(Collectors.toList());
-
-        Map<Integer, List<StreamMetadata>> resultMap = new HashMap<>();
-        for (Node node : nodeList) {
-            manager.getOpeningStreams(node, System.currentTimeMillis(), false)
-                .stream()
-                .filter(stream -> {
-                    Map<String, String> tagMap = stream.tagMap();
-                    return topicId.equals(tagMap.get("0")) && partitionSet.contains(Integer.parseInt(tagMap.get("1")));
-                })
-                .forEach(metadata -> resultMap.computeIfAbsent(node.id(), id -> new ArrayList<>()).add(metadata));
-        }
-        return resultMap;
     }
 }
