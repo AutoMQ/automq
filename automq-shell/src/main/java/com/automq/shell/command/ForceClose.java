@@ -102,6 +102,10 @@ public class ForceClose implements Callable<Integer> {
             System.out.println("Dry run mode, no stream will be closed.");
             System.out.println("Found following stream(s):");
         } else {
+            list.stream()
+                .filter(metadata -> StreamState.valueOf(metadata.state()) == StreamState.CLOSED)
+                .forEach(metadata -> System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch() + " will not be closed."));
+            System.out.println();
             System.out.println("Force close " + list.size() + " stream(s)...");
         }
 

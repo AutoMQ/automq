@@ -802,13 +802,19 @@ public class StreamControlManager {
                     endOffset = rangeMetadata.endOffset();
                 }
 
-                Uuid topicId = StreamTags.Topic.decode(streamMetadata.tags().get(StreamTags.Topic.KEY));
+                Uuid topicId = Uuid.ZERO_UUID;
                 String topicName = "";
-                ReplicationControlManager.TopicControlInfo topicInfo = replicationControlManager.getTopic(topicId);
-                if (topicInfo != null) {
-                    topicName = topicInfo.name();
+                if (streamMetadata.tags().containsKey(StreamTags.Topic.KEY)) {
+                    topicId = StreamTags.Topic.decode(streamMetadata.tags().get(StreamTags.Topic.KEY));
+                    ReplicationControlManager.TopicControlInfo topicInfo = replicationControlManager.getTopic(topicId);
+                    if (topicInfo != null) {
+                        topicName = topicInfo.name();
+                    }
                 }
-                int partition = StreamTags.Partition.decode(streamMetadata.tags().get(StreamTags.Partition.KEY));
+                int partition = -1;
+                if (streamMetadata.tags().containsKey(StreamTags.Partition.KEY)) {
+                    partition = StreamTags.Partition.decode(streamMetadata.tags().get(StreamTags.Partition.KEY));
+                }
 
                 return new DescribeStreamsResponseData.StreamMetadata()
                     .setStreamId(streamMetadata.streamId())
@@ -830,13 +836,16 @@ public class StreamControlManager {
 
     public DescribeStreamsResponseData describeStreams(DescribeStreamsRequestData data) {
         long streamId = data.streamId();
-        if (streamId > 0) {
+        if (streamId >= 0) {
             S3StreamMetadata metadata = streamsMetadata.get(streamId);
+            if (metadata == null) {
+                return bulidDescribeStreamsResponseData(Collections.emptyList());
+            }
             return bulidDescribeStreamsResponseData(List.of(metadata));
         }
 
         int nodeId = data.nodeId();
-        if (nodeId > 0) {
+        if (nodeId >= 0) {
             List<S3StreamMetadata> metadataList = streamsMetadata.values().stream()
                 .filter(metadata -> {
                     int rangeIndex = metadata.currentRangeIndex();
@@ -872,6 +881,10 @@ public class StreamControlManager {
 
         List<S3StreamMetadata> metadataList = streamsMetadata.values().stream()
             .filter(metadata -> {
+                if (!metadata.tags().containsKey(StreamTags.Topic.KEY) || !metadata.tags().containsKey(StreamTags.Partition.KEY)) {
+                    return false;
+                }
+
                 Uuid topicId = StreamTags.Topic.decode(metadata.tags().get(StreamTags.Topic.KEY));
                 ReplicationControlManager.TopicControlInfo topicInfo = replicationControlManager.getTopic(topicId);
                 if (topicInfo == null) {
