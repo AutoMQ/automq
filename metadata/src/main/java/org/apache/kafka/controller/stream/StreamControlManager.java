@@ -378,7 +378,7 @@ public class StreamControlManager {
             // regard it as a redundant close operation, just return success
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        // now the request is valid, update the stream's state
+        // now the request in valid, update the stream's state
         // stream update record
         List<ApiMessageAndVersion> records = List.of(
             new ApiMessageAndVersion(new S3StreamRecord()
@@ -781,7 +781,6 @@ public class StreamControlManager {
 
         List<ApiMessageAndVersion> records = new ArrayList<>();
 
-        AutoMQVersion autoMQVersion = featureControlManager.autoMQVersion();
         NodeMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
         if (nodeMetadata == null) {
             // create a new node metadata if absent
@@ -820,24 +819,11 @@ public class StreamControlManager {
         }).map(e -> {
             S3StreamMetadata streamMetadata = e.getValue();
             RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
-            StreamMetadata metadata = new StreamMetadata()
+            return new StreamMetadata()
                 .setStreamId(e.getKey())
                 .setEpoch(streamMetadata.currentEpoch())
                 .setStartOffset(streamMetadata.startOffset())
                 .setEndOffset(rangeMetadata.endOffset());
-
-            if (autoMQVersion.isStreamTagsSupported()) {
-                List<GetOpeningStreamsResponseData.Tag> tagList = streamMetadata.tags().entrySet().stream()
-                    .map(entry -> {
-                        GetOpeningStreamsResponseData.Tag tag = new GetOpeningStreamsResponseData.Tag();
-                        tag.setKey(entry.getKey());
-                        tag.setValue(entry.getValue());
-                        return tag;
-                    })
-                    .collect(Collectors.toList());
-                metadata.setTags(new GetOpeningStreamsResponseData.TagCollection(tagList.iterator()));
-            }
-            return metadata;
         }).collect(Collectors.toList());
         resp.setStreamMetadataList(streamStatusList);
         return ControllerResult.atomicOf(records, resp);
