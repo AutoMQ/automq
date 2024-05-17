@@ -2099,6 +2099,7 @@ project(':tools') {
     implementation libs.log4j
     implementation libs.joptSimple
     implementation libs.awsSdkAuth
+    implementation libs.hdrHistogram
 
     // for SASL/OAUTHBEARER JWT validation
     implementation (libs.jose4j){
