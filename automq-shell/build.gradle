@@ -17,7 +17,6 @@ repositories {
 dependencies {
     compileOnly libs.awsSdkAuth
     implementation 'info.picocli:picocli:4.7.6'
-    implementation 'org.slf4j:slf4j-nop:1.7.36'
     implementation(project(':s3stream')) {
         exclude(group: 'io.opentelemetry', module: '*')
         exclude(group: 'io.opentelemetry.instrumentation', module: '*')
