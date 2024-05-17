@@ -54,7 +54,7 @@ public class ConsumerService implements AutoCloseable {
         int count = 0;
         for (Topic topic : topics) {
             for (int g = 0; g < config.groupsPerTopic; g++) {
-                String groupId = String.format("sub-%s-%03d", topic, g);
+                String groupId = String.format("sub-%s-%03d", topic.name, g);
                 for (int c = 0; c < config.consumersPerGroup; c++) {
                     Consumer consumer = createConsumer(topic, groupId, config, callback);
                     consumers.add(consumer);
