@@ -29,6 +29,7 @@ import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
+import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -61,11 +62,11 @@ public class ForceClose implements Callable<Integer> {
         TopicPartition topicPartition;
     }
 
-    @Option(names = {"-c", "--max-count"}, description = "Max partition count in a batch.", defaultValue = "1000")
+    @Option(names = {"-m", "--max-count"}, description = "Max partition count in a batch.", defaultValue = "1000")
     int maxCount;
 
-    @Option(names = {"-d", "--dry-run"}, description = "Display the affected stream(s).")
-    boolean dryRun;
+    @Option(names = {"-f", "--force"}, description = "Confirm force close the stream(s).")
+    boolean force;
 
     @Override
     public Integer call() throws Exception {
@@ -98,26 +99,35 @@ public class ForceClose implements Callable<Integer> {
 
         list = list.subList(0, Math.min(maxCount, list.size()));
 
-        if (dryRun) {
-            System.out.println("Dry run mode, no stream will be closed.");
-            System.out.println("Found following stream(s):");
-        } else {
-            list.stream()
-                .filter(metadata -> StreamState.valueOf(metadata.state()) == StreamState.CLOSED)
-                .forEach(metadata -> System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch() + " will not be closed."));
+        if (force) {
             System.out.println();
             System.out.println("Force close " + list.size() + " stream(s)...");
+        } else {
+            String info = CommandLine.Help.Ansi.AUTO.string("@|bold Dry run mode, no stream will be closed.|@");
+            System.out.println(info);
+            System.out.println();
+            System.out.println("Found following stream(s):");
         }
 
         for (DescribeStreamsResponseData.StreamMetadata metadata : list) {
-            if (dryRun) {
-                System.out.println(metadata);
-            } else {
+            if (force) {
                 if (StreamState.valueOf(metadata.state()) == StreamState.OPENED) {
                     manager.closeStream(metadata.streamId(), metadata.epoch(), metadata.nodeId());
                     System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch() + " closed.");
                 }
+            } else {
+                System.out.println(metadata);
             }
+        }
+
+        if (force) {
+            list.stream()
+                .filter(metadata -> StreamState.valueOf(metadata.state()) == StreamState.CLOSED)
+                .forEach(metadata -> System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch() + " is already closed."));
+        } else {
+            System.out.println();
+            String warning = CommandLine.Help.Ansi.AUTO.string("@|bold,yellow WARNING: Closing the stream forcefully will result in the loss of uncommitted data. To proceed, please confirm by using --force to force close the stream(s).|@");
+            System.out.println(warning);
         }
 
         return 0;
