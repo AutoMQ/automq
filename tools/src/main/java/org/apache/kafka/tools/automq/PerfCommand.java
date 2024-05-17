@@ -77,12 +77,12 @@ public class PerfCommand implements AutoCloseable {
 
         if (config.warmupDurationMinutes > 0) {
             LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
-            printStats(Duration.ofMinutes(config.warmupDurationMinutes));
+            collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
             stats.reset();
         }
 
         LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
-        printStats(Duration.ofMinutes(config.testDurationMinutes));
+        collectStats(Duration.ofMinutes(config.testDurationMinutes));
 
         running = false;
     }
@@ -128,12 +128,12 @@ public class PerfCommand implements AutoCloseable {
         return List.of(payload);
     }
 
-    private String printStats(Duration duration) {
+    private String collectStats(Duration duration) {
         StopCondition condition = (startNanos, nowNanos) -> Duration.ofNanos(nowNanos - startNanos).compareTo(duration) >= 0;
-        return printStats(condition);
+        return collectStats(condition);
     }
 
-    private String printStats(StopCondition condition) {
+    private String collectStats(StopCondition condition) {
         long intervalNanos = TimeUnit.SECONDS.toNanos(config.reportingIntervalSeconds);
         return printAndCollectStats(stats, condition, intervalNanos, config.groupsPerTopic);
     }
