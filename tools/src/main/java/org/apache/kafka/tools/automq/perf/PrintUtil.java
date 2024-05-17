@@ -12,10 +12,9 @@
 package org.apache.kafka.tools.automq.perf;
 
 import java.text.DecimalFormat;
-import java.time.Duration;
 import java.util.concurrent.TimeUnit;
-import org.apache.kafka.tools.automq.perf.Stats.PeriodStats;
 import org.apache.kafka.tools.automq.perf.Stats.CumulativeStats;
+import org.apache.kafka.tools.automq.perf.Stats.PeriodStats;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +49,8 @@ public class PrintUtil {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PrintUtil.class);
 
-    public static String printAndCollectStats(Stats stats, StopCondition condition, long intervalNanos, int readWriteRatio) {
+    public static String printAndCollectStats(Stats stats, StopCondition condition, long intervalNanos,
+        int readWriteRatio) {
         final long start = System.nanoTime();
 
         long last = start;
