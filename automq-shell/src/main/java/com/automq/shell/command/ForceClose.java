@@ -35,7 +35,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
 
-@Command(name = "force-close", description = "Stream lossy failure recovery operation.")
+@Command(name = "force-close", description = "Stream lossy failure recovery operation.", mixinStandardHelpOptions = true)
 public class ForceClose implements Callable<Integer> {
     @ParentCommand
     AutoMQCLI cli;
@@ -47,7 +47,7 @@ public class ForceClose implements Callable<Integer> {
         @Option(names = {"-t", "--topic-name"}, description = "The topic you want to close.", required = true)
         String topicName;
 
-        @Option(names = {"-p", "--partition"}, description = "The partition you want to close.", required = true)
+        @Option(names = {"-p", "--partition"}, description = "The partition you want to close.", required = true, paramLabel = "<partition>")
         List<Integer> partitionList;
     }
 
@@ -62,10 +62,10 @@ public class ForceClose implements Callable<Integer> {
         TopicPartition topicPartition;
     }
 
-    @Option(names = {"-m", "--max-count"}, description = "Max partition count in a batch.", defaultValue = "1000")
+    @Option(names = {"-m", "--max-count"}, description = "Max partition count in a batch.", defaultValue = "1000", paramLabel = "<count>")
     int maxCount;
 
-    @Option(names = {"-f", "--force"}, description = "Confirm force close the stream(s).")
+    @Option(names = {"-f", "--force"}, description = "Confirm force close the stream(s). @|bold,yellow This will result in the loss of uncommitted data.|@")
     boolean force;
 
     @Override
@@ -102,29 +102,25 @@ public class ForceClose implements Callable<Integer> {
         if (force) {
             System.out.println();
             System.out.println("Force close " + list.size() + " stream(s)...");
+
+            for (DescribeStreamsResponseData.StreamMetadata metadata : list) {
+                if (StreamState.valueOf(metadata.state()) == StreamState.OPENED) {
+                    manager.closeStream(metadata.streamId(), metadata.epoch(), metadata.nodeId());
+                    System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", TopicPartition: " + metadata.topicName() + "-" + metadata.partitionIndex() + " closed.");
+                } else {
+                    System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", TopicPartition: " + metadata.topicName() + "-" + metadata.partitionIndex() + " is already closed.");
+                }
+            }
         } else {
             String info = CommandLine.Help.Ansi.AUTO.string("@|bold Dry run mode, no stream will be closed.|@");
             System.out.println(info);
             System.out.println();
             System.out.println("Found following stream(s):");
-        }
 
-        for (DescribeStreamsResponseData.StreamMetadata metadata : list) {
-            if (force) {
-                if (StreamState.valueOf(metadata.state()) == StreamState.OPENED) {
-                    manager.closeStream(metadata.streamId(), metadata.epoch(), metadata.nodeId());
-                    System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch() + " closed.");
-                }
-            } else {
-                System.out.println(metadata);
+            for (DescribeStreamsResponseData.StreamMetadata metadata : list) {
+                System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", TopicPartition: " + metadata.topicName() + "-" + metadata.partitionIndex() + ", State: " + StreamState.valueOf(metadata.state()));
             }
-        }
 
-        if (force) {
-            list.stream()
-                .filter(metadata -> StreamState.valueOf(metadata.state()) == StreamState.CLOSED)
-                .forEach(metadata -> System.out.println("Node: " + metadata.nodeId() + ", Stream: " + metadata.streamId() + ", Epoch: " + metadata.epoch() + " is already closed."));
-        } else {
             System.out.println();
             String warning = CommandLine.Help.Ansi.AUTO.string("@|bold,yellow WARNING: Closing the stream forcefully will result in the loss of uncommitted data. To proceed, please confirm by using --force to force close the stream(s).|@");
             System.out.println(warning);
