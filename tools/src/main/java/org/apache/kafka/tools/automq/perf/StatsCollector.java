@@ -69,176 +69,22 @@ public class StatsCollector {
             PeriodStats periodStats = stats.toPeriodStats();
             double elapsed = (periodStats.nowNanos - last) / NANOS_PER_SEC;
             double elapsedTotal = (periodStats.nowNanos - start) / NANOS_PER_SEC;
-            last = periodStats.nowNanos;
 
-            double produceRate = periodStats.messagesSent / elapsed;
-            double produceThroughputBps = periodStats.bytesSent / elapsed;
-            double errorRate = periodStats.messagesSendFailed / elapsed;
-            double consumeRate = periodStats.messagesReceived / elapsed;
-            double consumeThroughputBps = periodStats.bytesReceived / elapsed;
-            long backlog = Math.max(0, config.groupsPerTopic * periodStats.totalMessagesSent - periodStats.totalMessagesReceived);
-            double produceLatencyMeanMicros = periodStats.sendLatencyMicros.getMean();
-            double produceLatency50thMicros = periodStats.sendLatencyMicros.getValueAtPercentile(50);
-            double produceLatency75thMicros = periodStats.sendLatencyMicros.getValueAtPercentile(75);
-            double produceLatency90thMicros = periodStats.sendLatencyMicros.getValueAtPercentile(90);
-            double produceLatency95thMicros = periodStats.sendLatencyMicros.getValueAtPercentile(95);
-            double produceLatency99thMicros = periodStats.sendLatencyMicros.getValueAtPercentile(99);
-            double produceLatency999thMicros = periodStats.sendLatencyMicros.getValueAtPercentile(99.9);
-            double produceLatency9999thMicros = periodStats.sendLatencyMicros.getValueAtPercentile(99.99);
-            double produceLatencyMaxMicros = periodStats.sendLatencyMicros.getMaxValue();
-            double endToEndLatencyMeanMicros = periodStats.endToEndLatencyMicros.getMean();
-            double endToEndLatency50thMicros = periodStats.endToEndLatencyMicros.getValueAtPercentile(50);
-            double endToEndLatency75thMicros = periodStats.endToEndLatencyMicros.getValueAtPercentile(75);
-            double endToEndLatency90thMicros = periodStats.endToEndLatencyMicros.getValueAtPercentile(90);
-            double endToEndLatency95thMicros = periodStats.endToEndLatencyMicros.getValueAtPercentile(95);
-            double endToEndLatency99thMicros = periodStats.endToEndLatencyMicros.getValueAtPercentile(99);
-            double endToEndLatency999thMicros = periodStats.endToEndLatencyMicros.getValueAtPercentile(99.9);
-            double endToEndLatency9999thMicros = periodStats.endToEndLatencyMicros.getValueAtPercentile(99.99);
-            double endToEndLatencyMaxMicros = periodStats.endToEndLatencyMicros.getMaxValue();
-
-            result.timeSecs.add(elapsedTotal);
-            result.produceRate.add(produceRate);
-            result.produceThroughputBps.add(produceThroughputBps);
-            result.errorRate.add(errorRate);
-            result.consumeRate.add(consumeRate);
-            result.consumeThroughputBps.add(consumeThroughputBps);
-            result.backlog.add(backlog);
-            result.produceLatencyMeanMicros.add(produceLatencyMeanMicros);
-            result.produceLatency50thMicros.add(produceLatency50thMicros);
-            result.produceLatency75thMicros.add(produceLatency75thMicros);
-            result.produceLatency90thMicros.add(produceLatency90thMicros);
-            result.produceLatency95thMicros.add(produceLatency95thMicros);
-            result.produceLatency99thMicros.add(produceLatency99thMicros);
-            result.produceLatency999thMicros.add(produceLatency999thMicros);
-            result.produceLatency9999thMicros.add(produceLatency9999thMicros);
-            result.produceLatencyMaxMicros.add(produceLatencyMaxMicros);
-            result.endToEndLatencyMeanMicros.add(endToEndLatencyMeanMicros);
-            result.endToEndLatency50thMicros.add(endToEndLatency50thMicros);
-            result.endToEndLatency75thMicros.add(endToEndLatency75thMicros);
-            result.endToEndLatency90thMicros.add(endToEndLatency90thMicros);
-            result.endToEndLatency95thMicros.add(endToEndLatency95thMicros);
-            result.endToEndLatency99thMicros.add(endToEndLatency99thMicros);
-            result.endToEndLatency999thMicros.add(endToEndLatency999thMicros);
-            result.endToEndLatency9999thMicros.add(endToEndLatency9999thMicros);
-            result.endToEndLatencyMaxMicros.add(endToEndLatencyMaxMicros);
-
-            LOGGER.info(PERIOD_LOG_FORMAT,
-                DURATION_FORMAT.format(elapsedTotal),
-                RATE_FORMAT.format(produceRate),
-                THROUGHPUT_FORMAT.format(produceThroughputBps / BYTES_PER_MB),
-                RATE_FORMAT.format(errorRate),
-                RATE_FORMAT.format(consumeRate),
-                THROUGHPUT_FORMAT.format(consumeThroughputBps / BYTES_PER_MB),
-                COUNT_FORMAT.format(backlog / 1_000.0),
-                LATENCY_FORMAT.format(produceLatencyMeanMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(produceLatency50thMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(produceLatency99thMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(produceLatency999thMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(produceLatencyMaxMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(endToEndLatencyMeanMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(endToEndLatency50thMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(endToEndLatency99thMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(endToEndLatency999thMicros / MICROS_PER_MILLI),
-                LATENCY_FORMAT.format(endToEndLatencyMaxMicros / MICROS_PER_MILLI)
-            );
+            PeriodResult periodResult = new PeriodResult(periodStats, elapsed, config.groupsPerTopic);
+            result.update(periodResult, elapsedTotal);
+            periodResult.logIt(elapsedTotal);
 
             if (condition.shouldStop(start, periodStats.nowNanos)) {
                 CumulativeStats cumulativeStats = stats.toCumulativeStats();
                 elapsedTotal = (cumulativeStats.nowNanos - start) / NANOS_PER_SEC;
 
-                double produceRateTotal = cumulativeStats.totalMessagesSent / elapsedTotal;
-                double produceThroughputTotalBps = cumulativeStats.totalBytesSent / elapsedTotal;
-                double produceCountTotal = cumulativeStats.totalMessagesSent;
-                double produceSizeTotalBytes = cumulativeStats.totalBytesSent;
-                double produceErrorTotal = cumulativeStats.totalMessagesSendFailed;
-                double consumeRateTotal = cumulativeStats.totalMessagesReceived / elapsedTotal;
-                double consumeThroughputTotalBps = cumulativeStats.totalBytesReceived / elapsedTotal;
-                double consumeCountTotal = cumulativeStats.totalMessagesReceived;
-                double consumeSizeTotalBytes = cumulativeStats.totalBytesReceived;
-                double produceLatencyMeanTotalMicros = cumulativeStats.totalSendLatencyMicros.getMean();
-                double produceLatency50thTotalMicros = cumulativeStats.totalSendLatencyMicros.getValueAtPercentile(50);
-                double produceLatency75thTotalMicros = cumulativeStats.totalSendLatencyMicros.getValueAtPercentile(75);
-                double produceLatency90thTotalMicros = cumulativeStats.totalSendLatencyMicros.getValueAtPercentile(90);
-                double produceLatency95thTotalMicros = cumulativeStats.totalSendLatencyMicros.getValueAtPercentile(95);
-                double produceLatency99thTotalMicros = cumulativeStats.totalSendLatencyMicros.getValueAtPercentile(99);
-                double produceLatency999thTotalMicros = cumulativeStats.totalSendLatencyMicros.getValueAtPercentile(99.9);
-                double produceLatency9999thTotalMicros = cumulativeStats.totalSendLatencyMicros.getValueAtPercentile(99.99);
-                double produceLatencyMaxTotalMicros = cumulativeStats.totalSendLatencyMicros.getMaxValue();
-                double endToEndLatencyMeanTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getMean();
-                double endToEndLatency50thTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getValueAtPercentile(50);
-                double endToEndLatency75thTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getValueAtPercentile(75);
-                double endToEndLatency90thTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getValueAtPercentile(90);
-                double endToEndLatency95thTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getValueAtPercentile(95);
-                double endToEndLatency99thTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getValueAtPercentile(99);
-                double endToEndLatency999thTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getValueAtPercentile(99.9);
-                double endToEndLatency9999thTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getValueAtPercentile(99.99);
-                double endToEndLatencyMaxTotalMicros = cumulativeStats.totalEndToEndLatencyMicros.getMaxValue();
-
-                result.produceRateTotal = produceRateTotal;
-                result.produceThroughputTotalBps = produceThroughputTotalBps;
-                result.produceCountTotal = produceCountTotal;
-                result.produceSizeTotalBytes = produceSizeTotalBytes;
-                result.produceErrorTotal = produceErrorTotal;
-                result.consumeRateTotal = consumeRateTotal;
-                result.consumeThroughputTotalBps = consumeThroughputTotalBps;
-                result.consumeCountTotal = consumeCountTotal;
-                result.consumeSizeTotalBytes = consumeSizeTotalBytes;
-                result.produceLatencyMeanTotalMicros = produceLatencyMeanTotalMicros;
-                result.produceLatency50thTotalMicros = produceLatency50thTotalMicros;
-                result.produceLatency75thTotalMicros = produceLatency75thTotalMicros;
-                result.produceLatency90thTotalMicros = produceLatency90thTotalMicros;
-                result.produceLatency95thTotalMicros = produceLatency95thTotalMicros;
-                result.produceLatency99thTotalMicros = produceLatency99thTotalMicros;
-                result.produceLatency999thTotalMicros = produceLatency999thTotalMicros;
-                result.produceLatency9999thTotalMicros = produceLatency9999thTotalMicros;
-                result.produceLatencyMaxTotalMicros = produceLatencyMaxTotalMicros;
-                cumulativeStats.totalSendLatencyMicros.percentiles(100).forEach(
-                    value -> result.produceLatencyQuantilesMicros.put(value.getPercentile(), value.getValueIteratedTo())
-                );
-                result.endToEndLatencyMeanTotalMicros = endToEndLatencyMeanTotalMicros;
-                result.endToEndLatency50thTotalMicros = endToEndLatency50thTotalMicros;
-                result.endToEndLatency75thTotalMicros = endToEndLatency75thTotalMicros;
-                result.endToEndLatency90thTotalMicros = endToEndLatency90thTotalMicros;
-                result.endToEndLatency95thTotalMicros = endToEndLatency95thTotalMicros;
-                result.endToEndLatency99thTotalMicros = endToEndLatency99thTotalMicros;
-                result.endToEndLatency999thTotalMicros = endToEndLatency999thTotalMicros;
-                result.endToEndLatency9999thTotalMicros = endToEndLatency9999thTotalMicros;
-                result.endToEndLatencyMaxTotalMicros = endToEndLatencyMaxTotalMicros;
-                cumulativeStats.totalEndToEndLatencyMicros.percentiles(100).forEach(
-                    value -> result.endToEndLatencyQuantilesMicros.put(value.getPercentile(), value.getValueIteratedTo())
-                );
-
-                LOGGER.info(SUMMARY_LOG_FORMAT,
-                    RATE_FORMAT.format(produceRateTotal),
-                    THROUGHPUT_FORMAT.format(produceThroughputTotalBps / BYTES_PER_MB),
-                    COUNT_FORMAT.format(produceCountTotal / 1_000_000.0),
-                    COUNT_FORMAT.format(produceSizeTotalBytes / BYTES_PER_GB),
-                    COUNT_FORMAT.format(produceErrorTotal / 1_000.0),
-                    RATE_FORMAT.format(consumeRateTotal),
-                    THROUGHPUT_FORMAT.format(consumeThroughputTotalBps / BYTES_PER_MB),
-                    COUNT_FORMAT.format(consumeCountTotal / 1_000_000.0),
-                    COUNT_FORMAT.format(consumeSizeTotalBytes / BYTES_PER_GB),
-                    LATENCY_FORMAT.format(produceLatencyMeanTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(produceLatency50thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(produceLatency75thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(produceLatency90thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(produceLatency95thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(produceLatency99thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(produceLatency999thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(produceLatency9999thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(produceLatencyMaxTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatencyMeanTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatency50thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatency75thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatency90thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatency95thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatency99thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatency999thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatency9999thTotalMicros / MICROS_PER_MILLI),
-                    LATENCY_FORMAT.format(endToEndLatencyMaxTotalMicros / MICROS_PER_MILLI)
-                );
+                CumulativeResult cumulativeResult = new CumulativeResult(cumulativeStats, elapsedTotal);
+                result.update(cumulativeResult);
+                cumulativeResult.logIt();
                 break;
             }
+
+            last = periodStats.nowNanos;
         }
         return result;
     }
@@ -301,7 +147,7 @@ public class StatsCollector {
         public final List<Double> produceLatency999thMicros = new ArrayList<>();
         public final List<Double> produceLatency9999thMicros = new ArrayList<>();
         public final List<Double> produceLatencyMaxMicros = new ArrayList<>();
-        public final Map<Double, Long> produceLatencyQuantilesMicros = new TreeMap<>();
+        public Map<Double, Long> produceLatencyQuantilesMicros;
         public final List<Double> endToEndLatencyMeanMicros = new ArrayList<>();
         public final List<Double> endToEndLatency50thMicros = new ArrayList<>();
         public final List<Double> endToEndLatency75thMicros = new ArrayList<>();
@@ -311,11 +157,247 @@ public class StatsCollector {
         public final List<Double> endToEndLatency999thMicros = new ArrayList<>();
         public final List<Double> endToEndLatency9999thMicros = new ArrayList<>();
         public final List<Double> endToEndLatencyMaxMicros = new ArrayList<>();
-        public final Map<Double, Long> endToEndLatencyQuantilesMicros = new TreeMap<>();
+        public Map<Double, Long> endToEndLatencyQuantilesMicros;
 
-        public Result(PerfConfig config) {
+        private Result(PerfConfig config) {
             this.config = config;
             this.startMs = System.currentTimeMillis();
+        }
+
+        private void update(PeriodResult periodResult, double elapsedTotal) {
+            this.timeSecs.add(elapsedTotal);
+            this.produceRate.add(periodResult.produceRate);
+            this.produceThroughputBps.add(periodResult.produceThroughputBps);
+            this.errorRate.add(periodResult.errorRate);
+            this.consumeRate.add(periodResult.consumeRate);
+            this.consumeThroughputBps.add(periodResult.consumeThroughputBps);
+            this.backlog.add(periodResult.backlog);
+            this.produceLatencyMeanMicros.add(periodResult.produceLatencyMeanMicros);
+            this.produceLatency50thMicros.add(periodResult.produceLatency50thMicros);
+            this.produceLatency75thMicros.add(periodResult.produceLatency75thMicros);
+            this.produceLatency90thMicros.add(periodResult.produceLatency90thMicros);
+            this.produceLatency95thMicros.add(periodResult.produceLatency95thMicros);
+            this.produceLatency99thMicros.add(periodResult.produceLatency99thMicros);
+            this.produceLatency999thMicros.add(periodResult.produceLatency999thMicros);
+            this.produceLatency9999thMicros.add(periodResult.produceLatency9999thMicros);
+            this.produceLatencyMaxMicros.add(periodResult.produceLatencyMaxMicros);
+            this.endToEndLatencyMeanMicros.add(periodResult.endToEndLatencyMeanMicros);
+            this.endToEndLatency50thMicros.add(periodResult.endToEndLatency50thMicros);
+            this.endToEndLatency75thMicros.add(periodResult.endToEndLatency75thMicros);
+            this.endToEndLatency90thMicros.add(periodResult.endToEndLatency90thMicros);
+            this.endToEndLatency95thMicros.add(periodResult.endToEndLatency95thMicros);
+            this.endToEndLatency99thMicros.add(periodResult.endToEndLatency99thMicros);
+            this.endToEndLatency999thMicros.add(periodResult.endToEndLatency999thMicros);
+            this.endToEndLatency9999thMicros.add(periodResult.endToEndLatency9999thMicros);
+            this.endToEndLatencyMaxMicros.add(periodResult.endToEndLatencyMaxMicros);
+        }
+
+        private void update(CumulativeResult cumulativeResult) {
+            this.produceRateTotal = cumulativeResult.produceRateTotal;
+            this.produceThroughputTotalBps = cumulativeResult.produceThroughputTotalBps;
+            this.produceCountTotal = cumulativeResult.produceCountTotal;
+            this.produceSizeTotalBytes = cumulativeResult.produceSizeTotalBytes;
+            this.produceErrorTotal = cumulativeResult.produceErrorTotal;
+            this.consumeRateTotal = cumulativeResult.consumeRateTotal;
+            this.consumeThroughputTotalBps = cumulativeResult.consumeThroughputTotalBps;
+            this.consumeCountTotal = cumulativeResult.consumeCountTotal;
+            this.consumeSizeTotalBytes = cumulativeResult.consumeSizeTotalBytes;
+            this.produceLatencyMeanTotalMicros = cumulativeResult.produceLatencyMeanTotalMicros;
+            this.produceLatency50thTotalMicros = cumulativeResult.produceLatency50thTotalMicros;
+            this.produceLatency75thTotalMicros = cumulativeResult.produceLatency75thTotalMicros;
+            this.produceLatency90thTotalMicros = cumulativeResult.produceLatency90thTotalMicros;
+            this.produceLatency95thTotalMicros = cumulativeResult.produceLatency95thTotalMicros;
+            this.produceLatency99thTotalMicros = cumulativeResult.produceLatency99thTotalMicros;
+            this.produceLatency999thTotalMicros = cumulativeResult.produceLatency999thTotalMicros;
+            this.produceLatency9999thTotalMicros = cumulativeResult.produceLatency9999thTotalMicros;
+            this.produceLatencyMaxTotalMicros = cumulativeResult.produceLatencyMaxTotalMicros;
+            this.produceLatencyQuantilesMicros = cumulativeResult.produceLatencyQuantilesMicros;
+            this.endToEndLatencyMeanTotalMicros = cumulativeResult.endToEndLatencyMeanTotalMicros;
+            this.endToEndLatency50thTotalMicros = cumulativeResult.endToEndLatency50thTotalMicros;
+            this.endToEndLatency75thTotalMicros = cumulativeResult.endToEndLatency75thTotalMicros;
+            this.endToEndLatency90thTotalMicros = cumulativeResult.endToEndLatency90thTotalMicros;
+            this.endToEndLatency95thTotalMicros = cumulativeResult.endToEndLatency95thTotalMicros;
+            this.endToEndLatency99thTotalMicros = cumulativeResult.endToEndLatency99thTotalMicros;
+            this.endToEndLatency999thTotalMicros = cumulativeResult.endToEndLatency999thTotalMicros;
+            this.endToEndLatency9999thTotalMicros = cumulativeResult.endToEndLatency9999thTotalMicros;
+            this.endToEndLatencyMaxTotalMicros = cumulativeResult.endToEndLatencyMaxTotalMicros;
+            this.endToEndLatencyQuantilesMicros = cumulativeResult.endToEndLatencyQuantilesMicros;
+        }
+    }
+
+    private static class PeriodResult {
+        private final double produceRate;
+        private final double produceThroughputBps;
+        private final double errorRate;
+        private final double consumeRate;
+        private final double consumeThroughputBps;
+        private final long backlog;
+        private final double produceLatencyMeanMicros;
+        private final double produceLatency50thMicros;
+        private final double produceLatency75thMicros;
+        private final double produceLatency90thMicros;
+        private final double produceLatency95thMicros;
+        private final double produceLatency99thMicros;
+        private final double produceLatency999thMicros;
+        private final double produceLatency9999thMicros;
+        private final double produceLatencyMaxMicros;
+        private final double endToEndLatencyMeanMicros;
+        private final double endToEndLatency50thMicros;
+        private final double endToEndLatency75thMicros;
+        private final double endToEndLatency90thMicros;
+        private final double endToEndLatency95thMicros;
+        private final double endToEndLatency99thMicros;
+        private final double endToEndLatency999thMicros;
+        private final double endToEndLatency9999thMicros;
+        private final double endToEndLatencyMaxMicros;
+
+        private PeriodResult(PeriodStats stats, double elapsed, int readWriteRatio) {
+            this.produceRate = stats.messagesSent / elapsed;
+            this.produceThroughputBps = stats.bytesSent / elapsed;
+            this.errorRate = stats.messagesSendFailed / elapsed;
+            this.consumeRate = stats.messagesReceived / elapsed;
+            this.consumeThroughputBps = stats.bytesReceived / elapsed;
+            this.backlog = Math.max(0, readWriteRatio * stats.totalMessagesSent - stats.totalMessagesReceived);
+            this.produceLatencyMeanMicros = stats.sendLatencyMicros.getMean();
+            this.produceLatency50thMicros = stats.sendLatencyMicros.getValueAtPercentile(50);
+            this.produceLatency75thMicros = stats.sendLatencyMicros.getValueAtPercentile(75);
+            this.produceLatency90thMicros = stats.sendLatencyMicros.getValueAtPercentile(90);
+            this.produceLatency95thMicros = stats.sendLatencyMicros.getValueAtPercentile(95);
+            this.produceLatency99thMicros = stats.sendLatencyMicros.getValueAtPercentile(99);
+            this.produceLatency999thMicros = stats.sendLatencyMicros.getValueAtPercentile(99.9);
+            this.produceLatency9999thMicros = stats.sendLatencyMicros.getValueAtPercentile(99.99);
+            this.produceLatencyMaxMicros = stats.sendLatencyMicros.getMaxValue();
+            this.endToEndLatencyMeanMicros = stats.endToEndLatencyMicros.getMean();
+            this.endToEndLatency50thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(50);
+            this.endToEndLatency75thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(75);
+            this.endToEndLatency90thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(90);
+            this.endToEndLatency95thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(95);
+            this.endToEndLatency99thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(99);
+            this.endToEndLatency999thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(99.9);
+            this.endToEndLatency9999thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(99.99);
+            this.endToEndLatencyMaxMicros = stats.endToEndLatencyMicros.getMaxValue();
+        }
+
+        private void logIt(double elapsedTotal) {
+            LOGGER.info(PERIOD_LOG_FORMAT,
+                DURATION_FORMAT.format(elapsedTotal),
+                RATE_FORMAT.format(produceRate),
+                THROUGHPUT_FORMAT.format(produceThroughputBps / BYTES_PER_MB),
+                RATE_FORMAT.format(errorRate),
+                RATE_FORMAT.format(consumeRate),
+                THROUGHPUT_FORMAT.format(consumeThroughputBps / BYTES_PER_MB),
+                COUNT_FORMAT.format(backlog / 1_000.0),
+                LATENCY_FORMAT.format(produceLatencyMeanMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency50thMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency99thMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency999thMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatencyMaxMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatencyMeanMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency50thMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency99thMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency999thMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatencyMaxMicros / MICROS_PER_MILLI)
+            );
+        }
+    }
+
+    private static class CumulativeResult {
+        private final double produceRateTotal;
+        private final double produceThroughputTotalBps;
+        private final double produceCountTotal;
+        private final double produceSizeTotalBytes;
+        private final double produceErrorTotal;
+        private final double consumeRateTotal;
+        private final double consumeThroughputTotalBps;
+        private final double consumeCountTotal;
+        private final double consumeSizeTotalBytes;
+        private final double produceLatencyMeanTotalMicros;
+        private final double produceLatency50thTotalMicros;
+        private final double produceLatency75thTotalMicros;
+        private final double produceLatency90thTotalMicros;
+        private final double produceLatency95thTotalMicros;
+        private final double produceLatency99thTotalMicros;
+        private final double produceLatency999thTotalMicros;
+        private final double produceLatency9999thTotalMicros;
+        private final double produceLatencyMaxTotalMicros;
+        public final Map<Double, Long> produceLatencyQuantilesMicros = new TreeMap<>();
+        private final double endToEndLatencyMeanTotalMicros;
+        private final double endToEndLatency50thTotalMicros;
+        private final double endToEndLatency75thTotalMicros;
+        private final double endToEndLatency90thTotalMicros;
+        private final double endToEndLatency95thTotalMicros;
+        private final double endToEndLatency99thTotalMicros;
+        private final double endToEndLatency999thTotalMicros;
+        private final double endToEndLatency9999thTotalMicros;
+        private final double endToEndLatencyMaxTotalMicros;
+        public final Map<Double, Long> endToEndLatencyQuantilesMicros = new TreeMap<>();
+
+        private CumulativeResult(CumulativeStats stats, double elapsedTotal) {
+            produceRateTotal = stats.totalMessagesSent / elapsedTotal;
+            produceThroughputTotalBps = stats.totalBytesSent / elapsedTotal;
+            produceCountTotal = stats.totalMessagesSent;
+            produceSizeTotalBytes = stats.totalBytesSent;
+            produceErrorTotal = stats.totalMessagesSendFailed;
+            consumeRateTotal = stats.totalMessagesReceived / elapsedTotal;
+            consumeThroughputTotalBps = stats.totalBytesReceived / elapsedTotal;
+            consumeCountTotal = stats.totalMessagesReceived;
+            consumeSizeTotalBytes = stats.totalBytesReceived;
+            produceLatencyMeanTotalMicros = stats.totalSendLatencyMicros.getMean();
+            produceLatency50thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(50);
+            produceLatency75thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(75);
+            produceLatency90thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(90);
+            produceLatency95thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(95);
+            produceLatency99thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(99);
+            produceLatency999thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(99.9);
+            produceLatency9999thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(99.99);
+            produceLatencyMaxTotalMicros = stats.totalSendLatencyMicros.getMaxValue();
+            stats.totalSendLatencyMicros.percentiles(100).forEach(
+                value -> produceLatencyQuantilesMicros.put(value.getPercentile(), value.getValueIteratedTo())
+            );
+            endToEndLatencyMeanTotalMicros = stats.totalEndToEndLatencyMicros.getMean();
+            endToEndLatency50thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(50);
+            endToEndLatency75thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(75);
+            endToEndLatency90thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(90);
+            endToEndLatency95thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(95);
+            endToEndLatency99thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(99);
+            endToEndLatency999thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(99.9);
+            endToEndLatency9999thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(99.99);
+            endToEndLatencyMaxTotalMicros = stats.totalEndToEndLatencyMicros.getMaxValue();
+            stats.totalEndToEndLatencyMicros.percentiles(100).forEach(
+                value -> endToEndLatencyQuantilesMicros.put(value.getPercentile(), value.getValueIteratedTo())
+            );
+        }
+
+        private void logIt() {
+            LOGGER.info(SUMMARY_LOG_FORMAT,
+                RATE_FORMAT.format(produceRateTotal),
+                THROUGHPUT_FORMAT.format(produceThroughputTotalBps / BYTES_PER_MB),
+                COUNT_FORMAT.format(produceCountTotal / 1_000_000.0),
+                COUNT_FORMAT.format(produceSizeTotalBytes / BYTES_PER_GB),
+                COUNT_FORMAT.format(produceErrorTotal / 1_000.0),
+                RATE_FORMAT.format(consumeRateTotal),
+                THROUGHPUT_FORMAT.format(consumeThroughputTotalBps / BYTES_PER_MB),
+                COUNT_FORMAT.format(consumeCountTotal / 1_000_000.0),
+                COUNT_FORMAT.format(consumeSizeTotalBytes / BYTES_PER_GB),
+                LATENCY_FORMAT.format(produceLatencyMeanTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency50thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency75thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency90thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency95thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency99thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency999thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatency9999thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatencyMaxTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatencyMeanTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency50thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency75thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency90thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency95thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency99thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency999thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatency9999thTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatencyMaxTotalMicros / MICROS_PER_MILLI)
+            );
         }
     }
 }
