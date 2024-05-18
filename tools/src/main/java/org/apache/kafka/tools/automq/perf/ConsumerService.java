@@ -65,6 +65,14 @@ public class ConsumerService implements AutoCloseable {
         groups.forEach(group -> group.start(callback));
     }
 
+    public void pause() {
+        groups.forEach(Group::pause);
+    }
+
+    public void resume() {
+        groups.forEach(Group::resume);
+    }
+
     @Override
     public void close() {
         groups.forEach(Group::close);
@@ -117,6 +125,14 @@ public class ConsumerService implements AutoCloseable {
             consumers().forEach(consumer -> consumer.start(callback));
         }
 
+        public void pause() {
+            consumers().forEach(Consumer::pause);
+        }
+
+        public void resume() {
+            consumers().forEach(Consumer::resume);
+        }
+
         public int size() {
             return consumers.values().stream()
                 .mapToInt(List::size)
@@ -158,6 +174,7 @@ public class ConsumerService implements AutoCloseable {
         private final KafkaConsumer<String, byte[]> consumer;
         private final ExecutorService executor;
         private Future<?> task;
+        private boolean paused = false;
         private volatile boolean closing = false;
 
         public Consumer(KafkaConsumer<String, byte[]> consumer) {
@@ -169,9 +186,20 @@ public class ConsumerService implements AutoCloseable {
             this.task = this.executor.submit(() -> pollRecords(consumer, callback));
         }
 
+        public void pause() {
+            paused = true;
+        }
+
+        public void resume() {
+            paused = false;
+        }
+
         private void pollRecords(KafkaConsumer<String, byte[]> consumer, ConsumerCallback callback) {
             while (!closing) {
                 try {
+                    while (paused) {
+                        Thread.sleep(1000);
+                    }
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
                     for (ConsumerRecord<String, byte[]> record : records) {
                         long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value(), HEADER_KEY_CHARSET));

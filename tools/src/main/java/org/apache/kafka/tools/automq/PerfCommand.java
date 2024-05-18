@@ -93,8 +93,18 @@ public class PerfCommand implements AutoCloseable {
             stats.reset();
         }
 
-        LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
-        Result result = collectStats(Duration.ofMinutes(config.testDurationMinutes));
+        Result result = null;
+        if (config.backlogDurationSeconds > 0) {
+            LOGGER.info("Pausing consumers for {} seconds to build up backlog...", config.backlogDurationSeconds);
+            consumerService.pause();
+            collectStats(Duration.ofSeconds(config.backlogDurationSeconds));
+            consumerService.resume();
+            stats.reset();
+            // TODO
+        } else {
+            LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
+            result = collectStats(Duration.ofMinutes(config.testDurationMinutes));
+        }
         LOGGER.info("Saving results to {}", saveResult(result));
 
         running = false;
