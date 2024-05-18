@@ -11,6 +11,7 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
@@ -101,6 +102,7 @@ public class StatsCollector {
         boolean shouldStop(long startNanos, long nowNanos);
     }
 
+    @SuppressFBWarnings("URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
     public static class Result {
         public final PerfConfig config;
         public final long startMs;
