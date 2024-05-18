@@ -22,6 +22,7 @@ import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,10 +30,10 @@ import org.slf4j.LoggerFactory;
 public class TopicService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicService.class);
-    private final Admin client;
+    private final Admin admin;
 
     public TopicService(String bootstrapServer) {
-        this.client = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer));
+        this.admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer));
     }
 
     /**
@@ -44,7 +45,7 @@ public class TopicService implements AutoCloseable {
             .mapToObj(i -> generateTopicName(config.topicPrefix, config.partitionsPerTopic, i))
             .map(name -> new NewTopic(name, config.partitionsPerTopic, (short) 1).configs(config.topicConfigs))
             .collect(Collectors.toList());
-        CreateTopicsResult topics = client.createTopics(newTopics);
+        CreateTopicsResult topics = admin.createTopics(newTopics);
         topics.values().forEach(this::waitTopicCreated);
         return topics.values().keySet().stream()
             .map(name -> new Topic(name, config.partitionsPerTopic))
@@ -97,6 +98,16 @@ public class TopicService implements AutoCloseable {
             this.partitions = partitions;
         }
 
+        public List<TopicPartition> partitions() {
+            return IntStream.range(0, partitions)
+                .mapToObj(i -> new TopicPartition(name, i))
+                .collect(Collectors.toList());
+        }
+
+        public boolean containsPartition(TopicPartition partition) {
+            return name.equals(partition.topic()) && partition.partition() < partitions;
+        }
+
         @Override
         public boolean equals(Object o) {
             if (this == o) {
@@ -117,6 +128,6 @@ public class TopicService implements AutoCloseable {
 
     @Override
     public void close() {
-        client.close();
+        admin.close();
     }
 }
