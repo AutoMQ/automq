@@ -13,8 +13,8 @@ package org.apache.kafka.tools.automq.perf;
 
 import java.text.DecimalFormat;
 import java.util.concurrent.TimeUnit;
-import org.apache.kafka.tools.automq.perf.Stats.PeriodStats;
 import org.apache.kafka.tools.automq.perf.Stats.CumulativeStats;
+import org.apache.kafka.tools.automq.perf.Stats.PeriodStats;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +49,8 @@ public class PrintUtil {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PrintUtil.class);
 
-    public static String printAndCollectStats(Stats stats, StopCondition condition, long intervalNanos, int readWriteRatio) {
+    public static String printAndCollectStats(Stats stats, StopCondition condition, long intervalNanos,
+        int readWriteRatio) {
         final long start = System.nanoTime();
 
         long last = start;
@@ -62,8 +63,9 @@ public class PrintUtil {
 
             PeriodStats periodStats = stats.toPeriodStats();
             long now = System.nanoTime();
-
             double elapsed = (now - last) / NANOS_PER_SEC;
+            double elapsedTotal = (now - start) / NANOS_PER_SEC;
+
             double produceRate = periodStats.messagesSent / elapsed;
             double produceThroughput = periodStats.bytesSent / BYTES_PER_MB / elapsed;
             double errorRate = periodStats.messagesSendFailed / elapsed;
@@ -90,7 +92,7 @@ public class PrintUtil {
             double endToEndLatencyMax = periodStats.endToEndLatencyMicros.getMaxValue() / MICROS_PER_MILLI;
 
             LOGGER.info(PERIOD_LOG_FORMAT,
-                DURATION_FORMAT.format(elapsed),
+                DURATION_FORMAT.format(elapsedTotal),
                 RATE_FORMAT.format(produceRate),
                 THROUGHPUT_FORMAT.format(produceThroughput),
                 RATE_FORMAT.format(errorRate),
@@ -112,8 +114,8 @@ public class PrintUtil {
             if (condition.shouldStop(start, now)) {
                 CumulativeStats cumulativeStats = stats.toCumulativeStats();
                 now = System.nanoTime();
+                elapsedTotal = (now - start) / NANOS_PER_SEC;
 
-                double elapsedTotal = (now - start) / NANOS_PER_SEC;
                 double produceRateTotal = cumulativeStats.totalMessagesSent / elapsedTotal;
                 double produceThroughputTotal = cumulativeStats.totalBytesSent / BYTES_PER_MB / elapsedTotal;
                 double produceCountTotal = cumulativeStats.totalMessagesSent / 1_000_000.0;
@@ -191,18 +193,5 @@ public class PrintUtil {
          * @return true if the loop should stop
          */
         boolean shouldStop(long startNanos, long nowNanos);
-    }
-
-    public static class StopOnDuration implements StopCondition {
-        private final long durationNanos;
-
-        public StopOnDuration(long durationNanos) {
-            this.durationNanos = durationNanos;
-        }
-
-        @Override
-        public boolean shouldStop(long startNanos, long nowNanos) {
-            return nowNanos - startNanos >= durationNanos;
-        }
     }
 }

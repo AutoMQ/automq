@@ -18,25 +18,26 @@ import org.HdrHistogram.Recorder;
 
 public class Stats {
 
-    private static final long HIGHEST_TRACKABLE_VALUE_MICROS = TimeUnit.SECONDS.toMicros(180);
+    private static final long MAX_SEND_LATENCY = TimeUnit.SECONDS.toMicros(180);
+    private static final long MAX_END_TO_END_LATENCY = TimeUnit.HOURS.toMicros(1);
     private static final int NUMBER_OF_SIGNIFICANT_VALUE_DIGITS = 5;
 
     private final LongAdder messagesSent = new LongAdder();
     private final LongAdder messagesSendFailed = new LongAdder();
     private final LongAdder bytesSent = new LongAdder();
-    private final Recorder sendLatencyMicros = new Recorder(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+    private final Recorder sendLatencyMicros = new LimitedRecorder(MAX_SEND_LATENCY);
 
     private final LongAdder messagesReceived = new LongAdder();
     private final LongAdder bytesReceived = new LongAdder();
-    private final Recorder endToEndLatencyMicros = new Recorder(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+    private final Recorder endToEndLatencyMicros = new LimitedRecorder(MAX_END_TO_END_LATENCY);
 
     private final LongAdder totalMessagesSent = new LongAdder();
     private final LongAdder totalMessagesSendFailed = new LongAdder();
     private final LongAdder totalBytesSent = new LongAdder();
     private final LongAdder totalMessagesReceived = new LongAdder();
     private final LongAdder totalBytesReceived = new LongAdder();
-    private final Histogram totalSendLatencyMicros = new Histogram(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
-    private final Histogram totalEndToEndLatencyMicros = new Histogram(HIGHEST_TRACKABLE_VALUE_MICROS, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+    private final Histogram totalSendLatencyMicros = new LimitedHistogram(MAX_SEND_LATENCY);
+    private final Histogram totalEndToEndLatencyMicros = new LimitedHistogram(MAX_END_TO_END_LATENCY);
 
     public void messageSent(long bytes, long sendTimeNanos) {
         long latencyMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - sendTimeNanos);
@@ -143,5 +144,33 @@ public class Stats {
         public long totalBytesReceived;
         public Histogram totalSendLatencyMicros;
         public Histogram totalEndToEndLatencyMicros;
+    }
+
+    private static class LimitedRecorder extends Recorder {
+        private final long limit;
+
+        public LimitedRecorder(long limit) {
+            super(limit, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+            this.limit = limit;
+        }
+
+        @Override
+        public void recordValue(long value) {
+            super.recordValue(Math.min(value, limit));
+        }
+    }
+
+    private static class LimitedHistogram extends Histogram {
+        private final long limit;
+
+        public LimitedHistogram(long limit) {
+            super(limit, NUMBER_OF_SIGNIFICANT_VALUE_DIGITS);
+            this.limit = limit;
+        }
+
+        @Override
+        public void recordValue(long value) {
+            super.recordValue(Math.min(value, limit));
+        }
     }
 }

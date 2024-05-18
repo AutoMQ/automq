@@ -24,6 +24,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
@@ -52,7 +54,7 @@ public class ConsumerService implements AutoCloseable {
         int count = 0;
         for (Topic topic : topics) {
             for (int g = 0; g < config.groupsPerTopic; g++) {
-                String groupId = String.format("sub-%s-%03d", topic, g);
+                String groupId = String.format("sub-%s-%03d", topic.name, g);
                 for (int c = 0; c < config.consumersPerGroup; c++) {
                     Consumer consumer = createConsumer(topic, groupId, config, callback);
                     consumers.add(consumer);
@@ -69,6 +71,8 @@ public class ConsumerService implements AutoCloseable {
         properties.putAll(config.consumerConfigs);
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
 
         KafkaConsumer<String, byte[]> kafkaConsumer = new KafkaConsumer<>(properties);
         kafkaConsumer.subscribe(List.of(topic.name));
