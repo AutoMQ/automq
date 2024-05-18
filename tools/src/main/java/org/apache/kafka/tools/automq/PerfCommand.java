@@ -45,8 +45,8 @@ public class PerfCommand implements AutoCloseable {
 
     private final PerfConfig config;
     private final TopicService topicService;
-    private final ProducerService producerService = new ProducerService();
-    private final ConsumerService consumerService = new ConsumerService();
+    private final ProducerService producerService;
+    private final ConsumerService consumerService;
     private final Stats stats = new Stats();
 
     private volatile boolean running = true;
@@ -61,6 +61,8 @@ public class PerfCommand implements AutoCloseable {
     private PerfCommand(PerfConfig config) {
         this.config = config;
         this.topicService = new TopicService(config.bootstrapServer());
+        this.producerService = new ProducerService();
+        this.consumerService = new ConsumerService(config.bootstrapServer());
     }
 
     private void run() {
@@ -72,7 +74,8 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating consumers...");
-        int consumers = consumerService.createConsumers(topics, config.consumersConfig(), this::messageReceived);
+        int consumers = consumerService.createConsumers(topics, config.consumersConfig());
+        consumerService.start(this::messageReceived);
         LOGGER.info("Created {} consumers, took {} ms", consumers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating producers...");
@@ -89,11 +92,27 @@ public class PerfCommand implements AutoCloseable {
         if (config.warmupDurationMinutes > 0) {
             LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
             collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
-            stats.reset();
         }
 
-        LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
-        Result result = collectStats(Duration.ofMinutes(config.testDurationMinutes));
+        Result result = null;
+        if (config.backlogDurationSeconds > 0) {
+            LOGGER.info("Pausing consumers for {} seconds to build up backlog...", config.backlogDurationSeconds);
+            consumerService.pause();
+            long backlogStart = System.currentTimeMillis();
+            collectStats(Duration.ofSeconds(config.backlogDurationSeconds));
+            long backlogEnd = System.nanoTime();
+
+            LOGGER.info("Resetting consumer offsets and resuming...");
+            consumerService.resetOffset(backlogStart, TimeUnit.SECONDS.toMillis(config.groupStartDelaySeconds));
+            consumerService.resume();
+
+            stats.reset();
+            result = collectStats(backlogEnd);
+        } else {
+            LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
+            stats.reset();
+            result = collectStats(Duration.ofMinutes(config.testDurationMinutes));
+        }
         LOGGER.info("Saving results to {}", saveResult(result));
 
         running = false;
@@ -174,6 +193,11 @@ public class PerfCommand implements AutoCloseable {
 
     private Result collectStats(Duration duration) {
         StopCondition condition = (startNanos, nowNanos) -> Duration.ofNanos(nowNanos - startNanos).compareTo(duration) >= 0;
+        return collectStats(condition);
+    }
+
+    private Result collectStats(long consumerTimeNanos) {
+        StopCondition condition = (startNanos, nowNanos) -> stats.maxSendTimeNanos.get() >= consumerTimeNanos;
         return collectStats(condition);
     }
 
