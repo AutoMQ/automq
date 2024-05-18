@@ -36,6 +36,8 @@ public class PerfConfig {
     public final int groupsPerTopic;
     public final int consumersPerGroup;
     public final int recordSize;
+    public final double randomRatio;
+    public final int randomPoolSize;
     public final int sendRate;
     public final int warmupDurationMinutes;
     public final int testDurationMinutes;
@@ -65,6 +67,8 @@ public class PerfConfig {
         groupsPerTopic = ns.getInt("groupsPerTopic");
         consumersPerGroup = ns.getInt("consumersPerGroup");
         recordSize = ns.getInt("recordSize");
+        randomRatio = ns.getDouble("randomRatio");
+        randomPoolSize = ns.getInt("randomPoolSize");
         sendRate = ns.getInt("sendRate");
         warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
         testDurationMinutes = ns.getInt("testDurationMinutes");
@@ -143,6 +147,18 @@ public class PerfConfig {
             .dest("recordSize")
             .metavar("RECORD_SIZE")
             .help("The record size in bytes.");
+        parser.addArgument("-R", "--random-ratio")
+            .setDefault(0.0)
+            .type(Double.class)
+            .dest("randomRatio")
+            .metavar("RANDOM_RATIO")
+            .help("The ratio of random payloads. The value should be between 0.0 and 1.0.");
+        parser.addArgument("-S", "--random-pool-size")
+            .setDefault(1000)
+            .type(Integer.class)
+            .dest("randomPoolSize")
+            .metavar("RANDOM_POOL_SIZE")
+            .help("The count of random payloads. Only used when random ratio is greater than 0.0.");
         parser.addArgument("-r", "--send-rate")
             .setDefault(1000)
             .type(Integer.class)
