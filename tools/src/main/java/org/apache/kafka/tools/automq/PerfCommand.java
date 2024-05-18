@@ -13,7 +13,9 @@ package org.apache.kafka.tools.automq;
 
 import com.automq.stream.s3.metrics.TimerUtil;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
@@ -73,7 +75,8 @@ public class PerfCommand implements AutoCloseable {
         waitTopicsReady();
         LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
-        producerService.start(randomPayloads(config.recordSize), config.sendRate);
+        List<byte[]> payloads = randomPayloads(config.recordSize, config.randomRatio, config.randomPoolSize);
+        producerService.start(payloads, config.sendRate);
 
         if (config.warmupDurationMinutes > 0) {
             LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
@@ -121,11 +124,35 @@ public class PerfCommand implements AutoCloseable {
         stats.reset();
     }
 
-    private List<byte[]> randomPayloads(int size) {
-        // TODO more realistic payloads
-        byte[] payload = new byte[size];
-        ThreadLocalRandom.current().nextBytes(payload);
-        return List.of(payload);
+    /**
+     * Generates a list of byte arrays with specified size and mix of random and static content.
+     *
+     * @param size        The size of each byte array.
+     * @param randomRatio The fraction of each array that should be random (0.0 to 1.0).
+     * @param count       The number of arrays to generate.
+     * @return List of byte arrays, each containing a mix of random and static bytes.
+     */
+    private List<byte[]> randomPayloads(int size, double randomRatio, int count) {
+        Random r = ThreadLocalRandom.current();
+
+        int randomBytes = (int) (size * randomRatio);
+        int staticBytes = size - randomBytes;
+        byte[] staticPayload = new byte[staticBytes];
+        r.nextBytes(staticPayload);
+
+        if (randomBytes == 0) {
+            // all payloads are the same, no need to create multiple copies
+            return List.of(staticPayload);
+        }
+
+        List<byte[]> payloads = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            byte[] payload = new byte[size];
+            r.nextBytes(payload);
+            System.arraycopy(staticPayload, 0, payload, randomBytes, staticBytes);
+            payloads.add(payload);
+        }
+        return payloads;
     }
 
     private String collectStats(Duration duration) {
