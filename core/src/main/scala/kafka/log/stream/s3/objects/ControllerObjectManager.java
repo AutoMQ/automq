@@ -11,19 +11,21 @@
 
 package kafka.log.stream.s3.objects;
 
-
 import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.request.WrapRequest;
-import kafka.server.KafkaConfig;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
@@ -40,35 +42,31 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
-
 public class ControllerObjectManager implements ObjectManager {
 
     private final static Logger LOGGER = LoggerFactory.getLogger(ControllerObjectManager.class);
 
     private final ControllerRequestSender requestSender;
     private final StreamMetadataManager metadataManager;
-    private final KafkaConfig config;
     private final int nodeId;
     private final long nodeEpoch;
+    private final boolean failoverMode;
 
-    public ControllerObjectManager(ControllerRequestSender requestSender, StreamMetadataManager metadataManager, KafkaConfig config) {
+    public ControllerObjectManager(ControllerRequestSender requestSender, StreamMetadataManager metadataManager,
+        int nodeId, long nodeEpoch, boolean failoverMode) {
         this.requestSender = requestSender;
         this.metadataManager = metadataManager;
-        this.config = config;
-        this.nodeId = config.brokerId();
-        this.nodeEpoch = config.nodeEpoch();
+        this.nodeId = nodeId;
+        this.nodeEpoch = nodeEpoch;
+        this.failoverMode = failoverMode;
     }
 
     @Override
     public CompletableFuture<Long> prepareObject(int count, long ttl) {
         PrepareS3ObjectRequestData request = new PrepareS3ObjectRequestData()
-                .setNodeId(nodeId)
-                .setPreparedCount(count)
-                .setTimeToLiveInMs(ttl);
+            .setNodeId(nodeId)
+            .setPreparedCount(count)
+            .setTimeToLiveInMs(ttl);
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
@@ -96,26 +94,22 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
-        return commitStreamSetObject(commitStreamSetObjectRequest, nodeId, nodeEpoch, false);
-    }
-
-    public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(CommitStreamSetObjectRequest commitStreamSetObjectRequest,
-                                                                                  int nodeId, long nodeEpoch, boolean failoverMode) {
+    public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(
+        CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
         CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
-                .setNodeId(nodeId)
-                .setNodeEpoch(nodeEpoch)
-                .setOrderId(commitStreamSetObjectRequest.getOrderId())
-                .setObjectId(commitStreamSetObjectRequest.getObjectId())
-                .setObjectSize(commitStreamSetObjectRequest.getObjectSize())
-                .setObjectStreamRanges(commitStreamSetObjectRequest.getStreamRanges()
-                        .stream()
-                        .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
-                .setStreamObjects(commitStreamSetObjectRequest.getStreamObjects()
-                        .stream()
-                        .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
-                .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
-                .setFailoverMode(failoverMode);
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch)
+            .setOrderId(commitStreamSetObjectRequest.getOrderId())
+            .setObjectId(commitStreamSetObjectRequest.getObjectId())
+            .setObjectSize(commitStreamSetObjectRequest.getObjectSize())
+            .setObjectStreamRanges(commitStreamSetObjectRequest.getStreamRanges()
+                .stream()
+                .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
+            .setStreamObjects(commitStreamSetObjectRequest.getStreamObjects()
+                .stream()
+                .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
+            .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
+            .setFailoverMode(failoverMode);
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
@@ -152,15 +146,15 @@ public class ControllerObjectManager implements ObjectManager {
 
     public CompletableFuture<Void> compactStreamObject(CompactStreamObjectRequest compactStreamObjectRequest) {
         CommitStreamObjectRequestData request = new CommitStreamObjectRequestData()
-                .setNodeId(nodeId)
-                .setNodeEpoch(nodeEpoch)
-                .setObjectId(compactStreamObjectRequest.getObjectId())
-                .setObjectSize(compactStreamObjectRequest.getObjectSize())
-                .setStreamId(compactStreamObjectRequest.getStreamId())
-                .setStreamEpoch(compactStreamObjectRequest.getStreamEpoch())
-                .setStartOffset(compactStreamObjectRequest.getStartOffset())
-                .setEndOffset(compactStreamObjectRequest.getEndOffset())
-                .setSourceObjectIds(compactStreamObjectRequest.getSourceObjectIds());
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch)
+            .setObjectId(compactStreamObjectRequest.getObjectId())
+            .setObjectSize(compactStreamObjectRequest.getObjectSize())
+            .setStreamId(compactStreamObjectRequest.getStreamId())
+            .setStreamEpoch(compactStreamObjectRequest.getStreamEpoch())
+            .setStartOffset(compactStreamObjectRequest.getStartOffset())
+            .setEndOffset(compactStreamObjectRequest.getEndOffset())
+            .setSourceObjectIds(compactStreamObjectRequest.getSourceObjectIds());
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
@@ -200,7 +194,8 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset, int limit) {
+    public CompletableFuture<List<S3ObjectMetadata>> getObjects(long streamId, long startOffset, long endOffset,
+        int limit) {
         return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
             if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
                 LOGGER.error("Unexpect getObjects result={} from streamId={} [{}, {}) limit={}", inRangeObjects, streamId, startOffset, endOffset, limit);
@@ -226,7 +221,8 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
-    public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
+    public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset,
+        int limit) {
         return this.metadataManager.getStreamObjects(streamId, startOffset, endOffset, limit);
     }
 }

@@ -23,11 +23,14 @@ import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.cache.blockcache.StreamReaders;
 import com.automq.stream.s3.compact.CompactionManager;
 import com.automq.stream.s3.failover.Failover;
+import com.automq.stream.s3.failover.FailoverFactory;
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.LogContext;
@@ -38,7 +41,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import kafka.log.stream.s3.failover.DefaultFailoverFactory;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
@@ -61,9 +63,9 @@ public class DefaultS3Client implements Client {
 
     private final S3BlockCache blockCache;
 
-    private final ControllerObjectManager objectManager;
+    private final ObjectManager objectManager;
 
-    private final ControllerStreamManager streamManager;
+    private final StreamManager streamManager;
 
     private final CompactionManager compactionManager;
 
@@ -76,7 +78,10 @@ public class DefaultS3Client implements Client {
     private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
+    private final BrokerServer brokerServer;
+
     public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig) {
+        this.brokerServer = brokerServer;
         this.config = ConfigUtils.to(kafkaConfig);
         this.metadataManager = new StreamMetadataManager(brokerServer, kafkaConfig);
         String endpoint = kafkaConfig.s3Endpoint();
@@ -111,8 +116,8 @@ public class DefaultS3Client implements Client {
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(kafkaConfig.s3ControllerRequestRetryMaxCount(),
                 kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
-        this.streamManager = new ControllerStreamManager(this.metadataManager, this.requestSender, kafkaConfig, () -> brokerServer.metadataCache().autoMQVersion());
-        this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
+        this.streamManager = newStreamManager(kafkaConfig.nodeId(), kafkaConfig.nodeEpoch(), false);
+        this.objectManager = newObjectManager(kafkaConfig.nodeId(), kafkaConfig.nodeEpoch(), false);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, s3Operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionS3Operator);
         this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
@@ -159,8 +164,26 @@ public class DefaultS3Client implements Client {
         return this.failover.failover(request);
     }
 
+    StreamManager newStreamManager(int nodeId, long nodeEpoch, boolean failoverMode) {
+        return new ControllerStreamManager(this.metadataManager, this.requestSender, nodeId, nodeEpoch, () -> brokerServer.metadataCache().autoMQVersion(), failoverMode);
+    }
+
+    ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
+        return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch, failoverMode);
+    }
+
     Failover failover() {
-        return new Failover(new DefaultFailoverFactory(streamManager, objectManager), (wal, sm, om, logger) -> {
+        return new Failover(new FailoverFactory() {
+            @Override
+            public StreamManager getStreamManager(int nodeId, long nodeEpoch) {
+                return newStreamManager(nodeId, nodeEpoch, true);
+            }
+
+            @Override
+            public ObjectManager getObjectManager(int nodeId, long nodeEpoch) {
+                return newObjectManager(nodeId, nodeEpoch, true);
+            }
+        }, (wal, sm, om, logger) -> {
             try {
                 storage.recover(wal, sm, om, logger);
             } catch (Throwable e) {

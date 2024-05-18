@@ -17,5 +17,6 @@ import org.apache.kafka.common.requests.AbstractRequest;
 public interface WrapRequest {
 
     ApiKeys apiKey();
+
     AbstractRequest.Builder toRequestBuilder();
 }
