@@ -100,13 +100,14 @@ public class PerfCommand implements AutoCloseable {
             consumerService.pause();
             long backlogStart = System.currentTimeMillis();
             collectStats(Duration.ofSeconds(config.backlogDurationSeconds));
-            long backlogEnd = System.currentTimeMillis();
+            long backlogEnd = System.nanoTime();
 
+            LOGGER.info("Resetting consumer offsets and resuming...");
             consumerService.resetOffset(backlogStart, TimeUnit.SECONDS.toMillis(config.groupStartDelaySeconds));
             consumerService.resume();
 
             stats.reset();
-            // TODO
+            result = collectStats(backlogEnd);
         } else {
             LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
             stats.reset();
@@ -192,6 +193,11 @@ public class PerfCommand implements AutoCloseable {
 
     private Result collectStats(Duration duration) {
         StopCondition condition = (startNanos, nowNanos) -> Duration.ofNanos(nowNanos - startNanos).compareTo(duration) >= 0;
+        return collectStats(condition);
+    }
+
+    private Result collectStats(long consumerTimeNanos) {
+        StopCondition condition = (startNanos, nowNanos) -> stats.maxSendTimeNanos.get() >= consumerTimeNanos;
         return collectStats(condition);
     }
 

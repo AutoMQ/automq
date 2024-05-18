@@ -12,6 +12,7 @@
 package org.apache.kafka.tools.automq.perf;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import org.HdrHistogram.Histogram;
 import org.HdrHistogram.Recorder;
@@ -39,6 +40,12 @@ public class Stats {
     private final Histogram totalSendLatencyMicros = new LimitedHistogram(MAX_SEND_LATENCY);
     private final Histogram totalEndToEndLatencyMicros = new LimitedHistogram(MAX_END_TO_END_LATENCY);
 
+    /**
+     * The max send time of all messages received.
+     * Used to determine whether any consumer catches up to a specific time.
+     */
+    public final AtomicLong maxSendTimeNanos = new AtomicLong(0);
+
     public void messageSent(long bytes, long sendTimeNanos) {
         long latencyMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - sendTimeNanos);
         messagesSent.increment();
@@ -62,6 +69,7 @@ public class Stats {
         totalMessagesReceived.increment();
         totalBytesReceived.add(bytes);
         totalEndToEndLatencyMicros.recordValue(latencyMicros);
+        maxSendTimeNanos.updateAndGet(current -> Math.max(current, sendTimeNanos));
     }
 
     /**
