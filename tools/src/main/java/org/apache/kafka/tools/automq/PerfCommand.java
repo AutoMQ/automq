@@ -72,7 +72,8 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating consumers...");
-        int consumers = consumerService.createConsumers(topics, config.consumersConfig(), this::messageReceived);
+        int consumers = consumerService.createConsumers(topics, config.consumersConfig());
+        consumerService.start(this::messageReceived);
         LOGGER.info("Created {} consumers, took {} ms", consumers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating producers...");

@@ -13,6 +13,7 @@ package org.apache.kafka.tools.automq.perf;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -94,6 +95,23 @@ public class TopicService implements AutoCloseable {
         public Topic(String name, int partitions) {
             this.name = name;
             this.partitions = partitions;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            Topic topic = (Topic) o;
+            return partitions == topic.partitions && Objects.equals(name, topic.name);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(name, partitions);
         }
     }
 
