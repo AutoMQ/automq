@@ -307,4 +307,5 @@ libs += [
   jna: "net.java.dev.jna:jna:$versions.jna",
   guava: "com.google.guava:guava:$versions.guava",
   hdrHistogram: "org.hdrhistogram:HdrHistogram:$versions.hdrHistogram",
+  spotbugsAnnotations: "com.github.spotbugs:spotbugs-annotations:$versions.spotbugs",
 ]
