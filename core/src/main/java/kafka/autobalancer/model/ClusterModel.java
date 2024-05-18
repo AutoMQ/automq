@@ -321,8 +321,7 @@ public class ClusterModel {
             }
             if (oldBrokerId != -1) {
                 TopicPartition tp = new TopicPartition(topicName, partitionId);
-                TopicPartitionReplicaUpdater replicaUpdater = brokerReplicaMap.get(oldBrokerId).get(tp);
-                brokerReplicaMap.get(brokerId).put(tp, replicaUpdater);
+                brokerReplicaMap.get(brokerId).put(tp, createReplicaUpdater(tp));
                 brokerReplicaMap.get(oldBrokerId).remove(tp);
             }
             topicPartitionReplicaMap.get(topicName).put(partitionId, brokerId);
