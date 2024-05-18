@@ -39,6 +39,8 @@ public class PerfConfig {
     public final double randomRatio;
     public final int randomPoolSize;
     public final int sendRate;
+    public final int backlogDurationSeconds;
+    public final int groupStartDelaySeconds;
     public final int warmupDurationMinutes;
     public final int testDurationMinutes;
     public final int reportingIntervalSeconds;
@@ -70,9 +72,18 @@ public class PerfConfig {
         randomRatio = ns.getDouble("randomRatio");
         randomPoolSize = ns.getInt("randomPoolSize");
         sendRate = ns.getInt("sendRate");
+        backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
+        groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
         warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
         testDurationMinutes = ns.getInt("testDurationMinutes");
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
+
+        // TODO add more checker
+
+        if (backlogDurationSeconds <= producersPerTopic * groupStartDelaySeconds) {
+            throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should be greater than PRODUCERS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
+                backlogDurationSeconds, producersPerTopic, groupStartDelaySeconds));
+        }
     }
 
     public static ArgumentParser parser() {
@@ -165,6 +176,18 @@ public class PerfConfig {
             .dest("sendRate")
             .metavar("SEND_RATE")
             .help("The send rate in messages per second.");
+        parser.addArgument("-b", "--backlog-duration")
+            .setDefault(500)
+            .type(Integer.class)
+            .dest("backlogDurationSeconds")
+            .metavar("BACKLOG_DURATION_SECONDS")
+            .help("The backlog duration in seconds. Should be greater than PRODUCERS_PER_TOPIC * GROUP_START_DELAY_SECONDS.");
+        parser.addArgument("-G", "--group-start-delay")
+            .setDefault(0)
+            .type(Integer.class)
+            .dest("groupStartDelaySeconds")
+            .metavar("GROUP_START_DELAY_SECONDS")
+            .help("The group start delay in seconds.");
         parser.addArgument("-w", "--warmup-duration")
             .setDefault(1)
             .type(Integer.class)
