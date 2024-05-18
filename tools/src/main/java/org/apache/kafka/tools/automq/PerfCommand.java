@@ -12,28 +12,35 @@
 package org.apache.kafka.tools.automq;
 
 import com.automq.stream.s3.metrics.TimerUtil;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
+import java.io.File;
+import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
-import org.apache.kafka.tools.automq.perf.PrintUtil.StopCondition;
 import org.apache.kafka.tools.automq.perf.ProducerService;
 import org.apache.kafka.tools.automq.perf.Stats;
+import org.apache.kafka.tools.automq.perf.StatsCollector.Result;
+import org.apache.kafka.tools.automq.perf.StatsCollector.StopCondition;
 import org.apache.kafka.tools.automq.perf.TopicService;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.apache.kafka.tools.automq.perf.PrintUtil.printAndCollectStats;
+import static org.apache.kafka.tools.automq.perf.StatsCollector.printAndCollectStats;
 
 public class PerfCommand implements AutoCloseable {
 
     private static final long TOPIC_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(2);
 
+    private static final ObjectWriter JSON = new ObjectMapper().writerWithDefaultPrettyPrinter();
     private static final Logger LOGGER = LoggerFactory.getLogger(PerfCommand.class);
 
     private final PerfConfig config;
@@ -57,6 +64,7 @@ public class PerfCommand implements AutoCloseable {
     }
 
     private void run() {
+        LOGGER.info("Starting perf test with config: {}", jsonStringify(config));
         TimerUtil timer = new TimerUtil();
 
         LOGGER.info("Creating topics...");
@@ -85,9 +93,18 @@ public class PerfCommand implements AutoCloseable {
         }
 
         LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
-        collectStats(Duration.ofMinutes(config.testDurationMinutes));
+        Result result = collectStats(Duration.ofMinutes(config.testDurationMinutes));
+        LOGGER.info("Saving results to {}", saveResult(result));
 
         running = false;
+    }
+
+    private String jsonStringify(Object obj) {
+        try {
+            return JSON.writeValueAsString(obj);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private void messageSent(int size, long sendTimeNanos, Exception exception) {
@@ -155,14 +172,24 @@ public class PerfCommand implements AutoCloseable {
         return payloads;
     }
 
-    private String collectStats(Duration duration) {
+    private Result collectStats(Duration duration) {
         StopCondition condition = (startNanos, nowNanos) -> Duration.ofNanos(nowNanos - startNanos).compareTo(duration) >= 0;
         return collectStats(condition);
     }
 
-    private String collectStats(StopCondition condition) {
+    private Result collectStats(StopCondition condition) {
         long intervalNanos = TimeUnit.SECONDS.toNanos(config.reportingIntervalSeconds);
-        return printAndCollectStats(stats, condition, intervalNanos, config.groupsPerTopic);
+        return printAndCollectStats(stats, condition, intervalNanos, config);
+    }
+
+    private String saveResult(Result result) {
+        String fileName = String.format("perf-%s.json", new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss").format(new Date()));
+        try {
+            JSON.writeValue(new File(fileName), result);
+        } catch (Exception e) {
+            LOGGER.error("Failed to write result to file {}", fileName, e);
+        }
+        return fileName;
     }
 
     @Override

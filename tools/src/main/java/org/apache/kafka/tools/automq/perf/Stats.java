@@ -123,6 +123,7 @@ public class Stats {
     }
 
     public static class PeriodStats {
+        public long nowNanos = System.nanoTime();
         public long messagesSent;
         public long messagesSendFailed;
         public long bytesSent;
@@ -137,6 +138,7 @@ public class Stats {
     }
 
     public static class CumulativeStats {
+        public long nowNanos = System.nanoTime();
         public long totalMessagesSent;
         public long totalMessagesSendFailed;
         public long totalBytesSent;
