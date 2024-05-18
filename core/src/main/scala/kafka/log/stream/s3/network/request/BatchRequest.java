@@ -15,4 +15,8 @@ import org.apache.kafka.common.requests.AbstractRequest.Builder;
 
 public abstract class BatchRequest implements WrapRequest {
     public abstract Builder addSubRequest(Builder builder);
+
+    public Object batchKey() {
+        return apiKey();
+    }
 }

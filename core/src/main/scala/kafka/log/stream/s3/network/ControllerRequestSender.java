@@ -28,7 +28,6 @@ import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.BrokerServer;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractRequest.Builder;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.s3.AbstractBatchResponse;
@@ -46,7 +45,7 @@ public class ControllerRequestSender {
 
     private final ScheduledExecutorService retryService;
 
-    private final ConcurrentHashMap<ApiKeys, RequestAccumulator> requestAccumulatorMap;
+    private final ConcurrentHashMap<Object, RequestAccumulator> requestAccumulatorMap;
 
     public ControllerRequestSender(BrokerServer brokerServer, RetryPolicyContext retryPolicyContext) {
         this.retryPolicyContext = retryPolicyContext;
@@ -70,8 +69,8 @@ public class ControllerRequestSender {
     }
 
     private void batchSend(RequestTask task) {
-        requestAccumulatorMap.computeIfAbsent(task.request.apiKey(),
-                this::createRequestAccumulator).send(task);
+        requestAccumulatorMap.computeIfAbsent(((BatchRequest) task.request).batchKey(),
+            this::createRequestAccumulator).send(task);
     }
 
     private void singleSend(RequestTask task) {
@@ -182,7 +181,7 @@ public class ControllerRequestSender {
                 void onSuccess0(AbstractResponse response) {
                     if (!(response instanceof AbstractBatchResponse)) {
                         LOGGER.error("Unexpected response type: {} while sending request: {}",
-                                response.getClass().getSimpleName(), builder);
+                            response.getClass().getSimpleName(), builder);
                         onError(new RuntimeException("Unexpected response type while sending request"));
                         return;
                     }
@@ -238,7 +237,7 @@ public class ControllerRequestSender {
 
     }
 
-    private RequestAccumulator createRequestAccumulator(ApiKeys type) {
+    private RequestAccumulator createRequestAccumulator(Object batchKey) {
         return new RequestAccumulator();
     }
 
@@ -250,7 +249,7 @@ public class ControllerRequestSender {
         private int sendCount;
 
         public RequestTask(WrapRequest request, CompletableFuture<R> future,
-                           Function<T, ResponseHandleResult<R>> responseHandler) {
+            Function<T, ResponseHandleResult<R>> responseHandler) {
             this.request = request;
             this.future = future;
             this.responseHandler = responseHandler;
@@ -279,9 +278,9 @@ public class ControllerRequestSender {
         @Override
         public String toString() {
             return "RequestTask{" +
-                    "apiKey=" + request.apiKey() +
-                    ", sendCount=" + sendCount +
-                    '}';
+                "apiKey=" + request.apiKey() +
+                ", sendCount=" + sendCount +
+                '}';
         }
 
     }
