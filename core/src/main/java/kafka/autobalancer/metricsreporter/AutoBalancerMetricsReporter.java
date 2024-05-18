@@ -50,6 +50,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -374,6 +375,16 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         for (Map.Entry<MetricName, Metric> entry : interestedMetrics.entrySet()) {
             LOGGER.trace("Processing yammer metric {}, scope = {}", entry.getKey(), entry.getKey().getScope());
             entry.getValue().processWith(yammerMetricProcessor, entry.getKey(), context);
+        }
+        Iterator<Map.Entry<String, AutoBalancerMetrics>> iterator = context.getMetricMap().entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, AutoBalancerMetrics> entry = iterator.next();
+            AutoBalancerMetrics metrics = entry.getValue();
+            if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC
+                    && !metrics.getMetricValueMap().containsKey(RawMetricTypes.PARTITION_SIZE)) {
+                // remove metrics for closed partition
+                iterator.remove();
+            }
         }
     }
 
