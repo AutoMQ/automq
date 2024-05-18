@@ -12,18 +12,30 @@
 package org.apache.kafka.tools.automq.perf;
 
 import java.time.Duration;
-import java.util.LinkedList;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AlterConsumerGroupOffsetsResult;
+import org.apache.kafka.clients.admin.ListOffsetsResult;
+import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
@@ -36,50 +48,56 @@ public class ConsumerService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsumerService.class);
 
-    private final List<Consumer> consumers = new LinkedList<>();
+    private final Admin admin;
+    private final List<Group> groups = new ArrayList<>();
+
+    public ConsumerService(String bootstrapServer) {
+        this.admin = Admin.create(Map.of(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer));
+    }
 
     /**
      * Create consumers for the given topics.
      * Note: the created consumers will start polling immediately.
      * NOT thread-safe.
      *
-     * @param topics   topic names
-     * @param config   consumer configuration
-     * @param callback callback to be called when a message is received
+     * @param topics topic names
+     * @param config consumer configuration
      * @return the number of consumers created
      */
-    public int createConsumers(List<Topic> topics, ConsumersConfig config, ConsumerCallback callback) {
+    public int createConsumers(List<Topic> topics, ConsumersConfig config) {
         int count = 0;
-        for (Topic topic : topics) {
-            for (int g = 0; g < config.groupsPerTopic; g++) {
-                String groupId = String.format("sub-%s-%03d", topic, g);
-                for (int c = 0; c < config.consumersPerGroup; c++) {
-                    Consumer consumer = createConsumer(topic, groupId, config, callback);
-                    consumers.add(consumer);
-                    count++;
-                }
-            }
+        for (int g = 0; g < config.groupsPerTopic; g++) {
+            Group group = new Group(g, config.consumersPerGroup, topics, config);
+            groups.add(group);
+            count += group.size();
         }
         return count;
     }
 
-    private static Consumer createConsumer(Topic topic, String groupId,
-        ConsumersConfig config, ConsumerCallback callback) {
-        Properties properties = new Properties();
-        properties.putAll(config.consumerConfigs);
-        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
-        properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+    public void start(ConsumerCallback callback) {
+        groups.forEach(group -> group.start(callback));
+    }
 
-        KafkaConsumer<String, byte[]> kafkaConsumer = new KafkaConsumer<>(properties);
-        kafkaConsumer.subscribe(List.of(topic.name));
-        // start polling
-        return new Consumer(kafkaConsumer, callback);
+    public void pause() {
+        groups.forEach(Group::pause);
+    }
+
+    public void resume() {
+        groups.forEach(Group::resume);
+    }
+
+    public void resetOffset(long startMillis, long intervalMillis) {
+        for (Group group : groups) {
+            // TODO make this async
+            group.seek(startMillis);
+            startMillis += intervalMillis;
+        }
     }
 
     @Override
     public void close() {
-        consumers.forEach(Consumer::preClose);
-        consumers.forEach(Consumer::close);
+        admin.close();
+        groups.forEach(Group::close);
     }
 
     @FunctionalInterface
@@ -108,22 +126,143 @@ public class ConsumerService implements AutoCloseable {
         }
     }
 
+    private class Group implements AutoCloseable {
+        private final int index;
+        private final Map<Topic, List<Consumer>> consumers = new HashMap<>();
+
+        public Group(int index, int consumersPerGroup, List<Topic> topics, ConsumersConfig config) {
+            this.index = index;
+            Properties common = toProperties(config);
+            for (Topic topic : topics) {
+                List<Consumer> topicConsumers = new ArrayList<>();
+                for (int c = 0; c < consumersPerGroup; c++) {
+                    Consumer consumer = createConsumer(topic, common);
+                    topicConsumers.add(consumer);
+                }
+                consumers.put(topic, topicConsumers);
+            }
+        }
+
+        public void start(ConsumerCallback callback) {
+            consumers().forEach(consumer -> consumer.start(callback));
+        }
+
+        public void pause() {
+            consumers().forEach(Consumer::pause);
+        }
+
+        public void resume() {
+            consumers().forEach(Consumer::resume);
+        }
+
+        public void seek(long timestamp) {
+            try {
+                var offsetMap = admin.listOffsets(listOffsetsRequest(timestamp)).all().get();
+
+                List<AlterConsumerGroupOffsetsResult> futures = new ArrayList<>();
+                for (Topic topic : consumers.keySet()) {
+                    var future = admin.alterConsumerGroupOffsets(groupId(topic), resetOffsetsRequest(topic, offsetMap));
+                    futures.add(future);
+                }
+                for (AlterConsumerGroupOffsetsResult future : futures) {
+                    future.all().get();
+                }
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        public int size() {
+            return consumers.values().stream()
+                .mapToInt(List::size)
+                .sum();
+        }
+
+        @Override
+        public void close() {
+            consumers().forEach(Consumer::preClose);
+            consumers().forEach(Consumer::close);
+        }
+
+        private Properties toProperties(ConsumersConfig config) {
+            Properties properties = new Properties();
+            properties.putAll(config.consumerConfigs);
+            properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
+            properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+            properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+            return properties;
+        }
+
+        private Consumer createConsumer(Topic topic, Properties common) {
+            Properties properties = new Properties(common);
+            properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId(topic));
+
+            KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(properties);
+            consumer.subscribe(List.of(topic.name));
+            return new Consumer(consumer);
+        }
+
+        private Stream<Consumer> consumers() {
+            return consumers.values().stream().flatMap(List::stream);
+        }
+
+        private String groupId(Topic topic) {
+            return String.format("sub-%s-%03d", topic.name, index);
+        }
+
+        private Map<TopicPartition, OffsetSpec> listOffsetsRequest(long timestamp) {
+            return consumers.keySet().stream()
+                .map(Topic::partitions)
+                .flatMap(List::stream)
+                .collect(Collectors.toMap(
+                    partition -> partition,
+                    partition -> OffsetSpec.forTimestamp(timestamp)
+                ));
+        }
+
+        private Map<TopicPartition, OffsetAndMetadata> resetOffsetsRequest(Topic topic,
+            Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> offsetMap) {
+            return offsetMap.entrySet().stream()
+                .filter(entry -> topic.containsPartition(entry.getKey()))
+                .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> new OffsetAndMetadata(entry.getValue().offset())
+                ));
+        }
+    }
+
     private static class Consumer {
         private static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
+        private static final long PAUSE_INTERVAL = 1000;
         private final KafkaConsumer<String, byte[]> consumer;
         private final ExecutorService executor;
-        private final Future<?> task;
+        private Future<?> task;
+        private boolean paused = false;
         private volatile boolean closing = false;
 
-        public Consumer(KafkaConsumer<String, byte[]> consumer, ConsumerCallback callback) {
+        public Consumer(KafkaConsumer<String, byte[]> consumer) {
             this.consumer = consumer;
             this.executor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("perf-consumer", false));
+        }
+
+        public void start(ConsumerCallback callback) {
             this.task = this.executor.submit(() -> pollRecords(consumer, callback));
+        }
+
+        public void pause() {
+            paused = true;
+        }
+
+        public void resume() {
+            paused = false;
         }
 
         private void pollRecords(KafkaConsumer<String, byte[]> consumer, ConsumerCallback callback) {
             while (!closing) {
                 try {
+                    while (paused) {
+                        Thread.sleep(PAUSE_INTERVAL);
+                    }
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
                     for (ConsumerRecord<String, byte[]> record : records) {
                         long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value(), HEADER_KEY_CHARSET));
@@ -150,10 +289,12 @@ public class ConsumerService implements AutoCloseable {
          */
         public void close() {
             assert closing;
-            try {
-                task.get();
-            } catch (Exception e) {
-                LOGGER.error("exception occur while closing consumer", e);
+            if (task != null) {
+                try {
+                    task.get();
+                } catch (Exception e) {
+                    LOGGER.error("exception occur while closing consumer", e);
+                }
             }
             consumer.close();
         }
