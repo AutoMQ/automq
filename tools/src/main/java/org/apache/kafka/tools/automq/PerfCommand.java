@@ -12,31 +12,41 @@
 package org.apache.kafka.tools.automq;
 
 import com.automq.stream.s3.metrics.TimerUtil;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
-import org.apache.kafka.tools.automq.perf.PrintUtil.StopOnDuration;
 import org.apache.kafka.tools.automq.perf.ProducerService;
 import org.apache.kafka.tools.automq.perf.Stats;
+import org.apache.kafka.tools.automq.perf.StatsCollector.Result;
+import org.apache.kafka.tools.automq.perf.StatsCollector.StopCondition;
 import org.apache.kafka.tools.automq.perf.TopicService;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.apache.kafka.tools.automq.perf.PrintUtil.printAndCollectStats;
+import static org.apache.kafka.tools.automq.perf.StatsCollector.printAndCollectStats;
 
 public class PerfCommand implements AutoCloseable {
 
     private static final long TOPIC_READY_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(2);
 
+    private static final ObjectWriter JSON = new ObjectMapper().writerWithDefaultPrettyPrinter();
     private static final Logger LOGGER = LoggerFactory.getLogger(PerfCommand.class);
 
     private final PerfConfig config;
     private final TopicService topicService;
-    private final ProducerService producerService = new ProducerService();
-    private final ConsumerService consumerService = new ConsumerService();
+    private final ProducerService producerService;
+    private final ConsumerService consumerService;
     private final Stats stats = new Stats();
 
     private volatile boolean running = true;
@@ -51,9 +61,12 @@ public class PerfCommand implements AutoCloseable {
     private PerfCommand(PerfConfig config) {
         this.config = config;
         this.topicService = new TopicService(config.bootstrapServer());
+        this.producerService = new ProducerService();
+        this.consumerService = new ConsumerService(config.bootstrapServer());
     }
 
     private void run() {
+        LOGGER.info("Starting perf test with config: {}", jsonStringify(config));
         TimerUtil timer = new TimerUtil();
 
         LOGGER.info("Creating topics...");
@@ -61,29 +74,56 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating consumers...");
-        int consumers = consumerService.createConsumers(topics, config.consumersConfig(), this::messageReceived);
+        int consumers = consumerService.createConsumers(topics, config.consumersConfig());
+        consumerService.start(this::messageReceived);
         LOGGER.info("Created {} consumers, took {} ms", consumers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating producers...");
         int producers = producerService.createProducers(topics, config.producersConfig(), this::messageSent);
         LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
-        LOGGER.info("Waiting for topics are ready...");
+        LOGGER.info("Waiting for topics to be ready...");
         waitTopicsReady();
         LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
-        producerService.start(randomPayloads(config.recordSize), config.sendRate);
+        List<byte[]> payloads = randomPayloads(config.recordSize, config.randomRatio, config.randomPoolSize);
+        producerService.start(payloads, config.sendRate);
 
         if (config.warmupDurationMinutes > 0) {
             LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
-            printAndCollectStats(stats, new StopOnDuration(config.warmupDurationMinutes), config.reportingIntervalSeconds, config.groupsPerTopic);
-            stats.reset();
+            collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
         }
 
-        LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
-        printAndCollectStats(stats, new StopOnDuration(config.testDurationMinutes), config.reportingIntervalSeconds, config.groupsPerTopic);
+        Result result = null;
+        if (config.backlogDurationSeconds > 0) {
+            LOGGER.info("Pausing consumers for {} seconds to build up backlog...", config.backlogDurationSeconds);
+            consumerService.pause();
+            long backlogStart = System.currentTimeMillis();
+            collectStats(Duration.ofSeconds(config.backlogDurationSeconds));
+            long backlogEnd = System.nanoTime();
+
+            LOGGER.info("Resetting consumer offsets and resuming...");
+            consumerService.resetOffset(backlogStart, TimeUnit.SECONDS.toMillis(config.groupStartDelaySeconds));
+            consumerService.resume();
+
+            stats.reset();
+            result = collectStats(backlogEnd);
+        } else {
+            LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
+            stats.reset();
+            result = collectStats(Duration.ofMinutes(config.testDurationMinutes));
+        }
+        LOGGER.info("Saving results to {}", saveResult(result));
 
         running = false;
+    }
+
+    private String jsonStringify(Object obj) {
+        try {
+            return JSON.writeValueAsString(obj);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private void messageSent(int size, long sendTimeNanos, Exception exception) {
@@ -120,11 +160,60 @@ public class PerfCommand implements AutoCloseable {
         stats.reset();
     }
 
-    private List<byte[]> randomPayloads(int size) {
-        // TODO more realistic payloads
-        byte[] payload = new byte[size];
-        ThreadLocalRandom.current().nextBytes(payload);
-        return List.of(payload);
+    /**
+     * Generates a list of byte arrays with specified size and mix of random and static content.
+     *
+     * @param size        The size of each byte array.
+     * @param randomRatio The fraction of each array that should be random (0.0 to 1.0).
+     * @param count       The number of arrays to generate.
+     * @return List of byte arrays, each containing a mix of random and static bytes.
+     */
+    private List<byte[]> randomPayloads(int size, double randomRatio, int count) {
+        Random r = ThreadLocalRandom.current();
+
+        int randomBytes = (int) (size * randomRatio);
+        int staticBytes = size - randomBytes;
+        byte[] staticPayload = new byte[staticBytes];
+        r.nextBytes(staticPayload);
+
+        if (randomBytes == 0) {
+            // all payloads are the same, no need to create multiple copies
+            return List.of(staticPayload);
+        }
+
+        List<byte[]> payloads = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            byte[] payload = new byte[size];
+            r.nextBytes(payload);
+            System.arraycopy(staticPayload, 0, payload, randomBytes, staticBytes);
+            payloads.add(payload);
+        }
+        return payloads;
+    }
+
+    private Result collectStats(Duration duration) {
+        StopCondition condition = (startNanos, nowNanos) -> Duration.ofNanos(nowNanos - startNanos).compareTo(duration) >= 0;
+        return collectStats(condition);
+    }
+
+    private Result collectStats(long consumerTimeNanos) {
+        StopCondition condition = (startNanos, nowNanos) -> stats.maxSendTimeNanos.get() >= consumerTimeNanos;
+        return collectStats(condition);
+    }
+
+    private Result collectStats(StopCondition condition) {
+        long intervalNanos = TimeUnit.SECONDS.toNanos(config.reportingIntervalSeconds);
+        return printAndCollectStats(stats, condition, intervalNanos, config);
+    }
+
+    private String saveResult(Result result) {
+        String fileName = String.format("perf-%s.json", new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss").format(new Date()));
+        try {
+            JSON.writeValue(new File(fileName), result);
+        } catch (Exception e) {
+            LOGGER.error("Failed to write result to file {}", fileName, e);
+        }
+        return fileName;
     }
 
     @Override

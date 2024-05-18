@@ -36,7 +36,11 @@ public class PerfConfig {
     public final int groupsPerTopic;
     public final int consumersPerGroup;
     public final int recordSize;
+    public final double randomRatio;
+    public final int randomPoolSize;
     public final int sendRate;
+    public final int backlogDurationSeconds;
+    public final int groupStartDelaySeconds;
     public final int warmupDurationMinutes;
     public final int testDurationMinutes;
     public final int reportingIntervalSeconds;
@@ -65,10 +69,21 @@ public class PerfConfig {
         groupsPerTopic = ns.getInt("groupsPerTopic");
         consumersPerGroup = ns.getInt("consumersPerGroup");
         recordSize = ns.getInt("recordSize");
+        randomRatio = ns.getDouble("randomRatio");
+        randomPoolSize = ns.getInt("randomPoolSize");
         sendRate = ns.getInt("sendRate");
+        backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
+        groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
         warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
         testDurationMinutes = ns.getInt("testDurationMinutes");
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
+
+        // TODO add more checker
+
+        if (backlogDurationSeconds <= producersPerTopic * groupStartDelaySeconds) {
+            throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should be greater than PRODUCERS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
+                backlogDurationSeconds, producersPerTopic, groupStartDelaySeconds));
+        }
     }
 
     public static ArgumentParser parser() {
@@ -143,12 +158,36 @@ public class PerfConfig {
             .dest("recordSize")
             .metavar("RECORD_SIZE")
             .help("The record size in bytes.");
+        parser.addArgument("-R", "--random-ratio")
+            .setDefault(0.0)
+            .type(Double.class)
+            .dest("randomRatio")
+            .metavar("RANDOM_RATIO")
+            .help("The ratio of random payloads. The value should be between 0.0 and 1.0.");
+        parser.addArgument("-S", "--random-pool-size")
+            .setDefault(1000)
+            .type(Integer.class)
+            .dest("randomPoolSize")
+            .metavar("RANDOM_POOL_SIZE")
+            .help("The count of random payloads. Only used when random ratio is greater than 0.0.");
         parser.addArgument("-r", "--send-rate")
             .setDefault(1000)
             .type(Integer.class)
             .dest("sendRate")
             .metavar("SEND_RATE")
             .help("The send rate in messages per second.");
+        parser.addArgument("-b", "--backlog-duration")
+            .setDefault(500)
+            .type(Integer.class)
+            .dest("backlogDurationSeconds")
+            .metavar("BACKLOG_DURATION_SECONDS")
+            .help("The backlog duration in seconds. Should be greater than PRODUCERS_PER_TOPIC * GROUP_START_DELAY_SECONDS.");
+        parser.addArgument("-G", "--group-start-delay")
+            .setDefault(0)
+            .type(Integer.class)
+            .dest("groupStartDelaySeconds")
+            .metavar("GROUP_START_DELAY_SECONDS")
+            .help("The group start delay in seconds.");
         parser.addArgument("-w", "--warmup-duration")
             .setDefault(1)
             .type(Integer.class)

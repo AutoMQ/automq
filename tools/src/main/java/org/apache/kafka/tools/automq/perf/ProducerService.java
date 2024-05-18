@@ -32,6 +32,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import org.slf4j.Logger;
@@ -76,6 +78,8 @@ public class ProducerService implements AutoCloseable {
         Properties properties = new Properties();
         properties.putAll(config.producerConfigs);
         properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
+        properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
 
         KafkaProducer<String, byte[]> kafkaProducer = new KafkaProducer<>(properties);
         return new Producer(kafkaProducer, topic, callback);
