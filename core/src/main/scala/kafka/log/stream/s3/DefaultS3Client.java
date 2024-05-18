@@ -23,16 +23,21 @@ import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.compact.CompactionManager;
 import com.automq.stream.s3.failover.Failover;
+import com.automq.stream.s3.failover.FailoverFactory;
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
-import kafka.log.stream.s3.failover.DefaultFailoverFactory;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
@@ -42,10 +47,6 @@ import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 public class DefaultS3Client implements Client {
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
@@ -59,9 +60,9 @@ public class DefaultS3Client implements Client {
 
     private final S3BlockCache blockCache;
 
-    private final ControllerObjectManager objectManager;
+    private final ObjectManager objectManager;
 
-    private final ControllerStreamManager streamManager;
+    private final StreamManager streamManager;
 
     private final CompactionManager compactionManager;
 
@@ -74,27 +75,30 @@ public class DefaultS3Client implements Client {
     private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
+    private final BrokerServer brokerServer;
+
     public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig) {
+        this.brokerServer = brokerServer;
         this.config = ConfigUtils.to(kafkaConfig);
         this.metadataManager = new StreamMetadataManager(brokerServer, kafkaConfig);
         String endpoint = kafkaConfig.s3Endpoint();
         String region = kafkaConfig.s3Region();
         String bucket = kafkaConfig.s3Bucket();
         networkInboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND,
-                config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
+            config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
-                config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
+            config.networkBaselineBandwidth(), config.refillPeriodMs(), config.networkBaselineBandwidth());
         List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
         boolean forcePathStyle = this.config.forcePathStyle();
         S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
-                .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).forcePathStyle(forcePathStyle).build();
+            .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).forcePathStyle(forcePathStyle).build();
         S3Operator compactionS3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
-                .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).forcePathStyle(forcePathStyle).build();
+            .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).forcePathStyle(forcePathStyle).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(kafkaConfig.s3ControllerRequestRetryMaxCount(),
-                kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
+            kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
-        this.streamManager = new ControllerStreamManager(this.metadataManager, this.requestSender, kafkaConfig);
-        this.objectManager = new ControllerObjectManager(this.requestSender, this.metadataManager, kafkaConfig);
+        this.streamManager = newStreamManager(kafkaConfig.nodeId(), kafkaConfig.nodeEpoch(), false);
+        this.objectManager = newObjectManager(kafkaConfig.nodeId(), kafkaConfig.nodeEpoch(), false);
         this.blockCache = new DefaultS3BlockCache(this.config, objectManager, s3Operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionS3Operator);
         this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
@@ -141,8 +145,26 @@ public class DefaultS3Client implements Client {
         return this.failover.failover(request);
     }
 
+    StreamManager newStreamManager(int nodeId, long nodeEpoch, boolean failoverMode) {
+        return new ControllerStreamManager(this.metadataManager, this.requestSender, nodeId, nodeEpoch, failoverMode);
+    }
+
+    ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
+        return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch, failoverMode);
+    }
+
     Failover failover() {
-        return new Failover(new DefaultFailoverFactory(streamManager, objectManager), (wal, sm, om, logger) -> {
+        return new Failover(new FailoverFactory() {
+            @Override
+            public StreamManager getStreamManager(int nodeId, long nodeEpoch) {
+                return newStreamManager(nodeId, nodeEpoch, true);
+            }
+
+            @Override
+            public ObjectManager getObjectManager(int nodeId, long nodeEpoch) {
+                return newObjectManager(nodeId, nodeEpoch, true);
+            }
+        }, (wal, sm, om, logger) -> {
             try {
                 storage.recover(wal, sm, om, logger);
             } catch (Throwable e) {
