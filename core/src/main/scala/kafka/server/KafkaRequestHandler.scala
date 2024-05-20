@@ -30,6 +30,7 @@ import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, TimeUnit}
+import scala.collection.Set
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
@@ -630,6 +631,11 @@ class BrokerTopicStats(configOpt: java.util.Optional[KafkaConfig] = java.util.Op
     if (metrics != null) {
       metrics.close()
     }
+  }
+
+  def removeRedundantMetrics(topicPartitions: Set[TopicPartition]): Unit = {
+    val topicPartitionsToRemove = partitionStats.keys.diff(topicPartitions)
+    topicPartitionsToRemove.foreach(removeMetrics)
   }
 
   def updateBytesOut(topic: String, isFollower: Boolean, isReassignment: Boolean, value: Long): Unit = {
