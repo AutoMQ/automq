@@ -83,12 +83,17 @@ class ElasticReplicaManager(
   addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
   directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP,
   private val fastFetchExecutor: ExecutorService = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true)),
-  private val slowFetchExecutor: ExecutorService = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true))
+  private val slowFetchExecutor: ExecutorService = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true)),
+  private val partitionMetricsCleanerExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("kafka-partition-metrics-cleaner", true)),
 ) extends ReplicaManager(config, metrics, time, scheduler, logManager, remoteLogManager, quotaManagers, metadataCache,
   logDirFailureChannel, alterPartitionManager, brokerTopicStats, isShuttingDown, zkClient, delayedProducePurgatoryParam,
   delayedFetchPurgatoryParam, delayedDeleteRecordsPurgatoryParam, delayedElectLeaderPurgatoryParam,
   delayedRemoteFetchPurgatoryParam, threadNamePrefix, brokerEpochSupplier, addPartitionsToTxnManager,
   directoryEventHandler) {
+
+  partitionMetricsCleanerExecutor.scheduleAtFixedRate(() => {
+    brokerTopicStats.removeRedundantMetrics(allPartitions.keys)
+  }, 1, 1, TimeUnit.HOURS)
 
   protected val openingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
   protected val closingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
@@ -189,6 +194,7 @@ class ElasticReplicaManager(
         getPartition(topicPartition) match {
           case hostedPartition: HostedPartition.Online =>
             if (allPartitions.remove(topicPartition, hostedPartition)) {
+              brokerTopicStats.removeMetrics(topicPartition)
               maybeRemoveTopicMetrics(topicPartition.topic)
               // AutoMQ for Kafka inject start
               if (ElasticLogManager.enabled()) {
