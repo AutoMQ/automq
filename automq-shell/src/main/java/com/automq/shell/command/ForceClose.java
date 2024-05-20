@@ -74,14 +74,14 @@ public class ForceClose implements Callable<Integer> {
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, cli.bootstrapServer);
         Admin admin = Admin.create(properties);
 
-        Optional<Node> controllerOptional = findAnyControllerNode(admin);
-        if (controllerOptional.isEmpty()) {
+        Optional<Node> nodeOptional = findAnyNode(admin);
+        if (nodeOptional.isEmpty()) {
             System.err.println("No controller node found.");
             return 1;
         }
 
         NetworkClient client = CLIUtils.buildNetworkClient("automq-cli", new AdminClientConfig(new Properties()), new Metrics(), Time.SYSTEM, new LogContext());
-        ClientStreamManager manager = new ClientStreamManager(client, controllerOptional.get());
+        ClientStreamManager manager = new ClientStreamManager(client, nodeOptional.get());
 
         List<DescribeStreamsResponseData.StreamMetadata> list;
         if (exclusive.streamId > 0) {
@@ -129,10 +129,7 @@ public class ForceClose implements Callable<Integer> {
         return 0;
     }
 
-    private Optional<Node> findAnyControllerNode(Admin admin) throws Exception {
-        QuorumInfo info = admin.describeMetadataQuorum().quorumInfo().get();
-        int controllerLeaderId = info.leaderId();
-        return admin.describeCluster().nodes().get()
-            .stream().filter(node -> node.id() == controllerLeaderId).findFirst();
+    private Optional<Node> findAnyNode(Admin admin) throws Exception {
+        return admin.describeCluster().nodes().get().stream().findFirst();
     }
 }

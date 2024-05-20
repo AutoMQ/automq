@@ -48,7 +48,6 @@ public class ClientStreamManager {
     }
 
     private void connect(Node node) throws IOException {
-        node = new Node(node.id(), node.host(), 9093);
         boolean ready = networkClient.isReady(node, Time.SYSTEM.milliseconds());
         if (ready) {
             return;
