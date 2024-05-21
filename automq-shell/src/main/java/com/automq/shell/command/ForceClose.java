@@ -23,7 +23,6 @@ import java.util.concurrent.Callable;
 import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.QuorumInfo;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.metrics.Metrics;
