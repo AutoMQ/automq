@@ -92,7 +92,7 @@ public class S3Stream implements Stream {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
-        this.logIdent = "[Stream id=" + streamId + " epoch=" + epoch + "]";
+        this.logIdent = "[streamId=" + streamId + " epoch=" + epoch + "]";
         this.nextOffset = new AtomicLong(nextOffset);
         this.confirmOffset = new AtomicLong(nextOffset);
         this.status = new Status();

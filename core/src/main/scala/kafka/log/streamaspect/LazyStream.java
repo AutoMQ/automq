@@ -65,18 +65,15 @@ public class LazyStream implements Stream {
                     throw new RuntimeException(e.getCause());
                 }
             }
-            LOGGER.info("opened existing stream: stream_id={}, epoch={}, name={}", streamId, epoch, name);
+            LOGGER.info("opened existing stream: streamId={}, epoch={}, name={}", streamId, epoch, name);
         }
     }
 
     public void warmUp() throws IOException {
         if (this.inner == NOOP_STREAM) {
             try {
-                CreateStreamOptions.Builder options = CreateStreamOptions.builder().replicaCount(replicaCount)
-                    .epoch(epoch);
-                tags.forEach(options::tag);
-                this.inner = client.createAndOpenStream(options.build()).get();
-                LOGGER.info("warmup, created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
+                this.inner = createStream();
+                LOGGER.info("warmup, created and opened a new stream: streamId={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
                 notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
             } catch (Throwable e) {
                 throw new IOException(e);
@@ -114,9 +111,8 @@ public class LazyStream implements Stream {
     public synchronized CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
         if (this.inner == NOOP_STREAM) {
             try {
-                this.inner = client.createAndOpenStream(CreateStreamOptions.builder().replicaCount(replicaCount)
-                        .epoch(epoch).build()).get();
-                LOGGER.info("created and opened a new stream: stream_id={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
+                this.inner = createStream();
+                LOGGER.info("created and opened a new stream: streamId={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
                 notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
             } catch (Throwable e) {
                 return FutureUtil.failedFuture(new IOException(e));
@@ -160,6 +156,13 @@ public class LazyStream implements Stream {
         } catch (Throwable e) {
             LOGGER.error("got notify listener error", e);
         }
+    }
+
+    private Stream createStream() throws ExecutionException, InterruptedException {
+        CreateStreamOptions.Builder options = CreateStreamOptions.builder().replicaCount(replicaCount)
+            .epoch(epoch);
+        tags.forEach(options::tag);
+        return client.createAndOpenStream(options.build()).get();
     }
 
     static class NoopStream implements Stream {
