@@ -11,15 +11,11 @@
 
 package kafka.autobalancer.goals;
 
-import com.automq.stream.utils.LogContext;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.server.KafkaConfig;
-import org.slf4j.Logger;
 
 import java.util.Map;
 
 public abstract class AbstractNetworkUsageDistributionGoal extends AbstractResourceUsageDistributionGoal {
-    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     protected long linearNormalizerThreshold = 100 * 1024 * 1024;
 

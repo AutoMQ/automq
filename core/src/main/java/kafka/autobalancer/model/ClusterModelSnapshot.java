@@ -11,17 +11,21 @@
 
 package kafka.autobalancer.model;
 
+import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
+import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.common.types.metrics.AbnormalMetric;
 import org.apache.kafka.common.TopicPartition;
+import org.slf4j.Logger;
 
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
 public class ClusterModelSnapshot {
+    protected static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     private final Map<Integer, BrokerUpdater.Broker> brokerMap;
     private final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater.TopicPartitionReplica>> brokerToReplicaMap;
 
@@ -89,6 +93,10 @@ public class ClusterModelSnapshot {
         Map<BrokerUpdater.Broker, Map<Byte, Snapshot>> brokerMetricsValues = new HashMap<>();
         Map<Byte, Map<BrokerUpdater.Broker, Snapshot>> metricsValues = new HashMap<>();
         for (BrokerUpdater.Broker broker : brokerMap.values()) {
+            if (!broker.getMetricVersion().isSlowBrokerSupported()) {
+                LOGGER.warn("Slow broker detection is not supported for broker-{} with version {}.", broker.getBrokerId(), broker.getMetricVersion());
+                continue;
+            }
             Map<Byte, Snapshot> metricsValue = brokerMetricsValues.computeIfAbsent(broker, k -> new HashMap<>());
             for (Map.Entry<Byte, Snapshot> entry : broker.getMetricsSnapshot().entrySet()) {
                 Snapshot snapshot = entry.getValue();

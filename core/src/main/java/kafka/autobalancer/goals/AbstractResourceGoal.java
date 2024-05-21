@@ -11,10 +11,8 @@
 
 package kafka.autobalancer.goals;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.model.AbstractInstanceUpdater;
 import kafka.autobalancer.model.BrokerUpdater;
@@ -22,7 +20,6 @@ import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.ModelUtils;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.apache.kafka.common.TopicPartition;
-import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -34,14 +31,13 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public abstract class AbstractResourceGoal extends AbstractGoal {
-    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     protected abstract byte resource();
 
     @Override
-    public List<BrokerUpdater.Broker> getBrokersToOptimize(ClusterModelSnapshot cluster) {
+    public List<BrokerUpdater.Broker> getBrokersToOptimize(Collection<BrokerUpdater.Broker> brokers) {
         List<BrokerUpdater.Broker> brokersToOptimize = new ArrayList<>();
-        for (BrokerUpdater.Broker broker : cluster.brokers()) {
+        for (BrokerUpdater.Broker broker : brokers) {
             if (!isBrokerAcceptable(broker)) {
                 if (!broker.load(resource()).isTrusted()) {
                     // do not balance broker with untrusted load

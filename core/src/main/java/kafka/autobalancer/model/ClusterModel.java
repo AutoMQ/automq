@@ -174,7 +174,11 @@ public class ClusterModel {
             clusterLock.unlock();
         }
         if (brokerUpdater != null) {
-            return brokerUpdater.update(metricsMap, time);
+            boolean ret = brokerUpdater.update(metricsMap, time);
+            for (TopicPartitionReplicaUpdater replicaUpdater : brokerReplicaMap.get(brokerId).values()) {
+                replicaUpdater.setMetricVersion(brokerUpdater.metricVersion());
+            }
+            return ret;
         }
         return false;
     }

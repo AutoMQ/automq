@@ -140,8 +140,12 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
     }
 
     protected KafkaConsumer<String, AutoBalancerMetrics> createConsumer(String bootstrapServer) {
-        long randomToken = RANDOM.nextLong();
+        return new KafkaConsumer<>(buildConsumerProps(bootstrapServer));
+    }
+
+    protected Properties buildConsumerProps(String bootstrapServer) {
         Properties consumerProps = new Properties();
+        long randomToken = RANDOM.nextLong();
         consumerProps.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
         consumerProps.setProperty(ConsumerConfig.CLIENT_ID_CONFIG, consumerClientIdPrefix + "-consumer-" + randomToken);
         consumerProps.setProperty(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG, Long.toString(consumerRetryBackOffMs));
@@ -150,7 +154,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         consumerProps.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         StaticAutoBalancerConfigUtils.addSslConfigs(consumerProps, this.staticConfig);
-        return new KafkaConsumer<>(consumerProps);
+        return consumerProps;
     }
 
     static class BrokerEndpoints {
