@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.common.requests;
 
+import java.nio.ByteBuffer;
+import java.util.Map;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.network.Send;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -23,15 +25,13 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.MessageUtil;
 import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.protocol.SendBuilder;
-
-import java.nio.ByteBuffer;
-import java.util.Map;
 import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectRequest;
 import org.apache.kafka.common.requests.s3.CommitStreamSetObjectRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamsRequest;
 import org.apache.kafka.common.requests.s3.DeleteKVsRequest;
 import org.apache.kafka.common.requests.s3.DeleteStreamsRequest;
+import org.apache.kafka.common.requests.s3.DescribeStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetKVsRequest;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
@@ -367,6 +367,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return DeleteKVsRequest.parse(buffer, apiVersion);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdRequest.parse(buffer, apiVersion);
+            case DESCRIBE_STREAMS:
+                return DescribeStreamsRequest.parse(buffer, apiVersion);
             // AutoMQ for Kafka inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +

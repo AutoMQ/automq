@@ -75,13 +75,13 @@ public class TopicDeletionManagerTest {
         when(quorumController.isActive()).thenReturn(true);
         when(quorumController.appendWriteEvent(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        streams.put(1L, new S3StreamMetadata(0, 0, 0,
+        streams.put(1L, new S3StreamMetadata(1L, 0, 0, 0,
             StreamState.CLOSED, Collections.emptyMap(), registry));
         Map<String, String> tags = new HashMap<>();
         tags.put(StreamTags.Topic.KEY, StreamTags.Topic.encode(topicId));
-        streams.put(2L, new S3StreamMetadata(0, 0, 0,
+        streams.put(2L, new S3StreamMetadata(2L, 0, 0, 0,
             StreamState.OPENED, tags, registry));
-        streams.put(3L, new S3StreamMetadata(0, 0, 0,
+        streams.put(3L, new S3StreamMetadata(3L, 0, 0, 0,
             StreamState.CLOSED, tags, registry));
 
         topicDeletionManager.replay(
@@ -100,7 +100,7 @@ public class TopicDeletionManagerTest {
         verify(quorumController, times(0)).deleteStreams(any(), any());
 
         // close streamId=2, expect delete streamId=2/3
-        streams.put(2L, new S3StreamMetadata(0, 0, 0,
+        streams.put(2L, new S3StreamMetadata(2L, 0, 0, 0,
             StreamState.CLOSED, tags, registry));
 
         registry.getOrCreateSnapshot(2L);

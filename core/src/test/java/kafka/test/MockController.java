@@ -57,6 +57,8 @@ import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
+import org.apache.kafka.common.message.DescribeStreamsRequestData;
+import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
@@ -628,6 +630,12 @@ public class MockController implements Controller {
     @Override
     public CompletableFuture<CommitStreamObjectResponseData> commitStreamObject(ControllerRequestContext context,
         CommitStreamObjectRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<DescribeStreamsResponseData> describeStreams(ControllerRequestContext context,
+        DescribeStreamsRequestData request) {
         throw new UnsupportedOperationException();
     }
 

@@ -35,6 +35,7 @@ import org.apache.kafka.common.requests.s3.CommitStreamSetObjectResponse;
 import org.apache.kafka.common.requests.s3.CreateStreamsResponse;
 import org.apache.kafka.common.requests.s3.DeleteKVsResponse;
 import org.apache.kafka.common.requests.s3.DeleteStreamsResponse;
+import org.apache.kafka.common.requests.s3.DescribeStreamsResponse;
 import org.apache.kafka.common.requests.s3.GetKVsResponse;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdResponse;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
@@ -304,6 +305,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return DeleteKVsResponse.parse(responseBuffer, version);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdResponse.parse(responseBuffer, version);
+            case DESCRIBE_STREAMS:
+                return DescribeStreamsResponse.parse(responseBuffer, version);
             // AutoMQ for Kafka inject end
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +

@@ -19,11 +19,13 @@ package org.apache.kafka.controller;
 
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamState;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -32,10 +34,13 @@ import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamSetObjectRequestData.ObjectStreamRange;
 import org.apache.kafka.common.message.CommitStreamSetObjectRequestData.StreamObject;
 import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
+import org.apache.kafka.common.message.CreateStreamsRequestData;
 import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequest;
 import org.apache.kafka.common.message.CreateStreamsResponseData.CreateStreamResponse;
 import org.apache.kafka.common.message.DeleteStreamsRequestData.DeleteStreamRequest;
 import org.apache.kafka.common.message.DeleteStreamsResponseData.DeleteStreamResponse;
+import org.apache.kafka.common.message.DescribeStreamsRequestData;
+import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.GetOpeningStreamsResponseData;
 import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
@@ -63,6 +68,7 @@ import org.apache.kafka.controller.stream.S3StreamMetadata;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
+import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -102,11 +108,16 @@ public class StreamControlManagerTest {
 
     private final static long BROKER_EPOCH0 = 0;
 
+    private final static String TOPIC = "test";
+    private final static Uuid TOPIC_ID = Uuid.ONE_UUID;
+    private final static int PARTITION = 0;
+
     private QuorumController quorumController;
     private StreamControlManager manager;
     private S3ObjectControlManager objectControlManager;
     private ClusterControlManager clusterControlManager;
     private FeatureControlManager featureControlManager;
+    private ReplicationControlManager replicationControlManager;
 
     @BeforeEach
     public void setUp() {
@@ -116,9 +127,13 @@ public class StreamControlManagerTest {
         objectControlManager = mock(S3ObjectControlManager.class);
         clusterControlManager = mock(ClusterControlManager.class);
         featureControlManager = mock(FeatureControlManager.class);
+        replicationControlManager = mock(ReplicationControlManager.class);
         when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.LATEST);
+        when(replicationControlManager.getTopicId(TOPIC)).thenReturn(TOPIC_ID);
+        when(replicationControlManager.getTopic(TOPIC_ID)).thenReturn(new ReplicationControlManager.TopicControlInfo(TOPIC, new SnapshotRegistry(new LogContext()), TOPIC_ID));
 
-        manager = new StreamControlManager(quorumController, registry, context, objectControlManager, clusterControlManager, featureControlManager);
+        manager = new StreamControlManager(quorumController, registry, context, objectControlManager,
+            clusterControlManager, featureControlManager, replicationControlManager);
     }
 
     @Test
@@ -588,6 +603,19 @@ public class StreamControlManagerTest {
 
     private long createStream() {
         CreateStreamRequest request0 = new CreateStreamRequest();
+        ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
+        replay(manager, result0.records());
+        return result0.response().streamId();
+    }
+
+    private long createStream(Map<String, String> tagMap) {
+        CreateStreamRequest request0 = new CreateStreamRequest()
+            .setTags(new CreateStreamsRequestData.TagCollection(
+                tagMap.entrySet()
+                    .stream()
+                    .map(e -> new CreateStreamsRequestData.Tag().setKey(e.getKey()).setValue(e.getValue()))
+                    .collect(Collectors.toList())
+                    .iterator()));
         ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
         replay(manager, result0.records());
         return result0.response().streamId();
@@ -1116,6 +1144,70 @@ public class StreamControlManagerTest {
         result = manager.deleteStream(req);
         assertEquals(Errors.NONE.code(), result.response().errorCode());
         assertEquals(0, result.records().size());
+    }
+
+    @Test
+    public void testDescribeStreams() {
+        // 1. describe stream by stream id
+        DescribeStreamsRequestData request = new DescribeStreamsRequestData()
+            .setStreamId(0);
+        DescribeStreamsResponseData result = manager.describeStreams(request);
+        assertEquals(Errors.NONE, Errors.forCode(result.errorCode()));
+        assertEquals(0, result.streamMetadataList().size());
+
+        registerAlwaysSuccessEpoch(BROKER0);
+        long streamId = createStream();
+
+        request = new DescribeStreamsRequestData()
+            .setStreamId(streamId);
+        result = manager.describeStreams(request);
+        assertEquals(Errors.NONE, Errors.forCode(result.errorCode()));
+        assertEquals(1, result.streamMetadataList().size());
+
+        assertEquals(streamId, result.streamMetadataList().get(0).streamId());
+        assertEquals(-1, result.streamMetadataList().get(0).nodeId());
+        assertEquals(StreamState.CLOSED.name(), result.streamMetadataList().get(0).state());
+
+        assertEquals(Uuid.ZERO_UUID, result.streamMetadataList().get(0).topicId());
+        assertEquals("", result.streamMetadataList().get(0).topicName());
+        assertEquals(-1, result.streamMetadataList().get(0).partitionIndex());
+
+        // 2. describe stream by node id
+        request = new DescribeStreamsRequestData()
+            .setNodeId(BROKER2);
+        result = manager.describeStreams(request);
+        assertEquals(Errors.NONE, Errors.forCode(result.errorCode()));
+        assertEquals(0, result.streamMetadataList().size());
+
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER1, EPOCH1);
+
+        request = new DescribeStreamsRequestData()
+            .setNodeId(BROKER1);
+        result = manager.describeStreams(request);
+        assertEquals(Errors.NONE, Errors.forCode(result.errorCode()));
+        assertEquals(1, result.streamMetadataList().size());
+
+        assertEquals(BROKER1, result.streamMetadataList().get(0).nodeId());
+        assertEquals(StreamState.OPENED.name(), result.streamMetadataList().get(0).state());
+
+        // 3. describe stream by topic partition
+        request = new DescribeStreamsRequestData()
+            .setTopicPartitions(List.of(new DescribeStreamsRequestData.TopicPartitionData()
+                .setTopicName(TOPIC)
+                .setPartitions(List.of(new DescribeStreamsRequestData.PartitionData().setPartitionIndex(PARTITION)))));
+        result = manager.describeStreams(request);
+        assertEquals(Errors.NONE, Errors.forCode(result.errorCode()));
+        assertEquals(0, result.streamMetadataList().size());
+
+        createStream(Map.of(StreamTags.Topic.KEY, TOPIC_ID.toString(), StreamTags.Partition.KEY, String.valueOf(PARTITION)));
+        result = manager.describeStreams(request);
+        assertEquals(Errors.NONE, Errors.forCode(result.errorCode()));
+        assertEquals(1, result.streamMetadataList().size());
+
+        assertEquals(TOPIC_ID, result.streamMetadataList().get(0).topicId());
+        assertEquals(TOPIC, result.streamMetadataList().get(0).topicName());
+        assertEquals(PARTITION, result.streamMetadataList().get(0).partitionIndex());
     }
 
     @Test

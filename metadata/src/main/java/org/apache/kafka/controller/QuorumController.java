@@ -67,6 +67,8 @@ import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
+import org.apache.kafka.common.message.DescribeStreamsRequestData;
+import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
@@ -2112,7 +2114,7 @@ public final class QuorumController implements Controller {
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
-                this.s3ObjectControlManager, clusterControl, featureControl);
+                this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager);
         // AutoMQ for Kafka inject end
@@ -2658,6 +2660,13 @@ public final class QuorumController implements Controller {
         CommitStreamObjectRequestData request) {
         return appendWriteEvent("commitStreamObject", context.deadlineNs(),
             () -> streamControlManager.commitStreamObject(request));
+    }
+
+    @Override
+    public CompletableFuture<DescribeStreamsResponseData> describeStreams(ControllerRequestContext context,
+        DescribeStreamsRequestData request) {
+        return appendReadEvent("describeStreams", context.deadlineNs(),
+            () -> streamControlManager.describeStreams(request));
     }
 
     @Override
