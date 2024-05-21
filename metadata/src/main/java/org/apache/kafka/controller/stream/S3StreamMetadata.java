@@ -32,6 +32,7 @@ import java.util.Map;
 public class S3StreamMetadata {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamMetadata.class);
 
+    private final long streamId;
     // current epoch, when created but not open, use -1 represent
     private final TimelineLong currentEpoch;
     // rangeIndex, when created but not open, there is no range, use -1 represent
@@ -45,8 +46,9 @@ public class S3StreamMetadata {
     private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
     private final TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
 
-    public S3StreamMetadata(long currentEpoch, int currentRangeIndex, long startOffset,
+    public S3StreamMetadata(long streamId, long currentEpoch, int currentRangeIndex, long startOffset,
                             StreamState currentState, Map<String, String> tags, SnapshotRegistry registry) {
+        this.streamId = streamId;
         this.currentEpoch = new TimelineLong(registry);
         this.currentEpoch.set(currentEpoch);
         this.currentRangeIndex = new TimelineInteger(registry);
@@ -57,6 +59,10 @@ public class S3StreamMetadata {
         this.tags = tags;
         this.ranges = new TimelineHashMap<>(registry, 0);
         this.streamObjects = new TimelineHashMap<>(registry, 0);
+    }
+
+    public long streamId() {
+        return streamId;
     }
 
     public long currentEpoch() {

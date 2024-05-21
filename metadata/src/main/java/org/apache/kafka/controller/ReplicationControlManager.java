@@ -291,7 +291,7 @@ public class ReplicationControlManager {
         }
     }
 
-    static class TopicControlInfo {
+    public static class TopicControlInfo {
         private final String name;
         private final Uuid id;
         private final TimelineHashMap<Integer, PartitionRegistration> parts;
@@ -1083,12 +1083,11 @@ public class ReplicationControlManager {
         return topic.parts.get(partitionId);
     }
 
-    // VisibleForTesting
-    TopicControlInfo getTopic(Uuid topicId) {
+    public TopicControlInfo getTopic(Uuid topicId) {
         return topics.get(topicId);
     }
 
-    Uuid getTopicId(String name) {
+    public Uuid getTopicId(String name) {
         return topicsByName.get(name);
     }
 
