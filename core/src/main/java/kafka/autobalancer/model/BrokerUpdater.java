@@ -11,12 +11,15 @@
 
 package kafka.autobalancer.model;
 
+import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.model.samples.SnapshotSamples;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public class BrokerUpdater extends AbstractInstanceUpdater {
     private final int brokerId;
@@ -57,7 +60,25 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
-        return metricsMap.keySet().containsAll(RawMetricTypes.BROKER_METRICS);
+        metricVersion = extractMetricVersion(metricsMap);
+        Set<Byte> missingMetrics = new HashSet<>();
+        for (byte metricType : RawMetricTypes.requiredBrokerMetrics(metricVersion)) {
+            if (!metricsMap.containsKey(metricType)) {
+                missingMetrics.add(metricType);
+            }
+        }
+        boolean valid = missingMetrics.isEmpty();
+        if (!valid) {
+            LOG_SUPPRESSOR.warn("{} has missing metrics: {} for version {}", name(), missingMetrics, metricVersion);
+        }
+        return valid;
+    }
+
+    protected MetricVersion extractMetricVersion(Map<Byte, Double> metricsMap) {
+        if (metricsMap.containsKey(RawMetricTypes.BROKER_METRIC_VERSION)) {
+            return new MetricVersion(metricsMap.get(RawMetricTypes.BROKER_METRIC_VERSION).shortValue());
+        }
+        return defaultVersion();
     }
 
     @Override
@@ -84,7 +105,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected AbstractInstance createInstance() {
-        return new Broker(brokerId, rack, timestamp, getMetricsSnapshot());
+        return new Broker(brokerId, rack, timestamp, getMetricsSnapshot(), metricVersion);
     }
 
     protected Map<Byte, Snapshot> getMetricsSnapshot() {
@@ -101,8 +122,8 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         private final Map<Byte, Snapshot> metricsSnapshot;
         private boolean isSlowBroker;
 
-        public Broker(int brokerId, String rack, long timestamp, Map<Byte, Snapshot> metricsSnapshot) {
-            super(timestamp);
+        public Broker(int brokerId, String rack, long timestamp, Map<Byte, Snapshot> metricsSnapshot, MetricVersion metricVersion) {
+            super(timestamp, metricVersion);
             this.brokerId = brokerId;
             this.rack = rack;
             this.metricsSnapshot = metricsSnapshot;
@@ -153,7 +174,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
         @Override
         public Broker copy() {
-            Broker broker = new Broker(brokerId, rack, timestamp, null);
+            Broker broker = new Broker(brokerId, rack, timestamp, null, metricVersion);
             broker.copyLoads(this);
             return broker;
         }

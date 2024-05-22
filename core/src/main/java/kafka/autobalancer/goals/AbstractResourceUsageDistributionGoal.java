@@ -11,19 +11,15 @@
 
 package kafka.autobalancer.goals;
 
-import com.automq.stream.utils.LogContext;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.normalizer.Normalizer;
 import kafka.autobalancer.common.normalizer.StepNormalizer;
 import kafka.autobalancer.model.BrokerUpdater;
-import org.slf4j.Logger;
 
 import java.util.Collection;
 import java.util.Comparator;
 
 public abstract class AbstractResourceUsageDistributionGoal extends AbstractResourceDistributionGoal {
-    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     private final Comparator<BrokerUpdater.Broker> highLoadComparator = Comparator.comparingDouble(b -> -b.loadValue(resource()));
     private final Comparator<BrokerUpdater.Broker> lowLoadComparator = Comparator.comparingDouble(b -> b.loadValue(resource()));
     protected Normalizer normalizer;

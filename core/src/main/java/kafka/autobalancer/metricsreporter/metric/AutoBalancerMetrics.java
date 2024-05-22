@@ -23,7 +23,7 @@ import java.util.Map;
  * An interface for all the raw metrics reported by {@link AutoBalancerMetricsReporter}.
  */
 public abstract class AutoBalancerMetrics {
-    protected static final byte METRIC_VERSION = 0;
+    public static final byte METRIC_VERSION = 0;
     private final Map<Byte, Double> metricValueMap = new HashMap<>();
     private final long time;
     private final int brokerId;
@@ -57,9 +57,7 @@ public abstract class AutoBalancerMetrics {
     }
 
     public void add(AutoBalancerMetrics metrics) {
-        for (Map.Entry<Byte, Double> metricEntry : metrics.metricValueMap.entrySet()) {
-            this.metricValueMap.putIfAbsent(metricEntry.getKey(), metricEntry.getValue());
-        }
+        this.metricValueMap.putAll(metrics.metricValueMap);
     }
 
     public Map<Byte, Double> getMetricValueMap() {

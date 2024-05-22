@@ -11,13 +11,16 @@
 
 package kafka.autobalancer.model;
 
+import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.model.samples.AbstractTimeWindowSamples;
 import org.apache.kafka.common.TopicPartition;
 
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     private final TopicPartition tp;
@@ -32,7 +35,17 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
-        return metricsMap.keySet().containsAll(RawMetricTypes.PARTITION_METRICS);
+        Set<Byte> missingMetrics = new HashSet<>();
+        for (byte metricType : RawMetricTypes.requiredPartitionMetrics(metricVersion)) {
+            if (!metricsMap.containsKey(metricType)) {
+                missingMetrics.add(metricType);
+            }
+        }
+        boolean valid = missingMetrics.isEmpty();
+        if (!valid) {
+            LOG_SUPPRESSOR.warn("{} has missing metrics: {} for version {}", name(), missingMetrics, metricVersion);
+        }
+        return valid;
     }
 
     @Override
@@ -47,7 +60,7 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected AbstractInstance createInstance() {
-        TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp);
+        TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp, metricVersion);
         processRawMetrics(replica);
         return replica;
     }
@@ -75,8 +88,8 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     public static class TopicPartitionReplica extends AbstractInstance {
         private final TopicPartition tp;
 
-        public TopicPartitionReplica(TopicPartition tp, long timestamp) {
-            super(timestamp);
+        public TopicPartitionReplica(TopicPartition tp, long timestamp, MetricVersion metricVersion) {
+            super(timestamp, metricVersion);
             this.tp = tp;
         }
 
@@ -107,7 +120,7 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
         @Override
         public AbstractInstance copy() {
-            TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp);
+            TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp, metricVersion);
             replica.copyLoads(this);
             return replica;
         }

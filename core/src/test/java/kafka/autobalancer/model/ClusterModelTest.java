@@ -17,6 +17,7 @@
 
 package kafka.autobalancer.model;
 
+import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
@@ -397,7 +398,7 @@ public class ClusterModelTest {
 //        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
 //        clusterModel.unregisterBroker(0);
 
-        // test high append latency
+        // test high append latency old version
         clusterModel.onBrokerRegister(registerBrokerRecord0);
         for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
@@ -410,6 +411,22 @@ public class ClusterModelTest {
                 2000, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
+        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
+        clusterModel.unregisterBroker(0);
+
+        // test high append latency
+        clusterModel.onBrokerRegister(registerBrokerRecord0);
+        for (int i = 0; i < 100; i++) {
+            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                    0, 0, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
+        }
+        snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
+        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
+        Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+                2000, 0, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
+        snapshot = clusterModel.snapshot();
+        snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
         clusterModel.unregisterBroker(0);
 
@@ -417,13 +434,13 @@ public class ClusterModelTest {
         clusterModel.onBrokerRegister(registerBrokerRecord0);
         for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    0, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
+                    0, 0, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
         }
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                0, 20000, 0).getMetricValueMap(), System.currentTimeMillis()));
+                0, 20000, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
@@ -433,13 +450,13 @@ public class ClusterModelTest {
         clusterModel.onBrokerRegister(registerBrokerRecord0);
         for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    0, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
+                    0, 0, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
         }
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                0, 0, 20000).getMetricValueMap(), System.currentTimeMillis()));
+                0, 0, 20000, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
@@ -521,8 +538,16 @@ public class ClusterModelTest {
 
     private BrokerMetrics createBrokerMetrics(int brokerId, double appendLatency, double pendingAppendLatency,
                                               double pendingFetchLatency) {
+        return createBrokerMetrics(brokerId, appendLatency, pendingAppendLatency, pendingFetchLatency, null);
+    }
+
+    private BrokerMetrics createBrokerMetrics(int brokerId, double appendLatency, double pendingAppendLatency,
+                                              double pendingFetchLatency, MetricVersion metricVersion) {
         long now = System.currentTimeMillis();
         BrokerMetrics brokerMetrics = new BrokerMetrics(now, brokerId, "");
+        if (metricVersion != null) {
+            brokerMetrics.put(RawMetricTypes.BROKER_METRIC_VERSION, metricVersion.value());
+        }
         brokerMetrics.put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, appendLatency);
         brokerMetrics.put(RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, pendingAppendLatency);
         brokerMetrics.put(RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, pendingFetchLatency);

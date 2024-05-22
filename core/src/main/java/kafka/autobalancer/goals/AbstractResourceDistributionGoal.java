@@ -11,13 +11,10 @@
 
 package kafka.autobalancer.goals;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
-import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -27,7 +24,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public abstract class AbstractResourceDistributionGoal extends AbstractResourceGoal {
-    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     @Override
     public boolean isHardGoal() {
@@ -35,17 +31,17 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
     }
 
     @Override
-    public List<Action> doOptimize(List<BrokerUpdater.Broker> brokersToOptimize, ClusterModelSnapshot cluster,
+    public List<Action> doOptimize(List<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster,
                                    Collection<Goal> goalsByPriority, Collection<Goal> optimizedGoals,
                                    Map<String, Set<String>> goalsByGroup) {
         List<Action> actions = new ArrayList<>();
+        List<BrokerUpdater.Broker> brokersToOptimize = getBrokersToOptimize(eligibleBrokers);
         for (BrokerUpdater.Broker broker : brokersToOptimize) {
             if (isBrokerAcceptable(broker)) {
                 continue;
             }
-            List<BrokerUpdater.Broker> candidateBrokers =
-                    cluster.brokers().stream().filter(b -> b.getBrokerId() != broker.getBrokerId()
-                            && broker.load(resource()).isTrusted()).collect(Collectors.toList());
+            List<BrokerUpdater.Broker> candidateBrokers = eligibleBrokers.stream()
+                    .filter(b -> b.getBrokerId() != broker.getBrokerId() && broker.load(resource()).isTrusted()).collect(Collectors.toList());
             if (requireLessLoad(broker)) {
                 List<Action> brokerActions = tryReduceLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers,
                         goalsByPriority, optimizedGoals, goalsByGroup);

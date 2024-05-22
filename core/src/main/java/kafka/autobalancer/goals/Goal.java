@@ -11,12 +11,16 @@
 
 package kafka.autobalancer.goals;
 
+import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
+import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.config.ConfigException;
+import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -24,8 +28,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public interface Goal extends Configurable, Comparable<Goal> {
+    Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
-    List<Action> doOptimize(List<BrokerUpdater.Broker> brokersToOptimize, ClusterModelSnapshot cluster,
+    List<Action> doOptimize(List<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster,
                             Collection<Goal> goalsByPriority, Collection<Goal> optimizedGoals,
                             Map<String, Set<String>> goalsByGroup);
 
@@ -38,8 +43,21 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     default List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority,
                                   Collection<Goal> optimizedGoal, Map<String, Set<String>> goalsByGroup) {
-        goalsByPriority.forEach(e -> e.initialize(cluster.brokers()));
-        return doOptimize(getBrokersToOptimize(cluster), cluster, goalsByPriority, optimizedGoal, goalsByGroup);
+        List<BrokerUpdater.Broker> brokers = getEligibleBrokers(cluster);
+        goalsByPriority.forEach(e -> e.initialize(brokers));
+        return doOptimize(brokers, cluster, goalsByPriority, optimizedGoal, goalsByGroup);
+    }
+
+    default List<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {
+        List<BrokerUpdater.Broker> brokers = new ArrayList<>();
+        for (BrokerUpdater.Broker broker : cluster.brokers()) {
+            if (broker.getMetricVersion().isGoalSupported(this)) {
+                brokers.add(broker);
+            } else {
+                LOGGER.warn("Goal {} is not supported in version {} for broker-{}", name(), broker.getMetricVersion(), broker.getBrokerId());
+            }
+        }
+        return brokers;
     }
 
     void initialize(Collection<BrokerUpdater.Broker> brokers);
@@ -50,7 +68,7 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     double weight();
 
-    List<BrokerUpdater.Broker> getBrokersToOptimize(ClusterModelSnapshot cluster);
+    List<BrokerUpdater.Broker> getBrokersToOptimize(Collection<BrokerUpdater.Broker> brokers);
 
     String name();
 
