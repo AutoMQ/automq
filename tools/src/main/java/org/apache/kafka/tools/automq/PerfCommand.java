@@ -144,12 +144,13 @@ public class PerfCommand implements AutoCloseable {
         boolean ready = false;
         while (System.nanoTime() < start + TOPIC_READY_TIMEOUT_NANOS) {
             long received = stats.toCumulativeStats().totalMessagesReceived;
+            LOGGER.info("Waiting for topics to be ready... sent: {}, received: {}", sent, received);
             if (received >= sent) {
                 ready = true;
                 break;
             }
             try {
-                Thread.sleep(1000);
+                Thread.sleep(2000);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
