@@ -57,6 +57,7 @@ public class PerfConfig {
             parser.handleError(e);
             Exit.exit(1);
         }
+        assert ns != null;
 
         bootstrapServer = ns.getString("bootstrapServer");
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
@@ -80,9 +81,9 @@ public class PerfConfig {
 
         // TODO add more checker
 
-        if (backlogDurationSeconds <= producersPerTopic * groupStartDelaySeconds) {
-            throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should be greater than PRODUCERS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
-                backlogDurationSeconds, producersPerTopic, groupStartDelaySeconds));
+        if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
+            throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
+                backlogDurationSeconds, groupsPerTopic, groupStartDelaySeconds));
         }
     }
 
@@ -177,11 +178,11 @@ public class PerfConfig {
             .metavar("SEND_RATE")
             .help("The send rate in messages per second.");
         parser.addArgument("-b", "--backlog-duration")
-            .setDefault(500)
+            .setDefault(0)
             .type(Integer.class)
             .dest("backlogDurationSeconds")
             .metavar("BACKLOG_DURATION_SECONDS")
-            .help("The backlog duration in seconds. Should be greater than PRODUCERS_PER_TOPIC * GROUP_START_DELAY_SECONDS.");
+            .help("The backlog duration in seconds, and zero means no backlog. Should not be less than GROUPS_PER_TOPIC * GROUP_START_DELAY_SECONDS.");
         parser.addArgument("-G", "--group-start-delay")
             .setDefault(0)
             .type(Integer.class)
