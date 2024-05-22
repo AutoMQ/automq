@@ -69,6 +69,12 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Starting perf test with config: {}", jsonStringify(config));
         TimerUtil timer = new TimerUtil();
 
+        if (config.reset) {
+            LOGGER.info("Deleting all topics...");
+            int deleted = topicService.deleteTopics();
+            LOGGER.info("Deleted all topics ({} in total), took {} ms", deleted, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+        }
+
         LOGGER.info("Creating topics...");
         List<Topic> topics = topicService.createTopics(config.topicsConfig());
         LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));

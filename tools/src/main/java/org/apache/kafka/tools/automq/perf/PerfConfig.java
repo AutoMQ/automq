@@ -26,6 +26,7 @@ import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
 import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
 
+import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.nonNegativeInteger;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.positiveInteger;
 
@@ -34,6 +35,7 @@ public class PerfConfig {
     public final Map<String, String> topicConfigs;
     public final Map<String, String> producerConfigs;
     public final Map<String, String> consumerConfigs;
+    public final boolean reset;
     public final String topicPrefix;
     public final int topics;
     public final int partitionsPerTopic;
@@ -68,6 +70,7 @@ public class PerfConfig {
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
+        reset = ns.getBoolean("reset");
         topicPrefix = ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
@@ -120,6 +123,10 @@ public class PerfConfig {
             .dest("consumerConfigs")
             .metavar("CONSUMER_CONFIG")
             .help("The consumer configurations.");
+        parser.addArgument("--reset")
+            .action(storeTrue())
+            .dest("reset")
+            .help("delete all topics before running the test.");
         parser.addArgument("-X", "--topic-prefix")
             .setDefault("test-topic")
             .type(String.class)
