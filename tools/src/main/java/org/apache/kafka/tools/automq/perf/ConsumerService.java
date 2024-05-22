@@ -194,7 +194,8 @@ public class ConsumerService implements AutoCloseable {
         }
 
         private Consumer createConsumer(Topic topic, Properties common) {
-            Properties properties = new Properties(common);
+            Properties properties = new Properties();
+            properties.putAll(common);
             properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId(topic));
 
             KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(properties);
