@@ -11,6 +11,7 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -53,9 +54,11 @@ public class ConsumerService implements AutoCloseable {
 
     private final Admin admin;
     private final List<Group> groups = new ArrayList<>();
+    private final String groupSuffix;
 
     public ConsumerService(String bootstrapServer) {
         this.admin = Admin.create(Map.of(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer));
+        this.groupSuffix = new SimpleDateFormat("HHmmss").format(System.currentTimeMillis());
     }
 
     /**
@@ -208,7 +211,7 @@ public class ConsumerService implements AutoCloseable {
         }
 
         private String groupId(Topic topic) {
-            return String.format("sub-%s-%03d", topic.name, index);
+            return String.format("sub-%s-%s-%03d", topic.name, groupSuffix, index);
         }
 
         private Map<TopicPartition, OffsetSpec> listOffsetsRequest(long timestamp) {
