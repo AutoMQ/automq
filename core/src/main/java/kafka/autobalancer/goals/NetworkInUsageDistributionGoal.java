@@ -11,20 +11,16 @@
 
 package kafka.autobalancer.goals;
 
-import com.automq.stream.utils.LogContext;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
-import org.slf4j.Logger;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class NetworkInUsageDistributionGoal extends AbstractNetworkUsageDistributionGoal {
-    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     @Override
     public String name() {
