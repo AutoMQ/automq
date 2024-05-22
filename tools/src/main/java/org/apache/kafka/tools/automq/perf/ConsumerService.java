@@ -17,10 +17,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.admin.Admin;
@@ -32,6 +34,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -87,11 +90,12 @@ public class ConsumerService implements AutoCloseable {
     }
 
     public void resetOffset(long startMillis, long intervalMillis) {
-        for (Group group : groups) {
-            // TODO make this async
-            group.seek(startMillis);
-            startMillis += intervalMillis;
-        }
+        AtomicLong start = new AtomicLong(startMillis);
+        CompletableFuture.allOf(
+            groups.stream()
+                .map(group -> group.seek(start.getAndAdd(intervalMillis)))
+                .toArray(CompletableFuture[]::new)
+        ).join();
     }
 
     @Override
@@ -155,21 +159,17 @@ public class ConsumerService implements AutoCloseable {
             consumers().forEach(Consumer::resume);
         }
 
-        public void seek(long timestamp) {
-            try {
-                var offsetMap = admin.listOffsets(listOffsetsRequest(timestamp)).all().get();
-
-                List<AlterConsumerGroupOffsetsResult> futures = new ArrayList<>();
-                for (Topic topic : consumers.keySet()) {
-                    var future = admin.alterConsumerGroupOffsets(groupId(topic), resetOffsetsRequest(topic, offsetMap));
-                    futures.add(future);
-                }
-                for (AlterConsumerGroupOffsetsResult future : futures) {
-                    future.all().get();
-                }
-            } catch (InterruptedException | ExecutionException e) {
-                throw new RuntimeException(e);
-            }
+        public CompletableFuture<Void> seek(long timestamp) {
+            return admin.listOffsets(listOffsetsRequest(timestamp))
+                .all()
+                .toCompletionStage()
+                .toCompletableFuture()
+                .thenCompose(offsetMap -> CompletableFuture.allOf(consumers.keySet().stream()
+                    .map(topic -> admin.alterConsumerGroupOffsets(groupId(topic), resetOffsetsRequest(topic, offsetMap)))
+                    .map(AlterConsumerGroupOffsetsResult::all)
+                    .map(KafkaFuture::toCompletionStage)
+                    .map(CompletionStage::toCompletableFuture)
+                    .toArray(CompletableFuture[]::new)));
         }
 
         public int size() {

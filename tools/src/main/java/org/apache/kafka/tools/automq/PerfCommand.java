@@ -94,7 +94,7 @@ public class PerfCommand implements AutoCloseable {
             collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
         }
 
-        Result result = null;
+        Result result;
         if (config.backlogDurationSeconds > 0) {
             LOGGER.info("Pausing consumers for {} seconds to build up backlog...", config.backlogDurationSeconds);
             consumerService.pause();
