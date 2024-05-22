@@ -123,7 +123,7 @@
 
 > [2] EBS Durability: On Azure, GCP, and Alibaba Cloud, Regional EBS replicas span multiple AZs. On AWS, ensure durability by double writing to EBS and S3 Express One Zone in different AZs.
 
-## 🔶Why AutoMQ
+## 🔶 Why AutoMQ
 
 - **Cost effective**: The first true cloud-native streaming storage system, designed for optimal cost and efficiency on the cloud. Refer to [this report](https://docs.automq.com/docs/automq-opensource/EV6mwoC95ihwRckMsUKcppnqnJb) to see how we cut Apache Kafka billing by 90% on the cloud.
 - **High Reliability**: Leverage cloud-shared storage services(EBS and S3) to achieve zero RPO, RTO in seconds and 99.999999999% durability.
@@ -146,7 +146,7 @@ AutoMQ adopts a Shared-Storage architecture, replacing the storage layer of Apac
 
 Compared to the classic Kafka Shared-Nothing or Tiered-Storage architectures, AutoMQ's computing layer (Broker) is truly stateless, enabling features such as Auto-Scaling, Self-Balancing, and Partition Reassignment in Seconds that significantly reduce costs and improve efficiency.
 
-## ⛄Get started with AutoMQ
+## ⛄ Get started with AutoMQ
 
 ### Deploy Locally on a Single Host
 ```
@@ -162,16 +162,19 @@ There are more deployment options available:
 - [Try AutoMQ on Alibaba Cloud Marketplace](https://market.aliyun.com/products/55530001/cmgj00065841.html)
 - [Try AutoMQ on AWS Marketplace](https://docs.automq.com/docs/automq-onperm/LEGFwYWq7is3jnkLlUBceHYCnp3)
 
-## 💬Community
+## 💬 Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
 - Ask questions or report a bug by [GitHub Issues](https://github.com/AutoMQ/automq/issues)
 - Discuss about AutoMQ or Kafka by [Wechat Group](docs/images/automq-wechat.png)
 
 
-## 👥How to contribute
+## 👥 How to contribute
 If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq/issues).
 To contribute to AutoMQ please see [Code of Conduct](CODE_OF_CONDUCT.md) and [Contributing Guide](CONTRIBUTING_GUIDE.md).
 We have a list of [good first issues](https://github.com/AutoMQ/automq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process. To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. If you have any questions about the 'good first issue' please feel free to ask. We will do our best to clarify any doubts you may have.
 
-## ⭐License
+## ⭐ License
 AutoMQ is released under [Business Source License 1.1](BSL.md). When contributing to AutoMQ, you can find the relevant license header in each file.
+
+## 🙋 Contact Us
+Want to learn more, [Talk with our product experts](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh).
