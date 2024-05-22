@@ -402,10 +402,14 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     }
 
     protected void addMetricIfInterested(MetricName name, Metric metric) {
-        if (MetricsUtils.isInterested(name)) {
+        if (isInterestedMetric(name)) {
             LOGGER.debug("Added new metric {} to auto balancer metrics reporter.", name);
             interestedMetrics.put(name, metric);
         }
+    }
+
+    protected boolean isInterestedMetric(MetricName name) {
+        return MetricsUtils.isInterested(name);
     }
 
     private void setIfAbsent(Properties props, String key, String value) {

@@ -210,11 +210,11 @@ public class YammerMetricProcessor implements MetricProcessor<YammerMetricProces
             return brokerId;
         }
 
-        private String brokerRack() {
+        public String brokerRack() {
             return brokerRack;
         }
 
-        private Duration reportingInterval() {
+        public Duration reportingInterval() {
             return reportingInterval;
         }
     }
