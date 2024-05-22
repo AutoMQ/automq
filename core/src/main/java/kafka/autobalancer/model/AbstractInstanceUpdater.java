@@ -13,7 +13,9 @@ package kafka.autobalancer.model;
 
 
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.LogSuppressor;
 import kafka.autobalancer.common.AutoBalancerConstants;
+import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.model.samples.AbstractTimeWindowSamples;
 import kafka.autobalancer.model.samples.SimpleTimeWindowSamples;
@@ -26,20 +28,21 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public abstract class AbstractInstanceUpdater {
     protected static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
+    protected static final LogSuppressor LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 10000);
     protected final Lock lock = new ReentrantLock();
     protected Map<Byte, AbstractTimeWindowSamples> metricSampleMap = new HashMap<>();
     protected long timestamp = 0L;
+    protected MetricVersion metricVersion = defaultVersion();
 
     public boolean update(Map<Byte, Double> metricsMap, long time) {
-        if (!validateMetrics(metricsMap)) {
-            LOGGER.error("Metrics validation failed for: {}, metrics: {}", name(), metricsMap.keySet());
-            return false;
-        }
-
         lock.lock();
         try {
             if (time < timestamp) {
                 LOGGER.warn("Metrics for {} is outdated at {}, last updated time {}", name(), time, timestamp);
+                return false;
+            }
+            if (!validateMetrics(metricsMap)) {
+                LOG_SUPPRESSOR.warn("Metrics validation failed for: {} of version {}, metrics: {}", name(), metricVersion, metricsMap.keySet());
                 return false;
             }
             update0(metricsMap, time);
@@ -49,18 +52,25 @@ public abstract class AbstractInstanceUpdater {
         return true;
     }
 
+    protected MetricVersion defaultVersion() {
+        return MetricVersion.V0;
+    }
+
+    public MetricVersion metricVersion() {
+        return metricVersion;
+    }
+
+    public void setMetricVersion(MetricVersion metricVersion) {
+        this.metricVersion = metricVersion;
+    }
+
     protected void update0(Map<Byte, Double> metricsMap, long timestamp) {
-        lock.lock();
-        try {
-            for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
-                byte metricType = entry.getKey();
-                double value = entry.getValue();
-                metricSampleMap.computeIfAbsent(metricType, k -> createSample(metricType)).append(value);
-            }
-            this.timestamp = timestamp;
-        } finally {
-            lock.unlock();
+        for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
+            byte metricType = entry.getKey();
+            double value = entry.getValue();
+            metricSampleMap.computeIfAbsent(metricType, k -> createSample(metricType)).append(value);
         }
+        this.timestamp = timestamp;
     }
 
     protected AbstractTimeWindowSamples createSample(byte metricType) {
@@ -105,9 +115,11 @@ public abstract class AbstractInstanceUpdater {
     public static abstract class AbstractInstance {
         protected final Map<Byte, Load> loads = new HashMap<>();
         protected final long timestamp;
+        protected final MetricVersion metricVersion;
 
-        public AbstractInstance(long timestamp) {
+        public AbstractInstance(long timestamp, MetricVersion metricVersion) {
             this.timestamp = timestamp;
+            this.metricVersion = metricVersion;
         }
 
         public abstract AbstractInstance copy();
@@ -161,6 +173,10 @@ public abstract class AbstractInstanceUpdater {
             for (Map.Entry<Byte, Load> entry : other.loads.entrySet()) {
                 this.loads.put(entry.getKey(), new Load(entry.getValue()));
             }
+        }
+
+        public MetricVersion getMetricVersion() {
+            return metricVersion;
         }
 
         protected String timeString() {

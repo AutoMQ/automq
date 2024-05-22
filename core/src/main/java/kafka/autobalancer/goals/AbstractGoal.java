@@ -11,14 +11,11 @@
 
 package kafka.autobalancer.goals;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
-import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -33,7 +30,6 @@ import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 
 public abstract class AbstractGoal implements Goal {
-    private static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     public static final Double NOT_ACCEPTABLE = -1.0;
     public static final double POSITIVE_ACTION_SCORE_THRESHOLD = 0.5;
 
@@ -230,9 +226,9 @@ public abstract class AbstractGoal implements Goal {
     }
 
     @Override
-    public List<BrokerUpdater.Broker> getBrokersToOptimize(ClusterModelSnapshot cluster) {
+    public List<BrokerUpdater.Broker> getBrokersToOptimize(Collection<BrokerUpdater.Broker> brokers) {
         List<BrokerUpdater.Broker> brokersToOptimize = new ArrayList<>();
-        for (BrokerUpdater.Broker broker : cluster.brokers()) {
+        for (BrokerUpdater.Broker broker : brokers) {
             if (!isBrokerAcceptable(broker)) {
                 LOGGER.warn("Broker {} violates goal {}", broker.getBrokerId(), name());
                 brokersToOptimize.add(broker);

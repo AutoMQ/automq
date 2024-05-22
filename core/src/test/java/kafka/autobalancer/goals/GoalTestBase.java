@@ -17,6 +17,7 @@
 
 package kafka.autobalancer.goals;
 
+import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
@@ -79,7 +80,11 @@ public class GoalTestBase {
     }
 
     protected Broker createBroker(ClusterModelSnapshot cluster, String rack, int brokerId) {
-        Broker broker = new Broker(brokerId, rack, System.currentTimeMillis(), null);
+        return createBroker(cluster, rack, brokerId, MetricVersion.V0);
+    }
+
+    protected Broker createBroker(ClusterModelSnapshot cluster, String rack, int brokerId, MetricVersion metricVersion) {
+        Broker broker = new Broker(brokerId, rack, System.currentTimeMillis(), null, metricVersion);
         cluster.addBroker(broker);
         return broker;
     }
@@ -88,8 +93,16 @@ public class GoalTestBase {
                                                          int brokerId,
                                                          String topic,
                                                          int partition) {
+        return createTopicPartition(cluster, brokerId, topic, partition, MetricVersion.V0);
+    }
+
+    protected TopicPartitionReplica createTopicPartition(ClusterModelSnapshot cluster,
+                                                         int brokerId,
+                                                         String topic,
+                                                         int partition,
+                                                         MetricVersion metricVersion) {
         TopicPartition tp = new TopicPartition(topic, partition);
-        TopicPartitionReplica replica = new TopicPartitionReplica(tp, System.currentTimeMillis());
+        TopicPartitionReplica replica = new TopicPartitionReplica(tp, System.currentTimeMillis(), metricVersion);
         cluster.addTopicPartition(brokerId, tp, replica);
         return replica;
     }

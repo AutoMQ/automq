@@ -18,6 +18,7 @@ import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
 import kafka.autobalancer.common.types.MetricTypes;
+import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.StaticAutoBalancerConfig;
 import kafka.autobalancer.config.StaticAutoBalancerConfigUtils;
@@ -361,6 +362,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
     protected void addBrokerMetrics(YammerMetricProcessor.Context context) {
         context.merge(new BrokerMetrics(context.time(), brokerId, brokerRack)
+                .put(RawMetricTypes.BROKER_METRIC_VERSION, MetricVersion.LATEST_VERSION.value())
                 .put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS,
                         TimeUnit.NANOSECONDS.toMillis((long) appendLatencyAvg.derive(
                                 StreamOperationStats.getInstance().appendStreamLatency.sum(),
