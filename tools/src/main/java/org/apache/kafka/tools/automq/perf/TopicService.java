@@ -14,12 +14,14 @@ package org.apache.kafka.tools.automq.perf;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
+import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
@@ -50,6 +52,23 @@ public class TopicService implements AutoCloseable {
         return topics.values().keySet().stream()
             .map(name -> new Topic(name, config.partitionsPerTopic))
             .collect(Collectors.toList());
+    }
+
+    /**
+     * Delete all topics except internal topics (starting with '__').
+     */
+    public int deleteTopics() {
+        ListTopicsResult result = admin.listTopics();
+        try {
+            Set<String> topics = result.names().get();
+            topics.removeIf(name -> name.startsWith("__"));
+            admin.deleteTopics(topics).all().get();
+            return topics.size();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException ignored) {
+        }
+        return 0;
     }
 
     /**

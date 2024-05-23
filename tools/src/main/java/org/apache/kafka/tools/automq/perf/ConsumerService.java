@@ -11,16 +11,20 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.admin.Admin;
@@ -28,10 +32,12 @@ import org.apache.kafka.clients.admin.AlterConsumerGroupOffsetsResult;
 import org.apache.kafka.clients.admin.ListOffsetsResult;
 import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -50,9 +56,11 @@ public class ConsumerService implements AutoCloseable {
 
     private final Admin admin;
     private final List<Group> groups = new ArrayList<>();
+    private final String groupSuffix;
 
     public ConsumerService(String bootstrapServer) {
         this.admin = Admin.create(Map.of(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer));
+        this.groupSuffix = new SimpleDateFormat("HHmmss").format(System.currentTimeMillis());
     }
 
     /**
@@ -75,7 +83,11 @@ public class ConsumerService implements AutoCloseable {
     }
 
     public void start(ConsumerCallback callback) {
-        groups.forEach(group -> group.start(callback));
+        CompletableFuture.allOf(
+            groups.stream()
+                .map(group -> group.start(callback))
+                .toArray(CompletableFuture[]::new)
+        ).join();
     }
 
     public void pause() {
@@ -87,11 +99,12 @@ public class ConsumerService implements AutoCloseable {
     }
 
     public void resetOffset(long startMillis, long intervalMillis) {
-        for (Group group : groups) {
-            // TODO make this async
-            group.seek(startMillis);
-            startMillis += intervalMillis;
-        }
+        AtomicLong start = new AtomicLong(startMillis);
+        CompletableFuture.allOf(
+            groups.stream()
+                .map(group -> group.seek(start.getAndAdd(intervalMillis)))
+                .toArray(CompletableFuture[]::new)
+        ).join();
     }
 
     @Override
@@ -132,19 +145,25 @@ public class ConsumerService implements AutoCloseable {
 
         public Group(int index, int consumersPerGroup, List<Topic> topics, ConsumersConfig config) {
             this.index = index;
+
             Properties common = toProperties(config);
             for (Topic topic : topics) {
                 List<Consumer> topicConsumers = new ArrayList<>();
                 for (int c = 0; c < consumersPerGroup; c++) {
-                    Consumer consumer = createConsumer(topic, common);
+                    Consumer consumer = newConsumer(topic, common);
                     topicConsumers.add(consumer);
                 }
                 consumers.put(topic, topicConsumers);
             }
         }
 
-        public void start(ConsumerCallback callback) {
+        public CompletableFuture<Void> start(ConsumerCallback callback) {
             consumers().forEach(consumer -> consumer.start(callback));
+
+            // wait for all consumers to join the group
+            return CompletableFuture.allOf(consumers()
+                .map(Consumer::started)
+                .toArray(CompletableFuture[]::new));
         }
 
         public void pause() {
@@ -155,21 +174,17 @@ public class ConsumerService implements AutoCloseable {
             consumers().forEach(Consumer::resume);
         }
 
-        public void seek(long timestamp) {
-            try {
-                var offsetMap = admin.listOffsets(listOffsetsRequest(timestamp)).all().get();
-
-                List<AlterConsumerGroupOffsetsResult> futures = new ArrayList<>();
-                for (Topic topic : consumers.keySet()) {
-                    var future = admin.alterConsumerGroupOffsets(groupId(topic), resetOffsetsRequest(topic, offsetMap));
-                    futures.add(future);
-                }
-                for (AlterConsumerGroupOffsetsResult future : futures) {
-                    future.all().get();
-                }
-            } catch (InterruptedException | ExecutionException e) {
-                throw new RuntimeException(e);
-            }
+        public CompletableFuture<Void> seek(long timestamp) {
+            return admin.listOffsets(listOffsetsRequest(timestamp))
+                .all()
+                .toCompletionStage()
+                .toCompletableFuture()
+                .thenCompose(offsetMap -> CompletableFuture.allOf(consumers.keySet().stream()
+                    .map(topic -> admin.alterConsumerGroupOffsets(groupId(topic), resetOffsetsRequest(topic, offsetMap)))
+                    .map(AlterConsumerGroupOffsetsResult::all)
+                    .map(KafkaFuture::toCompletionStage)
+                    .map(CompletionStage::toCompletableFuture)
+                    .toArray(CompletableFuture[]::new)));
         }
 
         public int size() {
@@ -193,13 +208,11 @@ public class ConsumerService implements AutoCloseable {
             return properties;
         }
 
-        private Consumer createConsumer(Topic topic, Properties common) {
-            Properties properties = new Properties(common);
+        private Consumer newConsumer(Topic topic, Properties common) {
+            Properties properties = new Properties();
+            properties.putAll(common);
             properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId(topic));
-
-            KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(properties);
-            consumer.subscribe(List.of(topic.name));
-            return new Consumer(consumer);
+            return new Consumer(properties, topic.name);
         }
 
         private Stream<Consumer> consumers() {
@@ -207,7 +220,7 @@ public class ConsumerService implements AutoCloseable {
         }
 
         private String groupId(Topic topic) {
-            return String.format("sub-%s-%03d", topic.name, index);
+            return String.format("sub-%s-%s-%03d", topic.name, groupSuffix, index);
         }
 
         private Map<TopicPartition, OffsetSpec> listOffsetsRequest(long timestamp) {
@@ -237,16 +250,23 @@ public class ConsumerService implements AutoCloseable {
         private final KafkaConsumer<String, byte[]> consumer;
         private final ExecutorService executor;
         private Future<?> task;
+        private final CompletableFuture<Void> started = new CompletableFuture<>();
         private boolean paused = false;
         private volatile boolean closing = false;
 
-        public Consumer(KafkaConsumer<String, byte[]> consumer) {
-            this.consumer = consumer;
+        public Consumer(Properties properties, String topic) {
+            this.consumer = new KafkaConsumer<>(properties);
             this.executor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("perf-consumer", false));
+
+            consumer.subscribe(List.of(topic), subscribeListener());
         }
 
         public void start(ConsumerCallback callback) {
             this.task = this.executor.submit(() -> pollRecords(consumer, callback));
+        }
+
+        public CompletableFuture<Void> started() {
+            return started;
         }
 
         public void pause() {
@@ -255,6 +275,21 @@ public class ConsumerService implements AutoCloseable {
 
         public void resume() {
             paused = false;
+        }
+
+        private ConsumerRebalanceListener subscribeListener() {
+            return new ConsumerRebalanceListener() {
+                @Override
+                public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                    // do nothing
+                }
+
+                @Override
+                public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                    // once partitions are assigned, it means the consumer has joined the group
+                    started.complete(null);
+                }
+            };
         }
 
         private void pollRecords(KafkaConsumer<String, byte[]> consumer, ConsumerCallback callback) {
