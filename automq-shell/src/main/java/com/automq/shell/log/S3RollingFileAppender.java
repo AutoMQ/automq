@@ -52,6 +52,7 @@ public class S3RollingFileAppender extends RollingFileAppender {
         super.close();
         if (uploadThread != null) {
             uploadThread.interrupt();
+            s3Operator.close();
         }
     }
 
@@ -170,6 +171,6 @@ public class S3RollingFileAppender extends RollingFileAppender {
 
     private String getObjectKey() {
         String today = LocalDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        return String.format("automq/logs/cluster/%s/%s/%s.log", clusterId, today, UUID.randomUUID());
+        return String.format("automq/logs/cluster/%s/%s/%s", clusterId, today, UUID.randomUUID());
     }
 }
