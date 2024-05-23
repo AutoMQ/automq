@@ -69,6 +69,12 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Starting perf test with config: {}", jsonStringify(config));
         TimerUtil timer = new TimerUtil();
 
+        if (config.reset) {
+            LOGGER.info("Deleting all topics...");
+            int deleted = topicService.deleteTopics();
+            LOGGER.info("Deleted all topics ({} in total), took {} ms", deleted, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+        }
+
         LOGGER.info("Creating topics...");
         List<Topic> topics = topicService.createTopics(config.topicsConfig());
         LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
@@ -94,7 +100,7 @@ public class PerfCommand implements AutoCloseable {
             collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
         }
 
-        Result result = null;
+        Result result;
         if (config.backlogDurationSeconds > 0) {
             LOGGER.info("Pausing consumers for {} seconds to build up backlog...", config.backlogDurationSeconds);
             consumerService.pause();
@@ -144,12 +150,13 @@ public class PerfCommand implements AutoCloseable {
         boolean ready = false;
         while (System.nanoTime() < start + TOPIC_READY_TIMEOUT_NANOS) {
             long received = stats.toCumulativeStats().totalMessagesReceived;
+            LOGGER.info("Waiting for topics to be ready... sent: {}, received: {}", sent, received);
             if (received >= sent) {
                 ready = true;
                 break;
             }
             try {
-                Thread.sleep(1000);
+                Thread.sleep(2000);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }

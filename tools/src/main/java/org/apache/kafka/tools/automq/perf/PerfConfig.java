@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.helper.HelpScreenException;
+import net.sourceforge.argparse4j.impl.type.ReflectArgumentType;
+import net.sourceforge.argparse4j.inf.Argument;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
@@ -24,11 +26,16 @@ import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
 import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
 
+import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
+import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.nonNegativeInteger;
+import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.positiveInteger;
+
 public class PerfConfig {
     public final String bootstrapServer;
     public final Map<String, String> topicConfigs;
     public final Map<String, String> producerConfigs;
     public final Map<String, String> consumerConfigs;
+    public final boolean reset;
     public final String topicPrefix;
     public final int topics;
     public final int partitionsPerTopic;
@@ -57,11 +64,13 @@ public class PerfConfig {
             parser.handleError(e);
             Exit.exit(1);
         }
+        assert ns != null;
 
         bootstrapServer = ns.getString("bootstrapServer");
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
+        reset = ns.getBoolean("reset");
         topicPrefix = ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
@@ -78,11 +87,9 @@ public class PerfConfig {
         testDurationMinutes = ns.getInt("testDurationMinutes");
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
 
-        // TODO add more checker
-
-        if (backlogDurationSeconds <= producersPerTopic * groupStartDelaySeconds) {
-            throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should be greater than PRODUCERS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
-                backlogDurationSeconds, producersPerTopic, groupStartDelaySeconds));
+        if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
+            throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
+                backlogDurationSeconds, groupsPerTopic, groupStartDelaySeconds));
         }
     }
 
@@ -116,6 +123,10 @@ public class PerfConfig {
             .dest("consumerConfigs")
             .metavar("CONSUMER_CONFIG")
             .help("The consumer configurations.");
+        parser.addArgument("--reset")
+            .action(storeTrue())
+            .dest("reset")
+            .help("delete all topics before running the test.");
         parser.addArgument("-X", "--topic-prefix")
             .setDefault("test-topic")
             .type(String.class)
@@ -124,37 +135,37 @@ public class PerfConfig {
             .help("The topic prefix.");
         parser.addArgument("-t", "--topics")
             .setDefault(1)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("topics")
             .metavar("TOPICS")
             .help("The number of topics.");
         parser.addArgument("-n", "--partitions-per-topic")
             .setDefault(1)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("partitionsPerTopic")
             .metavar("PARTITIONS_PER_TOPIC")
             .help("The number of partitions per topic.");
         parser.addArgument("-p", "--producers-per-topic")
             .setDefault(1)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("producersPerTopic")
             .metavar("PRODUCERS_PER_TOPIC")
             .help("The number of producers per topic.");
         parser.addArgument("-g", "--groups-per-topic")
             .setDefault(1)
-            .type(Integer.class)
+            .type(nonNegativeInteger())
             .dest("groupsPerTopic")
             .metavar("GROUPS_PER_TOPIC")
             .help("The number of consumer groups per topic.");
         parser.addArgument("-c", "--consumers-per-group")
             .setDefault(1)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("consumersPerGroup")
             .metavar("CONSUMERS_PER_GROUP")
             .help("The number of consumers per group.");
         parser.addArgument("-s", "--record-size")
             .setDefault(1024)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("recordSize")
             .metavar("RECORD_SIZE")
             .help("The record size in bytes.");
@@ -166,43 +177,43 @@ public class PerfConfig {
             .help("The ratio of random payloads. The value should be between 0.0 and 1.0.");
         parser.addArgument("-S", "--random-pool-size")
             .setDefault(1000)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("randomPoolSize")
             .metavar("RANDOM_POOL_SIZE")
             .help("The count of random payloads. Only used when random ratio is greater than 0.0.");
         parser.addArgument("-r", "--send-rate")
             .setDefault(1000)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("sendRate")
             .metavar("SEND_RATE")
             .help("The send rate in messages per second.");
         parser.addArgument("-b", "--backlog-duration")
-            .setDefault(500)
-            .type(Integer.class)
+            .setDefault(0)
+            .type(nonNegativeInteger())
             .dest("backlogDurationSeconds")
             .metavar("BACKLOG_DURATION_SECONDS")
-            .help("The backlog duration in seconds. Should be greater than PRODUCERS_PER_TOPIC * GROUP_START_DELAY_SECONDS.");
+            .help("The backlog duration in seconds, and zero means no backlog. Should not be less than GROUPS_PER_TOPIC * GROUP_START_DELAY_SECONDS.");
         parser.addArgument("-G", "--group-start-delay")
             .setDefault(0)
-            .type(Integer.class)
+            .type(nonNegativeInteger())
             .dest("groupStartDelaySeconds")
             .metavar("GROUP_START_DELAY_SECONDS")
             .help("The group start delay in seconds.");
         parser.addArgument("-w", "--warmup-duration")
             .setDefault(1)
-            .type(Integer.class)
+            .type(nonNegativeInteger())
             .dest("warmupDurationMinutes")
             .metavar("WARMUP_DURATION_MINUTES")
             .help("The warmup duration in minutes.");
         parser.addArgument("-d", "--test-duration")
             .setDefault(5)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("testDurationMinutes")
             .metavar("TEST_DURATION_MINUTES")
             .help("The test duration in minutes.");
         parser.addArgument("-i", "--reporting-interval")
             .setDefault(1)
-            .type(Integer.class)
+            .type(positiveInteger())
             .dest("reportingIntervalSeconds")
             .metavar("REPORTING_INTERVAL_SECONDS")
             .help("The reporting interval in seconds.");
@@ -252,5 +263,41 @@ public class PerfConfig {
             map.put(parts[0], parts[1]);
         }
         return map;
+    }
+
+    static class IntegerArgumentType extends ReflectArgumentType<Integer> {
+
+        private final IntegerValidator validator;
+
+        public IntegerArgumentType(IntegerValidator validator) {
+            super(Integer.class);
+            this.validator = validator;
+        }
+
+        @Override
+        public Integer convert(ArgumentParser parser, Argument arg, String value) throws ArgumentParserException {
+            Integer result = super.convert(parser, arg, value);
+            String message = validator.validate(result);
+            if (message != null) {
+                throw new ArgumentParserException(message, parser, arg);
+            }
+            return result;
+        }
+
+        public static IntegerArgumentType nonNegativeInteger() {
+            return new IntegerArgumentType(value -> value < 0 ? "expected a non-negative integer, but got " + value : null);
+        }
+
+        public static IntegerArgumentType positiveInteger() {
+            return new IntegerArgumentType(value -> value <= 0 ? "expected a positive integer, but got " + value : null);
+        }
+    }
+
+    @FunctionalInterface
+    interface IntegerValidator {
+        /**
+         * Validate the given value. Return an error message if the value is invalid, otherwise return null.
+         */
+        String validate(Integer value);
     }
 }
