@@ -17,19 +17,21 @@
 
 package kafka
 
+import com.automq.shell.AutoMQApplication
 import com.automq.shell.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
+import com.automq.shell.log.S3LogConfig
 import com.automq.shell.model.S3Url
-
-import java.util.Properties
 import com.automq.stream.s3.ByteBufAlloc
 import joptsimple.OptionParser
 import kafka.s3shell.util.S3ShellPropUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
 import kafka.utils.{Exit, Logging}
-import org.apache.kafka.common.utils.{Java, LoggingSignalHandler, OperatingSystem, Time, Utils}
+import org.apache.kafka.common.utils._
 import org.apache.kafka.server.util.CommandLineUtils
 import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
+
+import java.util.Properties
 
 object Kafka extends Logging {
 
@@ -108,22 +110,38 @@ object Kafka extends Logging {
 
   private def buildServer(props: Properties): Server = {
     val config = KafkaConfig.fromProps(props, doLog = false)
+    AutoMQApplication.registerSingleton(classOf[S3LogConfig], new S3LogConfig {
+
+      override def isDebugEnabled: Boolean = config.isDebugEnabled
+
+      override def s3Endpoint(): String = config.s3Endpoint
+
+      override def s3Region(): String = config.s3Region
+
+      override def s3Bucket(): String = config.s3Bucket
+
+      override def s3PathStyle(): Boolean = config.s3PathStyle
+    })
     // AutoMQ for Kafka inject start
     // set allocator's policy as early as possible
     ByteBufAlloc.setPolicy(config.s3StreamAllocatorPolicy)
     // AutoMQ for Kafka inject end
     if (config.requiresZookeeper) {
-      new KafkaServer(
+      val kafkaServer = new KafkaServer(
         config,
         Time.SYSTEM,
         threadNamePrefix = None,
         enableForwarding = enableApiForwarding(config)
       )
+      AutoMQApplication.setClusterId(kafkaServer.clusterId)
+      kafkaServer
     } else {
-      new KafkaRaftServer(
+      val kafkaRaftServer = new KafkaRaftServer(
         config,
         Time.SYSTEM,
       )
+      AutoMQApplication.setClusterId(kafkaRaftServer.sharedServer.clusterId)
+      kafkaRaftServer
     }
   }
 
@@ -139,6 +157,7 @@ object Kafka extends Logging {
         CredentialsProviderHolder.create(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Url.getS3AccessKey, s3Url.getS3SecretKey)))
       }
       val server = buildServer(serverProps)
+      AutoMQApplication.registerSingleton(classOf[Server], server)
       // AutoMQ for Kafka inject end
 
       try {
