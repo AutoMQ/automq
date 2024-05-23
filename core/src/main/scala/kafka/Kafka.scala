@@ -112,7 +112,7 @@ object Kafka extends Logging {
     val config = KafkaConfig.fromProps(props, doLog = false)
     AutoMQApplication.registerSingleton(classOf[S3LogConfig], new S3LogConfig {
 
-      override def isDebugEnabled: Boolean = config.isDebugEnabled
+      override def isEnabled: Boolean = config.s3MetricsExporterType.contains("s3")
 
       override def s3Endpoint(): String = config.s3Endpoint
 

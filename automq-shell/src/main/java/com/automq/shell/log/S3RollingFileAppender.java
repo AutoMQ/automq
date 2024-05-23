@@ -98,7 +98,7 @@ public class S3RollingFileAppender extends RollingFileAppender {
     private boolean couldUpload() {
         initConfiguration();
         // TODO: use separated switch.
-        boolean enabled = clusterId != null && config != null && config.isDebugEnabled();
+        boolean enabled = clusterId != null && config != null && config.isEnabled();
 
         if (enabled) {
             initUploadComponent();

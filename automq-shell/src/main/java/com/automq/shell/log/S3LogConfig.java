@@ -12,7 +12,7 @@
 package com.automq.shell.log;
 
 public interface S3LogConfig {
-    boolean isDebugEnabled();
+    boolean isEnabled();
     String s3Endpoint();
     String s3Region();
     String s3Bucket();
