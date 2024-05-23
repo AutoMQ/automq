@@ -16,6 +16,8 @@ repositories {
 
 dependencies {
     compileOnly libs.awsSdkAuth
+    implementation libs.log4j
+    implementation libs.nettyBuffer
     implementation 'info.picocli:picocli:4.7.6'
     implementation(project(':s3stream')) {
         exclude(group: 'io.opentelemetry', module: '*')
