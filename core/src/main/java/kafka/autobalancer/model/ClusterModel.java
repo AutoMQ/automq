@@ -170,15 +170,15 @@ public class ClusterModel {
         clusterLock.lock();
         try {
             brokerUpdater = brokerMap.get(brokerId);
+            if (brokerUpdater != null) {
+                boolean ret = brokerUpdater.update(metricsMap, time);
+                for (TopicPartitionReplicaUpdater replicaUpdater : brokerReplicaMap.get(brokerId).values()) {
+                    replicaUpdater.setMetricVersion(brokerUpdater.metricVersion());
+                }
+                return ret;
+            }
         } finally {
             clusterLock.unlock();
-        }
-        if (brokerUpdater != null) {
-            boolean ret = brokerUpdater.update(metricsMap, time);
-            for (TopicPartitionReplicaUpdater replicaUpdater : brokerReplicaMap.get(brokerId).values()) {
-                replicaUpdater.setMetricVersion(brokerUpdater.metricVersion());
-            }
-            return ret;
         }
         return false;
     }
