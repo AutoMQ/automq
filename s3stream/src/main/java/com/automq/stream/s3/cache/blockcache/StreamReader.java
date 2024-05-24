@@ -112,7 +112,8 @@ public class StreamReader {
                 if (leftRetries > 0 && (cause instanceof ObjectNotExistException || cause instanceof NoSuchKeyException || cause instanceof BlockNotContinuousException)) {
                     // The cached blocks maybe invalid after object compaction, so we need to reset the blocks and retry read
                     resetBlocks();
-                    FutureUtil.propagate(read(startOffset, endOffset, maxBytes, leftRetries - 1), retCf);
+                    // use async to prevent recursive call cause stack overflow
+                    eventLoop.execute(() -> FutureUtil.propagate(read(startOffset, endOffset, maxBytes, leftRetries - 1), retCf));
                 } else {
                     for (Block block : readContext.blocks) {
                         block.release();
@@ -196,9 +197,18 @@ public class StreamReader {
                 ctx.cf.complete(new ReadDataBlock(ctx.records, ctx.accessType));
                 StorageOperationStats.getInstance().readBlockCacheStats(ctx.accessType == BLOCK_CACHE_HIT).record(ctx.start.elapsedAs(TimeUnit.NANOSECONDS));
             } else {
+                if (nextStartOffset == startOffset) {
+                    // The nextStartOffset is not changed. It means we can't read any more records from the blocks.
+                    // So we should fast fail to prevent infinite loop.
+                    ctx.cf.completeExceptionally(new AutoMQException("[UNEXPECTED] Can't read any record from the blocks"));
+                    return;
+                }
                 // The DataBlockIndex#size is not precise cause of the data block contains record header and data block header.
                 // So we may need to retry read to fulfill the endOffset or maxBytes
-                read0(ctx, nextStartOffset, endOffset, remainingSize);
+                long finalNextStartOffset = nextStartOffset;
+                int finalRemainingSize = remainingSize;
+                // use async to prevent recursive call cause stack overflow
+                eventLoop.execute(() -> read0(ctx, finalNextStartOffset, endOffset, finalRemainingSize));
             }
         }).whenComplete((nil, ex) -> {
             if (ex != null) {
@@ -229,8 +239,8 @@ public class StreamReader {
                 block.markRead();
             }
         }
-        // try readahead to accelerate the next read
-        readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS);
+        // try readahead to speed up the next read
+        eventLoop.execute(() -> readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS));
     }
 
     private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes,
@@ -288,7 +298,8 @@ public class StreamReader {
             }
         }
         int finalRemainingSize = remainingSize;
-        loadMoreBlocksCf.thenAccept(rst -> {
+        // use async to prevent recursive call cause stack overflow
+        loadMoreBlocksCf.thenAcceptAsync(rst -> {
             if (rst.isEmpty()) {
                 // it's already load to the end
                 if (endOffset != -1L && endOffset > loadedBlockIndexEndOffset) {
@@ -302,7 +313,7 @@ public class StreamReader {
                 long nextStartOffset = ctx.blocks.isEmpty() ? startOffset : ctx.blocks.get(ctx.blocks.size() - 1).index.endOffset();
                 getBlocks0(ctx, nextStartOffset, endOffset, finalRemainingSize);
             }
-        }).exceptionally(ex -> {
+        }, eventLoop).exceptionally(ex -> {
             ctx.cf.completeExceptionally(ex);
             return null;
         });
@@ -533,7 +544,12 @@ public class StreamReader {
             });
             // For get block indexes and load data block are sync success,
             // the whenComplete will invoke first before assign CompletableFuture to inflightReadaheadCf
-            inflightReadaheadCf.whenComplete((nil, ex) -> inflightReadaheadCf = null);
+            inflightReadaheadCf.whenComplete((nil, ex) -> {
+                if (ex != null) {
+                    LOGGER.error("Readahead failed", ex);
+                }
+                inflightReadaheadCf = null;
+            });
         }
 
         public void reset() {
