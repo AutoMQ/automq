@@ -107,7 +107,7 @@ public class StreamReader {
             Throwable cause = FutureUtil.cause(ex);
             if (cause != null) {
                 readContext.records.forEach(StreamRecordBatch::release);
-                if (leftRetries > 0 && (cause instanceof ObjectNotExistException || cause instanceof NoSuchKeyException || cause instanceof BlockNotContinuousException)) {
+                if (leftRetries > 0 && isRecoverable(cause)) {
                     // The cached blocks maybe invalid after object compaction, so we need to reset the blocks and retry read
                     resetBlocks();
                     // use async to prevent recursive call cause stack overflow
@@ -440,6 +440,10 @@ public class StreamReader {
         return true;
     }
 
+    private static boolean isRecoverable(Throwable cause) {
+        return cause instanceof ObjectNotExistException || cause instanceof NoSuchKeyException || cause instanceof BlockNotContinuousException;
+    }
+
     static class GetBlocksContext {
         final List<Block> blocks = new ArrayList<>();
         final CompletableFuture<List<Block>> cf = new CompletableFuture<>();
@@ -557,7 +561,8 @@ public class StreamReader {
             // For get block indexes and load data block are sync success,
             // the whenComplete will invoke first before assign CompletableFuture to inflightReadaheadCf
             inflightReadaheadCf.whenComplete((nil, ex) -> {
-                if (ex != null) {
+                Throwable cause = FutureUtil.cause(ex);
+                if (!isRecoverable(cause)) {
                     LOGGER.error("Readahead failed", ex);
                 }
                 inflightReadaheadCf = null;
