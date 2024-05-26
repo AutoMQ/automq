@@ -107,15 +107,15 @@ public class StreamReader {
             Throwable cause = FutureUtil.cause(ex);
             if (cause != null) {
                 readContext.records.forEach(StreamRecordBatch::release);
+                for (Block block : readContext.blocks) {
+                    block.release();
+                }
                 if (leftRetries > 0 && isRecoverable(cause)) {
                     // The cached blocks maybe invalid after object compaction, so we need to reset the blocks and retry read
                     resetBlocks();
                     // use async to prevent recursive call cause stack overflow
                     eventLoop.execute(() -> FutureUtil.propagate(read(startOffset, endOffset, maxBytes, leftRetries - 1), retCf));
                 } else {
-                    for (Block block : readContext.blocks) {
-                        block.release();
-                    }
                     retCf.completeExceptionally(cause);
                 }
             } else {
@@ -163,6 +163,7 @@ public class StreamReader {
 
         // 3. extract records from blocks
         loadBlocksCf.thenAccept(nil -> {
+            ctx.blocks.addAll(blocks);
             Optional<Block> failedBlock = blocks.stream().filter(block -> block.exception != null).findAny();
             if (failedBlock.isPresent()) {
                 ctx.cf.completeExceptionally(failedBlock.get().exception);
@@ -173,7 +174,6 @@ public class StreamReader {
                     streamId, startOffset, endOffset, maxBytes)));
                 return;
             }
-            ctx.blocks.addAll(blocks);
             int remainingSize = maxBytes;
             long nextStartOffset = startOffset;
             long nextEndOffset;
@@ -500,7 +500,6 @@ public class StreamReader {
 
         public void release() {
             if (released) {
-                LOGGER.error("[BUG] duplicated release", new IllegalStateException());
                 return;
             }
             released = true;
