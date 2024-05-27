@@ -11,6 +11,8 @@
 
 package kafka.log.stream.s3.telemetry;
 
+import com.automq.shell.metrics.S3MetricsConfig;
+import com.automq.shell.metrics.S3MetricsExporter;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
@@ -112,16 +114,16 @@ public class TelemetryManager {
 
     private void init() {
         Attributes baseAttributes = Attributes.builder()
-                .put(ResourceAttributes.SERVICE_NAME, clusterId)
-                .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
-                .put(ResourceAttributes.HOST_NAME, getHostName())
-                .put("instance", String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
-                .put("node_type", getNodeType())
-                .build();
+            .put(ResourceAttributes.SERVICE_NAME, clusterId)
+            .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
+            .put(ResourceAttributes.HOST_NAME, getHostName())
+            .put("instance", String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
+            .put("node_type", getNodeType())
+            .build();
 
         Resource resource = Resource.empty().toBuilder()
-                .putAll(baseAttributes)
-                .build();
+            .putAll(baseAttributes)
+            .build();
 
         OpenTelemetrySdkBuilder openTelemetrySdkBuilder = OpenTelemetrySdk.builder();
 
@@ -141,9 +143,9 @@ public class TelemetryManager {
         }
 
         openTelemetrySdk = openTelemetrySdkBuilder
-                .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
-                        W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
-                .build();
+            .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
+                W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
+            .build();
 
         if (kafkaConfig.s3MetricsEnable()) {
             addJmxMetrics(openTelemetrySdk);
@@ -159,7 +161,7 @@ public class TelemetryManager {
         }
 
         LOGGER.info("Instrument manager initialized with metrics: {} (level: {}), trace: {} report interval: {}",
-                kafkaConfig.s3MetricsEnable(), kafkaConfig.s3MetricsLevel(), kafkaConfig.s3TracerEnable(), kafkaConfig.s3ExporterReportIntervalMs());
+            kafkaConfig.s3MetricsEnable(), kafkaConfig.s3MetricsLevel(), kafkaConfig.s3TracerEnable(), kafkaConfig.s3ExporterReportIntervalMs());
     }
 
     public static OpenTelemetrySdk getOpenTelemetrySdk() {
@@ -224,21 +226,21 @@ public class TelemetryManager {
         }
         String otlpEndpoint = otlpEndpointOpt.get();
         OtlpGrpcSpanExporter spanExporter = OtlpGrpcSpanExporter.builder()
-                .setEndpoint(otlpEndpoint)
-                .setTimeout(EXPORTER_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .build();
+            .setEndpoint(otlpEndpoint)
+            .setTimeout(EXPORTER_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .build();
 
         SpanProcessor spanProcessor = BatchSpanProcessor.builder(spanExporter)
-                .setExporterTimeout(EXPORTER_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .setScheduleDelay(kafkaConfig.s3SpanScheduledDelayMs(), TimeUnit.MILLISECONDS)
-                .setMaxExportBatchSize(kafkaConfig.s3SpanMaxBatchSize())
-                .setMaxQueueSize(kafkaConfig.s3SpanMaxQueueSize())
-                .build();
+            .setExporterTimeout(EXPORTER_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .setScheduleDelay(kafkaConfig.s3SpanScheduledDelayMs(), TimeUnit.MILLISECONDS)
+            .setMaxExportBatchSize(kafkaConfig.s3SpanMaxBatchSize())
+            .setMaxQueueSize(kafkaConfig.s3SpanMaxQueueSize())
+            .build();
 
         return SdkTracerProvider.builder()
-                .addSpanProcessor(spanProcessor)
-                .setResource(resource)
-                .build();
+            .addSpanProcessor(spanProcessor)
+            .setResource(resource)
+            .build();
     }
 
     private SdkMeterProvider getMetricsProvider(Resource resource) {
@@ -258,12 +260,46 @@ public class TelemetryManager {
                 case "prometheus":
                     initPrometheusExporter(sdkMeterProviderBuilder, kafkaConfig);
                     break;
+                case "s3":
+                    initS3Exporter(sdkMeterProviderBuilder, kafkaConfig);
+                    break;
                 default:
                     LOGGER.error("illegal metrics exporter type: {}", exporterType);
                     break;
             }
         }
         return sdkMeterProviderBuilder.build();
+    }
+
+    private void initS3Exporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
+        S3MetricsExporter s3MetricsExporter = new S3MetricsExporter(new S3MetricsConfig() {
+            @Override
+            public String s3Endpoint() {
+                return kafkaConfig.s3Endpoint();
+            }
+
+            @Override
+            public String s3Region() {
+                return kafkaConfig.s3Region();
+            }
+
+            @Override
+            public String s3Bucket() {
+                return kafkaConfig.s3Bucket();
+            }
+
+            @Override
+            public boolean s3PathStyle() {
+                return kafkaConfig.s3PathStyle();
+            }
+        }, clusterId);
+        PeriodicMetricReaderBuilder builder = PeriodicMetricReader.builder(s3MetricsExporter);
+        MetricReader periodicReader = builder.setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs())).build();
+        metricReaderList.add(periodicReader);
+
+        SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,
+            instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
+        LOGGER.info("S3 exporter registered, bucket: {}", kafkaConfig.s3Bucket());
     }
 
     private void initOTLPExporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
@@ -279,16 +315,16 @@ public class TelemetryManager {
         switch (protocol) {
             case "grpc":
                 OtlpGrpcMetricExporterBuilder otlpExporterBuilder = OtlpGrpcMetricExporter.builder()
-                        .setEndpoint(otlpExporterHost)
-                        .setCompression(kafkaConfig.s3ExporterOTLPCompressionEnable() ? "gzip" : "none")
-                        .setTimeout(Duration.ofMillis(30000));
+                    .setEndpoint(otlpExporterHost)
+                    .setCompression(kafkaConfig.s3ExporterOTLPCompressionEnable() ? "gzip" : "none")
+                    .setTimeout(Duration.ofMillis(30000));
                 builder = PeriodicMetricReader.builder(otlpExporterBuilder.build());
                 break;
             case "http":
                 OtlpHttpMetricExporterBuilder otlpHttpExporterBuilder = OtlpHttpMetricExporter.builder()
-                        .setEndpoint(otlpExporterHost)
-                        .setCompression(kafkaConfig.s3ExporterOTLPCompressionEnable() ? "gzip" : "none")
-                        .setTimeout(Duration.ofMillis(30000));
+                    .setEndpoint(otlpExporterHost)
+                    .setCompression(kafkaConfig.s3ExporterOTLPCompressionEnable() ? "gzip" : "none")
+                    .setTimeout(Duration.ofMillis(30000));
                 builder = PeriodicMetricReader.builder(otlpHttpExporterBuilder.build());
                 break;
             default:
@@ -303,7 +339,7 @@ public class TelemetryManager {
         MetricReader periodicReader = builder.setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs())).build();
         metricReaderList.add(periodicReader);
         SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,
-                instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
+            instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
         LOGGER.info("OTLP exporter registered, endpoint: {}, protocol: {}", otlpExporterHost, protocol);
     }
 
@@ -315,11 +351,11 @@ public class TelemetryManager {
             return;
         }
         prometheusHttpServer = PrometheusHttpServer.builder()
-                .setHost(promExporterHost)
-                .setPort(promExporterPort)
-                .build();
+            .setHost(promExporterHost)
+            .setPort(promExporterPort)
+            .build();
         SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, prometheusHttpServer,
-                instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
+            instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
         LOGGER.info("Prometheus exporter registered, host: {}, port: {}", promExporterHost, promExporterPort);
     }
 
