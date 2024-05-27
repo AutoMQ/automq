@@ -174,9 +174,71 @@ public class S3Storage implements Storage {
         List<StreamMetadata> openingStreams, Logger logger) {
         Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
-        long logEndOffset = -1L;
         Map<Long, Long> streamNextOffsets = new HashMap<>();
         Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords = new HashMap<>();
+        long logEndOffset = recoverContinuousRecords(it, openingStreamEndOffsets, streamNextOffsets, streamDiscontinuousRecords, cacheBlock, logger);
+        // release all discontinuous records.
+        streamDiscontinuousRecords.values().forEach(queue -> {
+            if (queue.isEmpty()) {
+                return;
+            }
+            logger.info("drop discontinuous records, records={}", queue);
+            queue.forEach(StreamRecordBatch::release);
+        });
+
+        if (logEndOffset >= 0L) {
+            cacheBlock.confirmOffset(logEndOffset);
+        }
+
+        RecoverResult result = new RecoverResult();
+        cacheBlock.records().forEach((streamId, records) -> {
+            if (!records.isEmpty()) {
+                long startOffset = records.get(0).getBaseOffset();
+                long expectedStartOffset = openingStreamEndOffsets.getOrDefault(streamId, startOffset);
+                if (startOffset != expectedStartOffset) {
+                    RuntimeException exception = new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %d endOffset=%d from controller, " +
+                        "but WAL recovered records startOffset=%s", streamId, expectedStartOffset, startOffset));
+                    LOGGER.error("invalid stream records", exception);
+                    result.invalidStreams.put(streamId, exception);
+                }
+            }
+        });
+        if (result.invalidStreams.isEmpty()) {
+            result.cacheBlock = cacheBlock;
+        } else {
+            // re-new a cache block and put all valid records into it.
+            LogCache.LogCacheBlock newCacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
+            cacheBlock.records().forEach((streamId, records) -> {
+                if (!result.invalidStreams.containsKey(streamId)) {
+                    records.forEach(newCacheBlock::put);
+                } else {
+                    // release invalid records.
+                    records.forEach(StreamRecordBatch::release);
+                }
+            });
+            result.cacheBlock = newCacheBlock;
+        }
+
+        return result;
+    }
+
+    /**
+     * Recover continuous records in each stream from the WAL, and put them into the returned {@link LogCache.LogCacheBlock}.
+     *
+     * @param it                         WAL recover iterator
+     * @param openingStreamEndOffsets    the end offset of each opening stream
+     * @param streamNextOffsets          the next offset of each stream (to be filled)
+     * @param streamDiscontinuousRecords the out-of-order records of each stream (to be filled)
+     * @param cacheBlock                 the cache block (to be filled)
+     * @return the end offset of the last record recovered
+     */
+    private static long recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it,
+        Map<Long, Long> openingStreamEndOffsets,
+        Map<Long, Long> streamNextOffsets,
+        Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
+        LogCache.LogCacheBlock cacheBlock,
+        Logger logger) {
+        long logEndOffset = -1L;
         while (it.hasNext()) {
             WriteAheadLog.RecoverResult recoverResult = it.next();
             logEndOffset = recoverResult.recordOffset();
@@ -227,49 +289,7 @@ public class S3Storage implements Storage {
                 discontinuousRecords.add(streamRecordBatch);
             }
         }
-        // release all discontinuous records.
-        streamDiscontinuousRecords.values().forEach(queue -> {
-            if (queue.isEmpty()) {
-                return;
-            }
-            logger.info("drop discontinuous records, records={}", queue);
-            queue.forEach(StreamRecordBatch::release);
-        });
-
-        if (logEndOffset >= 0L) {
-            cacheBlock.confirmOffset(logEndOffset);
-        }
-
-        RecoverResult result = new RecoverResult();
-        cacheBlock.records().forEach((streamId, records) -> {
-            if (!records.isEmpty()) {
-                long startOffset = records.get(0).getBaseOffset();
-                long expectedStartOffset = openingStreamEndOffsets.getOrDefault(streamId, startOffset);
-                if (startOffset != expectedStartOffset) {
-                    RuntimeException exception = new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %d endOffset=%d from controller, " +
-                        "but WAL recovered records startOffset=%s", streamId, expectedStartOffset, startOffset));
-                    LOGGER.error("invalid stream records", exception);
-                    result.invalidStreams.put(streamId, exception);
-                }
-            }
-        });
-        if (result.invalidStreams.isEmpty()) {
-            result.cacheBlock = cacheBlock;
-        } else {
-            // re-new a cache block and put all valid records into it.
-            LogCache.LogCacheBlock newCacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
-            cacheBlock.records().forEach((streamId, records) -> {
-                if (!result.invalidStreams.containsKey(streamId)) {
-                    records.forEach(newCacheBlock::put);
-                } else {
-                    // release invalid records.
-                    records.forEach(StreamRecordBatch::release);
-                }
-            });
-            result.cacheBlock = newCacheBlock;
-        }
-
-        return result;
+        return logEndOffset;
     }
 
     @Override
