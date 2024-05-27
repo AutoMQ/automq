@@ -9,10 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.shell.log;
+package com.automq.shell.metrics;
 
-public interface S3LogConfig {
-    boolean isEnabled();
+public interface S3MetricsConfig {
     String s3Endpoint();
     String s3Region();
     String s3Bucket();
