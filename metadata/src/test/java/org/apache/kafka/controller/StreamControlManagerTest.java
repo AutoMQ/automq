@@ -584,6 +584,41 @@ public class StreamControlManagerTest {
         assertTrue(result4.records().isEmpty());
     }
 
+    @Test
+    public void testTrimBeyondCommit() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
+            long objectId = args.getArgument(0);
+            return ControllerResult.of(
+                List.of(
+                    new ApiMessageAndVersion(
+                        new S3ObjectRecord().setObjectId(objectId).setObjectState(S3ObjectState.COMMITTED.toByte()),
+                        (short) 0
+                    )
+                ),
+                true);
+        });
+        registerAlwaysSuccessEpoch(BROKER0);
+        CreateStreamRequest request0 = new CreateStreamRequest();
+        ControllerResult<CreateStreamResponse> createStreamRst = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
+        replay(manager, createStreamRst.records());
+        ControllerResult<OpenStreamResponse> openStreamRst = manager.openStream(BROKER0, 0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        replay(manager, openStreamRst.records());
+
+        ControllerResult<TrimStreamResponse> trimRst = manager.trimStream(BROKER0, EPOCH0, new TrimStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(100L));
+        replay(manager, trimRst.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).startOffset());
+
+        ControllerResult<CommitStreamSetObjectResponseData> commitRst = manager.commitStreamSetObject(new CommitStreamSetObjectRequestData().setNodeId(BROKER0).setNodeEpoch(EPOCH0).setObjectStreamRanges(
+            List.of(
+                new ObjectStreamRange().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setStartOffset(0).setEndOffset(10L)
+            )
+        ));
+        replay(manager, commitRst.records());
+        assertEquals(10L, manager.streamsMetadata().get(STREAM0).ranges().get(0).endOffset());
+        assertEquals((short) 0, commitRst.response().errorCode());
+    }
+
     private long createStream() {
         CreateStreamRequest request0 = new CreateStreamRequest();
         ControllerResult<CreateStreamResponse> result0 = manager.createStream(BROKER0, BROKER_EPOCH0, request0);
