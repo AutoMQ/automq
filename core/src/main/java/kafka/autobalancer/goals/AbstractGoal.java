@@ -215,6 +215,12 @@ public abstract class AbstractGoal implements Goal {
         }
         BrokerUpdater.Broker srcBrokerBefore = cluster.broker(action.getSrcBrokerId());
         BrokerUpdater.Broker destBrokerBefore = cluster.broker(action.getDestBrokerId());
+
+        if (!srcBrokerBefore.getMetricVersion().isGoalSupported(this)
+                || !destBrokerBefore.getMetricVersion().isGoalSupported(this)) {
+            return POSITIVE_ACTION_SCORE_THRESHOLD;
+        }
+
         BrokerUpdater.Broker srcBrokerAfter = srcBrokerBefore.copy();
         BrokerUpdater.Broker destBrokerAfter = destBrokerBefore.copy();
 
