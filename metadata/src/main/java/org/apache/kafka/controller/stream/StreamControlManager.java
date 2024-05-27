@@ -954,7 +954,8 @@ public class StreamControlManager {
                 .setStreamId(e.getKey())
                 .setEpoch(streamMetadata.currentEpoch())
                 .setStartOffset(streamMetadata.startOffset())
-                .setEndOffset(rangeMetadata.endOffset());
+                // Fix https://github.com/AutoMQ/automq/issues/1222#issuecomment-2132812938
+                .setEndOffset(Math.max(rangeMetadata.endOffset(), streamMetadata.startOffset()));
         }).collect(Collectors.toList());
         resp.setStreamMetadataList(streamStatusList);
         return ControllerResult.atomicOf(records, resp);
@@ -1020,16 +1021,17 @@ public class StreamControlManager {
         }
         for (StreamOffsetRange range : ranges) {
             // verify stream exist
-            if (!this.streamsMetadata.containsKey(range.streamId())) {
+            S3StreamMetadata streamMetadata = this.streamsMetadata.get(range.streamId());
+            if (streamMetadata == null) {
                 log.warn("[streamAdvanceCheck]: streamId={} not exist", range.streamId());
                 return Errors.STREAM_NOT_EXIST;
             }
             // check if this stream open
-            if (this.streamsMetadata.get(range.streamId()).currentState() != StreamState.OPENED) {
+            if (streamMetadata.currentState() != StreamState.OPENED) {
                 log.warn("[streamAdvanceCheck]: streamId={} not opened", range.streamId());
                 return Errors.STREAM_NOT_OPENED;
             }
-            RangeMetadata rangeMetadata = this.streamsMetadata.get(range.streamId()).currentRangeMetadata();
+            RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
             if (rangeMetadata == null) {
                 // should not happen
                 log.error("[streamAdvanceCheck]: streamId={}'s current range={} not exist when stream has been ",
@@ -1041,10 +1043,11 @@ public class StreamControlManager {
                     range.streamId(), rangeMetadata.nodeId(), nodeId);
                 return Errors.STREAM_INNER_ERROR;
             }
-            if (rangeMetadata.endOffset() != range.startOffset()) {
-                log.warn("[streamAdvanceCheck]: streamId={}'s current range={}'s end offset {} is not equal to request start offset {}",
+            if (!(rangeMetadata.endOffset() == range.startOffset() || range.startOffset() <= streamMetadata.startOffset())) {
+                // Fix https://github.com/AutoMQ/automq/issues/1222#issuecomment-2132812938
+                log.warn("[streamAdvanceCheck]: streamId={}'s current range={}'s end offset {} is not equal to request start offset {}, stream's startOffset={}",
                     range.streamId(), this.streamsMetadata.get(range.streamId()).currentRangeIndex(),
-                    rangeMetadata.endOffset(), range.startOffset());
+                    rangeMetadata.endOffset(), range.startOffset(), streamMetadata.startOffset());
                 return Errors.OFFSET_NOT_MATCHED;
             }
         }
