@@ -561,7 +561,7 @@ public class StreamReader {
             // the whenComplete will invoke first before assign CompletableFuture to inflightReadaheadCf
             inflightReadaheadCf.whenComplete((nil, ex) -> {
                 Throwable cause = FutureUtil.cause(ex);
-                if (!isRecoverable(cause)) {
+                if (cause != null && !isRecoverable(cause)) {
                     LOGGER.error("Readahead failed", ex);
                 }
                 inflightReadaheadCf = null;
