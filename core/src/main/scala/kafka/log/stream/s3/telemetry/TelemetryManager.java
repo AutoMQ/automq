@@ -11,6 +11,7 @@
 
 package kafka.log.stream.s3.telemetry;
 
+import com.automq.shell.AutoMQApplication;
 import com.automq.shell.metrics.S3MetricsConfig;
 import com.automq.shell.metrics.S3MetricsExporter;
 import com.automq.stream.s3.metrics.MetricsConfig;
@@ -60,6 +61,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import kafka.server.KafkaConfig;
+import kafka.server.KafkaRaftServer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
@@ -274,6 +276,22 @@ public class TelemetryManager {
     private void initS3Exporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
         S3MetricsExporter s3MetricsExporter = new S3MetricsExporter(new S3MetricsConfig() {
             @Override
+            public String clusterId() {
+                return clusterId;
+            }
+
+            @Override
+            public boolean isActiveController() {
+                KafkaRaftServer raftServer = AutoMQApplication.getBean(KafkaRaftServer.class);
+                return raftServer != null && raftServer.controller().exists(controller -> controller.controller().isActive());
+            }
+
+            @Override
+            public int nodeId() {
+                return kafkaConfig.nodeId();
+            }
+
+            @Override
             public String s3Endpoint() {
                 return kafkaConfig.s3Endpoint();
             }
@@ -283,18 +301,17 @@ public class TelemetryManager {
                 return kafkaConfig.s3Region();
             }
 
-            @Override
-            public String s3Bucket() {
-                return kafkaConfig.s3Bucket();
+            public String s3OpsBucket() {
+                return kafkaConfig.s3OpsBucket();
             }
 
             @Override
             public boolean s3PathStyle() {
                 return kafkaConfig.s3PathStyle();
             }
-        }, clusterId);
+        });
         PeriodicMetricReaderBuilder builder = PeriodicMetricReader.builder(s3MetricsExporter);
-        MetricReader periodicReader = builder.setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs())).build();
+        MetricReader periodicReader = builder.setInterval(Duration.ofMinutes(1)).build();
         metricReaderList.add(periodicReader);
 
         SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,

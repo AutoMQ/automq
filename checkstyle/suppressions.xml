@@ -363,7 +363,7 @@
 
     <!-- AutoMQ -->
     <suppress checks="CyclomaticComplexity"
-              files="(S3StreamsMetadataImage|S3StreamMetricsManager|BlockCache|StreamReader).java"/>
+              files="(S3StreamsMetadataImage|S3StreamMetricsManager|BlockCache|StreamReader|S3MetricsExporter).java"/>
     <suppress checks="NPathComplexity"
               files="(StreamControlManager|S3StreamsMetadataImage|CompactionManagerTest|S3StreamMetricsManager|CompactionManager|BlockCache|DefaultS3BlockCache|StreamReader|DefaultS3Operator|S3Utils|AnomalyDetector).java"/>
     <suppress checks="MethodLength"

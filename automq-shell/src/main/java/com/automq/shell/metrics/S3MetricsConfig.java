@@ -12,8 +12,18 @@
 package com.automq.shell.metrics;
 
 public interface S3MetricsConfig {
+
+    String clusterId();
+
+    boolean isActiveController();
+
+    int nodeId();
+
     String s3Endpoint();
+
     String s3Region();
-    String s3Bucket();
+
+    String s3OpsBucket();
+
     boolean s3PathStyle();
 }

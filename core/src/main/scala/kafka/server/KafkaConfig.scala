@@ -447,6 +447,7 @@ object KafkaConfig {
   val S3RegionProp = "s3.region"
   val S3PathStyleProp = "s3.path.style"
   val S3BucketProp = "s3.bucket"
+  val S3OpsBucketProp = "s3.ops.bucket"
   val S3WALPathProp = "s3.wal.path"
   val S3WALCapacityProp = "s3.wal.capacity"
   val S3WALThreadProp = "s3.wal.thread"
@@ -499,6 +500,7 @@ object KafkaConfig {
   val S3RegionDoc = "The object storage region, ex. <code>us-east-1</code>."
   val S3PathStyleDoc = "The object storage access path style. When using MinIO, it should be set to true."
   val S3BucketDoc = "The object storage bucket."
+  val S3OpsBucketDoc = "The object storage ops bucket."
   val S3WALPathDoc = "The local WAL path for AutoMQ can be set to a block device path such as /dev/xxx or a filesystem file path." +
     "It is recommended to use a block device for better write performance."
   val S3WALCapacityDoc = "The size of the local WAL for AutoMQ. This determines the maximum amount of data that can be written to the buffer before data is uploaded to object storage." +
@@ -1410,6 +1412,7 @@ object KafkaConfig {
       .define(S3RegionProp, STRING, null, HIGH, S3RegionDoc)
       .define(S3PathStyleProp, BOOLEAN, false, LOW, S3PathStyleDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
+      .define(S3OpsBucketProp, STRING, null, HIGH, S3OpsBucketDoc)
       .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
       .define(S3WALCacheSizeProp, LONG, -1L, MEDIUM, S3WALCacheSizeDoc)
       .define(S3WALCapacityProp, LONG, 2147483648L, MEDIUM, S3WALCapacityDoc)
@@ -2135,6 +2138,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3Region = getString(KafkaConfig.S3RegionProp)
   val s3PathStyle = getBoolean(KafkaConfig.S3PathStyleProp)
   val s3Bucket = getString(KafkaConfig.S3BucketProp)
+  val s3OpsBucket = getString(KafkaConfig.S3OpsBucketProp)
   val s3WALPath = getString(KafkaConfig.S3WALPathProp)
   val s3WALCapacity = getLong(KafkaConfig.S3WALCapacityProp)
   val s3WALThread = getInt(KafkaConfig.S3WALThreadProp)

@@ -30,7 +30,31 @@ import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -64,30 +88,6 @@ import software.amazon.awssdk.services.s3.model.Tagging;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
-
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.utils.FutureUtil.cause;
@@ -422,6 +422,22 @@ public class DefaultS3Operator implements S3Operator {
     @Override
     public Writer writer(Writer.Context context, String path, ThrottleStrategy throttleStrategy) {
         return new ProxyWriter(context, this, path, throttleStrategy);
+    }
+
+    @Override
+    public CompletableFuture<List<Pair<String, Long>>> list(String prefix) {
+        TimerUtil timerUtil = new TimerUtil();
+        return readS3Client.listObjectsV2(builder -> builder.bucket(bucket).prefix(prefix))
+            .thenApply(resp -> {
+                List<Pair<String, Long>> keyList = resp.contents().stream().map(object -> Pair.of(object.key(), object.lastModified().toEpochMilli())).collect(Collectors.toList());
+                S3OperationStats.getInstance().listObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                LOGGER.info("[ControllerS3Operator]: List objects finished, count: {}, cost: {}", keyList.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                return keyList;
+            }).exceptionally(ex -> {
+                S3OperationStats.getInstance().listObjectsStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                LOGGER.info("[ControllerS3Operator]: List objects failed, cost: {}, ex: {}", timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
+                return Collections.emptyList();
+            });
     }
 
     @Override

@@ -110,18 +110,6 @@ object Kafka extends Logging {
 
   private def buildServer(props: Properties): Server = {
     val config = KafkaConfig.fromProps(props, doLog = false)
-    AutoMQApplication.registerSingleton(classOf[S3LogConfig], new S3LogConfig {
-
-      override def isEnabled: Boolean = config.s3MetricsExporterType.contains("s3")
-
-      override def s3Endpoint(): String = config.s3Endpoint
-
-      override def s3Region(): String = config.s3Region
-
-      override def s3Bucket(): String = config.s3Bucket
-
-      override def s3PathStyle(): Boolean = config.s3PathStyle
-    })
     // AutoMQ for Kafka inject start
     // set allocator's policy as early as possible
     ByteBufAlloc.setPolicy(config.s3StreamAllocatorPolicy)
@@ -134,6 +122,24 @@ object Kafka extends Logging {
         enableForwarding = enableApiForwarding(config)
       )
       AutoMQApplication.setClusterId(kafkaServer.clusterId)
+      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new S3LogConfig {
+
+        override def isEnabled: Boolean = config.s3MetricsExporterType.contains("s3")
+
+        override def isActiveController: Boolean = false
+
+        override def clusterId(): String = kafkaServer.clusterId
+
+        override def nodeId(): Int = config.nodeId
+
+        override def s3Endpoint(): String = config.s3Endpoint
+
+        override def s3Region(): String = config.s3Region
+
+        override def s3OpsBucket(): String = config.s3OpsBucket
+
+        override def s3PathStyle(): Boolean = config.s3PathStyle
+      })
       kafkaServer
     } else {
       val kafkaRaftServer = new KafkaRaftServer(
@@ -141,6 +147,25 @@ object Kafka extends Logging {
         Time.SYSTEM,
       )
       AutoMQApplication.setClusterId(kafkaRaftServer.sharedServer.clusterId)
+      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new S3LogConfig {
+
+        override def isEnabled: Boolean = config.s3MetricsExporterType.contains("s3")
+
+        override def isActiveController: Boolean = kafkaRaftServer.controller.exists(_.controller.isActive)
+
+        override def clusterId(): String = kafkaRaftServer.sharedServer.clusterId
+
+        override def nodeId(): Int = config.nodeId
+
+        override def s3Endpoint(): String = config.s3Endpoint
+
+        override def s3Region(): String = config.s3Region
+
+        override def s3OpsBucket(): String = config.s3OpsBucket
+
+        override def s3PathStyle(): Boolean = config.s3PathStyle
+      })
+      AutoMQApplication.registerSingleton(classOf[KafkaRaftServer], kafkaRaftServer)
       kafkaRaftServer
     }
   }
@@ -150,7 +175,7 @@ object Kafka extends Logging {
       // AutoMQ for Kafka inject start
       val serverProps = getPropsFromArgs(args)
       val s3UrlString = S3Url.parseS3UrlValFromArgs(args)
-      if (s3UrlString == null ) {
+      if (s3UrlString == null) {
         CredentialsProviderHolder.create(EnvVariableCredentialsProvider.get())
       } else {
         val s3Url = S3Url.parse(s3UrlString)
