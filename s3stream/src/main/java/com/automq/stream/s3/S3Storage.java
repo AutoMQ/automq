@@ -132,9 +132,16 @@ public class S3Storage implements Storage {
         S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
     }
 
+    /**
+     * Only for test.
+     */
     static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it,
         List<StreamMetadata> openingStreams) {
-        return recoverContinuousRecords(it, openingStreams, LOGGER);
+        RecoverResult result = recoverContinuousRecords(it, openingStreams, LOGGER);
+        result.firstException().ifPresent(e -> {
+            throw e;
+        });
+        return result.cacheBlock;
     }
 
     /**
@@ -145,7 +152,7 @@ public class S3Storage implements Storage {
      *     <li>the records that have been committed</li>
      *     <li>the records that are not continuous, which means, all records after the first discontinuous record</li>
      * </ul>
-     *
+     * <p>
      * It throws {@link IllegalStateException} if the start offset of the first recovered record mismatches
      * the end offset of any opening stream, which indicates data loss.
      * <p>
@@ -163,7 +170,7 @@ public class S3Storage implements Storage {
      *     <li>The record 5 and 4 are reordered because they are out of order, and we handle this bug here</li>
      * </ul>
      */
-    static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it,
+    static RecoverResult recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it,
         List<StreamMetadata> openingStreams, Logger logger) {
         Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
@@ -232,19 +239,37 @@ public class S3Storage implements Storage {
         if (logEndOffset >= 0L) {
             cacheBlock.confirmOffset(logEndOffset);
         }
+
+        RecoverResult result = new RecoverResult();
         cacheBlock.records().forEach((streamId, records) -> {
             if (!records.isEmpty()) {
                 long startOffset = records.get(0).getBaseOffset();
                 long expectedStartOffset = openingStreamEndOffsets.getOrDefault(streamId, startOffset);
                 if (startOffset != expectedStartOffset) {
-                    throw new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %d endOffset=%d from controller, " +
+                    RuntimeException exception = new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %d endOffset=%d from controller, " +
                         "but WAL recovered records startOffset=%s", streamId, expectedStartOffset, startOffset));
+                    LOGGER.error("invalid stream records", exception);
+                    result.invalidStreams.put(streamId, exception);
                 }
             }
-
         });
+        if (result.invalidStreams.isEmpty()) {
+            result.cacheBlock = cacheBlock;
+        } else {
+            // re-new a cache block and put all valid records into it.
+            LogCache.LogCacheBlock newCacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
+            cacheBlock.records().forEach((streamId, records) -> {
+                if (!result.invalidStreams.containsKey(streamId)) {
+                    records.forEach(newCacheBlock::put);
+                } else {
+                    // release invalid records.
+                    records.forEach(StreamRecordBatch::release);
+                }
+            });
+            result.cacheBlock = newCacheBlock;
+        }
 
-        return cacheBlock;
+        return result;
     }
 
     @Override
@@ -284,7 +309,9 @@ public class S3Storage implements Storage {
         Logger logger) throws Throwable {
         List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
 
-        LogCache.LogCacheBlock cacheBlock = recoverContinuousRecords(deltaWAL.recover(), streams, logger);
+        RecoverResult recoverResult = recoverContinuousRecords(deltaWAL.recover(), streams, logger);
+        LogCache.LogCacheBlock cacheBlock = recoverResult.cacheBlock;
+
         Map<Long, Long> streamEndOffsets = new HashMap<>();
         cacheBlock.records().forEach((streamId, records) -> {
             if (!records.isEmpty()) {
@@ -310,6 +337,11 @@ public class S3Storage implements Storage {
                 .map(s -> streamManager.closeStream(s.streamId(), s.epoch()))
                 .toArray(CompletableFuture[]::new)
         ).get();
+
+        // fail it if there is any invalid stream.
+        recoverResult.firstException().ifPresent(e -> {
+            throw e;
+        });
     }
 
     @Override
@@ -504,7 +536,7 @@ public class S3Storage implements Storage {
     private void handleTimeout(Timeout timeout, long streamId, long startOffset, long finalEndOffset, int maxBytes) {
         if (timeout.isExpired()) {
             LOGGER.error("[POTENTIAL_BUG_RECOVERED] read from block cache completed, stream={}, [{},{}), maxBytes: {}",
-                    streamId, startOffset, finalEndOffset, maxBytes);
+                streamId, startOffset, finalEndOffset, maxBytes);
         } else {
             timeout.cancel();
         }
@@ -536,8 +568,8 @@ public class S3Storage implements Storage {
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.stream()
-                    .filter(it -> it.cache.containsStream(streamId))
-                    .map(it -> it.cf).toArray(CompletableFuture[]::new)), cf);
+                .filter(it -> it.cache.containsStream(streamId))
+                .map(it -> it.cf).toArray(CompletableFuture[]::new)), cf);
             if (LogCache.MATCH_ALL_STREAMS != streamId) {
                 callbackSequencer.tryFree(streamId);
             }
@@ -958,6 +990,27 @@ public class S3Storage implements Storage {
             } catch (Throwable e) {
                 return 0;
             }
+        }
+    }
+
+    /**
+     * Recover result of {@link #recoverContinuousRecords(Iterator, List, Logger)}
+     * Only streams not in {@link #invalidStreams} should be uploaded and closed.
+     */
+    static class RecoverResult {
+        /**
+         * Recovered records. All {@link #invalidStreams} have been filtered out.
+         */
+        LogCache.LogCacheBlock cacheBlock;
+
+        /**
+         * Invalid streams, for example, the recovered start offset mismatches the stream end offset from controller.
+         * Key is streamId, value is the exception.
+         */
+        Map<Long, RuntimeException> invalidStreams = new HashMap<>();
+
+        public Optional<RuntimeException> firstException() {
+            return invalidStreams.values().stream().findFirst();
         }
     }
 }
