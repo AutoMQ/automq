@@ -82,7 +82,8 @@ public class S3MetricsExporter implements MetricExporter {
                 }
             }
 
-            ByteBuf buffer = Unpooled.buffer();
+            int size = lineList.stream().mapToInt(line -> line.length() + 1 /*the newline character*/).sum();
+            ByteBuf buffer = Unpooled.buffer(size);
             lineList.forEach(line -> {
                 buffer.writeCharSequence(line, Charset.defaultCharset());
                 buffer.writeCharSequence("\n", Charset.defaultCharset());
