@@ -95,8 +95,8 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.es.AutoMQCreateTopicPolicy;
 import org.apache.kafka.controller.es.CreatePartitionPolicy;
 import org.apache.kafka.controller.es.ElasticCreatePartitionPolicy;
+import org.apache.kafka.controller.es.LoadAwarePartitionLeaderSelector;
 import org.apache.kafka.controller.es.PartitionLeaderSelector;
-import org.apache.kafka.controller.es.RandomPartitionLeaderSelector;
 import org.apache.kafka.controller.stream.TopicDeletion;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
@@ -2047,11 +2047,12 @@ public class ReplicationControlManager {
                     builder.setTargetNode(brokerToAdd);
                 } else {
                     if (partitionLeaderSelector == null) {
-                        partitionLeaderSelector = new RandomPartitionLeaderSelector(clusterControl.getActiveBrokers());
+                        partitionLeaderSelector = new LoadAwarePartitionLeaderSelector(clusterControl.getActiveBrokers(),
+                                brokerId -> brokerId != brokerToRemove);
                     }
                     partitionLeaderSelector
-                        .select(partition, br -> br.id() != brokerToRemove)
-                        .ifPresent(broker -> builder.setTargetNode(broker.id()));
+                        .select(new TopicPartition(topic.name(), topicIdPart.partitionId()))
+                        .ifPresent(builder::setTargetNode);
                 }
                 if (fencing) {
                     TopicPartition topicPartition = new TopicPartition(topic.name(), topicIdPart.partitionId());
