@@ -329,9 +329,8 @@ public class SaslChannelBuilder implements ChannelBuilder, ListenerReconfigurabl
                 } else {
                     callbackHandler = Utils.newInstance(clazz);
                 }
-            }
+            } else if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM))
             // AutoMQ inject end
-            else if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM))
                 callbackHandler = new PlainServerCallbackHandler();
             else if (ScramMechanism.isScram(mechanism))
                 callbackHandler = new ScramServerCallbackHandler(credentialCache.cache(mechanism, ScramCredential.class), tokenCache);
