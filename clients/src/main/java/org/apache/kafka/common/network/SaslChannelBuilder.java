@@ -135,6 +135,12 @@ public class SaslChannelBuilder implements ChannelBuilder, ListenerReconfigurabl
         }
     }
 
+    // AutoMQ inject start
+    public CredentialCache getCredentialCache() {
+        return credentialCache;
+    }
+    // AutoMQ inject end
+
     @SuppressWarnings("unchecked")
     @Override
     public void configure(Map<String, ?> configs) throws KafkaException {
@@ -316,9 +322,15 @@ public class SaslChannelBuilder implements ChannelBuilder, ListenerReconfigurabl
             @SuppressWarnings("unchecked")
             Class<? extends AuthenticateCallbackHandler> clazz =
                     (Class<? extends AuthenticateCallbackHandler>) configs.get(prefix + BrokerSecurityConfigs.SASL_SERVER_CALLBACK_HANDLER_CLASS);
-            if (clazz != null)
-                callbackHandler = Utils.newInstance(clazz);
-            else if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM))
+            // AutoMQ inject start
+            if (clazz != null) {
+                if (Utils.hasConstructor(clazz, SaslChannelBuilder.class)) {
+                    callbackHandler = Utils.newInstance(clazz, this);
+                } else {
+                    callbackHandler = Utils.newInstance(clazz);
+                }
+            } else if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM))
+            // AutoMQ inject end
                 callbackHandler = new PlainServerCallbackHandler();
             else if (ScramMechanism.isScram(mechanism))
                 callbackHandler = new ScramServerCallbackHandler(credentialCache.cache(mechanism, ScramCredential.class), tokenCache);
