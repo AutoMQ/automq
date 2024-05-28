@@ -405,32 +405,25 @@ public final class Utils {
     }
 
     // AutoMQ inject start
-    @SuppressWarnings("unchecked")
+    public static boolean hasConstructor(Class<?> c, Class<?>... argTypes) {
+        try {
+            c.getDeclaredConstructor(argTypes);
+            return true;
+        } catch (NoSuchMethodException ignored) {
+        }
+        return false;
+    }
+
     public static <T> T newInstance(Class<T> c, Object... args) {
         if (c == null)
             throw new KafkaException("class cannot be null");
-        Class<?>[] argTypes = new Class[args.length];
-        for (int i = 0; i < args.length; i++) {
-            argTypes[i] = args[i].getClass();
-        }
-
         try {
-            for (Constructor<?> declaredConstructor : c.getDeclaredConstructors()) {
-                Class<?>[] parameterTypes = declaredConstructor.getParameterTypes();
-                if (parameterTypes.length == args.length) {
-                    boolean match = true;
-                    for (int i = 0; i < args.length; i++) {
-                        if (!parameterTypes[i].isAssignableFrom(argTypes[i])) {
-                            match = false;
-                            break;
-                        }
-                    }
-                    if (match) {
-                        return (T) declaredConstructor.newInstance(args);
-                    }
-                }
+            Class<?>[] argTypes = new Class[args.length];
+            for (int i = 0; i < args.length; i++) {
+                argTypes[i] = args[i].getClass();
             }
-            return c.getDeclaredConstructor().newInstance();
+            Constructor<T> constructor = c.getDeclaredConstructor(argTypes);
+            return constructor.newInstance(args);
         } catch (NoSuchMethodException e) {
             throw new KafkaException("Could not find a public no-argument constructor for " + c.getName(), e);
         } catch (ReflectiveOperationException | RuntimeException e) {
