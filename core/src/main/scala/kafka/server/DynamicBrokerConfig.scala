@@ -106,10 +106,6 @@ object DynamicBrokerConfig {
     KafkaConfig.SaslLoginCallbackHandlerClassProp,
     KafkaConfig.SaslLoginClassProp,
     KafkaConfig.SaslServerCallbackHandlerClassProp,
-    // AutoMQ inject start
-    KafkaConfig.AutomqSaslServerCallbackHandlerClassProp,
-    KafkaConfig.AutomqSaslServerCallbackHandlerData,
-    // AutoMQ inject end
     KafkaConfig.ConnectionsMaxReauthMsProp)
 
   private val ReloadableFileConfigs = Set(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG)

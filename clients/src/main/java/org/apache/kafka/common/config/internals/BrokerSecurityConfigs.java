@@ -34,10 +34,6 @@ public class BrokerSecurityConfigs {
     public static final String SSL_CLIENT_AUTH_CONFIG = "ssl.client.auth";
     public static final String SASL_ENABLED_MECHANISMS_CONFIG = "sasl.enabled.mechanisms";
     public static final String SASL_SERVER_CALLBACK_HANDLER_CLASS = "sasl.server.callback.handler.class";
-    // AutoMQ inject start
-    public static final String AUTOMQ_SASL_SERVER_CALLBACK_HANDLER_CLASS = "sasl.server.callback.handler.automq.class";
-    public static final String AUTOMQ_SAAL_SERVER_CALLBACK_HANDLER_DATA = "sasl.server.callback.handler.automq.data";
-    // AutoMQ inject end
     public static final String SSL_PRINCIPAL_MAPPING_RULES_CONFIG = "ssl.principal.mapping.rules";
     public static final String CONNECTIONS_MAX_REAUTH_MS = "connections.max.reauth.ms";
     public static final int DEFAULT_SASL_SERVER_MAX_RECEIVE_SIZE = 524288;
@@ -93,14 +89,6 @@ public class BrokerSecurityConfigs {
             + "class that implements the AuthenticateCallbackHandler interface. Server callback handlers must be prefixed with "
             + "listener prefix and SASL mechanism name in lower-case. For example, "
             + "listener.name.sasl_ssl.plain.sasl.server.callback.handler.class=com.example.CustomPlainCallbackHandler.";
-
-    // AutoMQ inject start
-    public static final String AUTOMQ_SASL_SERVER_CALLBACK_HANDLER_CLASS_DOC = "The fully qualified name of a SASL server callback handler "
-            + "class for AutoMQ.";
-
-    public static final String AUTOMQ_SASL_SERVER_CALLBACK_HANDLER_DATA_DOC = "The additional data for SASL server callback handler "
-            + "class for AutoMQ.";
-    // AutoMQ inject end
 
     public static final String CONNECTIONS_MAX_REAUTH_MS_DOC = "When explicitly set to a positive number (the default is 0, not a positive number), "
             + "a session lifetime that will not exceed the configured value will be communicated to v2.2.0 or later clients when they authenticate. "
