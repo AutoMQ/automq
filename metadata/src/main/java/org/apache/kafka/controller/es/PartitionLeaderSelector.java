@@ -17,22 +17,14 @@
 
 package org.apache.kafka.controller.es;
 
-import org.apache.kafka.metadata.BrokerRegistration;
-import org.apache.kafka.metadata.PartitionRegistration;
+import org.apache.kafka.common.TopicPartition;
 
 import java.util.Optional;
-import java.util.function.Predicate;
 
 public interface PartitionLeaderSelector {
 
     /**
      * Select a leader for the given partition.
      */
-    Optional<BrokerRegistration> select(PartitionRegistration partition, Predicate<BrokerRegistration> predicate);
-
-
-    default Optional<BrokerRegistration> select(PartitionRegistration partition) {
-        return select(partition, br -> true);
-    }
-
+    Optional<Integer> select(TopicPartition tp);
 }

@@ -17,33 +17,30 @@
 
 package org.apache.kafka.controller.es;
 
-import org.apache.kafka.metadata.BrokerRegistration;
-import org.apache.kafka.metadata.PartitionRegistration;
+import org.apache.kafka.common.TopicPartition;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 public class RandomPartitionLeaderSelector implements PartitionLeaderSelector {
-    private final List<BrokerRegistration> aliveBrokers;
+    private final List<Integer> aliveBrokers;
     private int selectNextIndex = 0;
 
-    public RandomPartitionLeaderSelector(List<BrokerRegistration> aliveBrokers) {
-        this.aliveBrokers = new ArrayList<>(aliveBrokers);
+    public RandomPartitionLeaderSelector(List<Integer> aliveBrokers, Predicate<Integer> predicate) {
+        this.aliveBrokers = aliveBrokers.stream().filter(predicate).collect(Collectors.toList());
         Collections.shuffle(this.aliveBrokers);
     }
 
     @Override
-    public Optional<BrokerRegistration> select(PartitionRegistration partition, Predicate<BrokerRegistration> predicate) {
-        for (int i = 0; i < aliveBrokers.size(); i++) {
-            BrokerRegistration broker = aliveBrokers.get(selectNextIndex);
-            selectNextIndex = (selectNextIndex + 1) % aliveBrokers.size();
-            if (predicate.test(broker)) {
-                return Optional.of(broker);
-            }
+    public Optional<Integer> select(TopicPartition tp) {
+        if (aliveBrokers.isEmpty()) {
+            return Optional.empty();
         }
-        return Optional.empty();
+        int broker = aliveBrokers.get(selectNextIndex);
+        selectNextIndex = (selectNextIndex + 1) % aliveBrokers.size();
+        return Optional.of(broker);
     }
 }

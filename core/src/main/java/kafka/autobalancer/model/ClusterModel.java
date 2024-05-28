@@ -13,6 +13,8 @@ package kafka.autobalancer.model;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
+import kafka.autobalancer.common.types.Resource;
+import org.apache.kafka.controller.es.ClusterLoads;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
@@ -146,6 +148,52 @@ public class ClusterModel {
         }
 
         return snapshot;
+    }
+
+    public void updateClusterLoad(long maxToleratedMetricsDelay) {
+        clusterLock.lock();
+        try {
+            Map<Integer, Double> brokerLoads = new HashMap<>();
+            Map<TopicPartition, Double> tpLoads = new HashMap<>();
+            boolean invalid = false;
+            long now = System.currentTimeMillis();
+            for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> entry : brokerReplicaMap.entrySet()) {
+                int brokerId = entry.getKey();
+                for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
+                    TopicPartition tp = tpEntry.getKey();
+                    TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
+                    if (!replicaUpdater.isValidInstance()) {
+                        continue;
+                    }
+                    TopicPartitionReplicaUpdater.TopicPartitionReplica replica =
+                            (TopicPartitionReplicaUpdater.TopicPartitionReplica) replicaUpdater.get(now - maxToleratedMetricsDelay);
+                    if (replica == null) {
+                        invalid = true;
+                        brokerLoads = null;
+                        tpLoads = null;
+                        break;
+                    }
+                    tpLoads.put(tp, partitionLoad(replica));
+                    brokerLoads.compute(brokerId, (id, load) -> {
+                        if (load == null) {
+                            return partitionLoad(replica);
+                        }
+                        return load + partitionLoad(replica);
+                    });
+                }
+                if (invalid) {
+                    break;
+                }
+            }
+            ClusterLoads.getInstance().updateBrokerLoads(brokerLoads);
+            ClusterLoads.getInstance().updatePartitionLoads(tpLoads);
+        } finally {
+            clusterLock.unlock();
+        }
+    }
+
+    protected double partitionLoad(TopicPartitionReplicaUpdater.TopicPartitionReplica replica) {
+        return replica.loadValue(Resource.NW_IN) + replica.loadValue(Resource.NW_OUT);
     }
 
     private void accumulateLoads(Map<Byte, AbstractInstanceUpdater.Load> totalLoads, TopicPartitionReplicaUpdater.TopicPartitionReplica replica) {

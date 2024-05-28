@@ -826,9 +826,10 @@ public class ClusterControlManager {
         nextNodeId.set(record.nodeId());
     }
 
-    public List<BrokerRegistration> getActiveBrokers() {
+    public List<Integer> getActiveBrokers() {
         return brokerRegistrations.values().stream()
-            .filter(broker -> isActive(broker.id()))
+            .map(BrokerRegistration::id)
+            .filter(this::isActive)
             .collect(Collectors.toList());
     }
     // AutoMQ inject end
