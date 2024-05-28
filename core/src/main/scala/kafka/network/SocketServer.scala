@@ -1125,7 +1125,9 @@ private[kafka] class Processor(
 
                 // Mute the channel if the inflight requests exceed the threshold.
                 if (channelContext.nextCorrelationId.size() >= 8 && !channel.isMuted) {
-                  info(s"Mute channel ${channel.id} because the inflight requests exceed the threshold, inflight count is ${channelContext.nextCorrelationId.size()}.")
+                  if (isTraceEnabled) {
+                    trace(s"Mute channel ${channel.id} because the inflight requests exceed the threshold, inflight count is ${channelContext.nextCorrelationId.size()}.")
+                  }
                   channelContext.markQueueFull()
                   selector.mute(connectionId)
                 }
@@ -1171,7 +1173,9 @@ private[kafka] class Processor(
             val unmute = if (channelContext == null) {
               true
             } else if (channelContext.nextCorrelationId.size() < 8 && channelContext.clearQueueFull()) {
-              info(s"Unmute channel ${send.destinationId} because the inflight requests are below the threshold.")
+              if (isTraceEnabled) {
+                trace(s"Unmute channel ${send.destinationId} because the inflight requests are below the threshold.")
+              }
               true
             } else {
               false
