@@ -394,6 +394,10 @@ object KafkaConfig {
   val SaslJaasConfigProp = SaslConfigs.SASL_JAAS_CONFIG
   val SaslEnabledMechanismsProp = BrokerSecurityConfigs.SASL_ENABLED_MECHANISMS_CONFIG
   val SaslServerCallbackHandlerClassProp = BrokerSecurityConfigs.SASL_SERVER_CALLBACK_HANDLER_CLASS
+  // AutoMQ inject start
+  val AutomqSaslServerCallbackHandlerClassProp = BrokerSecurityConfigs.AUTOMQ_SASL_SERVER_CALLBACK_HANDLER_CLASS
+  val AutomqSaslServerCallbackHandlerData = BrokerSecurityConfigs.AUTOMQ_SAAL_SERVER_CALLBACK_HANDLER_DATA
+  // AutoMQ inject end
   val SaslClientCallbackHandlerClassProp = SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS
   val SaslLoginClassProp = SaslConfigs.SASL_LOGIN_CLASS
   val SaslLoginCallbackHandlerClassProp = SaslConfigs.SASL_LOGIN_CALLBACK_HANDLER_CLASS
@@ -1005,6 +1009,10 @@ object KafkaConfig {
   val SaslJaasConfigDoc = SaslConfigs.SASL_JAAS_CONFIG_DOC
   val SaslEnabledMechanismsDoc = BrokerSecurityConfigs.SASL_ENABLED_MECHANISMS_DOC
   val SaslServerCallbackHandlerClassDoc = BrokerSecurityConfigs.SASL_SERVER_CALLBACK_HANDLER_CLASS_DOC
+  // AutoMQ inject start
+  val AutoMqSaslServerCallbackHandlerClassDoc = BrokerSecurityConfigs.AUTOMQ_SASL_SERVER_CALLBACK_HANDLER_CLASS_DOC
+  val AutoMqSaslServerCallbackHandlerDataDoc = BrokerSecurityConfigs.AUTOMQ_SASL_SERVER_CALLBACK_HANDLER_DATA_DOC
+  // AutoMQ inject end
   val SaslClientCallbackHandlerClassDoc = SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS_DOC
   val SaslLoginClassDoc = SaslConfigs.SASL_LOGIN_CLASS_DOC
   val SaslLoginCallbackHandlerClassDoc = SaslConfigs.SASL_LOGIN_CALLBACK_HANDLER_CLASS_DOC
@@ -1350,6 +1358,10 @@ object KafkaConfig {
       .define(SaslJaasConfigProp, PASSWORD, null, MEDIUM, SaslJaasConfigDoc)
       .define(SaslEnabledMechanismsProp, LIST, Defaults.SASL_ENABLED_MECHANISMS, MEDIUM, SaslEnabledMechanismsDoc)
       .define(SaslServerCallbackHandlerClassProp, CLASS, null, MEDIUM, SaslServerCallbackHandlerClassDoc)
+      // AutoMQ inject start
+      .define(AutomqSaslServerCallbackHandlerClassProp, CLASS, null, MEDIUM, AutoMqSaslServerCallbackHandlerClassDoc)
+      .define(AutomqSaslServerCallbackHandlerData, STRING, null, MEDIUM, AutoMqSaslServerCallbackHandlerDataDoc)
+      // AutoMQ inject end
       .define(SaslClientCallbackHandlerClassProp, CLASS, null, MEDIUM, SaslClientCallbackHandlerClassDoc)
       .define(SaslLoginClassProp, CLASS, null, MEDIUM, SaslLoginClassDoc)
       .define(SaslLoginCallbackHandlerClassProp, CLASS, null, MEDIUM, SaslLoginCallbackHandlerClassDoc)

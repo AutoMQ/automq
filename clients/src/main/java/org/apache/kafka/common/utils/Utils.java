@@ -404,6 +404,25 @@ public final class Utils {
         }
     }
 
+    // AutoMQ inject start
+    public static <T> T newInstance(Class<T> c, Object... args) {
+        if (c == null)
+            throw new KafkaException("class cannot be null");
+        try {
+            Class<?>[] argTypes = new Class[args.length];
+            for (int i = 0; i < args.length; i++) {
+                argTypes[i] = args[i].getClass();
+            }
+            Constructor<T> constructor = c.getDeclaredConstructor(argTypes);
+            return constructor.newInstance(args);
+        } catch (NoSuchMethodException e) {
+            throw new KafkaException("Could not find a public no-argument constructor for " + c.getName(), e);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            throw new KafkaException("Could not instantiate class " + c.getName(), e);
+        }
+    }
+    // AutoMQ inject end
+
     /**
      * Look up the class by name and instantiate it.
      * @param klass class name

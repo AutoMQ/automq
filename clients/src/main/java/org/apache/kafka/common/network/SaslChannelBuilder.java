@@ -316,7 +316,15 @@ public class SaslChannelBuilder implements ChannelBuilder, ListenerReconfigurabl
             @SuppressWarnings("unchecked")
             Class<? extends AuthenticateCallbackHandler> clazz =
                     (Class<? extends AuthenticateCallbackHandler>) configs.get(prefix + BrokerSecurityConfigs.SASL_SERVER_CALLBACK_HANDLER_CLASS);
-            if (clazz != null)
+            // AutoMQ inject start
+            @SuppressWarnings("unchecked")
+            Class<? extends AuthenticateCallbackHandler> automqClazz =
+                    (Class<? extends AuthenticateCallbackHandler>) configs.get(prefix +  BrokerSecurityConfigs.AUTOMQ_SASL_SERVER_CALLBACK_HANDLER_CLASS);
+            String additionalData = (String) configs.get(prefix + BrokerSecurityConfigs.AUTOMQ_SAAL_SERVER_CALLBACK_HANDLER_DATA);
+            if (automqClazz != null)
+                callbackHandler = Utils.newInstance(automqClazz, credentialCache.cache(additionalData, ScramCredential.class), tokenCache, additionalData);
+            else if (clazz != null)
+            // AutoMQ inject end
                 callbackHandler = Utils.newInstance(clazz);
             else if (mechanism.equals(PlainSaslServer.PLAIN_MECHANISM))
                 callbackHandler = new PlainServerCallbackHandler();
