@@ -73,6 +73,13 @@ public class LogUploader {
         if (uploadThread != null) {
             uploadThread.interrupt();
             cleanupThread.interrupt();
+
+            if (uploadBuffer.readableBytes() > 0) {
+                try {
+                    s3Operator.write(getObjectKey(), uploadBuffer, ThrottleStrategy.BYPASS).get();
+                } catch (Exception ignore) {
+                }
+            }
             s3Operator.close();
         }
     }
@@ -127,7 +134,8 @@ public class LogUploader {
                         } catch (Exception e) {
                             LOGGER.error("Initialize log uploader failed", e);
                         }
-                    });
+                        Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+                    }, command -> new Thread(command).start());
                 }
             }
         }
