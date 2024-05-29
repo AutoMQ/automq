@@ -122,24 +122,7 @@ object Kafka extends Logging {
         enableForwarding = enableApiForwarding(config)
       )
       AutoMQApplication.setClusterId(kafkaServer.clusterId)
-      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new S3LogConfig {
-
-        override def isEnabled: Boolean = config.s3MetricsExporterType.contains("s3")
-
-        override def isActiveController: Boolean = false
-
-        override def clusterId(): String = kafkaServer.clusterId
-
-        override def nodeId(): Int = config.nodeId
-
-        override def s3Endpoint(): String = config.s3Endpoint
-
-        override def s3Region(): String = config.s3Region
-
-        override def s3OpsBucket(): String = config.s3OpsBucket
-
-        override def s3PathStyle(): Boolean = config.s3PathStyle
-      })
+      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, kafkaServer, null))
       kafkaServer
     } else {
       val kafkaRaftServer = new KafkaRaftServer(
@@ -147,24 +130,7 @@ object Kafka extends Logging {
         Time.SYSTEM,
       )
       AutoMQApplication.setClusterId(kafkaRaftServer.sharedServer.clusterId)
-      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new S3LogConfig {
-
-        override def isEnabled: Boolean = config.s3MetricsExporterType.contains("s3")
-
-        override def isActiveController: Boolean = kafkaRaftServer.controller.exists(_.controller.isActive)
-
-        override def clusterId(): String = kafkaRaftServer.sharedServer.clusterId
-
-        override def nodeId(): Int = config.nodeId
-
-        override def s3Endpoint(): String = config.s3Endpoint
-
-        override def s3Region(): String = config.s3Region
-
-        override def s3OpsBucket(): String = config.s3OpsBucket
-
-        override def s3PathStyle(): Boolean = config.s3PathStyle
-      })
+      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[KafkaRaftServer], kafkaRaftServer)
       kafkaRaftServer
     }

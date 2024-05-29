@@ -33,6 +33,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.log4j.spi.LoggingEvent;
 import org.slf4j.Logger;
@@ -42,7 +43,7 @@ public class LogUploader {
     private static final Logger LOGGER = LoggerFactory.getLogger(LogUploader.class);
 
     public static final int DEFAULT_MAX_QUEUE_SIZE = 64 * 1024;
-    public static final int DEFAULT_BUFFER_SIZE = 64 * 1024 * 1024;
+    public static final int DEFAULT_BUFFER_SIZE = 16 * 1024 * 1024;
     public static final int MAX_UPLOAD_INTERVAL = 60 * 1000;
 
     private static final LogUploader INSTANCE = new LogUploader();
@@ -85,8 +86,7 @@ public class LogUploader {
 
     private boolean couldUpload() {
         initConfiguration();
-        // TODO: use separated switch.
-        boolean enabled = config != null && config.isEnabled();
+        boolean enabled = config != null && config.isEnabled() && StringUtils.isNotBlank(config.s3OpsBucket());
 
         if (enabled) {
             initUploadComponent();
@@ -111,7 +111,6 @@ public class LogUploader {
                 if (startFuture == null) {
                     startFuture = CompletableFuture.runAsync(() -> {
                         try {
-                            // TODO: use separated bucket.
                             s3Operator = new DefaultS3Operator(config.s3Endpoint(), config.s3Region(),
                                 config.s3OpsBucket(), config.s3PathStyle(), List.of(CredentialsProviderHolder.getAwsCredentialsProvider()), false);
                             uploadThread = new Thread(new UploadTask());
@@ -177,6 +176,8 @@ public class LogUploader {
                     }
                 } catch (InterruptedException e) {
                     break;
+                } catch (Exception e) {
+                    LOGGER.error("Upload log to s3 failed", e);
                 }
             }
         }
@@ -219,7 +220,7 @@ public class LogUploader {
                         Thread.sleep(Duration.ofMinutes(1).toMillis());
                         continue;
                     }
-                    long expiredTime = System.currentTimeMillis() - Duration.ofMinutes(5).toMillis();
+                    long expiredTime = System.currentTimeMillis() - MAX_UPLOAD_INTERVAL * 3;
 
                     List<Pair<String, Long>> pairList = s3Operator.list(String.format("automq/logs/%s", config.clusterId())).join();
 
@@ -229,13 +230,13 @@ public class LogUploader {
                             .map(Pair::getLeft)
                             .collect(Collectors.toList());
                         s3Operator.delete(keyList).join();
-                        LOGGER.trace("Delete " + keyList.size() + "s3 log files.");
                     }
 
                     Thread.sleep(Duration.ofMinutes(1).toMillis());
                 } catch (InterruptedException e) {
                     break;
-                } catch (Exception ignore) {
+                } catch (Exception e) {
+                    LOGGER.error("Cleanup s3 logs failed", e);
                 }
             }
         }

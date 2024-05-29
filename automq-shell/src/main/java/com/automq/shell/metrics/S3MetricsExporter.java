@@ -12,6 +12,7 @@
 package com.automq.shell.metrics;
 
 import com.automq.shell.auth.CredentialsProviderHolder;
+import com.automq.shell.log.LogUploader;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,7 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -48,7 +48,6 @@ import org.slf4j.LoggerFactory;
 
 public class S3MetricsExporter implements MetricExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3MetricsExporter.class);
-    private static final Pattern CHARACTERS_BETWEEN_BRACES_PATTERN = Pattern.compile("\\{(.*?)}");
     private static final String TOTAL_SUFFIX = "_total";
 
     private final S3MetricsConfig config;
@@ -94,7 +93,7 @@ public class S3MetricsExporter implements MetricExporter {
                         Thread.sleep(Duration.ofMinutes(1).toMillis());
                         continue;
                     }
-                    long expiredTime = System.currentTimeMillis() - Duration.ofMinutes(5).toMillis();
+                    long expiredTime = System.currentTimeMillis() - LogUploader.MAX_UPLOAD_INTERVAL * 3;
 
                     List<Pair<String, Long>> pairList = s3Operator.list(String.format("automq/metrics/%s", config.clusterId())).join();
 
@@ -104,13 +103,13 @@ public class S3MetricsExporter implements MetricExporter {
                             .map(Pair::getLeft)
                             .collect(Collectors.toList());
                         s3Operator.delete(keyList).join();
-                        LOGGER.trace("Delete " + keyList.size() + "s3 metrics files.");
                     }
 
                     Thread.sleep(Duration.ofMinutes(1).toMillis());
                 } catch (InterruptedException e) {
                     break;
-                } catch (Exception ignore) {
+                } catch (Exception e) {
+                    LOGGER.error("Cleanup s3 metrics failed", e);
                 }
             }
         }
@@ -174,7 +173,7 @@ public class S3MetricsExporter implements MetricExporter {
             });
             s3Operator.write(getObjectKey(), buffer);
         } catch (Exception e) {
-            LOGGER.error("Failed to export metrics to S3", e);
+            LOGGER.error("Export metrics to S3 failed", e);
             return CompletableResultCode.ofFailure();
         }
 
