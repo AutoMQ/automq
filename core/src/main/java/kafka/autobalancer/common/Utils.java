@@ -47,4 +47,10 @@ public class Utils {
         return formatSize(size, BYTE, "Bytes");
     }
 
+    public static boolean checkListenerName(String listenerName, String expect) {
+        if (listenerName == null || listenerName.isEmpty() || listenerName.equals("CONTROLLER")) {
+            return false;
+        }
+        return expect.isEmpty() || listenerName.equals(expect);
+    }
 }

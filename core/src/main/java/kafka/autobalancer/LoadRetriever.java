@@ -13,6 +13,7 @@ package kafka.autobalancer;
 
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
+import kafka.autobalancer.common.Utils;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.StaticAutoBalancerConfig;
@@ -82,6 +83,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
     private final Set<Integer> brokerIdsInUse;
     private final Set<TopicPartition> currentAssignment = new HashSet<>();
     private final StaticAutoBalancerConfig staticConfig;
+    private final String listenerName;
     private volatile boolean leaderEpochInitialized;
     private volatile boolean isLeader;
     private volatile Consumer<String, AutoBalancerMetrics> consumer;
@@ -101,6 +103,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         this.mainExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-main"));
         leaderEpochInitialized = false;
         staticConfig = new StaticAutoBalancerConfig(config.originals(), false);
+        listenerName = staticConfig.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG);
         metricReporterTopicPartition = config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
         metricReporterTopicRetentionTime = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_RETENTION_MS_CONFIG);
         consumerPollTimeout = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT);
@@ -201,8 +204,13 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
             boolean isFenced = record.fenced() || record.inControlledShutdown();
             Set<String> endpoints = new HashSet<>();
             for (RegisterBrokerRecord.BrokerEndpoint endpoint : record.endPoints()) {
-                String url = endpoint.host() + ":" + endpoint.port();
-                endpoints.add(url);
+                if (Utils.checkListenerName(endpoint.name(), listenerName)) {
+                    String url = endpoint.host() + ":" + endpoint.port();
+                    endpoints.add(url);
+                }
+            }
+            if (endpoints.isEmpty()) {
+                logger.warn("No valid endpoint found for broker {} of name {}", record.brokerId(), listenerName);
             }
             BrokerEndpoints brokerEndpoints = new BrokerEndpoints(record.brokerId());
             brokerEndpoints.setFenced(isFenced);
@@ -270,7 +278,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         Set<String> endpoints = new HashSet<>();
         this.brokerIdsInUse.clear();
         for (BrokerEndpoints brokerEndpoints : this.bootstrapServerMap.values()) {
-            if (brokerEndpoints.isValid()) {
+            if (brokerEndpoints.isValid() && !brokerEndpoints.getEndpoints().isEmpty()) {
                 endpoints.add(brokerEndpoints.getEndpoints().iterator().next());
                 this.brokerIdsInUse.add(brokerEndpoints.brokerId());
             }
