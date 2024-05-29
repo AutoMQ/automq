@@ -20,7 +20,7 @@ due to performance and security concerns.
 ### Quick Start
 1. (Optional) set environment variables for data storage
     ```
-    export $DATA_PATH=/tmp/telemetry
+    export DATA_PATH=/tmp/telemetry
     ```
 2. start services
     ```
@@ -47,13 +47,7 @@ due to performance and security concerns.
     # or expose metrics for Prometheus backend to scrape
     # s3.telemetry.metrics.exporter.type=prometheus
     # s3.metrics.exporter.prom.host=127.0.0.1
-    # s3.metrics.exporter.prom.port=9090 
-   
-    # enable tracing
-    s3.telemetry.tracer.enable=true
-    s3.telemetry.tracer.span.scheduled.delay.ms=1000
-    s3.telemetry.tracer.span.max.queue.size=5120
-    s3.telemetry.tracer.span.max.batch.size=1024
+    # s3.metrics.exporter.prom.port=9090
    
     # OTLP backend endpoint (if using OTLP exporter)
     s3.telemetry.exporter.otlp.endpoint=http://${your_endpoint}
