@@ -274,6 +274,11 @@ public class TelemetryManager {
     }
 
     private void initS3Exporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
+        if (StringUtils.isBlank(kafkaConfig.s3OpsBucket())) {
+            LOGGER.error("property s3.ops.bucket is not set, skip initializing s3 metrics exporter.");
+            return;
+        }
+
         S3MetricsExporter s3MetricsExporter = new S3MetricsExporter(new S3MetricsConfig() {
             @Override
             public String clusterId() {
