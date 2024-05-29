@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.Pair;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 public class MemoryS3Operator implements S3Operator {
@@ -97,6 +99,13 @@ public class MemoryS3Operator implements S3Operator {
                 return CompletableFuture.completedFuture(null);
             }
         };
+    }
+
+    @Override
+    public CompletableFuture<List<Pair<String, Long>>> list(String prefix) {
+        CompletableFuture<List<Pair<String, Long>>> future = new CompletableFuture<>();
+        future.complete(storage.keySet().stream().filter(key -> key.startsWith(prefix)).map(key -> Pair.of(key, System.currentTimeMillis())).collect(Collectors.toList()));
+        return future;
     }
 
     @Override

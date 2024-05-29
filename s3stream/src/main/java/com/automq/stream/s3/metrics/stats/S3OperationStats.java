@@ -29,6 +29,10 @@ public class S3OperationStats {
     private final Map<String, HistogramMetric> getObjectFailedStats = new ConcurrentHashMap<>();
     private final Map<String, HistogramMetric> putObjectSuccessStats = new ConcurrentHashMap<>();
     private final Map<String, HistogramMetric> putObjectFailedStats = new ConcurrentHashMap<>();
+    private final HistogramMetric listObjectsStatsSuccessStats = S3StreamMetricsManager.buildOperationMetric(
+        MetricsLevel.INFO, S3Operation.LIST_OBJECTS, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
+    private final HistogramMetric listObjectsStatsFailedStats = S3StreamMetricsManager.buildOperationMetric(
+        MetricsLevel.INFO, S3Operation.LIST_OBJECTS, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
     private final HistogramMetric deleteObjectSuccessStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.DELETE_OBJECT, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
     private final HistogramMetric deleteObjectFailedStats = S3StreamMetricsManager.buildOperationMetric(
@@ -97,6 +101,10 @@ public class S3OperationStats {
             return uploadPartFailedStats.computeIfAbsent(label, name -> S3StreamMetricsManager.buildOperationMetric(
                 MetricsLevel.INFO, S3Operation.UPLOAD_PART, S3StreamMetricsConstant.LABEL_STATUS_FAILED, label));
         }
+    }
+
+    public HistogramMetric listObjectsStats(boolean isSuccess) {
+        return isSuccess ? listObjectsStatsSuccessStats : listObjectsStatsFailedStats;
     }
 
     public HistogramMetric deleteObjectStats(boolean isSuccess) {

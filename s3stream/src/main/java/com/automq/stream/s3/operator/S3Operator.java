@@ -15,6 +15,7 @@ import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import org.apache.commons.lang3.tuple.Pair;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 public interface S3Operator {
@@ -61,6 +62,8 @@ public interface S3Operator {
     default Writer writer(String path) {
         return writer(Writer.Context.DEFAULT, path, ThrottleStrategy.BYPASS);
     }
+
+    CompletableFuture<List<Pair<String, Long>>> list(String prefix);
 
     CompletableFuture<Void> delete(String path);
 

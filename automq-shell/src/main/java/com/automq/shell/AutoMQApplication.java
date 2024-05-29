@@ -13,8 +13,11 @@ package com.automq.shell;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class AutoMQApplication {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AutoMQApplication.class);
     private static final ConcurrentMap<Class<?>, Object> CONTAINER = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, String> CONTEXT = new ConcurrentHashMap<>();
 
@@ -25,6 +28,7 @@ public class AutoMQApplication {
     }
 
     public static <T> boolean registerSingleton(Class<T> type, T singleton, boolean override) {
+        LOGGER.info("[AutoMQApplication] try to register singleton for class: {}", type.getSimpleName());
         if (override) {
             CONTAINER.put(type, singleton);
             return true;
@@ -38,6 +42,7 @@ public class AutoMQApplication {
     }
 
     public static void setAttribute(String key, String value) {
+        LOGGER.info("[AutoMQApplication] try to set attribute {}: {}", key, value);
         CONTEXT.put(key, value);
     }
 

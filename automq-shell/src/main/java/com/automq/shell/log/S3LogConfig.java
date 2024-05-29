@@ -12,9 +12,20 @@
 package com.automq.shell.log;
 
 public interface S3LogConfig {
+
     boolean isEnabled();
+
+    boolean isActiveController();
+
+    String clusterId();
+
+    int nodeId();
+
     String s3Endpoint();
+
     String s3Region();
-    String s3Bucket();
+
+    String s3OpsBucket();
+
     boolean s3PathStyle();
 }
