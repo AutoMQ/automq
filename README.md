@@ -165,7 +165,7 @@ There are more deployment options available:
 ## 💬 Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
 - Ask questions or report a bug by [GitHub Issues](https://github.com/AutoMQ/automq/issues)
-- Discuss about AutoMQ or Kafka by [Wechat Group](docs/images/automq-wechat.png)
+- Discuss about AutoMQ or Kafka by [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA) or [Wechat Group](docs/images/automq-wechat.png)
 
 
 ## 👥 How to contribute
