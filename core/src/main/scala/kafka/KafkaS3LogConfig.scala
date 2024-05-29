@@ -20,7 +20,7 @@ class KafkaS3LogConfig(
   kafkaRaftServer: KafkaRaftServer
 ) extends S3LogConfig {
 
-  override def isEnabled: Boolean = config.s3MetricsExporterType.contains("s3")
+  override def isEnabled: Boolean = config.s3OpsTelemetryEnabled
 
   override def isActiveController: Boolean = {
 

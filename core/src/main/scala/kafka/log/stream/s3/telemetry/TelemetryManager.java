@@ -262,14 +262,16 @@ public class TelemetryManager {
                 case "prometheus":
                     initPrometheusExporter(sdkMeterProviderBuilder, kafkaConfig);
                     break;
-                case "s3":
-                    initS3Exporter(sdkMeterProviderBuilder, kafkaConfig);
-                    break;
                 default:
                     LOGGER.error("illegal metrics exporter type: {}", exporterType);
                     break;
             }
         }
+
+        if (kafkaConfig.s3OpsTelemetryEnabled()) {
+            initS3Exporter(sdkMeterProviderBuilder, kafkaConfig);
+        }
+
         return sdkMeterProviderBuilder.build();
     }
 

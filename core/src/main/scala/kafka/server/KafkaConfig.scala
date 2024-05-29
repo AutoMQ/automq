@@ -490,6 +490,7 @@ object KafkaConfig {
   val S3SpanScheduledDelayMsProp = "s3.telemetry.tracer.span.scheduled.delay.ms"
   val S3SpanMaxQueueSizeProp = "s3.telemetry.tracer.span.max.queue.size"
   val S3SpanMaxBatchSizeProp = "s3.telemetry.tracer.span.max.batch.size"
+  val S3OpsTelemetryEnabledProp = "s3.telemetry.ops.enabled"
 
 
   val ElasticStreamEnableDoc = "Whether to enable AutoMQ, it has to be set to true"
@@ -554,6 +555,7 @@ object KafkaConfig {
   val S3SpanScheduledDelayMsDoc = "The delay in milliseconds to export queued spans"
   val S3SpanMaxQueueSizeDoc = "The max number of spans that can be queued before dropped"
   val S3SpanMaxBatchSizeDoc = "The max number of spans that can be exported in a single batch"
+  val S3OpsTelemetryEnabledDoc = "Enable ops telemetry."
   // AutoMQ inject end
 
 
@@ -1413,6 +1415,7 @@ object KafkaConfig {
       .define(S3PathStyleProp, BOOLEAN, false, LOW, S3PathStyleDoc)
       .define(S3BucketProp, STRING, null, HIGH, S3BucketDoc)
       .define(S3OpsBucketProp, STRING, null, HIGH, S3OpsBucketDoc)
+      .define(S3OpsTelemetryEnabledProp, BOOLEAN, true, HIGH, S3OpsTelemetryEnabledDoc)
       .define(S3WALPathProp, STRING, null, HIGH, S3WALPathDoc)
       .define(S3WALCacheSizeProp, LONG, -1L, MEDIUM, S3WALCacheSizeDoc)
       .define(S3WALCapacityProp, LONG, 2147483648L, MEDIUM, S3WALCapacityDoc)
@@ -2139,6 +2142,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3PathStyle = getBoolean(KafkaConfig.S3PathStyleProp)
   val s3Bucket = getString(KafkaConfig.S3BucketProp)
   val s3OpsBucket = getString(KafkaConfig.S3OpsBucketProp)
+  val s3OpsTelemetryEnabled = getBoolean(KafkaConfig.S3OpsTelemetryEnabledProp)
   val s3WALPath = getString(KafkaConfig.S3WALPathProp)
   val s3WALCapacity = getLong(KafkaConfig.S3WALCapacityProp)
   val s3WALThread = getInt(KafkaConfig.S3WALThreadProp)
