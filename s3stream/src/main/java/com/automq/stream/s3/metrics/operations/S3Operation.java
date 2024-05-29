@@ -40,6 +40,7 @@ public enum S3Operation {
     /* S3 request operations start */
     GET_OBJECT(S3MetricsType.S3Request, "get_object"),
     PUT_OBJECT(S3MetricsType.S3Request, "put_object"),
+    LIST_OBJECTS(S3MetricsType.S3Request, "list_objects"),
     DELETE_OBJECT(S3MetricsType.S3Request, "delete_object"),
     DELETE_OBJECTS(S3MetricsType.S3Request, "delete_objects"),
     CREATE_MULTI_PART_UPLOAD(S3MetricsType.S3Request, "create_multi_part_upload"),

@@ -83,7 +83,7 @@ class KafkaRaftServer(
     None
   }
 
-  private val controller: Option[ControllerServer] = if (config.processRoles.contains(ProcessRole.ControllerRole)) {
+  val controller: Option[ControllerServer] = if (config.processRoles.contains(ProcessRole.ControllerRole)) {
     Some(controllerServer())
   } else {
     None
