@@ -17,6 +17,7 @@ import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
+import kafka.autobalancer.common.Utils;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
@@ -83,17 +84,24 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private int metricsReporterCreateRetries;
     private long lastErrorReportTime = 0;
 
-    private String getBootstrapServers(Map<String, ?> configs) {
-        String listeners = String.valueOf(configs.get(KafkaConfig.ListenersProp()));
-        if (!"null".equals(listeners) && !listeners.isEmpty()) {
-            // See https://kafka.apache.org/documentation/#listeners for possible responses. If multiple listeners are configured, this function
-            // picks the first listener in the list of listeners. Hence, users of this config must adjust their order accordingly.
-            String firstListener = listeners.split("\\s*,\\s*")[0];
-            String[] protocolHostPort = firstListener.split(":");
-            String portToUse = protocolHostPort[protocolHostPort.length - 1];
-            // Use host of listener if one is specified.
-            return ((protocolHostPort[1].length() == 2) ? DEFAULT_BOOTSTRAP_SERVERS_HOST
-                    : protocolHostPort[1].substring(2)) + ":" + portToUse;
+    private String getBootstrapServers(Map<String, ?> configs, String expectedListenerName) {
+        String listenerStr = String.valueOf(configs.get(KafkaConfig.ListenersProp()));
+        if (!"null".equals(listenerStr) && !listenerStr.isEmpty()) {
+            String[] listeners = listenerStr.split("\\s*,\\s*");
+            for (String listener : listeners) {
+                String[] protocolHostPort = listener.split(":");
+                if (protocolHostPort.length != 3) {
+                    throw new ConfigException("Invalid listener format: " + listener);
+                }
+                String listenerName = protocolHostPort[0];
+                if (Utils.checkListenerName(listenerName, expectedListenerName)) {
+                    String portToUse = protocolHostPort[protocolHostPort.length - 1];
+                    // Use host of listener if one is specified.
+                    return ((protocolHostPort[1].length() == 2) ? DEFAULT_BOOTSTRAP_SERVERS_HOST
+                            : protocolHostPort[1].substring(2)) + ":" + portToUse;
+                }
+            }
+            throw new ConfigException("No listener found for listener name: " + expectedListenerName);
         }
 
         return DEFAULT_BOOTSTRAP_SERVERS_HOST + ":" + DEFAULT_BOOTSTRAP_SERVERS_PORT;
@@ -195,22 +203,15 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
         Map<String, Object> configs = new HashMap<>(rawConfigs);
 
+        StaticAutoBalancerConfig staticAutoBalancerConfig = new StaticAutoBalancerConfig(configs, false);
         Properties producerProps = AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs);
 
         // Add BootstrapServers if not set
         if (!producerProps.containsKey(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG)) {
-            String bootstrapServers = getBootstrapServers(configs);
+            String bootstrapServers = getBootstrapServers(configs, staticAutoBalancerConfig.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG));
             producerProps.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
             LOGGER.info("Using default value of {} for {}", bootstrapServers,
                     AutoBalancerMetricsReporterConfig.config(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG));
-        }
-
-        // Add SecurityProtocol if not set
-        if (!producerProps.containsKey(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG)) {
-            String securityProtocol = "PLAINTEXT";
-            producerProps.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, securityProtocol);
-            LOGGER.info("Using default value of {} for {}", securityProtocol,
-                    AutoBalancerMetricsReporterConfig.config(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
         }
 
         AutoBalancerMetricsReporterConfig reporterConfig = new AutoBalancerMetricsReporterConfig(configs, false);
@@ -227,7 +228,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         setIfAbsent(producerProps, ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         setIfAbsent(producerProps, ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         setIfAbsent(producerProps, ProducerConfig.ACKS_CONFIG, "all");
-        StaticAutoBalancerConfigUtils.addSslConfigs(producerProps, new StaticAutoBalancerConfig(configs, false));
+        StaticAutoBalancerConfigUtils.addSslConfigs(producerProps, staticAutoBalancerConfig);
 
         metricsReporterCreateRetries = reporterConfig.getInt(
                 AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES_CONFIG);

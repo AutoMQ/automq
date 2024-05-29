@@ -12,7 +12,6 @@
 package kafka.autobalancer.config;
 
 import org.apache.kafka.clients.CommonClientConfigs;
-import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.config.types.Password;
@@ -34,8 +33,6 @@ public class StaticAutoBalancerConfigUtils {
     public static void addSslConfigs(Properties clientConfigs, StaticAutoBalancerConfig configs) {
         // Add security protocol (if specified).
         try {
-            String securityProtocol = configs.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL);
-            clientConfigs.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, securityProtocol);
             setStringConfigIfExists(configs, clientConfigs, StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL,
                     CommonClientConfigs.SECURITY_PROTOCOL_CONFIG);
             setStringConfigIfExists(configs, clientConfigs, StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SASL_MECHANISM,
