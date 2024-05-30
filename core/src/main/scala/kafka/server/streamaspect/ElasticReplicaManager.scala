@@ -15,6 +15,7 @@ import kafka.utils.Implicits.MapExtensionMethods
 import kafka.utils.{CoreUtils, Exit}
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.common.errors._
+import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.Errors
@@ -1090,7 +1091,12 @@ class ElasticReplicaManager(
                       // If it's a StreamFencedException failure, it's means the partition is reassigned to others.
                       // Expect the tracker will be removed in the following #asyncApplyDelta(TopicsDelta).
                       tracker.failed()
-                      stateChangeLogger.error(s"Transitioning partition(s) fail: $leader", t)
+                      val cause = FutureUtil.cause(t)
+                      if (cause.isInstanceOf[StreamFencedException]) {
+                        stateChangeLogger.warn(s"Transitioning partition(s) fail: $leader", t)
+                      } else {
+                        stateChangeLogger.error(s"Transitioning partition(s) fail: $leader", t)
+                      }
                     }
                   } finally {
                     opCf.complete(null)
