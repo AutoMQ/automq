@@ -21,7 +21,22 @@ public class S3RollingFileAppender extends RollingFileAppender {
     protected void subAppend(LoggingEvent event) {
         super.subAppend(event);
         if (!closed) {
-            logUploader.append(event);
+            LogRecorder.LogEvent logEvent = new LogRecorder.LogEvent(
+                event.getTimeStamp(),
+                event.getLevel().toString(),
+                event.getLoggerName(),
+                event.getRenderedMessage(),
+                event.getThrowableStrRep());
+
+            try {
+                logEvent.validate();
+            } catch (IllegalArgumentException e) {
+                // Drop invalid log event
+                errorHandler.error("Failed to validate log event", e, 0);
+                return;
+            }
+
+            logUploader.append(logEvent);
         }
     }
 }
