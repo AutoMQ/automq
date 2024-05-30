@@ -221,6 +221,11 @@ public class StreamObjectCompactor {
                     objectSize += basicObjectInfo.dataBlockSize() - validDataBlockStartPosition;
                     indexes.addComponent(true, subIndexes);
                     compactedObjectIds.add(object.objectId());
+                } catch (Throwable t) {
+                    LOGGER.error("[COPY_WRITE_FAILED] streamId={}, objectId={}, {}", streamId, object.objectId(), t.getMessage());
+                    indexes.release();
+                    writer.release();
+                    throw t;
                 }
             }
             if (lastIndex != null) {
