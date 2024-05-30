@@ -17,12 +17,6 @@
 
 package org.apache.kafka.controller;
 
-import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.shell.auth.EnvVariableCredentialsProvider;
-import com.automq.stream.s3.Config;
-import com.automq.stream.s3.operator.DefaultS3Operator;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.FeatureUpdate;
