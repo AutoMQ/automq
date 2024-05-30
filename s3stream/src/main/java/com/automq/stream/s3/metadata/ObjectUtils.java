@@ -11,6 +11,9 @@
 
 package com.automq.stream.s3.metadata;
 
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import software.amazon.awssdk.services.s3.model.Tag;
 import software.amazon.awssdk.services.s3.model.Tagging;
 
@@ -65,10 +68,17 @@ public class ObjectUtils {
     }
 
     /**
-     * Common tagging for all objects, identifying the namespace
+     * Convert a list of tags to a tagging object.
+     * It will return null if the input is null.
      */
-    public static Tagging tagging() {
-        Tag tag = Tag.builder().key(OBJECT_TAG_KEY).value(namespace).build();
-        return Tagging.builder().tagSet(tag).build();
+    public static Tagging tagging(Map<String, String> tagging) {
+        if (null == tagging) {
+            return null;
+        }
+        List<Tag> tags = tagging.entrySet().stream()
+            .map(e -> Tag.builder().key(e.getKey()).value(e.getValue()))
+            .map(Tag.Builder::build)
+            .collect(Collectors.toList());
+        return Tagging.builder().tagSet(tags).build();
     }
 }

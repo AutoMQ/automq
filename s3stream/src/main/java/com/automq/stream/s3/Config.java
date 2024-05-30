@@ -11,6 +11,8 @@
 
 package com.automq.stream.s3;
 
+import java.util.Map;
+
 // TODO: rename & init
 public class Config {
     private int nodeId;
@@ -33,7 +35,7 @@ public class Config {
     private int streamSplitSize = 16777216;
     private int objectBlockSize = 1048576;
     private int objectPartSize = 16777216;
-    private boolean objectTagging = false;
+    private Map<String, String> objectTagging = null;
     private long blockCacheSize = 100 * 1024 * 1024;
     private int streamObjectCompactionIntervalMinutes = 60;
     private long streamObjectCompactionMaxSizeBytes = 10737418240L;
@@ -136,7 +138,7 @@ public class Config {
         return objectPartSize;
     }
 
-    public boolean objectTagging() {
+    public Map<String, String> objectTagging() {
         return objectTagging;
     }
 
@@ -312,7 +314,7 @@ public class Config {
         return this;
     }
 
-    public Config objectTagging(boolean s3ObjectTagging) {
+    public Config objectTagging(Map<String, String> s3ObjectTagging) {
         this.objectTagging = s3ObjectTagging;
         return this;
     }
