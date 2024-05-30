@@ -74,7 +74,7 @@ public class S3MetricsExporter implements MetricExporter {
     public S3MetricsExporter(S3MetricsConfig config) {
         this.config = config;
         s3Operator = new DefaultS3Operator(config.s3Endpoint(), config.s3Region(),
-            config.s3OpsBucket(), config.s3PathStyle(), List.of(CredentialsProviderHolder.getAwsCredentialsProvider()), false);
+            config.s3OpsBucket(), config.s3PathStyle(), List.of(CredentialsProviderHolder.getAwsCredentialsProvider()), null);
 
         defalutTagMap.put("host_name", getHostName());
         defalutTagMap.put("service_name", config.clusterId());
