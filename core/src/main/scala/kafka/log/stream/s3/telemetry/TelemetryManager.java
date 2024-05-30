@@ -59,7 +59,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import kafka.server.KafkaConfig;
 import kafka.server.KafkaRaftServer;
@@ -319,7 +318,7 @@ public class TelemetryManager {
             }
         });
         PeriodicMetricReaderBuilder builder = PeriodicMetricReader.builder(s3MetricsExporter);
-        MetricReader periodicReader = builder.setInterval(Duration.ofSeconds(120 + new Random().nextInt(60))).build();
+        MetricReader periodicReader = builder.setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs())).build();
         metricReaderList.add(periodicReader);
 
         SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,

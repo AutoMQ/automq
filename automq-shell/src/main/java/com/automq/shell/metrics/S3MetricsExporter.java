@@ -12,7 +12,7 @@
 package com.automq.shell.metrics;
 
 import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.shell.log.LogUploader;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +38,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -50,12 +51,24 @@ public class S3MetricsExporter implements MetricExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3MetricsExporter.class);
     private static final String TOTAL_SUFFIX = "_total";
 
+    public static final int UPLOAD_INTERVAL = System.getenv("AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL") != null ? Integer.parseInt(System.getenv("AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL")) : 60 * 1000;
+    public static final int CLEANUP_INTERVAL = System.getenv("AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL") != null ? Integer.parseInt(System.getenv("AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL")) : 2 * 60 * 1000;
+    public static final int MAX_JITTER_INTERVAL = 60 * 1000;
+    public static final int DEFAULT_BUFFER_SIZE = 16 * 1024 * 1024;
+
     private final S3MetricsConfig config;
     private final Map<String, String> defalutTagMap = new HashMap<>();
+
+    private final ByteBuf uploadBuffer = Unpooled.directBuffer(DEFAULT_BUFFER_SIZE);
+    private final Random random = new Random();
+    private volatile long lastUploadTimestamp = System.currentTimeMillis();
+    private volatile long nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
+
     private final S3Operator s3Operator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private volatile boolean closed;
+    private final Thread uploadThread;
     private final Thread cleanupThread;
 
     public S3MetricsExporter(S3MetricsConfig config) {
@@ -69,6 +82,11 @@ public class S3MetricsExporter implements MetricExporter {
         defalutTagMap.put("service_instance_id", String.valueOf(config.nodeId()));
         defalutTagMap.put("instance", String.valueOf(config.nodeId()));
 
+        uploadThread = new Thread(new UploadTask());
+        uploadThread.setName("s3-metrics-exporter-upload-thread");
+        uploadThread.setDaemon(true);
+        uploadThread.start();
+
         cleanupThread = new Thread(new CleanupTask());
         cleanupThread.setName("s3-metrics-exporter-cleanup-thread");
         cleanupThread.setDaemon(true);
@@ -80,7 +98,26 @@ public class S3MetricsExporter implements MetricExporter {
         MetricExporter.super.close();
         closed = true;
         cleanupThread.interrupt();
+        uploadThread.interrupt();
+        flush();
         LOGGER.info("S3MetricsExporter is closed");
+    }
+
+    private class UploadTask implements Runnable {
+
+        @Override
+        public void run() {
+            while (!closed && !uploadThread.isInterrupted()) {
+                try {
+                    if (uploadBuffer.readableBytes() > 0 && System.currentTimeMillis() - lastUploadTimestamp > nextUploadInterval) {
+                        flush();
+                    }
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }
     }
 
     private class CleanupTask implements Runnable {
@@ -93,7 +130,7 @@ public class S3MetricsExporter implements MetricExporter {
                         Thread.sleep(Duration.ofMinutes(1).toMillis());
                         continue;
                     }
-                    long expiredTime = System.currentTimeMillis() - LogUploader.MAX_UPLOAD_INTERVAL * 3;
+                    long expiredTime = System.currentTimeMillis() - CLEANUP_INTERVAL;
 
                     List<Pair<String, Long>> pairList = s3Operator.list(String.format("automq/metrics/%s", config.clusterId())).join();
 
@@ -126,6 +163,10 @@ public class S3MetricsExporter implements MetricExporter {
 
     @Override
     public CompletableResultCode export(Collection<MetricData> metrics) {
+        if (closed) {
+            return CompletableResultCode.ofFailure();
+        }
+
         try {
             List<String> lineList = new ArrayList<>();
             // TODO: transfer metrics name into prometheus format
@@ -171,7 +212,13 @@ public class S3MetricsExporter implements MetricExporter {
                 buffer.writeCharSequence(line, Charset.defaultCharset());
                 buffer.writeCharSequence("\n", Charset.defaultCharset());
             });
-            s3Operator.write(getObjectKey(), buffer);
+            synchronized (uploadBuffer) {
+                if (uploadBuffer.writableBytes() < buffer.readableBytes()) {
+                    // Upload the buffer immediately
+                    flush();
+                }
+                uploadBuffer.writeBytes(buffer);
+            }
         } catch (Exception e) {
             LOGGER.error("Export metrics to S3 failed", e);
             return CompletableResultCode.ofFailure();
@@ -182,6 +229,20 @@ public class S3MetricsExporter implements MetricExporter {
 
     @Override
     public CompletableResultCode flush() {
+        synchronized (uploadBuffer) {
+            if (uploadBuffer.readableBytes() > 0) {
+                try {
+                    s3Operator.write(getObjectKey(), uploadBuffer.retainedSlice().asReadOnly(), ThrottleStrategy.BYPASS).get();
+                } catch (Exception e) {
+                    LOGGER.error("Failed to upload metrics to s3", e);
+                    return CompletableResultCode.ofFailure();
+                } finally {
+                    lastUploadTimestamp = System.currentTimeMillis();
+                    nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
+                    uploadBuffer.clear();
+                }
+            }
+        }
         return CompletableResultCode.ofSuccess();
     }
 
