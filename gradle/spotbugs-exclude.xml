@@ -32,8 +32,7 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
     <!-- TODO: fix spotbug for s3stream -->
     <Match>
         <!-- Disable warnings for S3Stream -->
-        <Bug
-            pattern="VA_FORMAT_STRING_USES_NEWLINE,JLM_JSR166_UTILCONCURRENT_MONITORENTER,RV_RETURN_VALUE_IGNORED_BAD_PRACTICE,MS_CANNOT_BE_FINAL,MS_SHOULD_BE_REFACTORED_TO_BE_FINAL,PA_PUBLIC_PRIMITIVE_ATTRIBUTE,RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT,SE_COMPARATOR_SHOULD_BE_SERIALIZABLE,UPM_UNCALLED_PRIVATE_METHOD,URF_UNREAD_FIELD"/>
+        <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE,JLM_JSR166_UTILCONCURRENT_MONITORENTER,RV_RETURN_VALUE_IGNORED_BAD_PRACTICE,MS_CANNOT_BE_FINAL,MS_SHOULD_BE_REFACTORED_TO_BE_FINAL,PA_PUBLIC_PRIMITIVE_ATTRIBUTE,RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT,SE_COMPARATOR_SHOULD_BE_SERIALIZABLE,UPM_UNCALLED_PRIVATE_METHOD,URF_UNREAD_FIELD"/>
     </Match>
 
     <Match>
@@ -70,8 +69,7 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
             PI_DO_NOT_REUSE_PUBLIC_IDENTIFIERS_FIELD_NAMES: Do not reuse public identifiers from JSL as field name
             PI_DO_NOT_REUSE_PUBLIC_IDENTIFIERS_METHOD_NAMES: Do not reuse public identifiers from JSL as method name
             -->
-        <Bug
-            pattern="PI_DO_NOT_REUSE_PUBLIC_IDENTIFIERS_CLASS_NAMES,PI_DO_NOT_REUSE_PUBLIC_IDENTIFIERS_FIELD_NAMES,PI_DO_NOT_REUSE_PUBLIC_IDENTIFIERS_METHOD_NAMES"/>
+        <Bug pattern="PI_DO_NOT_REUSE_PUBLIC_IDENTIFIERS_CLASS_NAMES,PI_DO_NOT_REUSE_PUBLIC_IDENTIFIERS_FIELD_NAMES,PI_DO_NOT_REUSE_PUBLIC_IDENTIFIERS_METHOD_NAMES"/>
     </Match>
 
     <Match>
@@ -100,7 +98,7 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
             IC_INIT_CIRCULARITY: Initialization circularity
             SE_NO_SUITABLE_CONSTRUCTOR: Class is Serializable but its superclass doesn't define a void constructor
             PA_PUBLIC_MUTABLE_OBJECT_ATTRIBUTE: Mutable object-type field is public -->
-        <Source name="~.*\.scala"/>
+        <Source name="~.*\.scala" />
         <Or>
             <Bug pattern="NP_LOAD_OF_KNOWN_NULL_VALUE"/>
             <Bug pattern="NP_NULL_ON_SOME_PATH"/>
@@ -306,9 +304,9 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
 
     <Match>
         <!-- Suppress aggressive and unnecessary warnings about switch fallthrough -->
-        <Class name="org.apache.kafka.connect.runtime.rest.resources.LoggingResource"/>
-        <Method name="setLevel"/>
-        <Bug pattern="SF_SWITCH_FALLTHROUGH"/>
+        <Class name="org.apache.kafka.connect.runtime.rest.resources.LoggingResource" />
+        <Method name="setLevel" />
+        <Bug pattern="SF_SWITCH_FALLTHROUGH" />
     </Match>
 
     <Match>
@@ -474,9 +472,9 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
         any other threads are created, but is used in synchronized and
         unsynchronized methods because it comes from the configs,
         passed through rewriteTopology. -->
-        <Package name="org.apache.kafka.streams.processor.internals"/>
-        <Source name="InternalTopologyBuilder.java"/>
-        <Bug pattern="IS2_INCONSISTENT_SYNC"/>
+            <Package name="org.apache.kafka.streams.processor.internals"/>
+            <Source name="InternalTopologyBuilder.java"/>
+            <Bug pattern="IS2_INCONSISTENT_SYNC"/>
     </Match>
 
     <Match>
@@ -491,9 +489,9 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
         <!-- Ignore spurious warning about imbalanced synchronization on a cached Exception. Some accesses of the
              variable must occur in synchronized blocks, while some need not, because of the nature of the producer.
              This seems to throw the static checker off. -->
-        <Package name="org.apache.kafka.clients.producer"/>
-        <Source name="TransactionState.java"/>
-        <Bug pattern="IS2_INCONSISTENT_SYNC"/>
+        <Package name="org.apache.kafka.clients.producer" />
+        <Source name="TransactionState.java" />
+        <Bug pattern="IS2_INCONSISTENT_SYNC" />
     </Match>
 
     <Match>
@@ -525,12 +523,11 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
         <Bug pattern="EQ_UNUSUAL"/>
     </Match>
 
-    -
-    <Match>
+-    <Match>
         <Package name="org.apache.kafka.streams.scala"/>
         <Or>
-            <Class name="org.apache.kafka.streams.scala.Serializer"/>
-            <Class name="org.apache.kafka.streams.scala.Deserializer"/>
+            <Class name="org.apache.kafka.streams.scala.Serializer" />
+            <Class name="org.apache.kafka.streams.scala.Deserializer" />
         </Or>
         <Bug pattern="NM_SAME_SIMPLE_NAME_AS_INTERFACE"/>
     </Match>
@@ -589,7 +586,7 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
     </Match>
 
     <Match>
-        <Package name="org.apache.kafka.common.security.oauthbearer.secured"/>
+        <Package name="org.apache.kafka.common.security.oauthbearer.secured" />
         <Bug pattern="NM_SAME_SIMPLE_NAME_AS_SUPERCLASS"/>
     </Match>
 
