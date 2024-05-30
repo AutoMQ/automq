@@ -457,7 +457,6 @@ object KafkaConfig {
   val S3StreamSplitSizeProp = "s3.stream.object.split.size"
   val S3ObjectBlockSizeProp = "s3.object.block.size"
   val S3ObjectPartSizeProp = "s3.object.part.size"
-  val S3ObjectTaggingProp = "s3.object.tagging"
   val S3BlockCacheSizeProp = "s3.block.cache.size"
   val S3StreamAllocatorPolicyProp = "s3.stream.allocator.policy"
   val S3StreamObjectCompactionIntervalMinutesProp = "s3.stream.object.compaction.interval.minutes"
@@ -515,7 +514,6 @@ object KafkaConfig {
   val S3StreamSplitSizeDoc = "The S3 stream object split size threshold when upload delta WAL or compact stream set object."
   val S3ObjectBlockSizeDoc = "The S3 object compressed block size threshold."
   val S3ObjectPartSizeDoc = "The S3 object multi-part upload part size threshold."
-  val S3ObjectTaggingDoc = "Whether to tag S3 objects"
   val S3BlockCacheSizeDoc = "s3.block.cache.size is the size of the block cache. The block cache is used to cache cold data read from object storage. " +
     "It is recommended to set this configuration item to be greater than 4MB * the concurrent cold reads per partition, to achieve better cold read performance."
   val S3StreamAllocatorPolicyDoc = "The S3 stream memory allocator policy, supported value: " + ByteBufAllocPolicy.values().mkString(", ") + ".\n" +
@@ -1425,7 +1423,6 @@ object KafkaConfig {
       .define(S3StreamSplitSizeProp, INT, 8388608, MEDIUM, S3StreamSplitSizeDoc)
       .define(S3ObjectBlockSizeProp, INT, 524288, MEDIUM, S3ObjectBlockSizeDoc)
       .define(S3ObjectPartSizeProp, INT, 16777216, MEDIUM, S3ObjectPartSizeDoc)
-      .define(S3ObjectTaggingProp, BOOLEAN, false, MEDIUM, S3ObjectTaggingDoc)
       .define(S3BlockCacheSizeProp, LONG, -1L, MEDIUM, S3BlockCacheSizeDoc)
       .define(S3StreamAllocatorPolicyProp, STRING, ByteBufAllocPolicy.POOLED_HEAP.name, MEDIUM, S3StreamAllocatorPolicyDoc)
       .define(S3StreamObjectCompactionIntervalMinutesProp, INT, 30, MEDIUM, S3StreamObjectCompactionIntervalMinutesDoc)
@@ -2150,7 +2147,6 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3StreamSplitSize = getInt(KafkaConfig.S3StreamSplitSizeProp)
   val s3ObjectBlockSize = getInt(KafkaConfig.S3ObjectBlockSizeProp)
   val s3ObjectPartSize = getInt(KafkaConfig.S3ObjectPartSizeProp)
-  val s3ObjectTagging = getBoolean(KafkaConfig.S3ObjectTaggingProp)
   val s3StreamAllocatorPolicy = Enum.valueOf(classOf[ByteBufAllocPolicy], getString(KafkaConfig.S3StreamAllocatorPolicyProp))
   val (s3WALCacheSize, s3BlockCacheSize, s3WALUploadThreshold) = adjustS3Configs(s3StreamAllocatorPolicy, s3WALCapacity)
   val s3StreamObjectCompactionTaskIntervalMinutes = getInt(KafkaConfig.S3StreamObjectCompactionIntervalMinutesProp)
