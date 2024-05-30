@@ -16,6 +16,7 @@ import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
@@ -47,7 +48,7 @@ public class PingS3Helper {
     private String bucket;
     private boolean isForcePathStyle;
     private List<AwsCredentialsProvider> credentialsProviders;
-    private boolean tagging;
+    private Map<String, String> tagging;
     private final boolean needPrintToConsole;
 
     private PingS3Helper(Builder builder) {
@@ -65,7 +66,7 @@ public class PingS3Helper {
         private String bucket;
         private boolean isForcePathStyle;
         private List<AwsCredentialsProvider> credentialsProviders;
-        private boolean tagging;
+        private Map<String, String> tagging;
 
         public Builder needPrintToConsole(boolean needPrintToConsole) {
             this.needPrintToConsole = needPrintToConsole;
@@ -97,7 +98,7 @@ public class PingS3Helper {
             return this;
         }
 
-        public Builder tagging(boolean tagging) {
+        public Builder tagging(Map<String, String> tagging) {
             this.tagging = tagging;
             return this;
         }
@@ -432,7 +433,7 @@ public class PingS3Helper {
     }
 
     private void checkTagging(List<String> advises) {
-        if (tagging) {
+        if (null != tagging) {
             advises.add("currently, it's only supported in AWS S3. Please make sure your object storage service supports tagging.");
         }
     }

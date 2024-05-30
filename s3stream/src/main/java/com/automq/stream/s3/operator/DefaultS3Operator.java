@@ -132,20 +132,20 @@ public class DefaultS3Operator implements S3Operator {
     private boolean checkS3ApiModel = false;
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
-        List<AwsCredentialsProvider> credentialsProviders, boolean tagging) {
+        List<AwsCredentialsProvider> credentialsProviders, Map<String, String> tagging) {
         this(endpoint, region, bucket, forcePathStyle, credentialsProviders, tagging, null, null, false, false);
     }
 
     public DefaultS3Operator(String endpoint, String region, String bucket, boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders,
-        boolean tagging,
+        Map<String, String> tagging,
         AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
         AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter, boolean readWriteIsolate, boolean checkS3ApiModel) {
         this.currentIndex = INDEX.incrementAndGet();
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
-        this.tagging = tagging ? tagging() : null;
+        this.tagging = tagging(tagging);
         int maxS3Concurrency = getMaxS3Concurrency();
         this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders, maxS3Concurrency);
         this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders, maxS3Concurrency) : writeS3Client;
@@ -1016,7 +1016,7 @@ public class DefaultS3Operator implements S3Operator {
         private String bucket;
         private boolean forcePathStyle;
         private List<AwsCredentialsProvider> credentialsProviders;
-        private boolean tagging;
+        private Map<String, String> tagging;
         private AsyncNetworkBandwidthLimiter inboundLimiter;
         private AsyncNetworkBandwidthLimiter outboundLimiter;
         private boolean readWriteIsolate;
@@ -1049,7 +1049,7 @@ public class DefaultS3Operator implements S3Operator {
             return this;
         }
 
-        public Builder tagging(boolean tagging) {
+        public Builder tagging(Map<String, String> tagging) {
             this.tagging = tagging;
             return this;
         }

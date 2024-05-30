@@ -119,7 +119,7 @@ public class LogUploader implements LogRecorder {
                     startFuture = CompletableFuture.runAsync(() -> {
                         try {
                             s3Operator = new DefaultS3Operator(config.s3Endpoint(), config.s3Region(),
-                                config.s3OpsBucket(), config.s3PathStyle(), List.of(CredentialsProviderHolder.getAwsCredentialsProvider()), false);
+                                config.s3OpsBucket(), config.s3PathStyle(), List.of(CredentialsProviderHolder.getAwsCredentialsProvider()), null);
                             uploadThread = new Thread(new UploadTask());
                             uploadThread.setName("log-uploader-upload-thread");
                             uploadThread.setDaemon(true);
