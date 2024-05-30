@@ -85,12 +85,16 @@ public class S3MetricsExporter implements MetricExporter {
         uploadThread = new Thread(new UploadTask());
         uploadThread.setName("s3-metrics-exporter-upload-thread");
         uploadThread.setDaemon(true);
-        uploadThread.start();
 
         cleanupThread = new Thread(new CleanupTask());
         cleanupThread.setName("s3-metrics-exporter-cleanup-thread");
         cleanupThread.setDaemon(true);
+    }
+
+    public void start() {
+        uploadThread.start();
         cleanupThread.start();
+        LOGGER.info("S3MetricsExporter is started");
     }
 
     @Override
