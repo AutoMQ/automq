@@ -145,7 +145,7 @@ public class LogUploader implements LogRecorder {
 
         public String formatTimestampInMillis(long timestamp) {
             return ZonedDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault())
-                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss Z"));
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS Z"));
         }
 
         @Override
