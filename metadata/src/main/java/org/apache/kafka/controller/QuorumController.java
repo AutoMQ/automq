@@ -148,6 +148,7 @@ import org.apache.kafka.controller.errors.EventHandlerExceptionInfo;
 import org.apache.kafka.controller.metrics.QuorumControllerMetrics;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
+import org.apache.kafka.controller.stream.StreamClient;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.controller.stream.TopicDeletionManager;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
@@ -282,12 +283,7 @@ public final class QuorumController implements Controller {
         private long delegationTokenExpiryCheckIntervalMs;
 
         // AutoMQ for Kafka inject start
-        // Provide a default value to pass the unit tests.
-        private Config streamConfig = new Config() {
-            {
-                this.mockEnable(true);
-            }
-        };
+        private StreamClient streamClient;
         private List<String> quorumVoters = Collections.emptyList();
         // AutoMQ for Kafka inject end
 
@@ -446,8 +442,8 @@ public final class QuorumController implements Controller {
         }
 
         // AutoMQ for Kafka inject start
-        public Builder setStreamConfig(Config streamConfig) {
-            this.streamConfig = streamConfig;
+        public Builder setStreamClient(StreamClient streamClient) {
+            this.streamClient = streamClient;
             return this;
         }
 
@@ -516,7 +512,7 @@ public final class QuorumController implements Controller {
                     delegationTokenExpiryTimeMs,
                     delegationTokenExpiryCheckIntervalMs,
                     eligibleLeaderReplicasEnabled,
-                    streamConfig,
+                    streamClient,
                     quorumVoters
                 );
             } catch (Exception e) {
@@ -1928,7 +1924,7 @@ public final class QuorumController implements Controller {
 
     // AutoMQ for Kafka inject start
 
-    private final Config streamConfig;
+    private final StreamClient streamClient;
 
     /**
      * An object which stores the controller's view of the S3 objects.
@@ -1988,7 +1984,7 @@ public final class QuorumController implements Controller {
         long delegationTokenExpiryTimeMs,
         long delegationTokenExpiryCheckIntervalMs,
         boolean eligibleLeaderReplicasEnabled,
-        Config streamConfig,
+        StreamClient streamClient,
         List<String> quorumVoters
     ) {
         this.nonFatalFaultHandler = nonFatalFaultHandler;
@@ -2102,17 +2098,9 @@ public final class QuorumController implements Controller {
         this.eligibleLeaderReplicasEnabled = eligibleLeaderReplicasEnabled;
 
         // AutoMQ for Kafka inject start
-        this.streamConfig = streamConfig;
-        S3Operator s3Operator;
-        if (streamConfig.mockEnable()) {
-            // only use for test
-            s3Operator = new MemoryS3Operator();
-        } else {
-            s3Operator = new DefaultS3Operator(streamConfig.endpoint(), streamConfig.region(), streamConfig.bucket(), streamConfig.forcePathStyle(),
-                List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()), streamConfig.objectTagging());
-        }
+        this.streamClient = streamClient;
         this.s3ObjectControlManager = new S3ObjectControlManager(
-            this, snapshotRegistry, logContext, clusterId, streamConfig, s3Operator);
+            this, snapshotRegistry, logContext, clusterId, streamClient.streamConfig(), streamClient.s3Operator());
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
                 this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);

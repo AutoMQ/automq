@@ -20,7 +20,6 @@ package kafka.server
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
-import kafka.log.stream.s3.ConfigUtils
 import kafka.metrics.LinuxIoMetricsCollector
 import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
@@ -32,6 +31,7 @@ import kafka.server.QuotaFactory.QuotaManagers
 import scala.collection.immutable
 import kafka.server.metadata.{AclPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, KRaftMetadataCachePublisher, ScramPublisher}
 import kafka.server.streamaspect.ElasticControllerApis
+import kafka.server.streamaspect.client.{Context, StreamClientFactoryProxy}
 import kafka.utils.{CoreUtils, Logging}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -252,8 +252,10 @@ class ControllerServer(
         quorumControllerMetrics = new QuorumControllerMetrics(Optional.of(KafkaYammerMetrics.defaultRegistry), time, config.migrationEnabled)
 
         // AutoMQ for Kafka inject start
-        val streamConfig = ConfigUtils.to(config)
-        // TODO create a client contains s3Operator and streamConfig by a factory class
+        val context = new Context()
+        context.kafkaConfig = config
+        val streamClient = StreamClientFactoryProxy.get(context)
+
         var namespace = config.elasticStreamNamespace
         namespace =  if (namespace == null || namespace.isEmpty) {
           "_kafka_" + clusterId
@@ -291,7 +293,7 @@ class ControllerServer(
           setDelegationTokenExpiryTimeMs(config.delegationTokenExpiryTimeMs).
           setDelegationTokenExpiryCheckIntervalMs(config.delegationTokenExpiryCheckIntervalMs).
           setEligibleLeaderReplicasEnabled(config.elrEnabled).
-          setStreamConfig(streamConfig).
+          setStreamClient(streamClient).
           setQuorumVoters(config.quorumVoters)
       }
       controller = controllerBuilder.build()

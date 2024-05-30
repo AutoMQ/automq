@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.server.streamaspect.client;
+package org.apache.kafka.controller.stream;
 
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.operator.S3Operator;
