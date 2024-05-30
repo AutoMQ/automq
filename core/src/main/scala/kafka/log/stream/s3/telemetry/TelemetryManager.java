@@ -317,8 +317,9 @@ public class TelemetryManager {
                 return kafkaConfig.s3PathStyle();
             }
         });
+        s3MetricsExporter.start();
         PeriodicMetricReaderBuilder builder = PeriodicMetricReader.builder(s3MetricsExporter);
-        MetricReader periodicReader = builder.setInterval(Duration.ofMinutes(1)).build();
+        MetricReader periodicReader = builder.setInterval(Duration.ofMillis(kafkaConfig.s3ExporterReportIntervalMs())).build();
         metricReaderList.add(periodicReader);
 
         SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,
