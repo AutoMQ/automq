@@ -55,7 +55,7 @@ public class ClientStreamManager {
 
         ready = NetworkClientUtils.awaitReady(networkClient, node, Time.SYSTEM, 1000);
         if (!ready) {
-            throw new NetworkException("Failed to connect to the broker.");
+            throw new NetworkException("Failed to connect to the node " + node.id());
         }
     }
 

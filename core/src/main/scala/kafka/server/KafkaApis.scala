@@ -257,6 +257,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.PUSH_TELEMETRY => handlePushTelemetryRequest(request)
         case ApiKeys.LIST_CLIENT_METRICS_RESOURCES => handleListClientMetricsResources(request)
         case ApiKeys.DESCRIBE_STREAMS => forwardToControllerOrFail(request)
+        case ApiKeys.PUT_KVS => forwardToControllerOrFail(request)
+        case ApiKeys.GET_KVS => forwardToControllerOrFail(request)
+        case ApiKeys.DELETE_KVS => forwardToControllerOrFail(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {
