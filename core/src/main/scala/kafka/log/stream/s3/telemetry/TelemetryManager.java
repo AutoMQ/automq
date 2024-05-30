@@ -290,7 +290,7 @@ public class TelemetryManager {
             @Override
             public boolean isActiveController() {
                 KafkaRaftServer raftServer = AutoMQApplication.getBean(KafkaRaftServer.class);
-                return raftServer != null && raftServer.controller().exists(controller -> controller.controller().isActive());
+                return raftServer != null && raftServer.controller().exists(controller -> controller.controller() != null && controller.controller().isActive());
             }
 
             @Override

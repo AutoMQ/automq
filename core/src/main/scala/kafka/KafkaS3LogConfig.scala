@@ -27,7 +27,7 @@ class KafkaS3LogConfig(
     if (kafkaServer != null) {
       false
     } else {
-      kafkaRaftServer.controller.exists(_.controller.isActive)
+      kafkaRaftServer.controller.exists(controller => controller.controller != null && controller.controller.isActive)
     }
   }
 

@@ -35,11 +35,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.log4j.spi.LoggingEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class LogUploader {
+public class LogUploader implements LogRecorder {
     private static final Logger LOGGER = LoggerFactory.getLogger(LogUploader.class);
 
     public static final int DEFAULT_MAX_QUEUE_SIZE = 64 * 1024;
@@ -48,7 +47,7 @@ public class LogUploader {
 
     private static final LogUploader INSTANCE = new LogUploader();
 
-    private final BlockingQueue<LoggingEvent> queue = new LinkedBlockingQueue<>(DEFAULT_MAX_QUEUE_SIZE);
+    private final BlockingQueue<LogEvent> queue = new LinkedBlockingQueue<>(DEFAULT_MAX_QUEUE_SIZE);
     private final ByteBuf uploadBuffer = Unpooled.directBuffer(DEFAULT_BUFFER_SIZE);
     private volatile long lastUploadTimestamp = 0L;
 
@@ -84,7 +83,8 @@ public class LogUploader {
         }
     }
 
-    public boolean append(LoggingEvent event) {
+    @Override
+    public boolean append(LogEvent event) {
         if (!closed && couldUpload()) {
             return queue.offer(event);
         }
@@ -153,25 +153,27 @@ public class LogUploader {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     long now = System.currentTimeMillis();
-                    LoggingEvent event = queue.poll(1, TimeUnit.SECONDS);
+                    LogEvent event = queue.poll(1, TimeUnit.SECONDS);
                     if (event != null) {
-                        // [DateTime] [Level] [Message] [LocationInfo]
-                        StringBuilder logline = new StringBuilder()
-                            .append(formatTimestampInMillis(event.timeStamp))
+                        // DateTime Level [Logger] Message \n stackTrace
+                        StringBuilder logLine = new StringBuilder()
+                            .append(formatTimestampInMillis(event.timestampMillis()))
                             .append(" ")
-                            .append(event.getLevel())
+                            .append(event.level())
                             .append(" ")
-                            .append(event.getRenderedMessage())
+                            .append("[").append(event.logger()).append("] ")
+                            .append(" ")
+                            .append(event.message())
                             .append("\n");
 
-                        String[] throwableStrRep = event.getThrowableStrRep();
+                        String[] throwableStrRep = event.stackTrace();
                         if (throwableStrRep != null) {
                             for (String stack : throwableStrRep) {
-                                logline.append(stack).append("\n");
+                                logLine.append(stack).append("\n");
                             }
                         }
 
-                        byte[] bytes = logline.toString().getBytes(StandardCharsets.UTF_8);
+                        byte[] bytes = logLine.toString().getBytes(StandardCharsets.UTF_8);
                         if (uploadBuffer.writableBytes() < bytes.length || now - lastUploadTimestamp > MAX_UPLOAD_INTERVAL) {
                             upload(now);
                         }
