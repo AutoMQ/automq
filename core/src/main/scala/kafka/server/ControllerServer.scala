@@ -254,6 +254,7 @@ class ControllerServer(
         // AutoMQ for Kafka inject start
         val context = new Context()
         context.kafkaConfig = config
+        context.controllerServer = this
         val streamClient = StreamClientFactoryProxy.get(context)
 
         var namespace = config.elasticStreamNamespace

@@ -11,8 +11,10 @@
 
 package kafka.server.streamaspect.client;
 
+import kafka.server.ControllerServer;
 import kafka.server.KafkaConfig;
 
 public class Context {
     public KafkaConfig kafkaConfig;
+    public ControllerServer controllerServer;
 }
