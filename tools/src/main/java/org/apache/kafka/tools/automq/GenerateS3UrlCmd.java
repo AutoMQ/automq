@@ -156,7 +156,6 @@ public class GenerateS3UrlCmd {
             .region(parameter.s3Region)
             .credentialsProviders(List.of(() -> AwsBasicCredentials.create(parameter.s3AccessKey, parameter.s3SecretKey)))
             .isForcePathStyle(parameter.s3PathStyle)
-            .tagging(false)
             .needPrintToConsole(true)
             .build();
         pingS3Helper.pingS3();
