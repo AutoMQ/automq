@@ -253,6 +253,7 @@ class ControllerServer(
 
         // AutoMQ for Kafka inject start
         val streamConfig = ConfigUtils.to(config)
+        // TODO create a client contains s3Operator and streamConfig by a factory class
         var namespace = config.elasticStreamNamespace
         namespace =  if (namespace == null || namespace.isEmpty) {
           "_kafka_" + clusterId

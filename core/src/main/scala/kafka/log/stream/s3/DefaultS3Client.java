@@ -81,8 +81,12 @@ public class DefaultS3Client implements Client {
     private final BrokerServer brokerServer;
 
     public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig) {
+        this(brokerServer, kafkaConfig, ConfigUtils.to(kafkaConfig));
+    }
+
+    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig, Config config) {
         this.brokerServer = brokerServer;
-        this.config = ConfigUtils.to(kafkaConfig);
+        this.config = config;
         this.metadataManager = new StreamMetadataManager(brokerServer, kafkaConfig);
         String endpoint = kafkaConfig.s3Endpoint();
         String region = kafkaConfig.s3Region();
