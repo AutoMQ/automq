@@ -50,6 +50,8 @@ public class DeltaWALUploadTask {
     private final double rate;
     private final AsyncRateLimiter limiter;
     private long startTimestamp;
+    private long uploadTimestamp;
+    private long commitTimestamp;
     private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
 
     public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
@@ -95,6 +97,7 @@ public class DeltaWALUploadTask {
     }
 
     private void upload0(long objectId) {
+        uploadTimestamp = System.currentTimeMillis();
         List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
         Collections.sort(streamIds);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
@@ -142,13 +145,19 @@ public class DeltaWALUploadTask {
     }
 
     public CompletableFuture<Void> commit() {
-        return uploadCf.thenCompose(request -> objectManager.commitStreamSetObject(request).thenAccept(resp -> {
-            LOGGER.info("Upload delta WAL {}, cost {}ms, rate limiter {}bytes/s", commitStreamSetObjectRequest,
-                System.currentTimeMillis() - startTimestamp, rate);
-            if (s3ObjectLogEnable) {
-                s3ObjectLogger.trace("{}", commitStreamSetObjectRequest);
-            }
-        }).whenComplete((nil, ex) -> limiter.close()));
+        return uploadCf.thenCompose(request -> {
+            commitTimestamp = System.currentTimeMillis();
+            return objectManager.commitStreamSetObject(request).thenAccept(resp -> {
+                long now = System.currentTimeMillis();
+                LOGGER.info("Upload delta WAL finished, cost {}ms, prepare {}ms, upload {}ms, commit {}ms, rate limiter {}bytes/s, request: {}",
+                    now - startTimestamp,
+                    uploadTimestamp - startTimestamp,
+                    commitTimestamp - uploadTimestamp,
+                    now - commitTimestamp,
+                    rate,
+                    commitStreamSetObjectRequest);
+            }).whenComplete((nil, ex) -> limiter.close());
+        });
     }
 
     private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords, int streamSize) {
