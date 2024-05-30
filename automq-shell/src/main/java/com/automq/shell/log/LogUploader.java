@@ -27,6 +27,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -43,13 +44,17 @@ public class LogUploader implements LogRecorder {
 
     public static final int DEFAULT_MAX_QUEUE_SIZE = 64 * 1024;
     public static final int DEFAULT_BUFFER_SIZE = 16 * 1024 * 1024;
-    public static final int MAX_UPLOAD_INTERVAL = 60 * 1000;
+    public static final int UPLOAD_INTERVAL = System.getenv("AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL") != null ? Integer.parseInt(System.getenv("AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL")) : 60 * 1000;
+    public static final int CLEANUP_INTERVAL = System.getenv("AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL") != null ? Integer.parseInt(System.getenv("AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL")) : 2 * 60 * 1000;
+    public static final int MAX_JITTER_INTERVAL = 60 * 1000;
 
     private static final LogUploader INSTANCE = new LogUploader();
 
     private final BlockingQueue<LogEvent> queue = new LinkedBlockingQueue<>(DEFAULT_MAX_QUEUE_SIZE);
     private final ByteBuf uploadBuffer = Unpooled.directBuffer(DEFAULT_BUFFER_SIZE);
-    private volatile long lastUploadTimestamp = 0L;
+    private final Random random = new Random();
+    private volatile long lastUploadTimestamp = System.currentTimeMillis();
+    private volatile long nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
 
     private volatile boolean closed;
 
@@ -174,14 +179,14 @@ public class LogUploader implements LogRecorder {
                         }
 
                         byte[] bytes = logLine.toString().getBytes(StandardCharsets.UTF_8);
-                        if (uploadBuffer.writableBytes() < bytes.length || now - lastUploadTimestamp > MAX_UPLOAD_INTERVAL) {
+                        if (uploadBuffer.writableBytes() < bytes.length || now - lastUploadTimestamp > nextUploadInterval) {
                             upload(now);
                         }
                         uploadBuffer.writeBytes(bytes);
                     } else if (closed) {
                         upload(now);
                         break;
-                    } else if (now - lastUploadTimestamp > MAX_UPLOAD_INTERVAL) {
+                    } else if (now - lastUploadTimestamp > nextUploadInterval) {
                         upload(now);
                     }
                 } catch (InterruptedException e) {
@@ -216,6 +221,7 @@ public class LogUploader implements LogRecorder {
                 }
                 uploadBuffer.clear();
                 lastUploadTimestamp = now;
+                nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
             }
         }
     }
@@ -230,7 +236,7 @@ public class LogUploader implements LogRecorder {
                         Thread.sleep(Duration.ofMinutes(1).toMillis());
                         continue;
                     }
-                    long expiredTime = System.currentTimeMillis() - MAX_UPLOAD_INTERVAL * 3;
+                    long expiredTime = System.currentTimeMillis() - CLEANUP_INTERVAL;
 
                     List<Pair<String, Long>> pairList = s3Operator.list(String.format("automq/logs/%s", config.clusterId())).join();
 
