@@ -23,19 +23,21 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import picocli.CommandLine;
 
-@CommandLine.Command(name = "recreate", description = "Discard all data and recreate partition.", mixinStandardHelpOptions = true)
+@CommandLine.Command(name = "recreate", description = "Discard all data and recreate partition(s).", mixinStandardHelpOptions = true)
 public class Recreate implements Callable<Integer> {
     @CommandLine.ParentCommand
     AutoMQCLI cli;
 
-    @CommandLine.Option(names = {"-t", "--namespace"}, description = "The stream namespace.")
+    @CommandLine.Option(names = {"-n", "--namespace"}, description = "The stream namespace.")
     String namespace;
 
     @CommandLine.Option(names = {"-t", "--topic-name"}, description = "The topic you want to close.", required = true)
@@ -43,6 +45,9 @@ public class Recreate implements Callable<Integer> {
 
     @CommandLine.Option(names = {"-p", "--partition"}, description = "The partition you want to close.", required = true, paramLabel = "<partition>")
     List<Integer> partitionList;
+
+    @CommandLine.Option(names = {"-f", "--force"}, description = "Confirm recreate the partition(s). @|bold,yellow This will result in the loss all data.|@")
+    boolean force;
 
     @Override
     public Integer call() throws Exception {
@@ -64,11 +69,41 @@ public class Recreate implements Callable<Integer> {
             namespace = "_kafka_" + clusterId;
         }
 
-        Uuid topicId = admin.describeTopics(List.of(topicName)).topicNameValues().get(topicName).get().topicId();
+        TopicDescription topicDescription;
+        try {
+            topicDescription = admin.describeTopics(List.of(topicName)).topicNameValues().get(topicName).get();
+        } catch (UnknownTopicOrPartitionException e) {
+            System.err.println("Topic " + topicName + " not found.");
+            return 1;
+        } catch (Exception e) {
+            System.err.println("Failed to describe topic " + topicName + ": " + e.getMessage());
+            return 1;
+        }
+
+        Uuid topicId = topicDescription.topicId();
+
+        String info;
+        if (!force) {
+            info = CommandLine.Help.Ansi.AUTO.string("@|bold Dry run mode, no partition will be recreated.|@");
+        } else {
+            info = CommandLine.Help.Ansi.AUTO.string("@|bold,yellow Remove the metadata stream related to specified partition, all data will be lost.|@");
+        }
+        System.out.println(info);
 
         for (Integer partition : partitionList) {
             String streamKey = formatStreamKey(namespace, topicId.toString(), partition);
-            clientKVClient.delKV(KeyValue.Key.of(streamKey));
+            KeyValue.Value value;
+            if (force) {
+                value = clientKVClient.deleteKV(streamKey);
+            } else {
+                value = clientKVClient.getKV(streamKey);
+            }
+
+            if (value == null || value.get() == null || value.get().remaining() < Long.BYTES) {
+                System.out.println("No stream found for partition " + topicName + "-" + partition);
+                continue;
+            }
+            System.out.println("The stream id related to partition " + topicName + "-" + partition + " is " + value.get().getLong());
         }
 
         return 0;

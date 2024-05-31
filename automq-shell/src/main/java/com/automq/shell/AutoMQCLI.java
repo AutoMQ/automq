@@ -12,12 +12,14 @@
 package com.automq.shell;
 
 import com.automq.shell.command.ForceClose;
+import com.automq.shell.command.Recreate;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "automq-cli", mixinStandardHelpOptions = true, version = "automq-cli 1.0",
     description = "Command line tool for maintain AutoMQ cluster(s).",
     subcommands = {
-        ForceClose.class
+        ForceClose.class,
+        Recreate.class
     })
 public class AutoMQCLI {
     @CommandLine.Option(names = {"-b", "--bootstrap-server"}, description = "The Kafka server to connect to.", required = true)
