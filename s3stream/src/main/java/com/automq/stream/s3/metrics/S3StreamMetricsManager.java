@@ -368,7 +368,7 @@ public class S3StreamMetricsManager {
 
     public static CounterMetric buildS3UploadSizeMetric() {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, s3UploadSizeInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, () -> s3UploadSizeInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
@@ -376,7 +376,7 @@ public class S3StreamMetricsManager {
 
     public static CounterMetric buildS3DownloadSizeMetric() {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, s3DownloadSizeInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, () -> s3DownloadSizeInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
@@ -435,7 +435,7 @@ public class S3StreamMetricsManager {
 
     public static CounterMetric buildObjectNumMetric() {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, objectNumInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, () -> objectNumInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
@@ -462,7 +462,7 @@ public class S3StreamMetricsManager {
 
     public static CounterMetric buildNetworkInboundUsageMetric(ThrottleStrategy strategy) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), networkInboundUsageInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), () -> networkInboundUsageInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
@@ -470,7 +470,7 @@ public class S3StreamMetricsManager {
 
     public static CounterMetric buildNetworkOutboundUsageMetric(ThrottleStrategy strategy) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), networkOutboundUsageInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), () -> networkOutboundUsageInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
@@ -523,7 +523,7 @@ public class S3StreamMetricsManager {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             CounterMetric metric = new CounterMetric(metricsConfig, Attributes.builder()
                 .put(AttributeKey.stringKey("ops"), ops)
-                .build(), blockCacheOpsThroughput);
+                .build(), () -> blockCacheOpsThroughput);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
@@ -561,7 +561,7 @@ public class S3StreamMetricsManager {
 
     public static CounterMetric buildCompactionReadSizeMetric() {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, compactionReadSizeInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, () -> compactionReadSizeInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
@@ -569,7 +569,7 @@ public class S3StreamMetricsManager {
 
     public static CounterMetric buildCompactionWriteSizeMetric() {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, compactionWriteSizeInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, () -> compactionWriteSizeInTotal);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
