@@ -60,15 +60,3 @@ services:
       - 4318:4318 # OTLP http receiver
     extra_hosts:
       - "host.docker.internal:host-gateway"
-  tempo:
-    image: grafana/tempo:latest
-    command: [ "-config.file=/etc/tempo.yaml" ]
-    volumes:
-      - ./tempo/tempo.yaml:/etc/tempo.yaml
-      - ${DATA_PATH}/tempo/data:/tmp/tempo
-    ports:
-      - "3200:3200"   # tempo
-      - "9095:9095" # tempo grpc
-      - "4320:4320"  # otlp grpc
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
