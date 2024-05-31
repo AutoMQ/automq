@@ -71,6 +71,7 @@ public class StreamReader {
     long nextReadOffset;
     private CompletableFuture<Void> inflightLoadIndexCf;
     private long lastAccessTimestamp = System.currentTimeMillis();
+    private boolean reading = false;
 
     private boolean closed = false;
 
@@ -91,9 +92,17 @@ public class StreamReader {
     }
 
     public CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes) {
+        if (startOffset != nextReadOffset) {
+            return FutureUtil.failedFuture(new AutoMQException(String.format("[BUG] %s read offset not match, expect %d but %d", this, nextReadOffset, startOffset)));
+        }
+        if (reading) {
+            return FutureUtil.failedFuture(new IllegalStateException(String.format("%s is in reading state, can't read again", this)));
+        }
+        reading = true;
         try {
-            return read(startOffset, endOffset, maxBytes, 1);
+            return read(startOffset, endOffset, maxBytes, 1).whenComplete((rst, ex) -> reading = false);
         } catch (Throwable e) {
+            reading = false;
             return FutureUtil.failedFuture(e);
         }
     }
@@ -435,6 +444,14 @@ public class StreamReader {
         blocksMap.put(block.index.startOffset(), block);
         loadedBlockIndexEndOffset = block.index.endOffset();
         return true;
+    }
+
+    @Override
+    public String toString() {
+        return "StreamReader{" +
+            "reading=" + reading +
+            ", nextReadOffset=" + nextReadOffset +
+            '}';
     }
 
     private static boolean isRecoverable(Throwable cause) {
