@@ -19,7 +19,7 @@ package kafka
 
 import com.automq.shell.AutoMQApplication
 import com.automq.shell.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
-import com.automq.shell.log.S3LogConfig
+import com.automq.shell.log.{LogUploader, S3LogConfig}
 import com.automq.shell.model.S3Url
 import com.automq.stream.s3.ByteBufAlloc
 import joptsimple.OptionParser
@@ -162,8 +162,10 @@ object Kafka extends Logging {
 
       // attach shutdown handler to catch terminating signals as well as normal termination
       Exit.addShutdownHook("kafka-shutdown-hook", {
-        try server.shutdown()
-        catch {
+        try {
+          server.shutdown()
+          LogUploader.getInstance().close()
+        } catch {
           case _: Throwable =>
             fatal("Halting Kafka.")
             // Calling exit() can lead to deadlock as exit() can be called multiple times. Force exit.

@@ -72,19 +72,15 @@ public class LogUploader implements LogRecorder {
         return INSTANCE;
     }
 
-    public void close() {
+    public void close() throws InterruptedException {
         closed = true;
         if (uploadThread != null) {
-            uploadThread.interrupt();
-            cleanupThread.interrupt();
-
-            if (uploadBuffer.readableBytes() > 0) {
-                try {
-                    s3Operator.write(getObjectKey(), uploadBuffer, ThrottleStrategy.BYPASS).get();
-                } catch (Exception ignore) {
-                }
-            }
+            uploadThread.join();
             s3Operator.close();
+        }
+
+        if (cleanupThread != null) {
+            cleanupThread.interrupt();
         }
     }
 
@@ -139,7 +135,6 @@ public class LogUploader implements LogRecorder {
                         } catch (Exception e) {
                             LOGGER.error("Initialize log uploader failed", e);
                         }
-                        Runtime.getRuntime().addShutdownHook(new Thread(this::close));
                     }, command -> new Thread(command).start());
                 }
             }
@@ -183,7 +178,7 @@ public class LogUploader implements LogRecorder {
                             upload(now);
                         }
                         uploadBuffer.writeBytes(bytes);
-                    } else if (closed) {
+                    } else if (closed && queue.isEmpty()) {
                         upload(now);
                         break;
                     } else if (now - lastUploadTimestamp > nextUploadInterval) {
@@ -201,7 +196,7 @@ public class LogUploader implements LogRecorder {
             if (uploadBuffer.readableBytes() > 0) {
                 if (couldUpload()) {
                     try {
-                        while (!closed && !Thread.currentThread().isInterrupted()) {
+                        while (!Thread.currentThread().isInterrupted()) {
                             if (s3Operator == null) {
                                 break;
                             }
