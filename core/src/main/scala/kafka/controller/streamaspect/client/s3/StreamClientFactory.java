@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.server.streamaspect.client.s3;
+package kafka.controller.streamaspect.client.s3;
 
 import com.automq.stream.s3.Config;
 import kafka.log.stream.s3.ConfigUtils;
-import kafka.server.streamaspect.client.Context;
+import kafka.controller.streamaspect.client.Context;
 import org.apache.kafka.controller.stream.StreamClient;
 
 public class StreamClientFactory {

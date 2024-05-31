@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.server.streamaspect.client;
+package kafka.controller.streamaspect.client;
 
 import kafka.server.ControllerServer;
 import kafka.server.KafkaConfig;

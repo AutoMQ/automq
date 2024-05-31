@@ -9,14 +9,14 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.server.streamaspect.client;
+package kafka.controller.streamaspect.client;
 
 import java.lang.reflect.Method;
 import org.apache.kafka.controller.stream.StreamClient;
 
 public class StreamClientFactoryProxy {
     private static final String PROTOCOL_SEPARATOR = ":";
-    private static final String FACTORY_CLASS_FORMAT = "kafka.server.streamaspect.client.%s.StreamClientFactory";
+    private static final String FACTORY_CLASS_FORMAT = "kafka.controller.streamaspect.client.%s.StreamClientFactory";
 
     public static StreamClient get(Context context) {
         String endpoint = context.kafkaConfig.elasticStreamEndpoint();
