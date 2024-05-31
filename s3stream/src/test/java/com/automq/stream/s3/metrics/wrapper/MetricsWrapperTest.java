@@ -37,7 +37,7 @@ public class MetricsWrapperTest {
     @Test
     public void testConfigurableMetrics() {
         CounterMetric metric = new CounterMetric(new MetricsConfig(), Attributes.builder().put("extra", "v").build(),
-            Mockito.mock(LongCounter.class));
+                () -> Mockito.mock(LongCounter.class));
         Assertions.assertEquals(MetricsLevel.INFO, metric.metricsLevel);
 
         metric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, Attributes.builder().put("base", "v2").build()));
@@ -60,7 +60,7 @@ public class MetricsWrapperTest {
 
     @Test
     public void testMetricsLevel() {
-        CounterMetric metric = new CounterMetric(new MetricsConfig(MetricsLevel.INFO, null), Mockito.mock(LongCounter.class));
+        CounterMetric metric = new CounterMetric(new MetricsConfig(MetricsLevel.INFO, null), () -> Mockito.mock(LongCounter.class));
         Assertions.assertTrue(metric.add(MetricsLevel.INFO, 1));
         Assertions.assertFalse(metric.add(MetricsLevel.DEBUG, 1));
         metric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
