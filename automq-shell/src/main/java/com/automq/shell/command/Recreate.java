@@ -40,10 +40,10 @@ public class Recreate implements Callable<Integer> {
     @CommandLine.Option(names = {"-n", "--namespace"}, description = "The stream namespace.")
     String namespace;
 
-    @CommandLine.Option(names = {"-t", "--topic-name"}, description = "The topic you want to close.", required = true)
+    @CommandLine.Option(names = {"-t", "--topic-name"}, description = "The topic you want to recreate.", required = true)
     String topicName;
 
-    @CommandLine.Option(names = {"-p", "--partition"}, description = "The partition you want to close.", required = true, paramLabel = "<partition>")
+    @CommandLine.Option(names = {"-p", "--partition"}, description = "The partition you want to recreate.", required = true, paramLabel = "<partition>")
     List<Integer> partitionList;
 
     @CommandLine.Option(names = {"-f", "--force"}, description = "Confirm recreate the partition(s). @|bold,yellow This will result in the loss all data.|@")
