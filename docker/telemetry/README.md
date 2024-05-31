@@ -19,25 +19,31 @@ due to performance and security concerns.
 
 ### Quick Start
 1. (Optional) set environment variables for data storage
-    ```
+    ``` Shell
     export DATA_PATH=/tmp/telemetry
     ```
 2. start services
-    ```
+    ``` Shell 
     ./install.sh start
     ```
-3. direct to Grafana UI to view default dashboard
+3. add following configurations to server/broker configuration file
+    ``` Properties
+    s3.telemetry.metrics.enable=true
+    s3.telemetry.metrics.exporter.type=otlp
+    s3.telemetry.exporter.otlp.endpoint=http://${endpoint}:4317
     ```
-    http://${hostname}:3000
+4. start AutoMQ cluster
+5. direct to Grafana UI to view default dashboard
+    ``` 
+    http://${endpoint}:3000
     ```
-4. stop and clean up
-    ```
+6. stop and clean up
+    ``` Shell
     ./install.sh remove
     ```
    
-### Configuration for AutoMQ for Kafka
-1. add telemetry configuration to configuration file
-    ```
+### Configurations
+``` Properties
     # enable metrics recording
     s3.telemetry.metrics.enable=true
    
@@ -62,5 +68,4 @@ due to performance and security concerns.
    
     # Metrics report interval
     s3.telemetry.exporter.report.interval.ms=5000
-    ```
-2. start AutoMQ for Kafka and metrics and traces will be ready to view on Grafana
+```
