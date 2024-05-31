@@ -103,7 +103,6 @@ public class S3MetricsExporter implements MetricExporter {
         closed = true;
         cleanupThread.interrupt();
         uploadThread.interrupt();
-        flush();
         LOGGER.info("S3MetricsExporter is closed");
     }
 
@@ -173,7 +172,6 @@ public class S3MetricsExporter implements MetricExporter {
 
         try {
             List<String> lineList = new ArrayList<>();
-            // TODO: transfer metrics name into prometheus format
             for (MetricData metric : metrics) {
                 switch (metric.getType()) {
                     case LONG_SUM:

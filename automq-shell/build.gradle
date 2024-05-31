@@ -59,15 +59,7 @@ test {
 }
 
 jar {
-    dependsOn(':s3stream:jar', ':clients:shadowJar')
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-    }
-    into('assets') {
-        from 'assets'
-    }
     manifest {
-        attributes 'Main-Class': 'org.apache.kafka.cli.AutoMQCLI'
+        attributes 'Main-Class': 'com.automq.shell.AutoMQCLI'
     }
 }
