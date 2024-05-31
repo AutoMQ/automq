@@ -20,7 +20,7 @@ package kafka.server
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
-import kafka.log.stream.s3.ConfigUtils
+import kafka.controller.streamaspect.client.{Context, StreamClientFactoryProxy}
 import kafka.metrics.LinuxIoMetricsCollector
 import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
@@ -252,7 +252,11 @@ class ControllerServer(
         quorumControllerMetrics = new QuorumControllerMetrics(Optional.of(KafkaYammerMetrics.defaultRegistry), time, config.migrationEnabled)
 
         // AutoMQ for Kafka inject start
-        val streamConfig = ConfigUtils.to(config)
+        val context = new Context()
+        context.kafkaConfig = config
+        context.controllerServer = this
+        val streamClient = StreamClientFactoryProxy.get(context)
+
         var namespace = config.elasticStreamNamespace
         namespace =  if (namespace == null || namespace.isEmpty) {
           "_kafka_" + clusterId
@@ -290,7 +294,7 @@ class ControllerServer(
           setDelegationTokenExpiryTimeMs(config.delegationTokenExpiryTimeMs).
           setDelegationTokenExpiryCheckIntervalMs(config.delegationTokenExpiryCheckIntervalMs).
           setEligibleLeaderReplicasEnabled(config.elrEnabled).
-          setStreamConfig(streamConfig).
+          setStreamClient(streamClient).
           setQuorumVoters(config.quorumVoters)
       }
       controller = controllerBuilder.build()
