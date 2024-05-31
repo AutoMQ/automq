@@ -122,15 +122,18 @@ public class StreamReaders implements S3BlockCache {
             eventLoop.execute(() -> {
                 cleanupExpiredStreamReader();
                 StreamReaderKey key = new StreamReaderKey(streamId, startOffset);
-                StreamReader streamReader = streamReaders.computeIfAbsent(key, k -> new StreamReader(streamId, startOffset, eventLoop, objectManager, objectReaderFactory, dataBlockCache));
+                StreamReader streamReader = streamReaders.remove(key);
+                if (streamReader == null) {
+                    streamReader = new StreamReader(streamId, startOffset, eventLoop, objectManager, objectReaderFactory, dataBlockCache);
+                }
+                StreamReader finalStreamReader = streamReader;
                 CompletableFuture<ReadDataBlock> streamReadCf = streamReader.read(startOffset, endOffset, maxBytes)
                     .whenComplete((rst, ex) -> {
                         if (ex != null) {
                             LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail", streamId, startOffset, endOffset, maxBytes, ex);
-                        }
-                        // when two stream read progress is the same, only one stream reader can be retained
-                        if (streamReaders.remove(key, streamReader) && ex == null) {
-                            streamReaders.put(new StreamReaderKey(streamId, streamReader.nextReadOffset()), streamReader);
+                        } else {
+                            // when two stream read progress is the same, only one stream reader can be retained
+                            streamReaders.put(new StreamReaderKey(streamId, finalStreamReader.nextReadOffset()), finalStreamReader);
                         }
                     });
                 FutureUtil.propagate(streamReadCf, cf);
