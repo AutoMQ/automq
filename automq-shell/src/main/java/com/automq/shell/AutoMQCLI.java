@@ -24,6 +24,8 @@ import picocli.CommandLine;
 public class AutoMQCLI {
     @CommandLine.Option(names = {"-b", "--bootstrap-server"}, description = "The Kafka server to connect to.", required = true)
     public String bootstrapServer;
+    @CommandLine.Option(names = {"-c", "--command-config"}, description = "Property file containing configs to be passed to Admin Client.")
+    public String commandConfig;
 
     public static void main(String... args) {
         int exitCode = new CommandLine(new AutoMQCLI()).execute(args);

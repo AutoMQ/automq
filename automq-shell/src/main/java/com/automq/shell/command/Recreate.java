@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.Callable;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -30,6 +31,7 @@ import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.common.utils.Utils;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "recreate", description = "Discard all data and recreate partition(s).", mixinStandardHelpOptions = true)
@@ -52,16 +54,30 @@ public class Recreate implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         Properties properties = new Properties();
+        if (cli.commandConfig != null) {
+            try {
+                properties = Utils.loadProps(cli.commandConfig);
+            } catch (Exception e) {
+                System.err.println("Error loading command config file: " + ExceptionUtils.getRootCauseMessage(e));
+                return 1;
+            }
+        }
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, cli.bootstrapServer);
         Admin admin = Admin.create(properties);
 
-        Optional<Node> nodeOptional = findAnyNode(admin);
+        Optional<Node> nodeOptional;
+        try {
+            nodeOptional = admin.describeCluster().nodes().get().stream().findFirst();
+        } catch (Exception e) {
+            System.err.println("Failed to get Kafka node: " + ExceptionUtils.getRootCauseMessage(e));
+            return 1;
+        }
         if (nodeOptional.isEmpty()) {
-            System.err.println("No controller node found.");
+            System.err.println("No Kafka node found.");
             return 1;
         }
 
-        NetworkClient client = CLIUtils.buildNetworkClient("automq-cli", new AdminClientConfig(new Properties()), new Metrics(), Time.SYSTEM, new LogContext());
+        NetworkClient client = CLIUtils.buildNetworkClient("automq-cli", new AdminClientConfig(properties), new Metrics(), Time.SYSTEM, new LogContext());
         ClientKVClient clientKVClient = new ClientKVClient(client, nodeOptional.get());
 
         if (StringUtils.isBlank(namespace)) {
@@ -76,7 +92,7 @@ public class Recreate implements Callable<Integer> {
             System.err.println("Topic " + topicName + " not found.");
             return 1;
         } catch (Exception e) {
-            System.err.println("Failed to describe topic " + topicName + ": " + e.getMessage());
+            System.err.println("Failed to describe topic " + topicName + ": " + ExceptionUtils.getRootCauseMessage(e));
             return 1;
         }
 
@@ -111,9 +127,5 @@ public class Recreate implements Callable<Integer> {
 
     private String formatStreamKey(String namespace, String topicId, int partition) {
         return namespace + "/" + topicId + "/" + partition;
-    }
-
-    private Optional<Node> findAnyNode(Admin admin) throws Exception {
-        return admin.describeCluster().nodes().get().stream().findFirst();
     }
 }
