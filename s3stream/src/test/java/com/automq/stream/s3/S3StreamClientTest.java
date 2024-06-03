@@ -29,6 +29,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -61,7 +62,7 @@ public class S3StreamClientTest {
         when(stream.streamId()).thenReturn(1L);
 
         CompletableFuture<StreamMetadata> cf = new CompletableFuture<>();
-        when(streamManager.openStream(anyLong(), anyLong())).thenReturn(cf);
+        when(streamManager.openStream(anyLong(), anyLong(), anyMap())).thenReturn(cf);
 
         doAnswer(args -> stream).when(client).newStream(any());
 

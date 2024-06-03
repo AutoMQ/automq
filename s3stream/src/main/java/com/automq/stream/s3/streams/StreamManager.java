@@ -56,7 +56,11 @@ public interface StreamManager {
      * @param epoch    stream epoch.
      * @return {@link StreamMetadata}
      */
-    CompletableFuture<StreamMetadata> openStream(long streamId, long epoch);
+    default CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
+        return openStream(streamId, epoch, Collections.emptyMap());
+    }
+
+    CompletableFuture<StreamMetadata> openStream(long streamId, long epoch, Map<String, String> tags);
 
     /**
      * Trim stream to new start offset.

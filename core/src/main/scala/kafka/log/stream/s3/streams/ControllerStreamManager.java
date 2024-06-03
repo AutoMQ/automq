@@ -176,10 +176,15 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     @Override
-    public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch) {
+    public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch, Map<String, String> tags) {
         OpenStreamRequest request = new OpenStreamRequest()
             .setStreamId(streamId)
             .setStreamEpoch(epoch);
+        if (version.get().isStreamTagsSupported() && tags != null && !tags.isEmpty()) {
+            OpenStreamsRequestData.TagCollection tagCollection = new OpenStreamsRequestData.TagCollection();
+            tags.forEach((k, v) -> tagCollection.add(new OpenStreamsRequestData.Tag().setKey(k).setValue(v)));
+            request.setTags(tagCollection);
+        }
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
