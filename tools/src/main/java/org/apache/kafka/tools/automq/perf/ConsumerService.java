@@ -24,6 +24,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -59,7 +60,10 @@ public class ConsumerService implements AutoCloseable {
     private final String groupSuffix;
 
     public ConsumerService(String bootstrapServer) {
-        this.admin = Admin.create(Map.of(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer));
+        Properties properties = new Properties();
+        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
+        properties.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) TimeUnit.SECONDS.toMillis(300));
+        this.admin = Admin.create(properties);
         this.groupSuffix = new SimpleDateFormat("HHmmss").format(System.currentTimeMillis());
     }
 
