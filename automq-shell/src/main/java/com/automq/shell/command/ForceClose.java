@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.Callable;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -28,6 +29,7 @@ import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.common.utils.Utils;
 import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
@@ -70,16 +72,30 @@ public class ForceClose implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         Properties properties = new Properties();
+        if (cli.commandConfig != null) {
+            try {
+                properties = Utils.loadProps(cli.commandConfig);
+            } catch (Exception e) {
+                System.err.println("Error loading command config file: " + ExceptionUtils.getRootCauseMessage(e));
+                return 1;
+            }
+        }
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, cli.bootstrapServer);
         Admin admin = Admin.create(properties);
 
-        Optional<Node> nodeOptional = findAnyNode(admin);
+        Optional<Node> nodeOptional;
+        try {
+            nodeOptional = admin.describeCluster().nodes().get().stream().findFirst();
+        } catch (Exception e) {
+            System.err.println("Failed to get Kafka node: " + ExceptionUtils.getRootCauseMessage(e));
+            return 1;
+        }
         if (nodeOptional.isEmpty()) {
             System.err.println("No controller node found.");
             return 1;
         }
 
-        NetworkClient client = CLIUtils.buildNetworkClient("automq-cli", new AdminClientConfig(new Properties()), new Metrics(), Time.SYSTEM, new LogContext());
+        NetworkClient client = CLIUtils.buildNetworkClient("automq-cli", new AdminClientConfig(properties), new Metrics(), Time.SYSTEM, new LogContext());
         ClientStreamManager manager = new ClientStreamManager(client, nodeOptional.get());
 
         List<DescribeStreamsResponseData.StreamMetadata> list;
@@ -126,9 +142,5 @@ public class ForceClose implements Callable<Integer> {
         }
 
         return 0;
-    }
-
-    private Optional<Node> findAnyNode(Admin admin) throws Exception {
-        return admin.describeCluster().nodes().get().stream().findFirst();
     }
 }
