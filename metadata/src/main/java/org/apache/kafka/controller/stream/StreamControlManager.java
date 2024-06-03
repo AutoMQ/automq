@@ -295,12 +295,20 @@ public class StreamControlManager {
         List<ApiMessageAndVersion> records = new ArrayList<>();
         int newRangeIndex = streamMetadata.currentRangeIndex() + 1;
         // stream update record
-        records.add(new ApiMessageAndVersion(new S3StreamRecord()
+        AutoMQVersion autoMQVersion = featureControlManager.autoMQVersion();
+        S3StreamRecord s3StreamRecord = new S3StreamRecord()
             .setStreamId(streamId)
             .setEpoch(epoch)
             .setRangeIndex(newRangeIndex)
             .setStartOffset(streamMetadata.startOffset())
-            .setStreamState(StreamState.OPENED.toByte()), version.streamRecordVersion()));
+            .setStreamState(StreamState.OPENED.toByte());
+        if (request.tags().size() > 0 && autoMQVersion.isStreamTagsSupported()) {
+            // Compatible with the stream created in the old version, add missing tags for the stream.
+            S3StreamRecord.TagCollection tags = new S3StreamRecord.TagCollection();
+            request.tags().forEach(tag -> tags.add(new S3StreamRecord.Tag().setKey(tag.key()).setValue(tag.value())));
+            s3StreamRecord.setTags(tags);
+        }
+        records.add(new ApiMessageAndVersion(s3StreamRecord, autoMQVersion.streamRecordVersion()));
         // get new range's start offset
         // default regard this range is the first range in stream, use 0 as start offset
         long startOffset = 0;
@@ -1140,6 +1148,11 @@ public class StreamControlManager {
             streamMetadata.currentEpoch(record.epoch());
             streamMetadata.currentRangeIndex(record.rangeIndex());
             streamMetadata.currentState(StreamState.fromByte(record.streamState()));
+            if (streamMetadata.tags().isEmpty() && record.tags().size() > 0) {
+                Map<String, String> tags = new HashMap<>();
+                record.tags().forEach(tag -> tags.put(tag.key(), tag.value()));
+                streamMetadata.setTags(tags);
+            }
             return;
         }
         Map<String, String> tags = new HashMap<>();

@@ -250,6 +250,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
+    public CompletableFuture<StreamMetadata> openStream(long streamId, long epoch, Map<String, String> tags) {
+        return openStream(streamId, epoch);
+    }
+
+    @Override
     public synchronized CompletableFuture<Void> trimStream(long streamId, long epoch, long newStartOffset) {
         StreamMetadata stream = streams.get(streamId);
         if (stream == null) {
