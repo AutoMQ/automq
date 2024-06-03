@@ -646,7 +646,7 @@ object ElasticLog extends Logging {
                 val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
                 awaitStreamReadyForOpen(openStreamChecker, topicId.get, topicPartition.partition(), metaStreamId, leaderEpoch, logIdent = logIdent)
                 // open partition meta stream
-                val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.builder().epoch(leaderEpoch).build())
+                val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.builder().epoch(leaderEpoch).tags(streamTags).build())
                     .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
                     .get()
                 info(s"${logIdent}opened existing meta stream: streamId==$metaStreamId")

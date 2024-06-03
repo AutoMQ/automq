@@ -17,7 +17,7 @@
   "apiKey": 502,
   "type": "response",
   "name": "OpenStreamsResponse",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {

@@ -98,7 +98,7 @@ public class S3StreamClient implements StreamClient {
             TimerUtil timerUtil = new TimerUtil();
             return FutureUtil.exec(() -> streamManager.createStream(options.tags()).thenCompose(streamId -> {
                 StreamOperationStats.getInstance().createStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                return openStream0(streamId, options.epoch());
+                return openStream0(streamId, options.epoch(), options.tags());
             }), LOGGER, "createAndOpenStream");
         });
     }
@@ -107,7 +107,7 @@ public class S3StreamClient implements StreamClient {
     public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
         return runInLock(() -> {
             checkState();
-            return FutureUtil.exec(() -> openStream0(streamId, openStreamOptions.epoch()), LOGGER, "openStream");
+            return FutureUtil.exec(() -> openStream0(streamId, openStreamOptions.epoch(), openStreamOptions.tags()), LOGGER, "openStream");
         });
     }
 
@@ -129,10 +129,10 @@ public class S3StreamClient implements StreamClient {
         }, 5, 5, TimeUnit.MINUTES);
     }
 
-    private CompletableFuture<Stream> openStream0(long streamId, long epoch) {
+    private CompletableFuture<Stream> openStream0(long streamId, long epoch, Map<String, String> tags) {
         return runInLock(() -> {
             TimerUtil timerUtil = new TimerUtil();
-            CompletableFuture<Stream> cf = streamManager.openStream(streamId, epoch).
+            CompletableFuture<Stream> cf = streamManager.openStream(streamId, epoch, tags).
                 thenApply(metadata -> {
                     StreamWrapper stream = new StreamWrapper(newStream(metadata));
                     runInLock(() -> openedStreams.put(streamId, stream));
