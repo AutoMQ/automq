@@ -42,7 +42,7 @@ public class S3StreamMetadata {
      */
     private final TimelineLong startOffset;
     private final TimelineObject<StreamState> currentState;
-    private final Map<String, String> tags;
+    private Map<String, String> tags;
     private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
     private final TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
 
@@ -106,6 +106,10 @@ public class S3StreamMetadata {
 
     public Map<String, String> tags() {
         return tags;
+    }
+
+    public void setTags(Map<String, String> tags) {
+        this.tags = tags;
     }
 
     public Map<Integer, RangeMetadata> ranges() {

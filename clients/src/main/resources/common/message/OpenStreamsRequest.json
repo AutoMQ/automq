@@ -21,7 +21,7 @@
     "broker"
   ],
   "name": "OpenStreamsRequest",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -55,7 +55,14 @@
           "versions": "0+",
           "entityType": "streamEpoch",
           "about": "The epoch of the requesting stream in the requesting broker"
-        }
+        },
+        { "name": "Tags", "type": "[]Tag", "versions": "1+",
+          "about": "The stream tags.", "fields": [
+          { "name": "Key", "type": "string", "versions": "1+", "mapKey": true,
+            "about": "The tag key." },
+          { "name": "Value", "type": "string", "versions": "1+",
+            "about": "The tag value." }
+        ]}
       ]
     }
   ]
