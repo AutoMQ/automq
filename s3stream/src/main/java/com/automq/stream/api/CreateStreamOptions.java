@@ -18,7 +18,7 @@ import java.util.Map;
 public class CreateStreamOptions {
     private int replicaCount;
     private long epoch;
-    private Map<String, String> tags = new HashMap<>();
+    private final Map<String, String> tags = new HashMap<>();
 
     private CreateStreamOptions() {
     }
