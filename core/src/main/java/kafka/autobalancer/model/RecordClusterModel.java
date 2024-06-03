@@ -46,9 +46,20 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
 
     @Override
     public void onBrokerRegistrationChanged(BrokerRegistrationChangeRecord record) {
-        boolean isActive = record.fenced() != BrokerRegistrationFencingChange.FENCE.value()
-                && record.inControlledShutdown() != BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN.value();
-        changeBrokerStatus(record.brokerId(), isActive);
+        BrokerRegistrationFencingChange fencingChange =
+                BrokerRegistrationFencingChange.fromValue(record.fenced()).orElseThrow(
+                        () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +
+                                "value for fenced field: %x", record, record.fenced())));
+        BrokerRegistrationInControlledShutdownChange inControlledShutdownChange =
+                BrokerRegistrationInControlledShutdownChange.fromValue(record.inControlledShutdown()).orElseThrow(
+                        () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +
+                                "value for inControlledShutdown field: %x", record, record.inControlledShutdown())));
+        if (fencingChange == BrokerRegistrationFencingChange.FENCE
+                || inControlledShutdownChange == BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN) {
+            changeBrokerStatus(record.brokerId(), false);
+        } else if (fencingChange == BrokerRegistrationFencingChange.UNFENCE) {
+            changeBrokerStatus(record.brokerId(), true);
+        }
     }
 
     @Override
