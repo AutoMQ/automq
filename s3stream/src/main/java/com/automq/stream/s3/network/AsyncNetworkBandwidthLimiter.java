@@ -230,16 +230,21 @@ public class AsyncNetworkBandwidthLimiter {
     private class BucketItem implements Comparable<BucketItem> {
         private final ThrottleStrategy strategy;
         private final CompletableFuture<Void> cf;
+        private final long timestamp;
         private long size;
 
         BucketItem(ThrottleStrategy strategy, long size, CompletableFuture<Void> cf) {
             this.strategy = strategy;
             this.size = size;
             this.cf = cf;
+            this.timestamp = System.nanoTime();
         }
 
         @Override
         public int compareTo(BucketItem o) {
+            if (strategy.priority() == o.strategy.priority()) {
+                return Long.compare(timestamp, o.timestamp);
+            }
             return Long.compare(strategy.priority(), o.strategy.priority());
         }
 
