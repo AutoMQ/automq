@@ -581,7 +581,12 @@ public final class QuorumController implements Controller {
         long deltaNs = endProcessingTime - startProcessingTimeNs;
         log.debug("Processed {} in {} us", name,
             MICROSECONDS.convert(deltaNs, NANOSECONDS));
-        controllerMetrics.updateEventQueueProcessingTime(NANOSECONDS.toMillis(deltaNs));
+
+        long millis = NANOSECONDS.toMillis(deltaNs);
+        if (millis > 1) {
+            log.error("Controller took {} ms to process event: {}", millis, name);
+        }
+        controllerMetrics.updateEventQueueProcessingTime(millis);
     }
 
     private Throwable handleEventException(
