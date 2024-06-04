@@ -69,8 +69,17 @@ public final class TopicsDelta {
     }
 
     public void replay(TopicRecord record) {
-        TopicDelta delta = new TopicDelta(
-            new TopicImage(record.name(), record.topicId(), Collections.emptyMap()));
+        TopicDelta delta = changedTopics.get(record.topicId());
+        if (delta != null) {
+            // Update the topic other modifiable properties in future
+            return;
+        }
+        TopicImage topicImage = image.getTopic(record.topicId());
+        if (topicImage == null) {
+            delta = new TopicDelta(new TopicImage(record.name(), record.topicId(), Collections.emptyMap()));
+        } else {
+            delta = new TopicDelta(topicImage);
+        }
         changedTopics.put(record.topicId(), delta);
         createdTopicIds.add(record.topicId());
     }
