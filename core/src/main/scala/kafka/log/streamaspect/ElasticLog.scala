@@ -640,7 +640,7 @@ object ElasticLog extends Logging {
         try {
             metaStream = if (metaNotExists) {
                 val stream = createMetaStream(client, key, replicationFactor, leaderEpoch, streamTags, logIdent = logIdent)
-                info(s"${logIdent}created a new meta stream: streamId==${stream.streamId()}")
+                info(s"${logIdent}created a new meta stream: streamId=${stream.streamId()}")
                 stream
             } else {
                 val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
@@ -649,7 +649,7 @@ object ElasticLog extends Logging {
                 val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.builder().epoch(leaderEpoch).tags(streamTags).build())
                     .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
                     .get()
-                info(s"${logIdent}opened existing meta stream: streamId==$metaStreamId")
+                info(s"${logIdent}opened existing meta stream: streamId=$metaStreamId")
                 stream
             }
             // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
@@ -784,7 +784,7 @@ object ElasticLog extends Logging {
 
         // First, open partition meta stream with higher epoch.
         val metaStream = openStreamWithRetry(client, metaStreamIdOpt.get, currentEpoch + 1, logIdent)
-        info(s"$logIdent opened meta stream: streamId==${metaStreamIdOpt.get}, epoch=${currentEpoch + 1}")
+        info(s"$logIdent opened meta stream: streamId=${metaStreamIdOpt.get}, epoch=${currentEpoch + 1}")
         // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
         val metaMap = metaStream.replay().asScala
 
@@ -793,7 +793,7 @@ object ElasticLog extends Logging {
             // streamId <0 means the stream is not actually created.
             logMeta.getStreamMap.values().forEach(streamId => if (streamId >= 0) {
                 openStreamWithRetry(client, streamId, currentEpoch + 1, logIdent).destroy()
-                info(s"$logIdent destroyed stream: streamId==$streamId, epoch=${currentEpoch + 1}")
+                info(s"$logIdent destroyed stream: streamId=$streamId, epoch=${currentEpoch + 1}")
             })
         })
 
