@@ -37,13 +37,13 @@ public class HistogramMetric extends ConfigurableMetric {
         return deltaHistogram.cumulativeSum();
     }
 
-    public double p50() {
-        return deltaHistogram.p50();
-    }
-
-    public double p99() {
-        return deltaHistogram.p99();
-    }
+//    public double p50() {
+//        return deltaHistogram.p50();
+//    }
+//
+//    public double p99() {
+//        return deltaHistogram.p99();
+//    }
 
     public double max() {
         return deltaHistogram.max();
