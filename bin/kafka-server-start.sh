@@ -46,6 +46,10 @@ if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
     export KAFKA_HEAP_OPTS="-Xmx${max_heap_kb}k -Xms${max_heap_kb}k -XX:MetaspaceSize=96m"
 fi
 
+if [ "x$KAFKA_OPTS" = "x" ]; then
+    export KAFKA_OPTS="-Dio.netty.allocator.maxOrder=11"
+fi
+
 EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer -loggc'}
 
 COMMAND=$1
