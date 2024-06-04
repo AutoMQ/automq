@@ -901,13 +901,7 @@
               },
               {
                 "id": "links",
-                "value": [
-                  {
-                    "targetBlank": true,
-                    "title": "Show Group Metrics",
-                    "url": "/d/d90be32f-7d32-488a-b99c-3e21529790e4/group-metrics?var-datasource=${datasource}&var-cluster_id=${cluster_id}&var-group_id=${__value.text}&var-topic=${__data.fields.topic}"
-                  }
-                ]
+                "value": []
               },
               {
                 "id": "custom.filterable",
@@ -1095,13 +1089,7 @@
               },
               {
                 "id": "links",
-                "value": [
-                  {
-                    "targetBlank": true,
-                    "title": "",
-                    "url": "/d/b908cc7a-3592-405d-aafb-fc9225219b0a/topic-metrics?orgId=1&var-datasource=${datasource}&var-cluster_id=${cluster_id}&var-topic=${__value.text}&from=now-1h&to=now"
-                  }
-                ]
+                "value": []
               }
             ]
           },
@@ -1385,13 +1373,7 @@
               },
               {
                 "id": "links",
-                "value": [
-                  {
-                    "targetBlank": true,
-                    "title": "",
-                    "url": "/d/e97dc219-c0c7-4bbe-9616-cdafb3451a3b/broker-metrics?var-cluster_id=$cluster_id&var-node_id=${__value.text}&var-datasource=${datasource}&var-node_type=All"
-                  }
-                ]
+                "value": []
               },
               {
                 "id": "custom.filterable",
