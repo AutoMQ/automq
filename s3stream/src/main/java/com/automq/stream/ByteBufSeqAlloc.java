@@ -52,8 +52,8 @@ public class ByteBufSeqAlloc {
             bufRef.set(newHugeBuf);
 
             // As the request capacity is not larger than HUGE_BUF_SIZE, the new hugeBuf will satisfy the request
-            assert hugeBuf.satisfies(capacity);
-            return hugeBuf.byteBuffer(capacity);
+            assert newHugeBuf.satisfies(capacity);
+            return newHugeBuf.byteBuffer(capacity);
         }
     }
 
