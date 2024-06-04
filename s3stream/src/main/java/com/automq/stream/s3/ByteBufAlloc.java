@@ -18,9 +18,11 @@ import io.netty.buffer.ByteBufAllocatorMetric;
 import io.netty.buffer.ByteBufAllocatorMetricProvider;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.PooledByteBufAllocatorMetric;
 import io.netty.buffer.UnpooledByteBufAllocator;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import org.slf4j.Logger;
@@ -56,6 +58,10 @@ public class ByteBufAlloc {
      * The allocator used to allocate memory. It should be updated when {@link #policy} is updated.
      */
     private static AbstractByteBufAllocator allocator = getAllocatorByPolicy(policy);
+    /**
+     * The metric of the allocator. It should be updated when {@link #policy} is updated.
+     */
+    private static ByteBufAllocatorMetric metric = getMetricByAllocator(allocator);
 
     static {
         registerAllocType(DEFAULT, "default");
@@ -79,10 +85,22 @@ public class ByteBufAlloc {
         LOGGER.info("Set alloc policy to {}", policy);
         ByteBufAlloc.policy = policy;
         ByteBufAlloc.allocator = getAllocatorByPolicy(policy);
+        ByteBufAlloc.metric = getMetricByAllocator(allocator);
     }
 
     public static ByteBufAllocPolicy getPolicy() {
         return policy;
+    }
+
+    /**
+     * Get the chunk size of the allocator.
+     * It returns {@link Optional#empty} if the {@link #policy} is not {@link ByteBufAllocPolicy#isPooled}.
+     */
+    public static Optional<Integer> getChunkSize() {
+        if (policy.isPooled()) {
+            return Optional.of(((PooledByteBufAllocatorMetric) metric).chunkSize());
+        }
+        return Optional.empty();
     }
 
     public static CompositeByteBuf compositeByteBuffer() {
@@ -141,6 +159,13 @@ public class ByteBufAlloc {
         return UnpooledByteBufAllocator.DEFAULT;
     }
 
+    private static ByteBufAllocatorMetric getMetricByAllocator(AbstractByteBufAllocator allocator) {
+        if (allocator instanceof ByteBufAllocatorMetricProvider) {
+            return ((ByteBufAllocatorMetricProvider) allocator).metric();
+        }
+        return null;
+    }
+
     public static class ByteBufAllocMetric {
         private final long usedMemory;
         private final long allocatedMemory;
@@ -150,7 +175,6 @@ public class ByteBufAlloc {
             USAGE_STATS.forEach((k, v) -> {
                 detail.put(k + "/" + ALLOC_TYPE.get(k), v.longValue());
             });
-            ByteBufAllocatorMetric metric = ((ByteBufAllocatorMetricProvider) allocator).metric();
             this.usedMemory = policy.isDirect() ? metric.usedDirectMemory() : metric.usedHeapMemory();
             this.allocatedMemory = this.detail.values().stream().mapToLong(Long::longValue).sum();
         }
@@ -165,8 +189,8 @@ public class ByteBufAlloc {
 
         @Override
         public String toString() {
-            StringBuilder sb = new StringBuilder("ByteBufAllocMetric{usedMemory=");
-            sb.append(usedMemory);
+            StringBuilder sb = new StringBuilder("ByteBufAllocMetric{allocatorMetric=");
+            sb.append(metric);
             sb.append(", allocatedMemory=");
             sb.append(allocatedMemory);
             sb.append(", detail=");
