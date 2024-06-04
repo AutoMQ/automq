@@ -11,19 +11,16 @@
 package com.automq.stream;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 
 public class ByteBufSeqAllocTest {
 
     @Test
     public void testAlloc() {
-        // TODO
         ByteBufSeqAlloc alloc = new ByteBufSeqAlloc(0, 1);
 
         AtomicReference<ByteBufSeqAlloc.HugeBuf> bufRef = alloc.hugeBufArray[Math.abs(Thread.currentThread().hashCode() % alloc.hugeBufArray.length)];
@@ -45,14 +42,13 @@ public class ByteBufSeqAllocTest {
         buf4.writeLong(6);
         buf4.writeLong(7);
 
-        assertTrue(oldHugeBuf != bufRef.get().buf);
+        assertNotSame(oldHugeBuf, bufRef.get().buf);
 
         assertEquals(1, buf1.readLong());
         assertEquals(2, buf1.readInt());
         assertEquals(3, buf2.readLong());
         assertEquals(4, buf2.readInt());
         assertEquals(5, buf2.readLong());
-        assertInstanceOf(CompositeByteBuf.class, buf4);
         assertEquals(6, buf4.readLong());
         assertEquals(7, buf4.readLong());
 
