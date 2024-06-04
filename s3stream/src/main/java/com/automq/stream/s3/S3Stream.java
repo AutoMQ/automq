@@ -150,7 +150,7 @@ public class S3Stream implements Stream {
         try {
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
-                    networkInboundLimiter.forceConsume(recordBatch.rawPayload().remaining());
+                    networkInboundLimiter.consume(ThrottleStrategy.BYPASS, recordBatch.rawPayload().remaining());
                 }
                 appendLock.lock();
                 try {
@@ -215,7 +215,7 @@ public class S3Stream implements Stream {
                     }
                     final long finalSize = totalSize;
                     if (context.readOptions().fastRead()) {
-                        networkOutboundLimiter.forceConsume(totalSize);
+                        networkOutboundLimiter.consume(ThrottleStrategy.BYPASS, totalSize);
                         NetworkStats.getInstance().fastReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
                     } else {
                         TimerUtil consumeTimer = new TimerUtil();
