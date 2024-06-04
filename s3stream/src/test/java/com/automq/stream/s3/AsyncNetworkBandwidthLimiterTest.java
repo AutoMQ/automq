@@ -101,11 +101,11 @@ public class AsyncNetworkBandwidthLimiterTest {
 
     @Test
     public void testThrottleConsume5() throws InterruptedException {
-        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 10, 100, 100);
+        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 10, 100, 200);
         bucket.consume(ThrottleStrategy.BYPASS, 1000);
-        Assertions.assertEquals(-100, bucket.getAvailableTokens());
+        Assertions.assertEquals(-200, bucket.getAvailableTokens());
         Thread.sleep(500);
-        bucket.consume(ThrottleStrategy.BYPASS, 100);
+        bucket.consume(ThrottleStrategy.BYPASS, 500);
         CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
         bucket.consume(ThrottleStrategy.CATCH_UP, 10);
         CompletableFuture<Void> result = cf.whenComplete((v, e) -> {

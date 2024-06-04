@@ -27,8 +27,8 @@ import java.util.function.Supplier;
 public class HistogramInstrument {
     private final ObservableLongGauge count;
     private final ObservableLongGauge sum;
-    private final ObservableDoubleGauge histP50Value;
-    private final ObservableDoubleGauge histP99Value;
+//    private final ObservableDoubleGauge histP50Value;
+//    private final ObservableDoubleGauge histP99Value;
     private final ObservableDoubleGauge histMaxValue;
 
     public HistogramInstrument(Meter meter, String name, String desc, String unit, Supplier<List<HistogramMetric>> histogramsSupplier) {
@@ -55,28 +55,28 @@ public class HistogramInstrument {
                     }
                 });
             });
-        this.histP50Value = meter.gaugeBuilder(name + S3StreamMetricsConstant.P50_METRIC_NAME_SUFFIX)
-            .setDescription(desc + " (50th percentile)")
-            .setUnit(unit)
-            .buildWithCallback(result -> {
-                List<HistogramMetric> histograms = histogramsSupplier.get();
-                histograms.forEach(histogram -> {
-                    if (histogram.shouldRecord()) {
-                        result.record(histogram.p50(), histogram.attributes);
-                    }
-                });
-            });
-        this.histP99Value = meter.gaugeBuilder(name + S3StreamMetricsConstant.P99_METRIC_NAME_SUFFIX)
-            .setDescription(desc + " (99th percentile)")
-            .setUnit(unit)
-            .buildWithCallback(result -> {
-                List<HistogramMetric> histograms = histogramsSupplier.get();
-                histograms.forEach(histogram -> {
-                    if (histogram.shouldRecord()) {
-                        result.record(histogram.p99(), histogram.attributes);
-                    }
-                });
-            });
+//        this.histP50Value = meter.gaugeBuilder(name + S3StreamMetricsConstant.P50_METRIC_NAME_SUFFIX)
+//            .setDescription(desc + " (50th percentile)")
+//            .setUnit(unit)
+//            .buildWithCallback(result -> {
+//                List<HistogramMetric> histograms = histogramsSupplier.get();
+//                histograms.forEach(histogram -> {
+//                    if (histogram.shouldRecord()) {
+//                        result.record(histogram.p50(), histogram.attributes);
+//                    }
+//                });
+//            });
+//        this.histP99Value = meter.gaugeBuilder(name + S3StreamMetricsConstant.P99_METRIC_NAME_SUFFIX)
+//            .setDescription(desc + " (99th percentile)")
+//            .setUnit(unit)
+//            .buildWithCallback(result -> {
+//                List<HistogramMetric> histograms = histogramsSupplier.get();
+//                histograms.forEach(histogram -> {
+//                    if (histogram.shouldRecord()) {
+//                        result.record(histogram.p99(), histogram.attributes);
+//                    }
+//                });
+//            });
         this.histMaxValue = meter.gaugeBuilder(name + S3StreamMetricsConstant.MAX_METRIC_NAME_SUFFIX)
             .setDescription(desc + " (max)")
             .setUnit(unit)
