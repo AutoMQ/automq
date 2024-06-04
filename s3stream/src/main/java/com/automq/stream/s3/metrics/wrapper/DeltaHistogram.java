@@ -11,9 +11,6 @@
 
 package com.automq.stream.s3.metrics.wrapper;
 
-import com.yammer.metrics.stats.ExponentiallyDecayingSample;
-import com.yammer.metrics.stats.Sample;
-import com.yammer.metrics.stats.Snapshot;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiPredicate;
 
@@ -23,7 +20,7 @@ public class DeltaHistogram {
     private final AtomicLong cumulativeSum = new AtomicLong(0L);
     private final AtomicLong min = new AtomicLong(Long.MAX_VALUE);
     private final AtomicLong max = new AtomicLong(Long.MIN_VALUE);
-    private final Sample sample = new ExponentiallyDecayingSample(1028, 0.015D);
+//    private final Sample sample = new ExponentiallyDecayingSample(1028, 0.015D);
     private volatile long snapshotInterval;
     private SnapshotExt lastSnapshot;
     private long lastCount;
@@ -90,7 +87,7 @@ public class DeltaHistogram {
     public void record(long value) {
         cumulativeCount.incrementAndGet();
         cumulativeSum.addAndGet(value);
-        sample.update(value);
+//        sample.update(value);
         updateMax(value);
         updateMin(value);
     }
@@ -103,30 +100,30 @@ public class DeltaHistogram {
         return cumulativeSum.get();
     }
 
-    public double p99() {
-        snapshotAndReset();
-        return lastSnapshot.snapshot.get99thPercentile();
-    }
+//    public double p99() {
+//        snapshotAndReset();
+//        return lastSnapshot.snapshot.get99thPercentile();
+//    }
 
-    public double p50() {
-        snapshotAndReset();
-        return lastSnapshot.snapshot.getMedian();
-    }
+//    public double p50() {
+//        snapshotAndReset();
+//        return lastSnapshot.snapshot.getMedian();
+//    }
 
     private void snapshotAndReset() {
         synchronized (this) {
             if (lastSnapshot == null || System.currentTimeMillis() - lastSnapshotTime > snapshotInterval) {
-                Snapshot snapshot = sample.getSnapshot();
+//                Snapshot snapshot = sample.getSnapshot();
                 long snapshotMin = min.get();
                 long snapshotMax = max.get();
                 long snapshotCount = cumulativeCount.get() - lastCount;
                 long snapshotSum = cumulativeSum.get() - lastSum;
                 lastCount = cumulativeCount.get();
                 lastSum = cumulativeSum.get();
-                sample.clear();
+//                sample.clear();
                 min.set(0);
                 max.set(0);
-                lastSnapshot = new SnapshotExt(snapshotMin, snapshotMax, snapshotCount, snapshotSum, snapshot);
+                lastSnapshot = new SnapshotExt(snapshotMin, snapshotMax, snapshotCount, snapshotSum);
                 lastSnapshotTime = System.currentTimeMillis();
             }
         }
@@ -137,14 +134,14 @@ public class DeltaHistogram {
         final long max;
         final long count;
         final long sum;
-        final Snapshot snapshot;
+//        final Snapshot snapshot;
 
-        public SnapshotExt(long min, long max, long count, long sum, Snapshot snapshot) {
+        public SnapshotExt(long min, long max, long count, long sum) {
             this.min = min;
             this.max = max;
             this.count = count;
             this.sum = sum;
-            this.snapshot = snapshot;
+//            this.snapshot = snapshot;
         }
 
         double mean() {
