@@ -372,6 +372,13 @@ public class TopicsImageTest {
         TopicsImage image = new TopicsImage(newTopicsByIdMap(topics), newTopicsByNameMap(topics));
 
         List<ApiMessageAndVersion> topicRecords = new ArrayList<>();
+        topicRecords.add(
+            new ApiMessageAndVersion(
+                new TopicRecord().setTopicId(zooId).setName("zoo"),
+                TOPIC_RECORD.highestSupportedVersion()
+            )
+        );
+
         // zoo-0 - follower to leader
         topicRecords.add(
             new ApiMessageAndVersion(
