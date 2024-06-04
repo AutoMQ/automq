@@ -17,7 +17,7 @@ import io.netty.buffer.CompositeByteBuf;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class ByteBufSeqAlloc {
-    public static final int HUGE_BUF_SIZE = 8 * 1024 * 1024;
+    public static final int HUGE_BUF_SIZE = ByteBufAlloc.getChunkSize() > 0 ? ByteBufAlloc.getChunkSize() : 4 >> 20;
     // why not use ThreadLocal? the partition open has too much threads
     final AtomicReference<HugeBuf>[] hugeBufArray;
     private final int allocType;
