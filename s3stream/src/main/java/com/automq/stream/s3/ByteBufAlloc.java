@@ -22,6 +22,7 @@ import io.netty.buffer.PooledByteBufAllocatorMetric;
 import io.netty.buffer.UnpooledByteBufAllocator;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import org.slf4j.Logger;
@@ -93,13 +94,13 @@ public class ByteBufAlloc {
 
     /**
      * Get the chunk size of the allocator.
-     * It returns -1 if the {@link #policy} is not {@link ByteBufAllocPolicy#isPooled()}.
+     * It returns {@link Optional#empty} if the {@link #policy} is not {@link ByteBufAllocPolicy#isPooled}.
      */
-    public static int getChunkSize() {
-        if (metric instanceof PooledByteBufAllocatorMetric) {
-            return ((PooledByteBufAllocatorMetric) metric).chunkSize();
+    public static Optional<Integer> getChunkSize() {
+        if (policy.isPooled()) {
+            return Optional.of(((PooledByteBufAllocatorMetric) metric).chunkSize());
         }
-        return -1;
+        return Optional.empty();
     }
 
     public static CompositeByteBuf compositeByteBuffer() {
