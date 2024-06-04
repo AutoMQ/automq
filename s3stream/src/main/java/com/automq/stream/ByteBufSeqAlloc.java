@@ -13,7 +13,6 @@ package com.automq.stream;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class ByteBufSeqAlloc {
