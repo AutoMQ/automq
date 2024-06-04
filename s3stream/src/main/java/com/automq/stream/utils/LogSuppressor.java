@@ -19,7 +19,7 @@ public class LogSuppressor {
     private final Logger logger;
     private final long intervalMills;
     private final AtomicLong lastLogTime = new AtomicLong(System.currentTimeMillis());
-    private AtomicInteger supressedCount = new AtomicInteger();
+    private final AtomicInteger suppressedCount = new AtomicInteger();
 
     public LogSuppressor(Logger logger, long intervalMills) {
         this.logger = logger;
@@ -32,11 +32,11 @@ public class LogSuppressor {
             long last = lastLogTime.get();
             if (now - last > intervalMills) {
                 if (lastLogTime.compareAndSet(last, now)) {
-                    logger.warn("[SUPPRESSED_TIME=" + supressedCount.getAndSet(0) + "] " + message, args);
+                    logger.warn("[SUPPRESSED_TIME=" + suppressedCount.getAndSet(0) + "] " + message, args);
                     break;
                 }
             } else {
-                supressedCount.incrementAndGet();
+                suppressedCount.incrementAndGet();
                 break;
             }
         }
@@ -48,11 +48,11 @@ public class LogSuppressor {
             long last = lastLogTime.get();
             if (now - last > intervalMills) {
                 if (lastLogTime.compareAndSet(last, now)) {
-                    logger.info("[SUPPRESSED_TIME=" + supressedCount.getAndSet(0) + "] " + message, args);
+                    logger.info("[SUPPRESSED_TIME=" + suppressedCount.getAndSet(0) + "] " + message, args);
                     break;
                 }
             } else {
-                supressedCount.incrementAndGet();
+                suppressedCount.incrementAndGet();
                 break;
             }
         }
