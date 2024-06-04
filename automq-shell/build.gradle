@@ -21,7 +21,6 @@ dependencies {
     implementation libs.opentelemetrySdk
     implementation libs.jacksonDatabind
     implementation libs.commonLang
-    implementation 'info.picocli:picocli:4.7.6'
     implementation(project(':s3stream')) {
         exclude(group: 'io.opentelemetry', module: '*')
         exclude(group: 'io.opentelemetry.instrumentation', module: '*')
