@@ -32,7 +32,7 @@ public class ByteBufSeqAlloc {
     }
 
     public ByteBuf byteBuffer(int capacity) {
-        if (capacity >= HUGE_BUF_SIZE) {
+        if (capacity > HUGE_BUF_SIZE) {
             // if the request capacity is larger than HUGE_BUF_SIZE, just allocate a new ByteBuf
             return ByteBufAlloc.byteBuffer(capacity, allocType);
         }
@@ -43,31 +43,18 @@ public class ByteBufSeqAlloc {
         synchronized (bufRef) {
             HugeBuf hugeBuf = bufRef.get();
 
-            if (hugeBuf.nextIndex + capacity <= hugeBuf.buf.capacity()) {
-                // if the request capacity can be satisfied by the current hugeBuf, return a slice of it
-                int nextIndex = hugeBuf.nextIndex;
-                hugeBuf.nextIndex += capacity;
-                ByteBuf slice = hugeBuf.buf.retainedSlice(nextIndex, capacity);
-                return slice.writerIndex(slice.readerIndex());
+            if (hugeBuf.satisfies(capacity)) {
+                return hugeBuf.byteBuffer(capacity);
             }
 
-            // if the request capacity cannot be satisfied by the current hugeBuf
-            // 1. slice the remaining of the current hugeBuf and release the hugeBuf
-            // 2. create a new hugeBuf and slice the remaining of the required capacity
-            // 3. return the composite ByteBuf of the two slices
-            CompositeByteBuf cbf = ByteBufAlloc.compositeByteBuffer();
-            int readLength = hugeBuf.buf.capacity() - hugeBuf.nextIndex;
-            cbf.addComponent(false, hugeBuf.buf.retainedSlice(hugeBuf.nextIndex, readLength));
-            capacity -= readLength;
+            // if the request capacity cannot be satisfied by the current hugeBuf, allocate it in a new hugeBuf
             hugeBuf.buf.release();
-
             HugeBuf newHugeBuf = new HugeBuf(ByteBufAlloc.byteBuffer(HUGE_BUF_SIZE, allocType));
             bufRef.set(newHugeBuf);
 
-            cbf.addComponent(false, newHugeBuf.buf.retainedSlice(0, capacity));
-            newHugeBuf.nextIndex = capacity;
-
-            return cbf;
+            // As the request capacity is not larger than HUGE_BUF_SIZE, the new hugeBuf will satisfy the request
+            assert hugeBuf.satisfies(capacity);
+            return hugeBuf.byteBuffer(capacity);
         }
     }
 
@@ -78,6 +65,18 @@ public class ByteBufSeqAlloc {
         HugeBuf(ByteBuf buf) {
             this.buf = buf;
             this.nextIndex = 0;
+        }
+
+        ByteBuf byteBuffer(int capacity) {
+            int start = nextIndex;
+            nextIndex += capacity;
+            ByteBuf slice = buf.retainedSlice(start, capacity);
+            slice.writerIndex(slice.readerIndex());
+            return slice;
+        }
+
+        boolean satisfies(int capacity) {
+            return nextIndex + capacity <= buf.capacity();
         }
     }
 
