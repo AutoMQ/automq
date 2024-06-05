@@ -47,8 +47,7 @@ import static com.automq.stream.s3.cache.CacheAccessType.BLOCK_CACHE_HIT;
 import static com.automq.stream.s3.cache.CacheAccessType.BLOCK_CACHE_MISS;
 import static com.automq.stream.utils.FutureUtil.exec;
 
-@EventLoopSafe
-public class StreamReader {
+@EventLoopSafe public class StreamReader {
     public static final int GET_OBJECT_STEP = 4;
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReader.class);
     static final int READAHEAD_SIZE_UNIT = 1024 * 1024 / 2;
@@ -61,6 +60,8 @@ public class StreamReader {
     final NavigableMap<Long, Block> blocksMap = new TreeMap<>();
     Block lastBlock = null;
     long loadedBlockIndexEndOffset = 0L;
+    // When the blocks reset, the epoch will increase. It's used to prevent the loadMoreBlocksWithoutData add invalid blocks.
+    long blocksEpoch = 0L;
 
     final Readahead readahead;
     private final long streamId;
@@ -75,12 +76,8 @@ public class StreamReader {
 
     private boolean closed = false;
 
-    public StreamReader(
-        long streamId, long nextReadOffset, EventLoop eventLoop,
-        ObjectManager objectManager,
-        Function<S3ObjectMetadata, ObjectReader> objectReaderFactory,
-        DataBlockCache dataBlockCache
-    ) {
+    public StreamReader(long streamId, long nextReadOffset, EventLoop eventLoop, ObjectManager objectManager,
+        Function<S3ObjectMetadata, ObjectReader> objectReaderFactory, DataBlockCache dataBlockCache) {
         this.streamId = streamId;
         this.nextReadOffset = nextReadOffset;
         this.readahead = new Readahead();
@@ -155,15 +152,10 @@ public class StreamReader {
 
         // 2. wait block's data loaded
         List<Block> blocks = new ArrayList<>();
-        CompletableFuture<Void> loadBlocksCf = getBlocksCf
-            .thenCompose(
-                blockList -> {
-                    blocks.addAll(blockList);
-                    return CompletableFuture.allOf(blockList.stream()
-                        .map(block -> block.loadCf)
-                        .toArray(CompletableFuture[]::new));
-                }
-            );
+        CompletableFuture<Void> loadBlocksCf = getBlocksCf.thenCompose(blockList -> {
+            blocks.addAll(blockList);
+            return CompletableFuture.allOf(blockList.stream().map(block -> block.loadCf).toArray(CompletableFuture[]::new));
+        });
 
         // if the cache is hit, the loadBlocks will be done immediately
         if (!loadBlocksCf.isDone()) {
@@ -179,8 +171,7 @@ public class StreamReader {
                 return;
             }
             if (blocks.isEmpty()) {
-                ctx.cf.completeExceptionally(new AutoMQException(String.format("[UNEXPECTED] streamId=%d Get empty blocks [%s, %s) %s",
-                    streamId, startOffset, endOffset, maxBytes)));
+                ctx.cf.completeExceptionally(new AutoMQException(String.format("[UNEXPECTED] streamId=%d Get empty blocks [%s, %s) %s", streamId, startOffset, endOffset, maxBytes)));
                 return;
             }
             int remainingSize = maxBytes;
@@ -272,6 +263,10 @@ public class StreamReader {
 
     private void getBlocks0(GetBlocksContext ctx, long startOffset, long endOffset, int maxBytes) {
         Long floorKey = blocksMap.floorKey(startOffset);
+        if (floorKey == null && !blocksMap.isEmpty()) {
+            LOGGER.error("[BUG] {} cannot find floor block for startOffset={}, the first block={}", this, startOffset, blocksMap.firstEntry());
+            throw new AutoMQException("[BUG] cannot find floor block");
+        }
         CompletableFuture<Boolean> loadMoreBlocksCf;
         int remainingSize = maxBytes;
         if (floorKey == null || startOffset >= loadedBlockIndexEndOffset) {
@@ -320,8 +315,7 @@ public class StreamReader {
                 }
             } else {
                 if (!moreBlocks && endOffset > loadedBlockIndexEndOffset) {
-                    String errMsg = String.format("[BUG] streamId=%s expect load blocks to endOffset=%s, " +
-                        "current loadedBlockIndexEndOffset=%s", streamId, endOffset, loadedBlockIndexEndOffset);
+                    String errMsg = String.format("[BUG] streamId=%s expect load blocks to endOffset=%s, " + "current loadedBlockIndexEndOffset=%s", streamId, endOffset, loadedBlockIndexEndOffset);
                     ctx.cf.completeExceptionally(new AutoMQException(errMsg));
                     return;
                 }
@@ -351,7 +345,7 @@ public class StreamReader {
         if (endOffset != -1L && endOffset <= loadedBlockIndexEndOffset) {
             return CompletableFuture.completedFuture(null);
         }
-
+        long currentBlocksEpoch = blocksEpoch;
         inflightLoadIndexCf = new CompletableFuture<>();
         long nextLoadingOffset = calWindowBlocksEndOffset();
         AtomicLong nextFindStartOffset = new AtomicLong(nextLoadingOffset);
@@ -368,24 +362,27 @@ public class StreamReader {
                 @SuppressWarnings("resource") ObjectReader objectReader = objectReaderFactory.apply(objectMetadata);
                 // invoke basicObjectInfo to warm up the objectReader
                 objectReader.basicObjectInfo();
-                prevCf = prevCf.thenCompose(
-                    nil ->
-                        objectReader
-                            .find(streamId, nextFindStartOffset.get(), -1L, Integer.MAX_VALUE)
-                            .thenAcceptAsync(
-                                findRst ->
-                                    findRst.streamDataBlocks().forEach(streamDataBlock -> {
-                                        DataBlockIndex index = streamDataBlock.dataBlockIndex();
-                                        Block block = new Block(objectMetadata, index);
-                                        if (!putBlock(block)) {
-                                            // After object compaction, the blocks get from different objectManager#getObjects maybe not continuous.
-                                            throw new BlockNotContinuousException();
-                                        }
-                                        nextFindStartOffset.set(streamDataBlock.getEndOffset());
-                                    }),
-                                eventLoop
-                            ).whenComplete((nil2, ex) -> objectReader.release())
-                );
+                prevCf = prevCf.thenCompose(nil -> {
+                    if (currentBlocksEpoch != blocksEpoch) {
+                        // The blocks are reset, we need to stop the load
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    return objectReader.find(streamId, nextFindStartOffset.get(), -1L, Integer.MAX_VALUE).thenAcceptAsync(findRst -> {
+                        if (currentBlocksEpoch != blocksEpoch) {
+                            // The blocks are reset, we need to stop the load
+                            return;
+                        }
+                        findRst.streamDataBlocks().forEach(streamDataBlock -> {
+                            DataBlockIndex index = streamDataBlock.dataBlockIndex();
+                            Block block = new Block(objectMetadata, index);
+                            if (!putBlock(block)) {
+                                // After object compaction, the blocks get from different objectManager#getObjects maybe not continuous.
+                                throw new BlockNotContinuousException();
+                            }
+                            nextFindStartOffset.set(streamDataBlock.getEndOffset());
+                        });
+                    }, eventLoop);
+                }).whenComplete((nil, ex) -> objectReader.release());
             }
             return prevCf;
         }, eventLoop);
@@ -427,6 +424,7 @@ public class StreamReader {
         blocksMap.clear();
         lastBlock = null;
         loadedBlockIndexEndOffset = 0L;
+        blocksEpoch++;
         BLOCKS_RESET_LOG_SUPPRESSOR.info("The stream reader's blocks are reset, cause of the object compaction");
     }
 
@@ -437,7 +435,13 @@ public class StreamReader {
      * @return if the block is continuous to the last block, it will return true
      */
     private boolean putBlock(Block block) {
-        if (lastBlock != null && lastBlock.index.endOffset() != block.index.startOffset()) {
+        if (lastBlock == null) {
+            // The first block should contain the nextReadOffset
+            if (!(block.index.startOffset() <= nextReadOffset && block.index.endOffset() > nextReadOffset)) {
+                LOGGER.error("[BUG] The first block should contain the nextReadOffset, block={} nextReadOffset={}", block.index, nextReadOffset);
+                return false;
+            }
+        } else if (lastBlock.index.endOffset() != block.index.startOffset()) {
             return false;
         }
         lastBlock = block;
@@ -448,10 +452,7 @@ public class StreamReader {
 
     @Override
     public String toString() {
-        return "StreamReader{" +
-            "reading=" + reading +
-            ", nextReadOffset=" + nextReadOffset +
-            '}';
+        return "StreamReader{" + "reading=" + reading + ", nextReadOffset=" + nextReadOffset + '}';
     }
 
     private static boolean isRecoverable(Throwable cause) {
