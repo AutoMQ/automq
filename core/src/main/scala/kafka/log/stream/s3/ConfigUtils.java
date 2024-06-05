@@ -32,6 +32,7 @@ public class ConfigUtils {
                 .streamSplitSize(s.s3StreamSplitSize())
                 .objectBlockSize(s.s3ObjectBlockSize())
                 .objectPartSize(s.s3ObjectPartSize())
+                .objectTagging(s.s3ObjectTagging())
                 .blockCacheSize(s.s3BlockCacheSize())
                 .streamObjectCompactionIntervalMinutes(s.s3StreamObjectCompactionTaskIntervalMinutes())
                 .streamObjectCompactionMaxSizeBytes(s.s3StreamObjectCompactionMaxSizeBytes())
