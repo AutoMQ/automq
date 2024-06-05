@@ -58,7 +58,7 @@ object S3TestCommand extends Logging {
       .region(s3Region)
       .credentialsProviders(util.List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3AccessKey, s3SecretKey))))
       .isForcePathStyle(forcePathStyle)
-      .tagging(if (tagging) util.Map.of("test-tag-key", "test-tag-value") else null)
+      .tagging(tagging)
       .needPrintToConsole(true)
       .build()
     pingS3Helper.pingS3()
