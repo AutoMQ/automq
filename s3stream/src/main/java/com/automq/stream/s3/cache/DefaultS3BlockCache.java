@@ -135,7 +135,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     this.inflightReadStatusMap.remove(key);
                 }), readCf, callBackExecutor);
             } catch (Exception e) {
-                LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail, {}", streamId, startOffset, endOffset, maxBytes, e);
+                LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail", streamId, startOffset, endOffset, maxBytes, e);
                 this.inflightReadThrottle.release(uuid);
                 this.inflightReadStatusMap.remove(key);
                 readCf.completeExceptionally(e);
