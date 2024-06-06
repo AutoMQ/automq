@@ -32,7 +32,7 @@ import org.apache.kafka.image.publisher.{SnapshotEmitter, SnapshotGenerator}
 import org.apache.kafka.metadata.MetadataRecordSerde
 import org.apache.kafka.raft.RaftConfig.AddressSpec
 import org.apache.kafka.server.common.ApiMessageAndVersion
-import org.apache.kafka.server.fault.{FaultHandler, LoggingFaultHandler, ProcessExitingFaultHandler}
+import org.apache.kafka.server.fault.{FaultHandler, LoggingFaultHandler, ProcessTerminatingFaultHandler}
 import org.apache.kafka.server.metrics.KafkaYammerMetrics
 
 import java.util
@@ -62,7 +62,9 @@ class StandardFaultHandlerFactory extends FaultHandlerFactory {
     action: Runnable
   ): FaultHandler = {
     if (fatal) {
-      new ProcessExitingFaultHandler(action)
+      new ProcessTerminatingFaultHandler.Builder()
+        .setAction(action)
+        .build()
     } else {
       new LoggingFaultHandler(name, action)
     }
@@ -156,6 +158,12 @@ class SharedServer(
     }
   }
 
+  def raftManagerFaultHandler: FaultHandler = faultHandlerFactory.build(
+    name = "raft manager",
+    fatal = true,
+    action = () => {}
+  )
+
   /**
    * The fault handler to use when metadata loading fails.
    */
@@ -163,8 +171,8 @@ class SharedServer(
     name = "metadata loading",
     fatal = sharedServerConfig.processRoles.contains(ControllerRole),
     action = () => SharedServer.this.synchronized {
-      if (brokerMetrics != null) brokerMetrics.metadataLoadErrorCount.getAndIncrement()
-      if (controllerMetrics != null) controllerMetrics.incrementMetadataErrorCount()
+      Option(brokerMetrics).foreach(_.metadataLoadErrorCount.getAndIncrement())
+      Option(controllerMetrics).foreach(_.incrementMetadataErrorCount())
       snapshotsDiabledReason.compareAndSet(null, "metadata loading fault")
     })
 
@@ -175,8 +183,8 @@ class SharedServer(
     name = "initial broker metadata loading",
     fatal = true,
     action = () => SharedServer.this.synchronized {
-      if (brokerMetrics != null) brokerMetrics.metadataApplyErrorCount.getAndIncrement()
-      if (controllerMetrics != null) controllerMetrics.incrementMetadataErrorCount()
+      Option(brokerMetrics).foreach(_.metadataApplyErrorCount.getAndIncrement())
+      Option(controllerMetrics).foreach(_.incrementMetadataErrorCount())
       snapshotsDiabledReason.compareAndSet(null, "initial broker metadata loading fault")
     })
 
@@ -187,7 +195,7 @@ class SharedServer(
     name = "quorum controller",
     fatal = true,
     action = () => SharedServer.this.synchronized {
-      if (controllerMetrics != null) controllerMetrics.incrementMetadataErrorCount()
+      Option(controllerMetrics).foreach(_.incrementMetadataErrorCount())
       snapshotsDiabledReason.compareAndSet(null, "quorum controller fault")
     })
 
@@ -198,8 +206,8 @@ class SharedServer(
     name = "metadata publishing",
     fatal = false,
     action = () => SharedServer.this.synchronized {
-      if (brokerMetrics != null) brokerMetrics.metadataApplyErrorCount.getAndIncrement()
-      if (controllerMetrics != null) controllerMetrics.incrementMetadataErrorCount()
+      Option(brokerMetrics).foreach(_.metadataApplyErrorCount.getAndIncrement())
+      Option(controllerMetrics).foreach(_.incrementMetadataErrorCount())
       // Note: snapshot generation does not need to be disabled for a publishing fault.
     })
 
@@ -223,7 +231,7 @@ class SharedServer(
           controllerMetrics = new QuorumControllerMetrics(KafkaYammerMetrics.defaultRegistry(), time)
         }
         telemetryManager = new TelemetryManager(sharedServerConfig, metaProps.clusterId)
-        raftManager = new KafkaRaftManager[ApiMessageAndVersion](
+        val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
           metaProps,
           sharedServerConfig,
           new MetadataRecordSerde,
@@ -232,8 +240,11 @@ class SharedServer(
           time,
           metrics,
           threadNamePrefix,
-          controllerQuorumVotersFuture)
-        raftManager.startup()
+          controllerQuorumVotersFuture,
+          raftManagerFaultHandler
+        )
+        raftManager = _raftManager
+        _raftManager.startup()
 
         if (sharedServerConfig.processRoles.contains(ControllerRole)) {
           val loaderBuilder = new MetadataLoader.Builder().
@@ -241,14 +252,14 @@ class SharedServer(
             setTime(time).
             setThreadNamePrefix(threadNamePrefix.getOrElse("")).
             setFaultHandler(metadataLoaderFaultHandler).
-            setHighWaterMarkAccessor(() => raftManager.client.highWatermark())
+            setHighWaterMarkAccessor(() => _raftManager.client.highWatermark())
           if (brokerMetrics != null) {
             loaderBuilder.setMetadataLoaderMetrics(brokerMetrics)
           }
           loader = loaderBuilder.build()
           snapshotEmitter = new SnapshotEmitter.Builder().
             setNodeId(metaProps.nodeId).
-            setRaftClient(raftManager.client).
+            setRaftClient(_raftManager.client).
             build()
           snapshotGenerator = new SnapshotGenerator.Builder(snapshotEmitter).
             setNodeId(metaProps.nodeId).
@@ -258,7 +269,7 @@ class SharedServer(
             setMaxTimeSinceLastSnapshotNs(TimeUnit.MILLISECONDS.toNanos(sharedServerConfig.metadataSnapshotMaxIntervalMs)).
             setDisabledReason(snapshotsDiabledReason).
             build()
-          raftManager.register(loader)
+          _raftManager.register(loader)
           try {
             loader.installPublishers(Collections.singletonList(snapshotGenerator))
           } catch {
@@ -282,10 +293,10 @@ class SharedServer(
   def ensureNotRaftLeader(): Unit = synchronized {
     // Ideally, this would just resign our leadership, if we had it. But we don't have an API in
     // RaftManager for that yet, so shut down the RaftManager.
-    if (raftManager != null) {
-      CoreUtils.swallow(raftManager.shutdown(), this)
+    Option(raftManager).foreach(_raftManager => {
+      CoreUtils.swallow(_raftManager.shutdown(), this)
       raftManager = null
-    }
+    })
   }
 
   private def stop(): Unit = synchronized {
