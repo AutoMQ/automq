@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.OutOfOrderSequenceException;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.storage.internals.log.AppendOrigin;
 import org.apache.kafka.storage.internals.log.CorruptSnapshotException;
@@ -36,6 +37,7 @@ import org.apache.kafka.storage.internals.log.VerificationStateEntry;
 
 public class ElasticProducerStateManager extends ProducerStateManager {
     private final PersistSnapshots persistSnapshots;
+    private final long createTimestamp;
 
     public ElasticProducerStateManager(
         TopicPartition topicPartition,
@@ -53,6 +55,7 @@ public class ElasticProducerStateManager extends ProducerStateManager {
         // ProducerStateManager will loadSnapshots in constructor, but at that moment, snapshotsMap is null.
         // So we need to call loadSnapshots again to load snapshots from snapshotsMap
         this.snapshots = loadSnapshots();
+        this.createTimestamp = time.milliseconds();
     }
 
     @Override
@@ -222,7 +225,7 @@ public class ElasticProducerStateManager extends ProducerStateManager {
         }
     }
 
-    static class ProducerAppendInfoExt extends ProducerAppendInfo {
+    class ProducerAppendInfoExt extends ProducerAppendInfo {
         public ProducerAppendInfoExt(TopicPartition topicPartition, long producerId, ProducerStateEntry currentEntry,
             AppendOrigin origin, VerificationStateEntry verificationStateEntry) {
             super(topicPartition, producerId, currentEntry, origin, verificationStateEntry);
@@ -230,6 +233,11 @@ public class ElasticProducerStateManager extends ProducerStateManager {
 
         @Override
         protected void checkSequence(short producerEpoch, int appendFirstSeq, long offset) {
+            if (currentEntry.isEmpty() && updatedEntry.isEmpty() && appendFirstSeq != 0 && time.milliseconds() - createTimestamp < 10000) {
+                throw new OutOfOrderSequenceException("Invalid sequence number for new created log, producer " + producerId() + " " +
+                    "at offset " + offset + " in partition " + topicPartition + ": " + producerEpoch + " (request epoch), " + appendFirstSeq + " (seq. number), " +
+                    updatedEntry.producerEpoch() + " (current producer epoch)");
+            }
             super.checkSequence(producerEpoch, appendFirstSeq, offset);
         }
     }

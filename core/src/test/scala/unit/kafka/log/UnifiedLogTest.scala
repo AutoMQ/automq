@@ -3829,7 +3829,8 @@ class UnifiedLogTest {
     val producerEpoch = 1.toShort
     var sequence = if (appendOrigin == AppendOrigin.CLIENT) 3 else 0
     val logConfig = LogTestUtils.createLogConfig(segmentBytes = 2048 * 5)
-    val log = createLog(logDir, logConfig, producerStateManagerConfig = producerStateManagerConfig)
+    val mockTime = new MockTime()
+    val log = createLog(logDir, logConfig, producerStateManagerConfig = producerStateManagerConfig, time = mockTime)
     assertFalse(log.hasOngoingTransaction(producerId))
     assertEquals(VerificationGuard.SENTINEL, log.verificationGuard(producerId))
     assertFalse(log.verificationGuard(producerId).verify(VerificationGuard.SENTINEL))
@@ -3859,6 +3860,7 @@ class UnifiedLogTest {
     val verificationGuard = log.maybeStartTransactionVerification(producerId, sequence, producerEpoch)
     assertNotEquals(VerificationGuard.SENTINEL, verificationGuard)
 
+    mockTime.sleep(10000)
     log.appendAsLeader(idempotentRecords, origin = appendOrigin, leaderEpoch = 0)
     assertFalse(log.hasOngoingTransaction(producerId))
 
@@ -3954,7 +3956,8 @@ class UnifiedLogTest {
     val producerEpoch = 1.toShort
     val sequence = 4
     val logConfig = LogTestUtils.createLogConfig(segmentBytes = 2048 * 5)
-    val log = createLog(logDir, logConfig, producerStateManagerConfig = producerStateManagerConfig)
+    val mockTime = new MockTime()
+    val log = createLog(logDir, logConfig, producerStateManagerConfig = producerStateManagerConfig, time = mockTime)
 
     producerStateManagerConfig.setTransactionVerificationEnabled(true)
 
@@ -3966,6 +3969,7 @@ class UnifiedLogTest {
       new SimpleRecord("1".getBytes),
       new SimpleRecord("2".getBytes)
     )
+    mockTime.sleep(10000)
     assertThrows(classOf[InvalidTxnStateException], () => log.appendAsLeader(transactionalRecords, leaderEpoch = 0))
     assertFalse(log.hasOngoingTransaction(producerId))
     assertEquals(VerificationGuard.SENTINEL, log.verificationGuard(producerId))
@@ -3986,7 +3990,8 @@ class UnifiedLogTest {
     val producerEpoch = 1.toShort
     val sequence = 3
     val logConfig = LogTestUtils.createLogConfig(segmentBytes = 2048 * 5)
-    val log = createLog(logDir, logConfig, producerStateManagerConfig = producerStateManagerConfig)
+    val mockTime = new MockTime()
+    val log = createLog(logDir, logConfig, producerStateManagerConfig = producerStateManagerConfig, time = mockTime)
     assertFalse(log.hasOngoingTransaction(producerId))
     assertEquals(VerificationGuard.SENTINEL, log.verificationGuard(producerId))
 
@@ -4000,6 +4005,7 @@ class UnifiedLogTest {
     )
 
     val verificationGuard = log.maybeStartTransactionVerification(producerId, sequence, producerEpoch)
+    mockTime.sleep(10000)
     // Append should not throw error.
     log.appendAsLeader(transactionalRecords, leaderEpoch = 0, verificationGuard = verificationGuard)
   }
