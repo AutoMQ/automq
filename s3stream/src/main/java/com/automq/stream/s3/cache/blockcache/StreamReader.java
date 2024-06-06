@@ -530,6 +530,17 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 data.markRead();
             }
         }
+
+        @Override
+        public String toString() {
+            return "Block{" +
+                "metadata=" + metadata +
+                ", index=" + index +
+                ", data=" + data +
+                ", exception=" + exception +
+                ", released=" + released +
+                '}';
+        }
     }
 
     class Readahead {
