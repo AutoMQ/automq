@@ -656,6 +656,9 @@ class ElasticProducerStateManagerTest {
 
         // entry added after recovery. The pid should be expired now, and would not exist in the pid mapping. Hence
         // we should accept the append and add the pid back in
+        assertThrows(classOf[OutOfOrderSequenceException], () => append(recoveredMapping, producerId, epoch, 2, 2L, 70001))
+
+        time.sleep(10000)
         append(recoveredMapping, producerId, epoch, 2, 2L, 70001)
 
         assertEquals(1, recoveredMapping.activeProducers.size)
@@ -819,7 +822,7 @@ class ElasticProducerStateManagerTest {
     @Test
     def testPidExpirationTimeout(): Unit = {
         val epoch = 5.toShort
-        val sequence = 37
+        val sequence = 0
         append(stateManager, producerId, epoch, sequence, 1L)
         time.sleep(producerStateManagerConfig.producerIdExpirationMs + 1)
         stateManager.removeExpiredProducers(time.milliseconds)

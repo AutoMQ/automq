@@ -605,6 +605,7 @@ class ReplicaManagerTest {
         }.head._2.asInstanceOf[Gauge[Int]].value
       }
 
+      time.sleep(10000)
       // Initially all metrics are 0.
       assertEquals(0, replicaManagerMetricValue())
 
@@ -676,13 +677,14 @@ class ReplicaManagerTest {
       val sequence = 9
       val records = MemoryRecords.withTransactionalRecords(CompressionType.NONE, producerId, epoch, sequence,
         new SimpleRecord(time.milliseconds(), s"message $sequence".getBytes))
+      time.sleep(10000)
       handleProduceAppend(replicaManager, new TopicPartition(topic, 0), records, transactionalId = transactionalId).onFire { response =>
         assertEquals(Errors.NONE, response.error)
       }
       assertLateTransactionCount(Some(0))
 
       // The transaction becomes late if not finished before the max transaction timeout passes
-      time.sleep(replicaManager.logManager.maxTransactionTimeoutMs + ProducerStateManager.LATE_TRANSACTION_BUFFER_MS)
+      time.sleep(replicaManager.logManager.maxTransactionTimeoutMs + ProducerStateManager.LATE_TRANSACTION_BUFFER_MS - 10000)
       assertLateTransactionCount(Some(0))
       time.sleep(1)
       assertLateTransactionCount(Some(1))
@@ -2229,6 +2231,7 @@ class ReplicaManagerTest {
       val transactionalRecords = MemoryRecords.withTransactionalRecords(CompressionType.NONE, producerId, producerEpoch, sequence,
         new SimpleRecord("message".getBytes))
 
+      time.sleep(10000)
       // We should add these partitions to the manager to verify.
       val result = handleProduceAppend(replicaManager, tp0, transactionalRecords, origin = appendOrigin, transactionalId = transactionalId)
       val appendCallback = ArgumentCaptor.forClass(classOf[AddPartitionsToTxnManager.AppendCallback])
@@ -2497,6 +2500,7 @@ class ReplicaManagerTest {
       val transactionalRecords = MemoryRecords.withTransactionalRecords(CompressionType.NONE, producerId, producerEpoch, sequence,
         new SimpleRecord("message".getBytes))
 
+      time.sleep(10000)
       // We should add these partitions to the manager to verify.
       val result = handleProduceAppend(replicaManager, tp0, transactionalRecords, transactionalId = transactionalId)
       val appendCallback = ArgumentCaptor.forClass(classOf[AddPartitionsToTxnManager.AppendCallback])
@@ -3270,7 +3274,7 @@ class ReplicaManagerTest {
       addPartitionsToTxnManager, directoryEventHandler)
   }
 
-  private def setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager: AddPartitionsToTxnManager,
+  protected def setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager: AddPartitionsToTxnManager,
                                                                      transactionalTopicPartitions: List[TopicPartition],
                                                                      config: KafkaConfig = config): ReplicaManager = {
     val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)))
