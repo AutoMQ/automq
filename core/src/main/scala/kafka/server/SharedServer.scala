@@ -32,7 +32,7 @@ import org.apache.kafka.image.publisher.{SnapshotEmitter, SnapshotGenerator}
 import org.apache.kafka.metadata.MetadataRecordSerde
 import org.apache.kafka.raft.RaftConfig.AddressSpec
 import org.apache.kafka.server.common.ApiMessageAndVersion
-import org.apache.kafka.server.fault.{FaultHandler, LoggingFaultHandler, ProcessTerminatingFaultHandler}
+import org.apache.kafka.server.fault.{FaultHandler, LoggingFaultHandler, ProcessExitingFaultHandler}
 import org.apache.kafka.server.metrics.KafkaYammerMetrics
 
 import java.util
@@ -62,9 +62,7 @@ class StandardFaultHandlerFactory extends FaultHandlerFactory {
     action: Runnable
   ): FaultHandler = {
     if (fatal) {
-      new ProcessTerminatingFaultHandler.Builder()
-        .setAction(action)
-        .build()
+      new ProcessExitingFaultHandler(action)
     } else {
       new LoggingFaultHandler(name, action)
     }
