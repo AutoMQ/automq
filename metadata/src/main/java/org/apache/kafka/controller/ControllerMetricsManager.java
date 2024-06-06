@@ -221,10 +221,10 @@ final class ControllerMetricsManager {
             throw new IllegalArgumentException(String.format("Broker with id %s is not registered", brokerId));
         }
 
-        if (fencingChange == BrokerRegistrationFencingChange.FENCE) {
+        if (fencingChange.equals(BrokerRegistrationFencingChange.FENCE)) {
             fencedBrokers.add(brokerId);
             updateBrokerStateMetrics();
-        } else if (fencingChange == BrokerRegistrationFencingChange.UNFENCE) {
+        } else if (fencingChange.equals(BrokerRegistrationFencingChange.UNFENCE)) {
             fencedBrokers.remove(brokerId);
             updateBrokerStateMetrics();
         } else {

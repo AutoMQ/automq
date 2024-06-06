@@ -274,13 +274,16 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
         log.debug("InitializeNewPublishers: setting up snapshot image for new publisher(s): {}",
                 uninitializedPublisherNames());
         long startNs = time.nanoseconds();
+        // We base this delta off of the empty image, reflecting the fact that these publishers
+        // haven't seen anything previously.
         MetadataDelta delta = new MetadataDelta.Builder().
-                setImage(image).
+                setImage(MetadataImage.EMPTY).
                 build();
         ImageReWriter writer = new ImageReWriter(delta);
         image.write(writer, new ImageWriterOptions.Builder().
                 setMetadataVersion(image.features().metadataVersion()).
                 build());
+        // ImageReWriter#close invokes finishSnapshot, so we don't need to invoke it here.
         SnapshotManifest manifest = new SnapshotManifest(
                 image.provenance(),
                 time.nanoseconds() - startNs);
@@ -312,9 +315,11 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
                         setImage(image).
                         build();
                 LogDeltaManifest manifest = loadLogDelta(delta, reader);
-                log.info("handleSnapshot: generated a metadata delta from a snapshot at offset {} " +
-                        "in {} us.", manifest.provenance().lastContainedOffset(),
-                        NANOSECONDS.toMicros(manifest.elapsedNs()));
+                if (log.isDebugEnabled()) {
+                    log.debug("handleCommit: Generated a metadata delta between {} and {} from {} batch(es) " +
+                                    "in {} us.", image.offset(), manifest.provenance().lastContainedOffset(),
+                            manifest.numBatches(), NANOSECONDS.toMicros(manifest.elapsedNs()));
+                }
                 try {
                     image = delta.apply(manifest.provenance());
                 } catch (Throwable e) {
@@ -477,6 +482,7 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
                 snapshotIndex++;
             }
         }
+        delta.finishSnapshot();
         MetadataProvenance provenance = new MetadataProvenance(reader.lastContainedLogOffset(),
                 reader.lastContainedLogEpoch(), reader.lastContainedLogTimestamp());
         return new SnapshotManifest(provenance,

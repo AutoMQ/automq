@@ -298,7 +298,7 @@ public abstract class AbstractHerder implements Herder, TaskStatus.Listener, Con
 
         Map<ConnectorTaskId, Map<String, String>> configs = new HashMap<>();
         for (ConnectorTaskId cti : configState.tasks(connector)) {
-            configs.put(cti, configState.taskConfig(cti));
+            configs.put(cti, configState.rawTaskConfig(cti));
         }
 
         return configs;
@@ -309,7 +309,7 @@ public abstract class AbstractHerder implements Herder, TaskStatus.Listener, Con
         ConnectorStatus connector = statusBackingStore.get(connName);
         if (connector == null)
             throw new NotFoundException("No status found for connector " + connName);
-        
+
         Collection<TaskStatus> tasks = statusBackingStore.getAll(connName);
 
         ConnectorStateInfo.ConnectorState connectorState = new ConnectorStateInfo.ConnectorState(
@@ -795,39 +795,61 @@ public abstract class AbstractHerder implements Herder, TaskStatus.Listener, Con
 
     @Override
     public List<ConfigKeyInfo> connectorPluginConfig(String pluginName) {
-        List<ConfigKeyInfo> results = new ArrayList<>();
-        ConfigDef configDefs;
+        Plugins p = plugins();
+        Class<?> pluginClass;
         try {
-            Plugins p = plugins();
+            pluginClass = p.pluginClass(pluginName);
+        } catch (ClassNotFoundException cnfe) {
+            throw new NotFoundException("Unknown plugin " + pluginName + ".");
+        }
+
+        try (LoaderSwap loaderSwap = p.withClassLoader(pluginClass.getClassLoader())) {
             Object plugin = p.newPlugin(pluginName);
             PluginType pluginType = PluginType.from(plugin.getClass());
+            // Contains definitions coming from Connect framework
+            ConfigDef baseConfigDefs = null;
+            // Contains definitions specifically declared on the plugin
+            ConfigDef pluginConfigDefs;
             switch (pluginType) {
                 case SINK:
+                    baseConfigDefs = SinkConnectorConfig.configDef();
+                    pluginConfigDefs = ((SinkConnector) plugin).config();
+                    break;
                 case SOURCE:
-                    configDefs = ((Connector) plugin).config();
+                    baseConfigDefs = SourceConnectorConfig.configDef();
+                    pluginConfigDefs = ((SourceConnector) plugin).config();
                     break;
                 case CONVERTER:
-                    configDefs = ((Converter) plugin).config();
+                    pluginConfigDefs = ((Converter) plugin).config();
                     break;
                 case HEADER_CONVERTER:
-                    configDefs = ((HeaderConverter) plugin).config();
+                    pluginConfigDefs = ((HeaderConverter) plugin).config();
                     break;
                 case TRANSFORMATION:
-                    configDefs = ((Transformation<?>) plugin).config();
+                    pluginConfigDefs = ((Transformation<?>) plugin).config();
                     break;
                 case PREDICATE:
-                    configDefs = ((Predicate<?>) plugin).config();
+                    pluginConfigDefs = ((Predicate<?>) plugin).config();
                     break;
                 default:
                     throw new BadRequestException("Invalid plugin type " + pluginType + ". Valid types are sink, source, converter, header_converter, transformation, predicate.");
             }
-        } catch (ClassNotFoundException cnfe) {
-            throw new NotFoundException("Unknown plugin " + pluginName + ".");
+
+            // Track config properties by name and, if the same property is defined in multiple places,
+            // give precedence to the one defined by the plugin class
+            // Preserve the ordering of properties as they're returned from each ConfigDef
+            Map<String, ConfigKey> configsMap = new LinkedHashMap<>(pluginConfigDefs.configKeys());
+            if (baseConfigDefs != null)
+                baseConfigDefs.configKeys().forEach(configsMap::putIfAbsent);
+
+            List<ConfigKeyInfo> results = new ArrayList<>();
+            for (ConfigKey configKey : configsMap.values()) {
+                results.add(AbstractHerder.convertConfigKey(configKey));
+            }
+            return results;
+        } catch (ClassNotFoundException e) {
+            throw new ConnectException("Failed to load plugin class or one of its dependencies", e);
         }
-        for (ConfigDef.ConfigKey configKey : configDefs.configKeys().values()) {
-            results.add(AbstractHerder.convertConfigKey(configKey));
-        }
-        return results;
     }
 
 }

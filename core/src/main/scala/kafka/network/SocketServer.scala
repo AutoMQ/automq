@@ -322,6 +322,7 @@ class SocketServer(val config: KafkaConfig,
       dataPlaneAcceptors.asScala.remove(endpoint).foreach { acceptor =>
         acceptor.beginShutdown()
         acceptor.close()
+        config.removeReconfigurable(acceptor)
       }
     }
   }
@@ -1156,10 +1157,11 @@ private[kafka] class Processor(
         if (response == null) {
           throw new IllegalStateException(s"Send for ${send.destinationId} completed, but not in `inflightResponses`")
         }
-        updateRequestMetrics(response)
-
-        // Invoke send completion callback
+        
+        // Invoke send completion callback, and then update request metrics since there might be some
+        // request metrics got updated during callback
         response.onComplete.foreach(onComplete => onComplete(send))
+        updateRequestMetrics(response)
 
         // AutoMQ for Kafka inject start
         // AutoMQ will pipeline the requests to accelerate the performance and also keep the request order.
