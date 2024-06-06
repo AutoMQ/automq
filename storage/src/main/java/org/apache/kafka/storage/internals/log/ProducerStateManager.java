@@ -110,7 +110,7 @@ public class ProducerStateManager {
     protected final TopicPartition topicPartition;
     private final int maxTransactionTimeoutMs;
     private final ProducerStateManagerConfig producerStateManagerConfig;
-    private final Time time;
+    protected final Time time;
 
     protected final Map<Long, ProducerStateEntry> producers = new HashMap<>();
 
