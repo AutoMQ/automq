@@ -390,10 +390,6 @@ public final class KafkaEventQueue implements EventQueue {
         this.eventHandlerThread.start();
     }
 
-    public Time time() {
-        return time;
-    }
-
     @Override
     public void enqueue(EventInsertionType insertionType,
                         String tag,
