@@ -156,6 +156,12 @@ class SharedServer(
     }
   }
 
+  def raftManagerFaultHandler: FaultHandler = faultHandlerFactory.build(
+    name = "raft manager",
+    fatal = true,
+    action = () => {}
+  )
+
   /**
    * The fault handler to use when metadata loading fails.
    */
@@ -232,7 +238,9 @@ class SharedServer(
           time,
           metrics,
           threadNamePrefix,
-          controllerQuorumVotersFuture)
+          controllerQuorumVotersFuture,
+          raftManagerFaultHandler
+        )
         raftManager.startup()
 
         if (sharedServerConfig.processRoles.contains(ControllerRole)) {
