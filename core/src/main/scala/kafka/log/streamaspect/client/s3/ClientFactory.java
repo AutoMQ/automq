@@ -12,13 +12,23 @@
 package kafka.log.streamaspect.client.s3;
 
 import com.automq.stream.api.Client;
+import com.automq.stream.s3.Config;
+import kafka.log.stream.s3.ConfigUtils;
 import kafka.log.stream.s3.DefaultS3Client;
 import kafka.log.streamaspect.AlwaysSuccessClient;
+import kafka.log.streamaspect.client.ClientFactoryProxy;
 import kafka.log.streamaspect.client.Context;
 
 public class ClientFactory {
+
+    /**
+     * This method will be called by {@link ClientFactoryProxy}
+     */
     public static Client get(Context context) {
-        DefaultS3Client client = new DefaultS3Client(context.brokerServer, context.config);
+        Config config = ConfigUtils.to(context.config);
+        config.nodeEpoch(System.currentTimeMillis());
+
+        DefaultS3Client client = new DefaultS3Client(context.brokerServer, config);
         return new AlwaysSuccessClient(client);
     }
 }

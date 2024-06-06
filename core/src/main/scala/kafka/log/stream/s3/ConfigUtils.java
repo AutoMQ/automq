@@ -19,7 +19,6 @@ public class ConfigUtils {
     public static Config to(KafkaConfig s) {
         return new Config()
                 .nodeId(s.nodeId())
-                .nodeEpoch(s.nodeEpoch())
                 .endpoint(s.s3Endpoint())
                 .region(s.s3Region())
                 .bucket(s.s3Bucket())
