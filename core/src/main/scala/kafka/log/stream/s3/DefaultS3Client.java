@@ -81,16 +81,16 @@ public class DefaultS3Client implements Client {
     private final BrokerServer brokerServer;
 
     public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig) {
-        this(brokerServer, kafkaConfig, ConfigUtils.to(kafkaConfig));
+        this(brokerServer, ConfigUtils.to(kafkaConfig));
     }
 
-    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig, Config config) {
+    public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;
         this.config = config;
-        this.metadataManager = new StreamMetadataManager(brokerServer, kafkaConfig);
-        String endpoint = kafkaConfig.s3Endpoint();
-        String region = kafkaConfig.s3Region();
-        String bucket = kafkaConfig.s3Bucket();
+        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId());
+        String endpoint = config.endpoint();
+        String region = config.region();
+        String bucket = config.bucket();
         long refillToken = (long) (config.networkBaselineBandwidth() * ((double) config.refillPeriodMs() / 1000));
         if (refillToken <= 0) {
             throw new IllegalArgumentException(String.format("refillToken must be greater than 0, bandwidth: %d, refill period: %dms",
@@ -117,11 +117,11 @@ public class DefaultS3Client implements Client {
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).forcePathStyle(forcePathStyle).build();
         S3Operator compactionS3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).forcePathStyle(forcePathStyle).build();
-        ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(kafkaConfig.s3ControllerRequestRetryMaxCount(),
-                kafkaConfig.s3ControllerRequestRetryBaseDelayMs());
+        ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
+                config.controllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
-        this.streamManager = newStreamManager(kafkaConfig.nodeId(), kafkaConfig.nodeEpoch(), false);
-        this.objectManager = newObjectManager(kafkaConfig.nodeId(), kafkaConfig.nodeEpoch(), false);
+        this.streamManager = newStreamManager(config.nodeId(), config.nodeEpoch(), false);
+        this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, s3Operator);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionS3Operator);
         this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();

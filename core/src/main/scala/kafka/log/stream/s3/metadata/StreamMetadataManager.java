@@ -47,7 +47,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
     // TODO: optimize by more suitable concurrent protection
     private final static Logger LOGGER = LoggerFactory.getLogger(StreamMetadataManager.class);
-    private final KafkaConfig config;
+    private final int nodeId;
     private final BrokerServer broker;
     private final List<GetObjectsTask> pendingGetObjectsTasks;
     private final ExecutorService pendingExecutorService;
@@ -56,8 +56,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     private S3StreamsMetadataImage streamsImage;
     private S3ObjectsImage objectsImage;
 
-    public StreamMetadataManager(BrokerServer broker, KafkaConfig config) {
-        this.config = config;
+    public StreamMetadataManager(BrokerServer broker, int nodeId) {
+        this.nodeId = nodeId;
         this.broker = broker;
         MetadataImage currentImage = this.broker.metadataCache().currentImage();
         this.streamsImage = currentImage.streamsMetadata();
@@ -92,7 +92,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
     public CompletableFuture<List<S3ObjectMetadata>> getStreamSetObjects() {
         synchronized (this) {
-            List<S3ObjectMetadata> s3ObjectMetadataList = this.streamsImage.getStreamSetObjects(config.brokerId()).stream()
+            List<S3ObjectMetadata> s3ObjectMetadataList = this.streamsImage.getStreamSetObjects(nodeId).stream()
                     .map(object -> {
                         S3Object s3Object = this.objectsImage.getObjectMetadata(object.objectId());
                         return new S3ObjectMetadata(object.objectId(), object.objectType(),
