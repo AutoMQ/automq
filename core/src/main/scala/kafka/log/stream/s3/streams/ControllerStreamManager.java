@@ -94,6 +94,11 @@ public class ControllerStreamManager implements StreamManager {
             public Builder toRequestBuilder() {
                 return new GetOpeningStreamsRequest.Builder(request);
             }
+
+            @Override
+            public String toString() {
+                return request.toString();
+            }
         };
 
         CompletableFuture<List<StreamMetadata>> future = new CompletableFuture<>();
