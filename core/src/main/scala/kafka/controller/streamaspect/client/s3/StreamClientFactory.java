@@ -12,11 +12,16 @@
 package kafka.controller.streamaspect.client.s3;
 
 import com.automq.stream.s3.Config;
+import kafka.controller.streamaspect.client.StreamClientFactoryProxy;
 import kafka.log.stream.s3.ConfigUtils;
 import kafka.controller.streamaspect.client.Context;
 import org.apache.kafka.controller.stream.StreamClient;
 
 public class StreamClientFactory {
+
+    /**
+     * This method will be called by {@link StreamClientFactoryProxy}
+     */
     public static StreamClient get(Context context) {
         Config streamConfig = ConfigUtils.to(context.kafkaConfig);
         return new StreamClient(streamConfig);

@@ -2154,7 +2154,6 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ControllerRequestRetryMaxCount = getInt(KafkaConfig.S3ControllerRequestRetryMaxCountProp)
   val s3ControllerRequestRetryBaseDelayMs = getLong(KafkaConfig.S3ControllerRequestRetryBaseDelayMsProp)
   // TODO: ensure incremental epoch => Store epoch in disk, if timestamp flip back, we could use disk epoch to keep the incremental epoch.
-  val nodeEpoch = System.currentTimeMillis()
   val s3StreamSetObjectCompactionInterval = getInt(KafkaConfig.S3StreamSetObjectCompactionIntervalProp)
   val s3StreamSetObjectCompactionCacheSize = getLong(KafkaConfig.S3StreamSetObjectCompactionCacheSizeProp)
   val s3StreamSetObjectCompactionStreamSplitSize = getLong(KafkaConfig.S3StreamSetObjectCompactionStreamSplitSizeProp)
