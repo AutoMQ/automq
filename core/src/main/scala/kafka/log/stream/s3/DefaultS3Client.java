@@ -46,7 +46,6 @@ import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
 import kafka.server.BrokerServer;
-import kafka.server.KafkaConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -79,10 +78,6 @@ public class DefaultS3Client implements Client {
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
     private final BrokerServer brokerServer;
-
-    public DefaultS3Client(BrokerServer brokerServer, KafkaConfig kafkaConfig) {
-        this(brokerServer, ConfigUtils.to(kafkaConfig));
-    }
 
     public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;

@@ -17,7 +17,6 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import kafka.server.BrokerServer;
-import kafka.server.KafkaConfig;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.S3ObjectsImage;
