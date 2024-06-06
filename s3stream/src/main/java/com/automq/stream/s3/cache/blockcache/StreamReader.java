@@ -264,8 +264,14 @@ import static com.automq.stream.utils.FutureUtil.exec;
     private void getBlocks0(GetBlocksContext ctx, long startOffset, long endOffset, int maxBytes) {
         Long floorKey = blocksMap.floorKey(startOffset);
         if (floorKey == null && !blocksMap.isEmpty()) {
-            LOGGER.error("[BUG] {} cannot find floor block for startOffset={}, the first block={}", this, startOffset, blocksMap.firstEntry());
-            throw new AutoMQException("[BUG] cannot find floor block");
+            if (ctx.readahead) {
+                // The user read may be faster than the readahead, and clear the read completed blocks.
+                ctx.cf.complete(ctx.blocks);
+                return;
+            } else {
+                LOGGER.error("[BUG] {} cannot find floor block for startOffset={}, the first block={}", this, startOffset, blocksMap.firstEntry());
+                throw new AutoMQException("[BUG] cannot find floor block");
+            }
         }
         CompletableFuture<Boolean> loadMoreBlocksCf;
         int remainingSize = maxBytes;
