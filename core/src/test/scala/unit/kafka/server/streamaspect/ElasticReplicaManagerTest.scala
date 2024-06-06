@@ -101,6 +101,31 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
       MoreExecutors.newDirectExecutorService(), MoreExecutors.newDirectExecutorService())
   }
 
+  override protected def setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager: AddPartitionsToTxnManager,
+      transactionalTopicPartitions: List[TopicPartition],
+      config: KafkaConfig = config): ReplicaManager = {
+    val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)), time = time)
+    val metadataCache = mock(classOf[MetadataCache])
+
+    val replicaManager = setUpReplicaManager(
+      metrics = metrics,
+      config = config,
+      time = time,
+      scheduler = new MockScheduler(time),
+      logManager = mockLogMgr,
+      quotaManagers = quotaManager,
+      metadataCache = metadataCache,
+      logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size),
+      alterPartitionManager = alterPartitionManager,
+      addPartitionsToTxnManager = Some(addPartitionsToTxnManager))
+
+    transactionalTopicPartitions.foreach(tp => when(metadataCache.contains(tp)).thenReturn(true))
+
+    // We will attempt to schedule to the request handler thread using a non request handler thread. Set this to avoid error.
+    KafkaRequestHandler.setBypassThreadCheck(true)
+    replicaManager
+  }
+
   override protected def setupReplicaManagerWithMockedPurgatories(
     timer: MockTimer, brokerId: Int,
     aliveBrokerIds: collection.Seq[Int], propsModifier: Properties => Unit,
@@ -140,7 +165,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
           new File(new File(dir), MetaPropertiesEnsemble.META_PROPERTIES_NAME).getAbsolutePath, false)
       })
     }
-    val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)), new LogConfig(logProps), log = if (shouldMockLog) Some(mockLog) else None, remoteStorageSystemEnable = enableRemoteStorage)
+    val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)), new LogConfig(logProps), log = if (shouldMockLog) Some(mockLog) else None, remoteStorageSystemEnable = enableRemoteStorage, time = time)
     val logConfig = new LogConfig(logProps)
     when(mockLog.config).thenReturn(logConfig)
     when(mockLog.remoteLogEnabled()).thenReturn(enableRemoteStorage)
