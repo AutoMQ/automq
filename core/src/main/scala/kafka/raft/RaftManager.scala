@@ -47,26 +47,18 @@ import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.raft.RaftConfig.{AddressSpec, InetAddressSpec, NON_ROUTABLE_ADDRESS, UnknownAddressSpec}
 import org.apache.kafka.raft.{FileBasedStateStore, KafkaRaftClient, LeaderAndEpoch, RaftClient, RaftConfig, RaftRequest, ReplicatedLog}
 import org.apache.kafka.server.common.serialization.RecordSerde
-import org.apache.kafka.server.fault.FaultHandler
-
 import scala.jdk.CollectionConverters._
 
 object KafkaRaftManager {
   class RaftIoThread(
     client: KafkaRaftClient[_],
-    threadNamePrefix: String,
-    fatalFaultHandler: FaultHandler
+    threadNamePrefix: String
   ) extends ShutdownableThread(
     name = threadNamePrefix + "-io-thread",
     isInterruptible = false
   ) {
     override def doWork(): Unit = {
-      try {
-        client.poll()
-      } catch {
-        case t: Throwable =>
-          throw fatalFaultHandler.handleFault("Unexpected error in raft IO thread", t)
-      }
+      client.poll()
     }
 
     override def initiateShutdown(): Boolean = {
@@ -137,8 +129,7 @@ class KafkaRaftManager[T](
   time: Time,
   metrics: Metrics,
   threadNamePrefixOpt: Option[String],
-  val controllerQuorumVotersFuture: CompletableFuture[util.Map[Integer, AddressSpec]],
-  fatalFaultHandler: FaultHandler
+  val controllerQuorumVotersFuture: CompletableFuture[util.Map[Integer, AddressSpec]]
 ) extends RaftManager[T] with Logging {
 
   val apiVersions = new ApiVersions()
@@ -173,7 +164,7 @@ class KafkaRaftManager[T](
   private val expirationTimer = new SystemTimer("raft-expiration-executor")
   private val expirationService = new TimingWheelExpirationService(expirationTimer)
   override val client: KafkaRaftClient[T] = buildRaftClient()
-  private val raftIoThread = new RaftIoThread(client, threadNamePrefix, fatalFaultHandler)
+  private val raftIoThread = new RaftIoThread(client, threadNamePrefix)
 
   def startup(): Unit = {
     // Update the voter endpoints (if valid) with what's in RaftConfig

@@ -41,7 +41,6 @@ import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import org.apache.kafka.server.fault.{FaultHandler, MockFaultHandler}
 import org.mockito.Mockito._
 
 class RaftManagerTest {
@@ -97,8 +96,7 @@ class RaftManagerTest {
       Time.SYSTEM,
       new Metrics(Time.SYSTEM),
       Option.empty,
-      CompletableFuture.completedFuture(RaftConfig.parseVoterConnections(config.quorumVoters)),
-      mock(classOf[FaultHandler])
+      CompletableFuture.completedFuture(RaftConfig.parseVoterConnections(config.quorumVoters))
     )
   }
 
@@ -200,8 +198,7 @@ class RaftManagerTest {
   @Test
   def testShutdownIoThread(): Unit = {
     val raftClient = mock(classOf[KafkaRaftClient[String]])
-    val faultHandler = new MockFaultHandler("RaftManagerTestFaultHandler")
-    val ioThread = new RaftIoThread(raftClient, threadNamePrefix = "test-raft", faultHandler)
+    val ioThread = new RaftIoThread(raftClient, threadNamePrefix = "test-raft")
 
     when(raftClient.isRunning).thenReturn(true)
     assertTrue(ioThread.isRunning)
@@ -219,27 +216,21 @@ class RaftManagerTest {
     ioThread.run()
     assertFalse(ioThread.isRunning)
     assertTrue(ioThread.isShutdownComplete)
-    assertNull(faultHandler.firstException)
   }
 
   @Test
   def testUncaughtExceptionInIoThread(): Unit = {
     val raftClient = mock(classOf[KafkaRaftClient[String]])
-    val faultHandler = new MockFaultHandler("RaftManagerTestFaultHandler")
-    val ioThread = new RaftIoThread(raftClient, threadNamePrefix = "test-raft", faultHandler)
+    val ioThread = new RaftIoThread(raftClient, threadNamePrefix = "test-raft")
 
     when(raftClient.isRunning).thenReturn(true)
     assertTrue(ioThread.isRunning)
 
-    val exception = new RuntimeException()
-    when(raftClient.poll()).thenThrow(exception)
+    when(raftClient.poll()).thenThrow(new RuntimeException)
     ioThread.run()
 
     assertTrue(ioThread.isShutdownComplete)
     assertTrue(ioThread.isThreadFailed)
     assertFalse(ioThread.isRunning)
-
-    val caughtException = faultHandler.firstException.getCause
-    assertEquals(exception, caughtException)
   }
 }
