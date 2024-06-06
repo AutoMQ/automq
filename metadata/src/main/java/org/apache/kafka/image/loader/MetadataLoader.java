@@ -174,9 +174,10 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
     private final LinkedHashMap<String, MetadataPublisher> publishers;
 
     /**
-     * True if we have caught up with the initial high water mark.
+     * True if we have not caught up with the initial high watermark.
+     * We do not send out any metadata updates until this is true.
      */
-    private boolean catchingUp = false;
+    private boolean catchingUp = true;
 
     /**
      * The current leader and epoch.
@@ -230,7 +231,7 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
         }
         log.info("The loader finished catch up to the current high water mark of " +
                 highWaterMark.getAsLong());
-        catchingUp = true;
+        catchingUp = false;
         return false;
     }
 
