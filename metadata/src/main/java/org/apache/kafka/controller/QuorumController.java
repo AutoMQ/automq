@@ -130,6 +130,7 @@ import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
 import org.apache.kafka.common.requests.ApiError;
@@ -2568,7 +2569,10 @@ public final class QuorumController implements Controller {
         long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<CreateStreamsResponseData.CreateStreamResponse>> batchCf = request.createStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("createStream", context.deadlineNs(), () -> streamControlManager.createStream(nodeId, nodeEpoch, req)))
+            .map(req ->
+                appendWriteEvent("createStream", context.deadlineNs(), () -> streamControlManager.createStream(nodeId, nodeEpoch, req))
+                    .exceptionally(ex -> new CreateStreamsResponseData.CreateStreamResponse().setErrorCode(Errors.forException(ex).code()))
+            )
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new CreateStreamsResponseData().setCreateStreamResponses(
@@ -2582,7 +2586,10 @@ public final class QuorumController implements Controller {
         long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<OpenStreamsResponseData.OpenStreamResponse>> batchCf = request.openStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("openStream", context.deadlineNs(), () -> streamControlManager.openStream(nodeId, nodeEpoch, req)))
+            .map(req ->
+                appendWriteEvent("openStream", context.deadlineNs(), () -> streamControlManager.openStream(nodeId, nodeEpoch, req))
+                    .exceptionally(ex -> new OpenStreamsResponseData.OpenStreamResponse().setErrorCode(Errors.forException(ex).code()))
+            )
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new OpenStreamsResponseData().setOpenStreamResponses(
@@ -2596,7 +2603,10 @@ public final class QuorumController implements Controller {
         long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<CloseStreamsResponseData.CloseStreamResponse>> batchCf = request.closeStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("closeStream", context.deadlineNs(), () -> streamControlManager.closeStream(nodeId, nodeEpoch, req)))
+            .map(req ->
+                appendWriteEvent("closeStream", context.deadlineNs(), () -> streamControlManager.closeStream(nodeId, nodeEpoch, req))
+                    .exceptionally(ex -> new CloseStreamsResponseData.CloseStreamResponse().setErrorCode(Errors.forException(ex).code()))
+            )
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new CloseStreamsResponseData().setCloseStreamResponses(
@@ -2610,7 +2620,10 @@ public final class QuorumController implements Controller {
         long nodeEpoch = request.nodeEpoch();
         List<CompletableFuture<TrimStreamsResponseData.TrimStreamResponse>> batchCf = request.trimStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("trimStream", context.deadlineNs(), () -> streamControlManager.trimStream(nodeId, nodeEpoch, req)))
+            .map(req ->
+                appendWriteEvent("trimStream", context.deadlineNs(), () -> streamControlManager.trimStream(nodeId, nodeEpoch, req))
+                    .exceptionally(ex -> new TrimStreamsResponseData.TrimStreamResponse().setErrorCode(Errors.forException(ex).code()))
+            )
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new TrimStreamsResponseData().setTrimStreamResponses(
@@ -2622,7 +2635,10 @@ public final class QuorumController implements Controller {
     public CompletableFuture<DeleteStreamsResponseData> deleteStreams(ControllerRequestContext context, DeleteStreamsRequestData request) {
         List<CompletableFuture<DeleteStreamsResponseData.DeleteStreamResponse>> batchCf = request.deleteStreamRequests()
             .stream()
-            .map(req -> appendWriteEvent("deleteStream", context.deadlineNs(), () -> streamControlManager.deleteStream(req)))
+            .map(req ->
+                appendWriteEvent("deleteStream", context.deadlineNs(), () -> streamControlManager.deleteStream(req))
+                    .exceptionally(ex -> new DeleteStreamsResponseData.DeleteStreamResponse().setErrorCode(Errors.forException(ex).code()))
+            )
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new DeleteStreamsResponseData().setDeleteStreamResponses(
@@ -2666,7 +2682,10 @@ public final class QuorumController implements Controller {
     public CompletableFuture<GetKVsResponseData> getKVs(ControllerRequestContext context, GetKVsRequestData request) {
         List<CompletableFuture<GetKVsResponseData.GetKVResponse>> batchCf = request.getKeyRequests()
             .stream()
-            .map(req -> appendReadEvent("getKV", context.deadlineNs(), () -> kvControlManager.getKV(req)))
+            .map(req ->
+                appendReadEvent("getKV", context.deadlineNs(), () -> kvControlManager.getKV(req))
+                    .exceptionally(ex -> new GetKVsResponseData.GetKVResponse().setErrorCode(Errors.forException(ex).code()))
+            )
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new GetKVsResponseData().setGetKVResponses(
@@ -2678,7 +2697,10 @@ public final class QuorumController implements Controller {
     public CompletableFuture<PutKVsResponseData> putKVs(ControllerRequestContext context, PutKVsRequestData request) {
         List<CompletableFuture<PutKVsResponseData.PutKVResponse>> batchCf = request.putKVRequests()
             .stream()
-            .map(req -> appendWriteEvent("putKV", context.deadlineNs(), () -> kvControlManager.putKV(req)))
+            .map(req ->
+                appendWriteEvent("putKV", context.deadlineNs(), () -> kvControlManager.putKV(req))
+                    .exceptionally(ex -> new PutKVsResponseData.PutKVResponse().setErrorCode(Errors.forException(ex).code()))
+            )
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new PutKVsResponseData().setPutKVResponses(
@@ -2690,7 +2712,10 @@ public final class QuorumController implements Controller {
     public CompletableFuture<DeleteKVsResponseData> deleteKVs(ControllerRequestContext context, DeleteKVsRequestData request) {
         List<CompletableFuture<DeleteKVsResponseData.DeleteKVResponse>> batchCf = request.deleteKVRequests()
             .stream()
-            .map(req -> appendWriteEvent("deleteKV", context.deadlineNs(), () -> kvControlManager.deleteKV(req)))
+            .map(req ->
+                appendWriteEvent("deleteKV", context.deadlineNs(), () -> kvControlManager.deleteKV(req))
+                    .exceptionally(ex -> new DeleteKVsResponseData.DeleteKVResponse().setErrorCode(Errors.forException(ex).code()))
+            )
             .collect(Collectors.toList());
         return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
             new DeleteKVsResponseData().setDeleteKVResponses(
