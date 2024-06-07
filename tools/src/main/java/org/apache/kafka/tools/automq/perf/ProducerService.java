@@ -17,11 +17,14 @@ import java.util.Base64;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Properties;
 import java.util.Random;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -45,12 +48,23 @@ public class ProducerService implements AutoCloseable {
 
     public static final Charset HEADER_KEY_CHARSET = StandardCharsets.UTF_8;
     public static final String HEADER_KEY_SEND_TIME_NANOS = "send_time_nanos";
+    public static final double MIN_RATE = 1.0;
+    private static final int ADJUST_RATE_INTERVAL_SECONDS = 5;
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
 
     private final List<Producer> producers = new LinkedList<>();
+    private final ScheduledExecutorService adjustRateExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("perf-producer-rate-adjust", true));
     private final ExecutorService executor = Executors.newCachedThreadPool(ThreadUtils.createThreadFactory("perf-producer", false));
 
-    private UniformRateLimiter rateLimiter = new UniformRateLimiter(1.0);
+    /**
+     * A map of rate changes over time. The rate at the given time will be calculated by linear interpolation between
+     * the two nearest known rates.
+     * If there is no known rate at the given time, the {@link #defaultRate} will be used.
+     */
+    private final NavigableMap<Long, Double> rateMap = new TreeMap<>();
+    private double defaultRate = MIN_RATE;
+    private UniformRateLimiter rateLimiter = new UniformRateLimiter(defaultRate);
+
     private volatile boolean closed = false;
 
     /**
@@ -106,6 +120,7 @@ public class ProducerService implements AutoCloseable {
      */
     public void start(List<byte[]> payloads, double rate) {
         adjustRate(rate);
+        adjustRateExecutor.scheduleWithFixedDelay(this::adjustRate, 0, ADJUST_RATE_INTERVAL_SECONDS, TimeUnit.SECONDS);
         int processors = Runtime.getRuntime().availableProcessors();
         // shard producers across processors
         int batchSize = Math.max(1, producers.size() / processors);
@@ -116,8 +131,47 @@ public class ProducerService implements AutoCloseable {
         }
     }
 
-    public void adjustRate(double rate) {
+    /**
+     * Adjust the rate at the given time.
+     */
+    public void adjustRate(long timeNanos, double rate) {
+        rateMap.put(timeNanos, rate);
+        adjustRate();
+    }
+
+    /**
+     * Adjust the default rate.
+     */
+    public void adjustRate(double defaultRate) {
+        this.defaultRate = defaultRate;
+        adjustRate();
+    }
+
+    private void adjustRate() {
+        double rate = calculateRate(System.nanoTime());
         this.rateLimiter = new UniformRateLimiter(rate);
+    }
+
+    private double calculateRate(long now) {
+        Map.Entry<Long, Double> floorEntry = rateMap.floorEntry(now);
+        Map.Entry<Long, Double> ceilingEntry = rateMap.ceilingEntry(now);
+        if (null == floorEntry || null == ceilingEntry) {
+            return defaultRate;
+        }
+
+        long floorTime = floorEntry.getKey();
+        double floorRate = floorEntry.getValue();
+        long ceilingTime = ceilingEntry.getKey();
+        double ceilingRate = ceilingEntry.getValue();
+
+        return calculateY(floorTime, floorRate, ceilingTime, ceilingRate, now);
+    }
+
+    private double calculateY(long x1, double y1, long x2, double y2, long x) {
+        if (x1 == x2) {
+            return y1;
+        }
+        return y1 + (x - x1) * (y2 - y1) / (x2 - x1);
     }
 
     private void start(List<Producer> producers, List<byte[]> payloads) {
@@ -151,6 +205,7 @@ public class ProducerService implements AutoCloseable {
     @Override
     public void close() {
         closed = true;
+        adjustRateExecutor.shutdownNow();
         executor.shutdown();
         try {
             if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
