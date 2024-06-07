@@ -117,6 +117,7 @@ public class PerfCommand implements AutoCloseable {
             consumerService.resume();
 
             stats.reset();
+            producerService.adjustRate(config.catchupRate);
             result = collectStats(backlogEnd);
         } else {
             LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
