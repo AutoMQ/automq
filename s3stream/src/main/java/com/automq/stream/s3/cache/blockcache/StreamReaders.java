@@ -163,7 +163,7 @@ public class StreamReaders implements S3BlockCache {
         public synchronized ObjectReader apply(S3ObjectMetadata metadata) {
             ObjectReader objectReader = objectReaders.get(metadata.objectId());
             if (objectReader == null) {
-                objectReader = new ObjectReader(metadata, s3Operator);
+                objectReader = ObjectReader.reader(metadata, s3Operator);
                 objectReaders.put(metadata.objectId(), objectReader);
             }
             return objectReader.retain();

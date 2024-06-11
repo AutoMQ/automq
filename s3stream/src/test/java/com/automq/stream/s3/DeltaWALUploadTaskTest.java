@@ -110,7 +110,7 @@ public class DeltaWALUploadTaskTest {
 
         {
             S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.STREAM_SET);
-            ObjectReader objectReader = new ObjectReader(s3ObjectMetadata, s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(s3ObjectMetadata, s3Operator);
             DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get()
                 .streamDataBlocks().get(0).dataBlockIndex();
             ObjectReader.DataBlockGroup dataBlockGroup = objectReader.read(blockIndex).get();
@@ -125,7 +125,7 @@ public class DeltaWALUploadTaskTest {
 
         {
             S3ObjectMetadata streamObjectMetadata = new S3ObjectMetadata(11, request.getStreamObjects().get(0).getObjectSize(), S3ObjectType.STREAM);
-            ObjectReader objectReader = new ObjectReader(streamObjectMetadata, s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(streamObjectMetadata, s3Operator);
             DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get()
                 .streamDataBlocks().get(0).dataBlockIndex();
             ObjectReader.DataBlockGroup dataBlockGroup = objectReader.read(blockIndex).get();

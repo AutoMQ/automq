@@ -526,7 +526,7 @@ public class StreamReader {
         synchronized (objectReaders) {
             ObjectReader objectReader = objectReaders.get(metadata.objectId());
             if (objectReader == null) {
-                objectReader = new ObjectReader(metadata, s3Operator);
+                objectReader = ObjectReader.reader(metadata, s3Operator);
                 objectReaders.put(metadata.objectId(), objectReader);
             }
             return objectReader.retain();

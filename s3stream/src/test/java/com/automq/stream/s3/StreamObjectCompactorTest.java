@@ -156,7 +156,7 @@ class StreamObjectCompactorTest {
 
         // verify compacted object record
         {
-            ObjectReader objectReader = new ObjectReader(new S3ObjectMetadata(5, req1.getObjectSize(), S3ObjectType.STREAM), s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(5, req1.getObjectSize(), S3ObjectType.STREAM), s3Operator);
             assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
             assertEquals(3, rst.streamDataBlocks().size());
@@ -184,7 +184,7 @@ class StreamObjectCompactorTest {
             objectReader.close();
         }
         {
-            ObjectReader objectReader = new ObjectReader(new S3ObjectMetadata(6, req2.getObjectSize(), S3ObjectType.STREAM), s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(6, req2.getObjectSize(), S3ObjectType.STREAM), s3Operator);
             assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 30L, 33L).get();
             assertEquals(3, rst.streamDataBlocks().size());
@@ -252,7 +252,7 @@ class StreamObjectCompactorTest {
 
         // verify compacted object record, expect [13,16) + [16, 17) compact to one data block group.
         {
-            ObjectReader objectReader = new ObjectReader(new S3ObjectMetadata(5, req.getObjectSize(), S3ObjectType.STREAM), s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(5, req.getObjectSize(), S3ObjectType.STREAM), s3Operator);
             assertEquals(2, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
             assertEquals(2, rst.streamDataBlocks().size());

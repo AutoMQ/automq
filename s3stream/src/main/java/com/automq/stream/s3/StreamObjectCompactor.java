@@ -187,7 +187,7 @@ public class StreamObjectCompactor {
             int groupRecordCount = 0;
             DataBlockIndex lastIndex = null;
             for (S3ObjectMetadata object : objectGroup) {
-                try (ObjectReader reader = new ObjectReader(object, s3Operator)) {
+                try (ObjectReader reader = ObjectReader.reader(object, s3Operator)) {
                     ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().get();
                     ByteBuf subIndexes = ByteBufAlloc.byteBuffer(basicObjectInfo.indexBlock().count() * DataBlockIndex.BLOCK_INDEX_SIZE, STREAM_OBJECT_COMPACTION_WRITE);
                     Iterator<DataBlockIndex> it = basicObjectInfo.indexBlock().iterator();

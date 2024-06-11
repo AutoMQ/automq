@@ -45,6 +45,11 @@ public class S3ObjectMetadata {
      * real committed timestamp of the data in the object.
      */
     private long committedTimestamp;
+    /**
+     * The bucket id which the object stores in.
+     */
+    // TODO: add initialization for bucketId
+    private short bucketId;
 
     // Only used for testing
     public S3ObjectMetadata(long objectId, long objectSize, S3ObjectType type) {
@@ -64,12 +69,24 @@ public class S3ObjectMetadata {
     }
 
     public S3ObjectMetadata(
+        long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
+        long committedTimestamp, long objectSize,
+        long orderId) {
+        this(objectId, type, offsetRanges, dataTimeInMs, committedTimestamp, objectSize, orderId, (short) 0);
+    }
+
+    public S3ObjectMetadata(long objectId, short bucketId) {
+        this(objectId, S3ObjectType.UNKNOWN, Collections.emptyList(), S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_OBJECT_SIZE,
+            S3StreamConstant.INVALID_ORDER_ID, bucketId);
+    }
+
+    public S3ObjectMetadata(
         // these four params come from S3StreamSetObject or S3StreamObject
         long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
         // these two params come from S3Object
         long committedTimestamp, long objectSize,
         // this param only comes from S3StreamSetObject
-        long orderId) {
+        long orderId, short bucketId) {
         this.objectId = objectId;
         this.orderId = orderId;
         this.objectSize = objectSize;
@@ -77,6 +94,7 @@ public class S3ObjectMetadata {
         this.offsetRanges = offsetRanges;
         this.dataTimeInMs = dataTimeInMs;
         this.committedTimestamp = committedTimestamp;
+        this.bucketId = bucketId;
     }
 
     public void setObjectSize(long objectSize) {
@@ -127,6 +145,10 @@ public class S3ObjectMetadata {
             return S3StreamConstant.INVALID_OFFSET;
         }
         return offsetRanges.get(offsetRanges.size() - 1).endOffset();
+    }
+
+    public short bucketId() {
+        return bucketId;
     }
 
     public boolean intersect(long streamId, long startOffset, long endOffset) {

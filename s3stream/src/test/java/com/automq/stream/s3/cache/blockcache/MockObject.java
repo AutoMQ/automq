@@ -36,7 +36,7 @@ public class MockObject {
     }
 
     public ObjectReader objectReader() {
-        return new ObjectReader(metadata, operator);
+        return ObjectReader.reader(metadata, operator);
     }
 
     public static Builder builder(long objectId, int blockSizeThreshold) {
