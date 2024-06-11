@@ -14,6 +14,8 @@ package org.apache.kafka.image.node.automq;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
 import org.apache.kafka.image.KVImage;
 import org.apache.kafka.image.node.MetadataLeafNode;
 import org.apache.kafka.image.node.MetadataNode;
@@ -28,7 +30,9 @@ public class KVImageNode implements MetadataNode {
 
     @Override
     public Collection<String> childNames() {
-        return kvImage.kv().keySet();
+        List<String> keys = new LinkedList<>();
+        kvImage.kv().forEach((k, v) -> keys.add(k));
+        return keys;
     }
 
     @Override

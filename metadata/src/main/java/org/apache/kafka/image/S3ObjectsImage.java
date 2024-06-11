@@ -17,13 +17,12 @@
 
 package org.apache.kafka.image;
 
+import java.util.Objects;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
-
-import java.util.Objects;
 
 /**
  * Represents the S3 objects in the metadata image.
