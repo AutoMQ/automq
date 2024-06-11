@@ -69,8 +69,7 @@ public class DeltaMap<K, V> {
         Map<K, V> delta0 = deltas.get(0);
         delta0.put(key, value);
         if (!removed.isEmpty()) {
-            Set<K> deleted = getRemovedForModify();
-            deleted.remove(key);
+            unmarkRemoved(key);
         }
     }
 
@@ -78,8 +77,7 @@ public class DeltaMap<K, V> {
         Map<K, V> delta0 = deltas.get(0);
         delta0.putAll(addDelta);
         if (!removed.isEmpty()) {
-            Set<K> deleted = getRemovedForModify();
-            addDelta.forEach((k, v) -> deleted.remove(k));
+            addDelta.forEach((k, v) -> unmarkRemoved(k));
         }
     }
 
@@ -131,6 +129,12 @@ public class DeltaMap<K, V> {
             newRemoved = true;
         }
         return removed;
+    }
+
+    private void unmarkRemoved(K key) {
+        if (removed.contains(key)) {
+            getRemovedForModify().remove(key);
+        }
     }
 
     public boolean isEmpty() {
