@@ -74,6 +74,13 @@ public interface Writer {
      */
     CompletableFuture<Void> release();
 
+    /**
+     * Get the bucket id which stores the object.
+     */
+    default short bucketId() {
+        return 0;
+    }
+
     class Context {
         public static final Context DEFAULT = new Context(ByteBufAlloc.DEFAULT);
 
