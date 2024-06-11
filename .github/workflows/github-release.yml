@@ -39,6 +39,7 @@ jobs:
               else
                   echo "Skip and remove site-docs file: $file"
                   rm "$file"
+              fi
           done
 
       - uses: jakejarvis/s3-sync-action@master
