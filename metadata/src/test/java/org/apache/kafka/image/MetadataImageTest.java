@@ -113,6 +113,11 @@ public class MetadataImageTest {
         records.addAll(AclsImageTest.DELTA1_RECORDS);
         records.addAll(ScramImageTest.DELTA1_RECORDS);
         records.addAll(DelegationTokenImageTest.DELTA1_RECORDS);
+
+        records.addAll(S3StreamsMetadataImageTest.DELTA1_RECORDS);
+        records.addAll(S3ObjectsImageTest.DELTA1_RECORDS);
+        records.addAll(KVImageTest.DELTA1_RECORDS);
+
         testToImage(IMAGE2, records);
     }
 

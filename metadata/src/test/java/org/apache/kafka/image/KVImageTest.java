@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
@@ -48,7 +47,7 @@ public class KVImageTest {
 
 
     static {
-        Map<String, ByteBuffer> map = Map.of(
+        DeltaMap<String, ByteBuffer> map = DeltaMap.of(
             "key1", ByteBuffer.wrap(new String("value1").getBytes()),
             "key2", ByteBuffer.wrap(new String("value2").getBytes()));
         IMAGE1 = new KVImage(map);
@@ -66,7 +65,7 @@ public class KVImageTest {
         DELTA1 = new KVDelta(IMAGE1);
         RecordTestUtils.replayAll(DELTA1, DELTA1_RECORDS);
 
-        Map<String, ByteBuffer> map2 = Map.of(
+        DeltaMap<String, ByteBuffer> map2 = DeltaMap.of(
             "key2", ByteBuffer.wrap(new String("value2").getBytes()),
             "key3", ByteBuffer.wrap(new String("value3").getBytes()));
         IMAGE2 = new KVImage(map2);
