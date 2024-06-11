@@ -18,11 +18,8 @@
 package org.apache.kafka.image;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.image.writer.ImageWriter;
@@ -31,26 +28,24 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 public final class KVImage {
 
-    public static final KVImage EMPTY = new KVImage(Collections.emptyMap());
+    public static final KVImage EMPTY = new KVImage(new DeltaMap<>(new int[] {1000, 10000}));
 
-    private final Map<String, ByteBuffer> kv;
+    private final DeltaMap<String, ByteBuffer> kv;
 
-    public KVImage(final Map<String, ByteBuffer> kv) {
+    public KVImage(final DeltaMap<String, ByteBuffer> kv) {
         this.kv = kv;
     }
 
-    public Map<String, ByteBuffer> kv() {
+    public DeltaMap<String, ByteBuffer> kv() {
         return kv;
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        List<KeyValue> kvs = kv.entrySet().stream().map(kv -> {
-            return new KeyValue()
-                .setKey(kv.getKey())
-                .setValue(kv.getValue().array());
-        }).collect(Collectors.toList());
-        writer.write(new ApiMessageAndVersion(new KVRecord()
-            .setKeyValues(kvs), (short) 0));
+        kv.forEach((k, v) -> {
+            List<KeyValue> kvs = List.of(new KeyValue().setKey(k).setValue(v.array()));
+            writer.write(new ApiMessageAndVersion(new KVRecord()
+                .setKeyValues(kvs), (short) 0));
+        });
     }
 
     @Override

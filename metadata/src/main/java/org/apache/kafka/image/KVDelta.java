@@ -54,7 +54,7 @@ public final class KVDelta {
     }
 
     public KVImage apply() {
-        Map<String, ByteBuffer> newKV = new HashMap<>(image.kv());
+        DeltaMap<String, ByteBuffer> newKV = image.kv().copy();
         newKV.putAll(changedKV);
         removedKeys.forEach(newKV::remove);
         return new KVImage(newKV);
