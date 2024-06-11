@@ -827,7 +827,7 @@ public class ReplicationControlManager {
                 for (int partitionId = 0; partitionId < topicAssignment.assignments().size(); partitionId++) {
                     PartitionAssignment partitionAssignment = topicAssignment.assignments().get(partitionId);
                     List<Integer> isr = partitionAssignment.replicas().stream().
-                        filter(brokerId -> brokerId != 0 && brokerId != 1 && brokerId != 2 && clusterControl.isActive(brokerId)).collect(Collectors.toList());
+                        filter(clusterControl::isActive).collect(Collectors.toList());
                     // If the ISR is empty, it means that all brokers are fenced or
                     // in controlled shutdown. To be consistent with the replica placer,
                     // we reject the create topic request with INVALID_REPLICATION_FACTOR.
