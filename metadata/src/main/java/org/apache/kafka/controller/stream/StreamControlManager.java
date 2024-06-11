@@ -680,8 +680,7 @@ public class StreamControlManager {
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
         }
-        log.info("[CommitStreamSetObject]: successfully commit stream set object. streamSetObjectId={}, nodeId={}, nodeEpoch={}, compacted objects: {}, stream range: {}, stream objects: {}",
-            objectId, nodeId, nodeEpoch, compactedObjectIds, data.objectStreamRanges(), streamObjects);
+        logCommitStreamSetObject(data);
         return ControllerResult.atomicOf(records, resp);
     }
 
@@ -1299,6 +1298,27 @@ public class StreamControlManager {
                ", streamsMetadata=" + streamsMetadata +
                ", nodesMetadata=" + nodesMetadata +
                '}';
+    }
+
+    private void logCommitStreamSetObject(CommitStreamSetObjectRequestData req) {
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("[CommitStreamSetObject]: successfully commit stream set object, ");
+        sb.append("streamSetObjectId=").append(req.objectId()).append(", nodeId=").append(req.nodeId());
+        sb.append(", nodeEpoch=").append(req.nodeEpoch()).append(", compactedObjects=").append(req.compactedObjectIds());
+        sb.append(", \n\tstreamRanges=");
+        req.objectStreamRanges().forEach(range -> {
+            sb.append("(si=").append(range.streamId()).append(", so=").append(range.startOffset()).append(", eo=")
+                .append(range.endOffset()).append("), ");
+        });
+        sb.append(", \n\tstreamObjects=");
+        req.streamObjects().forEach(obj -> {
+            sb.append("(si=").append(obj.streamId()).append(", so=").append(obj.startOffset()).append(", eo=")
+                .append(obj.endOffset()).append(", oi=").append(obj.objectId()).append("), ");
+        });
+        log.info(sb.toString());
     }
 
 }
