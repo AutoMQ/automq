@@ -26,11 +26,12 @@ import com.google.common.collect.Range;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -347,6 +348,19 @@ public class S3StreamsMetadataImageTest {
         CountDownLatch doneLatch = new CountDownLatch(4);
         CountDownLatch startLatch = new CountDownLatch(1);
 
+        class Item {
+            long start;
+            long end;
+            int limit;
+
+            public Item(long start, long end, int limit) {
+                this.start = start;
+                this.end = end;
+                this.limit = limit;
+            }
+        }
+
+        ConcurrentHashMap<Item, InRangeObjects> result = new ConcurrentHashMap<>();
         ExecutorService es = Executors.newFixedThreadPool(4);
         for (int j = 0; j < 4; j++) {
             es.submit(() -> {
@@ -361,8 +375,9 @@ public class S3StreamsMetadataImageTest {
                     try {
                         long start = r.nextLong(startOffset, endOffset);
                         long end = r.nextLong(start, endOffset);
-
-                        streamsImage.getObjects(STREAM0, start, end, r.nextInt(3, 17));
+                        int limit = r.nextInt(3, 17);
+                        Item item = new Item(start, end, limit);
+                        result.put(item, streamsImage.getObjects(STREAM0, start, end, limit));
                     } catch (Exception e) {
                         hasException.set(true);
                     }
@@ -382,6 +397,12 @@ public class S3StreamsMetadataImageTest {
         }
 
         assertFalse(hasException.get());
+
+        result.entrySet().forEach((entry) -> {
+            Item item = entry.getKey();
+            InRangeObjects objects = entry.getValue();
+            assertEquals(streamsImage.getObjects(STREAM0, item.start, item.end, item.limit), objects);
+        });
     }
 
     @Test
