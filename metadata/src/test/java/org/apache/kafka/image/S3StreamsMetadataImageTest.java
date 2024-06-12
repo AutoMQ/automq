@@ -362,7 +362,7 @@ public class S3StreamsMetadataImageTest {
                         long start = r.nextLong(startOffset, endOffset);
                         long end = r.nextLong(start, endOffset);
 
-                        streamsImage.getObjects(STREAM0, start, end, r.nextInt(3,17));
+                        streamsImage.getObjects(STREAM0, start, end, r.nextInt(3, 17));
                     } catch (Exception e) {
                         hasException.set(true);
                     }
