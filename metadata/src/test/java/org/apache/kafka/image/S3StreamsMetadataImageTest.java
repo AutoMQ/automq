@@ -398,7 +398,7 @@ public class S3StreamsMetadataImageTest {
 
         assertFalse(hasException.get());
 
-        result.entrySet().forEach((entry) -> {
+        result.entrySet().forEach(entry -> {
             Item item = entry.getKey();
             InRangeObjects objects = entry.getValue();
             assertEquals(streamsImage.getObjects(STREAM0, item.start, item.end, item.limit), objects);
