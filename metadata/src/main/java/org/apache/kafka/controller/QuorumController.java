@@ -17,6 +17,26 @@
 
 package org.apache.kafka.controller;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.FeatureUpdate;
@@ -32,10 +52,10 @@ import org.apache.kafka.common.errors.StaleBrokerEpochException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.message.AllocateProducerIdsRequestData;
 import org.apache.kafka.common.message.AllocateProducerIdsResponseData;
-import org.apache.kafka.common.message.AlterPartitionRequestData;
-import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.AlterPartitionRequestData;
+import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
@@ -118,16 +138,16 @@ import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
-import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
-import org.apache.kafka.common.metadata.UserScramCredentialRecord;
-import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
+import org.apache.kafka.common.metadata.UserScramCredentialRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
@@ -146,6 +166,8 @@ import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamClient;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.controller.stream.TopicDeletionManager;
+import org.apache.kafka.deferred.DeferredEvent;
+import org.apache.kafka.deferred.DeferredEventQueue;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
@@ -157,10 +179,8 @@ import org.apache.kafka.metadata.migration.ZkRecordConsumer;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
 import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
 import org.apache.kafka.metadata.util.RecordRedactor;
-import org.apache.kafka.deferred.DeferredEventQueue;
-import org.apache.kafka.deferred.DeferredEvent;
-import org.apache.kafka.queue.EventQueue.EarliestDeadlineFunction;
 import org.apache.kafka.queue.EventQueue;
+import org.apache.kafka.queue.EventQueue.EarliestDeadlineFunction;
 import org.apache.kafka.queue.KafkaEventQueue;
 import org.apache.kafka.raft.Batch;
 import org.apache.kafka.raft.BatchReader;
@@ -180,27 +200,6 @@ import org.apache.kafka.snapshot.SnapshotReader;
 import org.apache.kafka.snapshot.Snapshots;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.slf4j.Logger;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map.Entry;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalInt;
-import java.util.OptionalLong;
-import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Supplier;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -582,12 +581,7 @@ public final class QuorumController implements Controller {
         long deltaNs = endProcessingTime - startProcessingTimeNs;
         log.debug("Processed {} in {} us", name,
             MICROSECONDS.convert(deltaNs, NANOSECONDS));
-
-        long millis = NANOSECONDS.toMillis(deltaNs);
-        if (millis > 1) {
-            log.error("Controller took {} ms to process event: {}", millis, name);
-        }
-        controllerMetrics.updateEventQueueProcessingTime(millis);
+        controllerMetrics.updateEventQueueProcessingTime(NANOSECONDS.toMillis(deltaNs));
     }
 
     private Throwable handleEventException(
@@ -653,7 +647,14 @@ public final class QuorumController implements Controller {
             startProcessingTimeNs = OptionalLong.of(
                 updateEventStartMetricsAndGetTime(OptionalLong.of(eventCreatedTimeNs)));
             log.debug("Executing {}.", this);
-            handler.run();
+            try {
+                handler.run();
+            } finally {
+                long processTime = NANOSECONDS.toMillis(time.nanoseconds() - startProcessingTimeNs.getAsLong());
+                if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MS) {
+                    log.error("Controller took {} ms to process control event: {}", processTime, name);
+                }
+            }
             handleEventEnd(this.toString(), startProcessingTimeNs.getAsLong());
         }
 
@@ -703,7 +704,15 @@ public final class QuorumController implements Controller {
         public void run() throws Exception {
             startProcessingTimeNs = OptionalLong.of(
                 updateEventStartMetricsAndGetTime(OptionalLong.of(eventCreatedTimeNs)));
-            T value = handler.get();
+            T value;
+            try {
+                value = handler.get();
+            } finally {
+                long processTime = NANOSECONDS.toMillis(time.nanoseconds() - startProcessingTimeNs.getAsLong());
+                if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MS) {
+                    log.error("Controller took {} ms to process read event: {}", processTime, name);
+                }
+            }
             handleEventEnd(this.toString(), startProcessingTimeNs.getAsLong());
             future.complete(value);
         }
@@ -864,7 +873,16 @@ public final class QuorumController implements Controller {
                 log.info("Cannot run write operation {} in pre-migration mode. Returning NOT_CONTROLLER.", name);
                 throw ControllerExceptions.newPreMigrationException(latestController());
             }
-            ControllerResult<T> result = op.generateRecordsAndResult();
+            ControllerResult<T> result;
+            try {
+                result = op.generateRecordsAndResult();
+            } finally {
+                long processTime = NANOSECONDS.toMillis(time.nanoseconds() - startProcessingTimeNs.getAsLong());
+                if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MS) {
+                    log.error("Controller took {} ms to process write event: {}", processTime, name);
+                }
+            }
+
             if (result.records().isEmpty()) {
                 op.processBatchEndOffset(offsetControl.nextWriteOffset() - 1);
                 // If the operation did not return any records, then it was actually just
