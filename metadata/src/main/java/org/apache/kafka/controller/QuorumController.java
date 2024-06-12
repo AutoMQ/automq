@@ -582,12 +582,7 @@ public final class QuorumController implements Controller {
         long deltaNs = endProcessingTime - startProcessingTimeNs;
         log.debug("Processed {} in {} us", name,
             MICROSECONDS.convert(deltaNs, NANOSECONDS));
-
-        long millis = NANOSECONDS.toMillis(deltaNs);
-        if (millis > 1) {
-            log.error("Controller took {} ms to process event: {}", millis, name);
-        }
-        controllerMetrics.updateEventQueueProcessingTime(millis);
+        controllerMetrics.updateEventQueueProcessingTime(NANOSECONDS.toMillis(deltaNs));
     }
 
     private Throwable handleEventException(
@@ -653,7 +648,14 @@ public final class QuorumController implements Controller {
             startProcessingTimeNs = OptionalLong.of(
                 updateEventStartMetricsAndGetTime(OptionalLong.of(eventCreatedTimeNs)));
             log.debug("Executing {}.", this);
-            handler.run();
+            try {
+                handler.run();
+            } finally {
+                long processTime = NANOSECONDS.toMicros(time.nanoseconds() - startProcessingTimeNs.getAsLong());
+                if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND) {
+                    log.error("Controller took {} µs to process control event: {}", processTime, name);
+                }
+            }
             handleEventEnd(this.toString(), startProcessingTimeNs.getAsLong());
         }
 
@@ -703,7 +705,15 @@ public final class QuorumController implements Controller {
         public void run() throws Exception {
             startProcessingTimeNs = OptionalLong.of(
                 updateEventStartMetricsAndGetTime(OptionalLong.of(eventCreatedTimeNs)));
-            T value = handler.get();
+            T value;
+            try {
+                value = handler.get();
+            } finally {
+                long processTime = NANOSECONDS.toMicros(time.nanoseconds() - startProcessingTimeNs.getAsLong());
+                if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND) {
+                    log.error("Controller took {} µs to process read event: {}", processTime, name);
+                }
+            }
             handleEventEnd(this.toString(), startProcessingTimeNs.getAsLong());
             future.complete(value);
         }
@@ -864,7 +874,16 @@ public final class QuorumController implements Controller {
                 log.info("Cannot run write operation {} in pre-migration mode. Returning NOT_CONTROLLER.", name);
                 throw ControllerExceptions.newPreMigrationException(latestController());
             }
-            ControllerResult<T> result = op.generateRecordsAndResult();
+            ControllerResult<T> result;
+            try {
+                result = op.generateRecordsAndResult();
+            } finally {
+                long processTime = NANOSECONDS.toMicros(time.nanoseconds() - startProcessingTimeNs.getAsLong());
+                if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND) {
+                    log.error("Controller took {} µs to process write event: {}", processTime, name);
+                }
+            }
+
             if (result.records().isEmpty()) {
                 op.processBatchEndOffset(offsetControl.nextWriteOffset() - 1);
                 // If the operation did not return any records, then it was actually just
