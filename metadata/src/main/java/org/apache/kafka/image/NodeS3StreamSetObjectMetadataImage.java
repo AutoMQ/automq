@@ -26,6 +26,7 @@ import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -37,7 +38,10 @@ public class NodeS3StreamSetObjectMetadataImage {
     private final long nodeEpoch;
     private final DeltaMap<Long/*objectId*/, S3StreamSetObject> s3Objects;
     private final StreamOffsetIndexMap offsetIndexMap = new StreamOffsetIndexMap(2500000);
-    private List<S3StreamSetObject> orderIndex;
+
+    // this should be created only once in each image and not be modified
+    private volatile List<S3StreamSetObject> orderIndex;
+    private final Object orderIndexLock = new Object();
 
     public NodeS3StreamSetObjectMetadataImage(int nodeId, long nodeEpoch, DeltaMap<Long, S3StreamSetObject> streamSetObjects) {
         this.nodeId = nodeId;
@@ -75,10 +79,16 @@ public class NodeS3StreamSetObjectMetadataImage {
 
     public List<S3StreamSetObject> orderList() {
         if (orderIndex == null) {
-            List<S3StreamSetObject> objects = new ArrayList<>();
-            s3Objects.forEach((k, v) -> objects.add(v));
-            objects.sort(Comparator.comparingLong(S3StreamSetObject::orderId));
-            orderIndex = objects;
+            synchronized (orderIndexLock) {
+                if (orderIndex != null) {
+                    return orderIndex;
+                }
+
+                List<S3StreamSetObject> objects = new ArrayList<>();
+                s3Objects.forEach((k, v) -> objects.add(v));
+                objects.sort(Comparator.comparingLong(S3StreamSetObject::orderId));
+                orderIndex = Collections.unmodifiableList(objects);
+            }
         }
         return orderIndex;
     }

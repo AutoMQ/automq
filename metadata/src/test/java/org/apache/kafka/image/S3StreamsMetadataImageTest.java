@@ -22,8 +22,15 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
+import com.google.common.collect.Range;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -44,6 +51,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -244,24 +252,75 @@ public class S3StreamsMetadataImageTest {
         assertEquals(40L, objects.endOffset());
     }
 
+
+    private S3StreamsMetadataImage createStreamImage() {
+        DeltaMap<Long, S3StreamSetObject> broker0Objects = DeltaMap.of(
+                0L, new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 10L, 20L)), 0L),
+                1L, new S3StreamSetObject(1, BROKER0, List.of(new StreamOffsetRange(STREAM0, 40L, 60L)), 1L));
+        NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
+                broker0Objects);
+        List<RangeMetadata> ranges = List.of(
+                new RangeMetadata(STREAM0, 0L, 0, 10L, 40L, BROKER0),
+                new RangeMetadata(STREAM0, 2L, 2, 40L, 60L, BROKER0));
+        List<S3StreamObject> streamObjects = List.of(
+                new S3StreamObject(8, STREAM0, 20L, 40L, S3StreamConstant.INVALID_TS));
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
+                DeltaMap.of(BROKER0, broker0WALMetadataImage));
+        return streamsImage;
+    }
+
+    private S3StreamsMetadataImage generateStreamImage(long streamId, Range<Long> streamObjectRange, Range<Long> streamSetObjectRange, int step) {
+        long objectId = 0;
+
+        List<RangeMetadata> ranges = new ArrayList<>();
+        List<S3StreamObject> streamObjects = new ArrayList<>();
+
+        // streamObject first
+        int rangeIndex = 0;
+        for (long i = streamObjectRange.lowerEndpoint(); i < streamObjectRange.upperEndpoint(); i += step) {
+            ranges.add(new RangeMetadata(streamId, 0L, rangeIndex,
+                    i, i + step, BROKER0));
+
+            streamObjects.add(new S3StreamObject(objectId, streamId, i, i + step, S3StreamConstant.INVALID_TS));
+            rangeIndex++;
+            objectId++;
+        }
+
+        // streamSetObject second
+        DeltaMap<Long, S3StreamSetObject> broker0Objects = new DeltaMap<>();
+        for (long i = streamSetObjectRange.lowerEndpoint(); i < streamSetObjectRange.upperEndpoint(); i += step) {
+            ranges.add(new RangeMetadata(streamId, 0L, rangeIndex,
+                    i, i + step, BROKER0));
+            rangeIndex++;
+            broker0Objects.put(objectId,
+                    new S3StreamSetObject(objectId, BROKER0,
+                            List.of(new StreamOffsetRange(streamId, i, i + step)), i));
+            objectId++;
+        }
+
+        NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage =
+                new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
+                        broker0Objects);
+
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(
+                streamId, 4L, StreamState.OPENED,
+                streamObjectRange.lowerEndpoint(),
+                ranges, streamObjects);
+
+
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(streamId, DeltaMap.of(streamId, streamImage),
+                DeltaMap.of(BROKER0, broker0WALMetadataImage));
+
+        return streamsImage;
+    }
+
     /**
      * Test get objects with the first hit object is a stream set object.
      */
     @Test
     public void testGetObjectsWithFirstStreamSetObject() {
-        DeltaMap<Long, S3StreamSetObject> broker0Objects = DeltaMap.of(
-            0L, new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 10L, 20L)), 0L),
-            1L, new S3StreamSetObject(1, BROKER0, List.of(new StreamOffsetRange(STREAM0, 40L, 60L)), 1L));
-        NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
-            broker0Objects);
-        List<RangeMetadata> ranges = List.of(
-            new RangeMetadata(STREAM0, 0L, 0, 10L, 40L, BROKER0),
-            new RangeMetadata(STREAM0, 2L, 2, 40L, 60L, BROKER0));
-        List<S3StreamObject> streamObjects = List.of(
-            new S3StreamObject(8, STREAM0, 20L, 40L, S3StreamConstant.INVALID_TS));
-        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
-        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, DeltaMap.of(STREAM0, streamImage),
-            DeltaMap.of(BROKER0, broker0WALMetadataImage));
+        S3StreamsMetadataImage streamsImage = createStreamImage();
 
         InRangeObjects objects = streamsImage.getObjects(STREAM0, 12L, 30, 4);
         assertEquals(2, objects.objects().size());
@@ -272,6 +331,57 @@ public class S3StreamsMetadataImageTest {
         assertEquals(1, objects.objects().size());
         assertEquals(10L, objects.startOffset());
         assertEquals(20L, objects.endOffset());
+    }
+
+    @Test
+    public void testConcurrentFetchMetadataWithoutConcurrentModificationException() {
+        S3StreamsMetadataImage streamsImage = generateStreamImage(STREAM0,
+                Range.closedOpen(0L, 100000L),
+                Range.closedOpen(100000L, 110000L), 20);
+
+        long startOffset = streamsImage.getStreamMetadata(STREAM0).getStartOffset();
+        long endOffset = streamsImage.getStreamMetadata(STREAM0).lastRange().endOffset();
+
+        AtomicBoolean hasException = new AtomicBoolean(false);
+
+        CountDownLatch doneLatch = new CountDownLatch(4);
+        CountDownLatch startLatch = new CountDownLatch(1);
+
+        ExecutorService es = Executors.newFixedThreadPool(4);
+        for (int j = 0; j < 4; j++) {
+            es.submit(() -> {
+                try {
+                    startLatch.await();
+                } catch (InterruptedException e) {
+                    // ignore
+                    return;
+                }
+                ThreadLocalRandom r = ThreadLocalRandom.current();
+                for (int i = 0; i < 10000 && !hasException.get(); i++) {
+                    try {
+                        long start = r.nextLong(startOffset, endOffset);
+                        long end = r.nextLong(start, endOffset);
+
+                        streamsImage.getObjects(STREAM0, start, end, r.nextInt(3,17));
+                    } catch (Exception e) {
+                        hasException.set(true);
+                    }
+                }
+
+                doneLatch.countDown();
+            });
+        }
+
+        startLatch.countDown();
+        try {
+            doneLatch.await();
+        } catch (InterruptedException e) {
+            //
+        } finally {
+            es.shutdown();
+        }
+
+        assertFalse(hasException.get());
     }
 
     @Test

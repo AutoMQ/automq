@@ -12,7 +12,8 @@
 package org.apache.kafka.image;
 
 import com.automq.stream.s3.cache.LRUCache;
-
+import com.google.common.annotations.VisibleForTesting;
+import javax.annotation.concurrent.ThreadSafe;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -20,9 +21,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
 
-/**
- * NotThreadSafe, the caller should ensure the thread safety
- */
+@ThreadSafe
 public class StreamOffsetIndexMap {
     private final int maxSize;
     private final LRUCache<StreamOffset, Void> streamOffsetCache;
@@ -34,7 +33,7 @@ public class StreamOffsetIndexMap {
         this.streamOffsetIndexMap = new HashMap<>();
     }
 
-    public void put(long streamId, long startOffset, int index) {
+    public synchronized void put(long streamId, long startOffset, int index) {
         if (streamOffsetIndexMap.containsKey(streamId) && streamOffsetIndexMap.get(streamId).containsKey(startOffset)) {
             return;
         }
@@ -57,7 +56,7 @@ public class StreamOffsetIndexMap {
         });
     }
 
-    public int floorIndex(long streamId, long offset) {
+    public synchronized int floorIndex(long streamId, long offset) {
         NavigableMap<Long, Integer> map = streamOffsetIndexMap.get(streamId);
         if (map == null) {
             return 0;
@@ -69,10 +68,12 @@ public class StreamOffsetIndexMap {
         return entry.getValue();
     }
 
+    @VisibleForTesting
     int cacheSize() {
         return streamOffsetCache.size();
     }
 
+    @VisibleForTesting
     int entrySize() {
         return streamOffsetIndexMap.values().stream().mapToInt(NavigableMap::size).sum();
     }

@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -43,28 +44,18 @@ import java.util.stream.Collectors;
 import static com.automq.stream.utils.FutureUtil.exec;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPublisher {
-
-    // TODO: optimize by more suitable concurrent protection
     private final static Logger LOGGER = LoggerFactory.getLogger(StreamMetadataManager.class);
     private final int nodeId;
-    private final BrokerServer broker;
     private final List<GetObjectsTask> pendingGetObjectsTasks;
     private final ExecutorService pendingExecutorService;
-    // TODO: we just need the version of streams metadata, not the whole image
-    private volatile OffsetAndEpoch version;
-    private S3StreamsMetadataImage streamsImage;
-    private S3ObjectsImage objectsImage;
+    private volatile S3StreamImagePair image;
 
     public StreamMetadataManager(BrokerServer broker, int nodeId) {
         this.nodeId = nodeId;
-        this.broker = broker;
-        MetadataImage currentImage = this.broker.metadataCache().currentImage();
-        this.streamsImage = currentImage.streamsMetadata();
-        this.objectsImage = currentImage.objectsMetadata();
-        this.version = currentImage.highestOffsetAndEpoch();
+        this.image = new S3StreamImagePair(broker.metadataCache().currentImage());
         this.pendingGetObjectsTasks = new LinkedList<>();
         this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
-        this.broker.metadataLoader().installPublishers(List.of(this)).join();
+        broker.metadataLoader().installPublishers(List.of(this)).join();
     }
 
     @Override
@@ -74,118 +65,142 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
     @Override
     public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage, LoaderManifest manifest) {
-        if (newImage.highestOffsetAndEpoch().equals(this.version)) {
+        if (newImage.highestOffsetAndEpoch().equals(this.image.version())) {
             return;
         }
-        synchronized (this) {
-            // update version
-            this.version = newImage.highestOffsetAndEpoch();
-            // update image
-            this.streamsImage = newImage.streamsMetadata();
-            this.objectsImage = newImage.objectsMetadata();
 
-            // retry all pending tasks
-            retryPendingTasks();
-        }
+        // update image
+        this.image = new S3StreamImagePair(newImage);
+        // retry all pending tasks
+        retryPendingTasks();
     }
 
     public CompletableFuture<List<S3ObjectMetadata>> getStreamSetObjects() {
-        synchronized (this) {
-            List<S3ObjectMetadata> s3ObjectMetadataList = this.streamsImage.getStreamSetObjects(nodeId).stream()
-                    .map(object -> {
-                        S3Object s3Object = this.objectsImage.getObjectMetadata(object.objectId());
-                        return new S3ObjectMetadata(object.objectId(), object.objectType(),
-                                object.offsetRangeList(), object.dataTimeInMs(),
-                                s3Object.getCommittedTimeInMs(), s3Object.getObjectSize(),
-                                object.orderId());
-                    })
-                    .collect(Collectors.toList());
-            return CompletableFuture.completedFuture(s3ObjectMetadataList);
-        }
+        final S3StreamImagePair image = this.image;
+
+        final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
+        final S3ObjectsImage objectsImage = image.objectsMetadata();
+
+        List<S3ObjectMetadata> s3ObjectMetadataList = streamsImage.getStreamSetObjects(nodeId).stream()
+                .map(object -> {
+                    S3Object s3Object = objectsImage.getObjectMetadata(object.objectId());
+                    return new S3ObjectMetadata(object.objectId(), object.objectType(),
+                            object.offsetRangeList(), object.dataTimeInMs(),
+                            s3Object.getCommittedTimeInMs(), s3Object.getObjectSize(),
+                            object.orderId());
+                })
+                .collect(Collectors.toList());
+        return CompletableFuture.completedFuture(s3ObjectMetadataList);
     }
 
     @Override
-    public synchronized CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit) {
+    public CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit) {
         // TODO: cache the object list for next search
-        return exec(() -> fetch0(streamId, startOffset, endOffset, limit), LOGGER, "fetchObjects").thenApply(rst -> {
-            rst.objects().forEach(object -> {
-                S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
-                if (objectMetadata == null) {
-                    // should not happen
-                    LOGGER.error(
-                            "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with empty result",
-                            streamId, startOffset, endOffset, limit);
-                    throw new IllegalStateException("cannt find object metadata for object: " + object.objectId());
-                }
-                object.setObjectSize(objectMetadata.getObjectSize());
-                object.setCommittedTimestamp(objectMetadata.getCommittedTimeInMs());
+        return exec(() -> fetch0(streamId, startOffset, endOffset, limit), LOGGER, "fetchObjects")
+                .thenApply(rst -> {
+                    final InRangeObjects inRangeObjects = rst.getKey();
+                    final S3StreamImagePair image = rst.getValue();
 
-            });
-            if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace(
-                        "[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache success with result: {}",
-                        streamId, startOffset, endOffset, limit, rst);
-            }
-            return rst;
+                    inRangeObjects.objects().forEach(object -> {
+                        S3Object objectMetadata = image.objectsMetadata().getObjectMetadata(object.objectId());
+                        if (objectMetadata == null) {
+                            // should not happen
+                            LOGGER.error("[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, " +
+                                            "and search in metadataCache failed with empty result",
+                                    streamId, startOffset, endOffset, limit);
+                            throw new IllegalStateException("can't find object metadata for object: " + object.objectId());
+                        }
+                        object.setObjectSize(objectMetadata.getObjectSize());
+                        object.setCommittedTimestamp(objectMetadata.getCommittedTimeInMs());
+
+                    });
+
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, " +
+                                        "and search in metadataCache success with result: {}",
+                                streamId, startOffset, endOffset, limit, rst);
+                    }
+
+                    return inRangeObjects;
+                });
+    }
+
+    private CompletableFuture<Map.Entry<InRangeObjects, S3StreamImagePair>> fetch0(long streamId, long startOffset, long endOffset, int limit) {
+        final S3StreamImagePair image = this.image;
+        final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
+
+        InRangeObjects rst = streamsImage.getObjects(streamId, startOffset, endOffset, limit);
+        if (rst.objects().size() >= limit || rst.endOffset() >= endOffset || rst == InRangeObjects.INVALID) {
+            return CompletableFuture.completedFuture(Map.entry(rst, image));
+        }
+
+        LOGGER.info("[FetchObjects],[PENDING],streamId={} startOffset={} endOffset={} limit={}",
+                streamId, startOffset, endOffset, limit);
+
+        CompletableFuture<Void> pendingCf = pendingFetch();
+        CompletableFuture<Map.Entry<InRangeObjects, S3StreamImagePair>> rstCf = new CompletableFuture<>();
+        FutureUtil.propagate(pendingCf.thenCompose(nil -> fetch0(streamId, startOffset, endOffset, limit)), rstCf);
+        return rstCf.whenComplete((r, ex) -> {
+            LOGGER.info("[FetchObjects],[COMPLETE_PENDING],streamId={} startOffset={} endOffset={} limit={}",
+                    streamId, startOffset, endOffset, limit);
         });
     }
 
-    private synchronized CompletableFuture<InRangeObjects> fetch0(long streamId, long startOffset, long endOffset, int limit) {
-        InRangeObjects rst = streamsImage.getObjects(streamId, startOffset, endOffset, limit);
-        if (rst.objects().size() >= limit || rst.endOffset() >= endOffset || rst == InRangeObjects.INVALID) {
-            return CompletableFuture.completedFuture(rst);
-        }
-        LOGGER.info("[FetchObjects],[PENDING],streamId={} startOffset={} endOffset={} limit={}", streamId, startOffset, endOffset, limit);
-        CompletableFuture<Void> pendingCf = pendingFetch();
-        CompletableFuture<InRangeObjects> rstCf = new CompletableFuture<>();
-        FutureUtil.propagate(pendingCf.thenCompose(nil -> fetch0(streamId, startOffset, endOffset, limit)), rstCf);
-        return rstCf.whenComplete((r, ex) -> LOGGER.info("[FetchObjects],[COMPLETE_PENDING],streamId={} startOffset={} endOffset={} limit={}", streamId, startOffset, endOffset, limit));
-    }
-
     public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
-        synchronized (StreamMetadataManager.this) {
-            try {
-                List<S3StreamObject> streamObjects = streamsImage.getStreamObjects(streamId, startOffset, endOffset, limit);
-                List<S3ObjectMetadata> s3StreamObjectMetadataList = streamObjects.stream().map(object -> {
-                    S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
-                    long committedTimeInMs = objectMetadata.getCommittedTimeInMs();
-                    long objectSize = objectMetadata.getObjectSize();
-                    return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), object.dataTimeInMs(),
-                            committedTimeInMs, objectSize, S3StreamConstant.INVALID_ORDER_ID);
-                }).collect(Collectors.toList());
-                return CompletableFuture.completedFuture(s3StreamObjectMetadataList);
-            } catch (Exception e) {
-                LOGGER.warn(
-                        "[GetStreamObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with exception: {}",
-                        streamId, startOffset, endOffset, limit, e.getMessage());
-                return CompletableFuture.failedFuture(e);
-            }
+        final S3StreamImagePair image = this.image;
+
+        final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
+        final S3ObjectsImage objectsImage = image.objectsMetadata();
+
+        try {
+            List<S3StreamObject> streamObjects = streamsImage.getStreamObjects(streamId, startOffset, endOffset, limit);
+
+            List<S3ObjectMetadata> s3StreamObjectMetadataList = streamObjects.stream().map(object -> {
+                S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
+                long committedTimeInMs = objectMetadata.getCommittedTimeInMs();
+                long objectSize = objectMetadata.getObjectSize();
+                return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), object.dataTimeInMs(),
+                        committedTimeInMs, objectSize, S3StreamConstant.INVALID_ORDER_ID);
+            }).collect(Collectors.toList());
+
+            return CompletableFuture.completedFuture(s3StreamObjectMetadataList);
+        } catch (Exception e) {
+            LOGGER.warn(
+                    "[GetStreamObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with exception: {}",
+                    streamId, startOffset, endOffset, limit, e.getMessage());
+            return CompletableFuture.failedFuture(e);
         }
     }
 
     public List<StreamMetadata> getStreamMetadataList(List<Long> streamIds) {
-        synchronized (StreamMetadataManager.this) {
-            List<StreamMetadata> streamMetadataList = new ArrayList<>();
-            for (Long streamId : streamIds) {
-                S3StreamMetadataImage streamImage = streamsImage.streamsMetadata().get(streamId);
-                if (streamImage == null) {
-                    LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
-                    continue;
-                }
-                StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
-                        streamImage.getStartOffset(), -1L, streamImage.state()) {
-                    @Override
-                    public long endOffset() {
-                        throw new UnsupportedOperationException();
-                    }
-                };
-                streamMetadataList.add(streamMetadata);
+        final S3StreamImagePair image = this.image;
+
+        final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
+
+        List<StreamMetadata> streamMetadataList = new ArrayList<>();
+        for (Long streamId : streamIds) {
+            S3StreamMetadataImage streamImage = streamsImage.streamsMetadata().get(streamId);
+            if (streamImage == null) {
+                LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
+                continue;
             }
-            return streamMetadataList;
+            StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
+                    streamImage.getStartOffset(), -1L, streamImage.state()) {
+                @Override
+                public long endOffset() {
+                    throw new UnsupportedOperationException();
+                }
+            };
+            streamMetadataList.add(streamMetadata);
         }
+        return streamMetadataList;
+
     }
 
     public boolean isObjectExist(long objectId) {
+        final S3StreamImagePair image = this.image;
+        final S3ObjectsImage objectsImage = image.objectsMetadata();
+
         S3Object object = objectsImage.getObjectMetadata(objectId);
         if (object == null) {
             return false;
@@ -219,6 +234,30 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
         public GetObjectsTask() {
             this.cf = new CompletableFuture<>();
+        }
+    }
+
+    private static class S3StreamImagePair {
+        private final S3StreamsMetadataImage streamsImage;
+        private final S3ObjectsImage objectsImage;
+        private final OffsetAndEpoch offsetAndEpoch;
+
+        public S3StreamImagePair(MetadataImage image) {
+            this.streamsImage = image.streamsMetadata();
+            this.objectsImage = image.objectsMetadata();
+            this.offsetAndEpoch = image.highestOffsetAndEpoch();
+        }
+
+        public S3StreamsMetadataImage streamsMetadata() {
+            return streamsImage;
+        }
+
+        public S3ObjectsImage objectsMetadata() {
+            return objectsImage;
+        }
+
+        OffsetAndEpoch version() {
+            return this.offsetAndEpoch;
         }
     }
 
