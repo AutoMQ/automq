@@ -47,6 +47,7 @@ import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
 import org.apache.kafka.metadata.migration.{KRaftMigrationDriver, LegacyPropagator}
+import org.apache.kafka.metadata.placement.{ReplicaPlacer, StripedReplicaPlacer}
 import org.apache.kafka.metadata.publisher.FeaturesPublisher
 import org.apache.kafka.raft.RaftConfig
 import org.apache.kafka.security.PasswordEncoder
@@ -60,7 +61,7 @@ import org.apache.kafka.server.policy.{AlterConfigPolicy, CreateTopicPolicy}
 import org.apache.kafka.server.util.{Deadline, FutureUtils}
 
 import java.util
-import java.util.{Optional, OptionalLong}
+import java.util.{Optional, OptionalLong, Random}
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.{CompletableFuture, TimeUnit}
 import scala.compat.java8.OptionConverters._
@@ -295,7 +296,8 @@ class ControllerServer(
           setDelegationTokenExpiryCheckIntervalMs(config.delegationTokenExpiryCheckIntervalMs).
           setEligibleLeaderReplicasEnabled(config.elrEnabled).
           setStreamClient(streamClient).
-          setQuorumVoters(config.quorumVoters)
+          setQuorumVoters(config.quorumVoters).
+          setReplicaPlacer(replicaPlacer())
       }
       controller = controllerBuilder.build()
       controller.setExtension(quorumControllerExtension(controller))
@@ -580,8 +582,12 @@ class ControllerServer(
   }
 
   // AutoMQ for Kafka inject start
-  def quorumControllerExtension(quorumController: QuorumController): QuorumControllerExtension = {
+  protected def quorumControllerExtension(quorumController: QuorumController): QuorumControllerExtension = {
     QuorumControllerExtension.NOOP
+  }
+
+  protected def replicaPlacer(): ReplicaPlacer = {
+    new StripedReplicaPlacer(new Random())
   }
   // AutoMQ for Kafka inject end
 }
