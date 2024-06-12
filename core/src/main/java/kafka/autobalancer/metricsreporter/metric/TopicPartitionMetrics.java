@@ -11,13 +11,13 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
+import java.util.HashMap;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.metricsreporter.exception.UnknownVersionException;
 import org.apache.kafka.common.TopicPartition;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -28,7 +28,7 @@ public class TopicPartitionMetrics extends AutoBalancerMetrics {
     private final int partition;
 
     public TopicPartitionMetrics(long time, int brokerId, String brokerRack, String topic, int partition) {
-        this(time, brokerId, brokerRack, topic, partition, Collections.emptyMap());
+        this(time, brokerId, brokerRack, topic, partition, new HashMap<>());
     }
 
     public TopicPartitionMetrics(long time, int brokerId, String brokerRack, String topic, int partition, Map<Byte, Double> metricsMap) {
