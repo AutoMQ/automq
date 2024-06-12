@@ -12,7 +12,6 @@
 package kafka.autobalancer.metricsreporter.metric;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -24,20 +23,20 @@ import java.util.Map;
  */
 public abstract class AutoBalancerMetrics {
     public static final byte METRIC_VERSION = 0;
-    private final Map<Byte, Double> metricValueMap = new HashMap<>();
+    private final Map<Byte, Double> metricValueMap;
     private final long time;
     private final int brokerId;
     private final String brokerRack;
 
     public AutoBalancerMetrics(long time, int brokerId, String brokerRack) {
-        this(time, brokerId, brokerRack, Collections.emptyMap());
+        this(time, brokerId, brokerRack, new HashMap<>());
     }
 
     public AutoBalancerMetrics(long time, int brokerId, String brokerRack, Map<Byte, Double> metricValueMap) {
         this.time = time;
         this.brokerId = brokerId;
         this.brokerRack = brokerRack;
-        this.metricValueMap.putAll(metricValueMap);
+        this.metricValueMap = metricValueMap;
     }
 
     protected static Map<Byte, Double> parseMetricsMap(ByteBuffer buffer) {
