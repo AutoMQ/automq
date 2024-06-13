@@ -54,9 +54,13 @@ public class S3StreamMetadataImage {
 
     final DeltaMap<Long /* objectId */, S3StreamObject> streamObjectsMap;
 
-    private List<S3StreamObject> sortedStreamObjects;
+    // this should be created only once in each image and not be modified
+    private volatile List<S3StreamObject> sortedStreamObjects;
+    private final Object sortedStreamObjectsLock = new Object();
 
-    private NavigableMap<Long /* stream object start offset */, Integer /* stream object index */> streamObjectOffsets;
+    // this should be created only once in each image and not be modified
+    private volatile NavigableMap<Long /* stream object start offset */, Integer /* stream object index */> streamObjectOffsets;
+    private final Object streamObjectOffsetsLock = new Object();
 
     public S3StreamMetadataImage(
             long streamId, long epoch, StreamState state,
@@ -157,24 +161,37 @@ public class S3StreamMetadataImage {
         if (sortedStreamObjects != null) {
             return sortedStreamObjects;
         }
-        List<S3StreamObject> streamObjects = new ArrayList<>();
-        streamObjectsMap.forEach((objectId, streamObject) -> streamObjects.add(streamObject));
-        streamObjects.sort(Comparator.comparingLong(S3StreamObject::startOffset));
-        this.sortedStreamObjects = streamObjects;
-        return streamObjects;
+
+        synchronized (sortedStreamObjectsLock) {
+            if (sortedStreamObjects == null) {
+                List<S3StreamObject> streamObjects = new ArrayList<>();
+                streamObjectsMap.forEach((objectId, streamObject) -> streamObjects.add(streamObject));
+                streamObjects.sort(Comparator.comparingLong(S3StreamObject::startOffset));
+                this.sortedStreamObjects = Collections.unmodifiableList(streamObjects);
+            }
+        }
+
+        return this.sortedStreamObjects;
     }
 
     public int floorStreamObjectIndex(long offset) {
         List<S3StreamObject> sortedStreamObjects = getStreamObjects();
+
         if (streamObjectOffsets == null) {
-            // TODO: optimize, get floor index without construct sorted map
-            NavigableMap<Long, Integer> streamObjectOffsets = new TreeMap<>();
-            for (int i = 0; i < sortedStreamObjects.size(); i++) {
-                S3StreamObject streamObject = sortedStreamObjects.get(i);
-                streamObjectOffsets.put(streamObject.streamOffsetRange().startOffset(), i);
+            synchronized (streamObjectOffsetsLock) {
+                if (streamObjectOffsets == null) {
+                    // TODO: optimize, get floor index without construct sorted map
+                    NavigableMap<Long, Integer> streamObjectOffsets = new TreeMap<>();
+                    final int sortedStreamObjectsSize = sortedStreamObjects.size();
+                    for (int i = 0; i < sortedStreamObjectsSize; i++) {
+                        S3StreamObject streamObject = sortedStreamObjects.get(i);
+                        streamObjectOffsets.put(streamObject.streamOffsetRange().startOffset(), i);
+                    }
+                    this.streamObjectOffsets = Collections.unmodifiableNavigableMap(streamObjectOffsets);
+                }
             }
-            this.streamObjectOffsets = streamObjectOffsets;
         }
+
         Map.Entry<Long, Integer> entry = streamObjectOffsets.floorEntry(offset);
         if (entry == null) {
             return -1;
