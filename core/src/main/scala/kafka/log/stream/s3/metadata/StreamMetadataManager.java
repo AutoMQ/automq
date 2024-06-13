@@ -35,7 +35,6 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -96,49 +95,43 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     @Override
     public CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit) {
         // TODO: cache the object list for next search
-        return exec(() -> fetch0(streamId, startOffset, endOffset, limit), LOGGER, "fetchObjects")
-                .thenApply(rst -> {
-                    final InRangeObjects inRangeObjects = rst.getKey();
-                    final S3StreamImagePair image = rst.getValue();
-
-                    inRangeObjects.objects().forEach(object -> {
-                        S3Object objectMetadata = image.objectsMetadata().getObjectMetadata(object.objectId());
-                        if (objectMetadata == null) {
-                            // should not happen
-                            LOGGER.error("[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, " +
-                                            "and search in metadataCache failed with empty result",
-                                    streamId, startOffset, endOffset, limit);
-                            throw new IllegalStateException("can't find object metadata for object: " + object.objectId());
-                        }
-                        object.setObjectSize(objectMetadata.getObjectSize());
-                        object.setCommittedTimestamp(objectMetadata.getCommittedTimeInMs());
-
-                    });
-
-                    if (LOGGER.isTraceEnabled()) {
-                        LOGGER.trace("[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, " +
-                                        "and search in metadataCache success with result: {}",
-                                streamId, startOffset, endOffset, limit, rst);
-                    }
-
-                    return inRangeObjects;
-                });
+        return exec(() -> fetch0(streamId, startOffset, endOffset, limit), LOGGER, "fetchObjects");
     }
 
-    private CompletableFuture<Map.Entry<InRangeObjects, S3StreamImagePair>> fetch0(long streamId, long startOffset, long endOffset, int limit) {
+    private CompletableFuture<InRangeObjects> fetch0(long streamId, long startOffset, long endOffset, int limit) {
         final S3StreamImagePair image = this.image;
         final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
 
         InRangeObjects rst = streamsImage.getObjects(streamId, startOffset, endOffset, limit);
         if (rst.objects().size() >= limit || rst.endOffset() >= endOffset || rst == InRangeObjects.INVALID) {
-            return CompletableFuture.completedFuture(Map.entry(rst, image));
+            rst.objects().forEach(object -> {
+                S3Object objectMetadata = image.objectsMetadata().getObjectMetadata(object.objectId());
+                if (objectMetadata == null) {
+                    // should not happen
+                    LOGGER.error("[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, " +
+                                    "and search in metadataCache failed with empty result",
+                            streamId, startOffset, endOffset, limit);
+                    throw new IllegalStateException("can't find object metadata for object: " + object.objectId());
+                }
+                object.setObjectSize(objectMetadata.getObjectSize());
+                object.setCommittedTimestamp(objectMetadata.getCommittedTimeInMs());
+
+            });
+
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("[FetchObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, " +
+                                "and search in metadataCache success with result: {}",
+                        streamId, startOffset, endOffset, limit, rst);
+            }
+
+            return CompletableFuture.completedFuture(rst);
         }
 
         LOGGER.info("[FetchObjects],[PENDING],streamId={} startOffset={} endOffset={} limit={}",
                 streamId, startOffset, endOffset, limit);
 
         CompletableFuture<Void> pendingCf = pendingFetch();
-        CompletableFuture<Map.Entry<InRangeObjects, S3StreamImagePair>> rstCf = new CompletableFuture<>();
+        CompletableFuture<InRangeObjects> rstCf = new CompletableFuture<>();
         FutureUtil.propagate(pendingCf.thenCompose(nil -> fetch0(streamId, startOffset, endOffset, limit)), rstCf);
         return rstCf.whenComplete((r, ex) -> {
             LOGGER.info("[FetchObjects],[COMPLETE_PENDING],streamId={} startOffset={} endOffset={} limit={}",
