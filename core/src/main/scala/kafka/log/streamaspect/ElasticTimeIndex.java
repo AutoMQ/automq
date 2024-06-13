@@ -275,7 +275,17 @@ public class ElasticTimeIndex extends TimeIndex {
         }
         // cache missing, try to read from remote and put it to cache.
         // the index interval is 1MiB and the segment size is 1GB, so binary search only need 512 entries
-        FetchResult rst = stream.fetch(startOffset, Math.min(entries() * ENTRY_SIZE, startOffset + ENTRY_SIZE * 512)).get();
+        long endOffset = Math.min(entries() * ENTRY_SIZE, startOffset + ENTRY_SIZE * 512);
+        if (endOffset > stream.confirmOffset()) {
+            // the end offset is beyond the confirmed offset, so we need to wait for the last append to finish
+            //  to ensure the data is available
+            try {
+                lastAppend.get();
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
+        }
+        FetchResult rst = stream.fetch(startOffset, endOffset).get();
         List<RecordBatchWithContext> records = rst.recordBatchList();
         if (records.isEmpty()) {
             throw new IllegalStateException("fetch empty from stream " + stream + " at offset " + startOffset);
