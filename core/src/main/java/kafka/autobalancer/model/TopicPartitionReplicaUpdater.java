@@ -11,16 +11,16 @@
 
 package kafka.autobalancer.model;
 
+import java.util.Set;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
-import kafka.autobalancer.model.samples.AbstractTimeWindowSamples;
+import kafka.autobalancer.model.samples.Samples;
+import kafka.autobalancer.model.samples.SingleValueSamples;
 import org.apache.kafka.common.TopicPartition;
 
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     private final TopicPartition tp;
@@ -31,21 +31,6 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
     public TopicPartition topicPartition() {
         return this.tp;
-    }
-
-    @Override
-    protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
-        Set<Byte> missingMetrics = new HashSet<>();
-        for (byte metricType : RawMetricTypes.requiredPartitionMetrics(metricVersion)) {
-            if (!metricsMap.containsKey(metricType)) {
-                missingMetrics.add(metricType);
-            }
-        }
-        boolean valid = missingMetrics.isEmpty();
-        if (!valid) {
-            LOG_SUPPRESSOR.warn("{} has missing metrics: {} for version {}", name(), missingMetrics, metricVersion);
-        }
-        return valid;
     }
 
     @Override
@@ -65,24 +50,40 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         return replica;
     }
 
+    @Override
+    protected Set<Byte> requiredMetrics() {
+        return RawMetricTypes.requiredPartitionMetrics(metricVersion);
+    }
+
+    public void setMetricVersion(MetricVersion metricVersion) {
+        this.metricVersion = metricVersion;
+    }
+
     protected void processRawMetrics(TopicPartitionReplica replica) {
-        for (Map.Entry<Byte, AbstractTimeWindowSamples> entry : metricSampleMap.entrySet()) {
+        for (Map.Entry<Byte, Samples> entry : metricSampleMap.entrySet()) {
             byte metricType = entry.getKey();
-            AbstractTimeWindowSamples samples = entry.getValue();
-            if (!RawMetricTypes.PARTITION_METRICS.contains(metricType)) {
-                continue;
-            }
+            Samples samples = entry.getValue();
             switch (metricType) {
                 case RawMetricTypes.PARTITION_BYTES_IN:
-                    replica.setLoad(Resource.NW_IN, samples.ofLoad());
+                    replica.setLoad(Resource.NW_IN, samples.value(), samples.isTrusted());
                     break;
                 case RawMetricTypes.PARTITION_BYTES_OUT:
-                    replica.setLoad(Resource.NW_OUT, samples.ofLoad());
+                    replica.setLoad(Resource.NW_OUT, samples.value(), samples.isTrusted());
                     break;
                 default:
                     break;
             }
         }
+    }
+
+    @Override
+    protected boolean processMetric(byte metricType, double value) {
+        return true;
+    }
+
+    @Override
+    protected Samples createSample(byte metricType) {
+        return new SingleValueSamples();
     }
 
     public static class TopicPartitionReplica extends AbstractInstance {

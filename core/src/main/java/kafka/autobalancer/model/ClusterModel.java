@@ -213,7 +213,7 @@ public class ClusterModel {
         return new ClusterModelSnapshot();
     }
 
-    public boolean updateBrokerMetrics(int brokerId, Map<Byte, Double> metricsMap, long time) {
+    public boolean updateBrokerMetrics(int brokerId, Iterable<Map.Entry<Byte, Double>> metricsMap, long time) {
         BrokerUpdater brokerUpdater = null;
         clusterLock.lock();
         try {
@@ -231,7 +231,7 @@ public class ClusterModel {
         return false;
     }
 
-    public boolean updateTopicPartitionMetrics(int brokerId, TopicPartition tp, Map<Byte, Double> metricsMap, long time) {
+    public boolean updateTopicPartitionMetrics(int brokerId, TopicPartition tp, Iterable<Map.Entry<Byte, Double>> metricsMap, long time) {
         TopicPartitionReplicaUpdater replicaUpdater = null;
         clusterLock.lock();
         try {

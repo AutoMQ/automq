@@ -13,6 +13,7 @@ package kafka.autobalancer.metricsreporter.metric;
 
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
+import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
 
 import java.util.Collections;
@@ -258,7 +259,11 @@ public final class MetricsUtils {
     }
 
     public static boolean sanityCheckTopicPartitionMetricsCompleteness(AutoBalancerMetrics metrics) {
-        return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.PARTITION_METRICS);
+        return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.requiredPartitionMetrics(MetricVersion.LATEST_VERSION));
+    }
+
+    public static boolean sanityCheckBrokerMetricsCompleteness(AutoBalancerMetrics metrics) {
+        return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.requiredBrokerMetrics(MetricVersion.LATEST_VERSION));
     }
 
     public static String topicPartitionKey(String topic, int partition) {
