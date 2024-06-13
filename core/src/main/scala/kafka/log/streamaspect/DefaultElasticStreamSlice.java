@@ -81,6 +81,11 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
+    public long confirmOffset() {
+        return stream.confirmOffset() - startOffsetInStream;
+    }
+
+    @Override
     public long startOffsetInStream() {
         return startOffsetInStream;
     }
