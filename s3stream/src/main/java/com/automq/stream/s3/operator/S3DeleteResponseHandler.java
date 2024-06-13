@@ -33,8 +33,7 @@ public class S3DeleteResponseHandler implements DeleteResponseHandler<DeleteObje
         this.deleteObjectsReturnSuccessKeys = deleteObjectsReturnSuccessKeys;
     }
 
-    private  boolean deleteObjectsReturnSuccessKeys = false;
-
+    private boolean deleteObjectsReturnSuccessKeys = false;
 
 
     @Override
