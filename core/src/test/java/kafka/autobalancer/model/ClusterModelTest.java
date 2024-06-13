@@ -105,11 +105,11 @@ public class ClusterModelTest {
         clusterModel.updateBrokerMetrics(1, Map.of(
                 RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
                 RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
-                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), System.currentTimeMillis());
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0).entrySet(), System.currentTimeMillis());
         clusterModel.updateBrokerMetrics(2, Map.of(
                 RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
                 RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
-                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), System.currentTimeMillis());
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0).entrySet(), System.currentTimeMillis());
 
         ClusterModelSnapshot snapshot = clusterModel.snapshot();
         Assertions.assertNotNull(snapshot.broker(1));
@@ -249,7 +249,7 @@ public class ClusterModelTest {
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertFalse(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time()));
 
         RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
                 .setBrokerId(brokerId);
@@ -264,7 +264,7 @@ public class ClusterModelTest {
                 .setPartitionId(partition);
         clusterModel.onPartitionCreate(partitionRecord);
         Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time()));
     }
 
     @Test
@@ -303,21 +303,21 @@ public class ClusterModelTest {
         clusterModel.updateBrokerMetrics(brokerId, Map.of(
                 RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
                 RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
-                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), now);
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0).entrySet(), now);
 
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time());
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time());
 
         TopicPartitionMetrics topicPartitionMetrics1 = new TopicPartitionMetrics(now, brokerId, "", topicName1, partition);
         topicPartitionMetrics1.put(RawMetricTypes.PARTITION_BYTES_IN, 60);
         topicPartitionMetrics1.put(RawMetricTypes.PARTITION_BYTES_OUT, 50);
         topicPartitionMetrics1.put(RawMetricTypes.PARTITION_SIZE, 10);
         clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics1.brokerId(),
-                new TopicPartition(topicName1, partition), topicPartitionMetrics1.getMetricValueMap(), topicPartitionMetrics1.time());
+                new TopicPartition(topicName1, partition), topicPartitionMetrics1.getMetricValueMap().entrySet(), topicPartitionMetrics1.time());
 
         ClusterModelSnapshot snapshot = clusterModel.snapshot(Collections.emptySet(), Set.of(topicName1), 10000);
         Collection<TopicPartitionReplicaUpdater.TopicPartitionReplica> replicas = snapshot.replicasFor(brokerId);
@@ -360,20 +360,20 @@ public class ClusterModelTest {
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerId, Map.of(
                 RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
                 RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
-                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), now));
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0).entrySet(), now));
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now - 1000, brokerId, "", topicName, partition);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time()));
 
         topicPartitionMetrics = new TopicPartitionMetrics(now - 2000, brokerId, "", topicName, partition1);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition1), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+                new TopicPartition(topicName, partition1), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time()));
 
         Map<Integer, Long> metricsTimeMap = clusterModel.calculateBrokerLatestMetricsTime();
         Assertions.assertEquals(1, metricsTimeMap.size());
@@ -402,13 +402,13 @@ public class ClusterModelTest {
         clusterModel.onBrokerRegister(registerBrokerRecord0);
         for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    0, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
+                    0, 0, 0).getMetricValueMap().entrySet(), System.currentTimeMillis()));
         }
         ClusterModelSnapshot snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                2000, 0, 0).getMetricValueMap(), System.currentTimeMillis()));
+                2000, 0, 0).getMetricValueMap().entrySet(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
@@ -418,13 +418,13 @@ public class ClusterModelTest {
         clusterModel.onBrokerRegister(registerBrokerRecord0);
         for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    0, 0, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
+                    0, 0, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
         }
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                2000, 0, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
+                2000, 0, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
@@ -434,13 +434,13 @@ public class ClusterModelTest {
         clusterModel.onBrokerRegister(registerBrokerRecord0);
         for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    0, 0, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
+                    0, 0, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
         }
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                0, 20000, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
+                0, 20000, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
@@ -450,13 +450,13 @@ public class ClusterModelTest {
         clusterModel.onBrokerRegister(registerBrokerRecord0);
         for (int i = 0; i < 100; i++) {
             Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    0, 0, 0, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
+                    0, 0, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
         }
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                0, 0, 20000, MetricVersion.V1).getMetricValueMap(), System.currentTimeMillis()));
+                0, 0, 20000, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
         snapshot = clusterModel.snapshot();
         snapshot.markSlowBrokers();
         Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
@@ -495,21 +495,21 @@ public class ClusterModelTest {
         Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerId, Map.of(
                 RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
                 RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
-                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), now));
+                RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0).entrySet(), now));
 
         TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 15);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+                new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time()));
 
         topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition1);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 20);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 25);
         topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
-                new TopicPartition(topicName, partition1), topicPartitionMetrics.getMetricValueMap(), topicPartitionMetrics.time()));
+                new TopicPartition(topicName, partition1), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time()));
 
         ClusterModelSnapshot snapshot = clusterModel.snapshot();
         AbstractInstanceUpdater.Load brokerLoadIn = snapshot.broker(brokerId).load(Resource.NW_IN);

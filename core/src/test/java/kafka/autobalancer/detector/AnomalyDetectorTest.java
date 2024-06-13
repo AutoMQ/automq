@@ -205,7 +205,7 @@ public class AnomalyDetectorTest {
             clusterModel.updateBrokerMetrics(i, Map.of(
                     RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
                     RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
-                    RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0), System.currentTimeMillis());
+                    RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0).entrySet(), System.currentTimeMillis());
         }
         int topicNum = 5000;
         int totalPartitionNum = 100000;
@@ -222,7 +222,7 @@ public class AnomalyDetectorTest {
             for (int j = 0; j < partitionNumPerTopic; j++) {
                 clusterModel.createPartition(topicId, j, brokerIndex);
                 Map<Byte, Double> metrics = generateRandomMetrics(r);
-                clusterModel.updateTopicPartitionMetrics(brokerIndex, new TopicPartition(topicName, j), metrics, System.currentTimeMillis());
+                clusterModel.updateTopicPartitionMetrics(brokerIndex, new TopicPartition(topicName, j), metrics.entrySet(), System.currentTimeMillis());
                 currPartitionNum++;
                 if (currPartitionNum >= partitionNums[brokerIndex]) {
                     brokerIndex++;

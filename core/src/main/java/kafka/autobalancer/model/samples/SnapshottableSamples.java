@@ -16,32 +16,41 @@ import kafka.autobalancer.model.Snapshot;
 import java.util.Deque;
 import java.util.LinkedList;
 
-public class SnapshotSamples {
+public class SnapshottableSamples implements Samples {
     private static final int DEFAULT_MAX_SIZE = 1024;
     private final Deque<Double> values;
     private final int maxSize;
     private Snapshot prev;
 
-    public SnapshotSamples() {
+    public SnapshottableSamples() {
         this(DEFAULT_MAX_SIZE);
     }
 
-    public SnapshotSamples(int maxSize) {
+    public SnapshottableSamples(int maxSize) {
         this.maxSize = maxSize;
         this.values = new LinkedList<>();
     }
 
-    public SnapshotSamples copy() {
-        SnapshotSamples copy = new SnapshotSamples(maxSize);
+    public SnapshottableSamples copy() {
+        SnapshottableSamples copy = new SnapshottableSamples(maxSize);
         copy.values.addAll(values);
         return copy;
     }
 
+    @Override
     public void append(double value) {
         while (values.size() == maxSize) {
             values.pop();
         }
         values.offer(value);
+    }
+
+    @Override
+    public double value() {
+        if (values.isEmpty()) {
+            return 0.0;
+        }
+        return values.peekLast();
     }
 
     public Snapshot snapshot() {
@@ -52,5 +61,10 @@ public class SnapshotSamples {
 
     public int size() {
         return values.size();
+    }
+
+    @Override
+    public boolean isTrusted() {
+        return false;
     }
 }

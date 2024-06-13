@@ -11,20 +11,20 @@
 
 package kafka.autobalancer.model;
 
+import java.util.Set;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
-import kafka.autobalancer.model.samples.SnapshotSamples;
+import kafka.autobalancer.model.samples.Samples;
+import kafka.autobalancer.model.samples.SingleValueSamples;
+import kafka.autobalancer.model.samples.SnapshottableSamples;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 public class BrokerUpdater extends AbstractInstanceUpdater {
     private final int brokerId;
     private final String rack;
-    private final Map<Byte, SnapshotSamples> metricSequanceMap = new HashMap<>();
     private boolean active;
 
     public BrokerUpdater(int brokerId, String rack, boolean active) {
@@ -45,10 +45,6 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         return this.active;
     }
 
-    public Map<Byte, SnapshotSamples> metricSequenceMap() {
-        return this.metricSequanceMap;
-    }
-
     public void setActive(boolean active) {
         lock.lock();
         try {
@@ -59,42 +55,27 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected boolean validateMetrics(Map<Byte, Double> metricsMap) {
-        metricVersion = extractMetricVersion(metricsMap);
-        Set<Byte> missingMetrics = new HashSet<>();
-        for (byte metricType : RawMetricTypes.requiredBrokerMetrics(metricVersion)) {
-            if (!metricsMap.containsKey(metricType)) {
-                missingMetrics.add(metricType);
-            }
-        }
-        boolean valid = missingMetrics.isEmpty();
-        if (!valid) {
-            LOG_SUPPRESSOR.warn("{} has missing metrics: {} for version {}", name(), missingMetrics, metricVersion);
-        }
-        return valid;
-    }
-
-    protected MetricVersion extractMetricVersion(Map<Byte, Double> metricsMap) {
-        if (metricsMap.containsKey(RawMetricTypes.BROKER_METRIC_VERSION)) {
-            return new MetricVersion(metricsMap.get(RawMetricTypes.BROKER_METRIC_VERSION).shortValue());
-        }
-        return defaultVersion();
-    }
-
-    @Override
     protected boolean isValidInstance() {
         return active;
     }
 
     @Override
-    protected void update0(Map<Byte, Double> metricsMap, long timestamp) {
-        super.update0(metricsMap, timestamp);
-        for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
-            if (!RawMetricTypes.BROKER_METRICS.contains(entry.getKey())) {
-                continue;
-            }
-            SnapshotSamples metric = metricSequanceMap.computeIfAbsent(entry.getKey(), k -> new SnapshotSamples());
-            metric.append(entry.getValue());
+    protected boolean processMetric(byte metricType, double value) {
+        if (metricType == RawMetricTypes.BROKER_METRIC_VERSION) {
+            this.metricVersion = new MetricVersion((short) value);
+        }
+        return true;
+    }
+
+    @Override
+    protected Samples createSample(byte metricType) {
+        switch (metricType) {
+            case RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS:
+            case RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS:
+            case RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS:
+                return new SnapshottableSamples();
+            default:
+                return new SingleValueSamples();
         }
     }
 
@@ -108,10 +89,21 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         return new Broker(brokerId, rack, timestamp, getMetricsSnapshot(), metricVersion);
     }
 
+    @Override
+    protected Set<Byte> requiredMetrics() {
+        return RawMetricTypes.requiredBrokerMetrics(metricVersion);
+    }
+
     protected Map<Byte, Snapshot> getMetricsSnapshot() {
         Map<Byte, Snapshot> snapshotMap = new HashMap<>();
-        for (Map.Entry<Byte, SnapshotSamples> entry : metricSequanceMap.entrySet()) {
-            snapshotMap.put(entry.getKey(), entry.getValue().snapshot());
+        for (Map.Entry<Byte, Samples> entry : metricSampleMap.entrySet()) {
+            byte metricType = entry.getKey();
+            if (metricType == RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS
+                || metricType == RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS
+                || metricType == RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS) {
+                SnapshottableSamples snapshottableSamples = (SnapshottableSamples) entry.getValue();
+                snapshotMap.put(entry.getKey(), snapshottableSamples.snapshot());
+            }
         }
         return snapshotMap;
     }

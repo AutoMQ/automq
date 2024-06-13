@@ -13,12 +13,11 @@ package kafka.autobalancer.model;
 
 
 import com.automq.stream.utils.LogContext;
-import com.automq.stream.utils.LogSuppressor;
+import java.util.Set;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.Resource;
-import kafka.autobalancer.model.samples.AbstractTimeWindowSamples;
-import kafka.autobalancer.model.samples.SimpleTimeWindowSamples;
+import kafka.autobalancer.model.samples.Samples;
 import org.slf4j.Logger;
 
 import java.util.HashMap;
@@ -28,21 +27,16 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public abstract class AbstractInstanceUpdater {
     protected static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
-    protected static final LogSuppressor LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 10000);
     protected final Lock lock = new ReentrantLock();
-    protected Map<Byte, AbstractTimeWindowSamples> metricSampleMap = new HashMap<>();
+    protected Map<Byte, Samples> metricSampleMap = new HashMap<>();
     protected long timestamp = 0L;
     protected MetricVersion metricVersion = defaultVersion();
 
-    public boolean update(Map<Byte, Double> metricsMap, long time) {
+    public boolean update(Iterable<Map.Entry<Byte, Double>> metricsMap, long time) {
         lock.lock();
         try {
             if (time < timestamp) {
                 LOGGER.warn("Metrics for {} is outdated at {}, last updated time {}", name(), time, timestamp);
-                return false;
-            }
-            if (!validateMetrics(metricsMap)) {
-                LOG_SUPPRESSOR.warn("Metrics validation failed for: {} of version {}, metrics: {}", name(), metricVersion, metricsMap.keySet());
                 return false;
             }
             update0(metricsMap, time);
@@ -60,22 +54,21 @@ public abstract class AbstractInstanceUpdater {
         return metricVersion;
     }
 
-    public void setMetricVersion(MetricVersion metricVersion) {
-        this.metricVersion = metricVersion;
-    }
-
-    protected void update0(Map<Byte, Double> metricsMap, long timestamp) {
-        for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
+    protected void update0(Iterable<Map.Entry<Byte, Double>> metricsMap, long timestamp) {
+        for (Map.Entry<Byte, Double> entry : metricsMap) {
             byte metricType = entry.getKey();
             double value = entry.getValue();
+            if (!processMetric(metricType, value)) {
+                continue;
+            }
             metricSampleMap.computeIfAbsent(metricType, k -> createSample(metricType)).append(value);
         }
         this.timestamp = timestamp;
     }
 
-    protected AbstractTimeWindowSamples createSample(byte metricType) {
-        return new SimpleTimeWindowSamples(1, 1, 1);
-    }
+    abstract boolean processMetric(byte metricType, double value);
+
+    abstract Samples createSample(byte metricType);
 
     public long getTimestamp() {
         long timestamp;
@@ -95,7 +88,13 @@ public abstract class AbstractInstanceUpdater {
     public AbstractInstance get(long timeSince) {
         lock.lock();
         try {
-            if (timestamp < timeSince) {
+            if (timestamp < timeSince || !isValidInstance()) {
+                return null;
+            }
+            Set<Byte> requiredMetrics = requiredMetrics();
+            if (!metricSampleMap.keySet().containsAll(requiredMetrics)) {
+                LOGGER.warn("Metrics for {} of version {} is incomplete, expected: {}, actual: {}", name(),
+                    metricVersion(), requiredMetrics, metricSampleMap.keySet());
                 return null;
             }
             return createInstance();
@@ -104,9 +103,9 @@ public abstract class AbstractInstanceUpdater {
         }
     }
 
-    protected abstract String name();
+    protected abstract Set<Byte> requiredMetrics();
 
-    protected abstract boolean validateMetrics(Map<Byte, Double> metricsMap);
+    protected abstract String name();
 
     protected abstract AbstractInstance createInstance();
 

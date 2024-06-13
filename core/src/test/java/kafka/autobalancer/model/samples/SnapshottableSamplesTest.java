@@ -15,10 +15,10 @@ import kafka.autobalancer.model.Snapshot;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-public class SnapshotSamplesTest {
+public class SnapshottableSamplesTest {
     @Test
     public void testAppendAndSnapshot() {
-        SnapshotSamples sequence = new SnapshotSamples(512);
+        SnapshottableSamples sequence = new SnapshottableSamples(512);
         for (int i = 0; i < 1000; i++) {
             sequence.append(i);
         }
