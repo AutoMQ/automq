@@ -62,6 +62,11 @@ public interface ElasticStreamSlice {
     long nextOffset();
 
     /**
+     * Get stream slice confirm offset. All data before this offset is confirmed.
+     */
+    long confirmOffset();
+
+    /**
      * Get slice start offset in under stream.
      *
      * @return segment start offset in stream.
