@@ -16,10 +16,10 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3ObjectStats;
-import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -27,26 +27,23 @@ import java.util.concurrent.TimeUnit;
  * If object data size is less than ObjectWriter.MAX_UPLOAD_SIZE, we should use single upload to upload it.
  * Else, we should use multi-part upload to upload it.
  */
-class ProxyWriter implements Writer {
+class ProxyWriterV2<E> implements Writer {
     final ObjectWriter objectWriter = new ObjectWriter();
-    private final Context context;
-    private final S3Operator operator;
+    private final ObjectStorage.WriteOptions writeOptions;
+    private final AbstractObjectStorage<E> operator;
     private final String path;
     private final long minPartSize;
-    private final ThrottleStrategy throttleStrategy;
     Writer multiPartWriter = null;
 
-    public ProxyWriter(Context context, S3Operator operator, String path, long minPartSize,
-        ThrottleStrategy throttleStrategy) {
-        this.context = context;
+    public ProxyWriterV2(ObjectStorage.WriteOptions writeOptions, AbstractObjectStorage<E> operator, String path, long minPartSize) {
+        this.writeOptions = writeOptions;
         this.operator = operator;
         this.path = path;
         this.minPartSize = minPartSize;
-        this.throttleStrategy = throttleStrategy;
     }
 
-    public ProxyWriter(Context context, S3Operator operator, String path, ThrottleStrategy throttleStrategy) {
-        this(context, operator, path, MIN_PART_SIZE, throttleStrategy);
+    public ProxyWriterV2(ObjectStorage.WriteOptions writeOptions, AbstractObjectStorage<E> operator, String path) {
+        this(writeOptions, operator, path, Writer.MIN_PART_SIZE);
     }
 
     @Override
@@ -107,7 +104,7 @@ class ProxyWriter implements Writer {
     }
 
     private void newMultiPartWriter() {
-        this.multiPartWriter = new MultiPartWriter(context, operator, path, minPartSize, throttleStrategy);
+        this.multiPartWriter = new MultiPartWriterV2<>(writeOptions, operator, path, minPartSize);
         if (objectWriter.data.readableBytes() > 0) {
             FutureUtil.propagate(multiPartWriter.write(objectWriter.data), objectWriter.cf);
         } else {
@@ -133,7 +130,7 @@ class ProxyWriter implements Writer {
         public void copyOnWrite() {
             int size = data.readableBytes();
             if (size > 0) {
-                ByteBuf buf = ByteBufAlloc.byteBuffer(size, context.allocType());
+                ByteBuf buf = ByteBufAlloc.byteBuffer(size, writeOptions.context().allocType());
                 buf.writeBytes(data.duplicate());
                 CompositeByteBuf copy = ByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
                 this.data.release();
@@ -155,7 +152,7 @@ class ProxyWriter implements Writer {
         public CompletableFuture<Void> close() {
             S3ObjectStats.getInstance().objectStageReadyCloseStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             int size = data.readableBytes();
-            FutureUtil.propagate(operator.write(path, data, throttleStrategy), cf);
+            FutureUtil.propagate(operator.write(path, data, writeOptions.throttleStrategy()), cf);
             cf.whenComplete((nil, e) -> {
                 S3ObjectStats.getInstance().objectStageTotalStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);

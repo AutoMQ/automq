@@ -70,8 +70,6 @@ public abstract class AbstractObjectStorage<E> implements ObjectStorage {
     private final AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter;
     private final AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter;
     private final DeleteResponseHandler<E> deleteResponseHandler;
-
-
     private final ExecutorService readLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-read-limiter-cb-executor", true, LOGGER);
     private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
@@ -110,7 +108,7 @@ public abstract class AbstractObjectStorage<E> implements ObjectStorage {
 
     @Override
     public Writer writer(WriteOptions options, String objectPath) {
-        return new ProxyWriterV2<E>(options, this, objectPath);
+        return new ProxyWriterV2<>(options, this, objectPath);
     }
 
     @Override

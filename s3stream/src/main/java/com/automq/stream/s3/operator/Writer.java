@@ -12,7 +12,9 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import io.netty.buffer.ByteBuf;
+
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -56,11 +58,11 @@ public interface Writer {
     /**
      * Copy a part of the object.
      *
-     * @param sourcePath source object path.
-     * @param start      start position of the source object.
-     * @param end        end position of the source object.
+     * @param s3ObjectMetadata source object metadata.
+     * @param start            start position of the source object.
+     * @param end              end position of the source object.
      */
-    void copyWrite(String sourcePath, long start, long end);
+    void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end);
 
     boolean hasBatchingPart();
 

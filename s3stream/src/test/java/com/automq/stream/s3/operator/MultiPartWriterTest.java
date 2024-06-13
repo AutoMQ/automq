@@ -12,7 +12,10 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import io.netty.buffer.ByteBuf;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -22,6 +25,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -166,20 +170,27 @@ class MultiPartWriterTest {
             return CompletableFuture.completedFuture(responsePublisher);
         });
 
+        S3ObjectMetadata s3ObjectMetadata1 = new S3ObjectMetadata(1, 200, S3ObjectType.STREAM);
+        S3ObjectMetadata s3ObjectMetadata2 = new S3ObjectMetadata(2, 200, S3ObjectType.STREAM);
+        S3ObjectMetadata s3ObjectMetadata3 = new S3ObjectMetadata(3, 200, S3ObjectType.STREAM);
+        S3ObjectMetadata s3ObjectMetadata4 = new S3ObjectMetadata(4, 200, S3ObjectType.STREAM);
+        S3ObjectMetadata s3ObjectMetadata5 = new S3ObjectMetadata(5, 200, S3ObjectType.STREAM);
+        S3ObjectMetadata s3ObjectMetadata6 = new S3ObjectMetadata(6, 200, S3ObjectType.STREAM);
+        S3ObjectMetadata s3ObjectMetadata7 = new S3ObjectMetadata(7, 200, S3ObjectType.STREAM);
         // case 2
-        writer.copyWrite("path-1", 0, 120);
+        writer.copyWrite(s3ObjectMetadata1, 0, 120);
         // case 1
-        writer.copyWrite("path-2", 20, 40);
+        writer.copyWrite(s3ObjectMetadata2, 20, 40);
         // case 3
-        writer.copyWrite("path-3", 60, 100);
+        writer.copyWrite(s3ObjectMetadata3, 60, 100);
         // case 4
-        writer.copyWrite("path-4", 140, 200);
+        writer.copyWrite(s3ObjectMetadata4, 140, 200);
         // case 1
-        writer.copyWrite("path-5", 200, 280);
+        writer.copyWrite(s3ObjectMetadata5, 200, 280);
         // case 5
-        writer.copyWrite("path-6", 400, 600);
+        writer.copyWrite(s3ObjectMetadata6, 400, 600);
         // last part
-        writer.copyWrite("path-7", 10, 20);
+        writer.copyWrite(s3ObjectMetadata7, 10, 20);
 
         writer.close().get();
         assertEquals(3, uploadPartRequests.size());
@@ -205,7 +216,7 @@ class MultiPartWriterTest {
         assertEquals(1, uploadPartCopyRequests.size());
         assertEquals("unit-test-bucket", uploadPartCopyRequests.get(0).sourceBucket());
         assertEquals("unit-test-bucket", uploadPartCopyRequests.get(0).destinationBucket());
-        assertEquals(List.of("path-1"), uploadPartCopyRequests.stream()
+        assertEquals(List.of(s3ObjectMetadata1.key()), uploadPartCopyRequests.stream()
             .map(UploadPartCopyRequest::sourceKey)
             .collect(Collectors.toList()));
         assertEquals("test-path-2", uploadPartCopyRequests.get(0).destinationKey());

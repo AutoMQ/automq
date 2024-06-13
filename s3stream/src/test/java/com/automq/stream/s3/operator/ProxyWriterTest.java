@@ -12,9 +12,13 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
+
 import java.util.concurrent.CompletableFuture;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,7 +88,8 @@ public class ProxyWriterTest {
             .thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag1").build()));
         when(operator.completeMultipartUpload(eq("testpath"), eq("test_upload_id"), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        writer.copyWrite("test_src_path", 0, 15 * 1024 * 1024);
+        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 15 * 1024 * 1024, S3ObjectType.STREAM);
+        writer.copyWrite(s3ObjectMetadata, 0, 15 * 1024 * 1024);
         Assertions.assertTrue(writer.close().isDone());
 
         verify(operator, times(1)).uploadPartCopy(any(), any(), anyLong(), anyLong(), any(), anyInt());

@@ -10,6 +10,7 @@
  */
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
@@ -81,8 +82,8 @@ public class MemoryS3Operator implements S3Operator {
             }
 
             @Override
-            public void copyWrite(String sourcePath, long start, long end) {
-                ByteBuf source = storage.get(sourcePath);
+            public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
+                ByteBuf source = storage.get(s3ObjectMetadata.key());
                 if (source == null) {
                     throw new IllegalArgumentException("object not exist");
                 }

@@ -22,6 +22,7 @@ import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -30,6 +31,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -217,7 +219,7 @@ public class StreamObjectCompactor {
                         nextBlockPosition += dataBlock.size();
                         lastIndex = dataBlock;
                     }
-                    writer.copyWrite(ObjectUtils.genKey(0, object.objectId()), validDataBlockStartPosition, basicObjectInfo.dataBlockSize());
+                    writer.copyWrite(object, validDataBlockStartPosition, basicObjectInfo.dataBlockSize());
                     objectSize += basicObjectInfo.dataBlockSize() - validDataBlockStartPosition;
                     indexes.addComponent(true, subIndexes);
                     compactedObjectIds.add(object.objectId());
