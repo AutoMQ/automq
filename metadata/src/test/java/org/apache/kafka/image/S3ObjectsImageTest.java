@@ -60,7 +60,7 @@ public class S3ObjectsImageTest {
             map.put(object.getObjectId(), object);
         }
         registry.getOrCreateSnapshot(0);
-        IMAGE1 = new S3ObjectsImage(3, map, registry, 0);
+        IMAGE1 = new S3ObjectsImage(3, map, registry, 0, new ArrayList<>());
         DELTA1_RECORDS = new ArrayList<>();
         // try to update object0 and object1 to committed
         // try to make object2 expired and mark it to be destroyed
@@ -105,7 +105,7 @@ public class S3ObjectsImageTest {
             -1, -1, -1, -1,
             S3ObjectState.PREPARED));
         registry.getOrCreateSnapshot(1);
-        IMAGE2 = new S3ObjectsImage(4L, map2, registry, 1);
+        IMAGE2 = new S3ObjectsImage(4L, map2, registry, 1, new ArrayList<>());
     }
 
     @Test

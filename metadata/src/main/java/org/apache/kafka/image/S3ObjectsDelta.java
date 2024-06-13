@@ -17,8 +17,10 @@
 
 package org.apache.kafka.image;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -78,22 +80,26 @@ public final class S3ObjectsDelta {
         // get original objects first
         TimelineHashMap<Long, S3Object> newObjects = image.timelineObjects();
         SnapshotRegistry registry = image.registry();
+        List<Long> liveEpochs = image.liveEpochs();
         if (newObjects == null) {
             registry = new SnapshotRegistry(new LogContext());
             newObjects = new TimelineHashMap<>(registry, 100000);
+            liveEpochs = new ArrayList<>();
         }
-        if (registry.latestEpoch() > image.epoch()) {
-            LOGGER.error("Don't expect duplicated apply in non-test code");
-            registry.revertToSnapshot(image.epoch());
-        }
-
-        // put all new changed objects
-        newObjects.putAll(changedObjects);
-        // remove all removed objects
-        removedObjectIds.forEach(newObjects::remove);
         long newEpoch = image.epoch() + 1;
-        registry.getOrCreateSnapshot(newEpoch);
-        return new S3ObjectsImage(currentAssignedObjectId, newObjects, registry, newEpoch);
+        synchronized (registry) {
+            if (registry.latestEpoch() > image.epoch()) {
+                LOGGER.error("Don't expect duplicated apply in non-test code");
+                registry.revertToSnapshot(image.epoch());
+            }
+
+            // put all new changed objects
+            newObjects.putAll(changedObjects);
+            // remove all removed objects
+            removedObjectIds.forEach(newObjects::remove);
+            registry.getOrCreateSnapshot(newEpoch);
+        }
+        return new S3ObjectsImage(currentAssignedObjectId, newObjects, registry, newEpoch, liveEpochs);
     }
 
 }
