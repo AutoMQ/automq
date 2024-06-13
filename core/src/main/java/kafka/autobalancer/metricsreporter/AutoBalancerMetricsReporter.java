@@ -348,6 +348,8 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
         YammerMetricProcessor.Context context = new YammerMetricProcessor.Context(now, brokerId, brokerRack, reportingIntervalMs);
         processMetrics(context);
+        addMissingMetrics(context);
+        checkMetricCompleteness(context);
         for (Map.Entry<String, AutoBalancerMetrics> entry : context.getMetricMap().entrySet()) {
             sendAutoBalancerMetric(entry.getValue());
         }
@@ -355,13 +357,25 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         LOGGER.debug("Finished reporting metrics, total metrics size: {}, merged size: {}.", interestedMetrics.size(), context.getMetricMap().size());
     }
 
-    protected void processMetrics(YammerMetricProcessor.Context context) throws Exception {
-        processYammerMetrics(context);
-        addBrokerMetrics(context);
-        addMandatoryMetrics(context);
+    protected void checkMetricCompleteness(YammerMetricProcessor.Context context) {
+        for (AutoBalancerMetrics metrics : context.getMetricMap().values()) {
+            if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC
+                    && !MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics)) {
+                throw new IllegalStateException("Missing metrics for topic partition " + metrics.key());
+            }
+            if (metrics.metricType() == MetricTypes.BROKER_METRIC
+                    && !MetricsUtils.sanityCheckBrokerMetricsCompleteness(metrics)) {
+                throw new IllegalStateException("Missing metrics for broker " + metrics.key());
+            }
+        }
     }
 
-    protected void addBrokerMetrics(YammerMetricProcessor.Context context) {
+    protected void processMetrics(YammerMetricProcessor.Context context) throws Exception {
+        processYammerMetrics(context);
+        processBrokerMetrics(context);
+    }
+
+    protected void processBrokerMetrics(YammerMetricProcessor.Context context) {
         context.merge(new BrokerMetrics(context.time(), brokerId, brokerRack)
                 .put(RawMetricTypes.BROKER_METRIC_VERSION, MetricVersion.LATEST_VERSION.value())
                 .put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS,
@@ -391,13 +405,12 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         }
     }
 
-    private void addMandatoryMetrics(YammerMetricProcessor.Context context) {
+    protected void addMissingMetrics(YammerMetricProcessor.Context context) {
         for (AutoBalancerMetrics metrics : context.getMetricMap().values()) {
-            if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC
-                    && !MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics)) {
-                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.PARTITION_BYTES_IN, 0.0);
-                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.PARTITION_BYTES_OUT, 0.0);
-                metrics.getMetricValueMap().putIfAbsent(RawMetricTypes.PARTITION_SIZE, 0.0);
+            if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC) {
+                for (byte key : RawMetricTypes.requiredPartitionMetrics(MetricVersion.LATEST_VERSION)) {
+                    metrics.getMetricValueMap().putIfAbsent(key, 0.0);
+                }
             }
         }
     }

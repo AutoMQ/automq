@@ -496,11 +496,11 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
                 TopicPartitionMetrics partitionMetrics = (TopicPartitionMetrics) metrics;
                 clusterModel.updateTopicPartitionMetrics(partitionMetrics.brokerId(),
                         new TopicPartition(partitionMetrics.topic(), partitionMetrics.partition()),
-                        partitionMetrics.getMetricValueMap(), partitionMetrics.time());
+                        partitionMetrics.getMetricValueMap().entrySet(), partitionMetrics.time());
                 break;
             case MetricTypes.BROKER_METRIC:
                 BrokerMetrics brokerMetrics = (BrokerMetrics) metrics;
-                clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricValueMap(), brokerMetrics.time());
+                clusterModel.updateBrokerMetrics(brokerMetrics.brokerId(), brokerMetrics.getMetricValueMap().entrySet(), brokerMetrics.time());
                 break;
             default:
                 logger.error("Not supported metrics version {}", metrics.metricType());
