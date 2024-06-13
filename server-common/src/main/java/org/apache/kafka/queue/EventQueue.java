@@ -26,7 +26,7 @@ import org.slf4j.Logger;
 
 public interface EventQueue extends AutoCloseable {
     interface Event {
-        long EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND = TimeUnit.MICROSECONDS.convert(1, TimeUnit.MILLISECONDS);
+        long EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND = TimeUnit.MICROSECONDS.convert(5, TimeUnit.MILLISECONDS);
         /**
          * Run the event.
          */
