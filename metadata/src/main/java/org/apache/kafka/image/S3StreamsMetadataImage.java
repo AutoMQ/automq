@@ -23,6 +23,7 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.utils.biniarysearch.AbstractOrderedCollection;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
+import com.google.common.annotations.VisibleForTesting;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -54,9 +55,12 @@ public final class S3StreamsMetadataImage {
     private final DeltaMap<Integer/*nodeId*/, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata;
 
     // Partition <-> Streams mapping in memory
+    // this should be created only once in each image and not be modified
     private final DeltaMap<TopicIdPartition, Set<Long>> partition2streams;
+    // this should be created only once in each image and not be modified
     private final DeltaMap<Long, TopicIdPartition> stream2partition;
 
+    @VisibleForTesting
     public S3StreamsMetadataImage(
         long assignedStreamId,
         DeltaMap<Long, S3StreamMetadataImage> streamsMetadata,
@@ -116,7 +120,9 @@ public final class S3StreamsMetadataImage {
 
         // floor value < 0 means that all stream objects' ranges are greater than startOffset
         int streamObjectIndex = Math.max(0, stream.floorStreamObjectIndex(startOffset));
-        List<S3StreamObject> streamObjects = stream.getStreamObjects();
+
+        final List<S3StreamObject> streamObjects = stream.getStreamObjects();
+        final int streamObjectsSize = streamObjects.size();
 
         int lastRangeIndex = -1;
         List<S3StreamSetObject> streamSetObjects = null;
@@ -126,7 +132,7 @@ public final class S3StreamsMetadataImage {
             int roundStartObjectSize = objects.size();
 
             // try to find consistent stream objects
-            for (; streamObjectIndex < streamObjects.size(); streamObjectIndex++) {
+            for (; streamObjectIndex < streamObjectsSize; streamObjectIndex++) {
                 S3StreamObject streamObject = streamObjects.get(streamObjectIndex);
                 if (streamObject.startOffset() != nextStartOffset) {
                     //noinspection StatementWithEmptyBody
@@ -165,7 +171,9 @@ public final class S3StreamsMetadataImage {
                 }
             }
 
-            for (; streamSetObjectIndex < streamSetObjects.size(); streamSetObjectIndex++) {
+            final int streamSetObjectsSize = streamSetObjects.size();
+
+            for (; streamSetObjectIndex < streamSetObjectsSize; streamSetObjectIndex++) {
                 S3StreamSetObject streamSetObject = streamSetObjects.get(streamSetObjectIndex);
                 StreamOffsetRange streamOffsetRange = streamSetObject.find(streamId).orElse(null);
                 // skip the stream set object not containing the stream or the range is before the nextStartOffset
