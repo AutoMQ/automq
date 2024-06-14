@@ -61,7 +61,6 @@ class ListOffsetsIntegrationTest extends KafkaServerTestHarness {
 
   @AfterEach
   override def tearDown(): Unit = {
-    setOldMessageFormat = false
     Utils.closeQuietly(adminClient, "ListOffsetsAdminClient")
     super.tearDown()
   }

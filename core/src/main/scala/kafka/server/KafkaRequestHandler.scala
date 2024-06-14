@@ -22,7 +22,6 @@ import com.yammer.metrics.core.{Gauge, Meter}
 import kafka.network.RequestChannel
 import kafka.utils.{Exit, Logging, Pool}
 import kafka.server.KafkaRequestHandler.{threadCurrentRequest, threadRequestChannel}
-import kafka.utils._
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.utils.{KafkaThread, Time}
@@ -507,7 +506,7 @@ class AggregatedMetric {
   def close(): Unit = metricValues.clear()
 }
 
-class BrokerTopicPartitionMetrics(tp: TopicPartition, configOpt: java.util.Optional[KafkaConfig]) extends BrokerTopicMetrics(Some(tp.topic()), configOpt) {
+class BrokerTopicPartitionMetrics(tp: TopicPartition) extends BrokerTopicMetrics(Some(tp.topic()), false) {
   override lazy val tags: java.util.Map[String, String] = Map("topic" -> tp.topic(), "partition" -> tp.partition().toString).asJava
 }
 
@@ -536,7 +535,7 @@ object BrokerTopicStats {
 class BrokerTopicStats(remoteStorageEnabled: Boolean = false) extends Logging {
 
   private val valueFactory = (k: String) => new BrokerTopicMetrics(Some(k), remoteStorageEnabled)
-  private val partitionValueFactory = (k: TopicPartition) => new BrokerTopicPartitionMetrics(k, configOpt)
+  private val partitionValueFactory = (k: TopicPartition) => new BrokerTopicPartitionMetrics(k)
 
   private val stats = new Pool[String, BrokerTopicMetrics](Some(valueFactory))
   private val partitionStats = new Pool[TopicPartition, BrokerTopicPartitionMetrics](Some(partitionValueFactory))

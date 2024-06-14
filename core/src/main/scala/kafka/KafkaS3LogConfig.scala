@@ -35,7 +35,7 @@ class KafkaS3LogConfig(
     if (kafkaServer != null) {
       kafkaServer.clusterId
     } else {
-      kafkaRaftServer.sharedServer.clusterId
+      kafkaRaftServer.getSharedServer().clusterId
     }
   }
 

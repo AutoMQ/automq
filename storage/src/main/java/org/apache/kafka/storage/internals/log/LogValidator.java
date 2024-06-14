@@ -236,7 +236,7 @@ public class LogValidator {
             now,
             convertedRecords,
             info.maxTimestamp,
-            info.offsetOfMaxTimestamp,
+            info.shallowOffsetOfMaxTimestamp,
             true,
             recordValidationStats);
     }
@@ -494,7 +494,7 @@ public class LogValidator {
             logAppendTime,
             records,
             info.maxTimestamp,
-            info.offsetOfMaxTimestamp,
+            info.shallowOffsetOfMaxTimestamp,
             true,
             recordValidationStats);
     }

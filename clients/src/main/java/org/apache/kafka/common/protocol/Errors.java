@@ -144,7 +144,6 @@ import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.errors.TransactionAbortableException;
-import org.apache.kafka.common.errors.AbortableTransactionException;
 
 // AutoMQ inject start
 import org.apache.kafka.common.errors.s3.CompactedObjectsNotFoundException;

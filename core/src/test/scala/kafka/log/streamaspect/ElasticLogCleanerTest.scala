@@ -5,7 +5,7 @@ import kafka.log.streamaspect.client.Context
 import kafka.log.LogCleanerTest
 import kafka.server.BrokerTopicStats
 import org.apache.kafka.common.Uuid
-import org.apache.kafka.server.config.Defaults
+import org.apache.kafka.coordinator.transaction.TransactionLogConfigs
 import org.apache.kafka.storage.internals.log.{LogConfig, LogDirFailureChannel, LogOffsetsListener}
 import org.junit.jupiter.api.{BeforeEach, Tag, Test}
 
@@ -57,7 +57,7 @@ class ElasticLogCleanerTest extends LogCleanerTest {
             maxTransactionTimeoutMs = 5 * 60 * 1000,
             producerStateManagerConfig,
             brokerTopicStats = new BrokerTopicStats,
-            producerIdExpirationCheckIntervalMs = Defaults.PRODUCER_ID_EXPIRATION_CHECK_INTERVAL_MS,
+            producerIdExpirationCheckIntervalMs = TransactionLogConfigs.PRODUCER_ID_EXPIRATION_CHECK_INTERVAL_MS_DEFAULT,
             new LogDirFailureChannel(10),
             topicId = Some(Uuid.ZERO_UUID),
             0,

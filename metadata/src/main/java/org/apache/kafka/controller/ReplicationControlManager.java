@@ -1996,7 +1996,7 @@ public class ReplicationControlManager {
                                      int brokerWithUncleanShutdown,
                                      List<ApiMessageAndVersion> records,
                                      Iterator<TopicIdPartition> iterator) {
-        generateLeaderAndIsrUpdates(context, brokerToRemove, brokerToAdd, records, iterator, false);
+        generateLeaderAndIsrUpdates(context, brokerToRemove, brokerToAdd, brokerWithUncleanShutdown, records, iterator, false);
     }
 
     /**
@@ -2019,6 +2019,7 @@ public class ReplicationControlManager {
     void generateLeaderAndIsrUpdates(String context,
                                      int brokerToRemove,
                                      int brokerToAdd,
+                                     int brokerWithUncleanShutdown,
                                      List<ApiMessageAndVersion> records,
                                      Iterator<TopicIdPartition> iterator,
                                      boolean fencing) {

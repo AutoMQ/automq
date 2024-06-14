@@ -421,7 +421,7 @@ public class MemoryRecordsBuilderTest {
         else if (args.compression.type() == CompressionType.NONE && magic == MAGIC_VALUE_V1)
             assertEquals(1L, info.shallowOffsetOfMaxTimestamp);
         else
-            assertEquals(1L, info.offsetOfMaxTimestamp);
+            assertEquals(1L, info.shallowOffsetOfMaxTimestamp);
 
         int i = 0;
         long[] expectedTimestamps = new long[] {0L, 2L, 1L};

@@ -150,7 +150,11 @@ class BrokerServer(
 
   var clientMetricsManager: ClientMetricsManager = _
 
+  // AutoMQ inject start
+  var controllerNodeProvider: RaftControllerNodeProvider = _
+
   def metadataLoader: MetadataLoader = sharedServer.loader
+  // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
     lock.lock()
@@ -234,7 +238,7 @@ class BrokerServer(
         "controller quorum voters future",
         sharedServer.controllerQuorumVotersFuture,
         startupDeadline, time)
-      val controllerNodeProvider = RaftControllerNodeProvider(raftManager, config)
+      controllerNodeProvider = RaftControllerNodeProvider(raftManager, config)
 
       clientToControllerChannelManager = new NodeToControllerChannelManagerImpl(
         controllerNodeProvider,

@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import com.google.common.util.concurrent.MoreExecutors
 import com.yammer.metrics.core.{Gauge, Meter}
 import kafka.api._
 import kafka.cluster.PartitionTest.MockPartitionListener
@@ -65,7 +66,7 @@ import org.apache.kafka.server.config.{KRaftConfigs, ReplicationConfigs, ServerL
 import org.apache.kafka.server.log.remote.storage._
 import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics}
 import org.apache.kafka.server.util.timer.MockTimer
-import org.apache.kafka.server.util.{MockScheduler, MockTime}
+import org.apache.kafka.server.util.{MockScheduler, MockTime, Scheduler}
 import org.apache.kafka.storage.internals.checkpoint.PartitionMetadataFile
 import org.apache.kafka.storage.internals.log._
 import org.junit.jupiter.api.Assertions._
@@ -99,22 +100,22 @@ object ReplicaManagerTest {
 
 class ReplicaManagerTest {
 
-  private val topic = "test-topic"
+  protected val topic = "test-topic"
   private val topicId = Uuid.randomUuid()
-  private val topicIds = scala.Predef.Map("test-topic" -> topicId)
-  private val topicNames = scala.Predef.Map(topicId -> "test-topic")
+  protected val topicIds = scala.Predef.Map("test-topic" -> topicId)
+  protected val topicNames = scala.Predef.Map(topicId -> "test-topic")
   private val transactionalId = "txn"
-  private val time = new MockTime
-  private val metrics = new Metrics
+  protected val time = new MockTime
+  protected val metrics = new Metrics
   private val startOffset = 0
   private val endOffset = 20
   private val highHW = 18
-  private var alterPartitionManager: AlterPartitionManager = _
-  private var config: KafkaConfig = _
-  private var quotaManager: QuotaManagers = _
-  private var mockRemoteLogManager: RemoteLogManager = _
-  private var addPartitionsToTxnManager: AddPartitionsToTxnManager = _
-  private var brokerTopicStats: BrokerTopicStats = _
+  protected var alterPartitionManager: AlterPartitionManager = _
+  protected var config: KafkaConfig = _
+  protected var quotaManager: QuotaManagers = _
+  protected var mockRemoteLogManager: RemoteLogManager = _
+  protected var addPartitionsToTxnManager: AddPartitionsToTxnManager = _
+  protected var brokerTopicStats: BrokerTopicStats = _
   private val transactionSupportedOperation = genericError
 
   // Constants defined for readability
