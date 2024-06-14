@@ -67,9 +67,9 @@ public class FileCacheTest {
         long streamId3 = 3;
         fileCache.put(streamId3, 123, genBuf((byte) 6, 2049));
 
-        FileCache.Value value = fileCache.stream2cache.get(streamId3).get(123L);
-        assertEquals(2049, value.dataLength);
-        assertArrayEquals(new int[] {2, 3, 9}, value.blocks);
+        FileCache.Blocks blocks = fileCache.stream2cache.get(streamId3).get(123L);
+        assertEquals(2049, blocks.dataLength);
+        assertArrayEquals(new int[] {2, 3, 9}, blocks.indexes);
 
         rst = fileCache.get(streamId3, 123, 2049).get();
         assertEquals(2049, rst.readableBytes());
@@ -78,8 +78,8 @@ public class FileCacheTest {
         // expect evict test1-10 and test2-2048
         long streamId4 = 4;
         fileCache.put(streamId4, 123, genBuf((byte) 7, 2049));
-        value = fileCache.stream2cache.get(streamId4).get(123L);
-        assertArrayEquals(new int[] {0, 1, 4}, value.blocks);
+        blocks = fileCache.stream2cache.get(streamId4).get(123L);
+        assertArrayEquals(new int[] {0, 1, 4}, blocks.indexes);
         rst = fileCache.get(streamId4, 123, 2049).get();
         assertTrue(verify(rst, (byte) 7));
 
@@ -88,8 +88,8 @@ public class FileCacheTest {
         // expect occupy free blocks 5,6,7
         long streamId5 = 5;
         fileCache.put(streamId5, 123, genBuf((byte) 8, 2049));
-        value = fileCache.stream2cache.get(streamId5).get(123L);
-        assertArrayEquals(new int[] {5, 6, 7}, value.blocks);
+        blocks = fileCache.stream2cache.get(streamId5).get(123L);
+        assertArrayEquals(new int[] {5, 6, 7}, blocks.indexes);
         rst = fileCache.get(streamId5, 123, 2049).get();
         assertTrue(verify(rst, (byte) 8));
         assertEquals(1, fileCache.freeBlockCount);
