@@ -172,7 +172,7 @@ object RequestChannel extends Logging {
       s"$forwardDescription$header -- ${loggableRequest.toString(details)}"
     }
 
-    def body[T <: AbstractRequest](implicit classTag: ClassTag[T], @nowarn("cat=unused") nn: NotNothing[T]): T = {
+    def body[T <: AbstractRequest](implicit classTag: ClassTag[T]): T = {
       bodyAndSize.request match {
         case r: T => r
         case r =>

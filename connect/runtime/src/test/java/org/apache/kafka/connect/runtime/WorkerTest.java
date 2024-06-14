@@ -1167,6 +1167,7 @@ public class WorkerTest {
 
         Map<String, Object> connConfig = Collections.singletonMap("metadata.max.age.ms", "10000");
         Map<String, String> expectedConfigs = new HashMap<>(workerProps);
+        expectedConfigs.remove(AbstractConfig.CONFIG_PROVIDERS_CONFIG);
         expectedConfigs.put("bootstrap.servers", "localhost:9092");
         expectedConfigs.put("client.id", "testid");
         expectedConfigs.put("metadata.max.age.ms", "10000");
@@ -2601,7 +2602,7 @@ public class WorkerTest {
         Map<String, String> taskConfig = new HashMap<>();
 
         // No warnings or exceptions when a connector generates an empty list of task configs
-        when(sourceConnector.taskConfigs(1)).thenReturn(Arrays.asList());
+        when(sourceConnector.taskConfigs(1)).thenReturn(Collections.emptyList());
         try (LogCaptureAppender logCaptureAppender = LogCaptureAppender.createAndRegister(Worker.class)) {
             connectorProps.put(TASKS_MAX_CONFIG, "1");
             List<Map<String, String>> taskConfigs = worker.connectorTaskConfigs(CONNECTOR_ID, new ConnectorConfig(plugins, connectorProps));
@@ -2610,7 +2611,7 @@ public class WorkerTest {
         }
 
         // No warnings or exceptions when a connector generates the maximum permitted number of task configs
-        when(sourceConnector.taskConfigs(1)).thenReturn(Arrays.asList(taskConfig));
+        when(sourceConnector.taskConfigs(1)).thenReturn(Collections.singletonList(taskConfig));
         when(sourceConnector.taskConfigs(2)).thenReturn(Arrays.asList(taskConfig, taskConfig));
         when(sourceConnector.taskConfigs(3)).thenReturn(Arrays.asList(taskConfig, taskConfig, taskConfig));
         try (LogCaptureAppender logCaptureAppender = LogCaptureAppender.createAndRegister(Worker.class)) {
@@ -2671,7 +2672,7 @@ public class WorkerTest {
         }
 
         // One last sanity check in case the connector is reconfigured and respects tasks.max
-        when(sourceConnector.taskConfigs(1)).thenReturn(Arrays.asList(taskConfig));
+        when(sourceConnector.taskConfigs(1)).thenReturn(Collections.singletonList(taskConfig));
         try (LogCaptureAppender logCaptureAppender = LogCaptureAppender.createAndRegister(Worker.class)) {
             connectorProps.put(TASKS_MAX_CONFIG, "1");
             List<Map<String, String>> taskConfigs = worker.connectorTaskConfigs(CONNECTOR_ID, new ConnectorConfig(plugins, connectorProps));

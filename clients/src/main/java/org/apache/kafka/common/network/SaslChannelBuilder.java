@@ -345,9 +345,9 @@ public class SaslChannelBuilder implements ChannelBuilder, ListenerReconfigurabl
     private void createConnectionsMaxReauthMsMap(Map<String, ?> configs) {
         for (String mechanism : jaasContexts.keySet()) {
             String prefix = ListenerName.saslMechanismPrefix(mechanism);
-            Long connectionsMaxReauthMs = (Long) configs.get(prefix + BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS);
+            Long connectionsMaxReauthMs = (Long) configs.get(prefix + BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS_CONFIG);
             if (connectionsMaxReauthMs == null)
-                connectionsMaxReauthMs = (Long) configs.get(BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS);
+                connectionsMaxReauthMs = (Long) configs.get(BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS_CONFIG);
             if (connectionsMaxReauthMs != null)
                 connectionsMaxReauthMsByMechanism.put(mechanism, connectionsMaxReauthMs);
         }
