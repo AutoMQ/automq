@@ -21,6 +21,7 @@ from kafkatest.services.trogdor.produce_bench_workload import ProduceBenchWorklo
 from kafkatest.services.trogdor.consume_bench_workload import ConsumeBenchWorkloadService, ConsumeBenchWorkloadSpec
 from kafkatest.services.trogdor.task_spec import TaskSpec
 from kafkatest.services.kafka import KafkaService, quorum, consumer_group
+from kafkatest.services.kafka import KafkaService, quorum, consumer_group
 from kafkatest.services.trogdor.trogdor import TrogdorService
 from kafkatest.services.zookeeper import ZookeeperService
 
@@ -61,7 +62,7 @@ class ReplicaScaleTest(Test):
         partition_count=[34],
         replication_factor=[3],
         metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True]
+        use_new_coordinator=[False]
     )
     @matrix(
         topic_count=[3],
@@ -71,7 +72,7 @@ class ReplicaScaleTest(Test):
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
-    def test_produce_consume(self, topic_count, partition_count, replication_factor,
+    def test_produce_consume(self, topic_count, partition_count, replication_factor, 
                              metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         topics_create_start_time = time.time()
         for i in range(topic_count):

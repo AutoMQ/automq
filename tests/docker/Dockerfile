@@ -14,6 +14,34 @@
 # limitations under the License.
 
 ARG jdk_version=openjdk:8
+FROM $jdk_version AS build-native-image
+
+WORKDIR /build
+
+COPY native/ native
+
+ARG KAFKA_MODE
+ARG GRAALVM_URL="https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.1/graalvm-community-jdk-21.0.1_linux-aarch64_bin.tar.gz"
+
+ENV NATIVE_IMAGE_PATH="/build/graalvm/bin/native-image"
+ENV NATIVE_CONFIGS_DIR="/build/native/native-image-configs"
+ENV KAFKA_LIBS_DIR="/build/kafka/libs"
+ENV KAFKA_BIN_DIR="/build/kafka-binary"
+ENV TARGET_PATH="$KAFKA_BIN_DIR/kafka.Kafka"
+
+RUN mkdir $KAFKA_BIN_DIR
+
+RUN if [ "$KAFKA_MODE" = "native" ]; then \
+      apt update && apt install -y sudo build-essential libz-dev zlib1g-dev curl jq coreutils libffi-dev cmake pkg-config libfuse-dev && apt-get -y clean ; \
+      mkdir graalvm ; \
+      curl -L "$GRAALVM_URL" -o graalvm.tar.gz ; \
+      tar -xzf graalvm.tar.gz -C graalvm --strip-components=1 ; \
+      mkdir kafka ; \
+      tar xfz native/kafka.tgz -C kafka --strip-components 1 ; \
+      rm graalvm.tar.gz kafka.tgz ; \
+      /build/native/native_command.sh $NATIVE_IMAGE_PATH $NATIVE_CONFIGS_DIR $KAFKA_LIBS_DIR $TARGET_PATH ; \
+    fi
+
 FROM $jdk_version
 
 MAINTAINER AutoMQ for Apache Kafka dev@automq.com
@@ -38,14 +66,8 @@ LABEL ducker.creator=$ducker_creator
 # Update Linux and install necessary utilities.
 # we have to install git since it is included in openjdk:8 but not openjdk:11
 RUN apt update && apt install -y sudo git netcat iptables rsync unzip wget curl jq coreutils openssh-server net-tools vim python3-pip python3-dev libffi-dev libssl-dev cmake pkg-config libfuse-dev iperf traceroute iproute2 iputils-ping && apt-get -y clean
-# RUN python3 -m pip install -U pip==21.1.1;
-
-# setting mirrors
-RUN [ -z "${general_mirror_url}" ] || (pip install -i "https://${general_mirror_url}/pypi/web/simple" pip -U && pip config set global.index-url "https://${general_mirror_url}/pypi/web/simple")
-RUN pip3 install --upgrade cffi virtualenv pyasn1 pycrypto pywinrm ipaddress enum34 debugpy && pip3 install --upgrade "ducktape>0.8"
-# install awscliv2
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m | sed 's/arm64/aarch64/')-2.15.15.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install && rm -rf awscliv2.zip aws
-
+RUN python3 -m pip install -U pip==21.1.1;
+RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy && pip3 install --upgrade "ducktape>0.8"
 
 # Set up ssh
 COPY ./ssh-config /root/.ssh/config
@@ -116,7 +138,7 @@ ARG KIBOSH_VERSION="8841dd392e6fbf02986e2fb1f1ebf04df344b65a"
 ARG UID="1000"
 
 # Install Kibosh
-RUN apt-get install fuse
+RUN apt-get install fuse -y
 RUN cd /opt && git clone -q  https://github.com/confluentinc/kibosh.git && cd "/opt/kibosh" && git reset --hard $KIBOSH_VERSION && mkdir "/opt/kibosh/build" && cd "/opt/kibosh/build" && ../configure && make -j 2
 
 # Set up the ducker user.

@@ -92,9 +92,9 @@ public final class Utils {
 
     private Utils() {}
 
-    // This matches URIs of formats: host:port and protocol:\\host:port
+    // This matches URIs of formats: host:port and protocol://host:port
     // IPv6 is supported with [ip] pattern
-    private static final Pattern HOST_PORT_PATTERN = Pattern.compile(".*?\\[?([0-9a-zA-Z\\-%._:]*)\\]?:([0-9]+)");
+    private static final Pattern HOST_PORT_PATTERN = Pattern.compile("^(?:[a-zA-Z][a-zA-Z\\d+-.]*://)?\\[?([0-9a-zA-Z\\-._%:]+)\\]?:([0-9]+)$");
 
     private static final Pattern VALID_HOST_CHARACTERS = Pattern.compile("([0-9a-zA-Z\\-%._:]*)");
 
@@ -104,7 +104,7 @@ public final class Utils {
 
     private static final String[] BYTE_SCALE_SUFFIXES = new String[] {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
 
-    public static final String NL = System.getProperty("line.separator");
+    public static final String NL = System.lineSeparator();
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
 
@@ -490,7 +490,7 @@ public final class Utils {
             return constructor.newInstance(args);
         } catch (NoSuchMethodException e) {
             throw new ClassNotFoundException(String.format("Failed to find " +
-                "constructor with %s for %s", Utils.join(argTypes, ", "), className), e);
+                "constructor with %s for %s", Arrays.stream(argTypes).map(Object::toString).collect(Collectors.joining(", ")), className), e);
         } catch (InstantiationException e) {
             throw new ClassNotFoundException(String.format("Failed to instantiate " +
                 "%s", className), e);
@@ -591,7 +591,7 @@ public final class Utils {
     }
 
     /**
-     * Formats a byte number as a human readable String ("3.2 MB")
+     * Formats a byte number as a human-readable String ("3.2 MB")
      * @param bytes some size in bytes
      * @return
      */
@@ -610,46 +610,6 @@ public final class Utils {
             //huge number?
             return String.valueOf(asDouble);
         }
-    }
-
-    /**
-     * Create a string representation of an array joined by the given separator
-     * @param strs The array of items
-     * @param separator The separator
-     * @return The string representation.
-     */
-    public static <T> String join(T[] strs, String separator) {
-        return join(Arrays.asList(strs), separator);
-    }
-
-    /**
-     * Create a string representation of a collection joined by the given separator
-     * @param collection The list of items
-     * @param separator The separator
-     * @return The string representation.
-     */
-    public static <T> String join(Collection<T> collection, String separator) {
-        Objects.requireNonNull(collection);
-        return mkString(collection.stream(), "", "", separator);
-    }
-
-    /**
-     * Create a string representation of a stream surrounded by `begin` and `end` and joined by `separator`.
-     *
-     * @return The string representation.
-     */
-    public static <T> String mkString(Stream<T> stream, String begin, String end, String separator) {
-        Objects.requireNonNull(stream);
-        StringBuilder sb = new StringBuilder();
-        sb.append(begin);
-        Iterator<T> iter = stream.iterator();
-        while (iter.hasNext()) {
-            sb.append(iter.next());
-            if (iter.hasNext())
-                sb.append(separator);
-        }
-        sb.append(end);
-        return sb.toString();
     }
 
     /**
@@ -1224,7 +1184,7 @@ public final class Utils {
     // changing the signature to `public <R> List<R> tryAll(all: List[Callable<R>])`
     public static void tryAll(List<Callable<Void>> all) throws Throwable {
         Throwable exception = null;
-        for (Callable call : all) {
+        for (Callable<Void> call : all) {
             try {
                 call.call();
             } catch (Throwable t) {
@@ -1530,13 +1490,23 @@ public final class Utils {
      * @return a map including all elements in properties
      */
     public static Map<String, Object> propsToMap(Properties properties) {
-        Map<String, Object> map = new HashMap<>(properties.size());
-        for (Map.Entry<Object, Object> entry : properties.entrySet()) {
+        return castToStringObjectMap(properties);
+    }
+
+    /**
+     * Cast a map with arbitrary type keys to be keyed on String.
+     * @param inputMap A map with unknown type keys
+     * @return A map with the same contents as the input map, but with String keys
+     * @throws ConfigException if any key is not a String
+     */
+    public static Map<String, Object> castToStringObjectMap(Map<?, ?> inputMap) {
+        Map<String, Object> map = new HashMap<>(inputMap.size());
+        for (Map.Entry<?, ?> entry : inputMap.entrySet()) {
             if (entry.getKey() instanceof String) {
                 String k = (String) entry.getKey();
-                map.put(k, properties.get(k));
+                map.put(k, entry.getValue());
             } else {
-                throw new ConfigException(entry.getKey().toString(), entry.getValue(), "Key must be a string.");
+                throw new ConfigException(String.valueOf(entry.getKey()), entry.getValue(), "Key must be a string.");
             }
         }
         return map;
@@ -1701,6 +1671,15 @@ public final class Utils {
             }
         }
         return result;
+    }
+
+    /**
+     * Checks requirement. Throw {@link IllegalArgumentException} if {@code requirement} failed.
+     * @param requirement Requirement to check.
+     */
+    public static void require(boolean requirement) {
+        if (!requirement)
+            throw new IllegalArgumentException("requirement failed");
     }
 
     /**

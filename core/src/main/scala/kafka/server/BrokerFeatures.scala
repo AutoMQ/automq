@@ -19,6 +19,7 @@ package kafka.server
 
 import kafka.utils.Logging
 import org.apache.kafka.common.feature.{Features, SupportedVersionRange}
+import org.apache.kafka.server.common.Features.PRODUCTION_FEATURES
 import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.server.common.automq.AutoMQVersion
 
@@ -71,20 +72,29 @@ class BrokerFeatures private (@volatile var supportedFeatures: Features[Supporte
 
 object BrokerFeatures extends Logging {
 
-  def createDefault(unstableMetadataVersionsEnabled: Boolean): BrokerFeatures = {
-    new BrokerFeatures(defaultSupportedFeatures(unstableMetadataVersionsEnabled))
+  def createDefault(unstableFeatureVersionsEnabled: Boolean): BrokerFeatures = {
+    new BrokerFeatures(defaultSupportedFeatures(unstableFeatureVersionsEnabled))
   }
 
-  def defaultSupportedFeatures(unstableMetadataVersionsEnabled: Boolean): Features[SupportedVersionRange] = {
+  def defaultSupportedFeatures(unstableFeatureVersionsEnabled: Boolean): Features[SupportedVersionRange] = {
     val features = new util.HashMap[String, SupportedVersionRange]()
-    features.put(MetadataVersion.FEATURE_NAME, new SupportedVersionRange(
-      MetadataVersion.MINIMUM_KRAFT_VERSION.featureLevel(),
-      if (unstableMetadataVersionsEnabled) {
-        MetadataVersion.latestTesting.featureLevel
-      } else {
-        MetadataVersion.latestProduction.featureLevel
-      }
-    ))
+      features.put(MetadataVersion.FEATURE_NAME,
+        new SupportedVersionRange(
+          MetadataVersion.MINIMUM_KRAFT_VERSION.featureLevel(),
+          if (unstableFeatureVersionsEnabled) {
+            MetadataVersion.latestTesting.featureLevel
+          } else {
+            MetadataVersion.latestProduction.featureLevel
+          }))
+    PRODUCTION_FEATURES.forEach { feature => features.put(feature.featureName,
+          new SupportedVersionRange(0,
+            if (unstableFeatureVersionsEnabled) {
+              feature.latestTesting
+            } else {
+              feature.latestProduction
+            }))
+    }
+    // TODO: add AutoMQVersion to Features.PRODUCTION_FEATURES
     features.put(AutoMQVersion.FEATURE_NAME, new SupportedVersionRange(AutoMQVersion.V0.featureLevel(), AutoMQVersion.LATEST.featureLevel()))
     Features.supportedFeatures(features)
   }

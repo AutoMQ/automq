@@ -764,7 +764,7 @@ public interface Admin extends AutoCloseable {
      * </ul>
      *
      * @param options The options to use when creating delegation token.
-     * @return The DeleteRecordsResult.
+     * @return The CreateDelegationTokenResult.
      */
     CreateDelegationTokenResult createDelegationToken(CreateDelegationTokenOptions options);
 
