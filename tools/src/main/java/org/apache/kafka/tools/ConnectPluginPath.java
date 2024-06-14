@@ -94,8 +94,7 @@ public class ConnectPluginPath {
     }
 
     private static ArgumentParser parser() {
-        ArgumentParser parser = ArgumentParsers.newFor("connect-plugin-path")
-            .build()
+        ArgumentParser parser  = ArgumentParsers.newArgumentParser("connect-plugin-path")
             .defaultHelp(true)
             .description("Manage plugins on the Connect plugin.path");
 

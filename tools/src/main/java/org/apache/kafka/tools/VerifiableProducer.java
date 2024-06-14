@@ -110,10 +110,8 @@ public class VerifiableProducer implements AutoCloseable {
     /** Get the command-line argument parser. */
     private static ArgumentParser argParser() {
         ArgumentParser parser = ArgumentParsers
-                .newFor("verifiable-producer")
-                .build()
-                .defaultHelp(true)
-                .description("This tool produces increasing integers to the specified topic and prints JSON metadata to stdout on each \"send\" request, making externally visible which messages have been acked and which have not.");
+                .newArgumentParser("verifiable-producer")
+                 .description("This tool produces increasing integers to the specified topic and prints JSON metadata to stdout on each \"send\" request, making externally visible which messages have been acked and which have not.");
 
         parser.addArgument("--topic")
                 .action(store())

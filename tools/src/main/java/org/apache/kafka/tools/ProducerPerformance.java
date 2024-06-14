@@ -229,10 +229,8 @@ public class ProducerPerformance {
     /** Get the command-line argument parser. */
     static ArgumentParser argParser() {
         ArgumentParser parser = ArgumentParsers
-                .newFor("producer-performance")
-                .build()
-                .defaultHelp(true)
-                .description("This tool is used to verify the producer performance.");
+                .newArgumentParser("producer-performance")
+                 .description("This tool is used to verify the producer performance.");
 
         MutuallyExclusiveGroup payloadOptions = parser
                 .addMutuallyExclusiveGroup()

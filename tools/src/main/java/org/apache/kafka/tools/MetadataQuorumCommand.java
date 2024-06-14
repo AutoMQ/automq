@@ -73,8 +73,7 @@ public class MetadataQuorumCommand {
 
     static void execute(String... args) throws Exception {
         ArgumentParser parser = ArgumentParsers
-            .newFor("kafka-metadata-quorum")
-            .build()
+            .newArgumentParser("kafka-metadata-quorum")
             .defaultHelp(true)
             .description("This tool describes kraft metadata quorum status.");
         MutuallyExclusiveGroup connectionOptions = parser.addMutuallyExclusiveGroup().required(true);

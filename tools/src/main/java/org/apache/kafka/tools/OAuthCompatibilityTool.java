@@ -190,10 +190,8 @@ public class OAuthCompatibilityTool {
 
         private ArgsHandler() {
             this.parser = ArgumentParsers
-                .newFor("oauth-compatibility-tool")
-                .build()
-                .defaultHelp(true)
-                .description(DESCRIPTION);
+                .newArgumentParser("oauth-compatibility-tool")
+                 .description(DESCRIPTION);
         }
 
         private Namespace parseArgs(String[] args) throws ArgumentParserException {
