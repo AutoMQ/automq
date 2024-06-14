@@ -31,6 +31,7 @@ import org.apache.kafka.storage.internals.log.TimestampOffset;
 public class ElasticTimeIndex extends TimeIndex {
     private final File file;
     private final FileCache cache;
+    private final Long cachePathId;
     final ElasticStreamSlice stream;
 
     private volatile CompletableFuture<?> lastAppend = CompletableFuture.completedFuture(null);
@@ -46,6 +47,7 @@ public class ElasticTimeIndex extends TimeIndex {
         super(file, baseOffset, maxIndexSize, true, true);
         this.file = file;
         this.cache = cache;
+        this.cachePathId = cache.newPathId();
         this.stream = sliceSupplier.get();
         setEntries((int) (stream.nextOffset() / ENTRY_SIZE));
         if (entries() == 0) {
@@ -132,7 +134,7 @@ public class ElasticTimeIndex extends TimeIndex {
                 buffer.flip();
                 long position = stream.nextOffset();
                 lastAppend = stream.append(RawPayloadRecordBatch.of(buffer));
-                cache.put(file.getPath(), position, Unpooled.wrappedBuffer(buffer));
+                cache.put(cachePathId, position, Unpooled.wrappedBuffer(buffer));
                 incrementEntries();
                 lastEntry(new TimestampOffset(timestamp, offset));
             }
@@ -250,7 +252,7 @@ public class ElasticTimeIndex extends TimeIndex {
     }
 
     private TimestampOffset tryGetEntryFromCache(int n) {
-        Optional<ByteBuf> rst = cache.get(file.getPath(), (long) n * ENTRY_SIZE, ENTRY_SIZE);
+        Optional<ByteBuf> rst = cache.get(cachePathId, (long) n * ENTRY_SIZE, ENTRY_SIZE);
         if (rst.isPresent()) {
             ByteBuf buffer = rst.get();
             return new TimestampOffset(buffer.readLong(), baseOffset() + buffer.readInt());
@@ -292,7 +294,7 @@ public class ElasticTimeIndex extends TimeIndex {
         }
         ByteBuf buf = Unpooled.buffer(records.size() * ENTRY_SIZE);
         records.forEach(record -> buf.writeBytes(record.rawPayload()));
-        cache.put(file.getPath(), startOffset, buf);
+        cache.put(cachePathId, startOffset, buf);
         ByteBuf indexEntry = Unpooled.wrappedBuffer(records.get(0).rawPayload());
         timestampOffset = new TimestampOffset(indexEntry.readLong(), baseOffset() + indexEntry.readInt());
         rst.free();

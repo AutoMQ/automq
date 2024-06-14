@@ -28,6 +28,7 @@ import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -49,13 +50,14 @@ public class FileCache {
     private final int blockSize;
     private final BitSet freeBlocks;
     private final LRUCache<Key, Value> lru = new LRUCache<>();
-    final Map<String, NavigableMap<Long, Value>> path2cache = new HashMap<>();
+    final Map<Long, NavigableMap<Long, Value>> path2cache = new HashMap<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     int freeBlockCount;
     private int freeCheckPoint = 0;
     private final MappedByteBuffer cacheByteBuffer;
+    private final AtomicLong pathIdAlloc = new AtomicLong();
 
     public FileCache(String path, int size, int blockSize) throws IOException {
         this.blockSize = blockSize;
@@ -84,7 +86,11 @@ public class FileCache {
         this(path, size, BLOCK_SIZE);
     }
 
-    public void put(String path, long position, ByteBuf data) {
+    public Long newPathId() {
+        return pathIdAlloc.incrementAndGet();
+    }
+
+    public void put(Long path, long position, ByteBuf data) {
         writeLock.lock();
         try {
             int dataLength = data.readableBytes();
@@ -140,7 +146,7 @@ public class FileCache {
         }
     }
 
-    public Optional<ByteBuf> get(String filePath, long position, int length) {
+    public Optional<ByteBuf> get(Long filePath, long position, int length) {
         ByteBuf buf = Unpooled.buffer(length);
         readLock.lock();
         try {
@@ -243,10 +249,10 @@ public class FileCache {
     }
 
     static class Key implements Comparable<Key> {
-        String path;
+        Long path;
         long position;
 
-        public Key(String path, long position) {
+        public Key(Long path, long position) {
             this.path = path;
             this.position = position;
         }
