@@ -36,7 +36,6 @@ public class ElasticTransactionIndex extends TransactionIndex {
     private final StreamSliceSupplier streamSupplier;
     ElasticStreamSlice stream;
     private final FileCache cache;
-    private final Long cachePathId;
     private final String path;
     private volatile LastAppend lastAppend;
 
@@ -48,7 +47,6 @@ public class ElasticTransactionIndex extends TransactionIndex {
         this.streamSupplier = streamSupplier;
         this.stream = streamSupplier.get();
         this.cache = cache;
-        this.cachePathId = cache.newPathId();
         this.path = file.getPath();
         lastAppend = new LastAppend(stream.nextOffset(), CompletableFuture.completedFuture(null));
     }
@@ -72,7 +70,7 @@ public class ElasticTransactionIndex extends TransactionIndex {
         long position = stream.nextOffset();
         CompletableFuture<?> cf = stream.append(RawPayloadRecordBatch.of(abortedTxn.buffer().duplicate()));
         lastAppend = new LastAppend(stream.nextOffset(), cf);
-        cache.put(cachePathId, position, Unpooled.wrappedBuffer(abortedTxn.buffer()));
+        cache.put(stream.stream().streamId(), position, Unpooled.wrappedBuffer(abortedTxn.buffer()));
     }
 
     @Override
@@ -182,17 +180,15 @@ public class ElasticTransactionIndex extends TransactionIndex {
                     return item;
                 }
                 int endOffset = Math.min(position.value + AbortedTxn.TOTAL_SIZE * 128, endPosition);
-                Optional<ByteBuf> cacheDataOpt = cache.get(cachePathId, position.value, endOffset - position.value);
+                Optional<ByteBuf> cacheDataOpt = cache.get(stream.stream().streamId(), position.value, endOffset - position.value);
                 ByteBuf buf;
                 if (cacheDataOpt.isPresent()) {
                     buf = cacheDataOpt.get();
                 } else {
                     FetchResult records = fetchStream(position.value, endOffset, endOffset - position.value);
                     ByteBuf txnListBuf = Unpooled.buffer(records.recordBatchList().size() * AbortedTxn.TOTAL_SIZE);
-                    records.recordBatchList().forEach(r -> {
-                        txnListBuf.writeBytes(r.rawPayload());
-                    });
-                    cache.put(cachePathId, position.value, txnListBuf);
+                    records.recordBatchList().forEach(r -> txnListBuf.writeBytes(r.rawPayload()));
+                    cache.put(stream.stream().streamId(), position.value, txnListBuf);
                     records.free();
                     buf = txnListBuf;
                 }
