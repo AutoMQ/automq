@@ -119,8 +119,10 @@ public class FileCache {
             long cacheStartPosition;
             long cacheEndPosition;
             Blocks blocks;
-            if (pos2block == null || pos2block.getKey() + pos2block.getValue().dataLength < position) {
-                // no existing cache covers the position, create a new one
+            boolean coverPosition = pos2block != null && position <= pos2block.getKey() + pos2block.getValue().dataLength;
+            boolean tooManyBlocks = pos2block != null && pos2block.getValue().indexes.length >= Blocks.MAX_BLOCK_COUNT;
+            if (!coverPosition || tooManyBlocks) {
+                // no existing cache covers the position, or the existing cache has too many blocks, create a new one
                 cacheStartPosition = position;
                 cacheEndPosition = position + dataLength;
                 blocks = Blocks.EMPTY;
@@ -315,6 +317,11 @@ public class FileCache {
      */
     static class Blocks {
         static final Blocks EMPTY = new Blocks(new int[0], 0);
+        /**
+         * The max count of blocks in a {@link Blocks}.
+         * Used to ensure not too many blocks in a {@link Blocks}, as they will be evicted together once the cache is full.
+         */
+        static final int MAX_BLOCK_COUNT = 16;
 
         /**
          * The indexes of cache blocks
