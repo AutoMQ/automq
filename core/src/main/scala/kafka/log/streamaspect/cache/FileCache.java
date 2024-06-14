@@ -28,7 +28,6 @@ import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -50,14 +49,13 @@ public class FileCache {
     private final int blockSize;
     private final BitSet freeBlocks;
     private final LRUCache<Key, Value> lru = new LRUCache<>();
-    final Map<Long, NavigableMap<Long, Value>> path2cache = new HashMap<>();
+    final Map<Long, NavigableMap<Long, Value>> stream2cache = new HashMap<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     int freeBlockCount;
     private int freeCheckPoint = 0;
     private final MappedByteBuffer cacheByteBuffer;
-    private final AtomicLong pathIdAlloc = new AtomicLong();
 
     public FileCache(String path, int size, int blockSize) throws IOException {
         this.blockSize = blockSize;
@@ -86,28 +84,27 @@ public class FileCache {
         this(path, size, BLOCK_SIZE);
     }
 
-    public Long newPathId() {
-        return pathIdAlloc.incrementAndGet();
-    }
-
-    public void put(Long path, long position, ByteBuf data) {
+    public void put(long streamId, long position, ByteBuf data) {
         writeLock.lock();
         try {
             int dataLength = data.readableBytes();
-            NavigableMap<Long, Value> cache = path2cache.computeIfAbsent(path, k -> new TreeMap<>());
+            NavigableMap<Long, Value> cache = stream2cache.computeIfAbsent(streamId, k -> new TreeMap<>());
             Map.Entry<Long, Value> pos2value = cache.floorEntry(position);
             long cacheStartPosition;
+            long cacheEndPosition;
             Value value;
             if (pos2value == null || pos2value.getKey() + pos2value.getValue().dataLength < position) {
                 cacheStartPosition = position;
+                cacheEndPosition = position + dataLength;
                 value = Value.EMPTY;
             } else {
                 cacheStartPosition = pos2value.getKey();
                 value = pos2value.getValue();
+                cacheEndPosition = Math.max(pos2value.getKey() + value.dataLength, position + dataLength);
             }
             // ensure the capacity, if the capacity change then update the cache index
-            int moreCapacity = (int) ((position + dataLength) - (cacheStartPosition + value.blocks.length * (long) blockSize));
-            int newDataLength = (int) (position + dataLength - cacheStartPosition);
+            int moreCapacity = (int) (cacheEndPosition - (cacheStartPosition + value.blocks.length * (long) blockSize));
+            int newDataLength = (int) (cacheEndPosition - cacheStartPosition);
             if (moreCapacity > 0) {
                 int[] blocks = ensureCapacity(cacheStartPosition, moreCapacity);
                 if (blocks == null) {
@@ -121,7 +118,7 @@ public class FileCache {
                 value = new Value(value.blocks, newDataLength);
             }
             cache.put(cacheStartPosition, value);
-            lru.put(new Key(path, cacheStartPosition), value);
+            lru.put(new Key(streamId, cacheStartPosition), value);
 
             // write data to cache
             ByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
@@ -146,11 +143,11 @@ public class FileCache {
         }
     }
 
-    public Optional<ByteBuf> get(Long filePath, long position, int length) {
+    public Optional<ByteBuf> get(long streamId, long position, int length) {
         ByteBuf buf = Unpooled.buffer(length);
         readLock.lock();
         try {
-            NavigableMap<Long, Value> cache = path2cache.get(filePath);
+            NavigableMap<Long, Value> cache = stream2cache.get(streamId);
             if (cache == null) {
                 return Optional.empty();
             }
@@ -163,7 +160,7 @@ public class FileCache {
             if (entry.getKey() + entry.getValue().dataLength < position + length) {
                 return Optional.empty();
             }
-            lru.touchIfExist(new Key(filePath, cacheStartPosition));
+            lru.touchIfExist(new Key(streamId, cacheStartPosition));
             MappedByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
             long nextPosition = position;
             int remaining = length;
@@ -208,7 +205,7 @@ public class FileCache {
             }
             Key key = entry.getKey();
             Value value = entry.getValue();
-            path2cache.get(key.path).remove(key.position);
+            stream2cache.get(key.path).remove(key.position);
             if (key.position == cacheStartPosition) {
                 // eviction is conflict to current cache
                 for (int i = 0; i < acquiringBlockIndex; i++) {
