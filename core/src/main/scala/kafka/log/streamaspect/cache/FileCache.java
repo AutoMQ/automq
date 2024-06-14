@@ -29,9 +29,14 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import kafka.log.streamaspect.ElasticTimeIndex;
+import kafka.log.streamaspect.ElasticTransactionIndex;
 
 /**
- * File cache which used for cache time index data.
+ * File cache which used for cache {@link ElasticTimeIndex} data and {@link ElasticTransactionIndex} data.
+ * It uses a {@link MappedByteBuffer} as the cache, and the cache is divided into blocks.
+ * Contiguous data will be stored in a {@link Blocks} object, and the {@link Blocks} object contains the indexes of the cache blocks.
+ * A {@link LRUCache} is used to manage the cache, each block in the least recently used {@link Blocks} will be evicted once the cache is full.
  */
 public class FileCache {
     private static final int BLOCK_SIZE = 4 * 1024;
@@ -47,13 +52,34 @@ public class FileCache {
 
     private final int maxSize;
     private final int blockSize;
+    /**
+     * The index of free blocks in the cache.
+     */
     private final BitSet freeBlocks;
+    /**
+     * The LRU cache which contains the cache blocks. Used for eviction.
+     */
     private final LRUCache<Key, Blocks> lru = new LRUCache<>();
-    final Map<Long, NavigableMap<Long, Blocks>> stream2cache = new HashMap<>();
+    /**
+     * The cache of streamId to cache blocks.
+     * Its value is a {@link NavigableMap} which is used to store the cache blocks in the order of the position.
+     *
+     * @see Key#streamId
+     * @see Key#position
+     */
+    final Map<Long /* streamId */, NavigableMap<Long /* position /*/, Blocks>> stream2cache = new HashMap<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
+    /**
+     * The count of free blocks in the cache.
+     * Used for eviction.
+     */
     int freeBlockCount;
+    /**
+     * The index of the free block which will be checked next.
+     * Used for acquiring free blocks.
+     */
     private int freeCheckPoint = 0;
     private final MappedByteBuffer cacheByteBuffer;
 
@@ -94,10 +120,12 @@ public class FileCache {
             long cacheEndPosition;
             Blocks blocks;
             if (pos2block == null || pos2block.getKey() + pos2block.getValue().dataLength < position) {
+                // no existing cache covers the position, create a new one
                 cacheStartPosition = position;
                 cacheEndPosition = position + dataLength;
                 blocks = Blocks.EMPTY;
             } else {
+                // found an existing cache which covers the position, use it and maybe extend its capacity
                 cacheStartPosition = pos2block.getKey();
                 blocks = pos2block.getValue();
                 cacheEndPosition = Math.max(pos2block.getKey() + blocks.dataLength, position + dataLength);
@@ -106,6 +134,7 @@ public class FileCache {
             int moreCapacity = (int) (cacheEndPosition - (cacheStartPosition + blocks.indexes.length * (long) blockSize));
             int newDataLength = (int) (cacheEndPosition - cacheStartPosition);
             if (moreCapacity > 0) {
+                // need to extend the capacity, acquire free blocks
                 int[] indexes = ensureCapacity(cacheStartPosition, moreCapacity);
                 if (indexes == null) {
                     return;
@@ -198,6 +227,7 @@ public class FileCache {
         int requiredBlockCount = align(size) / blockSize;
         int[] indexes = new int[requiredBlockCount];
         int acquiringBlockIndex = 0;
+        // evict the least recently used cache blocks until the free blocks are enough
         while (freeBlockCount + acquiringBlockIndex < requiredBlockCount) {
             Map.Entry<Key, Blocks> entry = lru.pop();
             if (entry == null) {
@@ -224,6 +254,7 @@ public class FileCache {
                 }
             }
         }
+        // acquire free blocks
         while (acquiringBlockIndex < indexes.length) {
             int next = freeBlocks.nextSetBit(freeCheckPoint);
             if (next >= 0) {
