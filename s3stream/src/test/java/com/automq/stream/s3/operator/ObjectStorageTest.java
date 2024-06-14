@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -42,7 +43,7 @@ class ObjectStorageTest {
 
     @BeforeEach
     void setUp() {
-        s3 = S3AsyncClient.create();
+        s3 = mock(S3AsyncClient.class);
         objectStorage = new AwsObjectStorage(s3, "test-bucket", false);
     }
 
