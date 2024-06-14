@@ -31,8 +31,7 @@ public class ObjectsImageNode implements MetadataNode {
 
     @Override
     public Collection<String> childNames() {
-        List<Long> objectIdList = new LinkedList<>();
-        objectsImage.objectsMetadata().forEach((objectId, metadata) -> objectIdList.add(objectId));
+        List<Long> objectIdList = new LinkedList<>(objectsImage.objectIds());
         return objectIdList.stream().map(Object::toString).collect(Collectors.toList());
     }
 

@@ -324,6 +324,9 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
      * Callback used by MetadataBatchLoader and handleLoadSnapshot to update the active metadata publishers.
      */
     private void maybePublishMetadata(MetadataDelta delta, MetadataImage image, LoaderManifest manifest) {
+        // AutoMQ inject start
+        MetadataImage oldImage = this.image;
+        // AutoMQ inject end
         this.image = image;
 
         if (stillNeedToCatchUp(
@@ -350,6 +353,13 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
         if (!uninitializedPublishers.isEmpty()) {
             scheduleInitializeNewPublishers(0);
         }
+        // AutoMQ inject start
+        // Expect the old image is already replaced by the new image.
+        // If there is any reference to the old image, it should invoke the S3ObjectsImage#retain and release after used.
+        if (oldImage != null && image.objectsMetadata() != oldImage.objectsMetadata()) {
+            oldImage.objectsMetadata().release();
+        }
+        // AutoMQ inject end
     }
 
     @Override

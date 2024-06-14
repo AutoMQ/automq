@@ -20,18 +20,19 @@ package org.apache.kafka.image;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.timeline.SnapshotRegistry;
+import org.apache.kafka.timeline.TimelineHashMap;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -49,7 +50,8 @@ public class S3ObjectsImageTest {
     final static S3ObjectsImage IMAGE2;
 
     static {
-        Map<Long/*objectId*/, S3Object> map = new HashMap<>();
+        SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
+        TimelineHashMap<Long, S3Object> map = new TimelineHashMap<>(registry, 10);
         for (int i = 0; i < 4; i++) {
             S3Object object = new S3Object(
                 i, -1, null,
@@ -57,9 +59,8 @@ public class S3ObjectsImageTest {
                 S3ObjectState.PREPARED);
             map.put(object.getObjectId(), object);
         }
-        DeltaMap<Long, S3Object> deltaMap = new DeltaMap<>(new int[] {});
-        deltaMap.putAll(map);
-        IMAGE1 = new S3ObjectsImage(3, deltaMap);
+        registry.getOrCreateSnapshot(0);
+        IMAGE1 = new S3ObjectsImage(3, map, registry, 0, new ArrayList<>());
         DELTA1_RECORDS = new ArrayList<>();
         // try to update object0 and object1 to committed
         // try to make object2 expired and mark it to be destroyed
@@ -84,7 +85,9 @@ public class S3ObjectsImageTest {
         DELTA1 = new S3ObjectsDelta(IMAGE1);
         RecordTestUtils.replayAll(DELTA1, DELTA1_RECORDS);
 
-        Map<Long/*objectId*/, S3Object> map2 = new HashMap<>();
+
+        registry = new SnapshotRegistry(new LogContext());
+        TimelineHashMap<Long/*objectId*/, S3Object> map2 = new TimelineHashMap<>(registry, 10);
         map2.put(0L, new S3Object(
             0L, -1, null,
             -1, -1, -1, -1,
@@ -101,10 +104,8 @@ public class S3ObjectsImageTest {
             4L, -1, null,
             -1, -1, -1, -1,
             S3ObjectState.PREPARED));
-
-        deltaMap = new DeltaMap<>(new int[] {});
-        deltaMap.putAll(map2);
-        IMAGE2 = new S3ObjectsImage(4L, deltaMap);
+        registry.getOrCreateSnapshot(1);
+        IMAGE2 = new S3ObjectsImage(4L, map2, registry, 1, new ArrayList<>());
     }
 
     @Test

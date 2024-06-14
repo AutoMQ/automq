@@ -264,12 +264,18 @@ public class SnapshotGenerator implements MetadataPublisher {
         MetadataImage image
     ) {
         resetSnapshotCounters();
+        // AutoMQ inject start
+        image.objectsMetadata().retain();
+        // AutoMQ inject end
         eventQueue.append(() -> {
             String currentDisabledReason = disabledReason.get();
             if (currentDisabledReason != null) {
                 log.error("Not emitting {} despite the fact that {} because snapshots are " +
                     "disabled; {}", image.provenance().snapshotName(), reason,
                         currentDisabledReason);
+                // AutoMQ inject start
+                image.objectsMetadata().release();
+                // AutoMQ inject end
             } else {
                 log.info("Creating new KRaft snapshot file {} because {}.",
                         image.provenance().snapshotName(), reason);
@@ -277,6 +283,10 @@ public class SnapshotGenerator implements MetadataPublisher {
                     emitter.maybeEmit(image);
                 } catch (Throwable e) {
                     faultHandler.handleFault("KRaft snapshot file generation error", e);
+                } finally {
+                    // AutoMQ inject start
+                    image.objectsMetadata().release();
+                    // AutoMQ inject end
                 }
             }
         });
