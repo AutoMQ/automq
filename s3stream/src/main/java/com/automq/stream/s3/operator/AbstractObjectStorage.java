@@ -89,6 +89,19 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
     }
 
+    // used for test only
+    public AbstractObjectStorage(boolean manualMergeRead) {
+        this.currentIndex = 0;
+        this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
+        this.networkInboundBandwidthLimiter = null;
+        this.networkOutboundBandwidthLimiter = null;
+        this.inflightWriteLimiter = new Semaphore(50);
+        this.inflightReadLimiter = new Semaphore(50);
+        if (!manualMergeRead) {
+            scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
+        }
+    }
+
     @Override
     public Writer writer(WriteOptions options, String objectPath) {
         return null;
@@ -131,9 +144,18 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return rangeRead(ReadOptions.DEFAULT, objectMetadata, start, end);
     }
 
+    void close() {
+        readLimiterCallbackExecutor.shutdown();
+        readCallbackExecutor.shutdown();
+        scheduler.shutdown();
+        objectStorageClose();
+    }
+
     abstract void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf, Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler);
 
     abstract boolean isUnrecoverable(Throwable ex);
+
+    abstract void objectStorageClose();
 
     private void rangeRead0(S3ObjectMetadata s3ObjectMetadata, long start, long end, CompletableFuture<ByteBuf> cf) {
         synchronized (waitingReadTasks) {
@@ -141,7 +163,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
     }
 
-    private void tryMergeRead() {
+    void tryMergeRead() {
         try {
             tryMergeRead0();
         } catch (Throwable e) {
@@ -200,7 +222,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return inflightReadLimiter.availablePermits();
     }
 
-    private CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
+    CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
         end = end - 1;
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retCf = acquireReadPermit(cf);

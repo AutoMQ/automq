@@ -64,6 +64,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency()) : writeS3Client;
     }
 
+    // used for test only
+    public AwsObjectStorage(S3AsyncClient s3Client, String bucket, boolean manualMergeRead) {
+        super(manualMergeRead);
+        this.bucket = bucket;
+        this.writeS3Client = s3Client;
+        this.readS3Client = s3Client;
+        this.tagging = null;
+    }
+
     @Override
     void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf,
         Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler) {
@@ -101,6 +110,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND;
         }
         return false;
+    }
+
+    @Override
+    void objectStorageClose() {
+        close();
+        writeS3Client.close();
+        if (readS3Client != writeS3Client) {
+            readS3Client.close();
+        }
     }
 
     private String range(long start, long end) {
