@@ -148,12 +148,20 @@ public class StreamControlManager {
 
         S3StreamKafkaMetricsManager.setStreamSetObjectNumSupplier(() -> {
             Map<String, Integer> numMap = new HashMap<>();
+            if (!quorumController.isActive()) {
+                return numMap;
+            }
             for (NodeMetadata nodeMetadata : nodesMetadata.values()) {
                 numMap.put(String.valueOf(nodeMetadata.getNodeId()), nodeMetadata.streamSetObjects().size());
             }
             return numMap;
         });
-        S3StreamKafkaMetricsManager.setStreamObjectNumSupplier(() -> streamsMetadata.values().stream().mapToInt(it -> it.streamObjects().size()).sum());
+        S3StreamKafkaMetricsManager.setStreamObjectNumSupplier(() -> {
+            if (!quorumController.isActive()) {
+                return 0;
+            }
+            return streamsMetadata.values().stream().mapToInt(it -> it.streamObjects().size()).sum();
+        });
     }
 
     public ControllerResult<CreateStreamResponse> createStream(int nodeId, long nodeEpoch,
