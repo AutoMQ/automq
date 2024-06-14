@@ -28,7 +28,6 @@ public class TransactionProducer {
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "my-transactional-id");
-        props.put(ProducerConfig.BATCH_SIZE_CONFIG, "1");
 
         // Create a Kafka producer with the provided properties.
         Producer<String, String> producer = new KafkaProducer<>(props);
