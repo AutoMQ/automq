@@ -13,6 +13,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
@@ -24,6 +25,7 @@ import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
@@ -136,7 +138,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return rangeRead(ReadOptions.DEFAULT, objectMetadata, start, end);
     }
 
-    abstract void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf, Consumer<Throwable> failHandler);
+    abstract void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf, Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler);
 
     abstract boolean isUnrecoverable(Throwable ex);
 
@@ -229,7 +231,18 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             }
             S3OperationStats.getInstance().getObjectStats(size, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         };
-        doRangeRead(path, start, end, cf, failHandler);
+
+        Consumer<CompositeByteBuf> successHandler = buf -> {
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
+                    path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+            }
+            S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, size);
+            S3OperationStats.getInstance().getObjectStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            cf.complete(buf);
+        };
+
+        doRangeRead(path, start, end, cf, failHandler, successHandler);
     }
 
     int getMaxObjectStorageConcurrency() {
@@ -242,12 +255,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (this.networkInboundBandwidthLimiter.getMaxTokens() < Writer.MIN_PART_SIZE) {
                 throw new IllegalArgumentException(String.format("Network inbound burst bandwidth limit %d must be no less than min part size %d",
                     this.networkInboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
-            }
-        }
-        if (this.networkOutboundBandwidthLimiter != null) {
-            if (this.networkOutboundBandwidthLimiter.getMaxTokens() < Writer.MIN_PART_SIZE) {
-                throw new IllegalArgumentException(String.format("Network outbound burst bandwidth limit %d must be no less than min part size %d",
-                    this.networkOutboundBandwidthLimiter.getMaxTokens(), Writer.MIN_PART_SIZE));
             }
         }
     }

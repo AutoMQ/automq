@@ -12,9 +12,6 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.S3OperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -41,7 +38,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static com.automq.stream.utils.FutureUtil.cause;
@@ -63,10 +59,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf, Consumer<Throwable> failHandler) {
-        TimerUtil timerUtil = new TimerUtil();
-        long size = end - start + 1;
-        GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
+    void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf,
+        Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler) {
+        GetObjectRequest request = GetObjectRequest.builder()
+            .bucket(bucket)
+            .key(path)
+            .range(range(start, end))
+            .build();
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
                 CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
@@ -74,13 +73,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
                     buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
                 }).thenAccept(v -> {
-                    if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
-                            path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-                    }
-                    S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, size);
-                    S3OperationStats.getInstance().getObjectStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                    cf.complete(buf);
+                    successHandler.accept(buf);
                 }).exceptionally(ex -> {
                     buf.release();
                     failHandler.accept(ex);
