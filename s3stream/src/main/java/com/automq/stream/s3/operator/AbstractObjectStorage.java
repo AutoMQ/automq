@@ -31,7 +31,6 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.services.s3.model.Tagging;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,8 +47,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
-import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
-
 public abstract class AbstractObjectStorage implements ObjectStorage {
     static final Logger LOGGER = LoggerFactory.getLogger(AbstractObjectStorage.class);
     private static final AtomicInteger INDEX = new AtomicInteger(-1);
@@ -58,8 +55,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private static final int MAX_CONCURRENCY = 1000;
     private final float maxMergeReadSparsityRate;
     private final int currentIndex;
-    final String bucket;
-    final Tagging tagging;
     private final Semaphore inflightReadLimiter;
     private final Semaphore inflightWriteLimiter;
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
@@ -75,13 +70,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         ThreadUtils.createThreadFactory("objectStorage", true), LOGGER);
     boolean checkS3ApiMode = false;
 
-    public AbstractObjectStorage(String bucket, Map<String, String> tagging,
+    public AbstractObjectStorage(
         AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
         AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate,
         boolean checkS3ApiMode) {
-        this.bucket = bucket;
-        this.tagging = tagging(tagging);
         this.currentIndex = INDEX.incrementAndGet();
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         int maxObjectStorageConcurrency = getMaxObjectStorageConcurrency();

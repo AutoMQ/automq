@@ -31,6 +31,7 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.Tagging;
 
 import java.net.URI;
 import java.time.Duration;
@@ -40,10 +41,13 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
+import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.utils.FutureUtil.cause;
 
 public class AwsObjectStorage extends AbstractObjectStorage {
 
+    private final String bucket;
+    private final Tagging tagging;
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
 
@@ -53,7 +57,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate,
         boolean checkMode) {
-        super(bucket, tagging, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
+        super(networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
+        this.bucket = bucket;
+        this.tagging = tagging(tagging);
         this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency());
         this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency()) : writeS3Client;
     }
