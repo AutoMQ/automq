@@ -211,7 +211,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
             }
             // append an entry to the index (if needed)
             if (bytesSinceLastIndexEntry > indexIntervalBytes) {
-                timeIndex.maybeAppend(maxTimestampSoFar(), offsetOfMaxTimestampSoFar());
+                timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar());
                 bytesSinceLastIndexEntry = 0;
             }
             bytesSinceLastIndexEntry += records.sizeInBytes();
@@ -240,17 +240,17 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     }
 
     @Override
-    public FetchDataInfo read(long startOffset, int maxSize, long maxPosition,
+    public FetchDataInfo read(long startOffset, int maxSize, Optional<Long> maxPositionOpt,
         boolean minOneMessage) throws IOException {
         try {
-            return readAsync(startOffset, maxSize, maxPosition, Long.MAX_VALUE, minOneMessage).get();
+            return readAsync(startOffset, maxSize, maxPositionOpt, Long.MAX_VALUE, minOneMessage).get();
         } catch (Throwable e) {
             throw new IOException(e);
         }
     }
 
     @Override
-    public CompletableFuture<FetchDataInfo> readAsync(long startOffset, int maxSize, long maxPosition, long maxOffset,
+    public CompletableFuture<FetchDataInfo> readAsync(long startOffset, int maxSize, Optional<Long> maxPositionOpt, long maxOffset,
         boolean minOneMessage) {
         // TODO: isolate the log clean read to another method
         if (maxSize < 0)
@@ -345,7 +345,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
     @Override
     public void onBecomeInactiveSegment() throws IOException {
-        timeIndex.maybeAppend(maxTimestampSoFar(), offsetOfMaxTimestampSoFar(), true);
+        timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true);
         log.seal();
         meta.log(log.streamSegment().sliceRange());
         timeIndex.trimToValidSize();
@@ -392,7 +392,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     public void close() throws IOException {
         meta(); // fill the metadata
         if (maxTimestampAndOffsetSoFar != TimestampOffset.UNKNOWN)
-            Utils.swallow(LOGGER, Level.WARN, "maybeAppend", () -> timeIndex.maybeAppend(maxTimestampSoFar(), offsetOfMaxTimestampSoFar(), true));
+            Utils.swallow(LOGGER, Level.WARN, "maybeAppend", () -> timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true));
         Utils.closeQuietly(timeIndex, "timeIndex", LOGGER);
         Utils.closeQuietly(log, "log", LOGGER);
         Utils.closeQuietly(txnIndex, "txnIndex", LOGGER);
@@ -499,7 +499,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
                 // Build offset index
                 if (validBytes - lastIndexEntry > indexIntervalBytes && batch.baseOffset() > timeIndexCheckpoint) {
-                    timeIndex.maybeAppend(maxTimestampSoFar(), offsetOfMaxTimestampSoFar());
+                    timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar());
                     lastIndexEntry = validBytes;
                 }
                 validBytes += batch.sizeInBytes();
@@ -520,7 +520,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         }
         // won't have record corrupted cause truncate
         // A normally closed segment always appends the biggest timestamp ever seen into log segment, we do this as well.
-        timeIndex.maybeAppend(maxTimestampSoFar(), offsetOfMaxTimestampSoFar(), true);
+        timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true);
         return 0;
     }
 

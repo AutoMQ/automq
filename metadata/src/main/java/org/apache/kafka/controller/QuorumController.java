@@ -448,18 +448,6 @@ public final class QuorumController implements Controller {
         }
         // AutoMQ for Kafka inject end
 
-        // AutoMQ for Kafka inject start
-        public Builder setStreamClient(StreamClient streamClient) {
-            this.streamClient = streamClient;
-            return this;
-        }
-
-        public Builder setQuorumVoters(List<String> quorumVoters) {
-            this.quorumVoters = quorumVoters;
-            return this;
-        }
-        // AutoMQ for Kafka inject end
-
         public QuorumController build() throws Exception {
             if (raftClient == null) {
                 throw new IllegalStateException("You must set a raft client.");

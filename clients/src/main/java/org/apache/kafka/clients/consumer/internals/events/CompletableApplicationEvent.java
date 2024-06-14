@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.clients.consumer.internals.events;
 
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /**

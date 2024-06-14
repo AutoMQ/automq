@@ -30,6 +30,7 @@ import kafka.testkit.TestKitNodes;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.metadata.BrokerState;
+import org.apache.kafka.network.SocketServerConfigs;
 import org.apache.kafka.test.TestUtils;
 
 
@@ -53,7 +54,7 @@ public abstract class AutoBalancerIntegrationTestHarness {
             int i = 0;
             int[] port = AutoBalancerTestUtils.findLocalPorts(1);
             for (BrokerNode broker : nodes.brokerNodes().values()) {
-                broker.propertyOverrides().put(KafkaConfig.ListenersProp(), "EXTERNAL://" + HOST + ":" + port[i]);
+                broker.propertyOverrides().put(SocketServerConfigs.LISTENERS_CONFIG, "EXTERNAL://" + HOST + ":" + port[i]);
                 broker.propertyOverrides().put(AutoBalancerMetricsReporterConfig.config(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG), HOST + ":" + port[i]);
                 broker.propertyOverrides().put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID,
                         AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID + "-" + TestUtils.RANDOM.nextLong());

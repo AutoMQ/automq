@@ -212,7 +212,7 @@ public class MemoryRecords extends AbstractRecords {
                                 partition, batch.lastOffset(), maxRecordBatchSize, filteredBatchSize);
 
                         MemoryRecordsBuilder.RecordsInfo info = builder.info();
-                        filterResult.updateRetainedBatchMetadata(info.maxTimestamp, info.offsetOfMaxTimestamp,
+                        filterResult.updateRetainedBatchMetadata(info.maxTimestamp, info.shallowOffsetOfMaxTimestamp,
                             maxOffset, retainedRecords.size(), filteredBatchSize);
                     }
                 }
@@ -403,7 +403,7 @@ public class MemoryRecords extends AbstractRecords {
         private int bytesRetained = 0;
         private long maxOffset = -1L;
         private long maxTimestamp = RecordBatch.NO_TIMESTAMP;
-        private long offsetOfMaxTimestamp = -1L;
+        private long shallowOffsetOfMaxTimestamp = -1L;
 
         private FilterResult(ByteBuffer outputBuffer) {
             this.outputBuffer = outputBuffer;
@@ -420,7 +420,7 @@ public class MemoryRecords extends AbstractRecords {
             validateBatchMetadata(maxTimestamp, shallowOffsetOfMaxTimestamp, maxOffset);
             if (maxTimestamp > this.maxTimestamp) {
                 this.maxTimestamp = maxTimestamp;
-                this.offsetOfMaxTimestamp = offsetOfMaxTimestamp;
+                this.shallowOffsetOfMaxTimestamp = shallowOffsetOfMaxTimestamp;
             }
             this.maxOffset = Math.max(maxOffset, this.maxOffset);
             this.messagesRetained += messagesRetained;
@@ -462,8 +462,8 @@ public class MemoryRecords extends AbstractRecords {
             return maxTimestamp;
         }
 
-        public long offsetOfMaxTimestamp() {
-            return offsetOfMaxTimestamp;
+        public long shallowOffsetOfMaxTimestamp() {
+            return shallowOffsetOfMaxTimestamp;
         }
     }
 

@@ -23,7 +23,7 @@ import com.yammer.metrics.core.{Histogram, Meter}
 import kafka.network
 import kafka.server.{KafkaConfig, RequestLocal}
 import kafka.utils.Implicits._
-import kafka.utils.{Logging, NotNothing, Pool}
+import kafka.utils.{Logging, Pool}
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.memory.MemoryPool
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -39,7 +39,6 @@ import java.nio.ByteBuffer
 import java.util
 import java.util.Collections
 import java.util.concurrent._
-import scala.annotation.nowarn
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.reflect.ClassTag

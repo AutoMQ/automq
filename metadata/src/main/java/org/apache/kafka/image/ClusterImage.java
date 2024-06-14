@@ -47,6 +47,14 @@ public final class ClusterImage {
 
     public ClusterImage(
         Map<Integer, BrokerRegistration> brokers,
+        Map<Integer, ControllerRegistration> controllers
+    ) {
+        this(brokers, controllers, 0);
+    }
+
+
+    public ClusterImage(
+        Map<Integer, BrokerRegistration> brokers,
         Map<Integer, ControllerRegistration> controllers,
         int nextNodeId
     ) {

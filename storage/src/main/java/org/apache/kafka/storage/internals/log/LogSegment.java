@@ -64,8 +64,8 @@ import static java.util.Arrays.asList;
  * This class is not thread-safe.
  */
 public class LogSegment implements Closeable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LogSegment.class);
-    private static final Timer LOG_FLUSH_TIMER;
+    protected static final Logger LOGGER = LoggerFactory.getLogger(LogSegment.class);
+    protected static final Timer LOG_FLUSH_TIMER;
     /* a directory that is used for future partition */
     private static final String FUTURE_DIR_SUFFIX = "-future";
     private static final Pattern FUTURE_DIR_PATTERN = Pattern.compile("^(\\S+)-(\\S+)\\.(\\S+)" + FUTURE_DIR_SUFFIX);
@@ -97,7 +97,7 @@ public class LogSegment implements Closeable {
 
     // The maximum timestamp and offset we see so far
     // NOTED: the offset is the last offset of batch having the max timestamp.
-    private volatile TimestampOffset maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
+    protected volatile TimestampOffset maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
 
     private long created;
 
@@ -215,7 +215,7 @@ public class LogSegment implements Closeable {
     /**
      * Note that this may result in time index materialization.
      */
-    private long shallowOffsetOfMaxTimestampSoFar() throws IOException {
+    protected long shallowOffsetOfMaxTimestampSoFar() throws IOException {
         return readMaxTimestampAndOffsetSoFar().offset;
     }
 
@@ -245,7 +245,7 @@ public class LogSegment implements Closeable {
      */
     public void append(long largestOffset,
                        long largestTimestampMs,
-                       long offsetOfMaxTimestamp,
+                       long shallowOffsetOfMaxTimestamp,
                        MemoryRecords records) throws IOException {
         if (records.sizeInBytes() > 0) {
             LOGGER.trace("Inserting {} bytes at end offset {} at position {} with largest timestamp {} at offset {}",
@@ -261,7 +261,7 @@ public class LogSegment implements Closeable {
             LOGGER.trace("Appended {} to {} at end offset {}", appendedBytes, log.file(), largestOffset);
             // Update the in memory max timestamp and corresponding offset.
             if (largestTimestampMs > maxTimestampSoFar()) {
-                maxTimestampAndOffsetSoFar = new TimestampOffset(largestTimestampMs, offsetOfMaxTimestamp);
+                maxTimestampAndOffsetSoFar = new TimestampOffset(largestTimestampMs, shallowOffsetOfMaxTimestamp);
             }
             // append an entry to the index (if needed)
             if (bytesSinceLastIndexEntry > indexIntervalBytes) {
@@ -904,9 +904,9 @@ public class LogSegment implements Closeable {
     }
 
     // AutoMQ inject start
-    public CompletableFuture<FetchDataInfo> readAsync(long startOffset, int maxSize, long maxPosition, long maxOffset, boolean minOneMessage) {
+    public CompletableFuture<FetchDataInfo> readAsync(long startOffset, int maxSize, Optional<Long> maxPositionOpt, long maxOffset, boolean minOneMessage) {
         try {
-            return CompletableFuture.completedFuture(read(startOffset, maxSize, maxPosition, minOneMessage));
+            return CompletableFuture.completedFuture(read(startOffset, maxSize, maxPositionOpt, minOneMessage));
         } catch (Throwable e) {
             return CompletableFuture.failedFuture(e);
         }

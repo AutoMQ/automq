@@ -318,7 +318,7 @@ class ElasticLog(val metaStream: MetaStream,
                         if (maxOffsetMetadata.segmentBaseOffset == segment.baseOffset) maxOffsetMetadata.relativePositionInSegment
                         else segment.size
 
-                    segment.readAsync(startOffset, maxLength, maxPosition, maxOffsetMetadata.messageOffset, minOneMessage)
+                    segment.readAsync(startOffset, maxLength, Optional.of(maxPosition), maxOffsetMetadata.messageOffset, minOneMessage)
                         .thenCompose(dataInfo => {
                             if (dataInfo != null) {
                                 finalSegmentOpt = segOpt

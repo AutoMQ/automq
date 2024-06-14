@@ -129,7 +129,7 @@ object Kafka extends Logging {
         config,
         Time.SYSTEM,
       )
-      AutoMQApplication.setClusterId(kafkaRaftServer.sharedServer.clusterId)
+      AutoMQApplication.setClusterId(kafkaRaftServer.getSharedServer().clusterId)
       AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[KafkaRaftServer], kafkaRaftServer)
       kafkaRaftServer

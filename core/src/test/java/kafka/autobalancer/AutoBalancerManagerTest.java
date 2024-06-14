@@ -26,7 +26,6 @@ import kafka.autobalancer.utils.AbstractLoadGenerator;
 import kafka.autobalancer.utils.AutoBalancerClientsIntegrationTestHarness;
 import kafka.autobalancer.utils.ConsumeLoadGenerator;
 import kafka.autobalancer.utils.ProduceLoadGenerator;
-import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -38,7 +37,10 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.controller.QuorumController;
+import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
 import org.apache.kafka.raft.KafkaRaftClient;
+import org.apache.kafka.server.config.ReplicationConfigs;
+import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -77,10 +79,10 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
     @Override
     protected Map<String, String> overridingNodeProps() {
         Map<String, String> props = new HashMap<>();
-        props.put(KafkaConfig.LogFlushIntervalMessagesProp(), "1");
-        props.put(KafkaConfig.OffsetsTopicReplicationFactorProp(), "1");
-        props.put(KafkaConfig.DefaultReplicationFactorProp(), "1");
-        props.put(KafkaConfig.OffsetsTopicPartitionsProp(), "1");
+        props.put(ServerLogConfigs.LOG_FLUSH_INTERVAL_MESSAGES_CONFIG, "1");
+        props.put(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1");
+        props.put(ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG, "1");
+        props.put(GroupCoordinatorConfig.OFFSETS_TOPIC_PARTITIONS_CONFIG, "1");
         return props;
     }
 

@@ -22,7 +22,6 @@ import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.metrics.LinuxIoMetricsCollector
 import kafka.network.SocketServer
-import kafka.security.CredentialProvider
 import kafka.server.streamaspect.ElasticReplicaManager
 import kafka.utils.Logging
 import org.apache.kafka.common.ClusterResource

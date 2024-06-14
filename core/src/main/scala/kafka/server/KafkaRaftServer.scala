@@ -109,6 +109,10 @@ class KafkaRaftServer(
   }
 
   // AutoMQ inject start
+  def getSharedServer(): SharedServer = {
+    sharedServer
+  }
+
   protected def brokerServer(): BrokerServer = {
     new BrokerServer(
       sharedServer,
