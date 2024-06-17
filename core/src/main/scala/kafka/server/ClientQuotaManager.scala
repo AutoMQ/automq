@@ -156,11 +156,15 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
     case None => QuotaTypes.NoQuotas
   }
 
-  private val delayQueueSensor = metrics.sensor(quotaType.toString + "-delayQueue")
+  protected val delayQueueSensor = metrics.sensor(quotaType.toString + "-delayQueue")
   delayQueueSensor.add(metrics.metricName("queue-size", quotaType.toString,
     "Tracks the size of the delay queue"), new CumulativeSum())
 
-  private val delayQueue = new DelayQueue[ThrottledChannel]()
+  def getDelayQueueSensor: Sensor = {
+    delayQueueSensor
+  }
+
+  protected val delayQueue = new DelayQueue[ThrottledChannel]()
   private[server] val throttledChannelReaper = new ThrottledChannelReaper(delayQueue, threadNamePrefix)
   start() // Use start method to keep spotbugs happy
   private def start(): Unit = {
@@ -178,7 +182,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
       val throttledChannel: ThrottledChannel = delayQueue.poll(1, TimeUnit.SECONDS)
       if (throttledChannel != null) {
         // Decrement the size of the delay queue
-        delayQueueSensor.record(-1)
+        getDelayQueueSensor.record(-1)
         // Notify the socket server that throttling is done for this channel, so that it can try to unmute the channel.
         throttledChannel.notifyThrottlingDone()
       }
@@ -295,7 +299,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
       clientSensors.throttleTimeSensor.record(throttleTimeMs)
       val throttledChannel = new ThrottledChannel(time, throttleTimeMs, throttleCallback)
       delayQueue.add(throttledChannel)
-      delayQueueSensor.record()
+      getDelayQueueSensor.record()
       debug("Channel throttled for sensor (%s). Delay time: (%d)".format(clientSensors.quotaSensor.name(), throttleTimeMs))
     }
   }
@@ -371,7 +375,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
     )
   }
 
-  private def metricTagsToSensorSuffix(metricTags: Map[String, String]): String =
+  protected def metricTagsToSensorSuffix(metricTags: Map[String, String]): String =
     metricTags.values.mkString(":")
 
   private def getThrottleTimeSensorName(metricTags: Map[String, String]): String =
@@ -384,7 +388,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
     getQuotaMetricConfig(quotaLimit(metricTags.asJava))
   }
 
-  private def getQuotaMetricConfig(quotaLimit: Double): MetricConfig = {
+  protected def getQuotaMetricConfig(quotaLimit: Double): MetricConfig = {
     new MetricConfig()
       .timeWindow(config.quotaWindowSizeSeconds, TimeUnit.SECONDS)
       .samples(config.numQuotaSamples)

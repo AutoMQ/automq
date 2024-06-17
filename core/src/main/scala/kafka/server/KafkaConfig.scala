@@ -150,6 +150,13 @@ object KafkaConfig {
   val S3SpanMaxQueueSizeProp = "s3.telemetry.tracer.span.max.queue.size"
   val S3SpanMaxBatchSizeProp = "s3.telemetry.tracer.span.max.batch.size"
   val S3OpsTelemetryEnabledProp = "s3.telemetry.ops.enabled"
+  val BrokerQuotaEnabledProp = "broker.quota.enabled"
+  val BrokerQuotaProduceBytesProp = "broker.quota.produce.bytes"
+  val BrokerQuotaFetchBytesProp = "broker.quota.fetch.bytes"
+  val BrokerQuotaRequestPercentageProp = "broker.quota.request.percentage"
+  val BrokerQuotaWhiteListUserProp = "broker.quota.white.list.user"
+  val BrokerQuotaWhiteListClientIdProp = "broker.quota.white.list.client.id"
+  val BrokerQuotaWhiteListListenerProp = "broker.quota.white.list.listener"
 
 
   val ElasticStreamEnableDoc = "Whether to enable AutoMQ, it has to be set to true"
@@ -214,6 +221,13 @@ object KafkaConfig {
   val S3SpanMaxQueueSizeDoc = "The max number of spans that can be queued before dropped"
   val S3SpanMaxBatchSizeDoc = "The max number of spans that can be exported in a single batch"
   val S3OpsTelemetryEnabledDoc = "Enable ops telemetry."
+  val BrokerQuotaEnabledDoc = "Enable broker quota."
+  val BrokerQuotaProduceBytesDoc = "The maximum bytes send by producer in single window."
+  val BrokerQuotaFetchBytesDoc = "The maximum bytes receive by consumer in single window."
+  val BrokerQuotaRequestPercentageDoc = "The maximum cpu time percentage cost by client in single window."
+  val BrokerQuotaWhiteListUserDoc = "Broker quota white list for user."
+  val BrokerQuotaWhiteListClientIdDoc = "Broker quota white list for client id."
+  val BrokerQuotaWhiteListListenerDoc = "Broker quota white list for listener name."
   // AutoMQ inject end
 
   @nowarn("cat=deprecation")
@@ -628,6 +642,13 @@ object KafkaConfig {
       .define(S3SpanScheduledDelayMsProp, INT, Defaults.S3_SPAN_SCHEDULED_DELAY_MS, MEDIUM, S3SpanScheduledDelayMsDoc)
       .define(S3SpanMaxQueueSizeProp, INT, Defaults.S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, S3SpanMaxQueueSizeDoc)
       .define(S3SpanMaxBatchSizeProp, INT, Defaults.S3_SPAN_MAX_BATCH_SIZE, MEDIUM, S3SpanMaxBatchSizeDoc)
+      .define(BrokerQuotaEnabledProp, BOOLEAN, false, MEDIUM, BrokerQuotaEnabledDoc)
+      .define(BrokerQuotaProduceBytesProp, DOUBLE, Double.MaxValue, MEDIUM, BrokerQuotaProduceBytesDoc)
+      .define(BrokerQuotaFetchBytesProp, DOUBLE, Double.MaxValue, MEDIUM, BrokerQuotaFetchBytesDoc)
+      .define(BrokerQuotaRequestPercentageProp, DOUBLE, Double.MaxValue, MEDIUM, BrokerQuotaRequestPercentageDoc)
+      .define(BrokerQuotaWhiteListUserProp, STRING, "", MEDIUM, BrokerQuotaRequestPercentageDoc)
+      .define(BrokerQuotaWhiteListClientIdProp, STRING, "", MEDIUM, BrokerQuotaWhiteListClientIdDoc)
+      .define(BrokerQuotaWhiteListListenerProp, STRING, "", MEDIUM, BrokerQuotaWhiteListListenerDoc)
       // AutoMQ inject end
   }
 

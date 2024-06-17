@@ -39,6 +39,7 @@ import java.util
 import java.util.{Collections, Optional}
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{ExecutorService, Executors, TimeUnit}
+import java.util.stream.IntStream
 import scala.annotation.nowarn
 import scala.collection.{Map, Seq, mutable}
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsJava, MapHasAsScala, SeqHasAsJava}
@@ -281,16 +282,24 @@ class ElasticKafkaApis(
       val timeMs = time.milliseconds()
       val requestSize = request.sizeInBytes
       val bandwidthThrottleTimeMs = quotas.produce.maybeRecordAndGetThrottleTimeMs(request, requestSize, timeMs)
+      val brokerBandwidthThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Produce, request, requestSize, timeMs)
       val requestThrottleTimeMs =
         if (produceRequest.acks == 0) 0
         else quotas.request.maybeRecordAndGetThrottleTimeMs(request, timeMs)
-      val maxThrottleTimeMs = Math.max(bandwidthThrottleTimeMs, requestThrottleTimeMs)
+      val brokerRequestThrottleTimeMs =
+        if (produceRequest.acks == 0) 0
+        else quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Request, request, 0, timeMs)
+      val maxThrottleTimeMs = IntStream.of(bandwidthThrottleTimeMs, requestThrottleTimeMs, brokerBandwidthThrottleTimeMs, brokerRequestThrottleTimeMs).max().orElse(0)
       if (maxThrottleTimeMs > 0) {
         request.apiThrottleTimeMs = maxThrottleTimeMs
-        if (bandwidthThrottleTimeMs > requestThrottleTimeMs) {
+        if (bandwidthThrottleTimeMs == maxThrottleTimeMs) {
           requestHelper.throttle(quotas.produce, request, bandwidthThrottleTimeMs)
-        } else {
+        } else if (requestThrottleTimeMs == maxThrottleTimeMs) {
           requestHelper.throttle(quotas.request, request, requestThrottleTimeMs)
+        } else if (brokerBandwidthThrottleTimeMs == maxThrottleTimeMs) {
+          requestHelper.throttle(QuotaType.Produce, quotas.broker, request, brokerBandwidthThrottleTimeMs)
+        } else if (brokerRequestThrottleTimeMs == maxThrottleTimeMs) {
+          requestHelper.throttle(QuotaType.Request, quotas.broker, request, brokerRequestThrottleTimeMs)
         }
       }
 
@@ -624,17 +633,24 @@ class ElasticKafkaApis(
         val timeMs = time.milliseconds()
         val requestThrottleTimeMs = quotas.request.maybeRecordAndGetThrottleTimeMs(request, timeMs)
         val bandwidthThrottleTimeMs = quotas.fetch.maybeRecordAndGetThrottleTimeMs(request, responseSize, timeMs)
+        val brokerRequestThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Request, request, 0, timeMs)
+        val brokerBandwidthThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Fetch, request, responseSize, timeMs)
 
-        val maxThrottleTimeMs = math.max(bandwidthThrottleTimeMs, requestThrottleTimeMs)
+        val maxThrottleTimeMs = IntStream.of(bandwidthThrottleTimeMs, requestThrottleTimeMs, brokerBandwidthThrottleTimeMs, brokerRequestThrottleTimeMs).max().orElse(0)
         if (maxThrottleTimeMs > 0) {
           request.apiThrottleTimeMs = maxThrottleTimeMs
           // Even if we need to throttle for request quota violation, we should "unrecord" the already recorded value
           // from the fetch quota because we are going to return an empty response.
           quotas.fetch.unrecordQuotaSensor(request, responseSize, timeMs)
-          if (bandwidthThrottleTimeMs > requestThrottleTimeMs) {
+          quotas.broker.unrecordQuotaSensor(QuotaType.Fetch, responseSize, timeMs)
+          if (bandwidthThrottleTimeMs == maxThrottleTimeMs) {
             requestHelper.throttle(quotas.fetch, request, bandwidthThrottleTimeMs)
-          } else {
+          } else if (requestThrottleTimeMs == maxThrottleTimeMs) {
             requestHelper.throttle(quotas.request, request, requestThrottleTimeMs)
+          } else if (brokerBandwidthThrottleTimeMs == maxThrottleTimeMs) {
+            requestHelper.throttle(QuotaType.Fetch, quotas.broker, request, brokerBandwidthThrottleTimeMs)
+          } else if (brokerRequestThrottleTimeMs == maxThrottleTimeMs) {
+            requestHelper.throttle(QuotaType.Request, quotas.broker, request, brokerRequestThrottleTimeMs)
           }
           // If throttling is required, return an empty response.
           unconvertedFetchResponse = fetchContext.getThrottledResponse(maxThrottleTimeMs)
@@ -660,8 +676,12 @@ class ElasticKafkaApis(
       // trying to fetch more bytes would result in a guaranteed throttling potentially blocking consumer progress
       val maxQuotaWindowBytes = if (fetchRequest.isFromFollower)
         Int.MaxValue
-      else
-        quotas.fetch.getMaxValueInQuotaWindow(request.session, clientId).toInt
+      else {
+        val maxValue = quotas.fetch.getMaxValueInQuotaWindow(request.session, clientId).toInt
+        val brokerMaxValue = quotas.broker.getMaxValueInQuotaWindow(QuotaType.Fetch).toInt
+        math.min(maxValue, brokerMaxValue)
+      }
+
 
       val fetchMaxBytes = Math.min(Math.min(fetchRequest.maxBytes, config.fetchMaxBytes), maxQuotaWindowBytes)
       val fetchMinBytes = Math.min(fetchRequest.minBytes, fetchMaxBytes)
