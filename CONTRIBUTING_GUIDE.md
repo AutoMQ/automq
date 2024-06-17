@@ -7,7 +7,7 @@ reach out to us via [Wechat Group](https://www.automq.com/img/------------------
 or [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA)!
 
 Before getting started, please review AutoMQ's Code of Conduct. Everyone interacting in Slack or Wechat
-follow [Code of Conduct](../community/code-of-conduct.md).
+follow [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Code Contributions
 
@@ -27,8 +27,7 @@ The usual workflow of code contribution is:
 7. [Link an existing Issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue)
    that does not include the `needs triage` label to your Pull Request. A pull request without a linked issue will be
    closed, otherwise.
-8. Write a PR title and description that follows the [Pull Request Handbook](./resources/pull-requests-handbook.md)
-   and [Pull Request Template](https://github.com/airbytehq/airbyte/blob/master/.github/pull_request_template.md).
+8. Write a PR title and description that follows the [Pull Request Template](PULL_REQUEST_TEMPLATE.md).
 9. An AutoMQ maintainer will trigger the CI tests for you and review the code.
 10. Review and respond to feedback and questions by AutoMQ maintainers.
 11. Merge the contribution.
@@ -40,11 +39,6 @@ Please make sure you respond to our feedback/questions and sign our CLA.
 
 Pull Requests without updates will be closed due inactivity.
 :::
-
-Guidelines to common code contributions:
-
-- [Submit code change to existing Source Connector](change-cdk-connector.md)
-- [Submit a New Connector](submit-new-connector.md)
 
 ## Requirement
 
@@ -127,4 +121,4 @@ users or report bugs in Github.
 
 ## Attribution
 
-This contributing document is adapted from that of [AutoMQ](https://github.com/airbytehq/airbyte).
+This contributing document is adapted from that of [Airbyte](https://github.com/airbytehq/airbyte).
