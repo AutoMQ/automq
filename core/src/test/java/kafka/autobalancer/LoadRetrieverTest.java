@@ -36,6 +36,9 @@ import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
+import org.apache.kafka.server.config.ReplicationConfigs;
+import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -70,9 +73,9 @@ public class LoadRetrieverTest extends AutoBalancerClientsIntegrationTestHarness
     @Override
     protected Map<String, String> overridingNodeProps() {
         Map<String, String> props = new HashMap<>();
-        props.put(KafkaConfig.LogFlushIntervalMessagesProp(), "1");
-        props.put(KafkaConfig.OffsetsTopicReplicationFactorProp(), "1");
-        props.put(KafkaConfig.DefaultReplicationFactorProp(), "1");
+        props.put(ServerLogConfigs.LOG_FLUSH_INTERVAL_MESSAGES_CONFIG, "1");
+        props.put(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1");
+        props.put(ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG, "1");
         return props;
     }
 

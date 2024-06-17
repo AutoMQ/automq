@@ -74,7 +74,7 @@ public class UpdateFollowerFetchStateBenchmark {
     private final Option<Uuid> topicId = OptionConverters.toScala(Optional.of(Uuid.randomUuid()));
     private final File logDir = new File(System.getProperty("java.io.tmpdir"), topicPartition.toString());
     private final KafkaScheduler scheduler = new KafkaScheduler(1, true, "scheduler");
-    private final BrokerTopicStats brokerTopicStats = new BrokerTopicStats(Optional.empty());
+    private final BrokerTopicStats brokerTopicStats = new BrokerTopicStats(false);
     private final LogDirFailureChannel logDirFailureChannel = Mockito.mock(LogDirFailureChannel.class);
     private long nextOffset = 0;
     private LogManager logManager;
@@ -127,7 +127,7 @@ public class UpdateFollowerFetchStateBenchmark {
         partition = new Partition(topicPartition, 100,
                 MetadataVersion.latestTesting(), 0, () -> -1, Time.SYSTEM,
                 alterPartitionListener, delayedOperations,
-                Mockito.mock(MetadataCache.class), logManager, alterPartitionManager);
+                Mockito.mock(MetadataCache.class), logManager, alterPartitionManager, topicId);
         partition.makeLeader(partitionState, offsetCheckpoints, topicId, Option.empty());
         replica1 = partition.getReplica(1).get();
         replica2 = partition.getReplica(2).get();

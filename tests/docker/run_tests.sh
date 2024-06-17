@@ -28,15 +28,24 @@ die() {
     exit 1
 }
 
+if [[ "$_DUCKTAPE_OPTIONS" == *"kafka_mode"* && "$_DUCKTAPE_OPTIONS" == *"native"* ]]; then
+    export KAFKA_MODE="native"
+else
+    export KAFKA_MODE="jvm"
+fi
+
 if [ "$REBUILD" == "t" ]; then
     ./gradlew clean systemTestLibs
+    if [ "$KAFKA_MODE" == "native" ]; then
+        ./gradlew clean releaseTarGz
+    fi
 fi
 
 if ${SCRIPT_DIR}/ducker-ak ssh | grep -q '(none)'; then
     if [ -n "${TC_GENERAL_MIRROR_URL}" ]; then
-        ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" --general-mirror-url "${TC_GENERAL_MIRROR_URL}" --jdk "${TC_BASE_IMAGE}" || die "ducker-ak up failed"
+        ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" --general-mirror-url "${TC_GENERAL_MIRROR_URL}" --jdk "${TC_BASE_IMAGE}" -m "${KAFKA_MODE}" || die "ducker-ak up failed"
     else
-        ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" --jdk "${TC_BASE_IMAGE}" || die "ducker-ak up failed"
+        ${SCRIPT_DIR}/ducker-ak up -n "${KAFKA_NUM_CONTAINERS}" --jdk "${TC_BASE_IMAGE}" -m "${KAFKA_MODE}" || die "ducker-ak up failed"
     fi
 fi
 

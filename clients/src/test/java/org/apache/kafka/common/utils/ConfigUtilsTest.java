@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
@@ -163,10 +164,10 @@ public class ConfigUtilsTest {
     public void testConfigMapToRedactedStringWithSecrets() {
         Map<String, Object> testMap1 = new HashMap<>();
         testMap1.put("myString", "whatever");
-        testMap1.put("myInt", Integer.valueOf(123));
+        testMap1.put("myInt", 123);
         testMap1.put("myPassword", "foosecret");
         testMap1.put("myString2", null);
-        testMap1.put("myUnknown", Integer.valueOf(456));
+        testMap1.put("myUnknown", 456);
         assertEquals("{myInt=123, myPassword=(redacted), myString=\"whatever\", myString2=null, myUnknown=(redacted)}",
             ConfigUtils.configMapToRedactedString(testMap1, CONFIG));
     }
@@ -174,7 +175,7 @@ public class ConfigUtilsTest {
     @Test
     public void testGetBoolean() {
         String key = "test.key";
-        Boolean defaultValue = true;
+        boolean defaultValue = true;
 
         Map<String, Object> config = new HashMap<>();
         config.put("some.other.key", false);
@@ -182,15 +183,15 @@ public class ConfigUtilsTest {
 
         config = new HashMap<>();
         config.put(key, false);
-        assertEquals(false, ConfigUtils.getBoolean(config, key, defaultValue));
+        assertFalse(ConfigUtils.getBoolean(config, key, defaultValue));
 
         config = new HashMap<>();
         config.put(key, "false");
-        assertEquals(false, ConfigUtils.getBoolean(config, key, defaultValue));
+        assertFalse(ConfigUtils.getBoolean(config, key, defaultValue));
 
         config = new HashMap<>();
         config.put(key, "not-a-boolean");
-        assertEquals(false, ConfigUtils.getBoolean(config, key, defaultValue));
+        assertFalse(ConfigUtils.getBoolean(config, key, defaultValue));
 
         config = new HashMap<>();
         config.put(key, 5);

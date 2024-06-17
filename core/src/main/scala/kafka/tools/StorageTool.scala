@@ -24,22 +24,23 @@ import java.nio.file.{Files, Paths}
 import kafka.utils.{Exit, Logging}
 import net.sourceforge.argparse4j.ArgumentParsers
 import net.sourceforge.argparse4j.impl.Arguments.{append, store, storeTrue}
-import net.sourceforge.argparse4j.inf.{Namespace, Subparser}
+import net.sourceforge.argparse4j.inf.Namespace
 import org.apache.kafka.common.Uuid
 import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.metadata.bootstrap.{BootstrapDirectory, BootstrapMetadata}
-import org.apache.kafka.server.common.{ApiMessageAndVersion, MetadataVersion}
+import org.apache.kafka.server.common.{ApiMessageAndVersion, Features, MetadataVersion}
 import org.apache.kafka.common.metadata.FeatureLevelRecord
 import org.apache.kafka.common.metadata.UserScramCredentialRecord
 import org.apache.kafka.common.security.scram.internals.ScramMechanism
 import org.apache.kafka.common.security.scram.internals.ScramFormatter
+import org.apache.kafka.server.config.ReplicationConfigs
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble.VerificationFlag
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, MetaPropertiesVersion, PropertiesUtils}
+import org.apache.kafka.server.common.FeatureVersion
 import org.apache.kafka.server.common.automq.AutoMQVersion
 
 import java.util
-import java.util.Base64
-import java.util.Optional
+import java.util.{Base64, Collections, Optional}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable.ArrayBuffer
@@ -57,47 +58,51 @@ object StorageTool extends Logging {
           val selfManagedMode = configToSelfManagedMode(config.get)
           Exit.exit(infoCommand(System.out, selfManagedMode, directories))
 
-        case "format" | "auto-format" =>
+        case "format" =>
           val directories = configToLogDirectories(config.get)
           val clusterId = namespace.getString("cluster_id")
-          val metadataVersion = getMetadataVersion(namespace,
-            Option(config.get.originals.get(KafkaConfig.InterBrokerProtocolVersionProp)).map(_.toString))
-          if (!metadataVersion.isKRaftSupported) {
-            throw new TerseFailure(s"Must specify a valid KRaft metadata version of at least 3.0.")
-          }
-          if (!metadataVersion.isProduction) {
-            if (config.get.unstableMetadataVersionsEnabled) {
-              System.out.println(s"WARNING: using pre-production metadata version $metadataVersion.")
-            } else {
-              throw new TerseFailure(s"Metadata version $metadataVersion is not ready for production use yet.")
-            }
-          }
           val metaProperties = new MetaProperties.Builder().
             setVersion(MetaPropertiesVersion.V1).
             setClusterId(clusterId).
             setNodeId(config.get.nodeId).
             build()
           val metadataRecords : ArrayBuffer[ApiMessageAndVersion] = ArrayBuffer()
+          val specifiedFeatures: util.List[String] = namespace.getList("feature")
+          val releaseVersionFlagSpecified = namespace.getString("release_version") != null
+          if (releaseVersionFlagSpecified && specifiedFeatures != null) {
+            throw new TerseFailure("Both --release-version and --feature were set. Only one of the two flags can be set.")
+          }
+          val featureNamesAndLevelsMap = featureNamesAndLevels(Option(specifiedFeatures).getOrElse(Collections.emptyList).asScala.toList)
+          val metadataVersion = getMetadataVersion(namespace, featureNamesAndLevelsMap,
+            Option(config.get.originals.get(ReplicationConfigs.INTER_BROKER_PROTOCOL_VERSION_CONFIG)).map(_.toString))
+          validateMetadataVersion(metadataVersion, config)
+          // Get all other features, validate, and create records for them
+          // Use latest default for features if --release-version is not specified
+          generateFeatureRecords(
+            metadataRecords,
+            metadataVersion,
+            featureNamesAndLevelsMap,
+            Features.PRODUCTION_FEATURES.asScala.toList,
+            config.get.unstableFeatureVersionsEnabled,
+            releaseVersionFlagSpecified
+          )
           getUserScramCredentialRecords(namespace).foreach(userScramCredentialRecords => {
             if (!metadataVersion.isScramSupported) {
-              throw new TerseFailure(s"SCRAM is only supported in metadataVersion IBP_3_5_IV2 or later.")
+              throw new TerseFailure(s"SCRAM is only supported in metadata.version ${MetadataVersion.IBP_3_5_IV2} or later.")
             }
             for (record <- userScramCredentialRecords) {
               metadataRecords.append(new ApiMessageAndVersion(record, 0.toShort))
             }
           })
+
           val bootstrapMetadata = buildBootstrapMetadata(metadataVersion, Some(metadataRecords), "format command")
           val ignoreFormatted = namespace.getBoolean("ignore_formatted")
           if (!configToSelfManagedMode(config.get)) {
             throw new TerseFailure("The kafka configuration file appears to be for " +
               "a legacy cluster. Formatting is only supported for clusters in KRaft mode.")
           }
-
-          val commandResult = formatCommand(System.out, directories, metaProperties, bootstrapMetadata,
-                                  metadataVersion,ignoreFormatted)
-          if (command == "format") {
-            Exit.exit(commandResult)
-          }
+          Exit.exit(formatCommand(System.out, directories, metaProperties, bootstrapMetadata,
+            metadataVersion,ignoreFormatted))
 
         case "random-uuid" =>
           System.out.println(Uuid.randomUuid)
@@ -113,7 +118,53 @@ object StorageTool extends Logging {
     }
   }
 
-  @SuppressWarnings(Array("deprecation"))
+  private def validateMetadataVersion(metadataVersion: MetadataVersion, config: Option[KafkaConfig]): Unit = {
+    if (!metadataVersion.isKRaftSupported) {
+      throw new TerseFailure(s"Must specify a valid KRaft metadata.version of at least ${MetadataVersion.IBP_3_0_IV0}.")
+    }
+    if (!metadataVersion.isProduction) {
+      if (config.get.unstableFeatureVersionsEnabled) {
+        System.out.println(s"WARNING: using pre-production metadata.version $metadataVersion.")
+      } else {
+        throw new TerseFailure(s"The metadata.version $metadataVersion is not ready for production use yet.")
+      }
+    }
+  }
+
+  private[tools] def generateFeatureRecords(metadataRecords: ArrayBuffer[ApiMessageAndVersion],
+    metadataVersion: MetadataVersion,
+    specifiedFeatures: Map[String, java.lang.Short],
+    allFeatures: List[Features],
+    unstableFeatureVersionsEnabled: Boolean,
+    releaseVersionSpecified: Boolean): Unit = {
+    // If we are using --release-version, the default is based on the metadata version.
+    val metadataVersionForDefault = if (releaseVersionSpecified) metadataVersion else MetadataVersion.LATEST_PRODUCTION
+
+    val allNonZeroFeaturesAndLevels: ArrayBuffer[FeatureVersion] = mutable.ArrayBuffer[FeatureVersion]()
+
+    allFeatures.foreach { feature =>
+      val level: java.lang.Short = specifiedFeatures.getOrElse(feature.featureName, feature.defaultValue(metadataVersionForDefault))
+      // Only set feature records for levels greater than 0. 0 is assumed if there is no record. Throw an error if level < 0.
+      if (level != 0) {
+        allNonZeroFeaturesAndLevels.append(feature.fromFeatureLevel(level, unstableFeatureVersionsEnabled))
+      }
+    }
+    val featuresMap = Features.featureImplsToMap(allNonZeroFeaturesAndLevels.asJava)
+    featuresMap.put(MetadataVersion.FEATURE_NAME, metadataVersion.featureLevel)
+
+    try {
+      for (feature <- allNonZeroFeaturesAndLevels) {
+        // In order to validate, we need all feature versions set.
+        Features.validateVersion(feature, featuresMap)
+        metadataRecords.append(new ApiMessageAndVersion(new FeatureLevelRecord().
+          setName(feature.featureName).
+          setFeatureLevel(feature.featureLevel), 0.toShort))
+      }
+    } catch {
+      case e: Throwable => throw new TerseFailure(e.getMessage)
+    }
+  }
+
   def parseArguments(args: Array[String]): Namespace = {
     val parser = ArgumentParsers
       .newFor("kafka-storage")
@@ -129,22 +180,13 @@ object StorageTool extends Logging {
       help("Get information about the Kafka log directories on this node.")
     val formatParser = subparsers.addParser("format").
       help("Format the Kafka log directories on this node.")
-    val autoFormatParser = subparsers.addParser("auto-format").
-        help("Auto format the Kafka log directories on this node. ")
     subparsers.addParser("random-uuid").help("Print a random UUID.")
-    List(infoParser, formatParser, autoFormatParser).foreach(parser => {
+    List(infoParser, formatParser).foreach(parser => {
       parser.addArgument("--config", "-c").
         action(store()).
         required(true).
         help("The Kafka configuration file to use.")
     })
-    configureFormatParser(formatParser)
-    configureFormatParser(autoFormatParser)
-
-    parser.parseArgsOrFail(args)
-  }
-
-  private def configureFormatParser(formatParser: Subparser): Unit = {
     formatParser.addArgument("--cluster-id", "-t").
       action(store()).
       required(true).
@@ -152,13 +194,18 @@ object StorageTool extends Logging {
     formatParser.addArgument("--add-scram", "-S").
       action(append()).
       help("""A SCRAM_CREDENTIAL to add to the __cluster_metadata log e.g.
-              |'SCRAM-SHA-256=[name=alice,password=alice-secret]'
-              |'SCRAM-SHA-512=[name=alice,iterations=8192,salt="N3E=",saltedpassword="YCE="]'""".stripMargin)
+             |'SCRAM-SHA-256=[name=alice,password=alice-secret]'
+             |'SCRAM-SHA-512=[name=alice,iterations=8192,salt="N3E=",saltedpassword="YCE="]'""".stripMargin)
     formatParser.addArgument("--ignore-formatted", "-g").
       action(storeTrue())
     formatParser.addArgument("--release-version", "-r").
       action(store()).
-      help(s"A KRaft release version to use for the initial metadata version. The minimum is 3.0, the default is ${MetadataVersion.LATEST_PRODUCTION.version()}")
+      help(s"A KRaft release version to use for the initial metadata.version. The minimum is ${MetadataVersion.IBP_3_0_IV0}, the default is ${MetadataVersion.LATEST_PRODUCTION}")
+    formatParser.addArgument("--feature", "-f").
+      help("A feature upgrade we should perform, in feature=level format. For example: `metadata.version=5`.").
+      action(append());
+
+    parser.parseArgsOrFail(args)
   }
 
   def configToLogDirectories(config: KafkaConfig): Seq[String] = {
@@ -172,6 +219,7 @@ object StorageTool extends Logging {
 
   def getMetadataVersion(
     namespace: Namespace,
+    featureNamesAndLevelsMap: Map[String, java.lang.Short],
     defaultVersionString: Option[String]
   ): MetadataVersion = {
     val defaultValue = defaultVersionString match {
@@ -179,9 +227,19 @@ object StorageTool extends Logging {
       case None => MetadataVersion.LATEST_PRODUCTION
     }
 
-    Option(namespace.getString("release_version"))
-      .map(ver => MetadataVersion.fromVersionString(ver))
-      .getOrElse(defaultValue)
+    val releaseVersionTag = Option(namespace.getString("release_version"))
+    val featureTag = featureNamesAndLevelsMap.get(MetadataVersion.FEATURE_NAME)
+
+    (releaseVersionTag, featureTag) match {
+      case (Some(_), Some(_)) => // We should throw an error before we hit this case, but include for completeness
+        throw new IllegalArgumentException("Both --release_version and --feature were set. Only one of the two flags can be set.")
+      case (Some(version), None) =>
+        MetadataVersion.fromVersionString(version)
+      case (None, Some(level)) =>
+        MetadataVersion.fromFeatureLevel(level)
+      case (None, None) =>
+        defaultValue
+    }
   }
 
   private def getUserScramCredentialRecord(
@@ -195,9 +253,9 @@ object StorageTool extends Logging {
      * Create Map of K to V and replace all " in V
      */
     val argMap = config.substring(1, config.length - 1)
-                       .split(",")
-                       .map(_.split("=(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"))
-                       .map(args => args(0) -> args(1).replaceAll("\"", "")).toMap
+      .split(",")
+      .map(_.split("=(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"))
+      .map(args => args(0) -> args(1).replaceAll("\"", "")).toMap
 
     val scramMechanism = ScramMechanism.forMechanismName(mechanism)
 
@@ -220,10 +278,10 @@ object StorageTool extends Logging {
       if (argMap.contains("salt")) {
         val iterations = argMap("iterations").toInt
         if (iterations < scramMechanism.minIterations()) {
-            throw new TerseFailure(s"The 'iterations' value must be >= ${scramMechanism.minIterations()} for add-scram")
+          throw new TerseFailure(s"The 'iterations' value must be >= ${scramMechanism.minIterations()} for add-scram")
         }
         if (iterations > scramMechanism.maxIterations()) {
-            throw new TerseFailure(s"The 'iterations' value must be <= ${scramMechanism.maxIterations()} for add-scram")
+          throw new TerseFailure(s"The 'iterations' value must be <= ${scramMechanism.maxIterations()} for add-scram")
         }
         iterations
       } else {
@@ -239,15 +297,15 @@ object StorageTool extends Logging {
     ) : Array[Byte] = {
       if (argMap.contains("password")) {
         if (argMap.contains("saltedpassword")) {
-            throw new TerseFailure(s"You must only supply one of 'password' or 'saltedpassword' to add-scram")
+          throw new TerseFailure(s"You must only supply one of 'password' or 'saltedpassword' to add-scram")
         }
         new ScramFormatter(scramMechanism).saltedPassword(argMap("password"), salt, iterations)
       } else {
         if (!argMap.contains("saltedpassword")) {
-            throw new TerseFailure(s"You must supply one of 'password' or 'saltedpassword' to add-scram")
+          throw new TerseFailure(s"You must supply one of 'password' or 'saltedpassword' to add-scram")
         }
         if (!argMap.contains("salt")) {
-            throw new TerseFailure(s"You must supply 'salt' with 'saltedpassword' to add-scram")
+          throw new TerseFailure(s"You must supply 'salt' with 'saltedpassword' to add-scram")
         }
         Base64.getDecoder.decode(argMap("saltedpassword"))
       }
@@ -262,14 +320,14 @@ object StorageTool extends Logging {
       val formatter = new ScramFormatter(scramMechanism)
 
       new UserScramCredentialRecord()
-           .setName(name)
-           .setMechanism(scramMechanism.`type`)
-           .setSalt(salt)
-           .setStoredKey(formatter.storedKey(formatter.clientKey(saltedPassword)))
-           .setServerKey(formatter.serverKey(saltedPassword))
-           .setIterations(iterations)
+        .setName(name)
+        .setMechanism(scramMechanism.`type`)
+        .setSalt(salt)
+        .setStoredKey(formatter.storedKey(formatter.clientKey(saltedPassword)))
+        .setServerKey(formatter.serverKey(saltedPassword))
+        .setIterations(iterations)
     } catch {
-      case e: Throwable => 
+      case e: Throwable =>
         throw new TerseFailure(s"Error attempting to create UserScramCredentialRecord: ${e.getMessage}")
     }
     myrecord
@@ -386,13 +444,13 @@ object StorageTool extends Logging {
   }
 
   def buildBootstrapMetadata(metadataVersion: MetadataVersion,
-                             metadataOptionalArguments: Option[ArrayBuffer[ApiMessageAndVersion]],
-                             source: String): BootstrapMetadata = {
+    metadataOptionalArguments: Option[ArrayBuffer[ApiMessageAndVersion]],
+    source: String): BootstrapMetadata = {
 
     val metadataRecords = new util.ArrayList[ApiMessageAndVersion]
     metadataRecords.add(new ApiMessageAndVersion(new FeatureLevelRecord().
-                        setName(MetadataVersion.FEATURE_NAME).
-                        setFeatureLevel(metadataVersion.featureLevel()), 0.toShort))
+      setName(MetadataVersion.FEATURE_NAME).
+      setFeatureLevel(metadataVersion.featureLevel()), 0.toShort))
 
     metadataOptionalArguments.foreach { metadataArguments =>
       for (record <- metadataArguments) metadataRecords.add(record)
@@ -404,7 +462,6 @@ object StorageTool extends Logging {
       0.toShort
     ))
     // AutoMQ inject end
-
 
     BootstrapMetadata.fromRecords(metadataRecords, source)
   }
@@ -465,8 +522,12 @@ object StorageTool extends Logging {
         "Use --ignore-formatted to ignore this directory and format the others.")
     }
     if (!copier.errorLogDirs().isEmpty) {
-      val firstLogDir = copier.errorLogDirs().iterator().next()
-      throw new TerseFailure(s"I/O error trying to read log directory $firstLogDir.")
+      copier.errorLogDirs().forEach(errorLogDir => {
+        stream.println(s"I/O error trying to read log directory $errorLogDir. Ignoring...")
+      })
+      if (metaPropertiesEnsemble.emptyLogDirs().isEmpty && copier.logDirProps().isEmpty) {
+        throw new TerseFailure("No available log directories to format.")
+      }
     }
     if (metaPropertiesEnsemble.emptyLogDirs().isEmpty) {
       stream.println("All of the log directories are already formatted.")
@@ -484,9 +545,32 @@ object StorageTool extends Logging {
         copier.setWriteErrorHandler((logDir, e) => {
           throw new TerseFailure(s"Error while writing meta.properties file $logDir: ${e.getMessage}")
         })
-        copier.writeLogDirChanges()
       })
+      copier.writeLogDirChanges()
     }
     0
+  }
+
+  private def parseNameAndLevel(input: String): (String, java.lang.Short) = {
+    val equalsIndex = input.indexOf("=")
+    if (equalsIndex < 0)
+      throw new RuntimeException("Can't parse feature=level string " + input + ": equals sign not found.")
+    val name = input.substring(0, equalsIndex).trim
+    val levelString = input.substring(equalsIndex + 1).trim
+    try {
+      levelString.toShort
+    } catch {
+      case _: Throwable =>
+        throw new RuntimeException("Can't parse feature=level string " + input + ": " + "unable to parse " + levelString + " as a short.")
+    }
+    (name, levelString.toShort)
+  }
+
+  def featureNamesAndLevels(features: List[String]): Map[String, java.lang.Short] = {
+    features.map { (feature: String) =>
+      // Ensure the feature exists
+      val nameAndLevel = parseNameAndLevel(feature)
+      (nameAndLevel._1, nameAndLevel._2)
+    }.toMap
   }
 }

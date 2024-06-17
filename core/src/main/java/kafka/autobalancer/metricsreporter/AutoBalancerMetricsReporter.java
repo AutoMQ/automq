@@ -30,7 +30,6 @@ import kafka.autobalancer.metricsreporter.metric.Derivator;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
 import kafka.autobalancer.metricsreporter.metric.YammerMetricProcessor;
-import kafka.server.KafkaConfig;
 import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -46,6 +45,9 @@ import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.common.utils.KafkaThread;
+import org.apache.kafka.network.SocketServerConfigs;
+import org.apache.kafka.server.config.KRaftConfigs;
+import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,7 +87,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private long lastErrorReportTime = 0;
 
     private String getBootstrapServers(Map<String, ?> configs, String expectedListenerName) {
-        String listenerStr = String.valueOf(configs.get(KafkaConfig.ListenersProp()));
+        String listenerStr = String.valueOf(configs.get(SocketServerConfigs.LISTENERS_CONFIG));
         if (!"null".equals(listenerStr) && !listenerStr.isEmpty()) {
             String[] listeners = listenerStr.split("\\s*,\\s*");
             for (String listener : listeners) {
@@ -238,8 +240,8 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
             this.close();
         }
 
-        brokerId = Integer.parseInt((String) configs.get(KafkaConfig.BrokerIdProp()));
-        brokerRack = (String) configs.get(KafkaConfig.RackProp());
+        brokerId = Integer.parseInt((String) configs.get(KRaftConfigs.NODE_ID_CONFIG));
+        brokerRack = (String) configs.get(ServerConfigs.BROKER_RACK_CONFIG);
         if (brokerRack == null) {
             brokerRack = "";
         }

@@ -22,8 +22,8 @@ import java.util.Optional;
 import java.util.Properties;
 import kafka.utils.TestUtils;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.config.TopicConfig;
-import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -34,6 +34,7 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.coordinator.transaction.TransactionLogConfigs;
 import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpoint;
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache;
 import org.apache.kafka.storage.internals.log.EpochEntry;
@@ -201,18 +202,16 @@ public class ElasticLogSegmentTest {
 
         // append transactional records from pid1
         segment.append(101L, RecordBatch.NO_TIMESTAMP,
-            100L, MemoryRecords.withTransactionalRecords(100L, CompressionType.NONE,
+            100L, MemoryRecords.withTransactionalRecords(100L, Compression.NONE,
                 pid1, producerEpoch, sequence, partitionLeaderEpoch, new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         // append transactional records from pid2
-        segment.append(103L, RecordBatch.NO_TIMESTAMP,
-            102L, MemoryRecords.withTransactionalRecords(102L, CompressionType.NONE,
-                pid2, producerEpoch, sequence, partitionLeaderEpoch, new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
+        segment.append(103L, RecordBatch.NO_TIMESTAMP, 102L, MemoryRecords.withTransactionalRecords(102L, Compression.NONE,
+            pid2, producerEpoch, sequence, partitionLeaderEpoch, new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         // append non-transactional records
-        segment.append(105L, RecordBatch.NO_TIMESTAMP,
-            104L, MemoryRecords.withRecords(104L, CompressionType.NONE,
-                partitionLeaderEpoch, new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
+        segment.append(105L, RecordBatch.NO_TIMESTAMP, 104L, MemoryRecords.withRecords(104L, Compression.NONE,
+            partitionLeaderEpoch, new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         // abort the transaction from pid2 (note LSO should be 100L since the txn from pid1 has not completed)
         segment.append(106L, RecordBatch.NO_TIMESTAMP,
@@ -275,19 +274,19 @@ public class ElasticLogSegmentTest {
 
         LeaderEpochFileCache cache = new LeaderEpochFileCache(topicPartition, checkpoint);
         seg.append(105L, RecordBatch.NO_TIMESTAMP,
-            104L, MemoryRecords.withRecords(104L, CompressionType.NONE, 0,
+            104L, MemoryRecords.withRecords(104L, Compression.NONE, 0,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         seg.append(107L, RecordBatch.NO_TIMESTAMP,
-            106L, MemoryRecords.withRecords(106L, CompressionType.NONE, 1,
+            106L, MemoryRecords.withRecords(106L, Compression.NONE, 1,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         seg.append(109L, RecordBatch.NO_TIMESTAMP,
-            108L, MemoryRecords.withRecords(108L, CompressionType.NONE, 1,
+            108L, MemoryRecords.withRecords(108L, Compression.NONE, 1,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         seg.append(111L, RecordBatch.NO_TIMESTAMP,
-            110, MemoryRecords.withRecords(110L, CompressionType.NONE, 2,
+            110, MemoryRecords.withRecords(110L, Compression.NONE, 2,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         seg.recover(newProducerStateManager(), Optional.of(cache));
@@ -356,7 +355,7 @@ public class ElasticLogSegmentTest {
         return MemoryRecords.withRecords(
             RecordBatch.MAGIC_VALUE_V1,
             offset,
-            CompressionType.NONE,
+            Compression.NONE,
             TimestampType.CREATE_TIME,
             Arrays.stream(records).map(s -> new SimpleRecord(offset * 10, s.getBytes())).toArray(SimpleRecord[]::new));
     }
@@ -386,7 +385,7 @@ public class ElasticLogSegmentTest {
             topicPartition,
             logDir,
             5 * 60 * 1000,
-            new ProducerStateManagerConfig(org.apache.kafka.server.config.Defaults.PRODUCER_ID_EXPIRATION_MS, true),
+            new ProducerStateManagerConfig(TransactionLogConfigs.PRODUCER_ID_EXPIRATION_MS_DEFAULT, true),
             new MockTime()
         );
     }

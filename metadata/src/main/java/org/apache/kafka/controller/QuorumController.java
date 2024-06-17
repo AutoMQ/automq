@@ -448,7 +448,6 @@ public final class QuorumController implements Controller {
         }
         // AutoMQ for Kafka inject end
 
-        @SuppressWarnings("unchecked")
         public QuorumController build() throws Exception {
             if (raftClient == null) {
                 throw new IllegalStateException("You must set a raft client.");
@@ -571,8 +570,6 @@ public final class QuorumController implements Controller {
         }
     }
 
-    public static final String CONTROLLER_THREAD_SUFFIX = "QuorumControllerEventHandler";
-
     private OptionalInt latestController() {
         return raftClient.leaderAndEpoch().leaderId();
     }
@@ -693,7 +690,7 @@ public final class QuorumController implements Controller {
 
         ControllerReadEvent(String name, Supplier<T> handler) {
             this.name = name;
-            this.future = new CompletableFuture<T>();
+            this.future = new CompletableFuture<>();
             this.handler = handler;
         }
 
@@ -769,7 +766,7 @@ public final class QuorumController implements Controller {
         OptionalLong deadlineNs,
         Supplier<T> handler
     ) {
-        ControllerReadEvent<T> event = new ControllerReadEvent<T>(name, handler);
+        ControllerReadEvent<T> event = new ControllerReadEvent<>(name, handler);
         if (deadlineNs.isPresent()) {
             queue.appendWithDeadline(deadlineNs.getAsLong(), event);
         } else {
@@ -849,7 +846,7 @@ public final class QuorumController implements Controller {
             EnumSet<ControllerOperationFlag> flags
         ) {
             this.name = name;
-            this.future = new CompletableFuture<T>();
+            this.future = new CompletableFuture<>();
             this.op = op;
             this.flags = flags;
             this.resultAndOffset = null;
@@ -915,36 +912,34 @@ public final class QuorumController implements Controller {
                 // Pass the records to the Raft layer. This will start the process of committing
                 // them to the log.
                 long offset = appendRecords(log, result, maxRecordsPerBatch,
-                    new Function<List<ApiMessageAndVersion>, Long>() {
-                        @Override
-                        public Long apply(List<ApiMessageAndVersion> records) {
-                            // Start by trying to apply the record to our in-memory state. This should always
-                            // succeed; if it does not, that's a fatal error. It is important to do this before
-                            // scheduling the record for Raft replication.
-                            int recordIndex = 0;
-                            long nextWriteOffset = offsetControl.nextWriteOffset();
-                            for (ApiMessageAndVersion message : records) {
-                                long recordOffset = nextWriteOffset + recordIndex;
-                                try {
-                                    replay(message.message(), Optional.empty(), recordOffset);
-                                } catch (Throwable e) {
-                                    String failureMessage = String.format("Unable to apply %s " +
-                                        "record at offset %d on active controller, from the " +
-                                        "batch with baseOffset %d",
-                                        message.message().getClass().getSimpleName(),
-                                        recordOffset, nextWriteOffset);
-                                    throw fatalFaultHandler.handleFault(failureMessage, e);
-                                }
-                                recordIndex++;
+                    records -> {
+                        // Start by trying to apply the record to our in-memory state. This should always
+                        // succeed; if it does not, that's a fatal error. It is important to do this before
+                        // scheduling the record for Raft replication.
+                        int recordIndex = 0;
+                        long nextWriteOffset = offsetControl.nextWriteOffset();
+                        for (ApiMessageAndVersion message : records) {
+                            long recordOffset = nextWriteOffset + recordIndex;
+                            try {
+                                replay(message.message(), Optional.empty(), recordOffset);
+                            } catch (Throwable e) {
+                                String failureMessage = String.format("Unable to apply %s " +
+                                    "record at offset %d on active controller, from the " +
+                                    "batch with baseOffset %d",
+                                    message.message().getClass().getSimpleName(),
+                                    recordOffset, nextWriteOffset);
+                                throw fatalFaultHandler.handleFault(failureMessage, e);
                             }
-                            long nextEndOffset = nextWriteOffset - 1 + recordIndex;
-                            raftClient.scheduleAtomicAppend(controllerEpoch,
-                                OptionalLong.of(nextWriteOffset),
-                                records);
-                            offsetControl.handleScheduleAtomicAppend(nextEndOffset);
-                            return nextEndOffset;
+                            recordIndex++;
                         }
-                    });
+                        long nextEndOffset = nextWriteOffset - 1 + recordIndex;
+                        raftClient.scheduleAtomicAppend(controllerEpoch,
+                            OptionalLong.of(nextWriteOffset),
+                            records);
+                        offsetControl.handleScheduleAtomicAppend(nextEndOffset);
+                        return nextEndOffset;
+                    }
+                );
                 op.processBatchEndOffset(offset);
                 resultAndOffset = ControllerResultAndOffset.of(offset, result);
 
@@ -2063,6 +2058,7 @@ public final class QuorumController implements Controller {
             // AutoMQ for Kafka inject start
             setQuorumVoters(quorumVoters).
             // AutoMQ for Kafka inject end
+            setBrokerUncleanShutdownHandler(this::handleUncleanBrokerShutdown).
             build();
         this.producerIdControlManager = new ProducerIdControlManager.Builder().
             setLogContext(logContext).
@@ -2767,5 +2763,9 @@ public final class QuorumController implements Controller {
         appendControlEvent("setNewNextWriteOffset", () -> {
             offsetControl.setNextWriteOffset(newNextWriteOffset);
         });
+    }
+
+    void handleUncleanBrokerShutdown(int brokerId, List<ApiMessageAndVersion> records) {
+        replicationControl.handleBrokerUncleanShutdown(brokerId, records);
     }
 }

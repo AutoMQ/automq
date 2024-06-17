@@ -5,8 +5,10 @@ import kafka.server.{ControllerApisTest, KafkaConfig, SimpleApiVersionManager}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
 import org.apache.kafka.controller.Controller
 import org.apache.kafka.image.publisher.ControllerRegistrationsPublisher
+import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.server.authorizer.Authorizer
-import org.apache.kafka.server.common.{Features, MetadataVersion}
+import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
+import org.apache.kafka.server.config.KRaftConfigs
 import org.junit.jupiter.api.Tag
 
 import java.util.Properties
@@ -19,10 +21,10 @@ class ElasticControllerApisTest extends ControllerApisTest {
     props: Properties = new Properties(),
     throttle: Boolean = false): ElasticControllerApis = {
 
-    props.put(KafkaConfig.NodeIdProp, nodeId: java.lang.Integer)
-    props.put(KafkaConfig.ProcessRolesProp, "controller")
-    props.put(KafkaConfig.ControllerListenerNamesProp, "PLAINTEXT")
-    props.put(KafkaConfig.QuorumVotersProp, s"$nodeId@localhost:9092")
+    props.put(KRaftConfigs.NODE_ID_CONFIG, nodeId: java.lang.Integer)
+    props.put(KRaftConfigs.PROCESS_ROLES_CONFIG, "controller")
+    props.put(KRaftConfigs.CONTROLLER_LISTENER_NAMES_CONFIG, "PLAINTEXT")
+    props.put(QuorumConfig.QUORUM_VOTERS_CONFIG, s"$nodeId@localhost:9092")
     new ElasticControllerApis(
       requestChannel,
       authorizer,
@@ -37,7 +39,7 @@ class ElasticControllerApisTest extends ControllerApisTest {
         ListenerType.CONTROLLER,
         true,
         false,
-        () => Features.fromKRaftVersion(MetadataVersion.latestTesting())),
+        () => FinalizedFeatures.fromKRaftVersion(MetadataVersion.latestTesting())),
       metadataCache
     )
   }

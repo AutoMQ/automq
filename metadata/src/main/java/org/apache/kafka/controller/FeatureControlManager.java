@@ -60,12 +60,12 @@ public class FeatureControlManager {
         private ClusterFeatureSupportDescriber clusterSupportDescriber = new ClusterFeatureSupportDescriber() {
             @Override
             public Iterator<Entry<Integer, Map<String, VersionRange>>> brokerSupported() {
-                return Collections.<Integer, Map<String, VersionRange>>emptyMap().entrySet().iterator();
+                return Collections.emptyIterator();
             }
 
             @Override
             public Iterator<Entry<Integer, Map<String, VersionRange>>> controllerSupported() {
-                return Collections.<Integer, Map<String, VersionRange>>emptyMap().entrySet().iterator();
+                return Collections.emptyIterator();
             }
         };
 
@@ -409,7 +409,7 @@ public class FeatureControlManager {
             mv.setAutoMQVersion(autoMQVersion.get());
             // AutoMQ inject end
             metadataVersion.set(mv);
-            log.info("Replayed a FeatureLevelRecord setting metadata version to {}", mv);
+            log.info("Replayed a FeatureLevelRecord setting metadata.version to {}", mv);
         } else {
             if (record.featureLevel() == 0) {
                 finalizedVersions.remove(record.name());

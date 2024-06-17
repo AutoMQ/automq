@@ -33,7 +33,7 @@ public class LazyDownConversionRecords implements BaseRecords, PooledResource {
     private final Records records;
     private final byte toMagic;
     private final long firstOffset;
-    private ConvertedRecords firstConvertedBatch;
+    private ConvertedRecords<?> firstConvertedBatch;
     private final int sizeInBytes;
     private final Time time;
 
@@ -119,7 +119,7 @@ public class LazyDownConversionRecords implements BaseRecords, PooledResource {
     public final java.util.Iterator<ConvertedRecords<?>> iterator(long maximumReadSize) {
         // We typically expect only one iterator instance to be created, so null out the first converted batch after
         // first use to make it available for GC.
-        ConvertedRecords firstBatch = firstConvertedBatch;
+        ConvertedRecords<?> firstBatch = firstConvertedBatch;
         firstConvertedBatch = null;
         return new Iterator(records, maximumReadSize, firstBatch);
     }
@@ -139,7 +139,7 @@ public class LazyDownConversionRecords implements BaseRecords, PooledResource {
     private class Iterator extends AbstractIterator<ConvertedRecords<?>> {
         private final AbstractIterator<? extends RecordBatch> batchIterator;
         private final long maximumReadSize;
-        private ConvertedRecords firstConvertedBatch;
+        private ConvertedRecords<?> firstConvertedBatch;
 
         /**
          * @param recordsToDownConvert Records that require down-conversion
@@ -161,10 +161,10 @@ public class LazyDownConversionRecords implements BaseRecords, PooledResource {
          * @return Down-converted records
          */
         @Override
-        protected ConvertedRecords makeNext() {
+        protected ConvertedRecords<?> makeNext() {
             // If we have cached the first down-converted batch, return that now
             if (firstConvertedBatch != null) {
-                ConvertedRecords convertedBatch = firstConvertedBatch;
+                ConvertedRecords<?> convertedBatch = firstConvertedBatch;
                 firstConvertedBatch = null;
                 return convertedBatch;
             }
@@ -183,7 +183,7 @@ public class LazyDownConversionRecords implements BaseRecords, PooledResource {
                     isFirstBatch = false;
                 }
 
-                ConvertedRecords convertedRecords = RecordsUtil.downConvert(batches, toMagic, firstOffset, time);
+                ConvertedRecords<MemoryRecords> convertedRecords = RecordsUtil.downConvert(batches, toMagic, firstOffset, time);
                 // During conversion, it is possible that we drop certain batches because they do not have an equivalent
                 // representation in the message format we want to convert to. For example, V0 and V1 message formats
                 // have no notion of transaction markers which were introduced in V2 so they get dropped during conversion.

@@ -15,7 +15,7 @@ import kafka.log._
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.client.Context
 import kafka.server.{BrokerTopicStats, KafkaConfig}
-import kafka.utils.{TestUtils, Throttler}
+import kafka.utils.TestUtils
 import org.apache.kafka.common.Uuid
 import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
@@ -23,10 +23,14 @@ import org.apache.kafka.common.record.{MemoryRecords, SimpleRecord}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.log._
+import org.apache.kafka.storage.internals.utils.Throttler
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.{BeforeEach, Tag, Test}
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 
 import java.io.File
+import java.util.Optional
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
 @Tag("S3Unit")
@@ -264,7 +268,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
             ioBufferSize = 64 * 1024,
             maxIoBufferSize = 64 * 1024,
             dupBufferLoadFactor = 0.75,
-            throttler = new Throttler(Double.MaxValue, Long.MaxValue, false, time = mockTime),
+            throttler = new Throttler(Double.MaxValue, Long.MaxValue, "throttler", "entries", mockTime),
             time = mockTime,
             checkDone = _ => {})
 
@@ -451,8 +455,9 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         // AutoMQ embedded replication in S3Stream, so AutoMQ don't need truncateTo
     }
 
-    @Test
-    override def testRetentionDeletesProducerStateSnapshots(): Unit = {
+    @ParameterizedTest(name = "testRetentionDeletesProducerStateSnapshots with createEmptyActiveSegment: {0}")
+    @ValueSource(booleans = Array(true, false))
+    override def testRetentionDeletesProducerStateSnapshots(createEmptyActiveSegment: Boolean): Unit = {
         val logConfig = LogTestUtils.createLogConfig(segmentBytes = 2048 * 5, retentionBytes = 0, retentionMs = 1000 * 60, fileDeleteDelayMs = 0)
         val log = createLog(logDir, logConfig)
         val pid1 = 1L
@@ -466,10 +471,14 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         log.roll()
         log.appendAsLeader(TestUtils.records(List(new SimpleRecord("c".getBytes)), producerId = pid1,
             producerEpoch = epoch, sequence = 2), leaderEpoch = 0)
+        if (createEmptyActiveSegment) {
+            log.roll()
+        }
 
         log.updateHighWatermark(log.logEndOffset)
 
-        assertEquals(2, log.asInstanceOf[ElasticUnifiedLog].listProducerSnapshots().size())
+        val numProducerSnapshots = if (createEmptyActiveSegment) 3 else 2
+        assertEquals(numProducerSnapshots, log.asInstanceOf[ElasticUnifiedLog].listProducerSnapshots().size())
         // Sleep to breach the retention period
         mockTime.sleep(1000 * 60 + 1)
         log.deleteOldSegments()
@@ -554,7 +563,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
 
         val readInfo = segment.read(offsetMetadata.messageOffset,
             2048,
-            segment.size,
+            Optional.of(segment.size),
             false)
 
         if (offsetMetadata.relativePositionInSegment < segment.size) {
@@ -565,6 +574,14 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
     }
 
     override def testFetchLatestTieredTimestampWithRemoteStorage(): Unit = {
+        // AutoMQ embedded tiered storage in S3Stream
+    }
+
+    override def testIncrementLocalLogStartOffsetAfterLocalLogDeletion(): Unit = {
+        // AutoMQ embedded tiered storage in S3Stream
+    }
+
+    override def testConvertToOffsetMetadataDoesNotThrowOffsetOutOfRangeError(): Unit = {
         // AutoMQ embedded tiered storage in S3Stream
     }
 }

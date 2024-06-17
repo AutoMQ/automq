@@ -18,6 +18,7 @@ from ducktape.mark import matrix
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 from kafkatest.services.kafka import KafkaService, quorum, consumer_group
+from kafkatest.services.kafka import KafkaService, quorum, consumer_group
 from kafkatest.services.trogdor.produce_bench_workload import ProduceBenchWorkloadService, ProduceBenchWorkloadSpec
 from kafkatest.services.trogdor.consume_bench_workload import ConsumeBenchWorkloadService, ConsumeBenchWorkloadSpec
 from kafkatest.services.trogdor.task_spec import TaskSpec
@@ -90,6 +91,14 @@ class ConsumeBenchTest(Test):
             ["consume_bench_topic[0-5]:[0-4]"] # manual topic assignment
         ],
         metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
+    @matrix(
+        topics=[
+            ["consume_bench_topic[0-5]"], # topic subscription
+            ["consume_bench_topic[0-5]:[0-4]"] # manual topic assignment
+        ],
+        metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
@@ -118,6 +127,10 @@ class ConsumeBenchTest(Test):
     #     metadata_quorum=[quorum.zk],
     #     use_new_coordinator=[False]
     # )
+    @matrix(
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[False]
@@ -159,6 +172,10 @@ class ConsumeBenchTest(Test):
     )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
+    @matrix(
+        metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
@@ -189,6 +206,10 @@ class ConsumeBenchTest(Test):
     #     metadata_quorum=[quorum.zk],
     #     use_new_coordinator=[False]
     # )
+    @matrix(
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[False]
@@ -232,6 +253,10 @@ class ConsumeBenchTest(Test):
     )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
+    @matrix(
+        metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
@@ -263,6 +288,10 @@ class ConsumeBenchTest(Test):
     #     metadata_quorum=[quorum.zk],
     #     use_new_coordinator=[False]
     # )
+    @matrix(
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[False]
