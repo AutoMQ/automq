@@ -15,6 +15,9 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import io.netty.buffer.ByteBuf;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.eq;
@@ -25,8 +28,23 @@ import static org.mockito.Mockito.verify;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
+@Tag("S3Unit")
 abstract class ObjectStorageTestBase {
     AbstractObjectStorage objectStorage;
+
+    @BeforeEach
+    void setUp() {
+        doSetUp();
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (objectStorage != null) {
+            objectStorage.close();
+        }
+    }
+
+    abstract void doSetUp();
 
     void testMergeRead0() throws ExecutionException, InterruptedException {
         objectStorage = spy(objectStorage);

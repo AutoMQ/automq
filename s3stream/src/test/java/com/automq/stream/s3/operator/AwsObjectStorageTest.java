@@ -13,8 +13,6 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
 import io.netty.buffer.ByteBuf;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -29,14 +27,8 @@ import static org.mockito.Mockito.mock;
 public class AwsObjectStorageTest extends ObjectStorageTestBase {
     private S3AsyncClient s3;
 
-    @BeforeEach
-    void setUp() {
+    void doSetUp() {
         s3 = mock(S3AsyncClient.class);
-    }
-
-    @AfterEach
-    void tearDown() {
-        s3.close();
     }
 
     @Test
