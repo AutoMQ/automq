@@ -84,17 +84,23 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private int metricsReporterCreateRetries;
     private long lastErrorReportTime = 0;
 
-    private String getBootstrapServers(Map<String, ?> configs, String expectedListenerName) {
+    String getBootstrapServers(Map<String, ?> configs, String expectedListenerName) {
         String listenerStr = String.valueOf(configs.get(KafkaConfig.ListenersProp()));
         if (!"null".equals(listenerStr) && !listenerStr.isEmpty()) {
             String[] listeners = listenerStr.split("\\s*,\\s*");
+            if (listeners.length == 0) {
+                throw new ConfigException("No listener found in " + KafkaConfig.ListenersProp());
+            }
             for (String listener : listeners) {
                 String[] protocolHostPort = listener.split(":");
                 if (protocolHostPort.length != 3) {
                     throw new ConfigException("Invalid listener format: " + listener);
                 }
                 String listenerName = protocolHostPort[0];
-                if (Utils.checkListenerName(listenerName, expectedListenerName)) {
+                if (listenerName.equals("CONTROLLER")) {
+                    continue;
+                }
+                if (expectedListenerName == null || expectedListenerName.isEmpty() || Utils.checkListenerName(listenerName, expectedListenerName)) {
                     String portToUse = protocolHostPort[protocolHostPort.length - 1];
                     // Use host of listener if one is specified.
                     return ((protocolHostPort[1].length() == 2) ? DEFAULT_BOOTSTRAP_SERVERS_HOST
