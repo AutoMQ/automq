@@ -166,6 +166,9 @@ public class Stats {
 
         @Override
         public void recordValue(long value) {
+            if (value < 0) {
+                return;
+            }
             super.recordValue(Math.min(value, limit));
         }
     }
@@ -180,6 +183,9 @@ public class Stats {
 
         @Override
         public void recordValue(long value) {
+            if (value < 0) {
+                return;
+            }
             super.recordValue(Math.min(value, limit));
         }
     }
