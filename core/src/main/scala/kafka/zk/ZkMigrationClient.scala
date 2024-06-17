@@ -308,7 +308,7 @@ class ZkMigrationClient(
       zkClient.getDelegationTokenInfo(tokenId) match {
         case Some(tokenInformation) =>
           val newDelegationTokenData = new DelegationTokenData(tokenInformation)
-          batch.add(new ApiMessageAndVersion(newDelegationTokenData.toRecord(), 0.toShort))
+          batch.add(new ApiMessageAndVersion(newDelegationTokenData.toRecord, 0.toShort))
         case None =>
       }
     }

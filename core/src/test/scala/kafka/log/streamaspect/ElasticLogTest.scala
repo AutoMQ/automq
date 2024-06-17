@@ -14,12 +14,13 @@ package kafka.log.streamaspect
 import kafka.log._
 import kafka.server.KafkaConfig
 import kafka.utils.TestUtils
+import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.errors.KafkaStorageException
 import org.apache.kafka.common.message.FetchResponseData
-import org.apache.kafka.common.record.{CompressionType, MemoryRecords, Record, SimpleRecord}
+import org.apache.kafka.common.record.{MemoryRecords, Record, SimpleRecord}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
-import org.apache.kafka.server.config.Defaults.PRODUCER_ID_EXPIRATION_MS
+import org.apache.kafka.coordinator.transaction.TransactionLogConfigs
 import org.apache.kafka.server.util.{MockTime, Scheduler}
 import org.apache.kafka.storage.internals.log._
 import org.junit.jupiter.api.Assertions._
@@ -40,7 +41,7 @@ class ElasticLogTest {
     val topicPartition: TopicPartition = LocalLog.parseTopicPartitionName(logDir)
     val logDirFailureChannel = new LogDirFailureChannel(10)
     val mockTime = new MockTime()
-    val producerStateManagerConfig = new ProducerStateManagerConfig(PRODUCER_ID_EXPIRATION_MS, true)
+    val producerStateManagerConfig = new ProducerStateManagerConfig(TransactionLogConfigs.PRODUCER_ID_EXPIRATION_MS_DEFAULT, true)
     var log: ElasticLog = _
 
     @BeforeEach
@@ -96,7 +97,7 @@ class ElasticLogTest {
         log.append(lastOffset = initialOffset + records.size - 1,
             largestTimestamp = records.head.timestamp,
             offsetOfMaxTimestamp = initialOffset,
-            records = MemoryRecords.withRecords(initialOffset, CompressionType.NONE, 0, records.toList: _*))
+            records = MemoryRecords.withRecords(initialOffset, Compression.NONE, 0, records.toList: _*))
     }
 
     private def readRecords(log: ElasticLog = log,

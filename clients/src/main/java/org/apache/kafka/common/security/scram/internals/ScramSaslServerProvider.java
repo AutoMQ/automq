@@ -25,9 +25,9 @@ public class ScramSaslServerProvider extends Provider {
 
     private static final long serialVersionUID = 1L;
 
-    @SuppressWarnings({"deprecation", "this-escape"})
+    @SuppressWarnings("this-escape")
     protected ScramSaslServerProvider() {
-        super("SASL/SCRAM Server Provider", 1.0, "SASL/SCRAM Server Provider for Kafka");
+        super("SASL/SCRAM Server Provider", "1.0", "SASL/SCRAM Server Provider for Kafka");
         for (ScramMechanism mechanism : ScramMechanism.values())
             put("SaslServerFactory." + mechanism.mechanismName(), ScramSaslServerFactory.class.getName());
     }

@@ -120,7 +120,7 @@ object RequestConvertToJson {
       case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
       // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${request.apiKey} is not currently handled in `request`, the " +
-        "code should be updated to do so.");
+        "code should be updated to do so.")
     }
   }
 
@@ -218,7 +218,7 @@ object RequestConvertToJson {
       case res: GetNextNodeIdResponse => GetNextNodeIdResponseDataJsonConverter.write(res.data, version)
       // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +
-        "code should be updated to do so.");
+        "code should be updated to do so.")
     }
   }
 

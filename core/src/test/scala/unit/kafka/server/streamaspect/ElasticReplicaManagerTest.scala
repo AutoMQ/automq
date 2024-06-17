@@ -171,7 +171,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
     when(mockLog.remoteLogEnabled()).thenReturn(enableRemoteStorage)
     when(mockLog.remoteStorageSystemEnable).thenReturn(enableRemoteStorage)
     val aliveBrokers = aliveBrokerIds.map(brokerId => new Node(brokerId, s"host$brokerId", brokerId))
-    brokerTopicStats = new BrokerTopicStats(java.util.Optional.of(KafkaConfig.fromProps(props)))
+    brokerTopicStats = new BrokerTopicStats()
 
     val metadataCache: MetadataCache = mock(classOf[MetadataCache])
     when(metadataCache.topicIdInfo()).thenReturn((topicIds.asJava, topicNames.asJava))
@@ -776,5 +776,13 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
   @ValueSource(booleans = Array(true, false))
   @Disabled
   override def testPartitionFetchStateUpdatesWithTopicIdChanges(startsWithTopicId: Boolean): Unit = {
+  }
+
+  @Test
+  @Disabled
+  override def testFailedBuildRemoteLogAuxStateMetrics(): Unit = super.testFailedBuildRemoteLogAuxStateMetrics()
+
+  override def testBuildRemoteLogAuxStateMetricsThrowsException(): Unit = {
+    // AutoMQ embedded tiered storage in S3Stream
   }
 }

@@ -18,10 +18,7 @@
 # (eventually) be upgraded to test both of these consumer groups.
 classic_group_protocol = 'classic'
 consumer_group_protocol = 'consumer'
-# TODO: When apache kafka new consumer coordinator function is stable, revert it back
-# test case to verify: TC_GENERAL_MIRROR_URL=mirrors.ustc.edu.cn TC_PATHS="tests/kafkatest/tests/core/consume_bench_test.py::ConsumeBenchTest.test_single_partition" bash tests/docker/run_tests.sh
-# all_group_protocols = [classic_group_protocol, consumer_group_protocol]
-all_group_protocols = [classic_group_protocol]
+all_group_protocols = [classic_group_protocol, consumer_group_protocol]
 
 # These are the remote assignors used by the new group coordinator.
 range_remote_assignor = 'range'

@@ -320,8 +320,7 @@ public class SaslChannelBuilder implements ChannelBuilder, ListenerReconfigurabl
             AuthenticateCallbackHandler callbackHandler;
             String prefix = ListenerName.saslMechanismPrefix(mechanism);
             @SuppressWarnings("unchecked")
-            Class<? extends AuthenticateCallbackHandler> clazz =
-                    (Class<? extends AuthenticateCallbackHandler>) configs.get(prefix + BrokerSecurityConfigs.SASL_SERVER_CALLBACK_HANDLER_CLASS);
+            Class<? extends AuthenticateCallbackHandler> clazz = (Class<? extends AuthenticateCallbackHandler>) configs.get(SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS);
             // AutoMQ inject start
             if (clazz != null) {
                 if (Utils.hasConstructor(clazz, SaslChannelBuilder.class)) {
@@ -345,9 +344,9 @@ public class SaslChannelBuilder implements ChannelBuilder, ListenerReconfigurabl
     private void createConnectionsMaxReauthMsMap(Map<String, ?> configs) {
         for (String mechanism : jaasContexts.keySet()) {
             String prefix = ListenerName.saslMechanismPrefix(mechanism);
-            Long connectionsMaxReauthMs = (Long) configs.get(prefix + BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS);
+            Long connectionsMaxReauthMs = (Long) configs.get(prefix + BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS_CONFIG);
             if (connectionsMaxReauthMs == null)
-                connectionsMaxReauthMs = (Long) configs.get(BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS);
+                connectionsMaxReauthMs = (Long) configs.get(BrokerSecurityConfigs.CONNECTIONS_MAX_REAUTH_MS_CONFIG);
             if (connectionsMaxReauthMs != null)
                 connectionsMaxReauthMsByMechanism.put(mechanism, connectionsMaxReauthMs);
         }

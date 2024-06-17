@@ -7,8 +7,10 @@ import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager}
 import kafka.utils.TestUtils
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
 import org.apache.kafka.common.protocol.ApiKeys
+import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.server.authorizer.Authorizer
-import org.apache.kafka.server.common.{Features, MetadataVersion}
+import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
+import org.apache.kafka.server.config.KRaftConfigs
 import org.junit.jupiter.api.Tag
 import org.mockito.Mockito.mock
 
@@ -28,11 +30,11 @@ class ElasticKafkaApisTest extends KafkaApisTest {
     overrideProperties: Map[String, String] = Map.empty): ElasticKafkaApis = {
     val properties = if (raftSupport) {
       val properties = TestUtils.createBrokerConfig(brokerId, "")
-      properties.put(KafkaConfig.NodeIdProp, brokerId.toString)
-      properties.put(KafkaConfig.ProcessRolesProp, "broker")
+      properties.put(KRaftConfigs.NODE_ID_CONFIG, brokerId.toString)
+      properties.put(KRaftConfigs.PROCESS_ROLES_CONFIG, "broker")
       val voterId = brokerId + 1
-      properties.put(KafkaConfig.QuorumVotersProp, s"$voterId@localhost:9093")
-      properties.put(KafkaConfig.ControllerListenerNamesProp, "SSL")
+      properties.put(QuorumConfig.QUORUM_VOTERS_CONFIG, s"$voterId@localhost:9093")
+      properties.put(KRaftConfigs.CONTROLLER_LISTENER_NAMES_CONFIG, "SSL")
       properties
     } else {
       TestUtils.createBrokerConfig(brokerId, "zk")
@@ -73,7 +75,7 @@ class ElasticKafkaApisTest extends KafkaApisTest {
       BrokerFeatures.defaultSupportedFeatures(true),
       true,
       false,
-      () => new Features(MetadataVersion.latestTesting(), Collections.emptyMap[String, java.lang.Short], 0, raftSupport))
+      () => new FinalizedFeatures(MetadataVersion.latestTesting(), Collections.emptyMap[String, java.lang.Short], 0, raftSupport))
 
     val clientMetricsManagerOpt = if (raftSupport) Some(clientMetricsManager) else None
 

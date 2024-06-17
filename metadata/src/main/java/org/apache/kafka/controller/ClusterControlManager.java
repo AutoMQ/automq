@@ -51,8 +51,9 @@ import org.apache.kafka.metadata.VersionRange;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
 import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
 import org.apache.kafka.metadata.placement.UsableBroker;
-import org.apache.kafka.raft.RaftConfig;
+import org.apache.kafka.raft.QuorumConfig;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.Features;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
@@ -94,6 +95,7 @@ public class ClusterControlManager {
         private ReplicaPlacer replicaPlacer = null;
         private FeatureControlManager featureControl = null;
         private boolean zkMigrationEnabled = false;
+        private BrokerUncleanShutdownHandler brokerUncleanShutdownHandler = null;
 
         // AutoMQ for Kafka inject start
         private List<String> quorumVoters;
@@ -144,6 +146,11 @@ public class ClusterControlManager {
             return this;
         }
 
+        Builder setBrokerUncleanShutdownHandler(BrokerUncleanShutdownHandler brokerUncleanShutdownHandler) {
+            this.brokerUncleanShutdownHandler = brokerUncleanShutdownHandler;
+            return this;
+        }
+
         ClusterControlManager build() {
             if (logContext == null) {
                 logContext = new LogContext();
@@ -160,6 +167,9 @@ public class ClusterControlManager {
             if (featureControl == null) {
                 throw new RuntimeException("You must specify FeatureControlManager");
             }
+            if (brokerUncleanShutdownHandler == null) {
+                throw new RuntimeException("You must specify BrokerUncleanShutdownHandler");
+            }
             return new ClusterControlManager(logContext,
                 clusterId,
                 time,
@@ -168,6 +178,7 @@ public class ClusterControlManager {
                 replicaPlacer,
                 featureControl,
                 zkMigrationEnabled,
+                brokerUncleanShutdownHandler,
                 quorumVoters
             );
         }
@@ -260,6 +271,8 @@ public class ClusterControlManager {
      */
     private final boolean zkMigrationEnabled;
 
+    private BrokerUncleanShutdownHandler brokerUncleanShutdownHandler;
+
     /**
      * Maps controller IDs to controller registrations.
      */
@@ -289,6 +302,7 @@ public class ClusterControlManager {
         ReplicaPlacer replicaPlacer,
         FeatureControlManager featureControl,
         boolean zkMigrationEnabled,
+        BrokerUncleanShutdownHandler brokerUncleanShutdownHandler,
         List<String> quorumVoters
     ) {
         this.logContext = logContext;
@@ -305,8 +319,9 @@ public class ClusterControlManager {
         this.zkMigrationEnabled = zkMigrationEnabled;
         this.controllerRegistrations = new TimelineHashMap<>(snapshotRegistry, 0);
         this.directoryToBroker = new TimelineHashMap<>(snapshotRegistry, 0);
+        this.brokerUncleanShutdownHandler = brokerUncleanShutdownHandler;
         // AutoMQ for Kafka inject start
-        this.maxControllerId = RaftConfig.parseVoterConnections(quorumVoters).keySet().stream().max(Integer::compareTo).orElse(0);
+        this.maxControllerId = QuorumConfig.parseVoterConnections(quorumVoters).keySet().stream().max(Integer::compareTo).orElse(0);
         // AutoMQ for Kafka inject end
     }
 
@@ -376,10 +391,11 @@ public class ClusterControlManager {
                 ", but got cluster ID " + request.clusterId());
         }
         int brokerId = request.brokerId();
+        List<ApiMessageAndVersion> records = new ArrayList<>();
         BrokerRegistration existing = brokerRegistrations.get(brokerId);
         if (version < 2 || existing == null || request.previousBrokerEpoch() != existing.epoch()) {
-            // TODO(KIP-966): Update the ELR if the broker has an unclean shutdown.
             log.debug("Received an unclean shutdown request");
+            brokerUncleanShutdownHandler.addRecordsForShutdown(request.brokerId(), records);
         }
         if (existing != null) {
             if (heartbeatManager.hasValidSession(brokerId)) {
@@ -450,7 +466,6 @@ public class ClusterControlManager {
 
         heartbeatManager.register(brokerId, record.fenced());
 
-        List<ApiMessageAndVersion> records = new ArrayList<>();
         records.add(new ApiMessageAndVersion(record, featureControl.metadataVersion().
             registerBrokerRecordVersion()));
         return ControllerResult.atomicOf(records, new BrokerRegistrationReply(brokerEpoch));
@@ -485,18 +500,19 @@ public class ClusterControlManager {
         FinalizedControllerFeatures finalizedFeatures,
         BrokerRegistrationRequestData.Feature feature
     ) {
-        Optional<Short> finalized = finalizedFeatures.get(feature.name());
-        if (finalized.isPresent()) {
-            if (!VersionRange.of(feature.minSupportedVersion(), feature.maxSupportedVersion()).contains(finalized.get())) {
-                throw new UnsupportedVersionException("Unable to register because the broker " +
-                    "does not support version " + finalized.get() + " of " + feature.name() +
-                        ". It wants a version between " + feature.minSupportedVersion() + " and " +
-                        feature.maxSupportedVersion() + ", inclusive.");
-            }
-        } else {
+        int defaultVersion = feature.name().equals(MetadataVersion.FEATURE_NAME) ? 1 : 0; // The default value for MetadataVersion is 1 not 0.
+        short finalized = finalizedFeatures.versionOrDefault(feature.name(), (short) defaultVersion);
+        if (!VersionRange.of(feature.minSupportedVersion(), feature.maxSupportedVersion()).contains(finalized)) {
+            throw new UnsupportedVersionException("Unable to register because the broker " +
+                "does not support version " + finalized + " of " + feature.name() +
+                    ". It wants a version between " + feature.minSupportedVersion() + " and " +
+                    feature.maxSupportedVersion() + ", inclusive.");
+        }
+        // A feature is not found in the finalizedFeature map if it is unknown to the controller or set to 0 (feature not enabled).
+        // Only log if the feature name is not known by the controller.
+        if (!Features.PRODUCTION_FEATURE_NAMES.contains(feature.name()))
             log.warn("Broker {} registered with feature {} that is unknown to the controller",
                     brokerId, feature.name());
-        }
         return new BrokerFeature().
                 setName(feature.name()).
                 setMinSupportedVersion(feature.minSupportedVersion()).
@@ -819,6 +835,11 @@ public class ClusterControlManager {
                         registration.supportedFeatures());
             }
         };
+    }
+
+    @FunctionalInterface
+    interface BrokerUncleanShutdownHandler {
+        void addRecordsForShutdown(int brokerId, List<ApiMessageAndVersion> records);
     }
 
     // AutoMQ inject start
