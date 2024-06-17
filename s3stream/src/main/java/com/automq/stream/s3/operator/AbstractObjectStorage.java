@@ -156,7 +156,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         doClose();
     }
 
-    abstract void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf, Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler);
+    abstract void doRangeRead(String path, long start, long end, Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler);
 
     abstract boolean isUnrecoverable(Throwable ex);
 
@@ -262,7 +262,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(buf);
         };
 
-        doRangeRead(path, start, end, cf, failHandler, successHandler);
+        doRangeRead(path, start, end, failHandler, successHandler);
     }
 
     static int getMaxObjectStorageConcurrency() {

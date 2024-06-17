@@ -13,7 +13,6 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
@@ -38,7 +37,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
@@ -74,7 +72,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf,
+    void doRangeRead(String path, long start, long end,
         Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler) {
         GetObjectRequest request = GetObjectRequest.builder()
             .bucket(bucket)
