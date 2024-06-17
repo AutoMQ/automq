@@ -777,4 +777,12 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
   @Disabled
   override def testPartitionFetchStateUpdatesWithTopicIdChanges(startsWithTopicId: Boolean): Unit = {
   }
+
+  @Test
+  @Disabled
+  override def testFailedBuildRemoteLogAuxStateMetrics(): Unit = super.testFailedBuildRemoteLogAuxStateMetrics()
+
+  override def testBuildRemoteLogAuxStateMetricsThrowsException(): Unit = {
+    // AutoMQ embedded tiered storage in S3Stream
+  }
 }

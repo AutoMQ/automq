@@ -477,7 +477,8 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
 
         log.updateHighWatermark(log.logEndOffset)
 
-        assertEquals(2, log.asInstanceOf[ElasticUnifiedLog].listProducerSnapshots().size())
+        val numProducerSnapshots = if (createEmptyActiveSegment) 3 else 2
+        assertEquals(numProducerSnapshots, log.asInstanceOf[ElasticUnifiedLog].listProducerSnapshots().size())
         // Sleep to breach the retention period
         mockTime.sleep(1000 * 60 + 1)
         log.deleteOldSegments()
@@ -573,6 +574,14 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
     }
 
     override def testFetchLatestTieredTimestampWithRemoteStorage(): Unit = {
+        // AutoMQ embedded tiered storage in S3Stream
+    }
+
+    override def testIncrementLocalLogStartOffsetAfterLocalLogDeletion(): Unit = {
+        // AutoMQ embedded tiered storage in S3Stream
+    }
+
+    override def testConvertToOffsetMetadataDoesNotThrowOffsetOutOfRangeError(): Unit = {
         // AutoMQ embedded tiered storage in S3Stream
     }
 }
