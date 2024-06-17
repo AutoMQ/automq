@@ -113,7 +113,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    void objectStorageClose() {
+    void doClose() {
         close();
         writeS3Client.close();
         if (readS3Client != writeS3Client) {
