@@ -72,7 +72,7 @@ public class PerfConfig {
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
         reset = ns.getBoolean("reset");
-        topicPrefix = ns.getString("topicPrefix");
+        topicPrefix = ns.getString("topicPrefix") == null ? "test-topic-" + System.currentTimeMillis() : ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
         producersPerTopic = ns.getInt("producersPerTopic");
@@ -130,7 +130,6 @@ public class PerfConfig {
             .dest("reset")
             .help("delete all topics before running the test.");
         parser.addArgument("-X", "--topic-prefix")
-            .setDefault("test-topic")
             .type(String.class)
             .dest("topicPrefix")
             .metavar("TOPIC_PREFIX")
