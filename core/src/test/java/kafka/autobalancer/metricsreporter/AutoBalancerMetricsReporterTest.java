@@ -17,77 +17,42 @@
 
 package kafka.autobalancer.metricsreporter;
 
+import java.util.HashMap;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.common.types.RawMetricTypes;
-import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
+import kafka.autobalancer.config.StaticAutoBalancerConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
-import kafka.autobalancer.utils.AutoBalancerClientsIntegrationTestHarness;
-import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
-import org.apache.kafka.server.config.ReplicationConfigs;
-import org.apache.kafka.server.config.ServerLogConfigs;
-import org.junit.jupiter.api.AfterEach;
+import org.apache.kafka.network.SocketServerConfigs;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import org.mockito.Mockito;
 
 @Tag("S3Unit")
-// TODO fix it
-@Disabled
-public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrationTestHarness {
-
-    /**
-     * Setup the unit test.
-     */
-    @BeforeEach
-    public void setUp() {
-        super.setUp();
-    }
-
-    @AfterEach
-    public void tearDown() {
-        super.tearDown();
-    }
-
-    @Override
-    protected Map<String, String> overridingNodeProps() {
-        Map<String, String> props = new HashMap<>();
-        props.put(ServerLogConfigs.LOG_FLUSH_INTERVAL_MESSAGES_CONFIG, "1");
-        props.put(GroupCoordinatorConfig.OFFSETS_TOPIC_REPLICATION_FACTOR_CONFIG, "1");
-        props.put(ReplicationConfigs.DEFAULT_REPLICATION_FACTOR_CONFIG, "1");
-        return props;
-    }
-
-    @Override
-    public Map<String, String> overridingBrokerProps() {
-        Map<String, String> props = new HashMap<>();
-        props.put(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG, AutoBalancerMetricsReporter.class.getName());
-        props.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_INTERVAL_MS_CONFIG, "1000");
-        return props;
-    }
+public class AutoBalancerMetricsReporterTest {
 
     @Test
+    @Disabled
     public void testReportingMetrics() {
         Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "testReportingMetrics");
@@ -126,5 +91,58 @@ public class AutoBalancerMetricsReporterTest extends AutoBalancerClientsIntegrat
             }
             Assertions.assertEquals(expectedMetricTypes, metricTypes, "Expected " + expectedMetricTypes + ", but saw " + metricTypes);
         }
+    }
+
+    @Test
+    public void testBootstrapServersConfig() {
+        AutoBalancerMetricsReporter reporter = Mockito.mock(AutoBalancerMetricsReporter.class);
+        Mockito.doCallRealMethod().when(reporter).getBootstrapServers(Mockito.anyMap(), Mockito.anyString());
+
+        // test default config
+        StaticAutoBalancerConfig staticConfig = new StaticAutoBalancerConfig(new HashMap<>(), false);
+        Assertions.assertEquals("127.0.0.1:9092", reporter.getBootstrapServers(Map.of(
+            SocketServerConfigs.LISTENERS_CONFIG, "PLAINTEXT://127.0.0.1:9092"
+        ), staticConfig.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG)));
+
+        // test default config with multiple listeners
+        StaticAutoBalancerConfig staticConfig1 = new StaticAutoBalancerConfig(new HashMap<>(), false);
+        Assertions.assertEquals("127.0.0.1:9092", reporter.getBootstrapServers(Map.of(
+            SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://:9093,BROKER://127.0.0.1:9092"
+        ), staticConfig1.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG)));
+
+        // test illegal listener
+        StaticAutoBalancerConfig staticConfig2 = new StaticAutoBalancerConfig(Map.of(
+            StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG, "CONTROLLER"
+        ), false);
+        Assertions.assertThrows(ConfigException.class, () -> reporter.getBootstrapServers(Map.of(
+            SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://127.0.0.1:9092"
+        ), staticConfig2.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG)));
+
+        // test not existed listener
+        StaticAutoBalancerConfig staticConfig3 = new StaticAutoBalancerConfig(Map.of(
+            StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG, "BROKER"
+        ), false);
+        Assertions.assertThrows(ConfigException.class, () -> reporter.getBootstrapServers(Map.of(
+            SocketServerConfigs.LISTENERS_CONFIG, "PLAINTEXT://127.0.0.1:9092"
+        ), staticConfig3.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG)));
+
+        // test valid listener
+        StaticAutoBalancerConfig staticConfig4 = new StaticAutoBalancerConfig(Map.of(
+            StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG, "PLAINTEXT"
+        ), false);
+        Assertions.assertEquals("127.0.0.1:9092", reporter.getBootstrapServers(Map.of(
+            SocketServerConfigs.LISTENERS_CONFIG, "PLAINTEXT://127.0.0.1:9092"
+        ), staticConfig4.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG)));
+
+        // test multiple listeners
+        Assertions.assertEquals("127.0.0.1:9092", reporter.getBootstrapServers(Map.of(
+            SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://:9093,PLAINTEXT://127.0.0.1:9092"
+        ), staticConfig4.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG)));
+
+        // test default hostname
+        Assertions.assertEquals("localhost:9092", reporter.getBootstrapServers(Map.of(
+            SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://:9093,PLAINTEXT://:9092"
+        ), staticConfig4.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG)));
+
     }
 }
