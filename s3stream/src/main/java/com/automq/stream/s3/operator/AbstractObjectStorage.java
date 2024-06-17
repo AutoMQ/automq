@@ -149,7 +149,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return rangeRead(ReadOptions.DEFAULT, objectMetadata, start, end);
     }
 
-    void close() {
+    public void close() {
         readLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
         scheduler.shutdown();
