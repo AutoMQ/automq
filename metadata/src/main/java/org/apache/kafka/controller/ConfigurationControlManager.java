@@ -56,6 +56,8 @@ import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
+    public static final String TOPIC_COUNT_QUOTA_NAME = "cluster.quota.topic.count";
+    public static final String PARTITION_COUNT_QUOTA_NAME = "cluster.quota.partition.count";
 
     private final Logger log;
     private final SnapshotRegistry snapshotRegistry;
@@ -512,5 +514,31 @@ public class ConfigurationControlManager {
     Map<String, String> currentControllerConfig() {
         Map<String, String> result = configData.get(currentController);
         return (result == null) ? Collections.emptyMap() : result;
+    }
+
+    public int topicCountQuota() {
+        String topicCountQuota = currentControllerConfig().get(TOPIC_COUNT_QUOTA_NAME);
+        if (topicCountQuota == null) {
+            topicCountQuota = staticConfig.get(TOPIC_COUNT_QUOTA_NAME).toString();
+        }
+
+        try {
+            return Integer.parseInt(topicCountQuota);
+        } catch (Exception ignore) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    public int partitionCountQuota() {
+        String partitionCountQuota = currentControllerConfig().get(PARTITION_COUNT_QUOTA_NAME);
+        if (partitionCountQuota == null) {
+            partitionCountQuota = staticConfig.get(PARTITION_COUNT_QUOTA_NAME).toString();
+        }
+
+        try {
+            return Integer.parseInt(partitionCountQuota);
+        } catch (Exception ignore) {
+            return Integer.MAX_VALUE;
+        }
     }
 }

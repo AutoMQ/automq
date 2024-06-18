@@ -47,10 +47,10 @@ public class BrokerQuotaManagerConfig extends ClientQuotaManagerConfig {
 
     public void update(Properties props) {
         Map<String, Object> map = props.entrySet().stream().collect(Collectors.toMap(e -> e.getKey().toString(), Map.Entry::getValue));
-        quotaEnabled = getBoolean(map, BROKER_QUOTA_ENABLED_PROP, false);
-        produceQuota = getDouble(map, BROKER_QUOTA_PRODUCE_BYTES_PROP, Double.MAX_VALUE);
-        fetchQuota = getDouble(map, BROKER_QUOTA_FETCH_BYTES_PROP, Double.MAX_VALUE);
-        requestQuota = getDouble(map, BROKER_QUOTA_REQUEST_PERCENTAGE_PROP, Double.MAX_VALUE);
+        quotaEnabled = getBoolean(map, BROKER_QUOTA_ENABLED_PROP, quotaEnabled);
+        produceQuota = getDouble(map, BROKER_QUOTA_PRODUCE_BYTES_PROP, produceQuota);
+        fetchQuota = getDouble(map, BROKER_QUOTA_FETCH_BYTES_PROP, fetchQuota);
+        requestQuota = getDouble(map, BROKER_QUOTA_REQUEST_PERCENTAGE_PROP, requestQuota);
 
         String userWhiteListProp = props.getProperty(BROKER_QUOTA_WHITE_LIST_USER_PROP);
         if (null != userWhiteListProp && !userWhiteListProp.isBlank()) {

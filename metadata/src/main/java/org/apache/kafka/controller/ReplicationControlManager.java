@@ -683,6 +683,25 @@ public class ReplicationControlManager {
         Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges =
             computeConfigChanges(topicErrors, request.topics());
 
+        // Verify cluster quota
+        int topicCountQuota = configurationControl.topicCountQuota();
+        int topicCount = topics.size();
+
+        for (CreatableTopic topic : request.topics()) {
+            if (topicErrors.containsKey(topic.name())) {
+                continue;
+            }
+
+            topicCount++;
+            if (topicCount > topicCountQuota) {
+                topicErrors.put(topic.name(),
+                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Topic count quota exceeded: current quota is " + topicCountQuota));
+            }
+        }
+
+        int partitionCountQuota = configurationControl.partitionCountQuota();
+        int partitionCount = this.topics.values().stream().mapToInt(info -> info.parts.size()).sum();
+
         // Try to create whatever topics are needed.
         Map<String, CreatableTopicResult> successes = new HashMap<>();
         for (CreatableTopic topic : request.topics()) {
@@ -720,12 +739,16 @@ public class ReplicationControlManager {
 
             ApiError error;
             try {
-                error = createTopic(context, topic, records, successes, configRecords, describable.contains(topic.name()));
+                error = createTopic(context, topic, records, successes, configRecords, describable.contains(topic.name()), partitionCountQuota, partitionCount);
             } catch (ApiException e) {
                 error = ApiError.fromThrowable(e);
             }
             if (error.isFailure()) {
                 topicErrors.put(topic.name(), error);
+            } else {
+                int numPartitions = topic.numPartitions() == -1 ?
+                defaultNumPartitions : topic.numPartitions();
+                partitionCount += numPartitions;
             }
         }
 
@@ -765,7 +788,9 @@ public class ReplicationControlManager {
                                  List<ApiMessageAndVersion> records,
                                  Map<String, CreatableTopicResult> successes,
                                  List<ApiMessageAndVersion> configRecords,
-                                 boolean authorizedToReturnConfigs) {
+                                 boolean authorizedToReturnConfigs,
+                                 int partitionCountQuota,
+                                 int partitionCount) {
         Map<String, String> creationConfigs = translateCreationConfigs(topic.configs());
         Map<Integer, PartitionRegistration> newParts = new HashMap<>();
         if (!topic.assignments().isEmpty()) {
@@ -865,6 +890,11 @@ public class ReplicationControlManager {
                 numPartitions, e.throttleTimeMs());
             return ApiError.fromThrowable(e);
         }
+
+        if (partitionCount + numPartitions > partitionCountQuota) {
+            return new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCountQuota);
+        }
+
         Uuid topicId = Uuid.randomUuid();
         CreatableTopicResult result = new CreatableTopicResult().
             setName(topic.name()).
@@ -1812,10 +1842,15 @@ public class ReplicationControlManager {
     ) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         List<CreatePartitionsTopicResult> results = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+
+        int quota = configurationControl.partitionCountQuota();
+        int partitionCount = this.topics.values().stream().mapToInt(info -> info.parts.size()).sum();
+
         for (CreatePartitionsTopic topic : topics) {
             ApiError apiError = ApiError.NONE;
+            int additional = 0;
             try {
-                createPartitions(context, topic, records);
+                additional = createPartitions(context, topic, records, quota, partitionCount);
             } catch (ApiException e) {
                 apiError = ApiError.fromThrowable(e);
             } catch (Exception e) {
@@ -1826,13 +1861,13 @@ public class ReplicationControlManager {
                 setName(topic.name()).
                 setErrorCode(apiError.error().code()).
                 setErrorMessage(apiError.message()));
+            partitionCount += additional;
         }
         return ControllerResult.atomicOf(records, results);
     }
 
-    void createPartitions(ControllerRequestContext context,
-                          CreatePartitionsTopic topic,
-                          List<ApiMessageAndVersion> records) {
+    int createPartitions(ControllerRequestContext context, CreatePartitionsTopic topic,
+                          List<ApiMessageAndVersion> records, int quota, int partitionCount) {
         Uuid topicId = topicsByName.get(topic.name());
         if (topicId == null) {
             throw new UnknownTopicOrPartitionException();
@@ -1865,6 +1900,12 @@ public class ReplicationControlManager {
                 additional, e.throttleTimeMs());
             throw e;
         }
+
+        // Verify cluster quota
+        if (partitionCount + additional > quota) {
+            throw new ThrottlingQuotaExceededException(0, "Partition count quota exceeded: current quota is " + quota);
+        }
+
         Iterator<PartitionRegistration> iterator = topicInfo.parts.values().iterator();
         if (!iterator.hasNext()) {
             throw new UnknownServerException("Invalid state: topic " + topic.name() +
@@ -1932,6 +1973,7 @@ public class ReplicationControlManager {
                         build()));
             partitionId++;
         }
+        return additional;
     }
 
     void validateManualPartitionAssignment(
