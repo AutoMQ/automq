@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.objects;
 
+import com.automq.stream.s3.compact.CompactOperations;
 import java.util.List;
 
 public class CompactStreamObjectRequest {
@@ -28,6 +29,7 @@ public class CompactStreamObjectRequest {
      * The source objects' id of the stream object.
      */
     private final List<Long> sourceObjectIds;
+    private final List<CompactOperations> operations;
 
     public CompactStreamObjectRequest(
         long objectId,
@@ -37,6 +39,7 @@ public class CompactStreamObjectRequest {
         long startOffset,
         long endOffset,
         List<Long> sourceObjectIds,
+        List<CompactOperations> operations,
         int attributes) {
         this.objectId = objectId;
         this.objectSize = objectSize;
@@ -45,6 +48,7 @@ public class CompactStreamObjectRequest {
         this.endOffset = endOffset;
         this.streamEpoch = streamEpoch;
         this.sourceObjectIds = sourceObjectIds;
+        this.operations = operations;
         this.attributes = attributes;
     }
 
@@ -96,20 +100,26 @@ public class CompactStreamObjectRequest {
         return sourceObjectIds;
     }
 
+    public List<CompactOperations> getOperations() {
+        return operations;
+    }
+
     public int getAttributes() {
         return attributes;
     }
 
     @Override
     public String toString() {
-        return "CommitStreamObjectRequest{" +
+        return "CompactStreamObjectRequest{" +
             "objectId=" + objectId +
             ", objectSize=" + objectSize +
             ", streamId=" + streamId +
             ", startOffset=" + startOffset +
             ", endOffset=" + endOffset +
             ", streamEpoch=" + streamEpoch +
+            ", attributes=" + attributes +
             ", sourceObjectIds=" + sourceObjectIds +
+            ", operations=" + operations +
             '}';
     }
 }

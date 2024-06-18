@@ -17,6 +17,7 @@ import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
+import java.util.Collections;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.TreeMap;
@@ -35,7 +36,7 @@ public class CompositeObjectWriter implements ObjectWriter {
     private long startOffset = Constants.NOOP_OFFSET;
     private long expectStreamId = Constants.NOOP_STREAM_ID;
     private long expectOffset = Constants.NOOP_OFFSET;
-    private int size = -1;
+    private long size = 0;
     private int nextBlockStartIndex = 0;
 
     private final Writer writer;
@@ -48,6 +49,7 @@ public class CompositeObjectWriter implements ObjectWriter {
         continuousCheck(partObjectIndexes);
         components.put(nextBlockStartIndex, new LinkedObject(partObjectMetadata, partObjectIndexes));
         nextBlockStartIndex += partObjectIndexes.size();
+        size += partObjectIndexes.stream().mapToLong(DataBlockIndex::size).sum();
     }
 
     @Override
@@ -67,9 +69,16 @@ public class CompositeObjectWriter implements ObjectWriter {
 
     @Override
     public List<ObjectStreamRange> getStreamRanges() {
-        return List.of(new ObjectStreamRange(expectStreamId, Constants.NOOP_EPOCH, startOffset, expectOffset, size));
+        if (startOffset == Constants.NOOP_OFFSET) {
+            return Collections.emptyList();
+        }
+        return List.of(new ObjectStreamRange(expectStreamId, Constants.NOOP_EPOCH, startOffset, expectOffset, -1));
     }
 
+    /**
+     * Return the retained size of the object.
+     * For example, the composite object contains obj1 with size=10MiB and obj2 with size=20MiB, then the retained size is 30MiB
+     */
     @Override
     public long size() {
         return size;

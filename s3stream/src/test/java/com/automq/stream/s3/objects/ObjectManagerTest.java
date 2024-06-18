@@ -22,6 +22,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static com.automq.stream.s3.compact.CompactOperations.DELETE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ObjectManagerTest {
@@ -142,7 +143,8 @@ class ObjectManagerTest {
         assertEquals(1, streamObjectMetadataList.size());
 
         // Compact stream object.
-        objectManager.compactStreamObject(new CompactStreamObjectRequest(5, 2000, 2, 0L, 0, 20, List.of(1L, 4L), ObjectAttributes.DEFAULT.attributes())).join();
+        objectManager.compactStreamObject(new CompactStreamObjectRequest(5, 2000, 2, 0L, 0, 20,
+            List.of(1L, 4L), List.of(DELETE, DELETE), ObjectAttributes.DEFAULT.attributes())).join();
         streamObjectMetadataList = objectManager.getStreamObjects(2, 0, 10, 100).join();
         assertEquals(1, streamObjectMetadataList.size());
         ranges = streamObjectMetadataList.get(0).getOffsetRanges();

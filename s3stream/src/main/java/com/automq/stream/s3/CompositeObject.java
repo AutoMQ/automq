@@ -12,7 +12,9 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.Writer;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * CompositeObject is a logic object which soft links multiple objects together.
@@ -51,11 +53,18 @@ public class CompositeObject {
     public static final int FOOTER_SIZE = 48;
     public static final long FOOTER_MAGIC = 0x88e241b785f4cff8L;
 
-    public static ObjectReader reader(S3ObjectMetadata objectMetadata, ObjectReader.RangeReader rangeReader) {
+    public static CompositeObjectReader reader(S3ObjectMetadata objectMetadata, ObjectReader.RangeReader rangeReader) {
         return new CompositeObjectReader(objectMetadata, rangeReader);
     }
 
-    public static ObjectWriter writer(Writer writer) {
+    public static CompositeObjectWriter writer(Writer writer) {
         return new CompositeObjectWriter(writer);
+    }
+
+    public static CompletableFuture<Void> delete(S3ObjectMetadata objectMetadata, ObjectStorage objectStorage) {
+        // 1. use reader to get all linked object
+        // 2. delete linked object
+        // 3. delete composite object
+        throw new UnsupportedOperationException();
     }
 }
