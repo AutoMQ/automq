@@ -168,7 +168,7 @@ public class DefaultS3Client implements Client {
     }
 
     ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
-        return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch, failoverMode);
+        return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch, () -> brokerServer.metadataCache().autoMQVersion(), failoverMode);
     }
 
     Failover failover() {

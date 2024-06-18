@@ -21,7 +21,7 @@
     "broker"
   ],
   "name": "CommitStreamObjectRequest",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -80,6 +80,12 @@
       "entityType": "streamEpoch",
       "default": "-1",
       "about": "The epoch of the requesting stream in the requesting broker"
+    },
+    {
+      "name": "Attributes",
+      "type": "int32",
+      "versions": "1+",
+      "about": "The object attributes"
     }
   ]
 }

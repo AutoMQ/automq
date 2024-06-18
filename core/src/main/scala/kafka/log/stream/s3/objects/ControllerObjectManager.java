@@ -20,6 +20,7 @@ import com.automq.stream.s3.objects.ObjectManager;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
@@ -39,6 +40,7 @@ import org.apache.kafka.common.requests.s3.CommitStreamObjectResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.metadata.stream.InRangeObjects;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,14 +52,16 @@ public class ControllerObjectManager implements ObjectManager {
     private final StreamMetadataManager metadataManager;
     private final int nodeId;
     private final long nodeEpoch;
+    private final Supplier<AutoMQVersion> version;
     private final boolean failoverMode;
 
     public ControllerObjectManager(ControllerRequestSender requestSender, StreamMetadataManager metadataManager,
-        int nodeId, long nodeEpoch, boolean failoverMode) {
+        int nodeId, long nodeEpoch, Supplier<AutoMQVersion> version, boolean failoverMode) {
         this.requestSender = requestSender;
         this.metadataManager = metadataManager;
         this.nodeId = nodeId;
         this.nodeEpoch = nodeEpoch;
+        this.version = version;
         this.failoverMode = failoverMode;
     }
 
@@ -107,9 +111,12 @@ public class ControllerObjectManager implements ObjectManager {
                 .map(Convertor::toObjectStreamRangeInRequest).collect(Collectors.toList()))
             .setStreamObjects(commitStreamSetObjectRequest.getStreamObjects()
                 .stream()
-                .map(Convertor::toStreamObjectInRequest).collect(Collectors.toList()))
+                .map(s -> Convertor.toStreamObjectInRequest(s, version.get())).collect(Collectors.toList()))
             .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
             .setFailoverMode(failoverMode);
+        if (version.get().isObjectAttributesSupported()) {
+            request.setAttributes(commitStreamSetObjectRequest.getAttributes());
+        }
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {
@@ -155,6 +162,9 @@ public class ControllerObjectManager implements ObjectManager {
             .setStartOffset(compactStreamObjectRequest.getStartOffset())
             .setEndOffset(compactStreamObjectRequest.getEndOffset())
             .setSourceObjectIds(compactStreamObjectRequest.getSourceObjectIds());
+        if (version.get().isObjectAttributesSupported()) {
+            request.setAttributes(compactStreamObjectRequest.getAttributes());
+        }
         WrapRequest req = new WrapRequest() {
             @Override
             public ApiKeys apiKey() {

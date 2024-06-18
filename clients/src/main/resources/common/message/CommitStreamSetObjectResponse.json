@@ -17,7 +17,7 @@
   "apiKey": 506,
   "type": "response",
   "name": "CommitStreamSetObjectResponse",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -31,6 +31,12 @@
       "type": "int32",
       "versions": "0+",
       "about": "Duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota."
+    },
+    {
+      "name": "Attributes",
+      "type": "int32",
+      "versions": "1+",
+      "about": "The object attributes"
     }
   ]
 }

@@ -21,7 +21,7 @@
     "broker"
   ],
   "name": "CommitStreamSetObjectRequest",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -123,6 +123,12 @@
           "type": "int64",
           "versions": "0+",
           "about": "The end offset of the stream range"
+        },
+        {
+          "name": "Attributes",
+          "type": "int32",
+          "versions": "1+",
+          "about": "The object attributes"
         }
       ]
     },
@@ -137,6 +143,12 @@
       "type": "bool",
       "versions": "0+",
       "about": "The failover mode enabled or not"
+    },
+    {
+      "name": "Attributes",
+      "type": "int32",
+      "versions": "1+",
+      "about": "The object attributes"
     }
   ]
 }
