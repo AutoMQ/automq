@@ -13,6 +13,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
@@ -21,6 +22,7 @@ import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
@@ -29,6 +31,7 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.Tagging;
 
@@ -99,6 +102,22 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             });
     }
 
+    @Override
+    void doWrite(String path, ByteBuf data,
+        Consumer<Throwable> failHandler, Runnable successHandler) {
+        PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
+        if (null != tagging) {
+            builder.tagging(tagging);
+        }
+        PutObjectRequest request = builder.build();
+        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
+        writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
+            successHandler.run();
+        }).exceptionally(ex -> {
+            failHandler.accept(ex);
+            return null;
+        });
+    }
 
     @Override
     boolean isUnrecoverable(Throwable ex) {
