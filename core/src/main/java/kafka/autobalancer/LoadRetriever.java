@@ -15,6 +15,7 @@ import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.common.Utils;
 import kafka.autobalancer.common.types.MetricTypes;
+import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.StaticAutoBalancerConfig;
 import kafka.autobalancer.config.StaticAutoBalancerConfigUtils;
@@ -23,6 +24,7 @@ import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
+import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.services.AbstractResumableService;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -494,6 +496,10 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         switch (metrics.metricType()) {
             case MetricTypes.TOPIC_PARTITION_METRIC:
                 TopicPartitionMetrics partitionMetrics = (TopicPartitionMetrics) metrics;
+                BrokerUpdater brokerUpdater = clusterModel.brokerUpdater(partitionMetrics.brokerId());
+                if (brokerUpdater != null && brokerUpdater.metricVersion() == MetricVersion.V0) {
+                    clusterModel.updateBrokerMetrics(partitionMetrics.brokerId(), new HashMap<Byte, Double>().entrySet(), partitionMetrics.time());
+                }
                 clusterModel.updateTopicPartitionMetrics(partitionMetrics.brokerId(),
                         new TopicPartition(partitionMetrics.topic(), partitionMetrics.partition()),
                         partitionMetrics.getMetricValueMap().entrySet(), partitionMetrics.time());
