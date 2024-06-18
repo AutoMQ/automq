@@ -98,7 +98,7 @@ public class ObjectReaderTest {
         }
         objectWriter.close().get();
         S3ObjectMetadata metadata = new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.STREAM_SET);
-        try (ObjectReader objectReader = new ObjectReader(metadata, s3Operator)) {
+        try (ObjectReader objectReader = ObjectReader.reader(metadata, s3Operator)) {
             ObjectReader.BasicObjectInfo info = objectReader.basicObjectInfo().get();
             assertEquals(streamCount, info.indexBlock().count());
         }
@@ -122,7 +122,7 @@ public class ObjectReaderTest {
         int objectSize = buf.readableBytes();
         s3Operator.write(ObjectUtils.genKey(0, 1L), buf);
         buf.release();
-        try (ObjectReader reader = new ObjectReader(new S3ObjectMetadata(1L, objectSize, S3ObjectType.STREAM), s3Operator)) {
+        try (ObjectReader reader = ObjectReader.reader(new S3ObjectMetadata(1L, objectSize, S3ObjectType.STREAM), s3Operator)) {
             ObjectReader.FindIndexResult rst = reader.find(233L, 10L, 14L, 1024).get();
             assertEquals(1, rst.streamDataBlocks().size());
             try (ObjectReader.DataBlockGroup dataBlockGroup = reader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get()) {

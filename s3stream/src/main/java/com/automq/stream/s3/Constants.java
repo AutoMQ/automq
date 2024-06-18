@@ -14,4 +14,7 @@ public class Constants {
     public static final int CAPACITY_NOT_SET = -1;
     public static final int NOOP_NODE_ID = -1;
     public static final long NOOP_EPOCH = -1L;
+    public static final long NOOP_STREAM_ID = -1L;
+    public static final long NOOP_OFFSET = -1L;
+    public static final long NOOP_OBJECT_ID = -1L;
 }

@@ -35,130 +35,165 @@ import static com.automq.stream.s3.ByteBufAlloc.READ_INDEX_BLOCK;
 import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
-public class ObjectReader implements AutoCloseable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
-    private static final int MAX_RETRY_TIMES = 10;
-    private static final long RETRY_INTERVAL_MILLS = TimeUnit.SECONDS.toMillis(3);
-    private final S3ObjectMetadata metadata;
-    private final String objectKey;
-    private final S3Operator s3Operator;
-    private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
-    private final AtomicInteger refCount = new AtomicInteger(1);
+public interface ObjectReader extends AutoCloseable {
 
-    public ObjectReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
-        this.metadata = metadata;
-        this.objectKey = metadata.key();
-        this.s3Operator = s3Operator;
+    static ObjectReader reader(S3ObjectMetadata metadata, S3Operator s3Operator) {
+        return new DefaultObjectReader(metadata, s3Operator);
     }
 
-    public S3ObjectMetadata metadata() {
-        return metadata;
-    }
+    S3ObjectMetadata metadata();
 
-    public String objectKey() {
-        return objectKey;
-    }
+    String objectKey();
 
-    public synchronized CompletableFuture<BasicObjectInfo> basicObjectInfo() {
-        if (basicObjectInfoCf == null) {
-            this.basicObjectInfoCf = new CompletableFuture<>();
-            asyncGetBasicObjectInfo();
-        }
-        return basicObjectInfoCf;
-    }
+    CompletableFuture<BasicObjectInfo> basicObjectInfo();
 
-    public CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset) {
+    default CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset) {
         return find(streamId, startOffset, endOffset, Integer.MAX_VALUE);
     }
 
-    public CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset, int maxBytes) {
+    default CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset, int maxBytes) {
         return basicObjectInfo().thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
     }
 
-    public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
-        CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.CATCH_UP);
-        return rangeReadCf.thenApply(buf -> {
-            ByteBuf pooled = ByteBufAlloc.byteBuffer(buf.readableBytes(), BLOCK_CACHE);
-            pooled.writeBytes(buf);
-            buf.release();
-            return new DataBlockGroup(pooled);
-        });
+    CompletableFuture<DataBlockGroup> read(DataBlockIndex block);
+
+    ObjectReader retain();
+
+    ObjectReader release();
+
+    void close();
+
+    interface RangeReader {
+        CompletableFuture<ByteBuf> rangeRead(S3ObjectMetadata metadata, long start, long end);
     }
 
-    void asyncGetBasicObjectInfo() {
-        int guessIndexBlockSize = 1024 + (int) (metadata.objectSize() / (1024 * 1024 /* 1MB */) * 36 /* index unit size*/);
-        asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - guessIndexBlockSize), true, MAX_RETRY_TIMES);
-    }
+    class DefaultObjectReader implements ObjectReader {
 
-    private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt, int leftRetryTimes) {
-        CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize());
-        cf.thenAccept(buf -> {
-            try {
-                BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata);
-                basicObjectInfo().complete(basicObjectInfo);
-            } catch (IndexBlockParseException ex) {
-                if (!firstAttempt) {
-                    basicObjectInfo().completeExceptionally(ex);
-                    return;
+        private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
+        private static final int MAX_RETRY_TIMES = 10;
+        private static final long RETRY_INTERVAL_MILLS = TimeUnit.SECONDS.toMillis(3);
+        private final S3ObjectMetadata metadata;
+        private final String objectKey;
+        private final S3Operator s3Operator;
+        private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
+        private final AtomicInteger refCount = new AtomicInteger(1);
+
+        public DefaultObjectReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
+            this.metadata = metadata;
+            this.objectKey = metadata.key();
+            this.s3Operator = s3Operator;
+        }
+
+        public S3ObjectMetadata metadata() {
+            return metadata;
+        }
+
+        public String objectKey() {
+            return objectKey;
+        }
+
+        public synchronized CompletableFuture<BasicObjectInfo> basicObjectInfo() {
+            if (basicObjectInfoCf == null) {
+                this.basicObjectInfoCf = new CompletableFuture<>();
+                asyncGetBasicObjectInfo();
+            }
+            return basicObjectInfoCf;
+        }
+
+        public CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset) {
+            return find(streamId, startOffset, endOffset, Integer.MAX_VALUE);
+        }
+
+        public CompletableFuture<FindIndexResult> find(long streamId, long startOffset, long endOffset, int maxBytes) {
+            return basicObjectInfo().thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
+        }
+
+        public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
+            CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.CATCH_UP);
+            return rangeReadCf.thenApply(buf -> {
+                ByteBuf pooled = ByteBufAlloc.byteBuffer(buf.readableBytes(), BLOCK_CACHE);
+                pooled.writeBytes(buf);
+                buf.release();
+                return new DataBlockGroup(pooled);
+            });
+        }
+
+        void asyncGetBasicObjectInfo() {
+            int guessIndexBlockSize = 1024 + (int) (metadata.objectSize() / (1024 * 1024 /* 1MB */) * 36 /* index unit size*/);
+            asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - guessIndexBlockSize), true, MAX_RETRY_TIMES);
+        }
+
+        private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt, int leftRetryTimes) {
+            CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize());
+            cf.thenAccept(buf -> {
+                try {
+                    BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata);
+                    basicObjectInfo().complete(basicObjectInfo);
+                } catch (ObjectParseException ex) {
+                    if (!firstAttempt) {
+                        basicObjectInfo().completeExceptionally(ex);
+                        return;
+                    }
+                    // the first attempt get index data is not enough,
+                    asyncGetBasicObjectInfo0(ex.indexBlockPosition, false, leftRetryTimes);
                 }
-                // the first attempt get index data is not enough,
-                asyncGetBasicObjectInfo0(ex.indexBlockPosition, false, leftRetryTimes);
-            }
-        }).exceptionally(ex -> {
-            // The object might be invisible after put for a few seconds, so we need to retry get index later.
-            if (leftRetryTimes > 0) {
-                LOGGER.warn("[GET_OBJECT_INDEX_FAIL] s3 range read from {} [{}, {}) failed, leftRetryTimes={}", objectKey, startPosition, metadata.objectSize(), leftRetryTimes, ex);
-                Threads.COMMON_SCHEDULER.schedule(() -> asyncGetBasicObjectInfo0(startPosition, firstAttempt, leftRetryTimes - 1), RETRY_INTERVAL_MILLS, TimeUnit.MILLISECONDS);
-            } else {
-                LOGGER.error("[GET_OBJECT_INDEX_FAIL] s3 range read from {} [{}, {}) failed, leftRetryTimes={}", objectKey, startPosition, metadata.objectSize(), leftRetryTimes, ex);
-                basicObjectInfo().completeExceptionally(ex);
-            }
-            return null;
-        });
-    }
-
-    public ObjectReader retain() {
-        refCount.incrementAndGet();
-        return this;
-    }
-
-    public ObjectReader release() {
-        if (refCount.decrementAndGet() == 0) {
-            close0();
+            }).exceptionally(ex -> {
+                // The object might be invisible after put for a few seconds, so we need to retry get index later.
+                if (leftRetryTimes > 0) {
+                    LOGGER.warn("[GET_OBJECT_INDEX_FAIL] s3 range read from {} [{}, {}) failed, leftRetryTimes={}", objectKey, startPosition, metadata.objectSize(), leftRetryTimes, ex);
+                    Threads.COMMON_SCHEDULER.schedule(() -> asyncGetBasicObjectInfo0(startPosition, firstAttempt, leftRetryTimes - 1), RETRY_INTERVAL_MILLS, TimeUnit.MILLISECONDS);
+                } else {
+                    LOGGER.error("[GET_OBJECT_INDEX_FAIL] s3 range read from {} [{}, {}) failed, leftRetryTimes={}", objectKey, startPosition, metadata.objectSize(), leftRetryTimes, ex);
+                    basicObjectInfo().completeExceptionally(ex);
+                }
+                return null;
+            });
         }
-        return this;
-    }
 
-    @Override
-    public void close() {
-        release();
-    }
-
-    public synchronized void close0() {
-        if (basicObjectInfoCf != null) {
-            basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
+        public ObjectReader retain() {
+            refCount.incrementAndGet();
+            return this;
         }
-    }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o)
-            return true;
-        if (o == null || getClass() != o.getClass())
-            return false;
-        ObjectReader reader = (ObjectReader) o;
-        return Objects.equals(metadata.objectId(), reader.metadata.objectId());
-    }
+        public ObjectReader release() {
+            if (refCount.decrementAndGet() == 0) {
+                close0();
+            }
+            return this;
+        }
 
-    @Override
-    public int hashCode() {
-        return Objects.hash(metadata.objectId());
+        @Override
+        public void close() {
+            release();
+        }
+
+        public synchronized void close0() {
+            if (basicObjectInfoCf != null) {
+                basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o == null || getClass() != o.getClass())
+                return false;
+            DefaultObjectReader reader = (DefaultObjectReader) o;
+            return Objects.equals(metadata.objectId(), reader.metadata.objectId());
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(metadata.objectId());
+        }
+
     }
 
     /**
      *
      */
-    public static final class BasicObjectInfo {
+    class BasicObjectInfo {
         private final long dataBlockSize;
         private final IndexBlock indexBlock;
 
@@ -172,13 +207,13 @@ public class ObjectReader implements AutoCloseable {
         }
 
         public static BasicObjectInfo parse(ByteBuf objectTailBuf,
-            S3ObjectMetadata s3ObjectMetadata) throws IndexBlockParseException {
+            S3ObjectMetadata s3ObjectMetadata) throws ObjectParseException {
             objectTailBuf = objectTailBuf.slice();
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
             if (indexBlockPosition + objectTailBuf.readableBytes() < s3ObjectMetadata.objectSize()) {
                 objectTailBuf.release();
-                throw new IndexBlockParseException(indexBlockPosition);
+                throw new ObjectParseException(indexBlockPosition);
             } else {
                 int indexRelativePosition = objectTailBuf.readableBytes() - (int) (s3ObjectMetadata.objectSize() - indexBlockPosition);
 
@@ -233,13 +268,18 @@ public class ObjectReader implements AutoCloseable {
 
     }
 
-    public static class IndexBlock {
+    class IndexBlock {
         public static final int INDEX_BLOCK_UNIT_SIZE = 8/* streamId */ + 8 /* startOffset */ + 4 /* endOffset delta */
             + 4 /* record count */ + 8 /* block position */ + 4 /* block size */;
         private final S3ObjectMetadata s3ObjectMetadata;
         private final ByteBuf buf;
         private final int size;
         private final int count;
+
+
+        public IndexBlock(ByteBuf buf) {
+            this(null, buf);
+        }
 
         public IndexBlock(S3ObjectMetadata s3ObjectMetadata, ByteBuf buf) {
             this.s3ObjectMetadata = s3ObjectMetadata;
@@ -263,6 +303,14 @@ public class ObjectReader implements AutoCloseable {
             };
         }
 
+        public List<DataBlockIndex> indexes() {
+            List<DataBlockIndex> indexes = new LinkedList<>();
+            for (int i = 0; i < count; i++) {
+                indexes.add(get(i));
+            }
+            return indexes;
+        }
+
         public DataBlockIndex get(int index) {
             if (index < 0 || index >= count) {
                 throw new IllegalArgumentException("index" + index + " is out of range [0, " + count + ")");
@@ -274,7 +322,7 @@ public class ObjectReader implements AutoCloseable {
             int recordCount = buf.getInt(base + 20);
             long blockPosition = buf.getLong(base + 24);
             int blockSize = buf.getInt(base + 32);
-            return new DataBlockIndex(streamId, startOffset, endOffsetDelta, recordCount, blockPosition, blockSize);
+            return new DataBlockIndex(index, streamId, startOffset, endOffsetDelta, recordCount, blockPosition, blockSize);
         }
 
         public FindIndexResult find(long streamId, long startOffset, long endOffset) {
@@ -304,7 +352,7 @@ public class ObjectReader implements AutoCloseable {
                     }
                     matched = nextStartOffset == index.startOffset();
                     nextStartOffset = index.endOffset();
-                    rst.add(new StreamDataBlock(s3ObjectMetadata.objectId(), index));
+                    rst.add(new StreamDataBlock(s3ObjectMetadata == null ? Constants.NOOP_EPOCH : s3ObjectMetadata.objectId(), index));
 
                     // we consider first block as not matched because we do not know exactly how many bytes are within
                     // the range in first block, as a result we may read one more block than expected.
@@ -338,7 +386,7 @@ public class ObjectReader implements AutoCloseable {
         }
     }
 
-    public static final class FindIndexResult {
+    final class FindIndexResult {
         private final boolean isFulfilled;
         private final long nextStartOffset;
         private final int nextMaxBytes;
@@ -397,16 +445,20 @@ public class ObjectReader implements AutoCloseable {
 
     }
 
-    public static class IndexBlockParseException extends Exception {
+    class ObjectParseException extends Exception {
         long indexBlockPosition;
 
-        public IndexBlockParseException(long indexBlockPosition) {
+        public ObjectParseException(long indexBlockPosition) {
             this.indexBlockPosition = indexBlockPosition;
+        }
+
+        public ObjectParseException(String message) {
+            super(message);
         }
 
     }
 
-    public static class DataBlockGroup implements AutoCloseable {
+    class DataBlockGroup implements AutoCloseable {
         private final ByteBuf buf;
         private final int recordCount;
 
@@ -421,8 +473,7 @@ public class ObjectReader implements AutoCloseable {
             while (buf.readableBytes() > 0) {
                 byte magicCode = buf.readByte();
                 if (magicCode != ObjectWriter.DATA_BLOCK_MAGIC) {
-                    LOGGER.error("magic code mismatch, expected {}, actual {}", ObjectWriter.DATA_BLOCK_MAGIC, magicCode);
-                    throw new RuntimeException("[FATAL] magic code mismatch, data is corrupted");
+                    throw new RuntimeException("[FATAL] magic code mismatch, data is corrupted, expected " + ObjectWriter.DATA_BLOCK_MAGIC + ", actual " + magicCode);
                 }
                 buf.readByte(); // flag
                 recordCount += buf.readInt();
@@ -486,3 +537,4 @@ public class ObjectReader implements AutoCloseable {
     }
 
 }
+

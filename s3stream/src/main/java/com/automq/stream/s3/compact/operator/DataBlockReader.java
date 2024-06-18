@@ -71,7 +71,7 @@ public class DataBlockReader {
 
     public void parseDataBlockIndex() {
         // TODO: throttle level
-        @SuppressWarnings("resource") ObjectReader objectReader = new ObjectReader(metadata, s3Operator);
+        @SuppressWarnings("resource") ObjectReader objectReader = ObjectReader.reader(metadata, s3Operator);
         objectReader.basicObjectInfo().thenAccept(info -> {
             List<StreamDataBlock> blocks = new ArrayList<>(info.indexBlock().count());
             Iterator<DataBlockIndex> it = info.indexBlock().iterator();

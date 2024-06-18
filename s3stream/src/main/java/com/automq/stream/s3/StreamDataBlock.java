@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class StreamDataBlock {
     public static final Comparator<StreamDataBlock> STREAM_OFFSET_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getStartOffset);
     public static final Comparator<StreamDataBlock> BLOCK_POSITION_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getBlockStartPosition);
-    private final long objectId;
+    private long objectId;
     private final DataBlockIndex dataBlockIndex;
     private final CompletableFuture<ByteBuf> dataCf = new CompletableFuture<>();
     private final AtomicInteger refCount = new AtomicInteger(1);
@@ -54,6 +54,10 @@ public class StreamDataBlock {
 
     public long getObjectId() {
         return objectId;
+    }
+
+    public void setObjectId(long objectId) {
+        this.objectId = objectId;
     }
 
     public long getBlockStartPosition() {
