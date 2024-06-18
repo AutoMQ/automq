@@ -11,7 +11,6 @@
 
 package com.automq.stream.s3.objects;
 
-import java.util.List;
 
 public class StreamObject {
     private long objectId;
@@ -19,11 +18,7 @@ public class StreamObject {
     private long streamId;
     private long startOffset;
     private long endOffset;
-
-    /**
-     * The source objects' id of the stream object.
-     */
-    private List<Long> sourceObjectIds;
+    private int attributes = ObjectAttributes.DEFAULT.attributes();
 
     public long getObjectId() {
         return objectId;
@@ -65,12 +60,12 @@ public class StreamObject {
         this.endOffset = endOffset;
     }
 
-    public List<Long> getSourceObjectIds() {
-        return sourceObjectIds;
+    public int getAttributes() {
+        return attributes;
     }
 
-    public void setSourceObjectIds(List<Long> sourceObjectIds) {
-        this.sourceObjectIds = sourceObjectIds;
+    public void setAttributes(int attributes) {
+        this.attributes = attributes;
     }
 
     @Override
@@ -81,7 +76,7 @@ public class StreamObject {
             ", streamId=" + streamId +
             ", startOffset=" + startOffset +
             ", endOffset=" + endOffset +
-            ", sourceObjectIds=" + sourceObjectIds +
+            ", attributes=" + attributes +
             '}';
     }
 }

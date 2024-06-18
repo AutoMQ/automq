@@ -1,0 +1,29 @@
+/*
+ * Copyright 2024, AutoMQ CO.,LTD.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+package kafka.log.stream.s3.objects;
+
+import com.automq.stream.s3.objects.ObjectAttributes;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class ObjectAttributesTest {
+
+    @Test
+    public void test() {
+        ObjectAttributes attributes = ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).bucket((short) 10).build();
+        attributes = ObjectAttributes.from(attributes.attributes());
+        assertEquals(ObjectAttributes.Type.Composite, attributes.type());
+        assertEquals((short) 10, attributes.bucket());
+    }
+
+}

@@ -52,6 +52,11 @@ public class CommitStreamSetObjectRequest {
      */
     private List<Long> compactedObjectIds;
 
+    /**
+     * The generated object's attributes.
+     */
+    private int attributes = ObjectAttributes.DEFAULT.attributes();
+
     public long getObjectId() {
         return objectId;
     }
@@ -123,6 +128,14 @@ public class CommitStreamSetObjectRequest {
         this.orderId = orderId;
     }
 
+    public int getAttributes() {
+        return attributes;
+    }
+
+    public void setAttributes(int attributes) {
+        this.attributes = attributes;
+    }
+
     @Override
     public String toString() {
         return "CommitStreamSetObjectRequest{" +
@@ -132,6 +145,7 @@ public class CommitStreamSetObjectRequest {
             ", streamRanges=" + streamRanges +
             ", streamObjects=" + streamObjects +
             ", compactedObjectIds=" + compactedObjectIds +
+            ", attributes=" + attributes +
             '}';
     }
 }
