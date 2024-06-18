@@ -40,6 +40,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
@@ -54,6 +55,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private static final int DEFAULT_CONCURRENCY_PER_CORE = 25;
     private static final int MIN_CONCURRENCY = 50;
     private static final int MAX_CONCURRENCY = 1000;
+    private static final long DEFAULT_UPLOAD_PART_COPY_TIMEOUT = TimeUnit.MINUTES.toMillis(2);
     private final float maxMergeReadSparsityRate;
     private final int currentIndex;
     private final Semaphore inflightReadLimiter;
@@ -196,6 +198,129 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return retCf;
     }
 
+    public CompletableFuture<String> createMultipartUpload(String path) {
+        TimerUtil timerUtil = new TimerUtil();
+        CompletableFuture<String> cf = new CompletableFuture<>();
+        CompletableFuture<String> retCf = acquireWritePermit(cf);
+        if (retCf.isDone()) {
+            return retCf;
+        }
+        Consumer<String> successHandler = uploadId -> {
+            S3OperationStats.getInstance().createMultiPartUploadStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            cf.complete(uploadId);
+        };
+        Consumer<Throwable> failHandler = ex -> {
+            S3OperationStats.getInstance().createMultiPartUploadStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            if (isUnrecoverable(ex) || checkS3ApiMode) {
+                LOGGER.error("CreateMultipartUpload for object {} fail", path, ex);
+                cf.completeExceptionally(ex);
+            } else {
+                LOGGER.warn("CreateMultipartUpload for object {} fail, retry later", path, ex);
+                scheduler.schedule(() -> createMultipartUpload(path), 100, TimeUnit.MILLISECONDS);
+            }
+        };
+        doCreateMultipartUpload(path, failHandler, successHandler);
+        return retCf;
+
+    }
+
+    public CompletableFuture<ObjectStorageCompletedPart> uploadPart(String path, String uploadId, int partNumber,
+        ByteBuf data, ThrottleStrategy throttleStrategy) {
+        TimerUtil timerUtil = new TimerUtil();
+        CompletableFuture<ObjectStorageCompletedPart> cf = new CompletableFuture<>();
+        CompletableFuture<ObjectStorageCompletedPart> refCf = acquireWritePermit(cf);
+        if (refCf.isDone()) {
+            return refCf;
+        }
+        int size = data.readableBytes();
+        Consumer<ObjectStorageCompletedPart> successHandler = objectStorageCompletedPart -> {
+            S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, size);
+            S3OperationStats.getInstance().uploadPartStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            data.release();
+            cf.complete(objectStorageCompletedPart);
+        };
+        Consumer<Throwable> failHandler = ex -> {
+            S3OperationStats.getInstance().uploadPartStats(size, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            if (isUnrecoverable(ex) || checkS3ApiMode) {
+                LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, ex);
+                data.release();
+                cf.completeExceptionally(ex);
+            } else {
+                LOGGER.warn("UploadPart for object {}-{} fail, retry later", path, partNumber, ex);
+                scheduler.schedule(() -> uploadPart(path, uploadId, partNumber, data, throttleStrategy), 100, TimeUnit.MILLISECONDS);
+            }
+        };
+        if (networkOutboundBandwidthLimiter != null) {
+            networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
+                if (ex != null) {
+                    cf.completeExceptionally(ex);
+                } else {
+                    doUploadPart(path, uploadId, partNumber, data, failHandler, successHandler);
+                }
+            }, writeLimiterCallbackExecutor);
+        } else {
+            doUploadPart(path, uploadId, partNumber, data, failHandler, successHandler);
+        }
+        return refCf;
+    }
+
+    public CompletableFuture<ObjectStorageCompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end,
+        String uploadId, int partNumber) {
+        TimerUtil timerUtil = new TimerUtil();
+        CompletableFuture<ObjectStorageCompletedPart> cf = new CompletableFuture<>();
+        CompletableFuture<ObjectStorageCompletedPart> retCf = acquireWritePermit(cf);
+        Consumer<ObjectStorageCompletedPart> successHandler = objectStorageCompletedPart -> {
+            S3OperationStats.getInstance().uploadPartCopyStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            cf.complete(objectStorageCompletedPart);
+        };
+        Consumer<Throwable> failHandler = ex -> {
+            S3OperationStats.getInstance().uploadPartCopyStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            if (isUnrecoverable(ex) || checkS3ApiMode) {
+                LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail", path, partNumber, start, end, ex);
+                cf.completeExceptionally(ex);
+            } else {
+                long nextApiCallAttemptTimeout = Math.min(DEFAULT_UPLOAD_PART_COPY_TIMEOUT * 2, TimeUnit.MINUTES.toMillis(10));
+                LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail, retry later with apiCallAttemptTimeout={}", path, partNumber, start, end, nextApiCallAttemptTimeout, ex);
+                scheduler.schedule(() -> uploadPartCopy(sourcePath, path, start, end, uploadId, partNumber), 1000, TimeUnit.MILLISECONDS);
+            }
+        };
+        if (retCf.isDone()) {
+            return retCf;
+        }
+        // TODO: get default timeout by latency baseline
+        doUploadPartCopy(sourcePath, path, start, end, uploadId, partNumber, DEFAULT_UPLOAD_PART_COPY_TIMEOUT, failHandler, successHandler);
+        return retCf;
+    }
+
+    public CompletableFuture<Void> completeMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts) {
+        TimerUtil timerUtil = new TimerUtil();
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        CompletableFuture<Void> retCf = acquireWritePermit(cf);
+        if (retCf.isDone()) {
+            return retCf;
+        }
+        Runnable successHandler = () -> {
+            S3OperationStats.getInstance().completeMultiPartUploadStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            cf.complete(null);
+        };
+        Consumer<Throwable> failHandler = ex -> {
+            S3OperationStats.getInstance().completeMultiPartUploadStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            if (isUnrecoverable(ex) || checkS3ApiMode) {
+                LOGGER.error("CompleteMultipartUpload for object {} fail", path, ex);
+                cf.completeExceptionally(ex);
+            } else if (!checkPartNumbers(parts)) {
+                LOGGER.error("CompleteMultipartUpload for object {} fail, part numbers are not continuous", path);
+                cf.completeExceptionally(new IllegalArgumentException("Part numbers are not continuous"));
+            } else {
+                LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, ex);
+                scheduler.schedule(() -> completeMultipartUpload(path, uploadId, parts), 100, TimeUnit.MILLISECONDS);
+            }
+        };
+
+        doCompleteMultipartUpload(path, uploadId, parts, failHandler, successHandler);
+        return retCf;
+    }
+
     public void close() {
         readLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
@@ -207,9 +332,23 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     abstract void doWrite(String path, ByteBuf data, Consumer<Throwable> failHandler, Runnable successHandler);
 
+    abstract void doCreateMultipartUpload(String path, Consumer<Throwable> failHandler, Consumer<String> successHandler);
+
+    abstract void doUploadPart(String path, String uploadId, int partNumber, ByteBuf part, Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler);
+
+    abstract void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber, long apiCallAttemptTimeout,
+        Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler);
+
+    abstract void doCompleteMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts, Consumer<Throwable> failHandler, Runnable successHandler);
+
     abstract boolean isUnrecoverable(Throwable ex);
 
     abstract void doClose();
+
+    private static boolean checkPartNumbers(List<ObjectStorageCompletedPart> parts) {
+        Optional<Integer> maxOpt = parts.stream().map(ObjectStorageCompletedPart::getPartNumber).max(Integer::compareTo);
+        return maxOpt.isPresent() && maxOpt.get() == parts.size();
+    }
 
     private void rangeRead0(S3ObjectMetadata s3ObjectMetadata, long start, long end, CompletableFuture<ByteBuf> cf) {
         synchronized (waitingReadTasks) {
@@ -528,6 +667,24 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 "start=" + start + ", " +
                 "end=" + end + ", " +
                 "cf=" + cf + ']';
+        }
+    }
+
+    public static class ObjectStorageCompletedPart {
+        private final int partNumber;
+        private final String partId;
+
+        public ObjectStorageCompletedPart(int partNumber, String partId) {
+            this.partNumber = partNumber;
+            this.partId = partId;
+        }
+
+        public int getPartNumber() {
+            return partNumber;
+        }
+
+        public String getPartId() {
+            return partId;
         }
     }
 }
