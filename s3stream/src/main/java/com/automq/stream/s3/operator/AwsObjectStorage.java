@@ -22,6 +22,7 @@ import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.http.HttpStatusCode;
@@ -30,17 +31,26 @@ import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.Tagging;
+import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.utils.FutureUtil.cause;
@@ -112,6 +122,71 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         PutObjectRequest request = builder.build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
+            successHandler.run();
+        }).exceptionally(ex -> {
+            failHandler.accept(ex);
+            return null;
+        });
+    }
+
+    @Override
+    void doCreateMultipartUpload(String path,
+        Consumer<Throwable> failHandler, Consumer<String> successHandler) {
+        CreateMultipartUploadRequest.Builder builder = CreateMultipartUploadRequest.builder().bucket(bucket).key(path);
+        if (null != tagging) {
+            builder.tagging(tagging);
+        }
+        CreateMultipartUploadRequest request = builder.build();
+        writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
+            successHandler.accept(createMultipartUploadResponse.uploadId());
+        }).exceptionally(ex -> {
+            failHandler.accept(ex);
+            return null;
+        });
+    }
+
+    @Override
+    void doUploadPart(String path, String uploadId, int partNumber, ByteBuf part,
+        Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler) {
+        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
+        UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
+            .partNumber(partNumber).build();
+        CompletableFuture<UploadPartResponse> uploadPartCf = writeS3Client.uploadPart(request, body);
+        uploadPartCf.thenAccept(uploadPartResponse -> {
+            ObjectStorageCompletedPart objectStorageCompletedPart = new ObjectStorageCompletedPart(partNumber, uploadPartResponse.eTag());
+            successHandler.accept(objectStorageCompletedPart);
+        }).exceptionally(ex -> {
+            failHandler.accept(ex);
+            return null;
+        });
+    }
+
+    @Override
+    void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber, long apiCallAttemptTimeout,
+        Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler) {
+        long inclusiveEnd = end - 1;
+        UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
+            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber)
+            .overrideConfiguration(AwsRequestOverrideConfiguration.builder().apiCallAttemptTimeout(Duration.ofMillis(apiCallAttemptTimeout)).apiCallTimeout(Duration.ofMillis(apiCallAttemptTimeout)).build())
+            .build();
+        writeS3Client.uploadPartCopy(request).thenAccept(uploadPartCopyResponse -> {
+            ObjectStorageCompletedPart completedPart = new ObjectStorageCompletedPart(partNumber, uploadPartCopyResponse.copyPartResult().eTag());
+            successHandler.accept(completedPart);
+        }).exceptionally(ex -> {
+            failHandler.accept(ex);
+            return null;
+        });
+    }
+
+    @Override
+    public void doCompleteMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts,
+        Consumer<Throwable> failHandler, Runnable successHandler) {
+        List<CompletedPart> completedParts = parts.stream()
+            .map(part -> CompletedPart.builder().partNumber(part.getPartNumber()).eTag(part.getPartId()).build())
+            .collect(Collectors.toList());
+        CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(completedParts).build();
+        CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
+        writeS3Client.completeMultipartUpload(request).thenAccept(completeMultipartUploadResponse -> {
             successHandler.run();
         }).exceptionally(ex -> {
             failHandler.accept(ex);
