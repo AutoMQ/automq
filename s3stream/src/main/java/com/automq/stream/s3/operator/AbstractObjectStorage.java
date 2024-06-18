@@ -70,23 +70,41 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         ThreadUtils.createThreadFactory("objectStorage", true), LOGGER);
     boolean checkS3ApiMode = false;
 
-    public AbstractObjectStorage(
+    private AbstractObjectStorage(
         AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
         AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter,
+        int maxObjectStorageConcurrency,
+        int currentIndex,
         boolean readWriteIsolate,
-        boolean checkS3ApiMode) {
-        this.currentIndex = INDEX.incrementAndGet();
+        boolean checkS3ApiMode,
+        boolean manualMergeRead) {
+        this.currentIndex = currentIndex;
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
-        int maxObjectStorageConcurrency = getMaxObjectStorageConcurrency();
         this.inflightWriteLimiter = new Semaphore(maxObjectStorageConcurrency);
         this.inflightReadLimiter = readWriteIsolate ? new Semaphore(maxObjectStorageConcurrency) : inflightWriteLimiter;
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter;
         this.checkS3ApiMode = checkS3ApiMode;
-        scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
+        if (!manualMergeRead) {
+            scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
+        }
         checkConfig();
         S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
+    }
+
+    public AbstractObjectStorage(
+        AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
+        AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter,
+        boolean readWriteIsolate,
+        boolean checkS3ApiMode) {
+        this(networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, getMaxObjectStorageConcurrency(),
+            INDEX.incrementAndGet(), readWriteIsolate, checkS3ApiMode, false);
+    }
+
+    // used for test only
+    public AbstractObjectStorage(boolean manualMergeRead) {
+        this(null, null, 50, 0, true, false, manualMergeRead);
     }
 
     @Override
@@ -131,9 +149,18 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return rangeRead(ReadOptions.DEFAULT, objectMetadata, start, end);
     }
 
-    abstract void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf, Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler);
+    public void close() {
+        readLimiterCallbackExecutor.shutdown();
+        readCallbackExecutor.shutdown();
+        scheduler.shutdown();
+        doClose();
+    }
+
+    abstract void doRangeRead(String path, long start, long end, Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler);
 
     abstract boolean isUnrecoverable(Throwable ex);
+
+    abstract void doClose();
 
     private void rangeRead0(S3ObjectMetadata s3ObjectMetadata, long start, long end, CompletableFuture<ByteBuf> cf) {
         synchronized (waitingReadTasks) {
@@ -141,7 +168,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
     }
 
-    private void tryMergeRead() {
+    void tryMergeRead() {
         try {
             tryMergeRead0();
         } catch (Throwable e) {
@@ -200,7 +227,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return inflightReadLimiter.availablePermits();
     }
 
-    private CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
+    CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
         end = end - 1;
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retCf = acquireReadPermit(cf);
@@ -235,10 +262,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(buf);
         };
 
-        doRangeRead(path, start, end, cf, failHandler, successHandler);
+        doRangeRead(path, start, end, failHandler, successHandler);
     }
 
-    int getMaxObjectStorageConcurrency() {
+    static int getMaxObjectStorageConcurrency() {
         int cpuCores = Runtime.getRuntime().availableProcessors();
         return Math.max(MIN_CONCURRENCY, Math.min(cpuCores * DEFAULT_CONCURRENCY_PER_CORE, MAX_CONCURRENCY));
     }
