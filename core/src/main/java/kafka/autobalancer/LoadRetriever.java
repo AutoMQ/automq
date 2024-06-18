@@ -206,7 +206,10 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
             boolean isFenced = record.fenced() || record.inControlledShutdown();
             Set<String> endpoints = new HashSet<>();
             for (RegisterBrokerRecord.BrokerEndpoint endpoint : record.endPoints()) {
-                if (Utils.checkListenerName(endpoint.name(), listenerName)) {
+                if ("CONTROLLER".equals(endpoint.name())) {
+                    continue;
+                }
+                if (listenerName == null || listenerName.isEmpty() || Utils.checkListenerName(endpoint.name(), listenerName)) {
                     String url = endpoint.host() + ":" + endpoint.port();
                     endpoints.add(url);
                 }
