@@ -15,10 +15,14 @@ public enum AutoMQVersion {
 
     V0((short) 1),
     // Support reassignment v1: elect leader after partition open in the new broker
-    V1((short) 2);
+    // Support stream tags
+    V1((short) 2),
+    // Support composite object
+    // Support object bucket index
+    V2((short) 3);
 
     public static final String FEATURE_NAME = "automq.version";
-    public static final AutoMQVersion LATEST = V1;
+    public static final AutoMQVersion LATEST = V2;
 
     private final short level;
 
@@ -53,6 +57,18 @@ public enum AutoMQVersion {
 
     public boolean isTopicCleanupByControllerSupported() {
         return isAtLeast(V1);
+    }
+
+    public boolean isCompositeObjectSupported() {
+        return isAtLeast(V2);
+    }
+
+    public boolean isObjectBucketsSupported() {
+        return isAtLeast(V2);
+    }
+
+    public boolean isObjectAttributesSupported() {
+        return isAtLeast(V2);
     }
 
     public short streamRecordVersion() {

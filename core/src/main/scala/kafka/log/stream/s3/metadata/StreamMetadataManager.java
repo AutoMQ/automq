@@ -82,7 +82,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     return new S3ObjectMetadata(object.objectId(), object.objectType(),
                         object.offsetRangeList(), object.dataTimeInMs(),
                         s3Object.getCommittedTimeInMs(), s3Object.getObjectSize(),
-                        object.orderId());
+                        object.orderId(), s3Object.getAttributes());
                 })
                 .collect(Collectors.toList());
             return CompletableFuture.completedFuture(s3ObjectMetadataList);
@@ -113,7 +113,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     }
                     object.setObjectSize(objectMetadata.getObjectSize());
                     object.setCommittedTimestamp(objectMetadata.getCommittedTimeInMs());
-
+                    object.setAttributes(objectMetadata.getAttributes());
                 });
 
                 if (LOGGER.isTraceEnabled()) {
@@ -149,8 +149,9 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                 S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
                 long committedTimeInMs = objectMetadata.getCommittedTimeInMs();
                 long objectSize = objectMetadata.getObjectSize();
+                int attributes = objectMetadata.getAttributes();
                 return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), object.dataTimeInMs(),
-                    committedTimeInMs, objectSize, S3StreamConstant.INVALID_ORDER_ID);
+                    committedTimeInMs, objectSize, S3StreamConstant.INVALID_ORDER_ID, attributes);
             }).collect(Collectors.toList());
 
             return CompletableFuture.completedFuture(s3StreamObjectMetadataList);

@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.metadata;
 
+import com.automq.stream.s3.objects.ObjectAttributes;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -46,10 +47,9 @@ public class S3ObjectMetadata {
      */
     private long committedTimestamp;
     /**
-     * The bucket id which the object stores in.
+     * The object attributes {@link ObjectAttributes}.
      */
-    // TODO: add initialization for bucketId
-    private short bucketId;
+    private int attributes;
 
     // Only used for testing
     public S3ObjectMetadata(long objectId, long objectSize, S3ObjectType type) {
@@ -72,12 +72,12 @@ public class S3ObjectMetadata {
         long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
         long committedTimestamp, long objectSize,
         long orderId) {
-        this(objectId, type, offsetRanges, dataTimeInMs, committedTimestamp, objectSize, orderId, (short) 0);
+        this(objectId, type, offsetRanges, dataTimeInMs, committedTimestamp, objectSize, orderId, ObjectAttributes.DEFAULT.attributes());
     }
 
-    public S3ObjectMetadata(long objectId, short bucketId) {
+    public S3ObjectMetadata(long objectId, int attributes) {
         this(objectId, S3ObjectType.UNKNOWN, Collections.emptyList(), S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_OBJECT_SIZE,
-            S3StreamConstant.INVALID_ORDER_ID, bucketId);
+            S3StreamConstant.INVALID_ORDER_ID, attributes);
     }
 
     public S3ObjectMetadata(
@@ -86,7 +86,7 @@ public class S3ObjectMetadata {
         // these two params come from S3Object
         long committedTimestamp, long objectSize,
         // this param only comes from S3StreamSetObject
-        long orderId, short bucketId) {
+        long orderId, int attributes) {
         this.objectId = objectId;
         this.orderId = orderId;
         this.objectSize = objectSize;
@@ -94,7 +94,7 @@ public class S3ObjectMetadata {
         this.offsetRanges = offsetRanges;
         this.dataTimeInMs = dataTimeInMs;
         this.committedTimestamp = committedTimestamp;
-        this.bucketId = bucketId;
+        this.attributes = attributes;
     }
 
     public void setObjectSize(long objectSize) {
@@ -147,8 +147,12 @@ public class S3ObjectMetadata {
         return offsetRanges.get(offsetRanges.size() - 1).endOffset();
     }
 
-    public short bucketId() {
-        return bucketId;
+    public int attributes() {
+        return attributes;
+    }
+
+    public void setAttributes(int attributes) {
+        this.attributes = attributes;
     }
 
     public boolean intersect(long streamId, long startOffset, long endOffset) {

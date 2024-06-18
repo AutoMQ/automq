@@ -21,12 +21,23 @@ public class CompactStreamObjectRequest {
     private long endOffset;
     private final long streamEpoch;
     /**
+     * The generated object's attributes.
+     */
+    private final int attributes;
+    /**
      * The source objects' id of the stream object.
      */
-    private List<Long> sourceObjectIds;
+    private final List<Long> sourceObjectIds;
 
-    public CompactStreamObjectRequest(long objectId, long objectSize, long streamId, long streamEpoch, long startOffset,
-        long endOffset, List<Long> sourceObjectIds) {
+    public CompactStreamObjectRequest(
+        long objectId,
+        long objectSize,
+        long streamId,
+        long streamEpoch,
+        long startOffset,
+        long endOffset,
+        List<Long> sourceObjectIds,
+        int attributes) {
         this.objectId = objectId;
         this.objectSize = objectSize;
         this.streamId = streamId;
@@ -34,6 +45,7 @@ public class CompactStreamObjectRequest {
         this.endOffset = endOffset;
         this.streamEpoch = streamEpoch;
         this.sourceObjectIds = sourceObjectIds;
+        this.attributes = attributes;
     }
 
     public long getObjectId() {
@@ -84,8 +96,8 @@ public class CompactStreamObjectRequest {
         return sourceObjectIds;
     }
 
-    public void setSourceObjectIds(List<Long> sourceObjectIds) {
-        this.sourceObjectIds = sourceObjectIds;
+    public int getAttributes() {
+        return attributes;
     }
 
     @Override

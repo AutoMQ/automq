@@ -54,9 +54,7 @@ public class S3Object implements Comparable<S3Object> {
 
     private S3ObjectState s3ObjectState = S3ObjectState.UNINITIALIZED;
 
-    private S3Object(final long objectId) {
-        this.objectId = objectId;
-    }
+    private int attributes;
 
     public S3Object(
         final long objectId,
@@ -66,7 +64,8 @@ public class S3Object implements Comparable<S3Object> {
         final long expiredTimeInMs,
         final long committedTimeInMs,
         final long markDestroyedTimeInMs,
-        final S3ObjectState s3ObjectState) {
+        final S3ObjectState s3ObjectState,
+        final int attributes) {
         this.objectId = objectId;
         this.objectSize = objectSize;
         this.objectKey = objectKey;
@@ -75,6 +74,7 @@ public class S3Object implements Comparable<S3Object> {
         this.committedTimeInMs = committedTimeInMs;
         this.markDestroyedTimeInMs = markDestroyedTimeInMs;
         this.s3ObjectState = s3ObjectState;
+        this.attributes = attributes;
     }
 
     public ApiMessageAndVersion toRecord() {
@@ -92,7 +92,7 @@ public class S3Object implements Comparable<S3Object> {
         return new S3Object(
             record.objectId(), record.objectSize(), null,
             record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.markDestroyedTimeInMs(),
-            S3ObjectState.fromByte(record.objectState()));
+            S3ObjectState.fromByte(record.objectState()), record.attributes());
     }
 
     @Override
@@ -153,6 +153,10 @@ public class S3Object implements Comparable<S3Object> {
         return this.s3ObjectState == S3ObjectState.PREPARED && System.currentTimeMillis() > expiredTimeInMs;
     }
 
+    public int getAttributes() {
+        return attributes;
+    }
+
     @Override
     public String toString() {
         return "S3Object{" +
@@ -164,6 +168,7 @@ public class S3Object implements Comparable<S3Object> {
             ", committedTimeInMs=" + committedTimeInMs +
             ", markDestroyedTimeInMs=" + markDestroyedTimeInMs +
             ", s3ObjectState=" + s3ObjectState +
+            ", attributes=" + attributes +
             '}';
     }
 }

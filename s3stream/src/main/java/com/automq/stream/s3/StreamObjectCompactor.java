@@ -17,6 +17,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.operator.Writer;
@@ -114,7 +115,7 @@ public class StreamObjectCompactor {
                 int start = i;
                 int end = Math.min(i + EXPIRED_OBJECTS_CLEAN_UP_STEP, expiredObjectCount);
                 request = new CompactStreamObjectRequest(NOOP_OBJECT_ID, 0,
-                    streamId, stream.streamEpoch(), NOOP_OFFSET, NOOP_OFFSET, new ArrayList<>(compactedObjectIds.subList(start, end)));
+                    streamId, stream.streamEpoch(), NOOP_OFFSET, NOOP_OFFSET, new ArrayList<>(compactedObjectIds.subList(start, end)), ObjectAttributes.DEFAULT.attributes());
                 objectManager.compactStreamObject(request).get();
                 if (s3ObjectLogger.isTraceEnabled()) {
                     s3ObjectLogger.trace("{}", request);
@@ -243,7 +244,7 @@ public class StreamObjectCompactor {
             writer.write(indexBlockAndFooter.duplicate());
             writer.close().get();
             return Optional.of(new CompactStreamObjectRequest(objectId, objectSize, streamId, streamEpoch,
-                compactedStartOffset, compactedEndOffset, compactedObjectIds));
+                compactedStartOffset, compactedEndOffset, compactedObjectIds, ObjectAttributes.DEFAULT.attributes()));
         }
 
     }

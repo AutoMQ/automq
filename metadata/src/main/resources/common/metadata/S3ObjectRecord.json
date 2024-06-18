@@ -17,7 +17,7 @@
   "apiKey": 509,
   "type": "metadata",
   "name": "S3ObjectRecord",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -61,6 +61,12 @@
       "type": "int8",
       "versions": "0+",
       "about": "The object state"
+    },
+    {
+      "name": "Attributes",
+      "type": "int32",
+      "versions": "1+",
+      "about": "The object attributes"
     }
   ]
 }

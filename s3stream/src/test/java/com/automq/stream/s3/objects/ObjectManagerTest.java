@@ -142,7 +142,7 @@ class ObjectManagerTest {
         assertEquals(1, streamObjectMetadataList.size());
 
         // Compact stream object.
-        objectManager.compactStreamObject(new CompactStreamObjectRequest(5, 2000, 2, 0L, 0, 20, List.of(1L, 4L))).join();
+        objectManager.compactStreamObject(new CompactStreamObjectRequest(5, 2000, 2, 0L, 0, 20, List.of(1L, 4L), ObjectAttributes.DEFAULT.attributes())).join();
         streamObjectMetadataList = objectManager.getStreamObjects(2, 0, 10, 100).join();
         assertEquals(1, streamObjectMetadataList.size());
         ranges = streamObjectMetadataList.get(0).getOffsetRanges();

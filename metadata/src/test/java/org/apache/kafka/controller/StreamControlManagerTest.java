@@ -84,6 +84,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -318,7 +319,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitStreamSetObjectBasic() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(ink -> {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(ink -> {
             long objectId = ink.getArgument(0);
             if (objectId == 1) {
                 return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
@@ -421,7 +422,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitStreamSetObject_compactWithDeletedStream() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
             long objectId = args.getArgument(0);
             return ControllerResult.of(
                 List.of(
@@ -514,7 +515,7 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitStreamSetObject_theSameStreamSetObject() {
         List<Long> committed = new LinkedList<>();
-        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
+        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
             long objectId = args.getArgument(0);
             if (committed.contains(objectId)) {
                 return ControllerResult.of(Collections.emptyList(), Errors.REDUNDANT_OPERATION);
@@ -557,7 +558,7 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitStreamSetObject_theSameStreamObject() {
         List<Long> committed = new LinkedList<>();
-        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
+        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
             long objectId = args.getArgument(0);
             if (objectId == NOOP_OBJECT_ID) {
                 return ControllerResult.of(Collections.emptyList(), Errors.NONE);
@@ -603,7 +604,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testTrimBeyondCommit() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).then(args -> {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
             long objectId = args.getArgument(0);
             return ControllerResult.of(
                 List.of(
@@ -676,7 +677,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitWalCompacted() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
@@ -809,7 +810,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitWalWithStreamObject() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
@@ -901,7 +902,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCommitStreamObject() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
@@ -1008,7 +1009,7 @@ public class StreamControlManagerTest {
     }
 
     private void mockData0() {
-        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong()))
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
@@ -1298,7 +1299,7 @@ public class StreamControlManagerTest {
 
     @Test
     public void testCleanupScaleInNodes() {
-        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong())).thenReturn(ControllerResult.of(Collections.emptyList(), null));
+        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).thenReturn(ControllerResult.of(Collections.emptyList(), null));
 
         registerAlwaysSuccessEpoch(BROKER0);
         registerAlwaysSuccessEpoch(BROKER1);

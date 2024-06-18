@@ -19,6 +19,7 @@ package org.apache.kafka.image;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.automq.stream.s3.objects.ObjectAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -56,7 +57,7 @@ public class S3ObjectsImageTest {
             S3Object object = new S3Object(
                 i, -1, null,
                 -1, -1, -1, -1,
-                S3ObjectState.PREPARED);
+                S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes());
             map.put(object.getObjectId(), object);
         }
         registry.getOrCreateSnapshot(0);
@@ -91,19 +92,19 @@ public class S3ObjectsImageTest {
         map2.put(0L, new S3Object(
             0L, -1, null,
             -1, -1, -1, -1,
-            S3ObjectState.COMMITTED));
+            S3ObjectState.COMMITTED, ObjectAttributes.DEFAULT.attributes()));
         map2.put(1L, new S3Object(
             1L, -1, null,
             -1, -1, -1, -1,
-            S3ObjectState.COMMITTED));
+            S3ObjectState.COMMITTED, ObjectAttributes.DEFAULT.attributes()));
         map2.put(2L, new S3Object(
             2L, -1, null,
             -1, -1, -1, -1,
-            S3ObjectState.MARK_DESTROYED));
+            S3ObjectState.MARK_DESTROYED, ObjectAttributes.DEFAULT.attributes()));
         map2.put(4L, new S3Object(
             4L, -1, null,
             -1, -1, -1, -1,
-            S3ObjectState.PREPARED));
+            S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes()));
         registry.getOrCreateSnapshot(1);
         IMAGE2 = new S3ObjectsImage(4L, map2, registry, 1, new ArrayList<>());
     }
