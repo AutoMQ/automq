@@ -23,8 +23,9 @@ import java.util.zip.CRC32;
 import jnr.posix.POSIXFactory;
 
 public class WALUtil {
+    public static final String BLOCK_SIZE_PROPERTY = "automq.ebswal.blocksize";
     public static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(
-        "automq.ebswal.blocksize",
+        BLOCK_SIZE_PROPERTY,
         "4096"
     ));
 
