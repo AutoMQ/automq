@@ -107,10 +107,14 @@ class ClientQuotaMetadataManager(private[metadata] val quotaManagers: QuotaManag
   private def handleIpQuota(ipEntity: QuotaEntity, quotaDelta: ClientQuotaDelta): Unit = {
     val inetAddress = ipEntity match {
       case IpEntity(ip) =>
-        try {
-          Some(InetAddress.getByName(ip))
-        } catch {
-          case _: UnknownHostException => throw new IllegalArgumentException(s"Unable to resolve address $ip")
+        if ("0.0.0.0".equals(ip)) {
+          Some(connectionQuotas.wildcardIPAddress)
+        } else {
+          try {
+            Some(InetAddress.getByName(ip))
+          } catch {
+            case _: UnknownHostException => throw new IllegalArgumentException(s"Unable to resolve address $ip")
+          }
         }
       case DefaultIpEntity => None
       case _ => throw new IllegalStateException("Should only handle IP quota entities here")

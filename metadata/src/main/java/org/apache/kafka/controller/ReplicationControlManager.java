@@ -746,8 +746,7 @@ public class ReplicationControlManager {
             if (error.isFailure()) {
                 topicErrors.put(topic.name(), error);
             } else {
-                int numPartitions = topic.numPartitions() == -1 ?
-                defaultNumPartitions : topic.numPartitions();
+                int numPartitions = topic.numPartitions() == -1 ? defaultNumPartitions : topic.numPartitions();
                 partitionCount += numPartitions;
             }
         }
