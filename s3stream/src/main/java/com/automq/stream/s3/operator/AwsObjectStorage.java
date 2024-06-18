@@ -13,7 +13,6 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
@@ -38,7 +37,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
@@ -64,8 +62,17 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency()) : writeS3Client;
     }
 
+    // used for test only
+    public AwsObjectStorage(S3AsyncClient s3Client, String bucket, boolean manualMergeRead) {
+        super(manualMergeRead);
+        this.bucket = bucket;
+        this.writeS3Client = s3Client;
+        this.readS3Client = s3Client;
+        this.tagging = null;
+    }
+
     @Override
-    void doRangeRead(String path, long start, long end, CompletableFuture<ByteBuf> cf,
+    void doRangeRead(String path, long start, long end,
         Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler) {
         GetObjectRequest request = GetObjectRequest.builder()
             .bucket(bucket)
@@ -101,6 +108,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND;
         }
         return false;
+    }
+
+    @Override
+    void doClose() {
+        writeS3Client.close();
+        if (readS3Client != writeS3Client) {
+            readS3Client.close();
+        }
     }
 
     private String range(long start, long end) {
