@@ -57,7 +57,7 @@ public class ObjectWriterTest {
         assertEquals(objectSize, objectWriter.size());
 
         metadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.STREAM_SET);
-        ObjectReader objectReader = new ObjectReader(metadata, s3Operator);
+        ObjectReader objectReader = ObjectReader.reader(metadata, s3Operator);
         List<StreamDataBlock> streamDataBlocks = objectReader.find(233, 10, 30).get().streamDataBlocks();
         assertEquals(2, streamDataBlocks.size());
         {

@@ -18,6 +18,7 @@ public final class DataBlockIndex {
 
     public static final int BLOCK_INDEX_SIZE = 8/* streamId */ + 8 /* startOffset */ + 4 /* endOffset delta */
         + 4 /* record count */ + 8 /* block position */ + 4 /* block size */;
+    private final int blockId;
     private final long streamId;
     private final long startOffset;
     private final int endOffsetDelta;
@@ -25,14 +26,24 @@ public final class DataBlockIndex {
     private final long startPosition;
     private final int size;
 
-    public DataBlockIndex(long streamId, long startOffset, int endOffsetDelta, int recordCount, long startPosition,
-        int size) {
+    public DataBlockIndex(long streamId, long startOffset, int endOffsetDelta, int recordCount,
+        long startPosition, int size) {
+        this(-1, streamId, startOffset, endOffsetDelta, recordCount, startPosition, size);
+    }
+
+    public DataBlockIndex(int blockId, long streamId, long startOffset, int endOffsetDelta, int recordCount,
+        long startPosition, int size) {
+        this.blockId = blockId;
         this.streamId = streamId;
         this.startOffset = startOffset;
         this.endOffsetDelta = endOffsetDelta;
         this.recordCount = recordCount;
         this.startPosition = startPosition;
         this.size = size;
+    }
+
+    public int id() {
+        return blockId;
     }
 
     public long endOffset() {

@@ -12,6 +12,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.S3Operator;
@@ -45,13 +46,23 @@ public interface ObjectWriter {
         return new NoopObjectWriter(objectId);
     }
 
-    void write(long streamId, List<StreamRecordBatch> records);
+    /**
+     * Write records to the object. When close the object, ObjectWriter will generate the index block and footer.
+     */
+    default void write(long streamId, List<StreamRecordBatch> records) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Link the component object as a part to the composite object.
+     */
+    default void addComponent(S3ObjectMetadata partObjectMetadata, List<DataBlockIndex> partObjectIndexes) {
+        throw new UnsupportedOperationException();
+    }
 
     CompletableFuture<Void> close();
 
     List<ObjectStreamRange> getStreamRanges();
-
-    long objectId();
 
     long size();
 
@@ -62,7 +73,6 @@ public interface ObjectWriter {
         private final List<DataBlock> waitingUploadBlocks;
         private final List<DataBlock> completedBlocks;
         private final Writer writer;
-        private final long objectId;
         private int waitingUploadBlocksSize;
         private IndexBlock indexBlock;
         private long size;
@@ -77,7 +87,6 @@ public interface ObjectWriter {
          */
         public DefaultObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold,
             int partSizeThreshold) {
-            this.objectId = objectId;
             String objectKey = ObjectUtils.genKey(0, objectId);
             this.blockSizeThreshold = blockSizeThreshold;
             this.partSizeThreshold = Math.max(Writer.MIN_PART_SIZE, partSizeThreshold);
@@ -180,10 +189,6 @@ public interface ObjectWriter {
                 streamRanges.add(lastStreamRange);
             }
             return streamRanges;
-        }
-
-        public long objectId() {
-            return objectId;
         }
 
         public long size() {
@@ -305,11 +310,6 @@ public interface ObjectWriter {
         @Override
         public List<ObjectStreamRange> getStreamRanges() {
             return Collections.emptyList();
-        }
-
-        @Override
-        public long objectId() {
-            return objectId;
         }
 
         @Override
