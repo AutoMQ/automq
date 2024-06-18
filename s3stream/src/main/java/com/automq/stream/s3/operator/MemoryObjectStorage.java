@@ -14,6 +14,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.ByteBufAlloc;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.Unpooled;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,12 +42,28 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    void doWrite(String path, ByteBuf data, Consumer<Throwable> failHandler, Runnable successHandler) {
+        try {
+            if (data == null) {
+                failHandler.accept(new IllegalArgumentException("data to write cannot be null"));
+                return;
+            }
+            ByteBuf buf = Unpooled.buffer(data.readableBytes());
+            buf.writeBytes(data.duplicate());
+            storage.put(path, buf);
+            successHandler.run();
+        } catch (Exception ex) {
+            failHandler.accept(ex);
+        }
+    }
+
+    @Override
     boolean isUnrecoverable(Throwable ex) {
         return !(ex instanceof IllegalArgumentException);
     }
 
     @Override
-    void  doClose() {
+    void doClose() {
         storage.clear();
     }
 }

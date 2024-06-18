@@ -20,6 +20,7 @@ import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.metrics.stats.S3OperationStats;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -62,8 +63,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter;
     private final ExecutorService readLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-read-limiter-cb-executor", true, LOGGER);
+    private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+        "s3-write-limiter-cb-executor", true, LOGGER);
     private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(8,
         "s3-read-cb-executor", true, LOGGER);
+    private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+        "s3-write-cb-executor", true, LOGGER);
     private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
     final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
@@ -149,6 +154,48 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return rangeRead(ReadOptions.DEFAULT, objectMetadata, start, end);
     }
 
+    public CompletableFuture<Void> write(String path, ByteBuf data, ThrottleStrategy throttleStrategy) {
+        TimerUtil timerUtil = new TimerUtil();
+        long objectSize = data.readableBytes();
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        CompletableFuture<Void> retCf = acquireWritePermit(cf);
+        if (retCf.isDone()) {
+            return retCf;
+        }
+        Consumer<Throwable> failHandler = ex -> {
+            S3OperationStats.getInstance().putObjectStats(objectSize, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            if (isUnrecoverable(ex) || checkS3ApiMode) {
+                LOGGER.error("PutObject for object {} fail", path, ex);
+                cf.completeExceptionally(ex);
+                data.release();
+            } else {
+                LOGGER.warn("PutObject for object {} fail, retry later", path, ex);
+                scheduler.schedule(() -> write(path, data, throttleStrategy), 100, TimeUnit.MILLISECONDS);
+            }
+        };
+        Runnable successHandler = () -> {
+            S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
+            S3OperationStats.getInstance().putObjectStats(objectSize, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            data.release();
+            cf.complete(null);
+        };
+        if (networkOutboundBandwidthLimiter != null) {
+            networkOutboundBandwidthLimiter.consume(throttleStrategy, data.readableBytes()).whenCompleteAsync((v, ex) -> {
+                NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, throttleStrategy)
+                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                if (ex != null) {
+                    cf.completeExceptionally(ex);
+                } else {
+                    doWrite(path, data, failHandler, successHandler);
+                }
+            }, writeLimiterCallbackExecutor);
+        } else {
+            doWrite(path, data, failHandler, successHandler);
+        }
+        return retCf;
+    }
+
     public void close() {
         readLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
@@ -157,6 +204,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     abstract void doRangeRead(String path, long start, long end, Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler);
+
+    abstract void doWrite(String path, ByteBuf data, Consumer<Throwable> failHandler, Runnable successHandler);
 
     abstract boolean isUnrecoverable(Throwable ex);
 
@@ -294,6 +343,34 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.whenComplete((rst, ex) -> {
                 inflightReadLimiter.release();
                 readCallbackExecutor.execute(() -> {
+                    if (ex != null) {
+                        newCf.completeExceptionally(ex);
+                    } else {
+                        newCf.complete(rst);
+                    }
+                });
+            });
+            return newCf;
+        } catch (InterruptedException e) {
+            cf.completeExceptionally(e);
+            return cf;
+        }
+    }
+
+    /**
+     * Acquire write permit, permit will auto release when cf complete.
+     *
+     * @return retCf the retCf should be used as method return value to ensure release before following operations.
+     */
+    <T> CompletableFuture<T> acquireWritePermit(CompletableFuture<T> cf) {
+        try {
+            TimerUtil timerUtil = new TimerUtil();
+            inflightWriteLimiter.acquire();
+            StorageOperationStats.getInstance().writeS3LimiterStats(currentIndex).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            CompletableFuture<T> newCf = new CompletableFuture<>();
+            cf.whenComplete((rst, ex) -> {
+                inflightWriteLimiter.release();
+                writeCallbackExecutor.execute(() -> {
                     if (ex != null) {
                         newCf.completeExceptionally(ex);
                     } else {
