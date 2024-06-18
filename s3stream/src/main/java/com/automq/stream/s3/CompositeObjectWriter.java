@@ -12,6 +12,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
@@ -99,7 +100,7 @@ public class CompositeObjectWriter implements ObjectWriter {
             components.forEach((blockStartIndex, linkedObject) -> {
                 buf.writeLong(linkedObject.metadata.objectId());
                 buf.writeInt(blockStartIndex);
-                buf.writeShort(linkedObject.metadata.bucketId());
+                buf.writeShort(ObjectAttributes.from(linkedObject.metadata.attributes()).bucket());
             });
         }
 

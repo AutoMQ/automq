@@ -598,7 +598,7 @@ public class StreamControlManager {
         long committedTs = System.currentTimeMillis();
 
         // commit object
-        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize, committedTs);
+        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(objectId, objectSize, committedTs, data.attributes());
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
             log.error("[CommitStreamSetObject] stream set object id not exist. streamSetObjectId={}, nodeId={}, nodeEpoch={}", objectId, nodeId, nodeEpoch);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());
@@ -642,7 +642,7 @@ public class StreamControlManager {
             for (StreamObject streamObject : streamObjects) {
                 if (streamsMetadata.containsKey(streamObject.streamId())) {
                     ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
-                        streamObject.objectSize(), committedTs);
+                        streamObject.objectSize(), committedTs, streamObject.attributes());
                     if (streamObjectCommitResult.response() == Errors.REDUNDANT_OPERATION) {
                         // regard it as redundant commit operation, return success
                         log.warn("[CommitStreamSetObject]: stream object already committed. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
@@ -720,6 +720,7 @@ public class StreamControlManager {
         long startOffset = data.startOffset();
         long endOffset = data.endOffset();
         long objectSize = data.objectSize();
+        int attributes = data.attributes();
         List<Long> sourceObjectIds = data.sourceObjectIds();
         CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
         long committedTs = System.currentTimeMillis();
@@ -744,7 +745,7 @@ public class StreamControlManager {
         }
 
         // commit object
-        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(streamObjectId, objectSize, committedTs);
+        ControllerResult<Errors> commitResult = this.s3ObjectControlManager.commitObject(streamObjectId, objectSize, committedTs, attributes);
         if (commitResult.response() == Errors.OBJECT_NOT_EXIST) {
             log.error("[CommitStreamObject]: stream object not exist. streamObjectId={}, req={}", streamObjectId, data);
             resp.setErrorCode(Errors.OBJECT_NOT_EXIST.code());

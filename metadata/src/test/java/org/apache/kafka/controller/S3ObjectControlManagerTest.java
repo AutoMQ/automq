@@ -19,6 +19,7 @@ package org.apache.kafka.controller;
 
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.S3Operator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -168,19 +169,19 @@ public class S3ObjectControlManagerTest {
 
         // 2. commit an object which not exist in controller
         long expectedCommittedTs = 1313L;
-        ControllerResult<Errors> result1 = manager.commitObject(1, 1024, expectedCommittedTs);
+        ControllerResult<Errors> result1 = manager.commitObject(1, 1024, expectedCommittedTs, ObjectAttributes.DEFAULT.attributes());
         assertEquals(Errors.OBJECT_NOT_EXIST, result1.response());
         assertEquals(0, result1.records().size());
 
         // 3. commit an valid object
-        ControllerResult<Errors> result2 = manager.commitObject(0, 1024, expectedCommittedTs);
+        ControllerResult<Errors> result2 = manager.commitObject(0, 1024, expectedCommittedTs, ObjectAttributes.DEFAULT.attributes());
         assertEquals(Errors.NONE, result2.response());
         assertEquals(1, result2.records().size());
         S3ObjectRecord record = (S3ObjectRecord) result2.records().get(0).message();
         manager.replay(record);
 
         // 4. commit again
-        ControllerResult<Errors> result3 = manager.commitObject(0, 1024, expectedCommittedTs);
+        ControllerResult<Errors> result3 = manager.commitObject(0, 1024, expectedCommittedTs, ObjectAttributes.DEFAULT.attributes());
         assertEquals(Errors.REDUNDANT_OPERATION, result3.response());
         assertEquals(0, result3.records().size());
 
@@ -271,7 +272,7 @@ public class S3ObjectControlManagerTest {
         long objectId = prepareOneObject(60 * 1000);
         {
             long expectedCommittedTs = 1313L;
-            ControllerResult<Errors> result = manager.commitObject(objectId, 1024, expectedCommittedTs);
+            ControllerResult<Errors> result = manager.commitObject(objectId, 1024, expectedCommittedTs, ObjectAttributes.DEFAULT.attributes());
             assertEquals(Errors.NONE, result.response());
             assertEquals(1, result.records().size());
             S3ObjectRecord record = (S3ObjectRecord) result.records().get(0).message();
