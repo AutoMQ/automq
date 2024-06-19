@@ -385,7 +385,7 @@ public class S3Storage implements Storage {
     @Override
     @WithSpan
     public CompletableFuture<Void> append(AppendContext context, StreamRecordBatch streamRecord) {
-        TimerUtil timerUtil = new TimerUtil();
+        final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // encoded before append to free heap ByteBuf.
         streamRecord.encoded();
@@ -394,7 +394,7 @@ public class S3Storage implements Storage {
         append0(context, writeRequest, false);
         cf.whenComplete((nil, ex) -> {
             streamRecord.release();
-            StorageOperationStats.getInstance().appendStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
         });
         return cf;
     }
@@ -494,10 +494,10 @@ public class S3Storage implements Storage {
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
-        TimerUtil timerUtil = new TimerUtil();
+        final long startTime = System.nanoTime();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         FutureUtil.propagate(read0(context, streamId, startOffset, endOffset, maxBytes), cf);
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().readStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().readStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -580,11 +580,11 @@ public class S3Storage implements Storage {
      */
     @Override
     public CompletableFuture<Void> forceUpload(long streamId) {
-        TimerUtil timer = new TimerUtil();
+        final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // Wait for a while to group force upload tasks.
         forceUploadTicker.tick().whenComplete((nil, ex) -> {
-            StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.stream()
@@ -594,7 +594,7 @@ public class S3Storage implements Storage {
                 callbackSequencer.tryFree(streamId);
             }
         });
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -607,7 +607,7 @@ public class S3Storage implements Storage {
     }
 
     private void handleAppendCallback0(WalWriteRequest request) {
-        TimerUtil timer = new TimerUtil();
+        final long startTime = System.nanoTime();
         List<WalWriteRequest> waitingAckRequests;
         Lock lock = getStreamCallbackLock(request.record.getStreamId());
         lock.lock();
@@ -628,7 +628,7 @@ public class S3Storage implements Storage {
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
             waitingAckRequest.cf.complete(null);
         }
-        StorageOperationStats.getInstance().appendCallbackStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
+        StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
     }
 
     private Lock getStreamCallbackLock(long streamId) {
