@@ -192,7 +192,7 @@ public class StreamObjectCompactor {
             int start = i;
             int end = Math.min(i + EXPIRED_OBJECTS_CLEAN_UP_STEP, expiredObjectCount);
             List<Long> subCompactedObjectIds = new ArrayList<>(compactedObjectIds.subList(start, end));
-            List<CompactOperations> operations = subCompactedObjectIds.stream().map(id -> CompactOperations.DELETE).collect(Collectors.toList());
+            List<CompactOperations> operations = subCompactedObjectIds.stream().map(id -> CompactOperations.DEEP_DELETE).collect(Collectors.toList());
             request = new CompactStreamObjectRequest(ObjectUtils.NOOP_OBJECT_ID, 0,
                 stream.streamId(), stream.streamEpoch(), NOOP_OFFSET, NOOP_OFFSET, subCompactedObjectIds, operations, ObjectAttributes.DEFAULT.attributes());
             objectManager.compactStreamObject(request).get();
@@ -373,6 +373,7 @@ public class StreamObjectCompactor {
             List<DataBlockIndex> dataBlockIndexes = info.indexBlock().indexes();
             for (ObjectIndex linkedObjectIndex : linkedObjectIndexes) {
                 boolean hasLiveBlocks = false;
+                S3ObjectMetadata linkedObjectMetadata = new S3ObjectMetadata(linkedObjectIndex.objectId(), ObjectAttributes.builder().bucket(linkedObjectIndex.bucketId()).build().attributes());
                 for (int j = linkedObjectIndex.blockStartIndex(); j < linkedObjectIndex.blockEndIndex(); j++) {
                     DataBlockIndex dataBlockIndex = dataBlockIndexes.get(j);
                     if (dataBlockIndex.endOffset() <= startOffset) {
@@ -382,14 +383,14 @@ public class StreamObjectCompactor {
                     break;
                 }
                 if (!hasLiveBlocks) {
-                    // The linked object is fully expired, so we could delete the object from object storage.
-                    compactedObjectIds.add(linkedObjectIndex.objectId());
-                    operations.add(CompactOperations.DELETE);
+                    // The linked object is fully expired, and there won't be any access to it.
+                    // So we could directly delete the object from object storage.
+                    objectStorage.delete(List.of(linkedObjectMetadata)).get();
                 } else {
                     // Keep all blocks in the linked object even part of them are expired.
                     // So we could get more precise composite object retained size.
                     objectWriter.addComponent(
-                        new S3ObjectMetadata(linkedObjectIndex.objectId(), ObjectAttributes.builder().bucket(linkedObjectIndex.bucketId()).build().attributes()),
+                        linkedObjectMetadata,
                         dataBlockIndexes.subList(linkedObjectIndex.blockStartIndex(), linkedObjectIndex.blockEndIndex())
                     );
                     // The linked object's metadata is already deleted from KRaft after the first time become a part of composite object.
@@ -402,6 +403,7 @@ public class StreamObjectCompactor {
     }
 
     static List<List<S3ObjectMetadata>> group0(List<S3ObjectMetadata> objects, long maxStreamObjectSize) {
+        // TODO: switch to include/exclude composite object
         List<List<S3ObjectMetadata>> objectGroups = new LinkedList<>();
         long groupSize = 0;
         long groupNextOffset = -1L;

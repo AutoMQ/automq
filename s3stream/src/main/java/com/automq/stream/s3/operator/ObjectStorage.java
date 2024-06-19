@@ -14,6 +14,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface ObjectStorage {
@@ -29,6 +30,10 @@ public interface ObjectStorage {
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, S3ObjectMetadata objectMetadata, long start, long end);
 
     CompletableFuture<ByteBuf> rangeRead(S3ObjectMetadata objectMetadata, long start, long end);
+
+    default CompletableFuture<List<String>> delete(List<S3ObjectMetadata> objectMetadataList) {
+        throw new UnsupportedOperationException();
+    }
 
 
     class WriteOptions {

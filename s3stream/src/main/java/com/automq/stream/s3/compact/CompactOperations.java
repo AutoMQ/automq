@@ -12,8 +12,14 @@
 package com.automq.stream.s3.compact;
 
 public enum CompactOperations {
+    // - normal object: delete the object
+    // - composite object: delete the composite object
     DELETE((byte) 0),
-    KEEP_DATA((byte) 1);
+    // only delete the metadata in KRaft
+    KEEP_DATA((byte) 1),
+    // - normal object: delete the object
+    // - composite object: delete the composite object and all its linked objects
+    DEEP_DELETE((byte) 2);
 
     private final byte value;
 
@@ -31,6 +37,8 @@ public enum CompactOperations {
                 return DELETE;
             case 1:
                 return KEEP_DATA;
+            case 2:
+                return DEEP_DELETE;
             default:
                 throw new IllegalArgumentException("Unknown value: " + value);
         }

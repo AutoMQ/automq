@@ -18,21 +18,36 @@
 package org.apache.kafka.metadata.stream;
 
 public enum S3ObjectState {
-    UNINITIALIZED,
-    PREPARED,
-    COMMITTED,
-    MARK_DESTROYED,
-    DESTROYED;
+    UNINITIALIZED((byte) 0),
+    PREPARED((byte) 1),
+    COMMITTED((byte) 2),
+    MARK_DESTROYED((byte) 3),
+    DESTROYED((byte) 4);
+
+    private final byte value;
+
+    S3ObjectState(byte value) {
+        this.value = value;
+    }
 
     public byte toByte() {
-        return (byte) ordinal();
+        return value;
     }
 
     public static S3ObjectState fromByte(Byte b) {
-        int ordinal = b.intValue();
-        if (ordinal < 0 || ordinal >= values().length) {
-            throw new IllegalArgumentException("Invalid ObjectState ordinal " + ordinal);
+        switch (b) {
+            case 0:
+                return UNINITIALIZED;
+            case 1:
+                return PREPARED;
+            case 2:
+                return COMMITTED;
+            case 3:
+                return MARK_DESTROYED;
+            case 4:
+                return DESTROYED;
+            default:
+                throw new IllegalArgumentException("Unknown value: " + b);
         }
-        return values()[ordinal];
     }
 }

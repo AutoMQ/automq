@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
@@ -538,7 +539,8 @@ public class StreamControlManager {
             .setStreamId(streamId), (short) 0));
         // generate stream objects destroy records
         List<Long> streamObjectIds = new ArrayList<>(streamMetadata.streamObjects().keySet());
-        ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(streamObjectIds);
+        // deep delete the composite object: delete the composite object and it's linked objects
+        ControllerResult<Boolean> markDestroyResult = this.s3ObjectControlManager.markDestroyObjects(streamObjectIds, Collections.nCopies(streamObjectIds.size(), CompactOperations.DEEP_DELETE));
         if (!markDestroyResult.response()) {
             log.error("[DELETE_STREAM],[FAIL]: failed to mark destroy stream objects. streamId={}, objects={}", streamId, streamObjectIds);
             resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
@@ -761,7 +763,13 @@ public class StreamControlManager {
         long dataTs = committedTs;
         // mark destroy compacted object
         if (sourceObjectIds != null && !sourceObjectIds.isEmpty()) {
-            ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(sourceObjectIds);
+            List<CompactOperations> operations;
+            if (data.operations().isEmpty()) {
+                operations = Collections.nCopies(sourceObjectIds.size(), CompactOperations.DELETE);
+            } else {
+                operations = data.operations().stream().map(v -> CompactOperations.fromValue(v)).collect(Collectors.toList());
+            }
+            ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(sourceObjectIds, operations);
             if (!destroyResult.response()) {
                 log.error("[CommitStreamObject]: failed to mark destroy compacted objects. compactedObjects={}, req={}",
                     sourceObjectIds, data);

@@ -904,7 +904,7 @@ public class StreamControlManagerTest {
     public void testCommitStreamObject() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
-        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.markDestroyObjects(anyList(), anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
 
         // 1. create and open stream_0 and stream_1
@@ -987,7 +987,7 @@ public class StreamControlManagerTest {
         assertEquals(400L, response.streamMetadataList().get(1).endOffset());
 
         // 6. compact a stream object from invalid source object
-        Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
+        Mockito.when(objectControlManager.markDestroyObjects(anyList(), anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), false));
         streamObjectRequest = new CommitStreamObjectRequestData()
             .setObjectId(5L)
             .setStreamId(STREAM1)
@@ -1012,6 +1012,7 @@ public class StreamControlManagerTest {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt()))
             .thenReturn(ControllerResult.of(Collections.emptyList(), Errors.NONE));
         Mockito.when(objectControlManager.markDestroyObjects(anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        Mockito.when(objectControlManager.markDestroyObjects(anyList(), anyList())).thenReturn(ControllerResult.of(Collections.emptyList(), true));
         registerAlwaysSuccessEpoch(BROKER0);
         registerAlwaysSuccessEpoch(BROKER1);
 
