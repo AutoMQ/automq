@@ -17,11 +17,23 @@
 
 package org.apache.kafka.controller;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Consumer;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.common.config.ConfigResource.Type;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.config.ConfigResource.Type;
 import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.protocol.Errors;
@@ -37,23 +49,9 @@ import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.function.Consumer;
-
 import static org.apache.kafka.clients.admin.AlterConfigOp.OpType.APPEND;
 import static org.apache.kafka.common.protocol.Errors.INVALID_CONFIG;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
-
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
@@ -72,7 +70,8 @@ public class ConfigurationControlManager {
         private LogContext logContext = null;
         private SnapshotRegistry snapshotRegistry = null;
         private KafkaConfigSchema configSchema = KafkaConfigSchema.EMPTY;
-        private Consumer<ConfigResource> existenceChecker = __ -> { };
+        private Consumer<ConfigResource> existenceChecker = __ -> {
+        };
         private Optional<AlterConfigPolicy> alterConfigPolicy = Optional.empty();
         private ConfigurationValidator validator = ConfigurationValidator.NO_OP;
         private Map<String, Object> staticConfig = Collections.emptyMap();
@@ -119,8 +118,10 @@ public class ConfigurationControlManager {
         }
 
         ConfigurationControlManager build() {
-            if (logContext == null) logContext = new LogContext();
-            if (snapshotRegistry == null) snapshotRegistry = new SnapshotRegistry(logContext);
+            if (logContext == null)
+                logContext = new LogContext();
+            if (snapshotRegistry == null)
+                snapshotRegistry = new SnapshotRegistry(logContext);
             return new ConfigurationControlManager(
                 logContext,
                 snapshotRegistry,
@@ -134,13 +135,13 @@ public class ConfigurationControlManager {
     }
 
     private ConfigurationControlManager(LogContext logContext,
-            SnapshotRegistry snapshotRegistry,
-            KafkaConfigSchema configSchema,
-            Consumer<ConfigResource> existenceChecker,
-            Optional<AlterConfigPolicy> alterConfigPolicy,
-            ConfigurationValidator validator,
-            Map<String, Object> staticConfig,
-            int nodeId) {
+        SnapshotRegistry snapshotRegistry,
+        KafkaConfigSchema configSchema,
+        Consumer<ConfigResource> existenceChecker,
+        Optional<AlterConfigPolicy> alterConfigPolicy,
+        ConfigurationValidator validator,
+        Map<String, Object> staticConfig,
+        int nodeId) {
         this.log = logContext.logger(ConfigurationControlManager.class);
         this.snapshotRegistry = snapshotRegistry;
         this.configSchema = configSchema;
@@ -160,24 +161,24 @@ public class ConfigurationControlManager {
      * Determine the result of applying a batch of incremental configuration changes.  Note
      * that this method does not change the contents of memory.  It just generates a
      * result, that you can replay later if you wish using replay().
-     *
+     * <p>
      * Note that there can only be one result per ConfigResource.  So if you try to modify
      * several keys and one modification fails, the whole ConfigKey fails and nothing gets
      * changed.
      *
-     * @param configChanges     Maps each resource to a map from config keys to
-     *                          operation data.
-     * @return                  The result.
+     * @param configChanges Maps each resource to a map from config keys to
+     *                      operation data.
+     * @return The result.
      */
     ControllerResult<Map<ConfigResource, ApiError>> incrementalAlterConfigs(
         Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges,
         boolean newlyCreatedResource
     ) {
         List<ApiMessageAndVersion> outputRecords =
-                BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+            BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         Map<ConfigResource, ApiError> outputResults = new HashMap<>();
         for (Entry<ConfigResource, Map<String, Entry<OpType, String>>> resourceEntry :
-                configChanges.entrySet()) {
+            configChanges.entrySet()) {
             ApiError apiError = incrementalAlterConfigResource(resourceEntry.getKey(),
                 resourceEntry.getValue(),
                 newlyCreatedResource,
@@ -193,7 +194,7 @@ public class ConfigurationControlManager {
         boolean newlyCreatedResource
     ) {
         List<ApiMessageAndVersion> outputRecords =
-                BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+            BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         ApiError apiError = incrementalAlterConfigResource(configResource,
             keyToOps,
             newlyCreatedResource,
@@ -231,7 +232,7 @@ public class ConfigurationControlManager {
                     if (!configSchema.isSplittable(configResource.type(), key)) {
                         return new ApiError(
                             INVALID_CONFIG, "Can't " + opType + " to " +
-                            "key " + key + " because its type is not LIST.");
+                                            "key " + key + " because its type is not LIST.");
                     }
                     List<String> oldValueList = getParts(newValue, key, configResource);
                     if (opType == APPEND) {
@@ -266,13 +267,14 @@ public class ConfigurationControlManager {
     }
 
     private ApiError validateAlterConfig(ConfigResource configResource,
-                                         List<ApiMessageAndVersion> recordsExplicitlyAltered,
-                                         List<ApiMessageAndVersion> recordsImplicitlyDeleted,
-                                         boolean newlyCreatedResource) {
+        List<ApiMessageAndVersion> recordsExplicitlyAltered,
+        List<ApiMessageAndVersion> recordsImplicitlyDeleted,
+        boolean newlyCreatedResource) {
         Map<String, String> allConfigs = new HashMap<>();
         Map<String, String> alteredConfigsForAlterConfigPolicyCheck = new HashMap<>();
         TimelineHashMap<String, String> existingConfigs = configData.get(configResource);
-        if (existingConfigs != null) allConfigs.putAll(existingConfigs);
+        if (existingConfigs != null)
+            allConfigs.putAll(existingConfigs);
         for (ApiMessageAndVersion newRecord : recordsExplicitlyAltered) {
             ConfigRecord configRecord = (ConfigRecord) newRecord.message();
             if (configRecord.value() == null) {
@@ -314,16 +316,16 @@ public class ConfigurationControlManager {
      * that this method does not change the contents of memory.  It just generates a
      * result, that you can replay later if you wish using replay().
      *
-     * @param newConfigs        The new configurations to install for each resource.
-     *                          All existing configurations will be overwritten.
-     * @return                  The result.
+     * @param newConfigs The new configurations to install for each resource.
+     *                   All existing configurations will be overwritten.
+     * @return The result.
      */
     ControllerResult<Map<ConfigResource, ApiError>> legacyAlterConfigs(
         Map<ConfigResource, Map<String, String>> newConfigs,
         boolean newlyCreatedResource
     ) {
         List<ApiMessageAndVersion> outputRecords =
-                BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+            BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         Map<ConfigResource, ApiError> outputResults = new HashMap<>();
         for (Entry<ConfigResource, Map<String, String>> resourceEntry :
             newConfigs.entrySet()) {
@@ -337,10 +339,10 @@ public class ConfigurationControlManager {
     }
 
     private void legacyAlterConfigResource(ConfigResource configResource,
-                                           Map<String, String> newConfigs,
-                                           boolean newlyCreatedResource,
-                                           List<ApiMessageAndVersion> outputRecords,
-                                           Map<ConfigResource, ApiError> outputResults) {
+        Map<String, String> newConfigs,
+        boolean newlyCreatedResource,
+        List<ApiMessageAndVersion> outputRecords,
+        Map<ConfigResource, ApiError> outputResults) {
         List<ApiMessageAndVersion> recordsExplicitlyAltered = new ArrayList<>();
         Map<String, String> currentConfigs = configData.get(configResource);
         if (currentConfigs == null) {
@@ -399,7 +401,7 @@ public class ConfigurationControlManager {
     /**
      * Apply a configuration record to the in-memory state.
      *
-     * @param record            The ConfigRecord.
+     * @param record The ConfigRecord.
      */
     public void replay(ConfigRecord record) {
         Type type = Type.forId(record.resourceType());
@@ -419,10 +421,10 @@ public class ConfigurationControlManager {
         }
         if (configSchema.isSensitive(record)) {
             log.info("Replayed ConfigRecord for {} which set configuration {} to {}",
-                    configResource, record.name(), Password.HIDDEN);
+                configResource, record.name(), Password.HIDDEN);
         } else {
             log.info("Replayed ConfigRecord for {} which set configuration {} to {}",
-                    configResource, record.name(), record.value());
+                configResource, record.name(), record.value());
         }
     }
 
@@ -440,8 +442,8 @@ public class ConfigurationControlManager {
      * Get the config value for the give topic and give config key.
      * If the config value is not found, return null.
      *
-     * @param topicName            The topic name for the config.
-     * @param configKey            The key for the config.
+     * @param topicName The topic name for the config.
+     * @param configKey The key for the config.
      */
     String getTopicConfig(String topicName, String configKey) throws NoSuchElementException {
         Map<String, String> map = configData.get(new ConfigResource(Type.TOPIC, topicName));
@@ -456,7 +458,7 @@ public class ConfigurationControlManager {
     }
 
     public Map<ConfigResource, ResultOrError<Map<String, String>>> describeConfigs(
-            long lastCommittedOffset, Map<ConfigResource, Collection<String>> resources) {
+        long lastCommittedOffset, Map<ConfigResource, Collection<String>> resources) {
         Map<ConfigResource, ResultOrError<Map<String, String>>> results = new HashMap<>();
         for (Entry<ConfigResource, Collection<String>> resourceEntry : resources.entrySet()) {
             ConfigResource resource = resourceEntry.getKey();
@@ -516,12 +518,11 @@ public class ConfigurationControlManager {
     }
 
     public int topicCountQuota() {
-        String topicCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG);
-        if (topicCountQuota == null) {
-            topicCountQuota = staticConfig.get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG).toString();
-        }
-
         try {
+            String topicCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG);
+            if (topicCountQuota == null) {
+                topicCountQuota = staticConfig.get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG).toString();
+            }
             return Integer.parseInt(topicCountQuota);
         } catch (Exception ignore) {
             return Integer.MAX_VALUE;
@@ -529,12 +530,11 @@ public class ConfigurationControlManager {
     }
 
     public int partitionCountQuota() {
-        String partitionCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG);
-        if (partitionCountQuota == null) {
-            partitionCountQuota = staticConfig.get(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG).toString();
-        }
-
         try {
+            String partitionCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG);
+            if (partitionCountQuota == null) {
+                partitionCountQuota = staticConfig.get(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG).toString();
+            }
             return Integer.parseInt(partitionCountQuota);
         } catch (Exception ignore) {
             return Integer.MAX_VALUE;
