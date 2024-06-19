@@ -26,6 +26,7 @@ import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.network.Session;
 import org.apache.kafka.server.config.BrokerQuotaManagerConfig;
+import org.apache.kafka.server.config.QuotaConfigs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -64,8 +65,8 @@ public class BrokerQuotaManagerTest {
     public void testQuota() {
         // Test produce quota
         Properties properties = new Properties();
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_ENABLED_PROP, true);
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_PRODUCE_BYTES_PROP, 100);
+        properties.put(QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, true);
+        properties.put(QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, 100);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
 
         long time = this.time.milliseconds();
@@ -78,14 +79,14 @@ public class BrokerQuotaManagerTest {
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 100, time + second2millis);
         assertEquals(1000, result);
 
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_PRODUCE_BYTES_PROP, 1000);
+        properties.put(QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, 1000);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 500, time + second2millis);
         assertEquals(0, result);
 
         // Test fetch quota
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_PRODUCE_BYTES_PROP, 0);
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_FETCH_BYTES_PROP, 100);
+        properties.put(QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, 0);
+        properties.put(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, 100);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.fetch(), request, 100, time);
         assertEquals(0, result);
@@ -94,14 +95,14 @@ public class BrokerQuotaManagerTest {
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.fetch(), request, 100, time + second2millis);
         assertEquals(1000, result);
 
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_FETCH_BYTES_PROP, 1000);
+        properties.put(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, 1000);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.fetch(), request, 500, time + second2millis);
         assertEquals(0, result);
 
         // Test request quota
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_FETCH_BYTES_PROP, 0);
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_REQUEST_PERCENTAGE_PROP, 30);
+        properties.put(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, 0);
+        properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_PERCENTAGE_CONFIG, 30);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
         long second2Nanos = TimeUnit.SECONDS.toNanos(1);
         when(request.requestThreadTimeNanos()).thenReturn(second2Nanos / 4);
@@ -112,7 +113,7 @@ public class BrokerQuotaManagerTest {
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 0, time + second2millis);
         assertEquals(500, result);
 
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_REQUEST_PERCENTAGE_PROP, 50);
+        properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_PERCENTAGE_CONFIG, 50);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 0, time + second2millis);
         assertEquals(0, result);
@@ -144,9 +145,9 @@ public class BrokerQuotaManagerTest {
     public void testWhiteList() {
         // Test client id white list
         Properties properties = new Properties();
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_ENABLED_PROP, true);
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_PRODUCE_BYTES_PROP, 100);
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_PROP, "test");
+        properties.put(QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, true);
+        properties.put(QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, 100);
+        properties.put(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG, "test");
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
 
         int result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 1000, time.milliseconds());
@@ -156,25 +157,25 @@ public class BrokerQuotaManagerTest {
         assertEquals(0, result);
 
         // Test remove white list
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_PROP, "another_client_id");
+        properties.put(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG, "another_client_id");
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
 
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 1000, time.milliseconds());
         assertEquals(1000, result);
 
         // Test user white list
-        properties.remove(BrokerQuotaManagerConfig.BROKER_QUOTA_WHITE_LIST_USER_PROP);
-        properties.remove(BrokerQuotaManagerConfig.BROKER_QUOTA_WHITE_LIST_LISTENER_PROP);
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_WHITE_LIST_USER_PROP, "user");
+        properties.remove(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG);
+        properties.remove(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG);
+        properties.put(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_CONFIG, "user");
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
 
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 1000, time.milliseconds());
         assertEquals(0, result);
 
         // Test listener name white list
-        properties.remove(BrokerQuotaManagerConfig.BROKER_QUOTA_WHITE_LIST_USER_PROP);
-        properties.remove(BrokerQuotaManagerConfig.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_PROP);
-        properties.put(BrokerQuotaManagerConfig.BROKER_QUOTA_WHITE_LIST_LISTENER_PROP, "BROKER");
+        properties.remove(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_CONFIG);
+        properties.remove(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG);
+        properties.put(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG, "BROKER");
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
 
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 1000, time.milliseconds());

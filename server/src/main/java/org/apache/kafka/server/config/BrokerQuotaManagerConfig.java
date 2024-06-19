@@ -21,14 +21,6 @@ import static org.apache.kafka.common.utils.ConfigUtils.getBoolean;
 import static org.apache.kafka.common.utils.ConfigUtils.getDouble;
 
 public class BrokerQuotaManagerConfig extends ClientQuotaManagerConfig {
-    public static final String BROKER_QUOTA_ENABLED_PROP = "broker.quota.enabled";
-    public static final String BROKER_QUOTA_PRODUCE_BYTES_PROP = "broker.quota.produce.bytes";
-    public static final String BROKER_QUOTA_FETCH_BYTES_PROP = "broker.quota.fetch.bytes";
-    public static final String BROKER_QUOTA_REQUEST_PERCENTAGE_PROP = "broker.quota.request.percentage";
-    public static final String BROKER_QUOTA_WHITE_LIST_USER_PROP = "broker.quota.white.list.user";
-    public static final String BROKER_QUOTA_WHITE_LIST_CLIENT_ID_PROP = "broker.quota.white.list.client.id";
-    public static final String BROKER_QUOTA_WHITE_LIST_LISTENER_PROP = "broker.quota.white.list.listener";
-
     private final int nodeId;
 
     private boolean quotaEnabled = false;
@@ -47,22 +39,22 @@ public class BrokerQuotaManagerConfig extends ClientQuotaManagerConfig {
 
     public void update(Properties props) {
         Map<String, Object> map = props.entrySet().stream().collect(Collectors.toMap(e -> e.getKey().toString(), Map.Entry::getValue));
-        quotaEnabled = getBoolean(map, BROKER_QUOTA_ENABLED_PROP, quotaEnabled);
-        produceQuota = getDouble(map, BROKER_QUOTA_PRODUCE_BYTES_PROP, produceQuota);
-        fetchQuota = getDouble(map, BROKER_QUOTA_FETCH_BYTES_PROP, fetchQuota);
-        requestQuota = getDouble(map, BROKER_QUOTA_REQUEST_PERCENTAGE_PROP, requestQuota);
+        quotaEnabled = getBoolean(map, QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, quotaEnabled);
+        produceQuota = getDouble(map, QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, produceQuota);
+        fetchQuota = getDouble(map, QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, fetchQuota);
+        requestQuota = getDouble(map, QuotaConfigs.BROKER_QUOTA_REQUEST_PERCENTAGE_CONFIG, requestQuota);
 
-        String userWhiteListProp = props.getProperty(BROKER_QUOTA_WHITE_LIST_USER_PROP);
+        String userWhiteListProp = props.getProperty(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_CONFIG);
         if (null != userWhiteListProp && !userWhiteListProp.isBlank()) {
             userWhiteList = Arrays.asList(userWhiteListProp.split(","));
         }
 
-        String clientIdWhiteListProp = props.getProperty(BROKER_QUOTA_WHITE_LIST_CLIENT_ID_PROP);
+        String clientIdWhiteListProp = props.getProperty(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG);
         if (null != clientIdWhiteListProp && !clientIdWhiteListProp.isBlank()) {
             clientIdWhiteList = Arrays.asList(clientIdWhiteListProp.split(","));
         }
 
-        String listenerWhiteListProp = props.getProperty(BROKER_QUOTA_WHITE_LIST_LISTENER_PROP);
+        String listenerWhiteListProp = props.getProperty(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG);
         if (null != listenerWhiteListProp && !listenerWhiteListProp.isBlank()) {
             listenerWhiteList = Arrays.asList(listenerWhiteListProp.split(","));
         }

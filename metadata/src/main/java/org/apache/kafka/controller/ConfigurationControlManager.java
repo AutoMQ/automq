@@ -29,6 +29,7 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.metadata.KafkaConfigSchema;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.config.QuotaConfigs;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.AlterConfigPolicy.RequestMetadata;
@@ -56,8 +57,6 @@ import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
-    public static final String TOPIC_COUNT_QUOTA_NAME = "cluster.quota.topic.count";
-    public static final String PARTITION_COUNT_QUOTA_NAME = "cluster.quota.partition.count";
 
     private final Logger log;
     private final SnapshotRegistry snapshotRegistry;
@@ -517,9 +516,9 @@ public class ConfigurationControlManager {
     }
 
     public int topicCountQuota() {
-        String topicCountQuota = currentControllerConfig().get(TOPIC_COUNT_QUOTA_NAME);
+        String topicCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG);
         if (topicCountQuota == null) {
-            topicCountQuota = staticConfig.get(TOPIC_COUNT_QUOTA_NAME).toString();
+            topicCountQuota = staticConfig.get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG).toString();
         }
 
         try {
@@ -530,9 +529,9 @@ public class ConfigurationControlManager {
     }
 
     public int partitionCountQuota() {
-        String partitionCountQuota = currentControllerConfig().get(PARTITION_COUNT_QUOTA_NAME);
+        String partitionCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG);
         if (partitionCountQuota == null) {
-            partitionCountQuota = staticConfig.get(PARTITION_COUNT_QUOTA_NAME).toString();
+            partitionCountQuota = staticConfig.get(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG).toString();
         }
 
         try {
