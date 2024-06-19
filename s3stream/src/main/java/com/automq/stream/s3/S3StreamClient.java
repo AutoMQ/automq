@@ -18,6 +18,7 @@ import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.compact.StreamObjectCompactor;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metadata.StreamMetadata;
@@ -45,9 +46,9 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.CLEANUP;
-import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.MAJOR;
-import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.MINOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR;
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
@@ -220,7 +221,7 @@ public class S3StreamClient implements StreamClient {
         }
     }
 
-    class StreamWrapper implements Stream {
+    public class StreamWrapper implements Stream {
         private final S3Stream stream;
         private final Semaphore trimCompactionSemaphore = new Semaphore(1);
         private volatile long lastCompactionTimestamp = 0;

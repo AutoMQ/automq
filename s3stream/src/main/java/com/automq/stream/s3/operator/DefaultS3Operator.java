@@ -703,7 +703,7 @@ public class DefaultS3Operator implements S3Operator {
     }
 
     private String range(long start, long end) {
-        if (end == -1L) {
+        if (end == -2L) {
             return "bytes=" + start + "-";
         }
         return "bytes=" + start + "-" + end;

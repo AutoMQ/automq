@@ -33,6 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
@@ -48,6 +49,7 @@ import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -98,6 +100,7 @@ public class S3ObjectControlManager {
 
     private long lastCleanStartTimestamp = 0;
     private CompletableFuture<Void> lastCleanCf = CompletableFuture.completedFuture(null);
+    private final Supplier<AutoMQVersion> version;
 
     public S3ObjectControlManager(
         QuorumController quorumController,
@@ -105,7 +108,8 @@ public class S3ObjectControlManager {
         LogContext logContext,
         String clusterId,
         Config config,
-        S3Operator operator) {
+        S3Operator operator,
+        Supplier<AutoMQVersion> version) {
         this.quorumController = quorumController;
         this.log = logContext.logger(S3ObjectControlManager.class);
         this.clusterId = clusterId;
@@ -116,6 +120,7 @@ public class S3ObjectControlManager {
         this.s3ObjectSize = new TimelineLong(snapshotRegistry);
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
         this.operator = operator;
+        this.version = version;
         this.lifecycleListeners = new ArrayList<>();
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-object-lifecycle-check-timer", true));
@@ -152,6 +157,8 @@ public class S3ObjectControlManager {
     }
 
     public ControllerResult<PrepareS3ObjectResponseData> prepareObject(PrepareS3ObjectRequestData request) {
+        AutoMQVersion version = this.version.get();
+        short objectRecordVersion = version.objectRecordVersion();
         // TODO: pre assigned a batch of objectIds in controller
         List<ApiMessageAndVersion> records = new ArrayList<>();
         PrepareS3ObjectResponseData response = new PrepareS3ObjectResponseData();
@@ -172,7 +179,7 @@ public class S3ObjectControlManager {
                 .setObjectState(S3ObjectState.PREPARED.toByte())
                 .setPreparedTimeInMs(preparedTs)
                 .setExpiredTimeInMs(expiredTs);
-            records.add(new ApiMessageAndVersion(record, (short) 0));
+            records.add(new ApiMessageAndVersion(record, objectRecordVersion));
         }
         response.setFirstS3ObjectId(firstAssignedObjectId);
         return ControllerResult.atomicOf(records, response);
@@ -196,19 +203,24 @@ public class S3ObjectControlManager {
             log.error("object {} is not prepared but try to commit", objectId);
             return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
         }
+        AutoMQVersion version = this.version.get();
         S3ObjectRecord record = new S3ObjectRecord()
             .setObjectId(objectId)
             .setObjectSize(objectSize)
             .setObjectState(S3ObjectState.COMMITTED.toByte())
             .setPreparedTimeInMs(object.getPreparedTimeInMs())
             .setExpiredTimeInMs(object.getExpiredTimeInMs())
-            .setCommittedTimeInMs(committedTs)
-            .setAttributes(attributes);
+            .setCommittedTimeInMs(committedTs);
+        if (version.isObjectAttributesSupported()) {
+            record.setAttributes(attributes);
+        }
         return ControllerResult.of(List.of(
-            new ApiMessageAndVersion(record, (short) 0)), Errors.NONE);
+            new ApiMessageAndVersion(record, version.objectRecordVersion())), Errors.NONE);
     }
 
     public ControllerResult<Boolean> markDestroyObjects(List<Long> objects) {
+        AutoMQVersion version = this.version.get();
+        short objectRecordVersion = version.objectRecordVersion();
         List<ApiMessageAndVersion> records = new ArrayList<>();
         for (Long objectId : objects) {
             S3Object object = this.objectsMetadata.get(objectId);
@@ -223,9 +235,11 @@ public class S3ObjectControlManager {
                 .setPreparedTimeInMs(object.getPreparedTimeInMs())
                 .setExpiredTimeInMs(object.getExpiredTimeInMs())
                 .setCommittedTimeInMs(object.getCommittedTimeInMs())
-                .setAttributes(object.getAttributes())
                 .setMarkDestroyedTimeInMs(System.currentTimeMillis());
-            records.add(new ApiMessageAndVersion(record, (short) 0));
+            if (version.isCompositeObjectSupported()) {
+                record.setAttributes(object.getAttributes());
+            }
+            records.add(new ApiMessageAndVersion(record, objectRecordVersion));
         }
         return ControllerResult.atomicOf(records, true);
     }

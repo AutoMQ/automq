@@ -14,11 +14,14 @@ package com.automq.stream.s3;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
 import io.netty.buffer.ByteBuf;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -39,6 +42,17 @@ public interface ObjectReader extends AutoCloseable {
 
     static ObjectReader reader(S3ObjectMetadata metadata, S3Operator s3Operator) {
         return new DefaultObjectReader(metadata, s3Operator);
+    }
+
+    static ObjectReader reader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
+        switch (ObjectAttributes.from(metadata.attributes()).type()) {
+            case Normal:
+                throw new UnsupportedOperationException();
+            case Composite:
+                return new CompositeObjectReader(metadata, (m, start, end) -> objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, m, start, end));
+            default:
+                throw new UnsupportedOperationException();
+        }
     }
 
     S3ObjectMetadata metadata();
@@ -276,7 +290,6 @@ public interface ObjectReader extends AutoCloseable {
         private final int size;
         private final int count;
 
-
         public IndexBlock(ByteBuf buf) {
             this(null, buf);
         }
@@ -304,7 +317,7 @@ public interface ObjectReader extends AutoCloseable {
         }
 
         public List<DataBlockIndex> indexes() {
-            List<DataBlockIndex> indexes = new LinkedList<>();
+            List<DataBlockIndex> indexes = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
                 indexes.add(get(i));
             }

@@ -37,6 +37,7 @@ import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -80,7 +81,7 @@ public class S3ObjectControlManagerTest {
         Mockito.when(controller.isActive()).thenReturn(true);
         LogContext logContext = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
-        manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, operator);
+        manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, operator, () -> AutoMQVersion.LATEST);
     }
 
     @Test

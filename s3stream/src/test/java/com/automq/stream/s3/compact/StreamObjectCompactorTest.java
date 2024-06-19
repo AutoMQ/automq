@@ -9,8 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3;
+package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.ObjectWriter;
+import com.automq.stream.s3.S3Stream;
+import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
@@ -33,8 +37,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
-import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.CLEANUP;
-import static com.automq.stream.s3.StreamObjectCompactor.CompactionType.MAJOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
@@ -241,7 +245,7 @@ class StreamObjectCompactorTest {
     public void testCompact_groupBlocks() throws ExecutionException, InterruptedException {
         List<S3ObjectMetadata> objects = prepareData();
 
-        CompactStreamObjectRequest req = new StreamObjectCompactor.StreamObjectGroupCompactor(streamId, 0L, 14L,
+        CompactStreamObjectRequest req = new StreamObjectCompactor.CompactByPhysicalMerge(streamId, 0L, 14L,
             objects.subList(0, 2), 5, 5000, s3Operator).compact().get();
         // verify compact request
         assertEquals(5, req.getObjectId());
@@ -337,6 +341,11 @@ class StreamObjectCompactorTest {
         clean = ac.getAllValues().get(1);
         assertEquals(ObjectUtils.NOOP_OBJECT_ID, clean.getObjectId());
         assertEquals(LongStream.range(StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP, 1450).boxed().collect(Collectors.toList()), clean.getSourceObjectIds());
+    }
+
+    @Test
+    public void testCompactByCompositeObject() {
+        // TODO: add test when MemoryObjectStorage is ready
     }
 
     StreamRecordBatch newRecord(long offset, int count, int payloadSize) {
