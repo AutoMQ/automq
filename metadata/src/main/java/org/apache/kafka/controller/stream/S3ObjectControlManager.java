@@ -18,7 +18,9 @@
 package org.apache.kafka.controller.stream;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.S3Operator;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -219,27 +221,60 @@ public class S3ObjectControlManager {
     }
 
     public ControllerResult<Boolean> markDestroyObjects(List<Long> objects) {
+        return markDestroyObjects(objects, Collections.nCopies(objects.size(), CompactOperations.DELETE));
+    }
+
+    public ControllerResult<Boolean> markDestroyObjects(List<Long> objects, List<CompactOperations> operations) {
         AutoMQVersion version = this.version.get();
         short objectRecordVersion = version.objectRecordVersion();
         List<ApiMessageAndVersion> records = new ArrayList<>();
-        for (Long objectId : objects) {
+        for (int i = 0; i < objects.size(); i++) {
+            Long objectId = objects.get(i);
+            CompactOperations operation = operations.get(i);
             S3Object object = this.objectsMetadata.get(objectId);
             if (object == null || object.getS3ObjectState() == S3ObjectState.MARK_DESTROYED) {
                 log.error("object {} not exist when mark destroy object", objectId);
                 return ControllerResult.of(Collections.emptyList(), false);
             }
-            S3ObjectRecord record = new S3ObjectRecord()
-                .setObjectId(objectId)
-                .setObjectSize(object.getObjectSize())
-                .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
-                .setPreparedTimeInMs(object.getPreparedTimeInMs())
-                .setExpiredTimeInMs(object.getExpiredTimeInMs())
-                .setCommittedTimeInMs(object.getCommittedTimeInMs())
-                .setMarkDestroyedTimeInMs(System.currentTimeMillis());
-            if (version.isCompositeObjectSupported()) {
-                record.setAttributes(object.getAttributes());
+            switch (operation) {
+                case DELETE: {
+                    S3ObjectRecord record = new S3ObjectRecord()
+                        .setObjectId(objectId)
+                        .setObjectSize(object.getObjectSize())
+                        .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
+                        .setPreparedTimeInMs(object.getPreparedTimeInMs())
+                        .setExpiredTimeInMs(object.getExpiredTimeInMs())
+                        .setCommittedTimeInMs(object.getCommittedTimeInMs())
+                        .setMarkDestroyedTimeInMs(System.currentTimeMillis());
+                    if (version.isCompositeObjectSupported()) {
+                        record.setAttributes(object.getAttributes());
+                    }
+                    records.add(new ApiMessageAndVersion(record, objectRecordVersion));
+                    break;
+                }
+                case KEEP_DATA: {
+                    records.add(new ApiMessageAndVersion(new RemoveS3ObjectRecord().setObjectId(objectId), (short) 0));
+                    break;
+                }
+                case DEEP_DELETE: {
+                    S3ObjectRecord record = new S3ObjectRecord()
+                        .setObjectId(objectId)
+                        .setObjectSize(object.getObjectSize())
+                        .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
+                        .setPreparedTimeInMs(object.getPreparedTimeInMs())
+                        .setExpiredTimeInMs(object.getExpiredTimeInMs())
+                        .setCommittedTimeInMs(object.getCommittedTimeInMs())
+                        .setMarkDestroyedTimeInMs(System.currentTimeMillis());
+                    if (version.isCompositeObjectSupported()) {
+                        int attributes = ObjectAttributes.builder(object.getAttributes()).deepDelete().build().attributes();
+                        record.setAttributes(attributes);
+                    }
+                    records.add(new ApiMessageAndVersion(record, objectRecordVersion));
+                    break;
+                }
+                default:
+                    throw new IllegalArgumentException("Unknown operation: " + operation);
             }
-            records.add(new ApiMessageAndVersion(record, objectRecordVersion));
         }
         return ControllerResult.atomicOf(records, true);
     }
@@ -313,7 +348,7 @@ public class S3ObjectControlManager {
             log.info("objects TTL is reached, objects={}", ttlReachedObjects);
         }
         // check the mark destroyed objects
-        List<String> requiredDeleteKeys = new LinkedList<>();
+        List<S3Object> requiredDeleteKeys = new LinkedList<>();
         while (true) {
             Long objectId = this.markDestroyedObjects.peek();
             if (objectId == null) {
@@ -328,7 +363,7 @@ public class S3ObjectControlManager {
             if (object.getMarkDestroyedTimeInMs() + (this.config.objectRetentionTimeInSecond() * 1000L) < System.currentTimeMillis()) {
                 this.markDestroyedObjects.poll();
                 // exceed delete retention time, trigger the truly deletion
-                requiredDeleteKeys.add(object.getObjectKey());
+                requiredDeleteKeys.add(object);
             } else {
                 // the following objects' mark destroyed time is not expired, so break the loop
                 break;
@@ -382,7 +417,9 @@ public class S3ObjectControlManager {
 
         public static final int MAX_BATCH_DELETE_SIZE = 800;
 
-        CompletableFuture<Void> clean(List<String> objectKeys) {
+        CompletableFuture<Void> clean(List<S3Object> objects) {
+            // TODO: replace with object storage
+            List<String> objectKeys = objects.stream().map(S3Object::getObjectKey).collect(Collectors.toList());
             List<CompletableFuture<Void>> cfList = new LinkedList<>();
             for (int i = 0; i < objectKeys.size() / MAX_BATCH_DELETE_SIZE; i++) {
                 List<String> batch = objectKeys.subList(i * MAX_BATCH_DELETE_SIZE, (i + 1) * MAX_BATCH_DELETE_SIZE);
