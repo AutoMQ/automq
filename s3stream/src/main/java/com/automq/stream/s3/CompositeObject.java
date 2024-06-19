@@ -91,9 +91,7 @@ public class CompositeObject {
         }).thenAccept(rst -> {
         }).whenComplete((rst, ex) -> {
             reader.release();
-            if (ex == null) {
-
-            } else {
+            if (ex != null) {
                 LOGGER.error("Delete composite object {} fail", objectMetadata, ex);
             }
         });
