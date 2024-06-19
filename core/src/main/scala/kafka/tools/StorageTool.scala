@@ -24,7 +24,7 @@ import java.nio.file.{Files, Paths}
 import kafka.utils.{Exit, Logging}
 import net.sourceforge.argparse4j.ArgumentParsers
 import net.sourceforge.argparse4j.impl.Arguments.{append, store, storeTrue}
-import net.sourceforge.argparse4j.inf.Namespace
+import net.sourceforge.argparse4j.inf.{Namespace, Subparser}
 import org.apache.kafka.common.Uuid
 import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.metadata.bootstrap.{BootstrapDirectory, BootstrapMetadata}
@@ -58,7 +58,7 @@ object StorageTool extends Logging {
           val selfManagedMode = configToSelfManagedMode(config.get)
           Exit.exit(infoCommand(System.out, selfManagedMode, directories))
 
-        case "format" =>
+        case "format" | "auto-format" =>
           val directories = configToLogDirectories(config.get)
           val clusterId = namespace.getString("cluster_id")
           val metaProperties = new MetaProperties.Builder().
@@ -101,8 +101,12 @@ object StorageTool extends Logging {
             throw new TerseFailure("The kafka configuration file appears to be for " +
               "a legacy cluster. Formatting is only supported for clusters in KRaft mode.")
           }
-          Exit.exit(formatCommand(System.out, directories, metaProperties, bootstrapMetadata,
-            metadataVersion,ignoreFormatted))
+
+          val commandResult = formatCommand(System.out, directories, metaProperties, bootstrapMetadata,
+                                  metadataVersion,ignoreFormatted)
+          if (command == "format") {
+            Exit.exit(commandResult)
+          }
 
         case "random-uuid" =>
           System.out.println(Uuid.randomUuid)
@@ -180,13 +184,22 @@ object StorageTool extends Logging {
       help("Get information about the Kafka log directories on this node.")
     val formatParser = subparsers.addParser("format").
       help("Format the Kafka log directories on this node.")
+    val autoFormatParser = subparsers.addParser("auto-format").
+      help("Auto format the Kafka log directories on this node. ")
     subparsers.addParser("random-uuid").help("Print a random UUID.")
-    List(infoParser, formatParser).foreach(parser => {
+    List(infoParser, formatParser, autoFormatParser).foreach(parser => {
       parser.addArgument("--config", "-c").
         action(store()).
         required(true).
         help("The Kafka configuration file to use.")
     })
+    configureFormatParser(formatParser)
+    configureFormatParser(autoFormatParser)
+
+    parser.parseArgsOrFail(args)
+  }
+
+  private def configureFormatParser(formatParser: Subparser): Unit = {
     formatParser.addArgument("--cluster-id", "-t").
       action(store()).
       required(true).
@@ -204,8 +217,6 @@ object StorageTool extends Logging {
     formatParser.addArgument("--feature", "-f").
       help("A feature upgrade we should perform, in feature=level format. For example: `metadata.version=5`.").
       action(append());
-
-    parser.parseArgsOrFail(args)
   }
 
   def configToLogDirectories(config: KafkaConfig): Seq[String] = {
