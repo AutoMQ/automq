@@ -86,6 +86,12 @@
       "type": "int32",
       "versions": "1+",
       "about": "The object attributes"
+    },
+    {
+      "name": "Operations",
+      "type": "[]int8",
+      "versions": "1+",
+      "about": "The operations to be performed for the source objects, 0: DELETE, 1: KEEP_DATA"
     }
   ]
 }

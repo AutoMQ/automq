@@ -11,6 +11,7 @@
 
 package kafka.log.stream.s3.objects;
 
+import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
@@ -164,6 +165,9 @@ public class ControllerObjectManager implements ObjectManager {
             .setSourceObjectIds(compactStreamObjectRequest.getSourceObjectIds());
         if (version.get().isObjectAttributesSupported()) {
             request.setAttributes(compactStreamObjectRequest.getAttributes());
+        }
+        if (version.get().isCompositeObjectSupported()) {
+            request.setOperations(compactStreamObjectRequest.getOperations().stream().map(CompactOperations::value).collect(Collectors.toList()));
         }
         WrapRequest req = new WrapRequest() {
             @Override

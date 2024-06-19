@@ -37,7 +37,7 @@ public class MemoryS3Operator implements S3Operator {
         if (value == null) {
             return FutureUtil.failedFuture(new IllegalArgumentException("object not exist"));
         }
-        int length = (int) (end - start);
+        int length = end != -1L ? (int) (end - start) : (int) (value.readableBytes() - start);
         ByteBuf rst = value.retainedSlice(value.readerIndex() + (int) start, length);
         if (delay == 0) {
             return CompletableFuture.completedFuture(rst);

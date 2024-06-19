@@ -79,6 +79,14 @@ public enum AutoMQVersion {
         }
     }
 
+    public short objectRecordVersion() {
+        if (isObjectAttributesSupported()) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
     public boolean isAtLeast(AutoMQVersion otherVersion) {
         return this.compareTo(otherVersion) >= 0;
     }

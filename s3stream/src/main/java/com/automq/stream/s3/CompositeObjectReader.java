@@ -13,9 +13,13 @@ package com.automq.stream.s3;
 
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.utils.biniarysearch.AbstractOrderedCollection;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
 import io.netty.buffer.ByteBuf;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -100,7 +104,7 @@ public class CompositeObjectReader implements ObjectReader {
     }
 
     private void asyncGetBasicObjectInfo(CompletableFuture<BasicObjectInfo> basicObjectInfoCf) {
-        CompletableFuture<ByteBuf> cf = rangeReader.rangeRead(objectMetadata, 0, objectMetadata.objectSize());
+        CompletableFuture<ByteBuf> cf = rangeReader.rangeRead(objectMetadata, 0, -1L);
         cf.thenAccept(buf -> {
             try {
                 buf = buf.slice();
@@ -126,7 +130,7 @@ public class CompositeObjectReader implements ObjectReader {
     }
 
     private CompletableFuture<DataBlockGroup> read0(BasicObjectInfo info, DataBlockIndex block) {
-        S3ObjectMetadata linkObjectMetadata = ((BasicObjectInfoExt) info).getLinkObjectMetadata(block.id());
+        S3ObjectMetadata linkObjectMetadata = ((BasicObjectInfoExt) info).objectsBlock().getLinkObjectMetadata(block.id());
         return rangeReader.rangeRead(linkObjectMetadata, block.startPosition(), block.endPosition()).thenApply(buf -> {
             ByteBuf pooled = ByteBufAlloc.byteBuffer(buf.readableBytes(), BLOCK_CACHE);
             pooled.writeBytes(buf);
@@ -135,29 +139,22 @@ public class CompositeObjectReader implements ObjectReader {
         });
     }
 
-    class BasicObjectInfoExt extends BasicObjectInfo {
-        private final ByteBuf objectsBlockBuf;
-        private final ObjectsSearcher objectsSearcher;
+    public class BasicObjectInfoExt extends BasicObjectInfo {
+        private final ObjectsBlock objectsBlock;
 
         public BasicObjectInfoExt(ByteBuf objectsBlockBuf, IndexBlock indexBlock) {
             super(-1L, indexBlock);
-            this.objectsBlockBuf = objectsBlockBuf;
-            this.objectsSearcher = new ObjectsSearcher(objectsBlockBuf);
+            this.objectsBlock = new ObjectsBlock(objectsBlockBuf, indexBlock.count());
         }
 
         @Override
         void close() {
             super.close();
-            objectsBlockBuf.release();
+            objectsBlock.close();
         }
 
-        public S3ObjectMetadata getLinkObjectMetadata(int blockIndex) {
-            // TODO: optimize for next continuous search
-            int index = objectsSearcher.search(new SearchTarget(blockIndex));
-            int base = OBJECT_BLOCK_HEADER_SIZE + index * OBJECT_UNIT_SIZE;
-            long objectId = objectsBlockBuf.getLong(base);
-            short bucketId = objectsBlockBuf.getShort(base + 12);
-            return new S3ObjectMetadata(objectId, bucketId);
+        public ObjectsBlock objectsBlock() {
+            return objectsBlock;
         }
 
         @Override
@@ -233,6 +230,101 @@ public class CompositeObjectReader implements ObjectReader {
         @Override
         public boolean isGreaterThan(SearchTarget value) {
             return blockStartIndex > value.blockStartIndex;
+        }
+    }
+
+    public static class ObjectsBlock {
+        private final ByteBuf buf;
+        private final int count;
+        private final int dataBlockIndexCount;
+        private final ObjectsSearcher objectsSearcher;
+
+        public ObjectsBlock(ByteBuf buf, int dataBlockIndexCount) {
+            this.buf = buf.slice();
+            this.count = this.buf.getInt(1);
+            this.dataBlockIndexCount = dataBlockIndexCount;
+            this.objectsSearcher = new ObjectsSearcher(buf);
+        }
+
+        public Iterator<ObjectIndex> iterator() {
+            AtomicInteger getIndex = new AtomicInteger(0);
+            return new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    return getIndex.get() < count;
+                }
+
+                @Override
+                public ObjectIndex next() {
+                    return get(getIndex.getAndIncrement());
+                }
+            };
+        }
+
+        public List<ObjectIndex> indexes() {
+            List<ObjectIndex> indexes = new LinkedList<>();
+            for (int i = 0; i < count; i++) {
+                indexes.add(get(i));
+            }
+            return indexes;
+        }
+
+        public ObjectIndex get(int index) {
+            if (index < 0 || index >= count) {
+                throw new IllegalArgumentException("index" + index + " is out of range [0, " + count + ")");
+            }
+            int base = index * OBJECT_UNIT_SIZE + OBJECT_BLOCK_HEADER_SIZE;
+            long objectId = buf.getLong(base);
+            int blockStartIndex = buf.getInt(base + 8);
+            short bucket = buf.getShort(12);
+            int blockEndIndex = dataBlockIndexCount;
+            if (index < count - 1) {
+                blockEndIndex = buf.getInt(base + OBJECT_UNIT_SIZE + 8);
+            }
+            return new ObjectIndex(objectId, blockStartIndex, blockEndIndex, bucket);
+        }
+
+        public S3ObjectMetadata getLinkObjectMetadata(int blockIndex) {
+            // TODO: optimize for next continuous search
+            int index = objectsSearcher.search(new SearchTarget(blockIndex));
+            int base = OBJECT_BLOCK_HEADER_SIZE + index * OBJECT_UNIT_SIZE;
+            long objectId = buf.getLong(base);
+            short bucketId = buf.getShort(base + 12);
+            return new S3ObjectMetadata(objectId, ObjectAttributes.builder().bucket(bucketId).build().attributes());
+        }
+
+        public void close() {
+            buf.release();
+        }
+    }
+
+    public static class ObjectIndex {
+        private final long objectId;
+        private final int blockStartIndex;
+        private final int blockEndIndex;
+        private final short bucketId;
+
+        public ObjectIndex(long objectId, int blockStartIndex, int blockEndIndex, short bucketId) {
+            this.objectId = objectId;
+            this.blockStartIndex = blockStartIndex;
+            this.blockEndIndex = blockEndIndex;
+            this.bucketId = bucketId;
+        }
+
+        public long objectId() {
+            return objectId;
+        }
+
+        public int blockStartIndex() {
+            return blockStartIndex;
+        }
+
+        public int blockEndIndex() {
+            return blockEndIndex;
+        }
+
+        public short bucketId() {
+            return bucketId;
         }
     }
 
