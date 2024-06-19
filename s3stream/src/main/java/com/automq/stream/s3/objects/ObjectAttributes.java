@@ -17,10 +17,12 @@ package com.automq.stream.s3.objects;
  * 0: normal object
  * 1: composite object
  * 2~17: bucket index
- * 18~31 unused
+ * 18: deep delete mark
+ * 19~31 unused
  */
 public class ObjectAttributes {
     public static final ObjectAttributes DEFAULT = new ObjectAttributes(0);
+    private static final int DEEP_DELETE_MASK = 1 << 18;
     private final int attributes;
 
     private ObjectAttributes(int attributes) {
@@ -35,6 +37,10 @@ public class ObjectAttributes {
         return (short) ((attributes >> 2) & 0xFFFF);
     }
 
+    public boolean deepDelete() {
+        return (attributes & DEEP_DELETE_MASK) != 0;
+    }
+
     public int attributes() {
         return attributes;
     }
@@ -44,11 +50,19 @@ public class ObjectAttributes {
     }
 
     public static Builder builder() {
-        return new Builder();
+        return builder(0);
+    }
+
+    public static Builder builder(int attributes) {
+        return new Builder(attributes);
     }
 
     public static class Builder {
-        private int attributes = 0;
+        private int attributes;
+
+        public Builder(int attributes) {
+            this.attributes = attributes;
+        }
 
         public Builder type(Type type) {
             switch (type) {
@@ -65,6 +79,11 @@ public class ObjectAttributes {
 
         public Builder bucket(short bucketIndex) {
             attributes |= bucketIndex << 2;
+            return this;
+        }
+
+        public Builder deepDelete() {
+            attributes |= DEEP_DELETE_MASK;
             return this;
         }
 
