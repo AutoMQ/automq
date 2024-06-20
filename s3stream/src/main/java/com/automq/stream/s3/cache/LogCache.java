@@ -84,7 +84,7 @@ public class LogCache {
      * record batched in the same stream should be put in order.
      */
     public boolean put(StreamRecordBatch recordBatch) {
-        TimerUtil timerUtil = new TimerUtil();
+        long startTime = System.nanoTime();
         tryRealFree();
         size.addAndGet(recordBatch.size() + OBJECT_OVERHEAD);
         readLock.lock();
@@ -94,7 +94,7 @@ public class LogCache {
         } finally {
             readLock.unlock();
         }
-        StorageOperationStats.getInstance().appendLogCacheStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        StorageOperationStats.getInstance().appendLogCacheStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
         return full;
     }
 
@@ -133,7 +133,7 @@ public class LogCache {
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
         context.currentContext();
-        TimerUtil timerUtil = new TimerUtil();
+        long startTime = System.nanoTime();
         List<StreamRecordBatch> records;
         readLock.lock();
         try {
@@ -143,7 +143,7 @@ public class LogCache {
             readLock.unlock();
         }
 
-        long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
+        long timeElapsed = TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS);
         boolean isCacheHit = !records.isEmpty() && records.get(0).getBaseOffset() <= startOffset;
         StorageOperationStats.getInstance().readLogCacheStats(isCacheHit).record(timeElapsed);
         return records;
