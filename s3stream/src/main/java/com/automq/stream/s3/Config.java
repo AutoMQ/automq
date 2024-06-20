@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.Version;
 import java.util.Map;
 
 // TODO: rename & init
@@ -427,4 +428,7 @@ public class Config {
         return failoverEnable;
     }
 
+    public Version version() {
+        return Version.V0;
+    }
 }

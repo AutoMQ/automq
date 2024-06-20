@@ -154,14 +154,26 @@ public class StreamObjectCompactor {
             request = requestOpt.get();
             objectManager.compactStreamObject(request).get();
             if (s3ObjectLogger.isTraceEnabled()) {
-                s3ObjectLogger.trace("{} cost {}ms", request, start.elapsedAs(TimeUnit.MILLISECONDS));
+                s3ObjectLogger.trace("{} {} cost {}ms", compactionType, request, start.elapsedAs(TimeUnit.MILLISECONDS));
             }
         }
     }
 
     long getMaxGroupSize(CompactionType compactionType) {
-        long maxStreamObjectSize = MINOR.equals(compactionType) ? MINOR_COMPACTION_SIZE_THRESHOLD : this.maxStreamObjectSize;
-        return Math.min(maxStreamObjectSize, this.maxStreamObjectSize);
+        switch (compactionType) {
+            case MINOR:
+                return MINOR_COMPACTION_SIZE_THRESHOLD;
+            case MAJOR:
+                return this.maxStreamObjectSize;
+            case CLEANUP_V1:
+                return this.maxStreamObjectSize;
+            case MINOR_V1:
+                return MINOR_V1_COMPACTION_SIZE_THRESHOLD;
+            case MAJOR_V1:
+                return this.maxStreamObjectSize;
+            default:
+                throw new IllegalArgumentException("Unsupported compaction type: " + compactionType);
+        }
     }
 
     static boolean checkObjectGroupCouldBeCompact(List<S3ObjectMetadata> objectGroup, long startOffset,
@@ -331,29 +343,33 @@ public class StreamObjectCompactor {
                 reader.basicObjectInfo();
                 readers.add(reader);
             });
-            for (int i = 0; i < objectGroup.size(); i++) {
-                S3ObjectMetadata objectMetadata = objectGroup.get(i);
-                ObjectAttributes attributes = ObjectAttributes.from(objectMetadata.attributes());
-                ObjectReader objectReader = readers.get(i);
-                if (attributes.type() == Composite) {
-                    compactCompositeObject(objectMetadata, objectReader, objectWriter);
-                } else {
-                    compactNormalObject(objectMetadata, objectReader, objectWriter);
+            try {
+                for (int i = 0; i < objectGroup.size(); i++) {
+                    S3ObjectMetadata objectMetadata = objectGroup.get(i);
+                    ObjectAttributes attributes = ObjectAttributes.from(objectMetadata.attributes());
+                    ObjectReader objectReader = readers.get(i);
+                    if (attributes.type() == Composite) {
+                        compactCompositeObject(objectMetadata, objectReader, objectWriter);
+                    } else {
+                        compactNormalObject(objectMetadata, objectReader, objectWriter);
+                    }
                 }
-            }
-            List<ObjectStreamRange> ranges = objectWriter.getStreamRanges();
-            if (ranges.isEmpty()) {
-                // All data blocks are expired
-                compactedObjectIds.add(objectId);
-                operations.add(CompactOperations.DELETE);
-                return Optional.of(new CompactStreamObjectRequest(NOOP_OBJECT_ID, 0, streamId, streamEpoch,
-                    NOOP_OFFSET, NOOP_OFFSET, compactedObjectIds, operations, ObjectAttributes.DEFAULT.attributes()));
-            } else {
-                objectWriter.close().get();
-                int attributes = ObjectAttributes.builder().bucket((short) 0).type(Composite).build().attributes();
-                ObjectStreamRange range = ranges.get(0);
-                return Optional.of(new CompactStreamObjectRequest(objectId, objectWriter.size(), streamId, streamEpoch,
-                    range.getStartOffset(), range.getEndOffset(), compactedObjectIds, operations, attributes));
+                List<ObjectStreamRange> ranges = objectWriter.getStreamRanges();
+                if (ranges.isEmpty()) {
+                    // All data blocks are expired
+                    compactedObjectIds.add(objectId);
+                    operations.add(CompactOperations.DELETE);
+                    return Optional.of(new CompactStreamObjectRequest(NOOP_OBJECT_ID, 0, streamId, streamEpoch,
+                        NOOP_OFFSET, NOOP_OFFSET, compactedObjectIds, operations, ObjectAttributes.DEFAULT.attributes()));
+                } else {
+                    objectWriter.close().get();
+                    int attributes = ObjectAttributes.builder().bucket((short) 0).type(Composite).build().attributes();
+                    ObjectStreamRange range = ranges.get(0);
+                    return Optional.of(new CompactStreamObjectRequest(objectId, objectWriter.size(), streamId, streamEpoch,
+                        range.getStartOffset(), range.getEndOffset(), compactedObjectIds, operations, attributes));
+                }
+            } finally {
+                readers.forEach(ObjectReader::close);
             }
 
         }
