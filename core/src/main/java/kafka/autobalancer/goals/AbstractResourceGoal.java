@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public abstract class AbstractResourceGoal extends AbstractGoal {
+    private final PartitionComparator partitionComparator = new PartitionComparator(resource());
 
     protected abstract byte resource();
 
@@ -95,7 +96,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
         List<TopicPartitionReplicaUpdater.TopicPartitionReplica> srcReplicas = cluster
                 .replicasFor(srcBroker.getBrokerId())
                 .stream()
-                .sorted(Comparator.comparingDouble(r -> -r.loadValue(resource()))) // higher load first
+                .sorted(partitionComparator) // higher load first
                 .collect(Collectors.toList());
         double loadChange = 0.0;
         for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : srcReplicas) {
@@ -151,7 +152,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
             List<TopicPartitionReplicaUpdater.TopicPartitionReplica> candidateReplicas = cluster
                     .replicasFor(candidateBroker.getBrokerId())
                     .stream()
-                    .sorted(Comparator.comparingDouble(r -> -r.loadValue(resource()))) // higher load first
+                    .sorted(partitionComparator) // higher load first
                     .collect(Collectors.toList());
             for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : candidateReplicas) {
                 Optional<Action> optionalAction;
@@ -223,6 +224,26 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
 
         public double loadChange() {
             return loadChange;
+        }
+    }
+
+    static class PartitionComparator implements Comparator<TopicPartitionReplicaUpdater.TopicPartitionReplica> {
+        private final byte resource;
+
+        PartitionComparator(byte resource) {
+            this.resource = resource;
+        }
+
+        @Override
+        public int compare(TopicPartitionReplicaUpdater.TopicPartitionReplica p1, TopicPartitionReplicaUpdater.TopicPartitionReplica p2) {
+            boolean isCritical1 = GoalUtils.isCriticalTopic(p1.getTopicPartition().topic());
+            boolean isCritical2 = GoalUtils.isCriticalTopic(p2.getTopicPartition().topic());
+            if (isCritical1 && !isCritical2) {
+                return 1;
+            } else if (!isCritical1 && isCritical2) {
+                return -1;
+            }
+            return Double.compare(p2.loadValue(resource), p1.loadValue(resource));
         }
     }
 }
