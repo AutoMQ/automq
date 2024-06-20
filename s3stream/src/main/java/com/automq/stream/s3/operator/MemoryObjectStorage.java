@@ -82,6 +82,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    void doDeleteObjects(List<String> objectKeys, Consumer<Throwable> failHandler, Runnable successHandler) {
+        objectKeys.forEach(storage::remove);
+    }
+
+    @Override
     boolean isUnrecoverable(Throwable ex) {
         if (ex instanceof UnsupportedOperationException) {
             return true;
