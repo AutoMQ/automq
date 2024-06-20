@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.internals.Topic;
 
 public class GoalUtils {
 
@@ -48,5 +49,15 @@ public class GoalUtils {
 
     public static Map<String, Set<String>> groupGoals(Collection<Goal> goals) {
         return goals.stream().collect(Collectors.groupingBy(Goal::group, Collectors.mapping(Goal::name, Collectors.toSet())));
+    }
+
+    /**
+     * Topic which should be reassigned only when necessary.
+     *
+     * @param topic topic name
+     * @return true if the topic is critical
+     */
+    public static boolean isCriticalTopic(String topic) {
+        return Topic.isInternal(topic) || Topic.AUTO_BALANCER_METRICS_TOPIC_NAME.equals(topic);
     }
 }
