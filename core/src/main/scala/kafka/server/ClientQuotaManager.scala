@@ -156,12 +156,12 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
     case None => QuotaTypes.NoQuotas
   }
 
-  protected val delayQueueSensor = metrics.sensor(quotaType.toString + "-delayQueue")
-  delayQueueSensor.add(metrics.metricName("queue-size", quotaType.toString,
+  protected val _delayQueueSensor = metrics.sensor(quotaType.toString + "-delayQueue")
+  _delayQueueSensor.add(metrics.metricName("queue-size", quotaType.toString,
     "Tracks the size of the delay queue"), new CumulativeSum())
 
-  def getDelayQueueSensor: Sensor = {
-    delayQueueSensor
+  def delayQueueSensor: Sensor = {
+    _delayQueueSensor
   }
 
   protected val delayQueue = new DelayQueue[ThrottledChannel]()
@@ -182,7 +182,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
       val throttledChannel: ThrottledChannel = delayQueue.poll(1, TimeUnit.SECONDS)
       if (throttledChannel != null) {
         // Decrement the size of the delay queue
-        getDelayQueueSensor.record(-1)
+        delayQueueSensor.record(-1)
         // Notify the socket server that throttling is done for this channel, so that it can try to unmute the channel.
         throttledChannel.notifyThrottlingDone()
       }
@@ -299,7 +299,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
       clientSensors.throttleTimeSensor.record(throttleTimeMs)
       val throttledChannel = new ThrottledChannel(time, throttleTimeMs, throttleCallback)
       delayQueue.add(throttledChannel)
-      getDelayQueueSensor.record()
+      delayQueueSensor.record()
       debug("Channel throttled for sensor (%s). Delay time: (%d)".format(clientSensors.quotaSensor.name(), throttleTimeMs))
     }
   }

@@ -86,7 +86,9 @@ object QuotaFactory extends Logging {
       fetch.shutdown()
       produce.shutdown()
       request.shutdown()
+      // AutoMQ for Kafka inject start
       broker.shutdown()
+      // AutoMQ for Kafka inject end
       controllerMutation.shutdown()
       clientQuotaCallback.foreach(_.close())
     }
@@ -100,7 +102,9 @@ object QuotaFactory extends Logging {
       new ClientQuotaManager(clientConfig(cfg), metrics, Fetch, time, threadNamePrefix, clientQuotaCallback),
       new ClientQuotaManager(clientConfig(cfg), metrics, Produce, time, threadNamePrefix, clientQuotaCallback),
       new ClientRequestQuotaManager(clientConfig(cfg), metrics, time, threadNamePrefix, clientQuotaCallback),
+      // AutoMQ for Kafka inject start
       new BrokerQuotaManager(brokerQuotaConfig(cfg), metrics, time, threadNamePrefix),
+      // AutoMQ for Kafka inject end
       new ControllerMutationQuotaManager(clientControllerMutationConfig(cfg), metrics, time,
         threadNamePrefix, clientQuotaCallback),
       new ReplicationQuotaManager(replicationConfig(cfg), metrics, LeaderReplication, time),
@@ -110,6 +114,7 @@ object QuotaFactory extends Logging {
     )
   }
 
+  // AutoMQ for Kafka inject start
   private def brokerQuotaConfig(cfg: KafkaConfig): BrokerQuotaManagerConfig = {
     val config = new BrokerQuotaManagerConfig(
       cfg.nodeId,
@@ -121,6 +126,7 @@ object QuotaFactory extends Logging {
     config.update(props)
     config
   }
+  // AutoMQ for Kafka inject end
 
   def clientConfig(cfg: KafkaConfig): ClientQuotaManagerConfig = {
     new ClientQuotaManagerConfig(

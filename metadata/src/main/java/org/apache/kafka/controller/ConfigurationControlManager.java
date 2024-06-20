@@ -517,6 +517,7 @@ public class ConfigurationControlManager {
         return (result == null) ? Collections.emptyMap() : result;
     }
 
+    // AutoMQ inject start
     public int topicCountQuota() {
         try {
             String topicCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG);
@@ -540,4 +541,5 @@ public class ConfigurationControlManager {
             return Integer.MAX_VALUE;
         }
     }
+    // AutoMQ inject end
 }

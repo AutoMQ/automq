@@ -683,6 +683,7 @@ public class ReplicationControlManager {
         Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges =
             computeConfigChanges(topicErrors, request.topics());
 
+        // AutoMQ inject start
         // Verify cluster quota
         int topicCountQuota = configurationControl.topicCountQuota();
         int topicCount = topics.size();
@@ -709,7 +710,6 @@ public class ReplicationControlManager {
             // Figure out what ConfigRecords should be created, if any.
             ConfigResource configResource = new ConfigResource(TOPIC, topic.name());
 
-            // AutoMQ for Kafka inject start
             Map<String, Entry<OpType, String>> keyToOps = configChanges.computeIfAbsent(configResource, key -> new HashMap<>());
             // First, we pass topic replication factor through log config.
             int replicationFactor = topic.replicationFactor() == -1 ?
@@ -735,7 +735,6 @@ public class ReplicationControlManager {
             } else {
                 configRecords = configResult.records();
             }
-            // AutoMQ for Kafka inject end
 
             ApiError error;
             try {
@@ -750,6 +749,7 @@ public class ReplicationControlManager {
                 partitionCount += numPartitions;
             }
         }
+        // AutoMQ for Kafka inject end
 
         // Create responses for all topics.
         CreateTopicsResponseData data = new CreateTopicsResponseData();
@@ -890,9 +890,11 @@ public class ReplicationControlManager {
             return ApiError.fromThrowable(e);
         }
 
+        // AutoMQ inject start
         if (partitionCount + numPartitions > partitionCountQuota) {
             return new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCountQuota);
         }
+        // AutoMQ inject end
 
         Uuid topicId = Uuid.randomUuid();
         CreatableTopicResult result = new CreatableTopicResult().
@@ -1842,6 +1844,7 @@ public class ReplicationControlManager {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         List<CreatePartitionsTopicResult> results = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
 
+        // AutoMQ inject start
         int quota = configurationControl.partitionCountQuota();
         int partitionCount = this.topics.values().stream().mapToInt(info -> info.parts.size()).sum();
 
@@ -1862,6 +1865,7 @@ public class ReplicationControlManager {
                 setErrorMessage(apiError.message()));
             partitionCount += additional;
         }
+        // AutoMQ inject end
         return ControllerResult.atomicOf(records, results);
     }
 
@@ -1900,6 +1904,7 @@ public class ReplicationControlManager {
             throw e;
         }
 
+        // AutoMQ inject start
         // Verify cluster quota
         if (partitionCount + additional > quota) {
             throw new ThrottlingQuotaExceededException(0, "Partition count quota exceeded: current quota is " + quota);
@@ -1959,12 +1964,10 @@ public class ReplicationControlManager {
                         " time(s): All brokers are currently fenced or in controlled shutdown.");
             }
 
-            // AutoMQ for Kafka inject start
             // Generally, validateManualPartitionAssignment has checked to some extent. We still check here for defensive programming.
             if (ElasticStreamSwitch.isEnabled()) {
                 maybeCheckCreatePartitionPolicy(new CreatePartitionPolicy.RequestMetadata(partitionAssignment.replicas(), isr));
             }
-            // AutoMQ for Kafka inject end
 
             records.add(buildPartitionRegistration(partitionAssignment, isr)
                 .toRecord(topicId, partitionId, new ImageWriterOptions.Builder().
@@ -1973,6 +1976,7 @@ public class ReplicationControlManager {
             partitionId++;
         }
         return additional;
+        // AutoMQ for Kafka inject end
     }
 
     void validateManualPartitionAssignment(

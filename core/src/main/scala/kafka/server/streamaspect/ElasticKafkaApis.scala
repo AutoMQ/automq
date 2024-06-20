@@ -281,6 +281,8 @@ class ElasticKafkaApis(
       // that the request quota is not enforced if acks == 0.
       val timeMs = time.milliseconds()
       val requestSize = request.sizeInBytes
+
+      // AutoMQ for Kafka inject start
       val bandwidthThrottleTimeMs = quotas.produce.maybeRecordAndGetThrottleTimeMs(request, requestSize, timeMs)
       val brokerBandwidthThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Produce, request, requestSize, timeMs)
       val requestThrottleTimeMs =
@@ -302,6 +304,7 @@ class ElasticKafkaApis(
           requestHelper.throttle(QuotaType.Request, quotas.broker, request, brokerRequestThrottleTimeMs)
         }
       }
+      // AutoMQ for Kafka inject end
 
       // Send the response immediately. In case of throttling, the channel has already been muted.
       if (produceRequest.acks == 0) {
@@ -631,6 +634,8 @@ class ElasticKafkaApis(
         // quotas. When throttled, we unrecord the recorded bandwidth quota value
         val responseSize = fetchContext.getResponseSize(partitions, versionId)
         val timeMs = time.milliseconds()
+
+        // AutoMQ for Kafka inject start
         val requestThrottleTimeMs = quotas.request.maybeRecordAndGetThrottleTimeMs(request, timeMs)
         val bandwidthThrottleTimeMs = quotas.fetch.maybeRecordAndGetThrottleTimeMs(request, responseSize, timeMs)
         val brokerRequestThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Request, request, 0, timeMs)
@@ -652,6 +657,8 @@ class ElasticKafkaApis(
           } else if (brokerRequestThrottleTimeMs == maxThrottleTimeMs) {
             requestHelper.throttle(QuotaType.Request, quotas.broker, request, brokerRequestThrottleTimeMs)
           }
+          // AutoMQ for Kafka inject end
+
           // If throttling is required, return an empty response.
           unconvertedFetchResponse = fetchContext.getThrottledResponse(maxThrottleTimeMs)
           release()

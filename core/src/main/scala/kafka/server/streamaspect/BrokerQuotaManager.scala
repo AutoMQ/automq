@@ -39,7 +39,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   brokerDelayQueueSensor.add(metrics.metricName("broker-queue-size", "",
     "Tracks the size of the delay queue"), new CumulativeSum())
 
-  override def getDelayQueueSensor: Sensor = brokerDelayQueueSensor
+  override def delayQueueSensor: Sensor = brokerDelayQueueSensor
 
   def getMaxValueInQuotaWindow(quotaType: QuotaType): Double = {
     if (config.quotaEnabled) {
@@ -157,7 +157,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       clientSensors.throttleTimeSensor.record(throttleTimeMs)
       val throttledChannel = new ThrottledChannel(time, throttleTimeMs, throttleCallback)
       delayQueue.add(throttledChannel)
-      getDelayQueueSensor.record()
+      delayQueueSensor.record()
       debug("Channel throttled for sensor (%s). Delay time: (%d)".format(clientSensors.quotaSensor.name(), throttleTimeMs))
     }
   }

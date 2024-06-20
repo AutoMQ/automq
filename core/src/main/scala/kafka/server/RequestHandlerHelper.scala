@@ -75,6 +75,8 @@ class RequestHandlerHelper(
     quotaManager.throttle(request, callback, throttleTimeMs)
   }
 
+
+  // AutoMQ for Kafka inject start
   def throttle(
     quotaType: QuotaType,
     quotaManager: BrokerQuotaManager,
@@ -87,6 +89,7 @@ class RequestHandlerHelper(
     }
     quotaManager.throttle(quotaType, callback, throttleTimeMs)
   }
+  // AutoMQ for Kafka inject end
 
   def handleError(request: RequestChannel.Request, e: Throwable): Unit = {
     val mayThrottle = e.isInstanceOf[ClusterAuthorizationException] || !request.header.apiKey.clusterAction
