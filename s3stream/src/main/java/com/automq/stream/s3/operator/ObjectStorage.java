@@ -40,14 +40,24 @@ public interface ObjectStorage {
         public static final WriteOptions DEFAULT = new WriteOptions();
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
+        private Writer.Context context = Writer.Context.DEFAULT;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
             return this;
         }
 
+        public WriteOptions context(Writer.Context context) {
+            this.context = context;
+            return this;
+        }
+
         public ThrottleStrategy throttleStrategy() {
             return throttleStrategy;
+        }
+
+        public Writer.Context context() {
+            return context;
         }
 
     }
