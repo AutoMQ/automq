@@ -149,6 +149,12 @@ public class CompactionTestBase {
         if (!attr) {
             return false;
         }
+        try {
+            block1.getDataCf().get(1, TimeUnit.SECONDS);
+            block2.getDataCf().get(1, TimeUnit.SECONDS);
+        } catch (Throwable e) {
+            // ignore
+        }
         if (!block1.getDataCf().isDone()) {
             return !block2.getDataCf().isDone();
         } else {

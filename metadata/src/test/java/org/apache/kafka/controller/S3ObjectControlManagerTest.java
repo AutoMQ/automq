@@ -68,21 +68,20 @@ public class S3ObjectControlManagerTest {
     private static final Config S3_CONFIG = new Config().endpoint(S3_ENDPOINT).region(S3_REGION).bucket(S3_BUCKET).objectRetentionTimeInSecond(1);
     private S3ObjectControlManager manager;
     private QuorumController controller;
-    private ObjectStorage operator;
+    private ObjectStorage objectStorage;
     private long nextObjectId;
 
     @BeforeEach
     public void setUp() {
         controller = Mockito.mock(QuorumController.class);
-        operator = Mockito.mock(ObjectStorage.class);
-        Mockito.when(operator.delete(anyList())).then(inv -> {
-            List<String> objectKeys = inv.getArgument(0);
-            return CompletableFuture.completedFuture(objectKeys);
+        objectStorage = Mockito.mock(ObjectStorage.class);
+        Mockito.when(objectStorage.delete(anyList())).then(inv -> {
+            return CompletableFuture.completedFuture(null);
         });
         Mockito.when(controller.isActive()).thenReturn(true);
         LogContext logContext = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
-        manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, operator, () -> AutoMQVersion.LATEST);
+        manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, objectStorage, () -> AutoMQVersion.LATEST);
     }
 
     @Test
@@ -221,7 +220,7 @@ public class S3ObjectControlManagerTest {
         // 3. 5s later, it should be removed
         Thread.sleep(5 * 1000);
         assertEquals(0, manager.objectsMetadata().size());
-        Mockito.verify(operator, times(1)).delete(anyList());
+        Mockito.verify(objectStorage, times(1)).delete(anyList());
     }
 
     @Test
@@ -240,7 +239,7 @@ public class S3ObjectControlManagerTest {
             });
 
         CompletableFuture<Void> delayTrigger = new CompletableFuture<>();
-        Mockito.when(operator.delete(anyList())).then(inv -> {
+        Mockito.when(objectStorage.delete(anyList())).then(inv -> {
             List<String> objectKeys = inv.getArgument(0);
             return delayTrigger.thenApply(ignore -> objectKeys);
         });
@@ -251,22 +250,22 @@ public class S3ObjectControlManagerTest {
 
         manager.checkS3ObjectsLifecycle();
         @SuppressWarnings("unchecked") ArgumentCaptor<List<ObjectPath>> ac = ArgumentCaptor.forClass(List.class);
-        Mockito.verify(operator, times(1)).delete(ac.capture());
-        assertEquals(List.of(ObjectUtils.genKey(0, 0L)), ac.getValue());
+        Mockito.verify(objectStorage, times(1)).delete(ac.capture());
+        assertEquals(List.of(ObjectUtils.genKey(0, 0L)), ac.getValue().stream().map(ObjectPath::key).collect(Collectors.toList()));
 
         genMarkDestroyObject();
         Thread.sleep(1001L);
 
         // the last delete is inflight, so the next check should not trigger another delete
         manager.checkS3ObjectsLifecycle();
-        Mockito.verify(operator, times(1)).delete(ac.capture());
+        Mockito.verify(objectStorage, times(1)).delete(ac.capture());
 
         // complete the last delete
         delayTrigger.complete(null);
 
         manager.checkS3ObjectsLifecycle();
-        Mockito.verify(operator, times(2)).delete(ac.capture());
-        assertEquals(List.of(ObjectUtils.genKey(0, 1L)), ac.getValue());
+        Mockito.verify(objectStorage, times(2)).delete(ac.capture());
+        assertEquals(List.of(ObjectUtils.genKey(0, 1L)), ac.getValue().stream().map(ObjectPath::key).collect(Collectors.toList()));
     }
 
     private void genMarkDestroyObject() {
@@ -306,19 +305,7 @@ public class S3ObjectControlManagerTest {
                 replay(manager, result.records());
                 return CompletableFuture.completedFuture(null);
             });
-        Mockito.doAnswer(ink -> {
-            List<String> objectKeys = ink.getArgument(0);
-            assertEquals(800, objectKeys.size());
-            return CompletableFuture.completedFuture(objectKeys);
-        }).doAnswer(ink -> {
-            List<String> objectKeys = ink.getArgument(0);
-            assertEquals(800, objectKeys.size());
-            return CompletableFuture.completedFuture(objectKeys);
-        }).doAnswer(ink -> {
-            List<String> objectKeys = ink.getArgument(0);
-            assertEquals(100, objectKeys.size());
-            return CompletableFuture.completedFuture(objectKeys);
-        }).when(operator).delete(anyList());
+        Mockito.doAnswer(ink -> CompletableFuture.completedFuture(null)).when(objectStorage).delete(anyList());
         // 1. prepare 1700 object
         ControllerResult<PrepareS3ObjectResponseData> result0 = manager.prepareObject(new PrepareS3ObjectRequestData()
             .setNodeId(BROKER0)
@@ -338,7 +325,7 @@ public class S3ObjectControlManagerTest {
         // 3. 6s(3s * 2) later, they should be removed
         Thread.sleep(6 * 1000);
         assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
-        Mockito.verify(operator, times(3)).delete(anyList());
+        Mockito.verify(objectStorage, times(3)).delete(anyList());
     }
 
     private long prepareOneObject(long ttl) {

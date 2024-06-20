@@ -26,16 +26,19 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Timeout(60)
+@Tag("S3Unit")
 public class CompositeObjectTest {
 
     @Test
     public void testCompositeObject_writeAndRead() throws ExecutionException, InterruptedException {
-        // TODO: replace s3operator to objectStorage
         ObjectStorage objectStorage = new MemoryObjectStorage();
         // generate two normal object
         S3ObjectMetadata obj1;

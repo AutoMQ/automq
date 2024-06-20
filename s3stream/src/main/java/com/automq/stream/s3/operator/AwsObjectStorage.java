@@ -185,9 +185,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     @Override
     void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber, long apiCallAttemptTimeout,
         Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler) {
-        long inclusiveEnd = end - 1;
         UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
-            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, inclusiveEnd)).uploadId(uploadId).partNumber(partNumber)
+            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, end)).uploadId(uploadId).partNumber(partNumber)
             .overrideConfiguration(AwsRequestOverrideConfiguration.builder().apiCallAttemptTimeout(Duration.ofMillis(apiCallAttemptTimeout)).apiCallTimeout(Duration.ofMillis(apiCallAttemptTimeout)).build())
             .build();
         writeS3Client.uploadPartCopy(request).thenAccept(uploadPartCopyResponse -> {
@@ -305,10 +304,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
 
     private String range(long start, long end) {
-        if (end == -2L) {
+        if (end == -1L) {
             return "bytes=" + start + "-";
         }
-        return "bytes=" + start + "-" + end;
+        // the range end is inclusive end
+        return "bytes=" + start + "-" + (end - 1);
     }
 
     private boolean getDeleteObjectsMode() {

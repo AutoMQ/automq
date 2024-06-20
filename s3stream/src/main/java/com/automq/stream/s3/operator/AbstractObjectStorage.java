@@ -65,7 +65,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         "s3-read-limiter-cb-executor", true, LOGGER);
     private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-limiter-cb-executor", true, LOGGER);
-    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(8,
+    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-read-cb-executor", true, LOGGER);
     private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-cb-executor", true, LOGGER);
@@ -120,7 +120,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     @Override
     public CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end) {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        if (start > end) {
+        if (end != -1L && start > end) {
             IllegalArgumentException ex = new IllegalArgumentException();
             LOGGER.error("[UNEXPECTED] rangeRead [{}, {})", start, end, ex);
             cf.completeExceptionally(ex);
@@ -145,7 +145,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             rangeRead0(objectPath, start, end, cf);
 
         }
-        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end), 3, TimeUnit.MINUTES);
+        Timeout timeout = timeoutDetect.newTimeout(t -> {
+            LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end);
+            System.out.println("timeout");
+        }, 1, TimeUnit.MINUTES);
         return cf.whenComplete((rst, ex) -> timeout.cancel());
     }
 
@@ -471,7 +474,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
-        end = end - 1;
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retCf = acquireReadPermit(cf);
         if (retCf.isDone()) {
@@ -483,7 +485,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     private void mergedRangeRead0(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
         TimerUtil timerUtil = new TimerUtil();
-        long size = end - start + 1;
+        long size = end - start;
         Consumer<Throwable> failHandler = ex -> {
             if (isUnrecoverable(ex) || checkS3ApiMode) {
                 LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
@@ -662,7 +664,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
             } else {
                 for (AbstractObjectStorage.ReadTask readTask : readTasks) {
-                    readTask.cf.complete(rst.retainedSlice((int) (readTask.start - start), (int) (readTask.end - readTask.start)));
+                    int sliceStart = (int) (readTask.start - start);
+                    if (readTask.end == -1L) {
+                        readTask.cf.complete(rst.retainedSlice(sliceStart, rst.readableBytes()));
+                    } else {
+                        readTask.cf.complete(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));
+                    }
                 }
                 rst.release();
             }

@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -44,11 +45,10 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             failHandler.accept(new IllegalArgumentException("object not exist"));
             return;
         }
-        int length = (int) (end - start);
+        int length = end != -1L ? (int) (end - start) : (int) (value.readableBytes() - start);
         ByteBuf rst = value.retainedSlice(value.readerIndex() + (int) start, length);
         CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
-        buf.addComponent(rst);
-        successHandler.accept(buf);
+        buf.addComponent(true, rst);
         if (delay == 0) {
             successHandler.accept(buf);
         } else {
@@ -70,6 +70,51 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
         } catch (Exception ex) {
             failHandler.accept(ex);
         }
+    }
+
+    @Override
+    public Writer writer(WriteOptions writeOptions, String path) {
+        ByteBuf buf = Unpooled.buffer();
+        storage.put(path, buf);
+        return new Writer() {
+            @Override
+            public CompletableFuture<Void> write(ByteBuf part) {
+                buf.writeBytes(part);
+                // Keep the same behavior as a real S3Operator
+                // Release the part after write
+                part.release();
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public void copyOnWrite() {
+
+            }
+
+            @Override
+            public boolean hasBatchingPart() {
+                return false;
+            }
+
+            @Override
+            public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
+                ByteBuf source = storage.get(s3ObjectMetadata.key());
+                if (source == null) {
+                    throw new IllegalArgumentException("object not exist");
+                }
+                buf.writeBytes(source.slice(source.readerIndex() + (int) start, (int) (end - start)));
+            }
+
+            @Override
+            public CompletableFuture<Void> close() {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public CompletableFuture<Void> release() {
+                return CompletableFuture.completedFuture(null);
+            }
+        };
     }
 
     @Override
@@ -120,7 +165,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<List<ObjectInfo>> doList(String prefix) {
-        return CompletableFuture.completedFuture(storage.keySet().stream().map(s -> new ObjectInfo((short) 0, s, 0L)).collect(Collectors.toList()));
+        return CompletableFuture.completedFuture(storage.keySet().stream().filter(key -> key.startsWith(prefix)).map(s -> new ObjectInfo((short) 0, s, 0L)).collect(Collectors.toList()));
     }
 
     public ByteBuf get() {
