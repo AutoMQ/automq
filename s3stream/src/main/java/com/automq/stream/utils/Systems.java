@@ -11,6 +11,24 @@
 
 package com.automq.stream.utils;
 
+import org.apache.commons.lang3.StringUtils;
+
 public class Systems {
     public static final int CPU_CORES = Runtime.getRuntime().availableProcessors();
+
+    public static long getEnvLong(String name, long defaultValue) {
+        String value = System.getenv(name);
+        if (StringUtils.isBlank(value)) {
+            return defaultValue;
+        }
+        return Long.parseLong(value);
+    }
+
+    public static int getEnvInt(String name, int defaultValue) {
+        String value = System.getenv(name);
+        if (StringUtils.isBlank(value)) {
+            return defaultValue;
+        }
+        return Integer.parseInt(value);
+    }
 }

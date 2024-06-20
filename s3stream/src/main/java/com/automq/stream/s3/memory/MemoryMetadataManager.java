@@ -33,6 +33,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
@@ -213,6 +214,14 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             .limit(limit)
             .collect(Collectors.toList());
         return CompletableFuture.completedFuture(streamObjectList);
+    }
+
+    @Override
+    public CompletableFuture<Integer> getObjectsCount() {
+        AtomicInteger count = new AtomicInteger();
+        streamObjects.forEach((k, v) -> count.addAndGet(v.size()));
+        count.addAndGet(streamSetObjects.size());
+        return CompletableFuture.completedFuture(count.intValue());
     }
 
     @Override

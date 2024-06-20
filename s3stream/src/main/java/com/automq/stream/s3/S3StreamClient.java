@@ -29,6 +29,7 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.S3Operator;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import java.util.ArrayList;
@@ -39,7 +40,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -47,12 +47,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
-    private static final long STREAM_OBJECT_COMPACTION_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1);
+    private static final long MINOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(10));
+    private static final long MAJOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(60));
+    /**
+     * When the cluster objects count exceed MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD, the MAJOR_V1 compaction will be triggered.
+     * Default value is 400000: 10w partitions ~= 30w streams ~= 40w object
+     */
+    private static final int MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD = Systems.getEnvInt("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_MAX_OBJECT_THRESHOLD", 400000);
     private final ScheduledExecutorService streamObjectCompactionScheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-scheduler", true), LOGGER, true);
     final Map<Long, StreamWrapper> openedStreams;
@@ -125,9 +134,14 @@ public class S3StreamClient implements StreamClient {
      */
     private void startStreamObjectsCompactions() {
         scheduledCompactionTaskFuture = streamObjectCompactionScheduler.scheduleWithFixedDelay(() -> {
-            List<StreamWrapper> operationStreams = new ArrayList<>(openedStreams.values());
-            operationStreams.forEach(StreamWrapper::compact);
-        }, 5, 5, TimeUnit.MINUTES);
+            try {
+                CompactionHint hint = new CompactionHint(objectManager.getObjectsCount().get());
+                List<StreamWrapper> operationStreams = new ArrayList<>(openedStreams.values());
+                operationStreams.forEach(s -> s.compact(hint));
+            } catch (Throwable e) {
+                LOGGER.info("run stream object compaction task failed", e);
+            }
+        }, 1, 1, TimeUnit.MINUTES);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch, Map<String, String> tags) {
@@ -223,9 +237,10 @@ public class S3StreamClient implements StreamClient {
 
     public class StreamWrapper implements Stream {
         private final S3Stream stream;
-        private final Semaphore trimCompactionSemaphore = new Semaphore(1);
-        private volatile long lastCompactionTimestamp = 0;
-        private volatile long lastMajorCompactionTimestamp = System.currentTimeMillis();
+        private long lastMinorCompactionTimestamp = System.currentTimeMillis();
+        private long lastMajorCompactionTimestamp = System.currentTimeMillis();
+        private long lastMinorV1CompactionTimestamp = System.currentTimeMillis();
+        private long lastMajorV1CompactionTimestamp = System.currentTimeMillis();
 
         public StreamWrapper(S3Stream stream) {
             this.stream = stream;
@@ -269,21 +284,7 @@ public class S3StreamClient implements StreamClient {
 
         @Override
         public CompletableFuture<Void> trim(long newStartOffset) {
-            return stream.trim(newStartOffset).whenComplete((nil, ex) -> {
-                if (!trimCompactionSemaphore.tryAcquire()) {
-                    // ensure only one compaction task which trim triggers
-                    return;
-                }
-                streamObjectCompactionScheduler.execute(() -> {
-                    try {
-                        // trigger compaction after trim to clean up the expired stream objects.
-                        this.compact(CLEANUP);
-                    } finally {
-                        trimCompactionSemaphore.release();
-                    }
-                });
-            });
-
+            return stream.trim(newStartOffset);
         }
 
         @Override
@@ -316,29 +317,59 @@ public class S3StreamClient implements StreamClient {
             return stream.isClosed();
         }
 
-        public void compact() {
-            if (System.currentTimeMillis() - lastMajorCompactionTimestamp > TimeUnit.MINUTES.toMillis(config.streamObjectCompactionIntervalMinutes())) {
-                compact(MAJOR);
-                lastMajorCompactionTimestamp = System.currentTimeMillis();
-            } else {
-                compact(MINOR);
-            }
-        }
-
-        public void compact(StreamObjectCompactor.CompactionType compactionType) {
+        public void compact(CompactionHint hint) {
             if (isClosed()) {
                 // the compaction task may be taking a long time,
                 // so we need to check if the stream is closed before starting the compaction.
                 return;
             }
-            if (System.currentTimeMillis() - lastCompactionTimestamp < STREAM_OBJECT_COMPACTION_INTERVAL_MS) {
-                // skip compaction if the last compaction is within the interval.
-                return;
+            if (config.version().isStreamObjectCompactV1Supported()) {
+                compactV1(hint);
+            } else {
+                compactV0();
             }
+
+        }
+
+        private void compactV0() {
+            long now = System.currentTimeMillis();
+            if (now - lastMajorCompactionTimestamp > TimeUnit.MINUTES.toMillis(config.streamObjectCompactionIntervalMinutes())) {
+                compact(MAJOR);
+                lastMajorCompactionTimestamp = System.currentTimeMillis();
+            } else if (now - lastMinorCompactionTimestamp > TimeUnit.MINUTES.toMillis(5)) {
+                compact(MINOR);
+                lastMinorCompactionTimestamp = System.currentTimeMillis();
+            } else {
+                compact(CLEANUP);
+            }
+        }
+
+        private void compactV1(CompactionHint hint) {
+            long now = System.currentTimeMillis();
+            if (now - lastMajorV1CompactionTimestamp > MAJOR_V1_COMPACTION_INTERVAL || hint.objectsCount >= MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD) {
+                compact(MAJOR_V1);
+                lastMajorV1CompactionTimestamp = System.currentTimeMillis();
+            } else if (now - lastMinorV1CompactionTimestamp > MINOR_V1_COMPACTION_INTERVAL) {
+                compact(MINOR_V1);
+                lastMinorV1CompactionTimestamp = System.currentTimeMillis();
+            } else {
+                compact(CLEANUP_V1);
+            }
+        }
+
+        public void compact(StreamObjectCompactor.CompactionType compactionType) {
             StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(this)
                 .s3Operator(s3Operator).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
             task.compact(compactionType);
-            lastCompactionTimestamp = System.currentTimeMillis();
         }
+    }
+
+    static class CompactionHint {
+        int objectsCount;
+
+        public CompactionHint(int objectsCount) {
+            this.objectsCount = objectsCount;
+        }
+
     }
 }
