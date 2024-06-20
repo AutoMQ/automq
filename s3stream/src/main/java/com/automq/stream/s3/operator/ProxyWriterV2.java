@@ -130,7 +130,7 @@ class ProxyWriterV2 implements Writer {
         public void copyOnWrite() {
             int size = data.readableBytes();
             if (size > 0) {
-                ByteBuf buf = ByteBufAlloc.byteBuffer(size, writeOptions.context().allocType());
+                ByteBuf buf = ByteBufAlloc.byteBuffer(size, writeOptions.allocType());
                 buf.writeBytes(data.duplicate());
                 CompositeByteBuf copy = ByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
                 this.data.release();

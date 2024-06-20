@@ -11,9 +11,11 @@
 
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -40,15 +42,15 @@ public interface ObjectStorage {
         public static final WriteOptions DEFAULT = new WriteOptions();
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
-        private Writer.Context context = Writer.Context.DEFAULT;
+        private int allocType = ByteBufAlloc.DEFAULT;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
             return this;
         }
 
-        public WriteOptions context(Writer.Context context) {
-            this.context = context;
+        public WriteOptions allocType(int allocType) {
+            this.allocType = allocType;
             return this;
         }
 
@@ -56,8 +58,8 @@ public interface ObjectStorage {
             return throttleStrategy;
         }
 
-        public Writer.Context context() {
-            return context;
+        public int allocType() {
+            return allocType;
         }
 
     }

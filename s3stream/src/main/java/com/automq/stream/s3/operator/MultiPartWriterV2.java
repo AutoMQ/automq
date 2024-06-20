@@ -202,7 +202,7 @@ public class MultiPartWriterV2 implements Writer {
         public void copyOnWrite() {
             int size = partBuf.readableBytes();
             if (size > 0) {
-                ByteBuf buf = ByteBufAlloc.byteBuffer(size, writeOptions.context().allocType());
+                ByteBuf buf = ByteBufAlloc.byteBuffer(size, writeOptions.allocType());
                 buf.writeBytes(partBuf.duplicate());
                 CompositeByteBuf copy = ByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
                 this.partBuf.release();
