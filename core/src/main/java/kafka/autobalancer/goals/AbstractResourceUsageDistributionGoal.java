@@ -23,8 +23,9 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     private final Comparator<BrokerUpdater.Broker> highLoadComparator = Comparator.comparingDouble(b -> -b.loadValue(resource()));
     private final Comparator<BrokerUpdater.Broker> lowLoadComparator = Comparator.comparingDouble(b -> b.loadValue(resource()));
     protected Normalizer normalizer;
-    protected volatile long usageDetectThreshold;
-    protected volatile double usageAvgDeviationRatio;
+    protected long usageDetectThreshold;
+    protected double usageAvgDeviationRatio;
+    protected double usageTrivialRatio;
     protected double usageAvg;
     protected double usageAvgDeviation;
     protected double usageDistLowerBound;
@@ -32,6 +33,7 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
 
     @Override
     public void initialize(Collection<BrokerUpdater.Broker> brokers) {
+        super.initialize(brokers);
         byte resource = resource();
         usageAvg = brokers.stream().mapToDouble(e -> e.loadValue(resource)).sum() / brokers.size();
         usageAvgDeviation = usageAvg * usageAvgDeviationRatio;
@@ -89,4 +91,9 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     }
 
     public abstract double linearNormalizerThreshold();
+
+    @Override
+    public boolean isTrivialLoadChange(BrokerUpdater.Broker broker, double loadChange) {
+        return Math.abs(loadChange) < usageTrivialRatio * usageAvg;
+    }
 }

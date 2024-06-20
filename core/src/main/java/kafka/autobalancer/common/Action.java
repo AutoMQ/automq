@@ -58,6 +58,13 @@ public class Action {
         return srcBrokerId;
     }
 
+    public Action undo() {
+        if (type == ActionType.MOVE) {
+            return new Action(type, srcTp, destBrokerId, srcBrokerId);
+        }
+        return new Action(type, destTp, destBrokerId, srcBrokerId, srcTp);
+    }
+
     @Override
     public String toString() {
         return "Action{" +

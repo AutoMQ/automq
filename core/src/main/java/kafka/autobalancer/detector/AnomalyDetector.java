@@ -272,6 +272,7 @@ public class AnomalyDetector extends AbstractResumableService {
         List<Action> totalActions = new ArrayList<>();
         Map<String, Set<String>> goalsByGroup = GoalUtils.groupGoals(goals);
         List<Goal> optimizedGoals = new ArrayList<>();
+        goals.forEach(goal -> goal.initialize(goal.getEligibleBrokers(snapshot)));
         for (Goal goal : goals) {
             if (!isRunnable()) {
                 break;
