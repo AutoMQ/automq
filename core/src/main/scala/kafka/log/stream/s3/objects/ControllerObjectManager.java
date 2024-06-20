@@ -239,4 +239,9 @@ public class ControllerObjectManager implements ObjectManager {
         int limit) {
         return this.metadataManager.getStreamObjects(streamId, startOffset, endOffset, limit);
     }
+
+    @Override
+    public CompletableFuture<Integer> getObjectsCount() {
+        return CompletableFuture.completedFuture(this.metadataManager.getObjectsCount());
+    }
 }

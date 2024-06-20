@@ -67,7 +67,12 @@ public final class S3ObjectsImage extends AbstractReferenceCounted {
     }
 
     public S3Object getObjectMetadata(long objectId) {
-        return this.objects.get(objectId, epoch);
+        if (objects == null) {
+            return null;
+        }
+        synchronized (registry) {
+            return this.objects.get(objectId, epoch);
+        }
     }
 
     public long nextAssignedObjectId() {
@@ -102,20 +107,44 @@ public final class S3ObjectsImage extends AbstractReferenceCounted {
     }
 
     public boolean isEmpty() {
-        return objects == null || objects.isEmpty(epoch);
+        if (objects == null) {
+            return true;
+        }
+        synchronized (registry) {
+            return objects.isEmpty(epoch);
+        }
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nextAssignedObjectId, objects);
+        return Objects.hash(nextAssignedObjectId);
     }
 
     public Collection<Long> objectIds() {
-        return objects.keySet(epoch);
+        if (objects == null) {
+            return Collections.emptyList();
+        }
+        synchronized (registry) {
+            return objects.keySet(epoch);
+        }
+    }
+
+    public int objectsCount() {
+        if (objects == null) {
+            return 0;
+        }
+        synchronized (registry) {
+            return objects.size(epoch);
+        }
     }
 
     Collection<S3Object> objects() {
-        return objects == null ? Collections.emptyList() : new LinkedList<>(objects.values(epoch));
+        if (objects == null) {
+            return Collections.emptyList();
+        }
+        synchronized (registry) {
+            return new LinkedList<>(objects.values(epoch));
+        }
     }
 
     TimelineHashMap<Long, S3Object> timelineObjects() {

@@ -92,5 +92,10 @@ public interface ObjectManager {
      */
     CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset,
         int limit);
+
+    /**
+     * Get the cluster objects count.
+     */
+    CompletableFuture<Integer> getObjectsCount();
 }
 
