@@ -328,10 +328,10 @@ public class AnomalyDetectorTest {
         Assertions.assertEquals(2, detector.goals().size());
         Assertions.assertEquals(NetworkInUsageDistributionGoal.class, detector.goals().get(0).getClass());
         Assertions.assertEquals(1024 * 1024, ((AbstractResourceUsageDistributionGoal) detector.goals().get(0)).getUsageDetectThreshold());
-        Assertions.assertEquals(0.2, ((AbstractResourceUsageDistributionGoal) detector.goals().get(0)).getUsageAvgDeviationRatio());
+        Assertions.assertEquals(0.15, ((AbstractResourceUsageDistributionGoal) detector.goals().get(0)).getUsageAvgDeviationRatio());
         Assertions.assertEquals(NetworkOutUsageDistributionGoal.class, detector.goals().get(1).getClass());
         Assertions.assertEquals(1024 * 1024, ((AbstractResourceUsageDistributionGoal) detector.goals().get(1)).getUsageDetectThreshold());
-        Assertions.assertEquals(0.2, ((AbstractResourceUsageDistributionGoal) detector.goals().get(1)).getUsageAvgDeviationRatio());
+        Assertions.assertEquals(0.15, ((AbstractResourceUsageDistributionGoal) detector.goals().get(1)).getUsageAvgDeviationRatio());
 
         detector.reconfigure(Map.of(
                 AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, new StringJoiner(",")

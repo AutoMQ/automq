@@ -32,6 +32,17 @@ import java.util.stream.Collectors;
 public abstract class AbstractGoal implements Goal {
     public static final Double NOT_ACCEPTABLE = -1.0;
     public static final double POSITIVE_ACTION_SCORE_THRESHOLD = 0.5;
+    protected boolean initialized = false;
+
+    @Override
+    public void initialize(Collection<BrokerUpdater.Broker> brokers) {
+        initialized = true;
+    }
+
+    @Override
+    public boolean isInitialized() {
+        return initialized;
+    }
 
     protected Optional<Action> tryMovePartitionOut(ClusterModelSnapshot cluster,
                                                    TopicPartitionReplicaUpdater.TopicPartitionReplica replica,
@@ -216,8 +227,7 @@ public abstract class AbstractGoal implements Goal {
         BrokerUpdater.Broker srcBrokerBefore = cluster.broker(action.getSrcBrokerId());
         BrokerUpdater.Broker destBrokerBefore = cluster.broker(action.getDestBrokerId());
 
-        if (!srcBrokerBefore.getMetricVersion().isGoalSupported(this)
-                || !destBrokerBefore.getMetricVersion().isGoalSupported(this)) {
+        if (!(isEligibleBroker(srcBrokerBefore) && isEligibleBroker(destBrokerBefore))) {
             return POSITIVE_ACTION_SCORE_THRESHOLD;
         }
 

@@ -45,6 +45,8 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = PREFIX + "execution.interval.ms";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS = PREFIX + "exclude.broker.ids";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS = PREFIX + "exclude.topics";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO = PREFIX + "network.in.trivial.change.ratio";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_TRIVIAL_CHANGE_RATIO = PREFIX + "network.out.trivial.change.ratio";
     /* Default values */
     public static final boolean DEFAULT_AUTO_BALANCER_CONTROLLER_ENABLE = false;
     public static final Integer DEFAULT_AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG = 1;
@@ -58,13 +60,15 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
             .add(NetworkOutUsageDistributionGoal.class.getName()).toString();
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS = 60000;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD = 1024 * 1024;
-    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION = 0.2;
+    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION = 0.15;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD = 1024 * 1024;
-    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION = 0.2;
+    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION = 0.15;
     public static final int DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY = 50;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = 5000;
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS = "";
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS = "";
+    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO = 0.05;
+    public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_TRIVIAL_CHANGE_RATIO = 0.05;
     /* Documents */
     private static final String AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG_DOC = "The number of partitions of Auto Balancer metrics topic";
     private static final String AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_RETENTION_MS_CONFIG_DOC = TopicConfig.RETENTION_MS_DOC;
@@ -86,6 +90,8 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS_DOC = "Time interval between each action batch in milliseconds";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS_DOC = "Broker ids that auto balancer will ignore during balancing";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS_DOC = "Topics that auto balancer will ignore during balancing";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO_DOC = "The ratio of network inbound traffic change that is considered trivial. Trivial change will not be applied to the cluster";
+    public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_TRIVIAL_CHANGE_RATIO_DOC = "The ratio of network outbound traffic change that is considered trivial. Trivial change will not be applied to the cluster";
 
     public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE,
@@ -99,7 +105,9 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS,
-            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_TRIVIAL_CHANGE_RATIO
     );
 
     static {
@@ -157,7 +165,13 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
                         AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS_DOC)
                 .define(AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS, ConfigDef.Type.LIST,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS, ConfigDef.Importance.HIGH,
-                        AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS_DOC);
+                        AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS_DOC)
+                .define(AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO, ConfigDef.Type.DOUBLE,
+                        DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO, ConfigDef.Importance.HIGH,
+                        AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO_DOC)
+                .define(AUTO_BALANCER_CONTROLLER_NETWORK_OUT_TRIVIAL_CHANGE_RATIO, ConfigDef.Type.DOUBLE,
+                    DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_TRIVIAL_CHANGE_RATIO, ConfigDef.Importance.HIGH,
+                        AUTO_BALANCER_CONTROLLER_NETWORK_OUT_TRIVIAL_CHANGE_RATIO_DOC);
     }
 
     public AutoBalancerControllerConfig(Map<?, ?> originals, boolean doLog) {

@@ -78,9 +78,9 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
      * @param srcBroker        broker to reduce load
      * @param candidateBrokers candidate brokers to move replicas to, or swap replicas with
      * @param goalsByPriority  all configured goals sorted by priority
-     * @return a list of actions able to reduce load of srcBroker
+     * @return a list of actions able to reduce load of srcBroker along with load change
      */
-    protected List<Action> tryReduceLoadByAction(ActionType actionType,
+    protected Result tryReduceLoadByAction(ActionType actionType,
                                                  ClusterModelSnapshot cluster,
                                                  BrokerUpdater.Broker srcBroker,
                                                  List<BrokerUpdater.Broker> candidateBrokers,
@@ -90,13 +90,14 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
         List<Action> actionList = new ArrayList<>();
         candidateBrokers = candidateBrokers.stream().filter(b -> !b.isSlowBroker()).collect(Collectors.toList());
         if (candidateBrokers.isEmpty()) {
-            return actionList;
+            return new Result(actionList, 0.0);
         }
         List<TopicPartitionReplicaUpdater.TopicPartitionReplica> srcReplicas = cluster
                 .replicasFor(srcBroker.getBrokerId())
                 .stream()
                 .sorted(Comparator.comparingDouble(r -> -r.loadValue(resource()))) // higher load first
                 .collect(Collectors.toList());
+        double loadChange = 0.0;
         for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : srcReplicas) {
             candidateBrokers.sort(lowLoadComparator()); // lower load first
             Optional<Action> optionalAction;
@@ -113,13 +114,17 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                 Action action = optionalAction.get();
                 cluster.applyAction(action);
                 actionList.add(action);
+                loadChange -= tp.loadValue(resource());
+                if (action.getType() == ActionType.SWAP) {
+                    loadChange += cluster.replica(action.getDestBrokerId(), action.getDestTopicPartition()).loadValue(resource());
+                }
             }
             if (isBrokerAcceptable(srcBroker)) {
                 // broker is acceptable after action, skip iterating reset partitions
-                return actionList;
+                return new Result(actionList, loadChange);
             }
         }
-        return actionList;
+        return new Result(actionList, loadChange);
     }
 
     /**
@@ -130,9 +135,9 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
      * @param srcBroker        broker to increase load
      * @param candidateBrokers candidate brokers to move replicas from, or swap replicas with
      * @param goalsByPriority  all configured goals sorted by priority
-     * @return a list of actions able to increase load of srcBroker
+     * @return a list of actions able to increase load of srcBroker along with load change
      */
-    protected List<Action> tryIncreaseLoadByAction(ActionType actionType,
+    protected Result tryIncreaseLoadByAction(ActionType actionType,
                                                    ClusterModelSnapshot cluster,
                                                    BrokerUpdater.Broker srcBroker,
                                                    List<BrokerUpdater.Broker> candidateBrokers,
@@ -141,6 +146,7 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                                                    Map<String, Set<String>> goalsByGroup) {
         List<Action> actionList = new ArrayList<>();
         candidateBrokers.sort(highLoadComparator()); // higher load first
+        double loadChange = 0.0;
         for (BrokerUpdater.Broker candidateBroker : candidateBrokers) {
             List<TopicPartitionReplicaUpdater.TopicPartitionReplica> candidateReplicas = cluster
                     .replicasFor(candidateBroker.getBrokerId())
@@ -162,14 +168,18 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                     Action action = optionalAction.get();
                     cluster.applyAction(action);
                     actionList.add(action);
+                    loadChange += tp.loadValue(resource());
+                    if (action.getType() == ActionType.SWAP) {
+                        loadChange -= cluster.replica(action.getDestBrokerId(), action.getDestTopicPartition()).loadValue(resource());
+                    }
                 }
                 if (isBrokerAcceptable(srcBroker)) {
                     // broker is acceptable after action, skip iterating reset partitions
-                    return actionList;
+                    return new Result(actionList, loadChange);
                 }
             }
         }
-        return actionList;
+        return new Result(actionList, loadChange);
     }
 
     @Override
@@ -197,4 +207,22 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
     protected abstract Comparator<BrokerUpdater.Broker> highLoadComparator();
 
     protected abstract Comparator<BrokerUpdater.Broker> lowLoadComparator();
+
+    public static class Result {
+        private final List<Action> actions;
+        private final double loadChange;
+
+        public Result(List<Action> actions, double loadChange) {
+            this.actions = actions;
+            this.loadChange = loadChange;
+        }
+
+        public List<Action> actions() {
+            return actions;
+        }
+
+        public double loadChange() {
+            return loadChange;
+        }
+    }
 }

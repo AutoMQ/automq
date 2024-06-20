@@ -12,6 +12,7 @@
 package kafka.autobalancer.goals;
 
 import com.automq.stream.utils.LogContext;
+import java.util.Collections;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.model.BrokerUpdater;
@@ -20,7 +21,6 @@ import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.config.ConfigException;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -43,24 +43,26 @@ public interface Goal extends Configurable, Comparable<Goal> {
 
     default List<Action> optimize(ClusterModelSnapshot cluster, Collection<Goal> goalsByPriority,
                                   Collection<Goal> optimizedGoal, Map<String, Set<String>> goalsByGroup) {
-        List<BrokerUpdater.Broker> brokers = getEligibleBrokers(cluster);
-        goalsByPriority.forEach(e -> e.initialize(brokers));
-        return doOptimize(brokers, cluster, goalsByPriority, optimizedGoal, goalsByGroup);
+        for (Goal goal : goalsByPriority) {
+            if (!goal.isInitialized()) {
+                LOGGER.error("Goal {} is not initialized, maybe invoke initialize() before use.", goal.name());
+                return Collections.emptyList();
+            }
+        }
+        return doOptimize(getEligibleBrokers(cluster), cluster, goalsByPriority, optimizedGoal, goalsByGroup);
     }
 
     default List<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {
-        List<BrokerUpdater.Broker> brokers = new ArrayList<>();
-        for (BrokerUpdater.Broker broker : cluster.brokers()) {
-            if (broker.getMetricVersion().isGoalSupported(this)) {
-                brokers.add(broker);
-            } else {
-                LOGGER.warn("Goal {} is not supported in version {} for broker-{}", name(), broker.getMetricVersion(), broker.getBrokerId());
-            }
-        }
-        return brokers;
+        return cluster.brokers().stream().filter(this::isEligibleBroker).collect(Collectors.toList());
+    }
+
+    default boolean isEligibleBroker(BrokerUpdater.Broker broker) {
+        return broker.getMetricVersion().isGoalSupported(this);
     }
 
     void initialize(Collection<BrokerUpdater.Broker> brokers);
+
+    boolean isInitialized();
 
     boolean isHardGoal();
 
