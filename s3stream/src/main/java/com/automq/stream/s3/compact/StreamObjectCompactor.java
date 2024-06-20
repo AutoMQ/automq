@@ -269,7 +269,7 @@ public class StreamObjectCompactor {
                         nextBlockPosition += dataBlock.size();
                         lastIndex = dataBlock;
                     }
-                    writer.copyWrite(ObjectUtils.genKey(0, object.objectId()), validDataBlockStartPosition, basicObjectInfo.dataBlockSize());
+                    writer.copyWrite(object, validDataBlockStartPosition, basicObjectInfo.dataBlockSize());
                     objectSize += basicObjectInfo.dataBlockSize() - validDataBlockStartPosition;
                     indexes.addComponent(true, subIndexes);
                     compactedObjectIds.add(object.objectId());
