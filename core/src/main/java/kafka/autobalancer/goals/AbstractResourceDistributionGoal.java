@@ -42,24 +42,31 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
             }
             List<BrokerUpdater.Broker> candidateBrokers = eligibleBrokers.stream()
                     .filter(b -> b.getBrokerId() != broker.getBrokerId() && broker.load(resource()).isTrusted()).collect(Collectors.toList());
+            Result result = null;
             if (requireLessLoad(broker)) {
-                List<Action> brokerActions = tryReduceLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers,
+                result = tryReduceLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers,
                         goalsByPriority, optimizedGoals, goalsByGroup);
 //                if (!isBrokerAcceptable(broker)) {
 //                    brokerActions.addAll(tryReduceLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
 //                }
-                actions.addAll(brokerActions);
             } else if (requireMoreLoad(broker)) {
                 if (broker.isSlowBroker()) {
                     // prevent scheduling more partitions to slow broker
                     continue;
                 }
-                List<Action> brokerActions = tryIncreaseLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers,
+                result = tryIncreaseLoadByAction(ActionType.MOVE, cluster, broker, candidateBrokers,
                         goalsByPriority, optimizedGoals, goalsByGroup);
 //                if (!isBrokerAcceptable(broker)) {
 //                    brokerActions.addAll(tryIncreaseLoadByAction(ActionType.SWAP, cluster, broker, candidateBrokers, goalsByPriority));
 //                }
-                actions.addAll(brokerActions);
+            }
+
+            if (result != null) {
+                if (!isTrivialLoadChange(broker, result.loadChange())) {
+                    actions.addAll(result.actions());
+                } else {
+                    result.actions().forEach(cluster::undoAction);
+                }
             }
 
             if (!isBrokerAcceptable(broker)) {
@@ -68,6 +75,10 @@ public abstract class AbstractResourceDistributionGoal extends AbstractResourceG
             }
         }
         return actions;
+    }
+
+    protected boolean isTrivialLoadChange(BrokerUpdater.Broker broker, double loadChange) {
+        return false;
     }
 
     protected abstract boolean requireLessLoad(BrokerUpdater.Broker broker);

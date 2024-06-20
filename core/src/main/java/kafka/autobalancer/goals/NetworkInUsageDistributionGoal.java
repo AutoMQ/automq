@@ -39,6 +39,7 @@ public class NetworkInUsageDistributionGoal extends AbstractNetworkUsageDistribu
         this.usageDetectThreshold = controllerConfig.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD);
         this.usageAvgDeviationRatio = Math.max(0.0, Math.min(1.0,
                 controllerConfig.getDouble(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION)));
+        this.usageTrivialRatio = controllerConfig.getDouble(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO);
     }
 
     @Override

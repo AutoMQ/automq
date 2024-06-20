@@ -89,6 +89,11 @@ public class ClusterModelSnapshot {
         }
     }
 
+    public void undoAction(Action action) {
+        Action undoAction = action.undo();
+        applyAction(undoAction);
+    }
+
     public void markSlowBrokers() {
         Map<BrokerUpdater.Broker, Map<Byte, Snapshot>> brokerMetricsValues = new HashMap<>();
         Map<Byte, Map<BrokerUpdater.Broker, Snapshot>> metricsValues = new HashMap<>();
