@@ -393,21 +393,21 @@ public class BlockWALService implements WriteAheadLog {
     public AppendResult append(TraceContext context, ByteBuf buf, int crc) throws OverCapacityException {
         // get current method name
         TraceContext.Scope scope = TraceUtils.createAndStartSpan(context, "BlockWALService::append");
-        TimerUtil timerUtil = new TimerUtil();
+        final long startTime = System.nanoTime();
         try {
             AppendResult result = append0(buf, crc);
             result.future().whenComplete((nil, ex) -> TraceUtils.endSpan(scope, ex));
             return result;
         } catch (OverCapacityException ex) {
             buf.release();
-            StorageOperationStats.getInstance().appendWALFullStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALFullStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
             TraceUtils.endSpan(scope, ex);
             throw ex;
         }
     }
 
     private AppendResult append0(ByteBuf body, int crc) throws OverCapacityException {
-        TimerUtil timerUtil = new TimerUtil();
+        final long startTime = System.nanoTime();
         checkStarted();
         checkWriteMode();
         checkResetFinished();
@@ -432,8 +432,8 @@ public class BlockWALService implements WriteAheadLog {
         slidingWindowService.tryWriteBlock();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
-        StorageOperationStats.getInstance().appendWALBeforeStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+        StorageOperationStats.getInstance().appendWALBeforeStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
         return appendResult;
     }
 

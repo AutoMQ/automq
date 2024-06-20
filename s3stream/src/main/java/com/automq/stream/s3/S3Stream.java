@@ -145,7 +145,7 @@ public class S3Stream implements Stream {
     @Override
     @WithSpan
     public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
-        TimerUtil timerUtil = new TimerUtil();
+        long startTimeNanos = System.nanoTime();
         readLock.lock();
         try {
             CompletableFuture<AppendResult> cf = exec(() -> {
@@ -160,9 +160,9 @@ public class S3Stream implements Stream {
                 }
             }, LOGGER, "append");
             pendingAppends.add(cf);
-            pendingAppendTimestamps.push(timerUtil.lastAs(TimeUnit.NANOSECONDS));
+            pendingAppendTimestamps.push(startTimeNanos);
             cf.whenComplete((nil, ex) -> {
-                StreamOperationStats.getInstance().appendStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                StreamOperationStats.getInstance().appendStreamLatency.record(TimerUtil.durationElapsedAs(startTimeNanos, TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
                 pendingAppendTimestamps.pop();
             });
