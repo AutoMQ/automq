@@ -16,7 +16,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
@@ -40,16 +40,12 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
 public interface ObjectReader extends AutoCloseable {
 
-    static ObjectReader reader(S3ObjectMetadata metadata, S3Operator s3Operator) {
-        return new DefaultObjectReader(metadata, s3Operator);
-    }
-
     static ObjectReader reader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
         switch (ObjectAttributes.from(metadata.attributes()).type()) {
             case Normal:
-                throw new UnsupportedOperationException();
+                return new DefaultObjectReader(metadata, objectStorage);
             case Composite:
-                return new CompositeObjectReader(metadata, (m, start, end) -> objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, m, start, end));
+                return CompositeObject.reader(metadata, objectStorage);
             default:
                 throw new UnsupportedOperationException();
         }
@@ -88,14 +84,14 @@ public interface ObjectReader extends AutoCloseable {
         private static final long RETRY_INTERVAL_MILLS = TimeUnit.SECONDS.toMillis(3);
         private final S3ObjectMetadata metadata;
         private final String objectKey;
-        private final S3Operator s3Operator;
+        private final ObjectStorage objectStorage;
         private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
         private final AtomicInteger refCount = new AtomicInteger(1);
 
-        public DefaultObjectReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
+        public DefaultObjectReader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
             this.metadata = metadata;
             this.objectKey = metadata.key();
-            this.s3Operator = s3Operator;
+            this.objectStorage = objectStorage;
         }
 
         public S3ObjectMetadata metadata() {
@@ -123,7 +119,11 @@ public interface ObjectReader extends AutoCloseable {
         }
 
         public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
-            CompletableFuture<ByteBuf> rangeReadCf = s3Operator.rangeRead(objectKey, block.startPosition(), block.endPosition(), ThrottleStrategy.CATCH_UP);
+            CompletableFuture<ByteBuf> rangeReadCf = objectStorage.rangeRead(
+                new ReadOptions().throttleStrategy(ThrottleStrategy.CATCH_UP).bucket(metadata.bucket()), metadata.key(),
+                block.startPosition(),
+                block.endPosition()
+            );
             return rangeReadCf.thenApply(buf -> {
                 ByteBuf pooled = ByteBufAlloc.byteBuffer(buf.readableBytes(), BLOCK_CACHE);
                 pooled.writeBytes(buf);
@@ -138,7 +138,7 @@ public interface ObjectReader extends AutoCloseable {
         }
 
         private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt, int leftRetryTimes) {
-            CompletableFuture<ByteBuf> cf = s3Operator.rangeRead(objectKey, startPosition, metadata.objectSize());
+            CompletableFuture<ByteBuf> cf = objectStorage.rangeRead(new ReadOptions().bucket(metadata.bucket()), metadata.key(), startPosition, metadata.objectSize());
             cf.thenAccept(buf -> {
                 try {
                     BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata);

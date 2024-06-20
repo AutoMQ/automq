@@ -28,7 +28,7 @@ import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
@@ -66,7 +66,7 @@ public class CompactionManager {
     private final Logger s3ObjectLogger;
     private final ObjectManager objectManager;
     private final StreamManager streamManager;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
     private final CompactionAnalyzer compactionAnalyzer;
     private final ScheduledExecutorService compactionScheduledExecutor;
     private final ScheduledExecutorService bucketCallbackScheduledExecutor;
@@ -89,20 +89,20 @@ public class CompactionManager {
     private boolean hasRemainingObjects = false;
 
     public CompactionManager(Config config, ObjectManager objectManager, StreamManager streamManager,
-        S3Operator s3Operator) {
+        ObjectStorage objectStorage) {
         String logPrefix = String.format("[CompactionManager id=%d] ", config.nodeId());
         this.logger = new LogContext(logPrefix).logger(CompactionManager.class);
         this.s3ObjectLogger = S3ObjectLogger.logger(logPrefix);
         this.config = config;
         this.objectManager = objectManager;
         this.streamManager = streamManager;
-        this.s3Operator = s3Operator;
+        this.objectStorage = objectStorage;
         this.compactionInterval = config.streamSetObjectCompactionInterval();
         this.forceSplitObjectPeriod = config.streamSetObjectCompactionForceSplitPeriod();
         this.maxObjectNumToCompact = config.streamSetObjectCompactionMaxObjectNum();
         this.s3ObjectLogEnable = config.objectLogEnable();
         this.networkBandwidth = config.networkBaselineBandwidth();
-        this.uploader = new CompactionUploader(objectManager, s3Operator, config);
+        this.uploader = new CompactionUploader(objectManager, objectStorage, config);
         this.compactionCacheSize = config.streamSetObjectCompactionCacheSize();
         long streamSplitSize = config.streamSetObjectCompactionStreamSplitSize();
         maxStreamNumPerStreamSetObject = config.maxStreamNumPerStreamSetObject();
@@ -387,7 +387,7 @@ public class CompactionManager {
         }
 
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList,
-            Collections.singletonList(objectMetadata), s3Operator, logger);
+            Collections.singletonList(objectMetadata), objectStorage, logger);
         if (streamDataBlocksMap.isEmpty()) {
             logger.warn("Read index for object {} failed", objectMetadata.objectId());
             return false;
@@ -436,14 +436,14 @@ public class CompactionManager {
             objectManager.prepareObject(batchGroup.size(), TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
                 .thenComposeAsync(objectId -> {
                     List<StreamDataBlock> blocksToRead = batchGroup.stream().flatMap(p -> p.getLeft().stream()).collect(Collectors.toList());
-                    DataBlockReader reader = new DataBlockReader(objectMetadata, s3Operator, compactionBucket, bucketCallbackScheduledExecutor);
+                    DataBlockReader reader = new DataBlockReader(objectMetadata, objectStorage, compactionBucket, bucketCallbackScheduledExecutor);
                     // batch read
                     reader.readBlocks(blocksToRead, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
 
                     List<CompletableFuture<Void>> cfs = new ArrayList<>();
                     for (Pair<List<StreamDataBlock>, CompletableFuture<StreamObject>> pair : batchGroup) {
                         List<StreamDataBlock> blocks = pair.getLeft();
-                        DataBlockWriter writer = new DataBlockWriter(objectId, s3Operator, config.objectPartSize());
+                        DataBlockWriter writer = new DataBlockWriter(objectId, objectStorage, config.objectPartSize());
                         CompletableFuture<Void> cf = CompactionUtils.chainWriteDataBlock(writer, blocks, forceSplitThreadPool);
                         long finalObjectId = objectId;
                         cfs.add(cf.thenCompose(nil -> writer.close()).whenComplete((ret, ex) -> {
@@ -531,7 +531,7 @@ public class CompactionManager {
         logger.info("{} stream set objects as compact candidates, total compaction size: {}",
             objectsToCompact.size(), objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum());
         Map<Long, List<StreamDataBlock>> streamDataBlockMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList,
-            objectsToCompact, s3Operator, logger);
+            objectsToCompact, objectStorage, logger);
         for (List<StreamDataBlock> blocks : streamDataBlockMap.values()) {
             for (StreamDataBlock block : blocks) {
                 if (block.getBlockSize() > compactionCacheSize) {
@@ -679,7 +679,7 @@ public class CompactionManager {
             for (Map.Entry<Long, List<StreamDataBlock>> streamDataBlocEntry : compactionPlan.streamDataBlocksMap().entrySet()) {
                 S3ObjectMetadata metadata = s3ObjectMetadataMap.get(streamDataBlocEntry.getKey());
                 List<StreamDataBlock> streamDataBlocks = streamDataBlocEntry.getValue();
-                DataBlockReader reader = new DataBlockReader(metadata, s3Operator, compactionBucket, bucketCallbackScheduledExecutor);
+                DataBlockReader reader = new DataBlockReader(metadata, objectStorage, compactionBucket, bucketCallbackScheduledExecutor);
                 reader.readBlocks(streamDataBlocks, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
             }
             List<CompletableFuture<StreamObject>> streamObjectCfList = new ArrayList<>();

@@ -12,14 +12,14 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
-
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface ObjectStorage {
+
+    void close();
 
     /**
      * Get {@link Writer} for the object.
@@ -29,12 +29,46 @@ public interface ObjectStorage {
     /**
      * Range read object from the object.
      */
-    CompletableFuture<ByteBuf> rangeRead(ReadOptions options, S3ObjectMetadata objectMetadata, long start, long end);
+    CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
-    CompletableFuture<ByteBuf> rangeRead(S3ObjectMetadata objectMetadata, long start, long end);
 
-    CompletableFuture<Void> delete(List<S3ObjectMetadata> objectMetadataList);
+    // Low level API
+    CompletableFuture<Void> write(WriteOptions options, String objectPath, ByteBuf buf);
 
+    CompletableFuture<List<ObjectInfo>> list(String prefix);
+
+    CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
+
+    class ObjectPath {
+        private final short bucket;
+        private final String key;
+
+        public ObjectPath(short bucket, String key) {
+            this.bucket = bucket;
+            this.key = key;
+        }
+
+        public short bucket() {
+            return bucket;
+        }
+
+        public String key() {
+            return key;
+        }
+    }
+
+    class ObjectInfo extends ObjectPath {
+        private final long timestamp;
+
+        public ObjectInfo(short bucket, String key, long timestamp) {
+            super(bucket, key);
+            this.timestamp = timestamp;
+        }
+
+        public long timestamp() {
+            return timestamp;
+        }
+    }
 
     class WriteOptions {
         public static final WriteOptions DEFAULT = new WriteOptions();
@@ -66,14 +100,24 @@ public interface ObjectStorage {
         public static final ReadOptions DEFAULT = new ReadOptions();
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
+        private short bucket = (short) 0;
 
         public ReadOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
             return this;
         }
 
+        public ReadOptions bucket(short bucket) {
+            this.bucket = bucket;
+            return this;
+        }
+
         public ThrottleStrategy throttleStrategy() {
             return throttleStrategy;
+        }
+
+        public short bucket() {
+            return bucket;
         }
     }
 }

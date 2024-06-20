@@ -20,7 +20,8 @@ package org.apache.kafka.controller;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.objects.ObjectAttributes;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -67,13 +68,13 @@ public class S3ObjectControlManagerTest {
     private static final Config S3_CONFIG = new Config().endpoint(S3_ENDPOINT).region(S3_REGION).bucket(S3_BUCKET).objectRetentionTimeInSecond(1);
     private S3ObjectControlManager manager;
     private QuorumController controller;
-    private S3Operator operator;
+    private ObjectStorage operator;
     private long nextObjectId;
 
     @BeforeEach
     public void setUp() {
         controller = Mockito.mock(QuorumController.class);
-        operator = Mockito.mock(S3Operator.class);
+        operator = Mockito.mock(ObjectStorage.class);
         Mockito.when(operator.delete(anyList())).then(inv -> {
             List<String> objectKeys = inv.getArgument(0);
             return CompletableFuture.completedFuture(objectKeys);
@@ -249,7 +250,7 @@ public class S3ObjectControlManagerTest {
         Thread.sleep(1001L);
 
         manager.checkS3ObjectsLifecycle();
-        @SuppressWarnings("unchecked") ArgumentCaptor<List<String>> ac = ArgumentCaptor.forClass(List.class);
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<ObjectPath>> ac = ArgumentCaptor.forClass(List.class);
         Mockito.verify(operator, times(1)).delete(ac.capture());
         assertEquals(List.of(ObjectUtils.genKey(0, 0L)), ac.getValue());
 

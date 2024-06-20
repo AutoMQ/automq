@@ -17,6 +17,17 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -49,28 +60,16 @@ import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
-
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.utils.FutureUtil.cause;
 
 public class AwsObjectStorage extends AbstractObjectStorage {
+    public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
 
     private final String bucket;
     private final Tagging tagging;
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
-    private static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
     private boolean deleteObjectsReturnSuccessKeys;
 
 
@@ -81,11 +80,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         boolean readWriteIsolate,
         boolean checkMode) {
         super(networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
-        this.deleteObjectsReturnSuccessKeys = getDeleteObjectsMode();
         this.bucket = bucket;
         this.tagging = tagging(tagging);
         this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency());
         this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency()) : writeS3Client;
+        this.deleteObjectsReturnSuccessKeys = getDeleteObjectsMode();
+    }
+
+    // used for test only
+    public AwsObjectStorage(S3AsyncClient s3Client, String bucket) {
+        this(s3Client, bucket, false);
     }
 
     // used for test only
@@ -95,6 +99,10 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
         this.tagging = null;
+    }
+
+    public static Builder builder() {
+        return new Builder();
     }
 
     @Override
@@ -253,6 +261,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
     }
 
+    @Override
+    CompletableFuture<List<ObjectInfo>> doList(String prefix) {
+        return readS3Client.listObjectsV2(builder -> builder.bucket(bucket).prefix(prefix))
+            .thenApply(resp -> resp.contents().stream().map(object -> new ObjectInfo((short) 0, object.key(), object.lastModified().toEpochMilli())).collect(Collectors.toList()));
+    }
+
     static void handleDeleteObjectsResponse(DeleteObjectsResponse response, boolean deleteObjectsReturnSuccessKeys) throws Exception {
         int errDeleteCount = 0;
         ArrayList<String> failedKeys = new ArrayList<>();
@@ -330,7 +344,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .thenApply(resp -> checkIfDeleteObjectsWillReturnSuccessDeleteKeys(path, resp));
     }
 
-    private static boolean checkIfDeleteObjectsWillReturnSuccessDeleteKeys(List<String> path, DeleteObjectsResponse resp) {
+    static boolean checkIfDeleteObjectsWillReturnSuccessDeleteKeys(List<String> path, DeleteObjectsResponse resp) {
         // BOS S3 API works as quiet mode
         // in this mode success delete objects won't be returned.
         // which could cause object not deleted in metadata.
@@ -395,4 +409,73 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .build();
     }
 
+    public static class Builder {
+        private String endpoint;
+        private String region;
+        private String bucket;
+        private boolean forcePathStyle;
+        private List<AwsCredentialsProvider> credentialsProviders;
+        private Map<String, String> tagging;
+        private AsyncNetworkBandwidthLimiter inboundLimiter;
+        private AsyncNetworkBandwidthLimiter outboundLimiter;
+        private boolean readWriteIsolate;
+        private int maxReadConcurrency = 50;
+        private int maxWriteConcurrency = 50;
+        private boolean checkS3ApiModel = false;
+
+        public Builder endpoint(String endpoint) {
+            this.endpoint = endpoint;
+            return this;
+        }
+
+        public Builder region(String region) {
+            this.region = region;
+            return this;
+        }
+
+        public Builder bucket(String bucket) {
+            this.bucket = bucket;
+            return this;
+        }
+
+        public Builder forcePathStyle(boolean forcePathStyle) {
+            this.forcePathStyle = forcePathStyle;
+            return this;
+        }
+
+        public Builder credentialsProviders(List<AwsCredentialsProvider> credentialsProviders) {
+            this.credentialsProviders = credentialsProviders;
+            return this;
+        }
+
+        public Builder tagging(Map<String, String> tagging) {
+            this.tagging = tagging;
+            return this;
+        }
+
+        public Builder inboundLimiter(AsyncNetworkBandwidthLimiter inboundLimiter) {
+            this.inboundLimiter = inboundLimiter;
+            return this;
+        }
+
+        public Builder outboundLimiter(AsyncNetworkBandwidthLimiter outboundLimiter) {
+            this.outboundLimiter = outboundLimiter;
+            return this;
+        }
+
+        public Builder readWriteIsolate(boolean readWriteIsolate) {
+            this.readWriteIsolate = readWriteIsolate;
+            return this;
+        }
+
+        public Builder checkS3ApiModel(boolean checkS3ApiModel) {
+            this.checkS3ApiModel = checkS3ApiModel;
+            return this;
+        }
+
+        public AwsObjectStorage build() {
+            return new AwsObjectStorage(endpoint, tagging, region, bucket, forcePathStyle, credentialsProviders,
+                inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel);
+        }
+    }
 }

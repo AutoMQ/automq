@@ -25,7 +25,7 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.WriteAheadLog;
@@ -105,7 +105,7 @@ public class S3Storage implements Storage {
     private final ScheduledFuture<?> drainBackoffTask;
     private final StreamManager streamManager;
     private final ObjectManager objectManager;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
     private final S3BlockCache blockCache;
     /**
      * Stream callback locks. Used to ensure the stream callbacks will not be called concurrently.
@@ -119,7 +119,7 @@ public class S3Storage implements Storage {
     private volatile double maxDataWriteRate = 0.0;
 
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
-        S3BlockCache blockCache, S3Operator s3Operator) {
+        S3BlockCache blockCache, ObjectStorage objectStorage) {
         this.config = config;
         this.maxDeltaWALCacheSize = config.walCacheSize();
         this.deltaWAL = deltaWAL;
@@ -127,7 +127,7 @@ public class S3Storage implements Storage {
         this.deltaWALCache = new LogCache(config.walCacheSize(), config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
         this.streamManager = streamManager;
         this.objectManager = objectManager;
-        this.s3Operator = s3Operator;
+        this.objectStorage = objectStorage;
         this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
     }
@@ -342,7 +342,7 @@ public class S3Storage implements Storage {
         if (cacheBlock.size() != 0) {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
             DeltaWALUploadTask task = DeltaWALUploadTask.builder().config(config).streamRecordsMap(cacheBlock.records())
-                .objectManager(objectManager).s3Operator(s3Operator).executor(uploadWALExecutor).build();
+                .objectManager(objectManager).s3Operator(objectStorage).executor(uploadWALExecutor).build();
             task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
         }
@@ -699,7 +699,7 @@ public class S3Storage implements Storage {
             .config(config)
             .streamRecordsMap(context.cache.records())
             .objectManager(objectManager)
-            .s3Operator(s3Operator)
+            .s3Operator(objectStorage)
             .executor(uploadWALExecutor)
             .rate(rate)
             .build();

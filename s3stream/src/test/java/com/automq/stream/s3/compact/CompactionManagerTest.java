@@ -26,12 +26,11 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
-import com.automq.stream.s3.operator.DefaultS3Operator;
-import com.automq.stream.s3.operator.MemoryS3Operator;
+import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
 import io.netty.buffer.ByteBuf;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -132,7 +131,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
         CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
         Assertions.assertEquals(-1, request.getObjectId());
@@ -163,7 +162,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
         CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
         Assertions.assertEquals(-1, request.getObjectId());
@@ -191,8 +190,8 @@ public class CompactionManagerTest extends CompactionTestBase {
 
         Map<Long, List<StreamDataBlock>> streamDataBlockMap = getStreamDataBlockMap();
         S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, 0, S3ObjectType.STREAM_SET);
-        DefaultS3Operator s3Operator = Mockito.spy(new DefaultS3Operator(s3AsyncClient, ""));
-        doReturn(CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(eq(objectMetadata.key()), anyLong(), anyLong(), any());
+        AwsObjectStorage s3Operator = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
+        doReturn(CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(any(), eq(objectMetadata.key()), anyLong(), anyLong());
 
         CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
         Assertions.assertThrowsExactly(CompletionException.class, () -> compactionManager.groupAndSplitStreamDataBlocks(objectMetadata, streamDataBlockMap.get(OBJECT_0)));
@@ -203,7 +202,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         when(config.streamSetObjectCompactionCacheSize()).thenReturn(5L);
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
@@ -215,7 +214,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         when(config.streamSetObjectCompactionCacheSize()).thenReturn(150L);
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
@@ -228,7 +227,7 @@ public class CompactionManagerTest extends CompactionTestBase {
     @Test
     public void testCompact() {
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadata);
 
@@ -247,7 +246,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         List<S3ObjectMetadata> s3ObjectMetadataList = new ArrayList<>();
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
-            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 1024, 1024);
             StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
             StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(1024));
             StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(1024));
@@ -266,7 +265,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         when(streamManager.getStreams(Collections.emptyList())).thenReturn(CompletableFuture.completedFuture(
             List.of(new StreamMetadata(STREAM_0, 0, 1024, 2048, StreamState.OPENED),
                 new StreamMetadata(STREAM_3, 0, 1024, 2048, StreamState.OPENED))));
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadataList);
         assertEquals(-1L, request.getObjectId());
@@ -283,7 +282,7 @@ public class CompactionManagerTest extends CompactionTestBase {
             List.of(new StreamMetadata(STREAM_0, 0, 5, 20, StreamState.OPENED),
                 new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
@@ -303,7 +302,7 @@ public class CompactionManagerTest extends CompactionTestBase {
             List.of(new StreamMetadata(STREAM_0, 0, 15, 20, StreamState.OPENED),
                 new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
@@ -321,7 +320,7 @@ public class CompactionManagerTest extends CompactionTestBase {
     public void testCompactionWithDataTrimmed3() {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
-            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 1024, 1024);
             StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
             StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(1024));
             StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(1024));
@@ -342,7 +341,7 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED),
                 new StreamMetadata(STREAM_3, 0, 10, 20, StreamState.OPENED))));
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
         assertNull(request);
@@ -352,7 +351,7 @@ public class CompactionManagerTest extends CompactionTestBase {
     public void testCompactionWithDataTrimmed4() {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
-            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, s3Operator, 200, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 200, 1024);
             StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
             StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(200));
             StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(200));
@@ -373,7 +372,7 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED),
                 new StreamMetadata(STREAM_3, 0, 10, 20, StreamState.OPENED))));
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
@@ -393,7 +392,7 @@ public class CompactionManagerTest extends CompactionTestBase {
             List.of(new StreamMetadata(STREAM_0, 0, 15, 20, StreamState.OPENED),
                 new StreamMetadata(STREAM_1, 0, 60, 500, StreamState.OPENED),
                 new StreamMetadata(STREAM_2, 0, 60, 270, StreamState.OPENED))));
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
@@ -412,7 +411,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         when(streamManager.getStreams(Collections.emptyList())).thenReturn(CompletableFuture.completedFuture(
             List.of(new StreamMetadata(STREAM_1, 0, 25, 500, StreamState.OPENED),
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
@@ -446,10 +445,10 @@ public class CompactionManagerTest extends CompactionTestBase {
         S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
         doAnswer(invocation -> CompletableFuture.completedFuture(null)).when(s3AsyncClient).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
 
-        DefaultS3Operator s3Operator = Mockito.spy(new DefaultS3Operator(s3AsyncClient, ""));
-        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(s3Operator).rangeRead(eq(objectMetadata0.key()), anyLong(), anyLong(), any());
-        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(80))).when(s3Operator).rangeRead(eq(objectMetadata1.key()), anyLong(), anyLong(), any());
-        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(eq(objectMetadata2.key()), anyLong(), anyLong(), any());
+        AwsObjectStorage s3Operator = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(s3Operator).rangeRead(any(), eq(objectMetadata0.key()), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(80))).when(s3Operator).rangeRead(any(), eq(objectMetadata1.key()), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(any(), eq(objectMetadata2.key()), anyLong(), anyLong());
 
         CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
         Assertions.assertThrowsExactly(CompletionException.class,
@@ -482,10 +481,10 @@ public class CompactionManagerTest extends CompactionTestBase {
         S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
         doAnswer(invocation -> CompletableFuture.completedFuture(null)).when(s3AsyncClient).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
 
-        DefaultS3Operator s3Operator = Mockito.spy(new DefaultS3Operator(s3AsyncClient, ""));
-        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(s3Operator).rangeRead(eq(objectMetadata0.key()), anyLong(), anyLong(), any());
-        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(eq(objectMetadata1.key()), anyLong(), anyLong(), any());
-        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(50))).when(s3Operator).rangeRead(eq(objectMetadata2.key()), anyLong(), anyLong(), any());
+        AwsObjectStorage s3Operator = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(s3Operator).rangeRead(any(), eq(objectMetadata0.key()), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(any(), eq(objectMetadata1.key()), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(50))).when(s3Operator).rangeRead(any(), eq(objectMetadata2.key()), anyLong(), anyLong());
 
         CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
         Assertions.assertThrowsExactly(CompletionException.class,
@@ -507,7 +506,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         when(config.maxStreamNumPerStreamSetObject()).thenReturn(MAX_STREAM_NUM_IN_WAL);
         when(config.maxStreamObjectNumPerCommit()).thenReturn(4);
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadata);
 
@@ -531,9 +530,9 @@ public class CompactionManagerTest extends CompactionTestBase {
             List.of(new StreamMetadata(STREAM_0, 0, 0, 200, StreamState.OPENED))));
 
         objectManager = Mockito.spy(MemoryMetadataManager.class);
-        s3Operator = Mockito.spy(MemoryS3Operator.class);
+        objectStorage = Mockito.spy(MemoryObjectStorage.class);
         List<Pair<InvocationOnMock, CompletableFuture<ByteBuf>>> invocations = new ArrayList<>();
-        when(s3Operator.rangeRead(Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong(), Mockito.eq(ThrottleStrategy.COMPACTION)))
+        when(objectStorage.rangeRead(any(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong()))
             .thenAnswer(invocation -> {
                 CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
                 invocations.add(Pair.of(invocation, cf));
@@ -544,7 +543,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         // stream data for object 0
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_0, objectId);
-            ObjectWriter objectWriter = ObjectWriter.writer(objectId, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(objectId, objectStorage, 1024, 1024);
             StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 80, TestUtils.random(80));
             objectWriter.write(STREAM_0, List.of(r1));
             objectWriter.close().join();
@@ -560,7 +559,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         // stream data for object 1
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_1, objectId);
-            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, objectStorage, 1024, 1024);
             StreamRecordBatch r2 = new StreamRecordBatch(STREAM_0, 0, 80, 120, TestUtils.random(120));
             objectWriter.write(STREAM_0, List.of(r2));
             objectWriter.close().join();
@@ -575,8 +574,8 @@ public class CompactionManagerTest extends CompactionTestBase {
 
         doReturn(CompletableFuture.completedFuture(s3ObjectMetadataList)).when(objectManager).getServerObjects();
 
-        compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
-        
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
+
         CompletableFuture<Void> cf = compactionManager.compact();
         Thread.sleep(2000);
         compactionManager.shutdown();
@@ -595,11 +594,11 @@ public class CompactionManagerTest extends CompactionTestBase {
         CommitStreamSetObjectRequest request) {
         Map<Long, S3ObjectMetadata> s3WALObjectMetadataMap = s3ObjectMetadata.stream()
             .collect(Collectors.toMap(S3ObjectMetadata::objectId, e -> e));
-        Map<Long, List<StreamDataBlock>> streamDataBlocks = CompactionUtils.blockWaitObjectIndices(streamMetadataList, s3ObjectMetadata, s3Operator);
+        Map<Long, List<StreamDataBlock>> streamDataBlocks = CompactionUtils.blockWaitObjectIndices(streamMetadataList, s3ObjectMetadata, objectStorage);
         for (Map.Entry<Long, List<StreamDataBlock>> entry : streamDataBlocks.entrySet()) {
             long objectId = entry.getKey();
             DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(objectId,
-                s3WALObjectMetadataMap.get(objectId).objectSize(), S3ObjectType.STREAM_SET), s3Operator);
+                s3WALObjectMetadataMap.get(objectId).objectSize(), S3ObjectType.STREAM_SET), objectStorage);
             reader.readBlocks(entry.getValue());
         }
 
@@ -621,11 +620,11 @@ public class CompactionManagerTest extends CompactionTestBase {
             compactedObjectMap.put(request.getObjectId(), metadata);
         }
 
-        Map<Long, List<StreamDataBlock>> compactedStreamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, new ArrayList<>(compactedObjectMap.values()), s3Operator);
+        Map<Long, List<StreamDataBlock>> compactedStreamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, new ArrayList<>(compactedObjectMap.values()), objectStorage);
         for (Map.Entry<Long, List<StreamDataBlock>> entry : compactedStreamDataBlocksMap.entrySet()) {
             long objectId = entry.getKey();
             DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(objectId,
-                compactedObjectMap.get(objectId).objectSize(), S3ObjectType.STREAM_SET), s3Operator);
+                compactedObjectMap.get(objectId).objectSize(), S3ObjectType.STREAM_SET), objectStorage);
             reader.readBlocks(entry.getValue());
         }
         List<StreamDataBlock> expectedStreamDataBlocks = CompactionUtils.sortStreamRangePositions(streamDataBlocks);

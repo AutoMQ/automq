@@ -15,8 +15,9 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectStreamRange;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -33,8 +34,8 @@ public class ObjectWriterTest {
     public void testWrite() throws ExecutionException, InterruptedException {
         S3ObjectMetadata metadata = new S3ObjectMetadata(1, 0, S3ObjectType.STREAM_SET);
 
-        S3Operator s3Operator = new MemoryS3Operator();
-        ObjectWriter objectWriter = ObjectWriter.writer(1, s3Operator, 1024, 1024);
+        ObjectStorage objectStorage = new MemoryObjectStorage();
+        ObjectWriter objectWriter = ObjectWriter.writer(1, objectStorage, 1024, 1024);
         StreamRecordBatch r1 = newRecord(233, 10, 5, 512);
         StreamRecordBatch r2 = newRecord(233, 15, 10, 512);
         StreamRecordBatch r3 = newRecord(233, 25, 5, 512);
@@ -53,11 +54,11 @@ public class ObjectWriterTest {
         assertEquals(0, streamRanges.get(1).getStartOffset());
         assertEquals(5, streamRanges.get(1).getEndOffset());
 
-        int objectSize = s3Operator.rangeRead(metadata.key(), 0L, objectWriter.size()).get().readableBytes();
+        int objectSize = objectStorage.rangeRead(new ReadOptions().bucket(metadata.bucket()), metadata.key(), 0L, objectWriter.size()).get().readableBytes();
         assertEquals(objectSize, objectWriter.size());
 
         metadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.STREAM_SET);
-        ObjectReader objectReader = ObjectReader.reader(metadata, s3Operator);
+        ObjectReader objectReader = ObjectReader.reader(metadata, objectStorage);
         List<StreamDataBlock> streamDataBlocks = objectReader.find(233, 10, 30).get().streamDataBlocks();
         assertEquals(2, streamDataBlocks.size());
         {

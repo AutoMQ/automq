@@ -18,8 +18,8 @@ import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.CloseableIterator;
 import java.util.HashMap;
 import java.util.List;
@@ -49,13 +49,13 @@ import static org.mockito.Mockito.when;
 @Tag("S3Unit")
 public class DeltaWALUploadTaskTest {
     ObjectManager objectManager;
-    S3Operator s3Operator;
+    ObjectStorage objectStorage;
     DeltaWALUploadTask deltaWALUploadTask;
 
     @BeforeEach
     public void setup() {
         objectManager = mock(ObjectManager.class);
-        s3Operator = new MemoryS3Operator();
+        objectStorage = new MemoryObjectStorage();
     }
 
     @Test
@@ -80,7 +80,7 @@ public class DeltaWALUploadTaskTest {
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(1000);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-            .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
+            .s3Operator(objectStorage).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
@@ -110,7 +110,7 @@ public class DeltaWALUploadTaskTest {
 
         {
             S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.STREAM_SET);
-            ObjectReader objectReader = ObjectReader.reader(s3ObjectMetadata, s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(s3ObjectMetadata, objectStorage);
             DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get()
                 .streamDataBlocks().get(0).dataBlockIndex();
             ObjectReader.DataBlockGroup dataBlockGroup = objectReader.read(blockIndex).get();
@@ -125,7 +125,7 @@ public class DeltaWALUploadTaskTest {
 
         {
             S3ObjectMetadata streamObjectMetadata = new S3ObjectMetadata(11, request.getStreamObjects().get(0).getObjectSize(), S3ObjectType.STREAM);
-            ObjectReader objectReader = ObjectReader.reader(streamObjectMetadata, s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(streamObjectMetadata, objectStorage);
             DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get()
                 .streamDataBlocks().get(0).dataBlockIndex();
             ObjectReader.DataBlockGroup dataBlockGroup = objectReader.read(blockIndex).get();
@@ -160,7 +160,7 @@ public class DeltaWALUploadTaskTest {
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(16 * 1024 * 1024);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-            .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
+            .s3Operator(objectStorage).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
@@ -196,7 +196,7 @@ public class DeltaWALUploadTaskTest {
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(64);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-            .s3Operator(s3Operator).executor(ForkJoinPool.commonPool()).build();
+            .s3Operator(objectStorage).executor(ForkJoinPool.commonPool()).build();
         assertTrue(deltaWALUploadTask.forceSplit);
     }
 }

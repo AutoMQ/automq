@@ -18,7 +18,7 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.TraceUtils;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.Threads;
@@ -46,7 +46,7 @@ public class StreamReader {
     public static final Integer MAX_OBJECT_READER_SIZE = 100 * 1024 * 1024; // 100MB;
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReader.class);
     private static final Integer READ_OBJECT_INDEX_STEP = 2;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
     private final ObjectManager objectManager;
     private final ObjectReaderLRUCache objectReaders;
     private final DataBlockReadAccumulator dataBlockReadAccumulator;
@@ -74,10 +74,10 @@ public class StreamReader {
         true,
         LOGGER);
 
-    public StreamReader(S3Operator operator, ObjectManager objectManager, BlockCache blockCache,
+    public StreamReader(ObjectStorage operator, ObjectManager objectManager, BlockCache blockCache,
         Map<DefaultS3BlockCache.ReadAheadTaskKey, DefaultS3BlockCache.ReadAheadTaskContext> inflightReadAheadTaskMap,
         InflightReadThrottle inflightReadThrottle) {
-        this.s3Operator = operator;
+        this.objectStorage = operator;
         this.objectManager = objectManager;
         this.objectReaders = new ObjectReaderLRUCache(MAX_OBJECT_READER_SIZE);
         this.dataBlockReadAccumulator = new DataBlockReadAccumulator();
@@ -87,12 +87,12 @@ public class StreamReader {
     }
 
     // for test
-    public StreamReader(S3Operator operator, ObjectManager objectManager, BlockCache blockCache,
+    public StreamReader(ObjectStorage operator, ObjectManager objectManager, BlockCache blockCache,
         ObjectReaderLRUCache objectReaders,
         DataBlockReadAccumulator dataBlockReadAccumulator,
         Map<DefaultS3BlockCache.ReadAheadTaskKey, DefaultS3BlockCache.ReadAheadTaskContext> inflightReadAheadTaskMap,
         InflightReadThrottle inflightReadThrottle) {
-        this.s3Operator = operator;
+        this.objectStorage = operator;
         this.objectManager = objectManager;
         this.objectReaders = objectReaders;
         this.dataBlockReadAccumulator = dataBlockReadAccumulator;
@@ -526,7 +526,7 @@ public class StreamReader {
         synchronized (objectReaders) {
             ObjectReader objectReader = objectReaders.get(metadata.objectId());
             if (objectReader == null) {
-                objectReader = ObjectReader.reader(metadata, s3Operator);
+                objectReader = ObjectReader.reader(metadata, objectStorage);
                 objectReaders.put(metadata.objectId(), objectReader);
             }
             return objectReader.retain();

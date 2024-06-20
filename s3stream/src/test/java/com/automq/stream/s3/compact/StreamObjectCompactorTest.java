@@ -22,8 +22,8 @@ import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -53,14 +53,14 @@ import static org.mockito.Mockito.when;
 class StreamObjectCompactorTest {
 
     private ObjectManager objectManager;
-    private S3Operator s3Operator;
+    private ObjectStorage objectStorage;
     private S3Stream stream;
     private final long streamId = 233L;
 
     @BeforeEach
     void setUp() {
         objectManager = Mockito.mock(ObjectManager.class);
-        s3Operator = new MemoryS3Operator();
+        objectStorage = new MemoryObjectStorage();
         stream = Mockito.mock(S3Stream.class);
     }
 
@@ -69,7 +69,7 @@ class StreamObjectCompactorTest {
         List<S3ObjectMetadata> objects = new LinkedList<>();
         {
             // object-1: offset 10~15
-            ObjectWriter writer = ObjectWriter.writer(1, s3Operator, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            ObjectWriter writer = ObjectWriter.writer(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
             writer.write(233L, List.of(
                 newRecord(10L, 1, 1024),
                 newRecord(11L, 1, 1024),
@@ -86,7 +86,7 @@ class StreamObjectCompactorTest {
         }
         {
             // object-2: offset 16~17
-            ObjectWriter writer = ObjectWriter.writer(2, s3Operator, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            ObjectWriter writer = ObjectWriter.writer(2, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
             writer.write(233L, List.of(
                 newRecord(16L, 1, 1024)
             ));
@@ -99,7 +99,7 @@ class StreamObjectCompactorTest {
         }
         {
             // object-3: offset 30
-            ObjectWriter writer = ObjectWriter.writer(3, s3Operator, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            ObjectWriter writer = ObjectWriter.writer(3, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
             writer.write(233L, List.of(
                 newRecord(30L, 1, 1024)
             ));
@@ -109,7 +109,7 @@ class StreamObjectCompactorTest {
         }
         {
             // object-4: offset 31-32
-            ObjectWriter writer = ObjectWriter.writer(4, s3Operator, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            ObjectWriter writer = ObjectWriter.writer(4, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
             writer.write(233L, List.of(
                 newRecord(31L, 1, 1024)
             ));
@@ -135,7 +135,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(14L);
         when(stream.confirmOffset()).thenReturn(32L);
 
-        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
+        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(MAJOR);
 
@@ -160,7 +160,7 @@ class StreamObjectCompactorTest {
 
         // verify compacted object record
         {
-            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(5, req1.getObjectSize(), S3ObjectType.STREAM), s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(5, req1.getObjectSize(), S3ObjectType.STREAM), objectStorage);
             assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
             assertEquals(3, rst.streamDataBlocks().size());
@@ -188,7 +188,7 @@ class StreamObjectCompactorTest {
             objectReader.close();
         }
         {
-            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(6, req2.getObjectSize(), S3ObjectType.STREAM), s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(6, req2.getObjectSize(), S3ObjectType.STREAM), objectStorage);
             assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 30L, 33L).get();
             assertEquals(3, rst.streamDataBlocks().size());
@@ -227,7 +227,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(17L);
         when(stream.confirmOffset()).thenReturn(32L);
 
-        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
+        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(MAJOR);
 
@@ -246,7 +246,7 @@ class StreamObjectCompactorTest {
         List<S3ObjectMetadata> objects = prepareData();
 
         CompactStreamObjectRequest req = new StreamObjectCompactor.CompactByPhysicalMerge(streamId, 0L, 14L,
-            objects.subList(0, 2), 5, 5000, s3Operator).compact().get();
+            objects.subList(0, 2), 5, 5000, objectStorage).compact().get();
         // verify compact request
         assertEquals(5, req.getObjectId());
         assertEquals(233L, req.getStreamId());
@@ -256,7 +256,7 @@ class StreamObjectCompactorTest {
 
         // verify compacted object record, expect [13,16) + [16, 17) compact to one data block group.
         {
-            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(5, req.getObjectSize(), S3ObjectType.STREAM), s3Operator);
+            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(5, req.getObjectSize(), S3ObjectType.STREAM), objectStorage);
             assertEquals(2, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
             assertEquals(2, rst.streamDataBlocks().size());
@@ -298,7 +298,7 @@ class StreamObjectCompactorTest {
             new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamId, 31, 32)),
                 System.currentTimeMillis(), System.currentTimeMillis(), 1, 6)
         );
-        List<List<S3ObjectMetadata>> groups = StreamObjectCompactor.group0(objects, 512);
+        List<List<S3ObjectMetadata>> groups = StreamObjectCompactor.group0(objects, 512, false);
         assertEquals(3, groups.size());
         assertEquals(List.of(2L), groups.get(0).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(3L, 4L), groups.get(1).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
@@ -310,7 +310,7 @@ class StreamObjectCompactorTest {
         // prepare object
         List<S3ObjectMetadata> objects = new LinkedList<>();
         for (int i = 0; i < 1500; i++) {
-            ObjectWriter writer = ObjectWriter.writer(1, s3Operator, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            ObjectWriter writer = ObjectWriter.writer(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
             writer.write(streamId, List.of(
                 newRecord(i, 1, 1)
             ));
@@ -328,7 +328,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(1450L);
         when(stream.confirmOffset()).thenReturn(1500L);
 
-        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(s3Operator)
+        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(CLEANUP);
 

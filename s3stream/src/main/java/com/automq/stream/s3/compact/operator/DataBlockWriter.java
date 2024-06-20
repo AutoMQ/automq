@@ -20,7 +20,8 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.stats.CompactionStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -46,14 +47,16 @@ public class DataBlockWriter {
     private long nextDataBlockPosition;
     private long size;
 
-    public DataBlockWriter(long objectId, S3Operator s3Operator, int partSizeThreshold) {
+    public DataBlockWriter(long objectId, ObjectStorage objectStorage, int partSizeThreshold) {
         this.objectId = objectId;
         String objectKey = ObjectUtils.genKey(0, objectId);
         this.partSizeThreshold = Math.max(MIN_PART_SIZE, partSizeThreshold);
         waitingUploadBlocks = new LinkedList<>();
         waitingUploadBlockCfs = new ConcurrentHashMap<>();
         completedBlocks = new LinkedList<>();
-        writer = s3Operator.writer(new Writer.Context(STREAM_SET_OBJECT_COMPACTION_READ), objectKey, ThrottleStrategy.COMPACTION);
+        writer = objectStorage.writer(
+            new WriteOptions().allocType(STREAM_SET_OBJECT_COMPACTION_READ).throttleStrategy(ThrottleStrategy.COMPACTION),
+            objectKey);
     }
 
     public long getObjectId() {

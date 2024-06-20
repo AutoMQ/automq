@@ -176,6 +176,10 @@ public class S3ObjectMetadata {
         return ObjectUtils.genKey(0, objectId);
     }
 
+    public short bucket() {
+        return ObjectAttributes.from(attributes).bucket();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
