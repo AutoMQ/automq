@@ -48,6 +48,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public abstract class AbstractObjectStorage implements ObjectStorage {
     static final Logger LOGGER = LoggerFactory.getLogger(AbstractObjectStorage.class);
@@ -321,6 +322,36 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return retCf;
     }
 
+    @Override
+    public CompletableFuture<Void> delete(List<S3ObjectMetadata> objectMetadataList) {
+        TimerUtil timerUtil = new TimerUtil();
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        List<String> objectKeys = objectMetadataList.stream()
+            .map(metadata -> ObjectUtils.genKey(0, metadata.objectId()))
+            .collect(Collectors.toList());
+        Runnable successHandler = () -> {
+            LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            cf.complete(null);
+        };
+        Consumer<Throwable> failHandler = ex -> {
+            if (ex instanceof DeleteObjectsException) {
+                DeleteObjectsException deleteObjectsException = (DeleteObjectsException) ex;
+                LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, failedKeys: {}",
+                    deleteObjectsException.getFailedKeys().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS),
+                    deleteObjectsException.getFailedKeys());
+            } else {
+                S3OperationStats.getInstance().deleteObjectsStats(false)
+                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}",
+                    objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
+            }
+            cf.completeExceptionally(ex);
+        };
+        doDeleteObjects(objectKeys, failHandler, successHandler);
+        return cf;
+    }
+
     public void close() {
         readLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
@@ -340,6 +371,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler);
 
     abstract void doCompleteMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts, Consumer<Throwable> failHandler, Runnable successHandler);
+
+    abstract void doDeleteObjects(List<String> objectKeys, Consumer<Throwable> failHandler, Runnable successHandler);
 
     abstract boolean isUnrecoverable(Throwable ex);
 
@@ -598,7 +631,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private boolean canMerge(AbstractObjectStorage.ReadTask readTask) {
             return s3ObjectMetadata != null &&
                 s3ObjectMetadata.equals(readTask.s3ObjectMetadata) &&
-                dataSparsityRate <= this.maxMergeReadSparsityRate;
+                dataSparsityRate <= this.maxMergeReadSparsityRate &&
+                readTask.end != -1;
         }
 
         void handleReadCompleted(ByteBuf rst, Throwable ex) {
@@ -667,6 +701,25 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 "start=" + start + ", " +
                 "end=" + end + ", " +
                 "cf=" + cf + ']';
+        }
+    }
+
+    static class DeleteObjectsException extends Exception {
+        private final List<String> failedKeys;
+        private final List<String> errorsMessages;
+
+        public DeleteObjectsException(String message, List<String> successKeys, List<String> errorsMessage) {
+            super(message);
+            this.failedKeys = successKeys;
+            this.errorsMessages = errorsMessage;
+        }
+
+        public List<String> getFailedKeys() {
+            return failedKeys;
+        }
+
+        public List<String> getErrorsMessages() {
+            return errorsMessages;
         }
     }
 
