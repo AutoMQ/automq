@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3ObjectStats;
@@ -98,11 +99,11 @@ public class MultiPartWriter implements Writer {
     }
 
     @Override
-    public void copyWrite(String sourcePath, long start, long end) {
+    public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
         long nextStart = start;
         for (; ; ) {
             long currentEnd = Math.min(nextStart + Writer.MAX_PART_SIZE, end);
-            copyWrite0(sourcePath, nextStart, currentEnd);
+            copyWrite0(s3ObjectMetadata.key(), nextStart, currentEnd);
             nextStart = currentEnd;
             if (currentEnd == end) {
                 break;

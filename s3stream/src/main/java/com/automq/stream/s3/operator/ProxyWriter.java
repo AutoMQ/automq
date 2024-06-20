@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3ObjectStats;
@@ -71,11 +72,11 @@ class ProxyWriter implements Writer {
     }
 
     @Override
-    public void copyWrite(String sourcePath, long start, long end) {
+    public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
         if (multiPartWriter == null) {
             newMultiPartWriter();
         }
-        multiPartWriter.copyWrite(sourcePath, start, end);
+        multiPartWriter.copyWrite(s3ObjectMetadata, start, end);
     }
 
     @Override
@@ -141,7 +142,7 @@ class ProxyWriter implements Writer {
         }
 
         @Override
-        public void copyWrite(String sourcePath, long start, long end) {
+        public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
             throw new UnsupportedOperationException();
         }
 
