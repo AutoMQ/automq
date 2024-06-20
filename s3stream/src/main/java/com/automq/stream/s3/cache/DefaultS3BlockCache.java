@@ -101,7 +101,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
         }
         final TraceContext finalTraceContext = new TraceContext(traceContext);
         this.readAheadManager.updateReadProgress(streamId, startOffset);
-        TimerUtil timerUtil = new TimerUtil();
+        long startTime = System.nanoTime();
         CompletableFuture<ReadDataBlock> readCf = new CompletableFuture<>();
         ReadAheadAgent agent = this.readAheadManager.getOrCreateReadAheadAgent(streamId, startOffset);
         UUID uuid = UUID.randomUUID();
@@ -122,7 +122,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                     this.readAheadManager.updateReadResult(streamId, startOffset,
                         ret.getRecords().get(ret.getRecords().size() - 1).getLastOffset(), totalReturnedSize);
 
-                    long timeElapsed = timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
+                    long timeElapsed = TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS);
                     boolean isCacheHit = ret.getCacheAccessType() == CacheAccessType.BLOCK_CACHE_HIT;
                     StorageOperationStats.getInstance().readBlockCacheStats(isCacheHit).record(timeElapsed);
                     recordStageTime(isCacheHit, context);

@@ -423,13 +423,13 @@ public class StreamReader {
             if (emptyObjects) {
                 return CompletableFuture.completedFuture(null);
             }
-            TimerUtil timerUtil = new TimerUtil();
+            long startTime = System.nanoTime();
             S3ObjectMetadata objectMetadata = context.objects.get(context.objectIndex);
             ObjectReader reader = getObjectReader(objectMetadata);
             context.objectReaderMap.put(objectMetadata.objectId(), reader);
             return reader.find(streamId, context.nextStartOffset, endOffset, context.nextMaxBytes)
                     .whenComplete((ret, ex) -> {
-                        context.findIndexTime += timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
+                        context.findIndexTime += TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS);
                     });
         }, getIndicesExecutor);
 
@@ -442,7 +442,7 @@ public class StreamReader {
                 return CompletableFuture.completedFuture(null);
             }
 
-            TimerUtil timerUtil = new TimerUtil();
+            long startTime = System.nanoTime();
 
             for (StreamDataBlock streamDataBlock : streamDataBlocks) {
                 DefaultS3BlockCache.ReadAheadTaskKey taskKey = new DefaultS3BlockCache.ReadAheadTaskKey(streamId, streamDataBlock.getStartOffset());
@@ -471,7 +471,7 @@ public class StreamReader {
             context.nextMaxBytes = findIndexResult.nextMaxBytes();
             context.nextStartOffset = findIndexResult.nextStartOffset();
             context.objectIndex++;
-            context.computeTime += timerUtil.elapsedAs(TimeUnit.NANOSECONDS);
+            context.computeTime += TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS);
             if (findIndexResult.isFulfilled()) {
                 StorageOperationStats.getInstance().readAheadGetIndicesTimeStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
                 StorageOperationStats.getInstance().getIndicesTimeGetObjectStats.record(context.getObjectsTime);

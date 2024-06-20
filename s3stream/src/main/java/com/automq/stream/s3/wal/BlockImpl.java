@@ -40,7 +40,7 @@ public class BlockImpl implements Block {
     private final long softLimit;
     private final List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures = new LinkedList<>();
     private final List<Supplier<ByteBuf>> records = new LinkedList<>();
-    private final TimerUtil timer;
+    private final long startTime;
     /**
      * The next offset to write in this block.
      * Align to {@link WALUtil#BLOCK_SIZE}
@@ -56,7 +56,7 @@ public class BlockImpl implements Block {
         this.startOffset = startOffset;
         this.maxSize = maxSize;
         this.softLimit = softLimit;
-        this.timer = new TimerUtil();
+        this.startTime = System.nanoTime();
     }
 
     @Override
@@ -117,6 +117,6 @@ public class BlockImpl implements Block {
 
     @Override
     public void polled() {
-        StorageOperationStats.getInstance().appendWALBlockPolledStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
+        StorageOperationStats.getInstance().appendWALBlockPolledStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
     }
 }

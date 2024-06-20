@@ -347,13 +347,13 @@ public class SlidingWindowService {
     }
 
     private void writeBlockData(BlockBatch blocks) {
-        TimerUtil timer = new TimerUtil();
+        final long start = System.nanoTime();
         for (Block block : blocks.blocks()) {
             long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
             walChannel.retryWrite(block.data(), position);
         }
         walChannel.retryFlush();
-        StorageOperationStats.getInstance().appendWALWriteStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
+        StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.durationElapsedAs(start, TimeUnit.NANOSECONDS));
     }
 
     private void makeWriteOffsetMatchWindow(long newWindowEndOffset) {
@@ -523,16 +523,16 @@ public class SlidingWindowService {
 
     class WriteBlockProcessor implements Runnable {
         private final BlockBatch blocks;
-        private final TimerUtil timer;
+        private final long startTime;
 
         public WriteBlockProcessor(BlockBatch blocks) {
             this.blocks = blocks;
-            this.timer = new TimerUtil();
+            this.startTime = System.nanoTime();
         }
 
         @Override
         public void run() {
-            StorageOperationStats.getInstance().appendWALAwaitStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALAwaitStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
             try {
                 writeBlock(this.blocks);
             } catch (Exception e) {
@@ -548,7 +548,7 @@ public class SlidingWindowService {
             makeWriteOffsetMatchWindow(blocks.endOffset());
             writeBlockData(blocks);
 
-            TimerUtil timer = new TimerUtil();
+            final long startTime = System.nanoTime();
             // Update the start offset of the sliding window after finishing writing the record.
             windowCoreData.updateWindowStartOffset(wroteBlocks(blocks));
 
@@ -563,7 +563,7 @@ public class SlidingWindowService {
                     return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                 }
             });
-            StorageOperationStats.getInstance().appendWALAfterStats.record(timer.elapsedAs(TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
         }
     }
 }
