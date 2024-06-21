@@ -122,4 +122,29 @@ class AbstractObjectStorageTest {
         assertEquals(512, buf.readableBytes());
         buf.release();
     }
+
+
+    @Test
+    void testReadToEndOfObject() throws ExecutionException, InterruptedException {
+        objectStorage = new MemoryObjectStorage(true);
+        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 4096, S3ObjectType.STREAM);
+
+        objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(4096));
+        objectStorage = spy(objectStorage);
+
+        CompletableFuture<ByteBuf> cf1 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0L, 1024L);
+        CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 2048L, -1L);
+
+        objectStorage.tryMergeRead();
+        verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(eq(s3ObjectMetadata.key()), eq(0L), eq(1024L));
+        objectStorage.tryMergeRead();
+        verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(eq(s3ObjectMetadata.key()), eq(2048L), eq(-1L));
+
+        ByteBuf buf = cf1.get();
+        assertEquals(1024, buf.readableBytes());
+        buf.release();
+        buf = cf2.get();
+        assertEquals(2048, buf.readableBytes());
+        buf.release();
+    }
 }
