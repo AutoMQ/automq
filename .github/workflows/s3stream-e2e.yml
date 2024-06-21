@@ -4,8 +4,7 @@ on:
     types: [ opened, reopened, synchronize ]
   push:
     branches: [ "main" ]
-  paths:
-    - 's3stream/**'
+
 jobs:
   test:
     runs-on: ubuntu-latest
