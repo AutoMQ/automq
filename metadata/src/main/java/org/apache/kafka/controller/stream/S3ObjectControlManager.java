@@ -17,10 +17,13 @@
 
 package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.CompositeObject;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.objects.ObjectAttributes.Type;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import java.util.ArrayList;
@@ -36,6 +39,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
@@ -92,7 +96,7 @@ public class S3ObjectControlManager {
     // TODO: support different deletion policies, based on time dimension or space dimension?
     private final Queue<Long/*objectId*/> markDestroyedObjects;
 
-    private final ObjectStorage operator;
+    private final ObjectStorage objectStorage;
 
     private final List<S3ObjectLifeCycleListener> lifecycleListeners;
 
@@ -111,7 +115,7 @@ public class S3ObjectControlManager {
         LogContext logContext,
         String clusterId,
         Config config,
-        ObjectStorage operator,
+        ObjectStorage objectStorage,
         Supplier<AutoMQVersion> version) {
         this.quorumController = quorumController;
         this.log = logContext.logger(S3ObjectControlManager.class);
@@ -122,7 +126,7 @@ public class S3ObjectControlManager {
         this.preparedObjects = new TimelineHashSet<>(snapshotRegistry, 0);
         this.s3ObjectSize = new TimelineLong(snapshotRegistry);
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
-        this.operator = operator;
+        this.objectStorage = objectStorage;
         this.version = version;
         this.lifecycleListeners = new ArrayList<>();
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor(
@@ -296,6 +300,12 @@ public class S3ObjectControlManager {
             preparedObjects.remove(object.getObjectId());
             if (object.getS3ObjectState() == S3ObjectState.MARK_DESTROYED) {
                 markDestroyedObjects.add(object.getObjectId());
+                ObjectAttributes attributes = ObjectAttributes.from(object.getAttributes());
+                if (attributes.type() == Type.Composite && !attributes.deepDelete()) {
+                    // It means the composite object is compacted by another composite object.
+                    // So decrease size here to make the s3 size metrics more precise.
+                    s3ObjectSize.set(s3ObjectSize.get() - record.objectSize());
+                }
             } else {
                 // object committed
                 s3ObjectSize.set(s3ObjectSize.get() + record.objectSize());
@@ -306,7 +316,11 @@ public class S3ObjectControlManager {
     public void replay(RemoveS3ObjectRecord record) {
         S3Object object = objectsMetadata.remove(record.objectId());
         if (object != null) {
-            s3ObjectSize.set(s3ObjectSize.get() - object.getObjectSize());
+            ObjectAttributes attributes = ObjectAttributes.from(object.getAttributes());
+            // The DELETE composite object's size will be decrease when the object status becomes MARK_DESTROYED.
+            if (!(attributes.type() == Type.Composite && !attributes.deepDelete())) {
+                s3ObjectSize.set(s3ObjectSize.get() - object.getObjectSize());
+            }
         }
         preparedObjects.remove(record.objectId());
     }
@@ -419,37 +433,77 @@ public class S3ObjectControlManager {
         public static final int MAX_BATCH_DELETE_SIZE = 800;
 
         CompletableFuture<Void> clean(List<S3Object> objects) {
+            List<S3Object> deepDeleteCompositeObjects = new LinkedList<>();
+            List<S3Object> shallowDeleteObjects = new ArrayList<>(objects.size());
+            for (S3Object object : objects) {
+                ObjectAttributes attributes = ObjectAttributes.from(object.getAttributes());
+                if (attributes.deepDelete() && attributes.type() == Type.Composite) {
+                    deepDeleteCompositeObjects.add(object);
+                } else {
+                    shallowDeleteObjects.add(object);
+                }
+            }
+
             List<CompletableFuture<Void>> cfList = new LinkedList<>();
-            for (int i = 0; i < objects.size() / MAX_BATCH_DELETE_SIZE; i++) {
-                List<S3Object> batch = objects.subList(i * MAX_BATCH_DELETE_SIZE, (i + 1) * MAX_BATCH_DELETE_SIZE);
-                cfList.add(clean0(batch));
-            }
-            if (objects.size() % MAX_BATCH_DELETE_SIZE != 0) {
-                List<S3Object> batch = objects.subList(objects.size() / MAX_BATCH_DELETE_SIZE * MAX_BATCH_DELETE_SIZE, objects.size());
-                cfList.add(clean0(batch));
-            }
+            // Delete the objects
+            batchDelete(shallowDeleteObjects, this::shallowlyDelete, cfList);
+            // Delete the composite object and it's linked objects
+            batchDelete(deepDeleteCompositeObjects, this::deepDelete, cfList);
+
             return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
         }
 
-        private CompletableFuture<Void> clean0(List<S3Object> s3objects) {
+        private void batchDelete(List<S3Object> objects, Function<List<S3Object>, CompletableFuture<Void>> deleteFunc, List<CompletableFuture<Void>> cfList) {
+            for (int i = 0; i < objects.size() / MAX_BATCH_DELETE_SIZE; i++) {
+                List<S3Object> batch = objects.subList(i * MAX_BATCH_DELETE_SIZE, (i + 1) * MAX_BATCH_DELETE_SIZE);
+                cfList.add(deleteFunc.apply(batch));
+            }
+            if (objects.size() % MAX_BATCH_DELETE_SIZE != 0) {
+                List<S3Object> batch = objects.subList(objects.size() / MAX_BATCH_DELETE_SIZE * MAX_BATCH_DELETE_SIZE, objects.size());
+                cfList.add(deleteFunc.apply(batch));
+            }
+        }
+
+        private CompletableFuture<Void> shallowlyDelete(List<S3Object> s3objects) {
             List<ObjectPath> objectPaths = s3objects.stream().map(o -> new ObjectPath(o.bucket(), o.getObjectKey())).collect(Collectors.toList());
-            return operator.delete(objectPaths)
+            return objectStorage.delete(objectPaths)
                 .exceptionally(e -> {
                     log.error("Failed to delete the S3Object from S3, objectKeys: {}",
                         objectPaths.stream().map(ObjectPath::key).collect(Collectors.joining(",")), e);
                     return null;
                 }).thenAccept(rst -> {
                     List<Long> deletedObjectIds = s3objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
-                    // notify the controller an objects deletion event to drive the removal of the objects
-                    ControllerRequestContext ctx = new ControllerRequestContext(
-                        null, null, OptionalLong.empty());
-                    quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
-                        if (exp != null) {
-                            log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
-                                Arrays.toString(deletedObjectIds.toArray()), exp);
-                        }
-                    });
+                    notifyS3ObjectDeleted(deletedObjectIds);
                 });
+        }
+
+        private CompletableFuture<Void> deepDelete(List<S3Object> s3Objects) {
+            if (s3Objects.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            List<CompletableFuture<Void>> cfList = new LinkedList<>();
+            for (S3Object object : s3Objects) {
+                S3ObjectMetadata metadata = new S3ObjectMetadata(object.getObjectId(), object.getAttributes());
+                cfList.add(CompositeObject.delete(metadata, objectStorage));
+            }
+            CompletableFuture<Void> allCf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
+            allCf.thenAccept(rst -> {
+                List<Long> deletedObjectIds = s3Objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
+                notifyS3ObjectDeleted(deletedObjectIds);
+            });
+            return allCf;
+        }
+
+        private void notifyS3ObjectDeleted(List<Long> deletedObjectIds) {
+            // notify the controller an objects deletion event to drive the removal of the objects
+            ControllerRequestContext ctx = new ControllerRequestContext(
+                null, null, OptionalLong.empty());
+            quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
+                if (exp != null) {
+                    log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
+                        Arrays.toString(deletedObjectIds.toArray()), exp);
+                }
+            });
         }
     }
 

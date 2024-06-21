@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 import static com.automq.stream.s3.CompositeObject.FOOTER_MAGIC;
+import static com.automq.stream.s3.CompositeObject.OBJECTS_BLOCK_MAGIC;
 import static com.automq.stream.s3.CompositeObject.OBJECT_BLOCK_HEADER_SIZE;
 import static com.automq.stream.s3.CompositeObject.OBJECT_UNIT_SIZE;
 import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
@@ -118,7 +119,9 @@ public class CompositeObjectReader implements ObjectReader {
                 ByteBuf objectsBlockBuf = buf.retainedSlice(0, (int) indexBlockPosition);
                 ByteBuf indexesBlockBuf = buf.retainedSlice((int) indexBlockPosition, indexBlockSize);
                 buf.release();
-                basicObjectInfoCf.complete(new BasicObjectInfoExt(objectsBlockBuf, new IndexBlock(indexesBlockBuf)));
+                IndexBlock indexBlock = new IndexBlock(indexesBlockBuf);
+                ObjectsBlock objectsBlock = new ObjectsBlock(objectsBlockBuf, indexBlock.count());
+                basicObjectInfoCf.complete(new BasicObjectInfoExt(objectsBlock, new IndexBlock(indexesBlockBuf)));
             } catch (Throwable e) {
                 buf.release();
                 basicObjectInfoCf.completeExceptionally(e);
@@ -142,9 +145,9 @@ public class CompositeObjectReader implements ObjectReader {
     public class BasicObjectInfoExt extends BasicObjectInfo {
         private final ObjectsBlock objectsBlock;
 
-        public BasicObjectInfoExt(ByteBuf objectsBlockBuf, IndexBlock indexBlock) {
+        public BasicObjectInfoExt(ObjectsBlock objectsBlock, IndexBlock indexBlock) throws ObjectParseException {
             super(-1L, indexBlock);
-            this.objectsBlock = new ObjectsBlock(objectsBlockBuf, indexBlock.count());
+            this.objectsBlock = objectsBlock;
         }
 
         @Override
@@ -239,7 +242,10 @@ public class CompositeObjectReader implements ObjectReader {
         private final int dataBlockIndexCount;
         private final ObjectsSearcher objectsSearcher;
 
-        public ObjectsBlock(ByteBuf buf, int dataBlockIndexCount) {
+        public ObjectsBlock(ByteBuf buf, int dataBlockIndexCount) throws ObjectParseException {
+            if (buf.getByte(0) != OBJECTS_BLOCK_MAGIC) {
+                throw new ObjectParseException("Invalid objects block magic: " + buf.getByte(0));
+            }
             this.buf = buf.slice();
             this.count = this.buf.getInt(1);
             this.dataBlockIndexCount = dataBlockIndexCount;
@@ -276,7 +282,7 @@ public class CompositeObjectReader implements ObjectReader {
             int base = index * OBJECT_UNIT_SIZE + OBJECT_BLOCK_HEADER_SIZE;
             long objectId = buf.getLong(base);
             int blockStartIndex = buf.getInt(base + 8);
-            short bucket = buf.getShort(12);
+            short bucket = buf.getShort(base + 12);
             int blockEndIndex = dataBlockIndexCount;
             if (index < count - 1) {
                 blockEndIndex = buf.getInt(base + OBJECT_UNIT_SIZE + 8);
