@@ -205,7 +205,7 @@ public class DeltaWALUploadTask {
             return this;
         }
 
-        public Builder s3Operator(ObjectStorage objectStorage) {
+        public Builder objectStorage(ObjectStorage objectStorage) {
             this.objectStorage = objectStorage;
             return this;
         }

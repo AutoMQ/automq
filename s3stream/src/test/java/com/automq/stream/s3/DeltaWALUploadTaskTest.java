@@ -80,7 +80,7 @@ public class DeltaWALUploadTaskTest {
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(1000);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-            .s3Operator(objectStorage).executor(ForkJoinPool.commonPool()).build();
+            .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
@@ -160,7 +160,7 @@ public class DeltaWALUploadTaskTest {
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(16 * 1024 * 1024);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-            .s3Operator(objectStorage).executor(ForkJoinPool.commonPool()).build();
+            .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
@@ -196,7 +196,7 @@ public class DeltaWALUploadTaskTest {
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(64);
         deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
-            .s3Operator(objectStorage).executor(ForkJoinPool.commonPool()).build();
+            .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
         assertTrue(deltaWALUploadTask.forceSplit);
     }
 }

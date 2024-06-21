@@ -274,7 +274,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             // expect NoSuchKey is not response because s3 api won't return this in errors.
             for (S3Error error : response.errors()) {
                 if (errDeleteCount < 30) {
-                    LOGGER.error("[ControllerS3Operator]: Delete objects for key [{}] error code [{}] message [{}]",
+                    LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
                         error.key(), error.code(), error.message());
                 }
                 failedKeys.add(error.key());
@@ -289,7 +289,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     continue;
                 }
                 if (errDeleteCount < 30) {
-                    LOGGER.error("[ControllerS3Operator]: Delete objects for key [{}] error code [{}] message [{}]",
+                    LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
                         error.key(), error.code(), error.message());
                 }
                 failedKeys.add(error.key());

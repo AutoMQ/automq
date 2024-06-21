@@ -11,6 +11,9 @@
 
 package com.automq.stream.s3.compact;
 
+import com.automq.stream.s3.CompositeObject;
+import com.automq.stream.s3.CompositeObjectReader;
+import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.S3Stream;
@@ -21,9 +24,9 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
-import com.automq.stream.s3.operator.ObjectStorage;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -32,6 +35,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -39,8 +43,15 @@ import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import static com.automq.stream.s3.compact.CompactOperations.DELETE;
+import static com.automq.stream.s3.compact.CompactOperations.KEEP_DATA;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByCompositeObject;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByPhysicalMerge;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.builder;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.group0;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,7 +68,7 @@ import static org.mockito.Mockito.when;
 class StreamObjectCompactorTest {
 
     private ObjectManager objectManager;
-    private ObjectStorage objectStorage;
+    private MemoryObjectStorage objectStorage;
     private S3Stream stream;
     private final long streamId = 233L;
 
@@ -139,7 +150,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(14L);
         when(stream.confirmOffset()).thenReturn(32L);
 
-        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(objectStorage)
+        StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(MAJOR);
 
@@ -231,7 +242,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(17L);
         when(stream.confirmOffset()).thenReturn(32L);
 
-        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(objectStorage)
+        StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(MAJOR);
 
@@ -249,7 +260,7 @@ class StreamObjectCompactorTest {
     public void testCompact_groupBlocks() throws ExecutionException, InterruptedException {
         List<S3ObjectMetadata> objects = prepareData();
 
-        CompactStreamObjectRequest req = new StreamObjectCompactor.CompactByPhysicalMerge(streamId, 0L, 14L,
+        CompactStreamObjectRequest req = new CompactByPhysicalMerge(streamId, 0L, 14L,
             objects.subList(0, 2), 5, 5000, objectStorage).compact().get();
         // verify compact request
         assertEquals(5, req.getObjectId());
@@ -302,7 +313,7 @@ class StreamObjectCompactorTest {
             new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamId, 31, 32)),
                 System.currentTimeMillis(), System.currentTimeMillis(), 1, 6)
         );
-        List<List<S3ObjectMetadata>> groups = StreamObjectCompactor.group0(objects, 512, false);
+        List<List<S3ObjectMetadata>> groups = group0(objects, 512, false);
         assertEquals(3, groups.size());
         assertEquals(List.of(2L), groups.get(0).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(3L, 4L), groups.get(1).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
@@ -332,7 +343,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(1450L);
         when(stream.confirmOffset()).thenReturn(1500L);
 
-        StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).s3Operator(objectStorage)
+        StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(CLEANUP);
 
@@ -340,16 +351,77 @@ class StreamObjectCompactorTest {
         verify(objectManager, times(2)).compactStreamObject(ac.capture());
         CompactStreamObjectRequest clean = ac.getAllValues().get(0);
         assertEquals(ObjectUtils.NOOP_OBJECT_ID, clean.getObjectId());
-        assertEquals(LongStream.range(0, StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP).boxed().collect(Collectors.toList()), clean.getSourceObjectIds());
+        assertEquals(LongStream.range(0, EXPIRED_OBJECTS_CLEAN_UP_STEP).boxed().collect(Collectors.toList()), clean.getSourceObjectIds());
 
         clean = ac.getAllValues().get(1);
         assertEquals(ObjectUtils.NOOP_OBJECT_ID, clean.getObjectId());
-        assertEquals(LongStream.range(StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP, 1450).boxed().collect(Collectors.toList()), clean.getSourceObjectIds());
+        assertEquals(LongStream.range(EXPIRED_OBJECTS_CLEAN_UP_STEP, 1450).boxed().collect(Collectors.toList()), clean.getSourceObjectIds());
     }
 
     @Test
-    public void testCompactByCompositeObject() {
+    public void testCompactByCompositeObject() throws ExecutionException, InterruptedException {
         // TODO: add test when MemoryObjectStorage is ready
+        List<S3ObjectMetadata> metadataList = prepareData();
+        // composite compact two normal objects
+        CompactByCompositeObject compact = new CompactByCompositeObject(streamId, 0L, 0L, metadataList.subList(0, 2), 5, objectStorage);
+        CompactStreamObjectRequest req = compact.compact().get();
+        assertEquals(ObjectAttributes.Type.Composite, ObjectAttributes.from(req.getAttributes()).type());
+        assertEquals(5, req.getObjectId());
+        assertEquals(streamId, req.getStreamId());
+        assertEquals(10L, req.getStartOffset());
+        assertEquals(18L, req.getEndOffset());
+        assertEquals(List.of(1L, 2L), req.getSourceObjectIds());
+        assertEquals(List.of(KEEP_DATA, KEEP_DATA), req.getOperations());
+
+        S3ObjectMetadata object5Metadata = new S3ObjectMetadata(5, req.getAttributes());
+        CompositeObjectReader reader = CompositeObject.reader(object5Metadata, objectStorage);
+        List<DataBlockIndex> indexes = reader.basicObjectInfo().get().indexBlock().indexes();
+        Assertions.assertEquals(4, indexes.size());
+        Assertions.assertEquals(List.of(10L, 11L, 12L),
+            reader.read(indexes.get(0)).get().records().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList())
+        );
+        Assertions.assertEquals(List.of(13L, 14L, 15L),
+            reader.read(indexes.get(1)).get().records().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList())
+        );
+        Assertions.assertEquals(List.of(16L),
+            reader.read(indexes.get(2)).get().records().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList())
+        );
+        Assertions.assertEquals(List.of(17L),
+            reader.read(indexes.get(3)).get().records().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList())
+        );
+
+        // object-6: offset 18
+        ObjectWriter writer = ObjectWriter.writer(6, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        writer.write(233L, List.of(
+            newRecord(18L, 1, 1024)
+        ));
+        writer.close().get();
+        S3ObjectMetadata object6Metadata = new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamId, 18, 19)),
+            System.currentTimeMillis(), System.currentTimeMillis(), writer.size(), 6);
+
+        // compact object5 and object6, expect the composite object contains 16 ~ 18 and delete object1
+        compact = new CompactByCompositeObject(streamId, 0L, 17L, List.of(object5Metadata, object6Metadata), 7, objectStorage);
+        req = compact.compact().get();
+        assertEquals(ObjectAttributes.Type.Composite, ObjectAttributes.from(req.getAttributes()).type());
+        assertEquals(7, req.getObjectId());
+        assertEquals(16L, req.getStartOffset());
+        assertEquals(19L, req.getEndOffset());
+        assertEquals(List.of(5L, 6L), req.getSourceObjectIds());
+        assertEquals(List.of(DELETE, KEEP_DATA), req.getOperations());
+        assertFalse(objectStorage.contains(ObjectUtils.genKey(0, 1L)));
+        S3ObjectMetadata object7Metadata = new S3ObjectMetadata(7, req.getAttributes());
+        reader = CompositeObject.reader(object7Metadata, objectStorage);
+        indexes = reader.basicObjectInfo().get().indexBlock().indexes();
+        Assertions.assertEquals(3, indexes.size());
+        Assertions.assertEquals(List.of(16L),
+            reader.read(indexes.get(0)).get().records().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList())
+        );
+        Assertions.assertEquals(List.of(17L),
+            reader.read(indexes.get(1)).get().records().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList())
+        );
+        Assertions.assertEquals(List.of(18L),
+            reader.read(indexes.get(2)).get().records().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList())
+        );
     }
 
     StreamRecordBatch newRecord(long offset, int count, int payloadSize) {
