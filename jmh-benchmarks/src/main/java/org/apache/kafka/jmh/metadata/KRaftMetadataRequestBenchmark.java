@@ -38,6 +38,7 @@ import kafka.server.SimpleApiVersionManager;
 import kafka.server.builders.KafkaApisBuilder;
 import kafka.server.metadata.KRaftMetadataCache;
 import kafka.server.metadata.MockConfigRepository;
+import kafka.server.streamaspect.BrokerQuotaManager;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.memory.MemoryPool;
 import org.apache.kafka.common.message.ApiMessageType;
@@ -108,10 +109,11 @@ public class KRaftMetadataRequestBenchmark {
     private final KRaftMetadataCache metadataCache = MetadataCache.kRaftMetadataCache(brokerId);
     private final ClientQuotaManager clientQuotaManager = Mockito.mock(ClientQuotaManager.class);
     private final ClientRequestQuotaManager clientRequestQuotaManager = Mockito.mock(ClientRequestQuotaManager.class);
+    private final BrokerQuotaManager brokerQuotaManager = Mockito.mock(BrokerQuotaManager.class);
     private final ControllerMutationQuotaManager controllerMutationQuotaManager = Mockito.mock(ControllerMutationQuotaManager.class);
     private final ReplicationQuotaManager replicaQuotaManager = Mockito.mock(ReplicationQuotaManager.class);
     private final QuotaFactory.QuotaManagers quotaManagers = new QuotaFactory.QuotaManagers(clientQuotaManager,
-            clientQuotaManager, clientRequestQuotaManager, controllerMutationQuotaManager, replicaQuotaManager,
+            clientQuotaManager, clientRequestQuotaManager, brokerQuotaManager, controllerMutationQuotaManager, replicaQuotaManager,
             replicaQuotaManager, replicaQuotaManager, Option.empty());
     private final FetchManager fetchManager = Mockito.mock(FetchManager.class);
     private final BrokerTopicStats brokerTopicStats = new BrokerTopicStats(false);

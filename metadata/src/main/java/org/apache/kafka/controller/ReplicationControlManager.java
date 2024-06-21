@@ -662,6 +662,32 @@ public class ReplicationControlManager {
         log.info("Replayed RemoveTopicRecord for topic {} with ID {}.", topic.name, record.topicId());
     }
 
+    // AutoMQ inject start
+    void checkTopicQuota(CreateTopicsRequestData request, Map<String, ApiError> topicErrors) {
+        int topicCountQuota = configurationControl.topicCountQuota();
+        int topicCount = topics.size();
+        int topicAdditionCount = request.topics().size();
+        if (topicCount + topicAdditionCount > topicCountQuota) {
+            for (CreatableTopic topic : request.topics()) {
+                topicErrors.put(topic.name(),
+                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Topic count quota exceeded: current quota is " + topicCountQuota));
+            }
+        }
+
+        int partitionCountQuota = configurationControl.partitionCountQuota();
+        int partitionCount = this.topics.values().stream().mapToInt(info -> info.parts.size()).sum();
+        int partitionAdditionCount = request.topics().stream()
+            .mapToInt(topic -> topic.numPartitions() == -1 ? defaultNumPartitions : topic.numPartitions())
+            .sum();
+        if (partitionCount + partitionAdditionCount > partitionCountQuota) {
+            for (CreatableTopic topic : request.topics()) {
+                topicErrors.put(topic.name(),
+                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCountQuota));
+            }
+        }
+    }
+    // AutoMQ inject end
+
     ControllerResult<CreateTopicsResponseData> createTopics(
         ControllerRequestContext context,
         CreateTopicsRequestData request,
@@ -682,6 +708,10 @@ public class ReplicationControlManager {
         // configurations should be created.
         Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges =
             computeConfigChanges(topicErrors, request.topics());
+
+        // AutoMQ inject start
+        checkTopicQuota(request, topicErrors);
+        // AutoMQ inject end
 
         // Try to create whatever topics are needed.
         Map<String, CreatableTopicResult> successes = new HashMap<>();
@@ -1806,12 +1836,40 @@ public class ReplicationControlManager {
         return ControllerResult.of(records, rescheduleImmediately);
     }
 
+    // AutoMQ inject start
+    private void checkPartitionQuota(List<CreatePartitionsTopic> topics, List<CreatePartitionsTopicResult> results) {
+        int quota = configurationControl.partitionCountQuota();
+        Set<String> topicNameSet = topics.stream().map(CreatePartitionsTopic::name).collect(Collectors.toSet());
+        int partitionCount = this.topics.values()
+            .stream()
+            .filter(info -> !topicNameSet.contains(info.name))
+            .mapToInt(info -> info.parts.size()).sum();
+        int partitionAdditionCount = topics.stream().mapToInt(CreatePartitionsTopic::count).sum();
+        if (partitionCount + partitionAdditionCount > quota) {
+            for (CreatePartitionsTopic topic : topics) {
+                results.add(new CreatePartitionsTopicResult().
+                    setName(topic.name()).
+                    setErrorCode(Errors.THROTTLING_QUOTA_EXCEEDED.code()).
+                    setErrorMessage("Partition count exceeds the quota, current quota is " + quota));
+            }
+        }
+    }
+    // AutoMQ inject end
+
     ControllerResult<List<CreatePartitionsTopicResult>> createPartitions(
         ControllerRequestContext context,
         List<CreatePartitionsTopic> topics
     ) {
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         List<CreatePartitionsTopicResult> results = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+
+        // AutoMQ inject start
+        checkPartitionQuota(topics, results);
+        if (!results.isEmpty()) {
+            return ControllerResult.of(records, results);
+        }
+        // AutoMQ inject end
+
         for (CreatePartitionsTopic topic : topics) {
             ApiError apiError = ApiError.NONE;
             try {
@@ -2423,7 +2481,7 @@ public class ReplicationControlManager {
         } else {
             log.debug("Can't find the min isr config for topic: " + topicName + ". Use default value " + defaultMinIsr);
         }
-        
+
         Uuid topicId = topicsByName.get(topicName);
         int replicationFactor = topics.get(topicId).parts.get(0).replicas.length;
         return Math.min(currentMinIsr, replicationFactor);

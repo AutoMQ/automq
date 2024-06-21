@@ -21,6 +21,7 @@ import kafka.cluster.Partition
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.QuotaManagers
+import kafka.server.streamaspect.BrokerQuotaManager
 import org.apache.kafka.common.errors.ClusterAuthorizationException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.network.Send
@@ -73,6 +74,22 @@ class RequestHandlerHelper(
     }
     quotaManager.throttle(request, callback, throttleTimeMs)
   }
+
+
+  // AutoMQ for Kafka inject start
+  def throttle(
+    quotaType: QuotaType,
+    quotaManager: BrokerQuotaManager,
+    request: RequestChannel.Request,
+    throttleTimeMs: Int
+  ): Unit = {
+    val callback = new ThrottleCallback {
+      override def startThrottling(): Unit = requestChannel.startThrottling(request)
+      override def endThrottling(): Unit = requestChannel.endThrottling(request)
+    }
+    quotaManager.throttle(quotaType, callback, throttleTimeMs)
+  }
+  // AutoMQ for Kafka inject end
 
   def handleError(request: RequestChannel.Request, e: Throwable): Unit = {
     val mayThrottle = e.isInstanceOf[ClusterAuthorizationException] || !request.header.apiKey.clusterAction

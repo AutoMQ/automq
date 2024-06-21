@@ -1556,6 +1556,10 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
   private val interBrokerListenerName = config.interBrokerListenerName
   private val counts = mutable.Map[InetAddress, Int]()
 
+  // AutoMQ inject start
+  val wildcardIPAddress = new InetSocketAddress(0).getAddress
+  // AutoMQ inject end
+
   // Listener counts and configs are synchronized on `counts`
   private val listenerCounts = mutable.Map[ListenerName, Int]()
   private[network] val maxConnectionsPerListener = mutable.Map[ListenerName, ListenerConnectionQuota]()
@@ -1572,6 +1576,12 @@ class ConnectionQuotas(config: KafkaConfig, time: Time, metrics: Metrics) extend
       waitForConnectionSlot(listenerName, acceptorBlockedPercentMeter)
 
       recordIpConnectionMaybeThrottle(listenerName, address)
+
+      // AutoMQ inject start
+      // Record and check broker level quota
+      recordIpConnectionMaybeThrottle(listenerName, wildcardIPAddress)
+      // AutoMQ inject end
+
       val count = counts.getOrElseUpdate(address, 0)
       counts.put(address, count + 1)
       totalCount += 1

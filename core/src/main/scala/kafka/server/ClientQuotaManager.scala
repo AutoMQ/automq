@@ -156,11 +156,15 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
     case None => QuotaTypes.NoQuotas
   }
 
-  private val delayQueueSensor = metrics.sensor(quotaType.toString + "-delayQueue")
-  delayQueueSensor.add(metrics.metricName("queue-size", quotaType.toString,
+  protected val _delayQueueSensor = metrics.sensor(quotaType.toString + "-delayQueue")
+  _delayQueueSensor.add(metrics.metricName("queue-size", quotaType.toString,
     "Tracks the size of the delay queue"), new CumulativeSum())
 
-  private val delayQueue = new DelayQueue[ThrottledChannel]()
+  def delayQueueSensor: Sensor = {
+    _delayQueueSensor
+  }
+
+  protected val delayQueue = new DelayQueue[ThrottledChannel]()
   private[server] val throttledChannelReaper = new ThrottledChannelReaper(delayQueue, threadNamePrefix)
   start() // Use start method to keep spotbugs happy
   private def start(): Unit = {
@@ -371,7 +375,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
     )
   }
 
-  private def metricTagsToSensorSuffix(metricTags: Map[String, String]): String =
+  protected def metricTagsToSensorSuffix(metricTags: Map[String, String]): String =
     metricTags.values.mkString(":")
 
   private def getThrottleTimeSensorName(metricTags: Map[String, String]): String =
@@ -384,7 +388,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
     getQuotaMetricConfig(quotaLimit(metricTags.asJava))
   }
 
-  private def getQuotaMetricConfig(quotaLimit: Double): MetricConfig = {
+  protected def getQuotaMetricConfig(quotaLimit: Double): MetricConfig = {
     new MetricConfig()
       .timeWindow(config.quotaWindowSizeSeconds, TimeUnit.SECONDS)
       .samples(config.numQuotaSamples)
