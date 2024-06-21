@@ -69,6 +69,10 @@ RUN apt update && apt install -y sudo git netcat iptables rsync unzip wget curl 
 RUN python3 -m pip install -U pip==21.1.1;
 RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy && pip3 install --upgrade "ducktape>0.8"
 
+# AutoMQ inject start
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m | sed 's/arm64/aarch64/')-2.15.15.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install && rm -rf awscliv2.zip aws
+# AutoMQ inject end
+
 # Set up ssh
 COPY ./ssh-config /root/.ssh/config
 # NOTE: The paramiko library supports the PEM-format private key, but does not support the RFC4716 format.
