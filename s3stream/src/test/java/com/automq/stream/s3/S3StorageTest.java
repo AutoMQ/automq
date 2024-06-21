@@ -22,8 +22,8 @@ import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.MemoryWriteAheadLog;
 import com.automq.stream.s3.wal.WriteAheadLog;
@@ -59,7 +59,7 @@ public class S3StorageTest {
     StreamManager streamManager;
     ObjectManager objectManager;
     WriteAheadLog wal;
-    S3Operator s3Operator;
+    ObjectStorage objectStorage;
     S3Storage storage;
     Config config;
 
@@ -74,9 +74,9 @@ public class S3StorageTest {
         objectManager = mock(ObjectManager.class);
         streamManager = mock(StreamManager.class);
         wal = spy(new MemoryWriteAheadLog());
-        s3Operator = new MemoryS3Operator();
+        objectStorage = new MemoryObjectStorage();
         storage = new S3Storage(config, wal,
-            streamManager, objectManager, new DefaultS3BlockCache(config, objectManager, s3Operator), s3Operator);
+            streamManager, objectManager, new DefaultS3BlockCache(config, objectManager, objectStorage), objectStorage);
     }
 
     @Test

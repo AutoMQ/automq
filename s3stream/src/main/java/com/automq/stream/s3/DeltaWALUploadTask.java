@@ -16,7 +16,7 @@ import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.AsyncRateLimiter;
 import com.automq.stream.utils.FutureUtil;
 import java.util.ArrayList;
@@ -42,7 +42,7 @@ public class DeltaWALUploadTask {
     private final int objectPartSize;
     private final int streamSplitSizeThreshold;
     private final ObjectManager objectManager;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
     private final boolean s3ObjectLogEnable;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
     private final CompletableFuture<CommitStreamSetObjectRequest> uploadCf = new CompletableFuture<>();
@@ -55,7 +55,7 @@ public class DeltaWALUploadTask {
     private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
 
     public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
-        ObjectManager objectManager, S3Operator s3Operator,
+        ObjectManager objectManager, ObjectStorage objectStorage,
         ExecutorService executor, boolean forceSplit, double rate) {
         this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.nodeId()));
         this.streamRecordsMap = streamRecordsMap;
@@ -64,7 +64,7 @@ public class DeltaWALUploadTask {
         this.streamSplitSizeThreshold = config.streamSplitSize();
         this.s3ObjectLogEnable = config.objectLogEnable();
         this.objectManager = objectManager;
-        this.s3Operator = s3Operator;
+        this.objectStorage = objectStorage;
         this.forceSplit = forceSplit;
         this.executor = executor;
         this.rate = rate;
@@ -107,7 +107,7 @@ public class DeltaWALUploadTask {
             // when only has one stream, we only need to write the stream data.
             streamSetObject = ObjectWriter.noop(objectId);
         } else {
-            streamSetObject = ObjectWriter.writer(objectId, s3Operator, objectBlockSize, objectPartSize);
+            streamSetObject = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
         }
 
         List<CompletableFuture<Void>> streamObjectCfList = new LinkedList<>();
@@ -164,7 +164,7 @@ public class DeltaWALUploadTask {
         CompletableFuture<Long> cf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60));
         cf = cf.thenCompose(objectId -> limiter.acquire(streamSize).thenApply(nil -> objectId));
         return cf.thenComposeAsync(objectId -> {
-            ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, s3Operator, objectBlockSize, objectPartSize);
+            ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
             long streamId = streamRecords.get(0).getStreamId();
             streamObjectWriter.write(streamId, streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();
@@ -185,7 +185,7 @@ public class DeltaWALUploadTask {
         private Config config;
         private Map<Long, List<StreamRecordBatch>> streamRecordsMap;
         private ObjectManager objectManager;
-        private S3Operator s3Operator;
+        private ObjectStorage objectStorage;
         private ExecutorService executor;
         private Boolean forceSplit;
         private double rate = Long.MAX_VALUE;
@@ -205,8 +205,8 @@ public class DeltaWALUploadTask {
             return this;
         }
 
-        public Builder s3Operator(S3Operator s3Operator) {
-            this.s3Operator = s3Operator;
+        public Builder s3Operator(ObjectStorage objectStorage) {
+            this.objectStorage = objectStorage;
             return this;
         }
 
@@ -240,7 +240,7 @@ public class DeltaWALUploadTask {
                 }
                 this.forceSplit = forceSplit;
             }
-            return new DeltaWALUploadTask(config, streamRecordsMap, objectManager, s3Operator, executor, forceSplit, rate);
+            return new DeltaWALUploadTask(config, streamRecordsMap, objectManager, objectStorage, executor, forceSplit, rate);
         }
     }
 

@@ -15,8 +15,10 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
+import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.Arrays;
@@ -24,22 +26,25 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Timeout(60)
+@Tag("S3Unit")
 public class CompositeObjectTest {
 
     @Test
     public void testCompositeObject_writeAndRead() throws ExecutionException, InterruptedException {
-        // TODO: replace s3operator to objectStorage
-        S3Operator s3Operator = new MemoryS3Operator();
+        ObjectStorage objectStorage = new MemoryObjectStorage();
         // generate two normal object
         S3ObjectMetadata obj1;
         {
             S3ObjectMetadata metadata = new S3ObjectMetadata(1, 0, S3ObjectType.STREAM);
-            ObjectWriter objectWriter = ObjectWriter.writer(1, s3Operator, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            ObjectWriter objectWriter = ObjectWriter.writer(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
             StreamRecordBatch r1 = newRecord(233, 10, 5, genBuf((byte) 1, 512));
             StreamRecordBatch r2 = newRecord(233, 15, 10, genBuf((byte) 2, 512));
             objectWriter.write(233, List.of(r1, r2));
@@ -52,7 +57,7 @@ public class CompositeObjectTest {
         S3ObjectMetadata obj2;
         {
             S3ObjectMetadata metadata = new S3ObjectMetadata(2, 0, S3ObjectType.STREAM);
-            ObjectWriter objectWriter = ObjectWriter.writer(2, s3Operator, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            ObjectWriter objectWriter = ObjectWriter.writer(2, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
             StreamRecordBatch r1 = newRecord(233, 30, 10, genBuf((byte) 4, 512));
             objectWriter.write(233, List.of(r1));
             objectWriter.close().get();
@@ -62,15 +67,15 @@ public class CompositeObjectTest {
 
         // generate composite object from previous two objects
         long objectId = 3;
-        CompositeObjectWriter compositeObjectWriter = new CompositeObjectWriter(s3Operator.writer(ObjectUtils.genKey(0, objectId)));
-        compositeObjectWriter.addComponent(obj1, ObjectReader.reader(obj1, s3Operator).basicObjectInfo().get().indexBlock().indexes());
-        compositeObjectWriter.addComponent(obj2, ObjectReader.reader(obj2, s3Operator).basicObjectInfo().get().indexBlock().indexes());
+        CompositeObjectWriter compositeObjectWriter = new CompositeObjectWriter(objectStorage.writer(WriteOptions.DEFAULT, ObjectUtils.genKey(0, objectId)));
+        compositeObjectWriter.addComponent(obj1, ObjectReader.reader(obj1, objectStorage).basicObjectInfo().get().indexBlock().indexes());
+        compositeObjectWriter.addComponent(obj2, ObjectReader.reader(obj2, objectStorage).basicObjectInfo().get().indexBlock().indexes());
         compositeObjectWriter.close().get();
 
         // read composite object and verify
         S3ObjectMetadata metadata = new S3ObjectMetadata(3, objectId, S3ObjectType.COMPOSITE);
         metadata.setObjectSize(compositeObjectWriter.size());
-        CompositeObjectReader reader = new CompositeObjectReader(metadata, (metadata1, start, end) -> s3Operator.rangeRead(ObjectUtils.genKey(0, metadata1.objectId()), start, end));
+        CompositeObjectReader reader = new CompositeObjectReader(metadata, (metadata1, start, end) -> objectStorage.rangeRead(ReadOptions.DEFAULT, ObjectUtils.genKey(0, metadata1.objectId()), start, end));
         ObjectReader.BasicObjectInfo info = reader.basicObjectInfo().get();
         List<DataBlockIndex> indexes = info.indexBlock().indexes();
         Assertions.assertEquals(3, indexes.size());

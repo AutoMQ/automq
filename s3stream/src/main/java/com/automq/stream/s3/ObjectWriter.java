@@ -15,7 +15,7 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectStreamRange;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -38,8 +38,8 @@ public interface ObjectWriter {
     // TODO: first n bit is the compressed flag
     byte DATA_BLOCK_DEFAULT_FLAG = 0x02;
 
-    static ObjectWriter writer(long objectId, S3Operator s3Operator, int blockSizeThreshold, int partSizeThreshold) {
-        return new DefaultObjectWriter(objectId, s3Operator, blockSizeThreshold, partSizeThreshold);
+    static ObjectWriter writer(long objectId, ObjectStorage objectStorage, int blockSizeThreshold, int partSizeThreshold) {
+        return new DefaultObjectWriter(objectId, objectStorage, blockSizeThreshold, partSizeThreshold);
     }
 
     static ObjectWriter noop(long objectId) {
@@ -81,18 +81,18 @@ public interface ObjectWriter {
          * Create a new object writer.
          *
          * @param objectId           object id
-         * @param s3Operator         S3 operator
+         * @param objectStorage         S3 operator
          * @param blockSizeThreshold the max size of a block
          * @param partSizeThreshold  the max size of a part. If it is smaller than {@link Writer#MIN_PART_SIZE}, it will be set to {@link Writer#MIN_PART_SIZE}.
          */
-        public DefaultObjectWriter(long objectId, S3Operator s3Operator, int blockSizeThreshold,
+        public DefaultObjectWriter(long objectId, ObjectStorage objectStorage, int blockSizeThreshold,
             int partSizeThreshold) {
             String objectKey = ObjectUtils.genKey(0, objectId);
             this.blockSizeThreshold = blockSizeThreshold;
             this.partSizeThreshold = Math.max(Writer.MIN_PART_SIZE, partSizeThreshold);
             waitingUploadBlocks = new LinkedList<>();
             completedBlocks = new LinkedList<>();
-            writer = s3Operator.writer(objectKey);
+            writer = objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, objectKey);
         }
 
         public void write(long streamId, List<StreamRecordBatch> records) {

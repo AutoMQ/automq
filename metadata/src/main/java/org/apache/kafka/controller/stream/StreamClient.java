@@ -14,30 +14,31 @@ package org.apache.kafka.controller.stream;
 import com.automq.shell.auth.CredentialsProviderHolder;
 import com.automq.shell.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.s3.Config;
-import com.automq.stream.s3.operator.DefaultS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import java.util.List;
 
 public class StreamClient {
     private final Config streamConfig;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
 
     public StreamClient(Config streamConfig) {
         this.streamConfig = streamConfig;
-        this.s3Operator = new DefaultS3Operator(
-            streamConfig.endpoint(),
-            streamConfig.region(),
-            streamConfig.bucket(),
-            streamConfig.forcePathStyle(),
-            List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()),
-            streamConfig.objectTagging());
+        this.objectStorage = AwsObjectStorage.builder()
+            .endpoint(streamConfig.endpoint())
+            .region(streamConfig.region())
+            .bucket(streamConfig.bucket())
+            .forcePathStyle(streamConfig.forcePathStyle())
+            .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()))
+            .tagging(streamConfig.objectTagging())
+            .build();
     }
 
     public Config streamConfig() {
         return streamConfig;
     }
 
-    public S3Operator s3Operator() {
-        return s3Operator;
+    public ObjectStorage s3Operator() {
+        return objectStorage;
     }
 }

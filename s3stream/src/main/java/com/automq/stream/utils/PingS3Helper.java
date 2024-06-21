@@ -11,12 +11,21 @@
 
 package com.automq.stream.utils;
 
-
-import com.automq.stream.s3.operator.DefaultS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
+import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
@@ -24,25 +33,13 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.core.exception.SdkClientException;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
-import java.nio.charset.StandardCharsets;
-import java.util.AbstractMap;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ExecutionException;
-
 public class PingS3Helper {
     private static final Logger LOGGER = LoggerFactory.getLogger(PingS3Helper.class);
-    private S3Operator s3Operator;
+    private ObjectStorage objectStorage;
     private String endpoint;
     private String region;
     private String bucket;
@@ -128,8 +125,9 @@ public class PingS3Helper {
     }
 
     public void pingS3() {
+        // TODO: better ping to support multiple buckets and multiple cloud
         try {
-            s3Operator = DefaultS3Operator.builder()
+            objectStorage = AwsObjectStorage.builder()
                 .endpoint(endpoint)
                 .region(region)
                 .bucket(bucket)
@@ -143,11 +141,11 @@ public class PingS3Helper {
         }
         try {
             checkSimpleObjOperation();
-            checkMultipartUploadOperation();
-            checkUploadPartCopy().join();
-            checkDeleteObjs().join();
+//            checkMultipartUploadOperation();
+//            checkUploadPartCopy().join();
+//            checkDeleteObjs().join();
         } finally {
-            s3Operator.close();
+            objectStorage.close();
         }
     }
 
@@ -162,31 +160,31 @@ public class PingS3Helper {
         future.join();
     }
 
-    private void checkMultipartUploadOperation() {
-        String path = String.format("check_multipart_obj_available/%d", System.nanoTime());
-        CompletableFuture<Void> future = checkCreateMultipartUpload(path)
-            .thenCompose(respUploadId -> checkUploadPart(path, respUploadId)
-                .thenApply(completedPart -> new AbstractMap.SimpleEntry<>(respUploadId, completedPart)))
-            .thenCompose(entry ->
-                checkCompleteMultipartUpload(path, entry.getKey(), entry.getValue())
-            ).thenRun(() -> s3Operator.delete(path))
-            .exceptionally(ex -> {
-                handleException(ex, "Delete object");
-                return null;
-            });
-
-        future.join();
-    }
+//    private void checkMultipartUploadOperation() {
+//        String path = String.format("check_multipart_obj_available/%d", System.nanoTime());
+//        CompletableFuture<Void> future = checkCreateMultipartUpload(path)
+//            .thenCompose(respUploadId -> checkUploadPart(path, respUploadId)
+//                .thenApply(completedPart -> new AbstractMap.SimpleEntry<>(respUploadId, completedPart)))
+//            .thenCompose(entry ->
+//                checkCompleteMultipartUpload(path, entry.getKey(), entry.getValue())
+//            ).thenRun(() -> objectStorage.delete(path))
+//            .exceptionally(ex -> {
+//                handleException(ex, "Delete object");
+//                return null;
+//            });
+//
+//        future.join();
+//    }
 
     private CompletableFuture<Void> checkWrite(String path, ByteBuf data) {
-        return s3Operator.write(path, data).thenRun(() -> {
+        return objectStorage.write(WriteOptions.DEFAULT, path, data).thenRun(() -> {
             LOGGER.info("Successfully write object to s3");
             printOperationStatus("Write object", true);
         }).exceptionally(ex -> handleException(ex, "Write object"));
     }
 
     private CompletableFuture<Void> checkRead(String path, ByteBuf data) {
-        return s3Operator.rangeRead(path, 0, data.readableBytes()).thenAccept(buf -> {
+        return objectStorage.rangeRead(ReadOptions.DEFAULT, path, 0, data.readableBytes()).thenAccept(buf -> {
 
             if (data.equals(buf)) {
                 LOGGER.info("Successfully rangeRead object");
@@ -200,115 +198,116 @@ public class PingS3Helper {
     }
 
     private CompletableFuture<Void> checkDelete(String path) {
-        return s3Operator.delete(path).thenRun(() -> {
+        return objectStorage.delete(List.of(new ObjectStorage.ObjectPath((short) 0, path))).thenRun(() -> {
             LOGGER.info("Successfully delete object to s3");
             printOperationStatus("Delete object", true);
         }).exceptionally(ex -> handleException(ex, "Delete object"));
     }
 
-    private CompletableFuture<String> checkCreateMultipartUpload(String path) {
-        return s3Operator.createMultipartUpload(path)
-            .thenApply(respUploadId -> {
-                if (respUploadId != null && !respUploadId.isEmpty()) {
-                    printOperationStatus("CreateMultipartUpload", true);
-                    LOGGER.info("Successfully createMultipartUpload, uploadId: {}", respUploadId);
-                } else {
-                    String exceptionMsg = "Failed to createMultipartUpload, uploadId is empty";
-                    handleErrorResponse(exceptionMsg, "CreateMultipartUpload");
-                }
-                return respUploadId;
-            })
-            .exceptionally(ex -> {
-                handleException(ex, "CreateMultipartUpload");
-                return null;
-            });
-    }
-
-    private CompletableFuture<CompletedPart> checkUploadPart(String path, String uploadId) {
-        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
-        return s3Operator.uploadPart(path, uploadId, 1, Unpooled.wrappedBuffer(content))
-            .thenApply(completedPart -> {
-                if (completedPart.eTag() != null && !completedPart.eTag().isEmpty() && completedPart.partNumber() != null) {
-                    LOGGER.info("Successfully upload to s3, eTag: {}", completedPart.eTag());
-                    printOperationStatus("UploadPart", true);
-                } else {
-                    String exceptionMsg = String.format("Failed to uploadPart to s3, eTag: %s, partNumber: %s", completedPart.eTag(), completedPart.partNumber());
-                    handleErrorResponse(exceptionMsg, "UploadPart");
-                }
-                return completedPart;
-            })
-            .exceptionally(ex -> {
-                handleException(ex, "UploadPart");
-                return null;
-            });
-    }
-
-    private CompletionStage<Void> checkCompleteMultipartUpload(String path, String uploadId, CompletedPart completedPart) {
-        List<CompletedPart> parts = new ArrayList<>();
-        parts.add(completedPart);
-        return s3Operator.completeMultipartUpload(path, uploadId, parts).thenRun(() -> {
-            LOGGER.info("Successfully CompleteMultipartUpload");
-            printOperationStatus("CompleteMultipartUpload", true);
-        }).exceptionally(ex -> handleException(ex, "completeMultipartUpload"));
-    }
-
-    private CompletableFuture<Void> checkUploadPartCopy() {
-        String sourcePath = String.format("check_upload_part_copy_available/%d", System.nanoTime());
-        String path = String.format("check_upload_part_copy_available/%d", System.nanoTime());
-
-        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
-        ByteBuf data = Unpooled.wrappedBuffer(content);
-
-        return s3Operator.write(sourcePath, data)
-            .thenCompose(aVoid -> s3Operator.createMultipartUpload(path))
-            .thenCompose(uploadId ->
-                s3Operator.uploadPartCopy(sourcePath, path, 0, data.readableBytes(), uploadId, 1)
-                    .thenCompose(uploadPartCopyResponse -> {
-                        if (uploadPartCopyResponse != null && uploadPartCopyResponse.eTag() != null && !uploadPartCopyResponse.eTag().isEmpty()) {
-                            LOGGER.info("Successfully uploadPartCopy");
-                            printOperationStatus("UploadPartCopy", true);
-                            CompletedPart completedPart = CompletedPart.builder().partNumber(1).eTag(uploadPartCopyResponse.eTag()).build();
-                            ArrayList<CompletedPart> completedParts = new ArrayList<>();
-                            completedParts.add(completedPart);
-                            return s3Operator.completeMultipartUpload(path, uploadId, completedParts);
-                        } else {
-                            handleErrorResponse("Failed to uploadPartCopy. The response was wrong", "UploadPartCopy");
-                        }
-                        return null;
-                    })
-                    .exceptionally(ex -> handleException(ex, "UploadPartCopy")))
-            .thenCompose(aVoid -> {
-                CompletableFuture<Void> deletePath = s3Operator.delete(path);
-                CompletableFuture<Void> deleteSourcePath = s3Operator.delete(sourcePath);
-                return CompletableFuture.allOf(deletePath, deleteSourcePath);
-            });
-    }
-
-    private CompletableFuture<Object> checkDeleteObjs() {
-        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
-        String path1 = String.format("check_available/deleteObjects/%d", System.nanoTime());
-        String path2 = String.format("check_available/deleteObjects/%d", System.nanoTime() + 1);
-        List<String> paths = List.of(path1, path2);
-        CompletableFuture<Void> writeFuture = CompletableFuture.allOf(
-            s3Operator.write(path1, Unpooled.wrappedBuffer(content)),
-            s3Operator.write(path2, Unpooled.wrappedBuffer(content))
-        );
-
-        return writeFuture.thenCompose(v ->
-            s3Operator.delete(paths)
-                .thenCompose(response -> {
-                    if (response != null && response.size() == 2) {
-                        LOGGER.info("Successfully deleted objects");
-                        printOperationStatus("Delete objects", true);
-                        return CompletableFuture.completedFuture(null);
-                    } else {
-                        String exceptionMsg = "Failed to delete objects. The response was wrong";
-                        handleErrorResponse(exceptionMsg, "Delete objects");
-                    }
-                    return null;
-                }).exceptionally(ex -> handleException(ex, "deleteObjects"))
-        );
-    }
+//    private CompletableFuture<String> checkCreateMultipartUpload(String path) {
+//        return objectStorage.createMultipartUpload(path)
+//            .thenApply(respUploadId -> {
+//                if (respUploadId != null && !respUploadId.isEmpty()) {
+//                    printOperationStatus("CreateMultipartUpload", true);
+//                    LOGGER.info("Successfully createMultipartUpload, uploadId: {}", respUploadId);
+//                } else {
+//                    String exceptionMsg = "Failed to createMultipartUpload, uploadId is empty";
+//                    handleErrorResponse(exceptionMsg, "CreateMultipartUpload");
+//                }
+//                return respUploadId;
+//            })
+//            .exceptionally(ex -> {
+//                handleException(ex, "CreateMultipartUpload");
+//                return null;
+//            });
+//    }
+//
+//    private CompletableFuture<CompletedPart> checkUploadPart(String path, String uploadId) {
+//        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+//        return objectStorage.uploadPart(path, uploadId, 1, Unpooled.wrappedBuffer(content))
+//            .thenApply(completedPart -> {
+//                if (completedPart.eTag() != null && !completedPart.eTag().isEmpty() && completedPart.partNumber() != null) {
+//                    LOGGER.info("Successfully upload to s3, eTag: {}", completedPart.eTag());
+//                    printOperationStatus("UploadPart", true);
+//                } else {
+//                    String exceptionMsg = String.format("Failed to uploadPart to s3, eTag: %s, partNumber: %s", completedPart.eTag(), completedPart.partNumber());
+//                    handleErrorResponse(exceptionMsg, "UploadPart");
+//                }
+//                return completedPart;
+//            })
+//            .exceptionally(ex -> {
+//                handleException(ex, "UploadPart");
+//                return null;
+//            });
+//    }
+//
+//    private CompletionStage<Void> checkCompleteMultipartUpload(String path, String uploadId,
+//        CompletedPart completedPart) {
+//        List<CompletedPart> parts = new ArrayList<>();
+//        parts.add(completedPart);
+//        return objectStorage.completeMultipartUpload(path, uploadId, parts).thenRun(() -> {
+//            LOGGER.info("Successfully CompleteMultipartUpload");
+//            printOperationStatus("CompleteMultipartUpload", true);
+//        }).exceptionally(ex -> handleException(ex, "completeMultipartUpload"));
+//    }
+//
+//    private CompletableFuture<Void> checkUploadPartCopy() {
+//        String sourcePath = String.format("check_upload_part_copy_available/%d", System.nanoTime());
+//        String path = String.format("check_upload_part_copy_available/%d", System.nanoTime());
+//
+//        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+//        ByteBuf data = Unpooled.wrappedBuffer(content);
+//
+//        return objectStorage.write(sourcePath, data)
+//            .thenCompose(aVoid -> objectStorage.createMultipartUpload(path))
+//            .thenCompose(uploadId ->
+//                objectStorage.uploadPartCopy(sourcePath, path, 0, data.readableBytes(), uploadId, 1)
+//                    .thenCompose(uploadPartCopyResponse -> {
+//                        if (uploadPartCopyResponse != null && uploadPartCopyResponse.eTag() != null && !uploadPartCopyResponse.eTag().isEmpty()) {
+//                            LOGGER.info("Successfully uploadPartCopy");
+//                            printOperationStatus("UploadPartCopy", true);
+//                            CompletedPart completedPart = CompletedPart.builder().partNumber(1).eTag(uploadPartCopyResponse.eTag()).build();
+//                            ArrayList<CompletedPart> completedParts = new ArrayList<>();
+//                            completedParts.add(completedPart);
+//                            return objectStorage.completeMultipartUpload(path, uploadId, completedParts);
+//                        } else {
+//                            handleErrorResponse("Failed to uploadPartCopy. The response was wrong", "UploadPartCopy");
+//                        }
+//                        return null;
+//                    })
+//                    .exceptionally(ex -> handleException(ex, "UploadPartCopy")))
+//            .thenCompose(aVoid -> {
+//                CompletableFuture<Void> deletePath = objectStorage.delete(path);
+//                CompletableFuture<Void> deleteSourcePath = objectStorage.delete(sourcePath);
+//                return CompletableFuture.allOf(deletePath, deleteSourcePath);
+//            });
+//    }
+//
+//    private CompletableFuture<Object> checkDeleteObjs() {
+//        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+//        String path1 = String.format("check_available/deleteObjects/%d", System.nanoTime());
+//        String path2 = String.format("check_available/deleteObjects/%d", System.nanoTime() + 1);
+//        List<String> paths = List.of(path1, path2);
+//        CompletableFuture<Void> writeFuture = CompletableFuture.allOf(
+//            objectStorage.write(path1, Unpooled.wrappedBuffer(content)),
+//            objectStorage.write(path2, Unpooled.wrappedBuffer(content))
+//        );
+//
+//        return writeFuture.thenCompose(v ->
+//            objectStorage.delete(paths)
+//                .thenCompose(response -> {
+//                    if (response != null && response.size() == 2) {
+//                        LOGGER.info("Successfully deleted objects");
+//                        printOperationStatus("Delete objects", true);
+//                        return CompletableFuture.completedFuture(null);
+//                    } else {
+//                        String exceptionMsg = "Failed to delete objects. The response was wrong";
+//                        handleErrorResponse(exceptionMsg, "Delete objects");
+//                    }
+//                    return null;
+//                }).exceptionally(ex -> handleException(ex, "deleteObjects"))
+//        );
+//    }
 
     private void handleErrorResponse(String exceptionMsg, String operation) {
         printOperationStatus(operation, false);

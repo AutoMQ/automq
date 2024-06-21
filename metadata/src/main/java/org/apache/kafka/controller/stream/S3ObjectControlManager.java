@@ -21,7 +21,8 @@ import com.automq.stream.s3.Config;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.objects.ObjectAttributes;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -91,7 +92,7 @@ public class S3ObjectControlManager {
     // TODO: support different deletion policies, based on time dimension or space dimension?
     private final Queue<Long/*objectId*/> markDestroyedObjects;
 
-    private final S3Operator operator;
+    private final ObjectStorage operator;
 
     private final List<S3ObjectLifeCycleListener> lifecycleListeners;
 
@@ -110,7 +111,7 @@ public class S3ObjectControlManager {
         LogContext logContext,
         String clusterId,
         Config config,
-        S3Operator operator,
+        ObjectStorage operator,
         Supplier<AutoMQVersion> version) {
         this.quorumController = quorumController;
         this.log = logContext.logger(S3ObjectControlManager.class);
@@ -418,39 +419,36 @@ public class S3ObjectControlManager {
         public static final int MAX_BATCH_DELETE_SIZE = 800;
 
         CompletableFuture<Void> clean(List<S3Object> objects) {
-            // TODO: replace with object storage
-            List<String> objectKeys = objects.stream().map(S3Object::getObjectKey).collect(Collectors.toList());
             List<CompletableFuture<Void>> cfList = new LinkedList<>();
-            for (int i = 0; i < objectKeys.size() / MAX_BATCH_DELETE_SIZE; i++) {
-                List<String> batch = objectKeys.subList(i * MAX_BATCH_DELETE_SIZE, (i + 1) * MAX_BATCH_DELETE_SIZE);
+            for (int i = 0; i < objects.size() / MAX_BATCH_DELETE_SIZE; i++) {
+                List<S3Object> batch = objects.subList(i * MAX_BATCH_DELETE_SIZE, (i + 1) * MAX_BATCH_DELETE_SIZE);
                 cfList.add(clean0(batch));
             }
-            if (objectKeys.size() % MAX_BATCH_DELETE_SIZE != 0) {
-                List<String> batch = objectKeys.subList(objectKeys.size() / MAX_BATCH_DELETE_SIZE * MAX_BATCH_DELETE_SIZE, objectKeys.size());
+            if (objects.size() % MAX_BATCH_DELETE_SIZE != 0) {
+                List<S3Object> batch = objects.subList(objects.size() / MAX_BATCH_DELETE_SIZE * MAX_BATCH_DELETE_SIZE, objects.size());
                 cfList.add(clean0(batch));
             }
             return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
         }
 
-        private CompletableFuture<Void> clean0(List<String> objectKeys) {
-            return operator.delete(objectKeys)
+        private CompletableFuture<Void> clean0(List<S3Object> s3objects) {
+            List<ObjectPath> objectPaths = s3objects.stream().map(o -> new ObjectPath(o.bucket(), o.getObjectKey())).collect(Collectors.toList());
+            return operator.delete(objectPaths)
                 .exceptionally(e -> {
                     log.error("Failed to delete the S3Object from S3, objectKeys: {}",
-                        String.join(",", objectKeys), e);
+                        objectPaths.stream().map(ObjectPath::key).collect(Collectors.joining(",")), e);
                     return null;
-                }).thenAccept(resp -> {
-                    if (resp != null && !resp.isEmpty()) {
-                        List<Long> deletedObjectIds = resp.stream().map(key -> ObjectUtils.parseObjectId(0, key)).collect(Collectors.toList());
-                        // notify the controller an objects deletion event to drive the removal of the objects
-                        ControllerRequestContext ctx = new ControllerRequestContext(
-                            null, null, OptionalLong.empty());
-                        quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
-                            if (exp != null) {
-                                log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
-                                    Arrays.toString(deletedObjectIds.toArray()), exp);
-                            }
-                        });
-                    }
+                }).thenAccept(rst -> {
+                    List<Long> deletedObjectIds = s3objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
+                    // notify the controller an objects deletion event to drive the removal of the objects
+                    ControllerRequestContext ctx = new ControllerRequestContext(
+                        null, null, OptionalLong.empty());
+                    quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
+                        if (exp != null) {
+                            log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
+                                Arrays.toString(deletedObjectIds.toArray()), exp);
+                        }
+                    });
                 });
         }
     }

@@ -13,9 +13,11 @@ package com.automq.shell.log;
 
 import com.automq.shell.AutoMQApplication;
 import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.stream.s3.network.ThrottleStrategy;
-import com.automq.stream.s3.operator.DefaultS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
+import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +37,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,7 +62,7 @@ public class LogUploader implements LogRecorder {
     private volatile S3LogConfig config;
 
     private volatile CompletableFuture<Void> startFuture;
-    private S3Operator s3Operator;
+    private ObjectStorage objectStorage;
     private Thread uploadThread;
     private Thread cleanupThread;
 
@@ -76,7 +77,7 @@ public class LogUploader implements LogRecorder {
         closed = true;
         if (uploadThread != null) {
             uploadThread.join();
-            s3Operator.close();
+            objectStorage.close();
         }
 
         if (cleanupThread != null) {
@@ -119,8 +120,13 @@ public class LogUploader implements LogRecorder {
                 if (startFuture == null) {
                     startFuture = CompletableFuture.runAsync(() -> {
                         try {
-                            s3Operator = new DefaultS3Operator(config.s3Endpoint(), config.s3Region(),
-                                config.s3OpsBucket(), config.s3PathStyle(), List.of(CredentialsProviderHolder.getAwsCredentialsProvider()), null);
+                            objectStorage = AwsObjectStorage.builder()
+                                .endpoint(config.s3Endpoint())
+                                .region(config.s3Region())
+                                .bucket(config.s3OpsBucket())
+                                .forcePathStyle(config.s3PathStyle())
+                                .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
+                                .build();
                             uploadThread = new Thread(new UploadTask());
                             uploadThread.setName("log-uploader-upload-thread");
                             uploadThread.setDaemon(true);
@@ -197,13 +203,13 @@ public class LogUploader implements LogRecorder {
                 if (couldUpload()) {
                     try {
                         while (!Thread.currentThread().isInterrupted()) {
-                            if (s3Operator == null) {
+                            if (objectStorage == null) {
                                 break;
                             }
 
                             try {
                                 String objectKey = getObjectKey();
-                                s3Operator.write(objectKey, uploadBuffer.retainedSlice().asReadOnly(), ThrottleStrategy.BYPASS).get();
+                                objectStorage.write(WriteOptions.DEFAULT, objectKey, uploadBuffer.retainedSlice().asReadOnly()).get();
                                 break;
                             } catch (Exception e) {
                                 e.printStackTrace(System.err);
@@ -233,14 +239,14 @@ public class LogUploader implements LogRecorder {
                     }
                     long expiredTime = System.currentTimeMillis() - CLEANUP_INTERVAL;
 
-                    List<Pair<String, Long>> pairList = s3Operator.list(String.format("automq/logs/%s", config.clusterId())).join();
+                    List<ObjectInfo> objects = objectStorage.list(String.format("automq/logs/%s", config.clusterId())).join();
 
-                    if (!pairList.isEmpty()) {
-                        List<String> keyList = pairList.stream()
-                            .filter(pair -> pair.getRight() < expiredTime)
-                            .map(Pair::getLeft)
+                    if (!objects.isEmpty()) {
+                        List<ObjectPath> keyList = objects.stream()
+                            .filter(object -> object.timestamp() < expiredTime)
+                            .map(object -> new ObjectPath(object.bucket(), object.key()))
                             .collect(Collectors.toList());
-                        s3Operator.delete(keyList).join();
+                        objectStorage.delete(keyList).join();
                     }
 
                     Thread.sleep(Duration.ofMinutes(1).toMillis());

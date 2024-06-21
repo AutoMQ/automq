@@ -31,7 +31,8 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
+import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -52,6 +53,7 @@ import static com.automq.stream.s3.Constants.NOOP_OBJECT_ID;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
@@ -79,14 +81,14 @@ public class StreamObjectCompactor {
     private final long maxStreamObjectSize;
     private final Stream stream;
     private final ObjectManager objectManager;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
     private final int dataBlockGroupSizeThreshold;
     private CompactStreamObjectRequest request;
 
-    private StreamObjectCompactor(ObjectManager objectManager, S3Operator s3Operator, Stream stream,
+    private StreamObjectCompactor(ObjectManager objectManager, ObjectStorage objectStorage, Stream stream,
         long maxStreamObjectSize, int dataBlockGroupSizeThreshold) {
         this.objectManager = objectManager;
-        this.s3Operator = s3Operator;
+        this.objectStorage = objectStorage;
         this.stream = stream;
         this.maxStreamObjectSize = Math.min(maxStreamObjectSize, Writer.MAX_OBJECT_SIZE);
         String logIdent = "[StreamObjectsCompactionTask streamId=" + stream.streamId() + "] ";
@@ -133,7 +135,8 @@ public class StreamObjectCompactor {
         }
 
         // compact the living objects
-        List<List<S3ObjectMetadata>> objectGroups = group0(livingObjects, getMaxGroupSize(compactionType));
+        boolean includeCompositeObject = CLEANUP_V1.equals(compactionType) || MAJOR_V1.equals(compactionType);
+        List<List<S3ObjectMetadata>> objectGroups = group0(livingObjects, getMaxGroupSize(compactionType), includeCompositeObject);
         for (List<S3ObjectMetadata> objectGroup : objectGroups) {
             if (!checkObjectGroupCouldBeCompact(objectGroup, startOffset, compactionType)) {
                 continue;
@@ -143,10 +146,10 @@ public class StreamObjectCompactor {
             Optional<CompactStreamObjectRequest> requestOpt;
             if (MINOR.equals(compactionType) || MAJOR.equals(compactionType) || MINOR_V1.equals(compactionType)) {
                 requestOpt = new CompactByPhysicalMerge(streamId, stream.streamEpoch(),
-                    startOffset, objectGroup, objectId, dataBlockGroupSizeThreshold, s3Operator).compact();
+                    startOffset, objectGroup, objectId, dataBlockGroupSizeThreshold, objectStorage).compact();
             } else {
-//                requestOpt = new CompactByCompositeObject(streamId, stream.streamEpoch(), startOffset, objectGroup, objectId, null).compact();
-                throw new UnsupportedOperationException("todo: init object storage");
+                requestOpt = new CompactByCompositeObject(streamId, stream.streamEpoch(), startOffset, objectGroup,
+                    objectId, objectStorage).compact();
             }
             if (requestOpt.isEmpty()) {
                 continue;
@@ -222,19 +225,19 @@ public class StreamObjectCompactor {
         private final long startOffset;
         // compact object group to the new object
         private final long objectId;
-        private final S3Operator s3Operator;
+        private final ObjectStorage objectStorage;
         private final int dataBlockGroupSizeThreshold;
 
         public CompactByPhysicalMerge(long streamId, long streamEpoch, long startOffset,
             List<S3ObjectMetadata> objectGroup,
-            long objectId, int dataBlockGroupSizeThreshold, S3Operator s3Operator) {
+            long objectId, int dataBlockGroupSizeThreshold, ObjectStorage objectStorage) {
             this.streamId = streamId;
             this.streamEpoch = streamEpoch;
             this.startOffset = startOffset;
             this.objectGroup = objectGroup;
             this.objectId = objectId;
             this.dataBlockGroupSizeThreshold = dataBlockGroupSizeThreshold;
-            this.s3Operator = s3Operator;
+            this.objectStorage = objectStorage;
         }
 
         public Optional<CompactStreamObjectRequest> compact() throws ExecutionException, InterruptedException {
@@ -244,14 +247,16 @@ public class StreamObjectCompactor {
             long compactedEndOffset = objectGroup.get(objectGroup.size() - 1).endOffset();
             List<Long> compactedObjectIds = new LinkedList<>();
             CompositeByteBuf indexes = ByteBufAlloc.compositeByteBuffer();
-            Writer writer = s3Operator.writer(new Writer.Context(STREAM_OBJECT_COMPACTION_READ), ObjectUtils.genKey(0, objectId), ThrottleStrategy.COMPACTION);
+            Writer writer = objectStorage.writer(
+                new WriteOptions().allocType(STREAM_OBJECT_COMPACTION_READ).throttleStrategy(ThrottleStrategy.COMPACTION),
+                ObjectUtils.genKey(0, objectId));
             long groupStartOffset = -1L;
             long groupStartPosition = -1L;
             int groupSize = 0;
             int groupRecordCount = 0;
             DataBlockIndex lastIndex = null;
             for (S3ObjectMetadata object : objectGroup) {
-                try (ObjectReader reader = ObjectReader.reader(object, s3Operator)) {
+                try (ObjectReader reader = ObjectReader.reader(object, objectStorage)) {
                     ObjectReader.BasicObjectInfo basicObjectInfo = reader.basicObjectInfo().get();
                     ByteBuf subIndexes = ByteBufAlloc.byteBuffer(basicObjectInfo.indexBlock().count() * DataBlockIndex.BLOCK_INDEX_SIZE, STREAM_OBJECT_COMPACTION_WRITE);
                     Iterator<DataBlockIndex> it = basicObjectInfo.indexBlock().iterator();
@@ -336,7 +341,7 @@ public class StreamObjectCompactor {
         }
 
         public Optional<CompactStreamObjectRequest> compact() throws ExecutionException, InterruptedException {
-            CompositeObjectWriter objectWriter = CompositeObject.writer(objectStorage.writer(new ObjectStorage.WriteOptions(), ObjectUtils.genKey(0, objectId)));
+            CompositeObjectWriter objectWriter = CompositeObject.writer(objectStorage.writer(new WriteOptions(), ObjectUtils.genKey(0, objectId)));
             List<ObjectReader> readers = new ArrayList<>();
             objectGroup.stream().map(object -> ObjectReader.reader(object, objectStorage)).forEach(reader -> {
                 // warm up
@@ -401,7 +406,7 @@ public class StreamObjectCompactor {
                 if (!hasLiveBlocks) {
                     // The linked object is fully expired, and there won't be any access to it.
                     // So we could directly delete the object from object storage.
-                    objectStorage.delete(List.of(linkedObjectMetadata)).get();
+                    objectStorage.delete(List.of(new ObjectPath(linkedObjectMetadata.bucket(), linkedObjectMetadata.key()))).get();
                 } else {
                     // Keep all blocks in the linked object even part of them are expired.
                     // So we could get more precise composite object retained size.
@@ -418,7 +423,8 @@ public class StreamObjectCompactor {
         }
     }
 
-    static List<List<S3ObjectMetadata>> group0(List<S3ObjectMetadata> objects, long maxStreamObjectSize) {
+    static List<List<S3ObjectMetadata>> group0(List<S3ObjectMetadata> objects, long maxStreamObjectSize,
+        boolean includeCompositeObject) {
         // TODO: switch to include/exclude composite object
         List<List<S3ObjectMetadata>> objectGroups = new LinkedList<>();
         long groupSize = 0;
@@ -426,6 +432,9 @@ public class StreamObjectCompactor {
         List<S3ObjectMetadata> group = new LinkedList<>();
         int partCount = 0;
         for (S3ObjectMetadata object : objects) {
+            if (!includeCompositeObject && ObjectAttributes.from(object.attributes()).type() == Composite) {
+                continue;
+            }
             int objectPartCount = (int) ((object.objectSize() + Writer.MAX_PART_SIZE - 1) / Writer.MAX_PART_SIZE);
             if (objectPartCount >= Writer.MAX_PART_COUNT) {
                 continue;
@@ -466,7 +475,7 @@ public class StreamObjectCompactor {
 
     public static class Builder {
         private ObjectManager objectManager;
-        private S3Operator s3Operator;
+        private ObjectStorage objectStorage;
         private Stream stream;
         private long maxStreamObjectSize;
         private int dataBlockGroupSizeThreshold = DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD;
@@ -476,8 +485,8 @@ public class StreamObjectCompactor {
             return this;
         }
 
-        public Builder s3Operator(S3Operator s3Operator) {
-            this.s3Operator = s3Operator;
+        public Builder s3Operator(ObjectStorage objectStorage) {
+            this.objectStorage = objectStorage;
             return this;
         }
 
@@ -505,7 +514,7 @@ public class StreamObjectCompactor {
         }
 
         public StreamObjectCompactor build() {
-            return new StreamObjectCompactor(objectManager, s3Operator, stream, maxStreamObjectSize, dataBlockGroupSizeThreshold);
+            return new StreamObjectCompactor(objectManager, objectStorage, stream, maxStreamObjectSize, dataBlockGroupSizeThreshold);
         }
     }
 

@@ -11,9 +11,11 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.s3.operator.Writer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -62,7 +64,12 @@ public class CompositeObject {
     }
 
     public static CompositeObjectReader reader(S3ObjectMetadata objectMetadata, ObjectStorage objectStorage) {
-        return new CompositeObjectReader(objectMetadata, (metadata, startOffset, endOffset) -> objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, metadata, startOffset, endOffset));
+        return new CompositeObjectReader(
+            objectMetadata,
+            (metadata, startOffset, endOffset) ->
+                objectStorage.rangeRead(
+                    new ObjectStorage.ReadOptions().bucket(metadata.bucket()), metadata.key(), startOffset, endOffset)
+        );
     }
 
     public static CompositeObjectWriter writer(Writer writer) {
@@ -76,15 +83,15 @@ public class CompositeObject {
         return reader.basicObjectInfo().thenCompose(info -> {
             // 2. delete linked object
             List<CompositeObjectReader.ObjectIndex> objectIndexes = ((CompositeObjectReader.BasicObjectInfoExt) info).objectsBlock().indexes();
-            List<S3ObjectMetadata> metadataList = objectIndexes
+            List<ObjectPath> objectPaths = objectIndexes
                 .stream()
-                .map(o -> new S3ObjectMetadata(o.objectId(), ObjectAttributes.builder().bucket(o.bucketId()).build().attributes()))
+                .map(o -> new ObjectPath(o.bucketId(), ObjectUtils.genKey(0, o.objectId())))
                 .collect(Collectors.toList());
-            return objectStorage.delete(metadataList)
+            return objectStorage.delete(objectPaths)
                 .thenApply(rst -> objectIndexes.stream().map(o -> o.bucketId() + "/" + o.objectId()).collect(Collectors.toList()));
         }).thenCompose(linkedObjects -> {
             // 3. delete composite object
-            return objectStorage.delete(List.of(objectMetadata)).thenAccept(rst ->
+            return objectStorage.delete(List.of(new ObjectPath(objectMetadata.bucket(), objectMetadata.key()))).thenAccept(rst ->
                 LOGGER.info("Delete composite object {}/{} success, linked objects: {}",
                     ObjectAttributes.from(objectMetadata.attributes()).bucket(), objectMetadata.objectId(), linkedObjects)
             );

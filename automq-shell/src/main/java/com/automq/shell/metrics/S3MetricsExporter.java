@@ -12,9 +12,11 @@
 package com.automq.shell.metrics;
 
 import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.stream.s3.network.ThrottleStrategy;
-import com.automq.stream.s3.operator.DefaultS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
+import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -43,7 +45,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,7 +65,7 @@ public class S3MetricsExporter implements MetricExporter {
     private volatile long lastUploadTimestamp = System.currentTimeMillis();
     private volatile long nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
 
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private volatile boolean closed;
@@ -73,8 +74,13 @@ public class S3MetricsExporter implements MetricExporter {
 
     public S3MetricsExporter(S3MetricsConfig config) {
         this.config = config;
-        s3Operator = new DefaultS3Operator(config.s3Endpoint(), config.s3Region(),
-            config.s3OpsBucket(), config.s3PathStyle(), List.of(CredentialsProviderHolder.getAwsCredentialsProvider()), null);
+        this.objectStorage = AwsObjectStorage.builder()
+            .endpoint(config.s3Endpoint())
+            .region(config.s3Region())
+            .bucket(config.s3OpsBucket())
+            .forcePathStyle(config.s3PathStyle())
+            .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
+            .build();
 
         defalutTagMap.put("host_name", getHostName());
         defalutTagMap.put("service_name", config.clusterId());
@@ -135,14 +141,14 @@ public class S3MetricsExporter implements MetricExporter {
                     }
                     long expiredTime = System.currentTimeMillis() - CLEANUP_INTERVAL;
 
-                    List<Pair<String, Long>> pairList = s3Operator.list(String.format("automq/metrics/%s", config.clusterId())).join();
+                    List<ObjectInfo> objects = objectStorage.list(String.format("automq/metrics/%s", config.clusterId())).join();
 
-                    if (!pairList.isEmpty()) {
-                        List<String> keyList = pairList.stream()
-                            .filter(pair -> pair.getRight() < expiredTime)
-                            .map(Pair::getLeft)
+                    if (!objects.isEmpty()) {
+                        List<ObjectPath> keyList = objects.stream()
+                            .filter(object -> object.timestamp() < expiredTime)
+                            .map(object -> new ObjectPath(object.bucket(), object.key()))
                             .collect(Collectors.toList());
-                        s3Operator.delete(keyList).join();
+                        objectStorage.delete(keyList).join();
                     }
 
                     Thread.sleep(Duration.ofMinutes(1).toMillis());
@@ -234,7 +240,7 @@ public class S3MetricsExporter implements MetricExporter {
         synchronized (uploadBuffer) {
             if (uploadBuffer.readableBytes() > 0) {
                 try {
-                    s3Operator.write(getObjectKey(), uploadBuffer.retainedSlice().asReadOnly(), ThrottleStrategy.BYPASS).get();
+                    objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), uploadBuffer.retainedSlice().asReadOnly()).get();
                 } catch (Exception e) {
                     LOGGER.error("Failed to upload metrics to s3", e);
                     return CompletableResultCode.ofFailure();
@@ -250,7 +256,7 @@ public class S3MetricsExporter implements MetricExporter {
 
     @Override
     public CompletableResultCode shutdown() {
-        s3Operator.close();
+        objectStorage.close();
         return CompletableResultCode.ofSuccess();
     }
 

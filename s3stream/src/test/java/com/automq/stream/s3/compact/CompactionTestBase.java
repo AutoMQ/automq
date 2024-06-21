@@ -25,8 +25,8 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.ArrayList;
@@ -60,7 +60,7 @@ public class CompactionTestBase {
     protected static final List<S3ObjectMetadata> S3_WAL_OBJECT_METADATA_LIST = new ArrayList<>();
     protected MemoryMetadataManager streamManager;
     protected MemoryMetadataManager objectManager;
-    protected S3Operator s3Operator;
+    protected ObjectStorage objectStorage;
 
     public void setUp() throws Exception {
         ByteBufAlloc.setPolicy(POOLED_DIRECT);
@@ -71,11 +71,11 @@ public class CompactionTestBase {
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
 
         objectManager = Mockito.spy(MemoryMetadataManager.class);
-        s3Operator = new MemoryS3Operator();
+        objectStorage = new MemoryObjectStorage();
         // stream data for object 0
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_0, objectId);
-            ObjectWriter objectWriter = ObjectWriter.writer(objectId, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(objectId, objectStorage, 1024, 1024);
             StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 15, TestUtils.random(2));
             StreamRecordBatch r2 = new StreamRecordBatch(STREAM_1, 0, 25, 5, TestUtils.random(2));
             StreamRecordBatch r3 = new StreamRecordBatch(STREAM_1, 0, 30, 30, TestUtils.random(22));
@@ -100,7 +100,7 @@ public class CompactionTestBase {
         // stream data for object 1
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_1, objectId);
-            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, objectStorage, 1024, 1024);
             StreamRecordBatch r5 = new StreamRecordBatch(STREAM_0, 0, 15, 5, TestUtils.random(1));
             StreamRecordBatch r6 = new StreamRecordBatch(STREAM_1, 0, 60, 60, TestUtils.random(52));
             objectWriter.write(STREAM_0, List.of(r5));
@@ -119,7 +119,7 @@ public class CompactionTestBase {
         // stream data for object 2
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_2, objectId);
-            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_2, s3Operator, 1024, 1024);
+            ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_2, objectStorage, 1024, 1024);
             StreamRecordBatch r8 = new StreamRecordBatch(STREAM_1, 0, 400, 100, TestUtils.random(92));
             StreamRecordBatch r9 = new StreamRecordBatch(STREAM_2, 0, 230, 40, TestUtils.random(32));
             objectWriter.write(STREAM_1, List.of(r8));
@@ -148,6 +148,12 @@ public class CompactionTestBase {
             block1.dataBlockIndex().recordCount() == block2.dataBlockIndex().recordCount();
         if (!attr) {
             return false;
+        }
+        try {
+            block1.getDataCf().get(1, TimeUnit.SECONDS);
+            block2.getDataCf().get(1, TimeUnit.SECONDS);
+        } catch (Throwable e) {
+            // ignore
         }
         if (!block1.getDataCf().isDone()) {
             return !block2.getDataCf().isDone();

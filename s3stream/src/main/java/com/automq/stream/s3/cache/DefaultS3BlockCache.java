@@ -16,7 +16,7 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
@@ -49,7 +49,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
     private final StreamReader streamReader;
     private final InflightReadThrottle inflightReadThrottle;
 
-    public DefaultS3BlockCache(Config config, ObjectManager objectManager, S3Operator s3Operator) {
+    public DefaultS3BlockCache(Config config, ObjectManager objectManager, ObjectStorage objectStorage) {
         int blockSize = config.objectBlockSize();
         CacheSizeSet cacheSizeSet = getCacheSize(config.blockCacheSize());
 
@@ -66,7 +66,7 @@ public class DefaultS3BlockCache implements S3BlockCache {
                 false,
                 LOGGER);
         this.inflightReadThrottle = new InflightReadThrottle(cacheSizeSet.inflightReadSize);
-        this.streamReader = new StreamReader(s3Operator, objectManager, cache, inflightReadAheadTasks, inflightReadThrottle);
+        this.streamReader = new StreamReader(objectStorage, objectManager, cache, inflightReadAheadTasks, inflightReadThrottle);
         LOGGER.info("Init s3 block cache, block cache size: {}, inflight read size: {}", cacheSizeSet.blockCacheSize, cacheSizeSet.inflightReadSize);
     }
 

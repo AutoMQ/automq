@@ -15,7 +15,7 @@ import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -46,7 +46,7 @@ public class S3StreamClientTest {
     @BeforeEach
     void setup() {
         streamManager = mock(StreamManager.class);
-        client = spy(new S3StreamClient(streamManager, mock(Storage.class), mock(ObjectManager.class), mock(S3Operator.class), new Config()));
+        client = spy(new S3StreamClient(streamManager, mock(Storage.class), mock(ObjectManager.class), mock(ObjectStorage.class), new Config()));
         scheduler = Executors.newSingleThreadScheduledExecutor();
     }
 
