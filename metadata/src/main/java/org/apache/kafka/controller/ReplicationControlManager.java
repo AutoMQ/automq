@@ -687,14 +687,9 @@ public class ReplicationControlManager {
         // Verify cluster quota
         int topicCountQuota = configurationControl.topicCountQuota();
         int topicCount = topics.size();
-
-        for (CreatableTopic topic : request.topics()) {
-            if (topicErrors.containsKey(topic.name())) {
-                continue;
-            }
-
-            topicCount++;
-            if (topicCount > topicCountQuota) {
+        int topicAdditionCount = request.topics().size();
+        if (topicCount + topicAdditionCount > topicCountQuota) {
+            for (CreatableTopic topic : request.topics()) {
                 topicErrors.put(topic.name(),
                     new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Topic count quota exceeded: current quota is " + topicCountQuota));
             }
@@ -702,6 +697,16 @@ public class ReplicationControlManager {
 
         int partitionCountQuota = configurationControl.partitionCountQuota();
         int partitionCount = this.topics.values().stream().mapToInt(info -> info.parts.size()).sum();
+        int partitionAdditionCount = request.topics().stream()
+            .mapToInt(topic -> topic.numPartitions() == -1 ? defaultNumPartitions : topic.numPartitions())
+            .sum();
+        if (partitionCount + partitionAdditionCount > partitionCountQuota) {
+            for (CreatableTopic topic : request.topics()) {
+                topicErrors.put(topic.name(),
+                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCount));
+            }
+        }
+        // AutoMQ inject end
 
         // Try to create whatever topics are needed.
         Map<String, CreatableTopicResult> successes = new HashMap<>();
@@ -710,6 +715,7 @@ public class ReplicationControlManager {
             // Figure out what ConfigRecords should be created, if any.
             ConfigResource configResource = new ConfigResource(TOPIC, topic.name());
 
+            // AutoMQ for Kafka inject start
             Map<String, Entry<OpType, String>> keyToOps = configChanges.computeIfAbsent(configResource, key -> new HashMap<>());
             // First, we pass topic replication factor through log config.
             int replicationFactor = topic.replicationFactor() == -1 ?
@@ -735,21 +741,18 @@ public class ReplicationControlManager {
             } else {
                 configRecords = configResult.records();
             }
+            // AutoMQ for Kafka inject end
 
             ApiError error;
             try {
-                error = createTopic(context, topic, records, successes, configRecords, describable.contains(topic.name()), partitionCountQuota, partitionCount);
+                error = createTopic(context, topic, records, successes, configRecords, describable.contains(topic.name()));
             } catch (ApiException e) {
                 error = ApiError.fromThrowable(e);
             }
             if (error.isFailure()) {
                 topicErrors.put(topic.name(), error);
-            } else {
-                int numPartitions = topic.numPartitions() == -1 ? defaultNumPartitions : topic.numPartitions();
-                partitionCount += numPartitions;
             }
         }
-        // AutoMQ for Kafka inject end
 
         // Create responses for all topics.
         CreateTopicsResponseData data = new CreateTopicsResponseData();
@@ -787,9 +790,7 @@ public class ReplicationControlManager {
                                  List<ApiMessageAndVersion> records,
                                  Map<String, CreatableTopicResult> successes,
                                  List<ApiMessageAndVersion> configRecords,
-                                 boolean authorizedToReturnConfigs,
-                                 int partitionCountQuota,
-                                 int partitionCount) {
+                                 boolean authorizedToReturnConfigs) {
         Map<String, String> creationConfigs = translateCreationConfigs(topic.configs());
         Map<Integer, PartitionRegistration> newParts = new HashMap<>();
         if (!topic.assignments().isEmpty()) {
@@ -889,13 +890,6 @@ public class ReplicationControlManager {
                 numPartitions, e.throttleTimeMs());
             return ApiError.fromThrowable(e);
         }
-
-        // AutoMQ inject start
-        if (partitionCount + numPartitions > partitionCountQuota) {
-            return new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCountQuota);
-        }
-        // AutoMQ inject end
-
         Uuid topicId = Uuid.randomUuid();
         CreatableTopicResult result = new CreatableTopicResult().
             setName(topic.name()).
@@ -1846,13 +1840,26 @@ public class ReplicationControlManager {
 
         // AutoMQ inject start
         int quota = configurationControl.partitionCountQuota();
-        int partitionCount = this.topics.values().stream().mapToInt(info -> info.parts.size()).sum();
+        Set<String> topicNameSet = topics.stream().map(CreatePartitionsTopic::name).collect(Collectors.toSet());
+        int currentPartitionCount = this.topics.values()
+            .stream()
+            .filter(info -> !topicNameSet.contains(info.name))
+            .mapToInt(info -> info.parts.size()).sum();
+        if (currentPartitionCount + topics.stream().mapToInt(CreatePartitionsTopic::count).sum() > quota) {
+            for (CreatePartitionsTopic topic : topics) {
+                results.add(new CreatePartitionsTopicResult().
+                    setName(topic.name()).
+                    setErrorCode(Errors.THROTTLING_QUOTA_EXCEEDED.code()).
+                    setErrorMessage("Partition count exceeds the quota, current quota is " + quota));
+            }
+            return ControllerResult.atomicOf(records, results);
+        }
+        // AutoMQ inject end
 
         for (CreatePartitionsTopic topic : topics) {
             ApiError apiError = ApiError.NONE;
-            int additional = 0;
             try {
-                additional = createPartitions(context, topic, records, quota, partitionCount);
+                createPartitions(context, topic, records);
             } catch (ApiException e) {
                 apiError = ApiError.fromThrowable(e);
             } catch (Exception e) {
@@ -1863,14 +1870,13 @@ public class ReplicationControlManager {
                 setName(topic.name()).
                 setErrorCode(apiError.error().code()).
                 setErrorMessage(apiError.message()));
-            partitionCount += additional;
         }
-        // AutoMQ inject end
         return ControllerResult.atomicOf(records, results);
     }
 
-    int createPartitions(ControllerRequestContext context, CreatePartitionsTopic topic,
-                          List<ApiMessageAndVersion> records, int quota, int partitionCount) {
+    void createPartitions(ControllerRequestContext context,
+                          CreatePartitionsTopic topic,
+                          List<ApiMessageAndVersion> records) {
         Uuid topicId = topicsByName.get(topic.name());
         if (topicId == null) {
             throw new UnknownTopicOrPartitionException();
@@ -1903,13 +1909,6 @@ public class ReplicationControlManager {
                 additional, e.throttleTimeMs());
             throw e;
         }
-
-        // AutoMQ inject start
-        // Verify cluster quota
-        if (partitionCount + additional > quota) {
-            throw new ThrottlingQuotaExceededException(0, "Partition count quota exceeded: current quota is " + quota);
-        }
-
         Iterator<PartitionRegistration> iterator = topicInfo.parts.values().iterator();
         if (!iterator.hasNext()) {
             throw new UnknownServerException("Invalid state: topic " + topic.name() +
@@ -1964,10 +1963,12 @@ public class ReplicationControlManager {
                         " time(s): All brokers are currently fenced or in controlled shutdown.");
             }
 
+            // AutoMQ for Kafka inject start
             // Generally, validateManualPartitionAssignment has checked to some extent. We still check here for defensive programming.
             if (ElasticStreamSwitch.isEnabled()) {
                 maybeCheckCreatePartitionPolicy(new CreatePartitionPolicy.RequestMetadata(partitionAssignment.replicas(), isr));
             }
+            // AutoMQ for Kafka inject end
 
             records.add(buildPartitionRegistration(partitionAssignment, isr)
                 .toRecord(topicId, partitionId, new ImageWriterOptions.Builder().
@@ -1975,8 +1976,6 @@ public class ReplicationControlManager {
                         build()));
             partitionId++;
         }
-        return additional;
-        // AutoMQ for Kafka inject end
     }
 
     void validateManualPartitionAssignment(
@@ -2468,7 +2467,7 @@ public class ReplicationControlManager {
         } else {
             log.debug("Can't find the min isr config for topic: " + topicName + ". Use default value " + defaultMinIsr);
         }
-        
+
         Uuid topicId = topicsByName.get(topicName);
         int replicationFactor = topics.get(topicId).parts.get(0).replicas.length;
         return Math.min(currentMinIsr, replicationFactor);
