@@ -145,6 +145,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     @Override
     void doDeleteObjects(List<String> objectKeys, Consumer<Throwable> failHandler, Runnable successHandler) {
         objectKeys.forEach(storage::remove);
+        successHandler.run();
     }
 
     @Override
@@ -173,6 +174,10 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             throw new IllegalStateException("expect only one object in storage");
         }
         return storage.values().iterator().next();
+    }
+
+    public boolean contains(String path) {
+        return storage.containsKey(path);
     }
 
     public void setDelay(long delay) {
