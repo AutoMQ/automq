@@ -11,6 +11,8 @@
 
 package org.apache.kafka.server.common.automq;
 
+import com.automq.stream.Version;
+
 public enum AutoMQVersion {
 
     V0((short) 1),
@@ -25,9 +27,11 @@ public enum AutoMQVersion {
     public static final AutoMQVersion LATEST = V2;
 
     private final short level;
+    private final Version s3streamVersion;
 
     AutoMQVersion(short level) {
         this.level = level;
+        s3streamVersion = mapS3StreamVersion(level);
     }
 
     public static AutoMQVersion from(short level) {
@@ -87,8 +91,25 @@ public enum AutoMQVersion {
         }
     }
 
+    public Version s3streamVersion() {
+        return s3streamVersion;
+    }
+
     public boolean isAtLeast(AutoMQVersion otherVersion) {
         return this.compareTo(otherVersion) >= 0;
     }
+
+    private Version mapS3StreamVersion(short automqVersion) {
+        switch (automqVersion) {
+            case 1:
+            case 2:
+                return Version.V0;
+            case 3:
+                return Version.V1;
+            default:
+                throw new IllegalArgumentException("Unknown AutoMQVersion level: " + automqVersion);
+        }
+    }
+
 
 }

@@ -15,15 +15,17 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ObjectAttributesTest {
 
     @Test
     public void test() {
-        ObjectAttributes attributes = ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).bucket((short) 10).build();
+        ObjectAttributes attributes = ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).bucket((short) 10).deepDelete().build();
         attributes = ObjectAttributes.from(attributes.attributes());
         assertEquals(ObjectAttributes.Type.Composite, attributes.type());
         assertEquals((short) 10, attributes.bucket());
+        assertTrue(attributes.deepDelete());
     }
 
 }

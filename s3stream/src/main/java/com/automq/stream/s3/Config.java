@@ -13,6 +13,7 @@ package com.automq.stream.s3;
 
 import com.automq.stream.Version;
 import java.util.Map;
+import java.util.function.Supplier;
 
 // TODO: rename & init
 public class Config {
@@ -58,6 +59,9 @@ public class Config {
     private int refillPeriodMs = 10;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
+    private Supplier<Version> version = () -> {
+        throw new UnsupportedOperationException();
+    };
 
     public int nodeId() {
         return nodeId;
@@ -428,7 +432,12 @@ public class Config {
         return failoverEnable;
     }
 
+    public Config version(Supplier<Version> version) {
+        this.version = version;
+        return this;
+    }
+
     public Version version() {
-        return Version.V0;
+        return version.get();
     }
 }

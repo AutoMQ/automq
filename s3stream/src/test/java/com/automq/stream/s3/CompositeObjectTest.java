@@ -11,10 +11,13 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.CompositeObjectReader.BasicObjectInfoExt;
+import com.automq.stream.s3.CompositeObjectReader.ObjectIndex;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
@@ -25,11 +28,13 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-import org.junit.jupiter.api.Assertions;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import static com.automq.stream.s3.metadata.S3StreamConstant.INVALID_TS;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -56,7 +61,8 @@ public class CompositeObjectTest {
         }
         S3ObjectMetadata obj2;
         {
-            S3ObjectMetadata metadata = new S3ObjectMetadata(2, 0, S3ObjectType.STREAM);
+            S3ObjectMetadata metadata = new S3ObjectMetadata(2, S3ObjectType.STREAM, null, INVALID_TS,
+                INVALID_TS, 0, -1L, ObjectAttributes.builder().bucket((short) 233).build().attributes());
             ObjectWriter objectWriter = ObjectWriter.writer(2, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
             StreamRecordBatch r1 = newRecord(233, 30, 10, genBuf((byte) 4, 512));
             objectWriter.write(233, List.of(r1));
@@ -78,7 +84,11 @@ public class CompositeObjectTest {
         CompositeObjectReader reader = new CompositeObjectReader(metadata, (metadata1, start, end) -> objectStorage.rangeRead(ReadOptions.DEFAULT, ObjectUtils.genKey(0, metadata1.objectId()), start, end));
         ObjectReader.BasicObjectInfo info = reader.basicObjectInfo().get();
         List<DataBlockIndex> indexes = info.indexBlock().indexes();
-        Assertions.assertEquals(3, indexes.size());
+        assertEquals(3, indexes.size());
+        List<ObjectIndex> objectIndexes = ((BasicObjectInfoExt) info).objectsBlock().indexes();
+        assertEquals(2, objectIndexes.size());
+        assertEquals(List.of(1L, 2L), objectIndexes.stream().map(ObjectIndex::objectId).collect(Collectors.toList()));
+        assertEquals(List.of((short) 0, (short) 233), objectIndexes.stream().map(ObjectIndex::bucketId).collect(Collectors.toList()));
         {
             ObjectReader.DataBlockGroup data = reader.read(indexes.get(0)).get();
             Iterator<StreamRecordBatch> it = data.iterator();
