@@ -359,7 +359,7 @@ public class S3StreamClient implements StreamClient {
 
         public void compact(StreamObjectCompactor.CompactionType compactionType) {
             StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(this)
-                .s3Operator(objectStorage).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
+                .objectStorage(objectStorage).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
             task.compact(compactionType);
         }
     }

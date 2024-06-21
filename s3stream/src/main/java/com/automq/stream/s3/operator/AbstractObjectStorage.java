@@ -327,20 +327,20 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             .map(ObjectPath::key)
             .collect(Collectors.toList());
         Runnable successHandler = () -> {
-            LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            LOGGER.info("Delete objects finished, count: {}, cost: {}", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(null);
         };
         Consumer<Throwable> failHandler = ex -> {
             if (ex instanceof DeleteObjectsException) {
                 DeleteObjectsException deleteObjectsException = (DeleteObjectsException) ex;
-                LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, failedKeys: {}",
+                LOGGER.info("Delete objects failed, count: {}, cost: {}, failedKeys: {}",
                     deleteObjectsException.getFailedKeys().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS),
                     deleteObjectsException.getFailedKeys());
             } else {
                 S3OperationStats.getInstance().deleteObjectsStats(false)
                     .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                LOGGER.info("[ControllerS3Operator]: Delete objects failed, count: {}, cost: {}, ex: {}",
+                LOGGER.info("Delete objects failed, count: {}, cost: {}, ex: {}",
                     objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
             }
             cf.completeExceptionally(ex);

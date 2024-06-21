@@ -527,6 +527,14 @@ public interface ObjectReader extends AutoCloseable {
             };
         }
 
+        public List<StreamRecordBatch> records() {
+            List<StreamRecordBatch> records = new ArrayList<>(recordCount);
+            try (CloseableIterator<StreamRecordBatch> it = iterator()) {
+                it.forEachRemaining(records::add);
+            }
+            return records;
+        }
+
         public int recordCount() {
             return recordCount;
         }
