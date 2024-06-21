@@ -27,6 +27,7 @@ public class ClientFactory {
     public static Client get(Context context) {
         Config config = ConfigUtils.to(context.config);
         config.nodeEpoch(System.currentTimeMillis());
+        config.version(() -> context.brokerServer.metadataCache().autoMQVersion().s3streamVersion());
 
         DefaultS3Client client = new DefaultS3Client(context.brokerServer, config);
         return new AlwaysSuccessClient(client);
