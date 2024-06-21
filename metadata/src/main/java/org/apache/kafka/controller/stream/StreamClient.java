@@ -38,7 +38,7 @@ public class StreamClient {
         return streamConfig;
     }
 
-    public ObjectStorage s3Operator() {
+    public ObjectStorage objectStorage() {
         return objectStorage;
     }
 }

@@ -190,10 +190,10 @@ public class CompactionManagerTest extends CompactionTestBase {
 
         Map<Long, List<StreamDataBlock>> streamDataBlockMap = getStreamDataBlockMap();
         S3ObjectMetadata objectMetadata = new S3ObjectMetadata(OBJECT_0, 0, S3ObjectType.STREAM_SET);
-        AwsObjectStorage s3Operator = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
-        doReturn(CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(any(), eq(objectMetadata.key()), anyLong(), anyLong());
+        AwsObjectStorage objectStorage = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
+        doReturn(CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(objectStorage).rangeRead(any(), eq(objectMetadata.key()), anyLong(), anyLong());
 
-        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         Assertions.assertThrowsExactly(CompletionException.class, () -> compactionManager.groupAndSplitStreamDataBlocks(objectMetadata, streamDataBlockMap.get(OBJECT_0)));
     }
 
@@ -445,12 +445,12 @@ public class CompactionManagerTest extends CompactionTestBase {
         S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
         doAnswer(invocation -> CompletableFuture.completedFuture(null)).when(s3AsyncClient).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
 
-        AwsObjectStorage s3Operator = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
-        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(s3Operator).rangeRead(any(), eq(objectMetadata0.key()), anyLong(), anyLong());
-        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(80))).when(s3Operator).rangeRead(any(), eq(objectMetadata1.key()), anyLong(), anyLong());
-        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(any(), eq(objectMetadata2.key()), anyLong(), anyLong());
+        AwsObjectStorage objectStorage = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(objectStorage).rangeRead(any(), eq(objectMetadata0.key()), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(80))).when(objectStorage).rangeRead(any(), eq(objectMetadata1.key()), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(objectStorage).rangeRead(any(), eq(objectMetadata2.key()), anyLong(), anyLong());
 
-        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         Assertions.assertThrowsExactly(CompletionException.class,
             () -> compactionManager.executeCompactionPlans(request, compactionPlans, s3ObjectMetadata));
         for (CompactionPlan plan : compactionPlans) {
@@ -481,12 +481,12 @@ public class CompactionManagerTest extends CompactionTestBase {
         S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
         doAnswer(invocation -> CompletableFuture.completedFuture(null)).when(s3AsyncClient).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
 
-        AwsObjectStorage s3Operator = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
-        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(s3Operator).rangeRead(any(), eq(objectMetadata0.key()), anyLong(), anyLong());
-        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(s3Operator).rangeRead(any(), eq(objectMetadata1.key()), anyLong(), anyLong());
-        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(50))).when(s3Operator).rangeRead(any(), eq(objectMetadata2.key()), anyLong(), anyLong());
+        AwsObjectStorage objectStorage = Mockito.spy(new AwsObjectStorage(s3AsyncClient, ""));
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(65))).when(objectStorage).rangeRead(any(), eq(objectMetadata0.key()), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.failedFuture(new IllegalArgumentException("exception"))).when(objectStorage).rangeRead(any(), eq(objectMetadata1.key()), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.completedFuture(TestUtils.randomPooled(50))).when(objectStorage).rangeRead(any(), eq(objectMetadata2.key()), anyLong(), anyLong());
 
-        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, s3Operator);
+        CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         Assertions.assertThrowsExactly(CompletionException.class,
             () -> compactionManager.executeCompactionPlans(request, compactionPlans, s3ObjectMetadata));
         for (CompactionPlan plan : compactionPlans) {
