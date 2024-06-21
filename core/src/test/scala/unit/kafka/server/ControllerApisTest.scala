@@ -21,6 +21,7 @@ import kafka.network.RequestChannel
 import kafka.raft.RaftManager
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata.KRaftMetadataCache
+import kafka.server.streamaspect.BrokerQuotaManager
 import kafka.test.MockController
 import org.apache.kafka.clients.admin.AlterConfigOp
 import org.apache.kafka.common.Uuid.ZERO_UUID
@@ -107,6 +108,7 @@ class ControllerApisTest {
   protected val time = new MockTime
   protected val clientQuotaManager: ClientQuotaManager = mock(classOf[ClientQuotaManager])
   protected val clientRequestQuotaManager: ClientRequestQuotaManager = mock(classOf[ClientRequestQuotaManager])
+  protected val brokerQuotaManager: BrokerQuotaManager = mock(classOf[BrokerQuotaManager])
   protected val neverThrottlingClientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
   when(neverThrottlingClientControllerQuotaManager.newQuotaFor(
     any(classOf[RequestChannel.Request]),
@@ -129,6 +131,7 @@ class ControllerApisTest {
     clientQuotaManager,
     clientQuotaManager,
     clientRequestQuotaManager,
+    brokerQuotaManager,
     neverThrottlingClientControllerQuotaManager,
     replicaQuotaManager,
     replicaQuotaManager,
@@ -139,6 +142,7 @@ class ControllerApisTest {
     clientQuotaManager,
     clientQuotaManager,
     clientRequestQuotaManager,
+    brokerQuotaManager,
     alwaysThrottlingClientControllerQuotaManager,
     replicaQuotaManager,
     replicaQuotaManager,

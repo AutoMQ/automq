@@ -258,5 +258,18 @@ public class ConfigUtils {
         }
         throw new IllegalArgumentException("Invalid value (" + value + ") on configuration '" + key + "'. Please specify a double value.");
     }
+
+    public static double getDouble(final Map<String, Object> configs, final String key, final double defaultValue) {
+        final Object value = configs.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        } else if (value instanceof String) {
+            return Double.parseDouble((String) value);
+        }
+        throw new IllegalArgumentException("Invalid value (" + value + ") on configuration '" + key + "'. Please specify a double value.");
+    }
     // AutoMQ injection end
 }

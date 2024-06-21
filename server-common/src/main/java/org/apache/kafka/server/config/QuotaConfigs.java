@@ -96,6 +96,28 @@ public class QuotaConfigs {
     public static final String IP_CONNECTION_RATE_DOC = "An int representing the upper bound of connections accepted " +
             "for the specified IP.";
 
+    // AutoMQ inject start
+    public static final String BROKER_QUOTA_ENABLED_CONFIG = "broker.quota.enabled";
+    public static final String BROKER_QUOTA_PRODUCE_BYTES_CONFIG = "broker.quota.produce.bytes";
+    public static final String BROKER_QUOTA_FETCH_BYTES_CONFIG = "broker.quota.fetch.bytes";
+    public static final String BROKER_QUOTA_REQUEST_PERCENTAGE_CONFIG = "broker.quota.request.percentage";
+    public static final String BROKER_QUOTA_WHITE_LIST_USER_CONFIG = "broker.quota.white.list.user";
+    public static final String BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG = "broker.quota.white.list.client.id";
+    public static final String BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG = "broker.quota.white.list.listener";
+    public static final String CLUSTER_QUOTA_TOPIC_COUNT_CONFIG = "cluster.quota.topic.count";
+    public static final String CLUSTER_QUOTA_PARTITION_COUNT_CONFIG = "cluster.quota.partition.count";
+
+    public static final String BROKER_QUOTA_ENABLED_DOC = "Enable broker quota.";
+    public static final String BROKER_QUOTA_PRODUCE_BYTES_DOC = "The maximum bytes send by producer in single window.";
+    public static final String BROKER_QUOTA_FETCH_BYTES_DOC = "The maximum bytes receive by consumer in single window.";
+    public static final String BROKER_QUOTA_REQUEST_PERCENTAGE_DOC = "The maximum cpu time percentage cost by client in single window.";
+    public static final String BROKER_QUOTA_WHITE_LIST_USER_DOC = "Broker quota white list for user.";
+    public static final String BROKER_QUOTA_WHITE_LIST_CLIENT_ID_DOC = "Broker quota white list for client id.";
+    public static final String BROKER_QUOTA_WHITE_LIST_LISTENER_DOC = "Broker quota white list for listener name.";
+    public static final String CLUSTER_QUOTA_TOPIC_COUNT_DOC = "The maximum topic count in cluster.";
+    public static final String CLUSTER_QUOTA_PARTITION_COUNT_DOC = "The maximum partition count in cluster.";
+    // AutoMQ inject end
+
     public static final int IP_CONNECTION_RATE_DEFAULT = Integer.MAX_VALUE;
 
     private final static Set<String> USER_AND_CLIENT_QUOTA_NAMES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(

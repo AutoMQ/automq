@@ -29,6 +29,7 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.metadata.KafkaConfigSchema;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.config.QuotaConfigs;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.AlterConfigPolicy.RequestMetadata;
@@ -513,4 +514,30 @@ public class ConfigurationControlManager {
         Map<String, String> result = configData.get(currentController);
         return (result == null) ? Collections.emptyMap() : result;
     }
+
+    // AutoMQ inject start
+    public int topicCountQuota() {
+        try {
+            String topicCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG);
+            if (topicCountQuota == null) {
+                topicCountQuota = staticConfig.get(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG).toString();
+            }
+            return Integer.parseInt(topicCountQuota);
+        } catch (Exception ignore) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    public int partitionCountQuota() {
+        try {
+            String partitionCountQuota = currentControllerConfig().get(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG);
+            if (partitionCountQuota == null) {
+                partitionCountQuota = staticConfig.get(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG).toString();
+            }
+            return Integer.parseInt(partitionCountQuota);
+        } catch (Exception ignore) {
+            return Integer.MAX_VALUE;
+        }
+    }
+    // AutoMQ inject end
 }

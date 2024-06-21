@@ -25,6 +25,7 @@ import kafka.log.UnifiedLog
 import kafka.network.{RequestChannel, RequestMetrics}
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata.{ConfigRepository, KRaftMetadataCache, MockConfigRepository, ZkMetadataCache}
+import kafka.server.streamaspect.BrokerQuotaManager
 import kafka.utils.{CoreUtils, Log4jController, Logging, TestUtils}
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType
@@ -127,8 +128,9 @@ class KafkaApisTest extends Logging {
   protected val clientRequestQuotaManager: ClientRequestQuotaManager = mock(classOf[ClientRequestQuotaManager])
   protected val clientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
   protected val replicaQuotaManager: ReplicationQuotaManager = mock(classOf[ReplicationQuotaManager])
+  protected val brokerQuotaManager: BrokerQuotaManager = mock(classOf[BrokerQuotaManager])
   protected val quotas = QuotaManagers(clientQuotaManager, clientQuotaManager, clientRequestQuotaManager,
-    clientControllerQuotaManager, replicaQuotaManager, replicaQuotaManager, replicaQuotaManager, None)
+    brokerQuotaManager, clientControllerQuotaManager, replicaQuotaManager, replicaQuotaManager, replicaQuotaManager, None)
   protected val fetchManager: FetchManager = mock(classOf[FetchManager])
   protected val clientMetricsManager: ClientMetricsManager = mock(classOf[ClientMetricsManager])
   protected val brokerTopicStats = new BrokerTopicStats

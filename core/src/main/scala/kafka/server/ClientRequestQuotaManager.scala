@@ -44,7 +44,7 @@ class ClientRequestQuotaManager(private val config: ClientQuotaManagerConfig,
                                 private val quotaCallback: Option[ClientQuotaCallback])
     extends ClientQuotaManager(config, metrics, QuotaType.Request, time, threadNamePrefix, quotaCallback) {
 
-  private val maxThrottleTimeMs = TimeUnit.SECONDS.toMillis(this.config.quotaWindowSizeSeconds)
+  protected val maxThrottleTimeMs = TimeUnit.SECONDS.toMillis(this.config.quotaWindowSizeSeconds)
   private val exemptMetricName = metrics.metricName("exempt-request-time",
     QuotaType.Request.toString, "Tracking exempt-request-time utilization percentage")
 
@@ -90,6 +90,6 @@ class ClientRequestQuotaManager(private val config: ClientQuotaManagerConfig,
       quotaMetricTags.asJava)
   }
 
-  private def nanosToPercentage(nanos: Long): Double =
+  protected def nanosToPercentage(nanos: Long): Double =
     nanos * ClientRequestQuotaManager.NanosToPercentagePerSecond
 }
