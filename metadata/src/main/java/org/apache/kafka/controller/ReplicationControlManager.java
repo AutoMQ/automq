@@ -682,7 +682,7 @@ public class ReplicationControlManager {
         if (partitionCount + partitionAdditionCount > partitionCountQuota) {
             for (CreatableTopic topic : request.topics()) {
                 topicErrors.put(topic.name(),
-                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCount));
+                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCountQuota));
             }
         }
     }
