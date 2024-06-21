@@ -662,6 +662,32 @@ public class ReplicationControlManager {
         log.info("Replayed RemoveTopicRecord for topic {} with ID {}.", topic.name, record.topicId());
     }
 
+    // AutoMQ inject start
+    void checkTopicQuota(CreateTopicsRequestData request, Map<String, ApiError> topicErrors) {
+        int topicCountQuota = configurationControl.topicCountQuota();
+        int topicCount = topics.size();
+        int topicAdditionCount = request.topics().size();
+        if (topicCount + topicAdditionCount > topicCountQuota) {
+            for (CreatableTopic topic : request.topics()) {
+                topicErrors.put(topic.name(),
+                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Topic count quota exceeded: current quota is " + topicCountQuota));
+            }
+        }
+
+        int partitionCountQuota = configurationControl.partitionCountQuota();
+        int partitionCount = this.topics.values().stream().mapToInt(info -> info.parts.size()).sum();
+        int partitionAdditionCount = request.topics().stream()
+            .mapToInt(topic -> topic.numPartitions() == -1 ? defaultNumPartitions : topic.numPartitions())
+            .sum();
+        if (partitionCount + partitionAdditionCount > partitionCountQuota) {
+            for (CreatableTopic topic : request.topics()) {
+                topicErrors.put(topic.name(),
+                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCount));
+            }
+        }
+    }
+    // AutoMQ inject end
+
     ControllerResult<CreateTopicsResponseData> createTopics(
         ControllerRequestContext context,
         CreateTopicsRequestData request,
@@ -684,28 +710,7 @@ public class ReplicationControlManager {
             computeConfigChanges(topicErrors, request.topics());
 
         // AutoMQ inject start
-        // Verify cluster quota
-        int topicCountQuota = configurationControl.topicCountQuota();
-        int topicCount = topics.size();
-        int topicAdditionCount = request.topics().size();
-        if (topicCount + topicAdditionCount > topicCountQuota) {
-            for (CreatableTopic topic : request.topics()) {
-                topicErrors.put(topic.name(),
-                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Topic count quota exceeded: current quota is " + topicCountQuota));
-            }
-        }
-
-        int partitionCountQuota = configurationControl.partitionCountQuota();
-        int partitionCount = this.topics.values().stream().mapToInt(info -> info.parts.size()).sum();
-        int partitionAdditionCount = request.topics().stream()
-            .mapToInt(topic -> topic.numPartitions() == -1 ? defaultNumPartitions : topic.numPartitions())
-            .sum();
-        if (partitionCount + partitionAdditionCount > partitionCountQuota) {
-            for (CreatableTopic topic : request.topics()) {
-                topicErrors.put(topic.name(),
-                    new ApiError(Errors.THROTTLING_QUOTA_EXCEEDED, "Partition count quota exceeded: current quota is " + partitionCount));
-            }
-        }
+        checkTopicQuota(request, topicErrors);
         // AutoMQ inject end
 
         // Try to create whatever topics are needed.
@@ -1831,6 +1836,26 @@ public class ReplicationControlManager {
         return ControllerResult.of(records, rescheduleImmediately);
     }
 
+    // AutoMQ inject start
+    private void checkPartitionQuota(List<CreatePartitionsTopic> topics, List<CreatePartitionsTopicResult> results) {
+        int quota = configurationControl.partitionCountQuota();
+        Set<String> topicNameSet = topics.stream().map(CreatePartitionsTopic::name).collect(Collectors.toSet());
+        int partitionCount = this.topics.values()
+            .stream()
+            .filter(info -> !topicNameSet.contains(info.name))
+            .mapToInt(info -> info.parts.size()).sum();
+        int partitionAdditionCount = topics.stream().mapToInt(CreatePartitionsTopic::count).sum();
+        if (partitionCount + partitionAdditionCount > quota) {
+            for (CreatePartitionsTopic topic : topics) {
+                results.add(new CreatePartitionsTopicResult().
+                    setName(topic.name()).
+                    setErrorCode(Errors.THROTTLING_QUOTA_EXCEEDED.code()).
+                    setErrorMessage("Partition count exceeds the quota, current quota is " + quota));
+            }
+        }
+    }
+    // AutoMQ inject end
+
     ControllerResult<List<CreatePartitionsTopicResult>> createPartitions(
         ControllerRequestContext context,
         List<CreatePartitionsTopic> topics
@@ -1839,20 +1864,9 @@ public class ReplicationControlManager {
         List<CreatePartitionsTopicResult> results = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
 
         // AutoMQ inject start
-        int quota = configurationControl.partitionCountQuota();
-        Set<String> topicNameSet = topics.stream().map(CreatePartitionsTopic::name).collect(Collectors.toSet());
-        int currentPartitionCount = this.topics.values()
-            .stream()
-            .filter(info -> !topicNameSet.contains(info.name))
-            .mapToInt(info -> info.parts.size()).sum();
-        if (currentPartitionCount + topics.stream().mapToInt(CreatePartitionsTopic::count).sum() > quota) {
-            for (CreatePartitionsTopic topic : topics) {
-                results.add(new CreatePartitionsTopicResult().
-                    setName(topic.name()).
-                    setErrorCode(Errors.THROTTLING_QUOTA_EXCEEDED.code()).
-                    setErrorMessage("Partition count exceeds the quota, current quota is " + quota));
-            }
-            return ControllerResult.atomicOf(records, results);
+        checkPartitionQuota(topics, results);
+        if (!results.isEmpty()) {
+            return ControllerResult.of(records, results);
         }
         // AutoMQ inject end
 
