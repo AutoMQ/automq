@@ -20,7 +20,8 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.stats.CompactionStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -43,20 +44,20 @@ public class DataBlockReader {
     private static final ByteBufSeqAlloc DIRECT_ALLOC = new ByteBufSeqAlloc(STREAM_SET_OBJECT_COMPACTION_READ, 1);
     private final S3ObjectMetadata metadata;
     private final String objectKey;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
     private final CompletableFuture<List<StreamDataBlock>> indexBlockCf = new CompletableFuture<>();
     private final Bucket throttleBucket;
     private final ScheduledExecutorService bucketCallbackExecutor;
 
-    public DataBlockReader(S3ObjectMetadata metadata, S3Operator s3Operator) {
-        this(metadata, s3Operator, null, null);
+    public DataBlockReader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
+        this(metadata, objectStorage, null, null);
     }
 
-    public DataBlockReader(S3ObjectMetadata metadata, S3Operator s3Operator, Bucket throttleBucket,
+    public DataBlockReader(S3ObjectMetadata metadata, ObjectStorage objectStorage, Bucket throttleBucket,
         ScheduledExecutorService bucketCallbackExecutor) {
         this.metadata = metadata;
         this.objectKey = metadata.key();
-        this.s3Operator = s3Operator;
+        this.objectStorage = objectStorage;
         this.throttleBucket = throttleBucket;
         if (this.throttleBucket != null) {
             this.bucketCallbackExecutor = Objects.requireNonNull(bucketCallbackExecutor);
@@ -71,7 +72,7 @@ public class DataBlockReader {
 
     public void parseDataBlockIndex() {
         // TODO: throttle level
-        @SuppressWarnings("resource") ObjectReader objectReader = ObjectReader.reader(metadata, s3Operator);
+        @SuppressWarnings("resource") ObjectReader objectReader = ObjectReader.reader(metadata, objectStorage);
         objectReader.basicObjectInfo().thenAccept(info -> {
             List<StreamDataBlock> blocks = new ArrayList<>(info.indexBlock().count());
             Iterator<DataBlockIndex> it = info.indexBlock().iterator();
@@ -195,7 +196,7 @@ public class DataBlockReader {
 
     private CompletableFuture<ByteBuf> rangeRead0(long start, long end) {
         if (throttleBucket == null) {
-            return s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.COMPACTION).thenApply(buf -> {
+            return objectStorage.rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION).bucket(metadata.bucket()), objectKey, start, end).thenApply(buf -> {
                 // convert heap buffer to direct buffer
                 ByteBuf directBuf = DIRECT_ALLOC.byteBuffer(buf.readableBytes());
                 directBuf.writeBytes(buf);
@@ -205,7 +206,7 @@ public class DataBlockReader {
         } else {
             return throttleBucket.asScheduler().consume(end - start + 1, bucketCallbackExecutor)
                 .thenCompose(v ->
-                    s3Operator.rangeRead(objectKey, start, end, ThrottleStrategy.COMPACTION).thenApply(buf -> {
+                    objectStorage.rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION).bucket(metadata.bucket()), objectKey, start, end).thenApply(buf -> {
                         // convert heap buffer to direct buffer
                         ByteBuf directBuf = DIRECT_ALLOC.byteBuffer(buf.readableBytes());
                         directBuf.writeBytes(buf);

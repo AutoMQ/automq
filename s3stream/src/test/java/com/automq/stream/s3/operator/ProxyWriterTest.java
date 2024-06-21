@@ -21,7 +21,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -38,13 +37,13 @@ import static org.mockito.Mockito.when;
 
 public class ProxyWriterTest {
 
-    S3Operator operator;
+    AbstractObjectStorage operator;
     ProxyWriter writer;
 
     @BeforeEach
     public void setup() {
-        operator = mock(S3Operator.class);
-        writer = new ProxyWriter(Writer.Context.DEFAULT, operator, "testpath", null);
+        operator = mock(AbstractObjectStorage.class);
+        writer = new ProxyWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "testpath");
     }
 
     @Test
@@ -63,8 +62,8 @@ public class ProxyWriterTest {
     @Test
     public void testWrite_dataLargerThanMaxUploadSize() {
         when(operator.createMultipartUpload(eq("testpath"))).thenReturn(CompletableFuture.completedFuture("test_upload_id"));
-        when(operator.uploadPart(eq("testpath"), eq("test_upload_id"), eq(1), any(), any())).thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag1").build()));
-        when(operator.uploadPart(eq("testpath"), eq("test_upload_id"), eq(2), any(), any())).thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag2").build()));
+        when(operator.uploadPart(eq("testpath"), eq("test_upload_id"), eq(1), any(), any())).thenReturn(CompletableFuture.completedFuture(new AbstractObjectStorage.ObjectStorageCompletedPart(1, "etag1")));
+        when(operator.uploadPart(eq("testpath"), eq("test_upload_id"), eq(2), any(), any())).thenReturn(CompletableFuture.completedFuture(new AbstractObjectStorage.ObjectStorageCompletedPart(2, "etag2")));
         when(operator.completeMultipartUpload(eq("testpath"), eq("test_upload_id"), any())).thenReturn(CompletableFuture.completedFuture(null));
         writer.write(TestUtils.random(17 * 1024 * 1024));
         assertTrue(writer.hasBatchingPart());
@@ -83,7 +82,7 @@ public class ProxyWriterTest {
     public void testWrite_copyWrite() {
         when(operator.createMultipartUpload(eq("testpath"))).thenReturn(CompletableFuture.completedFuture("test_upload_id"));
         when(operator.uploadPartCopy(eq("test_src_path"), eq("testpath"), eq(0L), eq(15L * 1024 * 1024), eq("test_upload_id"), eq(1)))
-            .thenReturn(CompletableFuture.completedFuture(CompletedPart.builder().partNumber(1).eTag("etag1").build()));
+            .thenReturn(CompletableFuture.completedFuture(new AbstractObjectStorage.ObjectStorageCompletedPart(1, "etag1")));
         when(operator.completeMultipartUpload(eq("testpath"), eq("test_upload_id"), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 15 * 1024 * 1024, S3ObjectType.STREAM);

@@ -19,7 +19,7 @@ import com.automq.stream.s3.compact.operator.DataBlockWriter;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.objects.ObjectStreamRange;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -60,19 +60,19 @@ public class CompactionUtils {
 
     public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList,
         List<S3ObjectMetadata> objectMetadataList,
-        S3Operator s3Operator) {
-        return blockWaitObjectIndices(streamMetadataList, objectMetadataList, s3Operator, null);
+        ObjectStorage objectStorage) {
+        return blockWaitObjectIndices(streamMetadataList, objectMetadataList, objectStorage, null);
     }
 
     public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList,
         List<S3ObjectMetadata> objectMetadataList,
-        S3Operator s3Operator,
+        ObjectStorage objectStorage,
         Logger logger) {
         Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
             .collect(Collectors.toMap(StreamMetadata::streamId, s -> s));
         Map<Long, CompletableFuture<List<StreamDataBlock>>> objectStreamRangePositionFutures = new HashMap<>();
         for (S3ObjectMetadata objectMetadata : objectMetadataList) {
-            DataBlockReader dataBlockReader = new DataBlockReader(objectMetadata, s3Operator);
+            DataBlockReader dataBlockReader = new DataBlockReader(objectMetadata, objectStorage);
             dataBlockReader.parseDataBlockIndex();
             objectStreamRangePositionFutures.put(objectMetadata.objectId(), dataBlockReader.getDataBlockIndex());
         }

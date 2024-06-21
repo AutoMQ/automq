@@ -26,7 +26,7 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
@@ -68,7 +68,7 @@ public class S3StreamClient implements StreamClient {
     private final StreamManager streamManager;
     private final Storage storage;
     private final ObjectManager objectManager;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
     private final Config config;
     private final AsyncNetworkBandwidthLimiter networkInboundBucket;
     private final AsyncNetworkBandwidthLimiter networkOutboundBucket;
@@ -83,18 +83,18 @@ public class S3StreamClient implements StreamClient {
 
     @SuppressWarnings("unused")
     public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
-        S3Operator s3Operator, Config config) {
-        this(streamManager, storage, objectManager, s3Operator, config, null, null);
+        ObjectStorage objectStorage, Config config) {
+        this(streamManager, storage, objectManager, objectStorage, config, null, null);
     }
 
     public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
-        S3Operator s3Operator, Config config,
+        ObjectStorage objectStorage, Config config,
         AsyncNetworkBandwidthLimiter networkInboundBucket, AsyncNetworkBandwidthLimiter networkOutboundBucket) {
         this.streamManager = streamManager;
         this.storage = storage;
         this.openedStreams = new ConcurrentHashMap<>();
         this.objectManager = objectManager;
-        this.s3Operator = s3Operator;
+        this.objectStorage = objectStorage;
         this.config = config;
         this.networkInboundBucket = networkInboundBucket;
         this.networkOutboundBucket = networkOutboundBucket;
@@ -359,7 +359,7 @@ public class S3StreamClient implements StreamClient {
 
         public void compact(StreamObjectCompactor.CompactionType compactionType) {
             StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(this)
-                .s3Operator(s3Operator).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
+                .s3Operator(objectStorage).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
             task.compact(compactionType);
         }
     }

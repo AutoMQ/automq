@@ -17,7 +17,7 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
@@ -43,13 +43,13 @@ public class StreamReaders implements S3BlockCache {
     private final ObjectReaderFactory objectReaderFactory;
 
     private final ObjectManager objectManager;
-    private final S3Operator s3Operator;
+    private final ObjectStorage objectStorage;
 
-    public StreamReaders(long size, ObjectManager objectManager, S3Operator s3Operator) {
-        this(size, objectManager, s3Operator, Systems.CPU_CORES);
+    public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage) {
+        this(size, objectManager, objectStorage, Systems.CPU_CORES);
     }
 
-    public StreamReaders(long size, ObjectManager objectManager, S3Operator s3Operator, int concurrency) {
+    public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage, int concurrency) {
         EventLoop[] eventLoops = new EventLoop[concurrency];
         for (int i = 0; i < concurrency; i++) {
             eventLoops[i] = new EventLoop("stream-reader-" + i);
@@ -63,7 +63,7 @@ public class StreamReaders implements S3BlockCache {
         this.objectReaderFactory = new ObjectReaderFactory();
 
         this.objectManager = objectManager;
-        this.s3Operator = s3Operator;
+        this.objectStorage = objectStorage;
     }
 
     @Override
@@ -163,7 +163,7 @@ public class StreamReaders implements S3BlockCache {
         public synchronized ObjectReader apply(S3ObjectMetadata metadata) {
             ObjectReader objectReader = objectReaders.get(metadata.objectId());
             if (objectReader == null) {
-                objectReader = ObjectReader.reader(metadata, s3Operator);
+                objectReader = ObjectReader.reader(metadata, objectStorage);
                 objectReaders.put(metadata.objectId(), objectReader);
             }
             return objectReader.retain();

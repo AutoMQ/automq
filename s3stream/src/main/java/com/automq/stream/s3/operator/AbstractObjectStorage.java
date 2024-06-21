@@ -11,8 +11,6 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -30,9 +28,6 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -49,6 +44,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class AbstractObjectStorage implements ObjectStorage {
     static final Logger LOGGER = LoggerFactory.getLogger(AbstractObjectStorage.class);
@@ -68,7 +65,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         "s3-read-limiter-cb-executor", true, LOGGER);
     private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-limiter-cb-executor", true, LOGGER);
-    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(8,
+    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-read-cb-executor", true, LOGGER);
     private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-cb-executor", true, LOGGER);
@@ -117,13 +114,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public Writer writer(WriteOptions options, String objectPath) {
-        return null;
+        return new ProxyWriter(options, this, objectPath);
     }
 
     @Override
-    public CompletableFuture<ByteBuf> rangeRead(ReadOptions options, S3ObjectMetadata objectMetadata, long start, long end) {
+    public CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end) {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        if (start > end) {
+        if (end != -1L && start > end) {
             IllegalArgumentException ex = new IllegalArgumentException();
             LOGGER.error("[UNEXPECTED] rangeRead [{}, {})", start, end, ex);
             cf.completeExceptionally(ex);
@@ -141,20 +138,18 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                 } else {
-                    rangeRead0(objectMetadata, start, end, cf);
+                    rangeRead0(objectPath, start, end, cf);
                 }
             }, readLimiterCallbackExecutor);
         } else {
-            rangeRead0(objectMetadata, start, end, cf);
+            rangeRead0(objectPath, start, end, cf);
 
         }
-        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", objectMetadata, start, end), 3, TimeUnit.MINUTES);
+        Timeout timeout = timeoutDetect.newTimeout(t -> {
+            LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end);
+            System.out.println("timeout");
+        }, 1, TimeUnit.MINUTES);
         return cf.whenComplete((rst, ex) -> timeout.cancel());
-    }
-
-    @Override
-    public CompletableFuture<ByteBuf> rangeRead(S3ObjectMetadata objectMetadata, long start, long end) {
-        return rangeRead(ReadOptions.DEFAULT, objectMetadata, start, end);
     }
 
     public CompletableFuture<Void> write(String path, ByteBuf data, ThrottleStrategy throttleStrategy) {
@@ -265,7 +260,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return refCf;
     }
 
-    public CompletableFuture<ObjectStorageCompletedPart> uploadPartCopy(String sourcePath, String path, long start, long end,
+    public CompletableFuture<ObjectStorageCompletedPart> uploadPartCopy(String sourcePath, String path, long start,
+        long end,
         String uploadId, int partNumber) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ObjectStorageCompletedPart> cf = new CompletableFuture<>();
@@ -293,7 +289,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return retCf;
     }
 
-    public CompletableFuture<Void> completeMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts) {
+    public CompletableFuture<Void> completeMultipartUpload(String path, String uploadId,
+        List<ObjectStorageCompletedPart> parts) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompletableFuture<Void> retCf = acquireWritePermit(cf);
@@ -323,11 +320,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public CompletableFuture<Void> delete(List<S3ObjectMetadata> objectMetadataList) {
+    public CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        List<String> objectKeys = objectMetadataList.stream()
-            .map(metadata -> ObjectUtils.genKey(0, metadata.objectId()))
+        List<String> objectKeys = objectPaths.stream()
+            .map(ObjectPath::key)
             .collect(Collectors.toList());
         Runnable successHandler = () -> {
             LOGGER.info("[ControllerS3Operator]: Delete objects finished, count: {}, cost: {}", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
@@ -352,6 +349,27 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return cf;
     }
 
+    @Override
+    public CompletableFuture<Void> write(WriteOptions options, String objectPath, ByteBuf buf) {
+        return write(objectPath, buf, options.throttleStrategy());
+    }
+
+    @Override
+    public CompletableFuture<List<ObjectInfo>> list(String prefix) {
+        TimerUtil timerUtil = new TimerUtil();
+        CompletableFuture<List<ObjectInfo>> cf = doList(prefix);
+        cf.thenAccept(keyList -> {
+            S3OperationStats.getInstance().listObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            LOGGER.info("List objects finished, count: {}, cost: {}", keyList.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        }).exceptionally(ex -> {
+            S3OperationStats.getInstance().listObjectsStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            LOGGER.info("List objects failed, cost: {}, ex: {}", timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
+            return null;
+        });
+        return cf;
+    }
+
+    @Override
     public void close() {
         readLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
@@ -359,18 +377,23 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         doClose();
     }
 
-    abstract void doRangeRead(String path, long start, long end, Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler);
+    abstract void doRangeRead(String path, long start, long end, Consumer<Throwable> failHandler,
+        Consumer<CompositeByteBuf> successHandler);
 
     abstract void doWrite(String path, ByteBuf data, Consumer<Throwable> failHandler, Runnable successHandler);
 
-    abstract void doCreateMultipartUpload(String path, Consumer<Throwable> failHandler, Consumer<String> successHandler);
+    abstract void doCreateMultipartUpload(String path, Consumer<Throwable> failHandler,
+        Consumer<String> successHandler);
 
-    abstract void doUploadPart(String path, String uploadId, int partNumber, ByteBuf part, Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler);
-
-    abstract void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber, long apiCallAttemptTimeout,
+    abstract void doUploadPart(String path, String uploadId, int partNumber, ByteBuf part,
         Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler);
 
-    abstract void doCompleteMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts, Consumer<Throwable> failHandler, Runnable successHandler);
+    abstract void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId,
+        int partNumber, long apiCallAttemptTimeout,
+        Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler);
+
+    abstract void doCompleteMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts,
+        Consumer<Throwable> failHandler, Runnable successHandler);
 
     abstract void doDeleteObjects(List<String> objectKeys, Consumer<Throwable> failHandler, Runnable successHandler);
 
@@ -378,14 +401,16 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     abstract void doClose();
 
+    abstract CompletableFuture<List<ObjectInfo>> doList(String prefix);
+
     private static boolean checkPartNumbers(List<ObjectStorageCompletedPart> parts) {
         Optional<Integer> maxOpt = parts.stream().map(ObjectStorageCompletedPart::getPartNumber).max(Integer::compareTo);
         return maxOpt.isPresent() && maxOpt.get() == parts.size();
     }
 
-    private void rangeRead0(S3ObjectMetadata s3ObjectMetadata, long start, long end, CompletableFuture<ByteBuf> cf) {
+    private void rangeRead0(String objectPath, long start, long end, CompletableFuture<ByteBuf> cf) {
         synchronized (waitingReadTasks) {
-            waitingReadTasks.add(new AbstractObjectStorage.ReadTask(s3ObjectMetadata, start, end, cf));
+            waitingReadTasks.add(new AbstractObjectStorage.ReadTask(objectPath, start, end, cf));
         }
     }
 
@@ -412,7 +437,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 Map<String, AbstractObjectStorage.MergedReadTask> mergingReadTasks = new HashMap<>();
                 while (it.hasNext()) {
                     AbstractObjectStorage.ReadTask readTask = it.next();
-                    String path = ObjectUtils.genKey(0, readTask.s3ObjectMetadata.objectId());
+                    String path = readTask.objectPath;
                     AbstractObjectStorage.MergedReadTask mergedReadTask = mergingReadTasks.get(path);
                     if (mergedReadTask == null) {
                         if (readPermit > 0) {
@@ -432,7 +457,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
         mergedReadTasks.forEach(
             mergedReadTask -> {
-                String path = mergedReadTask.s3ObjectMetadata.key();
+                String path = mergedReadTask.objectPath;
                 if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("[S3BlockCache] merge read: {}, {}-{}, size: {}, sparsityRate: {}",
                         path, mergedReadTask.start, mergedReadTask.end,
@@ -449,7 +474,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     CompletableFuture<ByteBuf> mergedRangeRead(String path, long start, long end) {
-        end = end - 1;
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retCf = acquireReadPermit(cf);
         if (retCf.isDone()) {
@@ -461,7 +485,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     private void mergedRangeRead0(String path, long start, long end, CompletableFuture<ByteBuf> cf) {
         TimerUtil timerUtil = new TimerUtil();
-        long size = end - start + 1;
+        long size = end - start;
         Consumer<Throwable> failHandler = ex -> {
             if (isUnrecoverable(ex) || checkS3ApiMode) {
                 LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
@@ -559,7 +583,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     static class MergedReadTask {
         static final int MAX_MERGE_READ_SIZE = 4 * 1024 * 1024;
-        final S3ObjectMetadata s3ObjectMetadata;
+        final String objectPath;
         final List<AbstractObjectStorage.ReadTask> readTasks = new ArrayList<>();
         long start;
         long end;
@@ -568,7 +592,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         float maxMergeReadSparsityRate;
 
         MergedReadTask(AbstractObjectStorage.ReadTask readTask, float maxMergeReadSparsityRate) {
-            this.s3ObjectMetadata = readTask.s3ObjectMetadata;
+            this.objectPath = readTask.objectPath;
             this.start = readTask.start;
             this.end = readTask.end;
             this.readTasks.add(readTask);
@@ -629,8 +653,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
 
         private boolean canMerge(AbstractObjectStorage.ReadTask readTask) {
-            return s3ObjectMetadata != null &&
-                s3ObjectMetadata.equals(readTask.s3ObjectMetadata) &&
+            return objectPath != null &&
+                objectPath.equals(readTask.objectPath) &&
                 dataSparsityRate <= this.maxMergeReadSparsityRate &&
                 readTask.end != -1;
         }
@@ -640,7 +664,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
             } else {
                 for (AbstractObjectStorage.ReadTask readTask : readTasks) {
-                    readTask.cf.complete(rst.retainedSlice((int) (readTask.start - start), (int) (readTask.end - readTask.start)));
+                    int sliceStart = (int) (readTask.start - start);
+                    if (readTask.end == -1L) {
+                        readTask.cf.complete(rst.retainedSlice(sliceStart, rst.readableBytes()));
+                    } else {
+                        readTask.cf.complete(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));
+                    }
                 }
                 rst.release();
             }
@@ -648,20 +677,20 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     static final class ReadTask {
-        private final S3ObjectMetadata s3ObjectMetadata;
+        private final String objectPath;
         private final long start;
         private final long end;
         private final CompletableFuture<ByteBuf> cf;
 
-        ReadTask(S3ObjectMetadata s3ObjectMetadata, long start, long end, CompletableFuture<ByteBuf> cf) {
-            this.s3ObjectMetadata = s3ObjectMetadata;
+        ReadTask(String objectPath, long start, long end, CompletableFuture<ByteBuf> cf) {
+            this.objectPath = objectPath;
             this.start = start;
             this.end = end;
             this.cf = cf;
         }
 
-        public S3ObjectMetadata s3ObjectMetadata() {
-            return s3ObjectMetadata;
+        public String objectPath() {
+            return objectPath;
         }
 
         public long start() {
@@ -683,7 +712,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (obj == null || obj.getClass() != this.getClass())
                 return false;
             var that = (AbstractObjectStorage.ReadTask) obj;
-            return Objects.equals(this.s3ObjectMetadata, that.s3ObjectMetadata) &&
+            return Objects.equals(this.objectPath, that.objectPath) &&
                 this.start == that.start &&
                 this.end == that.end &&
                 Objects.equals(this.cf, that.cf);
@@ -691,13 +720,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         @Override
         public int hashCode() {
-            return Objects.hash(s3ObjectMetadata, start, end, cf);
+            return Objects.hash(objectPath, start, end, cf);
         }
 
         @Override
         public String toString() {
             return "ReadTask[" +
-                "s3ObjectMetadata=" + s3ObjectMetadata + ", " +
+                "s3ObjectMetadata=" + objectPath + ", " +
                 "start=" + start + ", " +
                 "end=" + end + ", " +
                 "cf=" + cf + ']';

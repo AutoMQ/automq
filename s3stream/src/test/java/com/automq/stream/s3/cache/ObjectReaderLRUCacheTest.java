@@ -17,8 +17,8 @@ import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -36,22 +36,22 @@ public class ObjectReaderLRUCacheTest {
 
     @Test
     public void testGetPut() throws ExecutionException, InterruptedException {
-        S3Operator s3Operator = new MemoryS3Operator();
-        ObjectWriter objectWriter = ObjectWriter.writer(233L, s3Operator, 1024, 1024);
+        ObjectStorage objectStorage = new MemoryObjectStorage();
+        ObjectWriter objectWriter = ObjectWriter.writer(233L, objectStorage, 1024, 1024);
         writeStream(1000, objectWriter);
         objectWriter.close().get();
 
-        ObjectWriter objectWriter2 = ObjectWriter.writer(234L, s3Operator, 1024, 1024);
+        ObjectWriter objectWriter2 = ObjectWriter.writer(234L, objectStorage, 1024, 1024);
         writeStream(2000, objectWriter2);
         objectWriter2.close().get();
 
-        ObjectWriter objectWriter3 = ObjectWriter.writer(235L, s3Operator, 1024, 1024);
+        ObjectWriter objectWriter3 = ObjectWriter.writer(235L, objectStorage, 1024, 1024);
         writeStream(3000, objectWriter3);
         objectWriter3.close().get();
 
-        ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.STREAM_SET), s3Operator);
-        ObjectReader objectReader2 = ObjectReader.reader(new S3ObjectMetadata(234L, objectWriter2.size(), S3ObjectType.STREAM_SET), s3Operator);
-        ObjectReader objectReader3 = ObjectReader.reader(new S3ObjectMetadata(235L, objectWriter3.size(), S3ObjectType.STREAM_SET), s3Operator);
+        ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.STREAM_SET), objectStorage);
+        ObjectReader objectReader2 = ObjectReader.reader(new S3ObjectMetadata(234L, objectWriter2.size(), S3ObjectType.STREAM_SET), objectStorage);
+        ObjectReader objectReader3 = ObjectReader.reader(new S3ObjectMetadata(235L, objectWriter3.size(), S3ObjectType.STREAM_SET), objectStorage);
         Assertions.assertEquals(36000, objectReader.basicObjectInfo().get().size());
         Assertions.assertEquals(72000, objectReader2.basicObjectInfo().get().size());
         Assertions.assertEquals(108000, objectReader3.basicObjectInfo().get().size());

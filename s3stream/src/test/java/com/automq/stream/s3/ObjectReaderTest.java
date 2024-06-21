@@ -15,8 +15,9 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.operator.MemoryS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.Iterator;
@@ -88,8 +89,8 @@ public class ObjectReaderTest {
 
     @Test
     public void testGetBasicObjectInfo() throws ExecutionException, InterruptedException {
-        S3Operator s3Operator = new MemoryS3Operator();
-        ObjectWriter objectWriter = ObjectWriter.writer(233L, s3Operator, 1024, 1024);
+        ObjectStorage objectStorage = new MemoryObjectStorage();
+        ObjectWriter objectWriter = ObjectWriter.writer(233L, objectStorage, 1024, 1024);
         // make index block bigger than 1M
         int streamCount = 2 * 1024 * 1024 / 40;
         for (int i = 0; i < streamCount; i++) {
@@ -98,7 +99,7 @@ public class ObjectReaderTest {
         }
         objectWriter.close().get();
         S3ObjectMetadata metadata = new S3ObjectMetadata(233L, objectWriter.size(), S3ObjectType.STREAM_SET);
-        try (ObjectReader objectReader = ObjectReader.reader(metadata, s3Operator)) {
+        try (ObjectReader objectReader = ObjectReader.reader(metadata, objectStorage)) {
             ObjectReader.BasicObjectInfo info = objectReader.basicObjectInfo().get();
             assertEquals(streamCount, info.indexBlock().count());
         }
@@ -106,7 +107,7 @@ public class ObjectReaderTest {
 
     @Test
     public void testReadBlockGroup() throws ExecutionException, InterruptedException {
-        S3Operator s3Operator = new MemoryS3Operator();
+        ObjectStorage objectStorage = new MemoryObjectStorage();
         ByteBuf buf = ByteBufAlloc.byteBuffer(0);
         buf.writeBytes(new ObjectWriter.DataBlock(233L, List.of(
             new StreamRecordBatch(233L, 0, 10, 1, TestUtils.random(100)),
@@ -120,9 +121,8 @@ public class ObjectReaderTest {
         int indexSize = buf.readableBytes() - indexPosition;
         buf.writeBytes(new ObjectWriter.Footer(indexPosition, indexSize).buffer());
         int objectSize = buf.readableBytes();
-        s3Operator.write(ObjectUtils.genKey(0, 1L), buf);
-        buf.release();
-        try (ObjectReader reader = ObjectReader.reader(new S3ObjectMetadata(1L, objectSize, S3ObjectType.STREAM), s3Operator)) {
+        objectStorage.write(WriteOptions.DEFAULT, ObjectUtils.genKey(0, 1L), buf);
+        try (ObjectReader reader = ObjectReader.reader(new S3ObjectMetadata(1L, objectSize, S3ObjectType.STREAM), objectStorage)) {
             ObjectReader.FindIndexResult rst = reader.find(233L, 10L, 14L, 1024).get();
             assertEquals(1, rst.streamDataBlocks().size());
             try (ObjectReader.DataBlockGroup dataBlockGroup = reader.read(rst.streamDataBlocks().get(0).dataBlockIndex()).get()) {

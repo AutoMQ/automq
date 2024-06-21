@@ -17,6 +17,7 @@
 
 package org.apache.kafka.metadata.stream;
 
+import com.automq.stream.s3.objects.ObjectAttributes;
 import java.util.Objects;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -155,6 +156,10 @@ public class S3Object implements Comparable<S3Object> {
 
     public int getAttributes() {
         return attributes;
+    }
+
+    public short bucket() {
+        return ObjectAttributes.from(attributes).bucket();
     }
 
     @Override

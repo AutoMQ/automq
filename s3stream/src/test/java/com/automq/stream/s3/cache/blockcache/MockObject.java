@@ -17,18 +17,18 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.operator.MemoryS3Operator;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
 import io.netty.buffer.ByteBuf;
 import java.util.LinkedList;
 import java.util.List;
 
 public class MockObject {
     final S3ObjectMetadata metadata;
-    final MemoryS3Operator operator;
+    final MemoryObjectStorage objectStorage;
 
-    private MockObject(S3ObjectMetadata metadata, MemoryS3Operator operator) {
+    private MockObject(S3ObjectMetadata metadata, MemoryObjectStorage objectStorage) {
         this.metadata = metadata;
-        this.operator = operator;
+        this.objectStorage = objectStorage;
     }
 
     public S3ObjectMetadata metadata() {
@@ -36,7 +36,7 @@ public class MockObject {
     }
 
     public ObjectReader objectReader() {
-        return ObjectReader.reader(metadata, operator);
+        return ObjectReader.reader(metadata, objectStorage);
     }
 
     public static Builder builder(long objectId, int blockSizeThreshold) {
@@ -46,7 +46,7 @@ public class MockObject {
     public static class Builder {
         private final long objectId;
         private final List<StreamOffsetRange> offsetRanges = new LinkedList<>();
-        private final MemoryS3Operator operator = new MemoryS3Operator();
+        private final MemoryObjectStorage operator = new MemoryObjectStorage();
         private final ObjectWriter writer;
 
         public Builder(long objectId, int blockSizeThreshold) {

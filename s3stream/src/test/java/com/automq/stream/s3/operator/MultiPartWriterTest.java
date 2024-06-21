@@ -50,14 +50,14 @@ import static org.mockito.Mockito.when;
 @Tag("S3Unit")
 class MultiPartWriterTest {
     private S3AsyncClient s3;
-    private DefaultS3Operator operator;
+    private AwsObjectStorage operator;
     private MultiPartWriter writer;
     private Lock lock;
 
     @BeforeEach
     void setUp() {
         s3 = mock(S3AsyncClient.class);
-        operator = new DefaultS3Operator(s3, "unit-test-bucket");
+        operator = new AwsObjectStorage(s3, "unit-test-bucket");
         CreateMultipartUploadResponse.Builder builder = CreateMultipartUploadResponse.builder();
         when(s3.createMultipartUpload(any(CreateMultipartUploadRequest.class))).thenReturn(CompletableFuture.completedFuture(builder.build()));
         lock = new ReentrantLock();
@@ -65,7 +65,7 @@ class MultiPartWriterTest {
 
     @Test
     void testWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = new MultiPartWriter(Writer.Context.DEFAULT, operator, "test-path", 100, null);
+        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "test-path", 100);
 
         List<UploadPartRequest> requests = new ArrayList<>();
         List<Long> contentLengths = new ArrayList<>();
@@ -116,7 +116,7 @@ class MultiPartWriterTest {
     @Test
     @SuppressWarnings("unchecked")
     void testCopyWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = new MultiPartWriter(Writer.Context.DEFAULT, operator, "test-path-2", 100, null);
+        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "test-path-2", 100);
         List<UploadPartRequest> uploadPartRequests = new ArrayList<>();
         List<UploadPartCopyRequest> uploadPartCopyRequests = new ArrayList<>();
         List<Long> writeContentLengths = new ArrayList<>();

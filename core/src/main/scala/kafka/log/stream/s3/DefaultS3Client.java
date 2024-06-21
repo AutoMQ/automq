@@ -28,8 +28,8 @@ import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.DefaultS3Operator;
-import com.automq.stream.s3.operator.S3Operator;
+import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
@@ -108,21 +108,21 @@ public class DefaultS3Client implements Client {
                 .needPrintToConsole(false)
                 .build();
         pingS3Helper.pingS3();
-        S3Operator s3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
+        ObjectStorage objectStorage = AwsObjectStorage.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).forcePathStyle(forcePathStyle).build();
-        S3Operator compactionS3Operator = DefaultS3Operator.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
+        ObjectStorage compactionobjectStorage = AwsObjectStorage.builder().endpoint(endpoint).region(region).bucket(bucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).forcePathStyle(forcePathStyle).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
                 config.controllerRequestRetryBaseDelayMs());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = newStreamManager(config.nodeId(), config.nodeEpoch(), false);
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
-        this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, s3Operator);
-        this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionS3Operator);
+        this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage);
+        this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
         this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
-        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, s3Operator);
+        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
         // stream object compactions share the same s3Operator with stream set object compactions
-        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionS3Operator, this.config, networkInboundLimiter, networkOutboundLimiter);
+        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
         this.kvClient = new ControllerKVClient(this.requestSender);
         this.failover = failover();
 
