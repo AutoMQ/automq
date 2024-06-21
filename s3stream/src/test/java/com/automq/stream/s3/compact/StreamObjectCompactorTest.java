@@ -150,7 +150,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(14L);
         when(stream.confirmOffset()).thenReturn(32L);
 
-        StreamObjectCompactor task = builder().objectManager(objectManager).s3Operator(objectStorage)
+        StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(MAJOR);
 
@@ -242,7 +242,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(17L);
         when(stream.confirmOffset()).thenReturn(32L);
 
-        StreamObjectCompactor task = builder().objectManager(objectManager).s3Operator(objectStorage)
+        StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(MAJOR);
 
@@ -343,7 +343,7 @@ class StreamObjectCompactorTest {
         when(stream.startOffset()).thenReturn(1450L);
         when(stream.confirmOffset()).thenReturn(1500L);
 
-        StreamObjectCompactor task = builder().objectManager(objectManager).s3Operator(objectStorage)
+        StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
             .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(CLEANUP);
 

@@ -342,7 +342,7 @@ public class S3Storage implements Storage {
         if (cacheBlock.size() != 0) {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
             DeltaWALUploadTask task = DeltaWALUploadTask.builder().config(config).streamRecordsMap(cacheBlock.records())
-                .objectManager(objectManager).s3Operator(objectStorage).executor(uploadWALExecutor).build();
+                .objectManager(objectManager).objectStorage(objectStorage).executor(uploadWALExecutor).build();
             task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
         }
@@ -699,7 +699,7 @@ public class S3Storage implements Storage {
             .config(config)
             .streamRecordsMap(context.cache.records())
             .objectManager(objectManager)
-            .s3Operator(objectStorage)
+            .objectStorage(objectStorage)
             .executor(uploadWALExecutor)
             .rate(rate)
             .build();

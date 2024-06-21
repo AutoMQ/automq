@@ -80,7 +80,6 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             @Override
             public CompletableFuture<Void> write(ByteBuf part) {
                 buf.writeBytes(part);
-                // Keep the same behavior as a real S3Operator
                 // Release the part after write
                 part.release();
                 return CompletableFuture.completedFuture(null);
