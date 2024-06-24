@@ -59,9 +59,35 @@ public class LoadAwarePartitionLeaderSelectorTest {
         Assertions.assertEquals(40.0, brokerLoads.get(4));
         Assertions.assertEquals(50.0, brokerLoads.get(5));
 
+        // test missing broker
+        brokerLoads = setUpCluster();
+        brokerLoads.remove(1);
+        ClusterStats.getInstance().updateBrokerLoads(brokerLoads);
+        loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, broker -> broker != brokerToRemove);
+
+        brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
+        Assertions.assertTrue(brokerSet.contains(brokerId));
+        Assertions.assertEquals(0, brokerId);
+        brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 1)).orElse(-1);
+        Assertions.assertTrue(brokerSet.contains(brokerId));
+        Assertions.assertEquals(0, brokerId);
+        brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 2)).orElse(-1);
+        Assertions.assertTrue(brokerSet.contains(brokerId));
+        Assertions.assertEquals(0, brokerId);
+        brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 3)).orElse(-1);
+        Assertions.assertTrue(brokerSet.contains(brokerId));
+        Assertions.assertEquals(2, brokerId);
+
+        Assertions.assertEquals(30.0, brokerLoads.get(0));
+        Assertions.assertEquals(40.0, brokerLoads.get(2));
+        Assertions.assertEquals(30.0, brokerLoads.get(3));
+        Assertions.assertEquals(40.0, brokerLoads.get(4));
+        Assertions.assertEquals(50.0, brokerLoads.get(5));
+
+
         // tests exclude broker
         brokerLoads = setUpCluster();
-        ClusterLoads.getInstance().updateExcludedBrokers(Set.of(1));
+        ClusterStats.getInstance().updateExcludedBrokers(Set.of(1));
         loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, broker -> broker != brokerToRemove);
 
         brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
@@ -87,6 +113,7 @@ public class LoadAwarePartitionLeaderSelectorTest {
 
     private Map<Integer, Double> setUpCluster() {
         Map<Integer, Double> brokerLoads = new HashMap<>();
+        brokerLoads.put(0, 0.0);
         brokerLoads.put(1, 10.0);
         brokerLoads.put(2, 20.0);
         brokerLoads.put(3, 30.0);
@@ -98,8 +125,8 @@ public class LoadAwarePartitionLeaderSelectorTest {
                 new TopicPartition("topic", 2), 15.0,
                 new TopicPartition("topic", 3), 20.0
         );
-        ClusterLoads.getInstance().updateBrokerLoads(brokerLoads);
-        ClusterLoads.getInstance().updatePartitionLoads(partitionLoads);
+        ClusterStats.getInstance().updateBrokerLoads(brokerLoads);
+        ClusterStats.getInstance().updatePartitionLoads(partitionLoads);
         return brokerLoads;
     }
 }
