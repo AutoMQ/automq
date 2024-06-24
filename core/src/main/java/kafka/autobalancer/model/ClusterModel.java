@@ -14,7 +14,6 @@ package kafka.autobalancer.model;
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.Resource;
-import org.apache.kafka.controller.es.ClusterLoads;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
@@ -37,13 +36,13 @@ public class ClusterModel {
     /*
      * Guard the access on cluster structure (read/add/remove for brokers, replicas)
      */
-    private final Lock clusterLock = new ReentrantLock();
+    protected final Lock clusterLock = new ReentrantLock();
 
     /* cluster structure indices*/
-    private final Map<Integer, BrokerUpdater> brokerMap = new HashMap<>();
-    private final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> brokerReplicaMap = new HashMap<>();
-    private final Map<Uuid, String> idToTopicNameMap = new HashMap<>();
-    private final Map<String, Map<Integer, Integer>> topicPartitionReplicaMap = new HashMap<>();
+    protected final Map<Integer, BrokerUpdater> brokerMap = new HashMap<>();
+    protected final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> brokerReplicaMap = new HashMap<>();
+    protected final Map<Uuid, String> idToTopicNameMap = new HashMap<>();
+    protected final Map<String, Map<Integer, Integer>> topicPartitionReplicaMap = new HashMap<>();
 
     public ClusterModel() {
         this(null);
@@ -150,7 +149,7 @@ public class ClusterModel {
         return snapshot;
     }
 
-    public void updateClusterLoad(long maxToleratedMetricsDelay) {
+    public ClusterLoad getClusterLoad(long maxToleratedMetricsDelay) {
         clusterLock.lock();
         try {
             Map<Integer, Double> brokerLoads = new HashMap<>();
@@ -185,8 +184,7 @@ public class ClusterModel {
                     break;
                 }
             }
-            ClusterLoads.getInstance().updateBrokerLoads(brokerLoads);
-            ClusterLoads.getInstance().updatePartitionLoads(tpLoads);
+            return new ClusterLoad(brokerLoads, tpLoads);
         } finally {
             clusterLock.unlock();
         }
@@ -411,5 +409,22 @@ public class ClusterModel {
             clusterLock.unlock();
         }
     }
-    /* Code visible for test end*/
+
+    public static class ClusterLoad {
+        private final Map<Integer, Double> brokerLoads;
+        private final Map<TopicPartition, Double> partitionLoads;
+
+        public ClusterLoad(Map<Integer, Double> brokerLoads, Map<TopicPartition, Double> partitionLoads) {
+            this.brokerLoads = brokerLoads;
+            this.partitionLoads = partitionLoads;
+        }
+
+        public Map<Integer, Double> brokerLoads() {
+            return brokerLoads;
+        }
+
+        public Map<TopicPartition, Double> partitionLoads() {
+            return partitionLoads;
+        }
+    }
 }
