@@ -16,23 +16,23 @@ import org.apache.kafka.common.TopicPartition;
 import java.util.Map;
 import java.util.Set;
 
-public class ClusterLoads {
+public class ClusterStats {
     public static final double INVALID = -1;
     private static final long EXPIRE_TIME_MS = 60000; // 1 minute
-    private volatile static ClusterLoads instance = null;
+    private volatile static ClusterStats instance = null;
     private volatile Set<Integer> excludedBrokers;
     private volatile Map<Integer, Double> brokerLoads;
     private volatile Map<TopicPartition, Double> partitionLoads;
     private volatile long lastUpdateTime = 0;
 
-    private ClusterLoads() {
+    private ClusterStats() {
     }
 
-    public static ClusterLoads getInstance() {
+    public static ClusterStats getInstance() {
         if (instance == null) {
-            synchronized (ClusterLoads.class) {
+            synchronized (ClusterStats.class) {
                 if (instance == null) {
-                    instance = new ClusterLoads();
+                    instance = new ClusterStats();
                 }
             }
         }

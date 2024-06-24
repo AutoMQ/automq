@@ -31,7 +31,14 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
     private final Map<Integer, Double> brokerLoadMap;
 
     public LoadAwarePartitionLeaderSelector(List<Integer> aliveBrokers, Predicate<Integer> brokerPredicate) {
-        Set<Integer> excludedBrokers = ClusterLoads.getInstance().excludedBrokers();
+        brokerLoadMap = ClusterStats.getInstance().brokerLoads();
+        if (brokerLoadMap == null) {
+            this.brokerLoads = null;
+            LOGGER.warn("No broker loads available, using random partition leader selector");
+            this.randomSelector = new RandomPartitionLeaderSelector(aliveBrokers, brokerPredicate);
+            return;
+        }
+        Set<Integer> excludedBrokers = ClusterStats.getInstance().excludedBrokers();
         if (excludedBrokers == null) {
             excludedBrokers = new HashSet<>();
         }
@@ -41,18 +48,12 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
                 availableBrokers.add(broker);
             }
         }
-        brokerLoadMap = ClusterLoads.getInstance().brokerLoads();
-        if (brokerLoadMap == null) {
-            this.brokerLoads = null;
-            LOGGER.warn("No broker loads available, using random partition leader selector");
-        } else {
-            this.brokerLoads = new PriorityQueue<>();
-            for (int brokerId : availableBrokers) {
-                if (!brokerPredicate.test(brokerId)) {
-                    continue;
-                }
-                brokerLoads.offer(new BrokerLoad(brokerId, brokerLoadMap.getOrDefault(brokerId, 0.0)));
+        this.brokerLoads = new PriorityQueue<>();
+        for (int brokerId : availableBrokers) {
+            if (!brokerPredicate.test(brokerId) || !brokerLoadMap.containsKey(brokerId)) {
+                continue;
             }
+            brokerLoads.offer(new BrokerLoad(brokerId, brokerLoadMap.get(brokerId)));
         }
         this.randomSelector = new RandomPartitionLeaderSelector(availableBrokers, brokerPredicate);
     }
@@ -62,8 +63,8 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
         if (this.brokerLoads == null || brokerLoads.isEmpty()) {
             return randomSelector.select(tp);
         }
-        double tpLoad = ClusterLoads.getInstance().partitionLoad(tp);
-        if (tpLoad == ClusterLoads.INVALID) {
+        double tpLoad = ClusterStats.getInstance().partitionLoad(tp);
+        if (tpLoad == ClusterStats.INVALID) {
             return randomSelector.select(tp);
         }
         BrokerLoad candidate = brokerLoads.poll();
