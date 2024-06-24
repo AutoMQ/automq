@@ -1,4 +1,4 @@
-## AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3
+## AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3 and EBS
 
 ![GitHub release (with filter)](https://img.shields.io/github/v/release/AutoMQ/automq)
 [![](https://img.shields.io/badge/Document-blue)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
