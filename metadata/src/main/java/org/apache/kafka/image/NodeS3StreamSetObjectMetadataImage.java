@@ -70,7 +70,7 @@ public class NodeS3StreamSetObjectMetadataImage {
         writer.write(new ApiMessageAndVersion(new NodeWALMetadataRecord()
                 .setNodeId(nodeId)
                 .setNodeEpoch(nodeEpoch), (short) 0));
-        s3Objects.forEach((k, v) -> writer.write(v.toRecord()));
+        s3Objects.forEach((k, v) -> writer.write(v.toRecord(options.metadataVersion().autoMQVersion())));
     }
 
     public DeltaMap<Long, S3StreamSetObject> getObjects() {

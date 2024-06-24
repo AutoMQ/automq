@@ -17,12 +17,11 @@
 
 package org.apache.kafka.image;
 
+import java.util.Objects;
 import org.apache.kafka.image.node.MetadataImageNode;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.raft.OffsetAndEpoch;
-
-import java.util.Objects;
 
 
 /**
@@ -243,4 +242,16 @@ public final class MetadataImage {
     public String toString() {
         return new MetadataImageNode(this).stringify();
     }
+
+    // AutoMQ inject start
+    public void retain() {
+        streamsMetadata().retain();
+        objectsMetadata().retain();
+    }
+
+    public void release() {
+        streamsMetadata().release();
+        objectsMetadata().release();
+    }
+    // AutoMQ inject end
 }

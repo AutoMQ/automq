@@ -14,6 +14,7 @@ package com.automq.stream.s3;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -135,4 +136,41 @@ public class ObjectReaderTest {
         }
     }
 
+    @Test
+    public void testFindStreamOffsetRange() throws ExecutionException, InterruptedException {
+        // prepare data
+        S3ObjectMetadata metadata = new S3ObjectMetadata(1, 0, S3ObjectType.STREAM_SET);
+        ObjectStorage objectStorage = new MemoryObjectStorage();
+        ObjectWriter objectWriter = ObjectWriter.writer(1, objectStorage, 1024, 1024);
+        {
+            StreamRecordBatch r = newRecord(200, 10, 5, 512);
+            objectWriter.write(200, List.of(r));
+        }
+        {
+            StreamRecordBatch r1 = newRecord(234, 0, 5, 512);
+            objectWriter.write(234, List.of(r1));
+            StreamRecordBatch r2 = newRecord(234, 5, 20, 512);
+            objectWriter.write(234, List.of(r2));
+        }
+        {
+            StreamRecordBatch r = newRecord(250, 30, 5, 512);
+            objectWriter.write(250, List.of(r));
+        }
+        objectWriter.close().get();
+        metadata.setObjectSize(objectWriter.size());
+
+        ObjectReader objectReader = ObjectReader.reader(metadata, objectStorage);
+        ObjectReader.BasicObjectInfo info = objectReader.basicObjectInfo().get();
+
+        assertEquals(new StreamOffsetRange(200, 10, 15), info.indexBlock().findStreamOffsetRange(200).get());
+        assertEquals(new StreamOffsetRange(234, 0, 25), info.indexBlock().findStreamOffsetRange(234).get());
+        assertEquals(new StreamOffsetRange(250, 30, 35), info.indexBlock().findStreamOffsetRange(250).get());
+        assertTrue(info.indexBlock().findStreamOffsetRange(100).isEmpty());
+        assertTrue(info.indexBlock().findStreamOffsetRange(230).isEmpty());
+        assertTrue(info.indexBlock().findStreamOffsetRange(300).isEmpty());
+    }
+
+    StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
+        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(payloadSize));
+    }
 }

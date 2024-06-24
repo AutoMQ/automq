@@ -14,41 +14,17 @@
 // limitations under the License.
 
 {
-  "apiKey": 507,
+  "apiKey": 515,
   "type": "metadata",
-  "name": "S3StreamSetObjectRecord",
-  "validVersions": "0-1",
+  "name": "S3StreamEndOffsetsRecord",
+  "validVersions": "0",
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "NodeId",
-      "type": "int32",
-      "versions": "0+",
-      "about": "The node which owns the object"
-    },
-    {
-      "name": "ObjectId",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The object id of the S3 object"
-    },
-    {
-      "name": "OrderId",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The order id of the S3 object"
-    },
-    {
-      "name": "DataTimeInMs",
-      "type": "int64",
-      "versions": "0+",
-      "about": "The data time of the S3 object"
-    },
-    {
-      "name": "Ranges",
+      "name": "EndOffsets",
       "type": "bytes",
       "versions": "0",
-      "about": "The raw bytes of ranges"
+      "about": "The raw bytes of stream endOffsets"
     }
   ]
 }

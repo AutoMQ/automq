@@ -57,6 +57,7 @@ import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
@@ -1395,6 +1396,9 @@ public class StreamControlManagerTest {
                     manager.replay((RemoveS3StreamObjectRecord) message);
                     break;
                 case S3_OBJECT_RECORD:
+                    break;
+                case S3_STREAM_END_OFFSETS_RECORD:
+                    manager.replay((S3StreamEndOffsetsRecord) message);
                     break;
                 default:
                     throw new IllegalStateException("Unknown metadata record type " + type);

@@ -265,7 +265,7 @@ public class SnapshotGenerator implements MetadataPublisher {
     ) {
         resetSnapshotCounters();
         // AutoMQ inject start
-        image.objectsMetadata().retain();
+        image.retain();
         // AutoMQ inject end
         eventQueue.append(() -> {
             String currentDisabledReason = disabledReason.get();
@@ -274,7 +274,7 @@ public class SnapshotGenerator implements MetadataPublisher {
                     "disabled; {}", image.provenance().snapshotName(), reason,
                         currentDisabledReason);
                 // AutoMQ inject start
-                image.objectsMetadata().release();
+                image.release();
                 // AutoMQ inject end
             } else {
                 log.info("Creating new KRaft snapshot file {} because {}.",
@@ -285,7 +285,7 @@ public class SnapshotGenerator implements MetadataPublisher {
                     faultHandler.handleFault("KRaft snapshot file generation error", e);
                 } finally {
                     // AutoMQ inject start
-                    image.objectsMetadata().release();
+                    image.release();
                     // AutoMQ inject end
                 }
             }

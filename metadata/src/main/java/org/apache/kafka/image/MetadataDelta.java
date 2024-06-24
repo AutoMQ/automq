@@ -47,6 +47,7 @@ import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
@@ -366,6 +367,9 @@ public final class MetadataDelta {
             case REMOVE_KVRECORD:
                 replay((RemoveKVRecord) record);
                 break;
+            case S3_STREAM_END_OFFSETS_RECORD:
+                replay((S3StreamEndOffsetsRecord) record);
+                break;
                 // AutoMQ for Kafka inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
@@ -536,6 +540,10 @@ public final class MetadataDelta {
 
     public void replay(RemoveKVRecord record) {
         getOrCreateKVDelta().replay(record);
+    }
+
+    public void replay(S3StreamEndOffsetsRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
     }
     // AutoMQ for Kafka inject end
 

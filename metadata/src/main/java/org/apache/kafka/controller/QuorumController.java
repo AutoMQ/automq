@@ -119,6 +119,7 @@ import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
@@ -1724,6 +1725,9 @@ public final class QuorumController implements Controller {
             }
             case UPDATE_NEXT_NODE_ID_RECORD:
                 clusterControl.replay((UpdateNextNodeIdRecord) message);
+                break;
+            case S3_STREAM_END_OFFSETS_RECORD:
+                streamControlManager.replay((S3StreamEndOffsetsRecord) message);
                 break;
             default:
                 if (!extensionMatch) {

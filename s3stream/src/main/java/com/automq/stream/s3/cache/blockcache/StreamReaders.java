@@ -11,11 +11,8 @@
 
 package com.automq.stream.s3.cache.blockcache;
 
-import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.cache.ObjectReaderLRUCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -28,28 +25,27 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class StreamReaders implements S3BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReaders.class);
-    private static final int MAX_OBJECT_READER_SIZE = 100 * 1024 * 1024; // 100MB;
     private static final long STREAM_READER_EXPIRED_MILLS = TimeUnit.MINUTES.toMillis(1);
     private static final long STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS = TimeUnit.MINUTES.toMillis(1);
     private final Cache[] caches;
     private final DataBlockCache dataBlockCache;
-    private final ObjectReaderLRUCache objectReaders;
     private final ObjectReaderFactory objectReaderFactory;
 
     private final ObjectManager objectManager;
     private final ObjectStorage objectStorage;
 
-    public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage) {
-        this(size, objectManager, objectStorage, Systems.CPU_CORES);
+    public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage,
+        ObjectReaderFactory objectReaderFactory) {
+        this(size, objectManager, objectStorage, objectReaderFactory, Systems.CPU_CORES);
     }
 
-    public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage, int concurrency) {
+    public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage,
+        ObjectReaderFactory objectReaderFactory, int concurrency) {
         EventLoop[] eventLoops = new EventLoop[concurrency];
         for (int i = 0; i < concurrency; i++) {
             eventLoops[i] = new EventLoop("stream-reader-" + i);
@@ -59,9 +55,8 @@ public class StreamReaders implements S3BlockCache {
             caches[i] = new Cache(eventLoops[i]);
         }
         this.dataBlockCache = new DataBlockCache(size, eventLoops);
-        this.objectReaders = new ObjectReaderLRUCache(MAX_OBJECT_READER_SIZE);
-        this.objectReaderFactory = new ObjectReaderFactory();
 
+        this.objectReaderFactory = objectReaderFactory;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
     }
@@ -155,18 +150,6 @@ public class StreamReaders implements S3BlockCache {
                     }
                 }
             }
-        }
-    }
-
-    class ObjectReaderFactory implements Function<S3ObjectMetadata, ObjectReader> {
-        @Override
-        public synchronized ObjectReader apply(S3ObjectMetadata metadata) {
-            ObjectReader objectReader = objectReaders.get(metadata.objectId());
-            if (objectReader == null) {
-                objectReader = ObjectReader.reader(metadata, objectStorage);
-                objectReaders.put(metadata.objectId(), objectReader);
-            }
-            return objectReader.retain();
         }
     }
 }
