@@ -77,7 +77,7 @@ public class TelemetryManager {
     private static boolean traceEnable = false;
     private final KafkaConfig kafkaConfig;
     private final String clusterId;
-    private final List<MetricReader> metricReaderList;
+    protected final List<MetricReader> metricReaderList;
     private final List<AutoCloseable> autoCloseables;
     private JmxMetricInsight jmxMetricInsight;
     private PrometheusHttpServer prometheusHttpServer;
@@ -90,7 +90,6 @@ public class TelemetryManager {
         // redirect JUL from OpenTelemetry SDK to SLF4J
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
-        init();
     }
 
     private String getNodeType() {
@@ -114,7 +113,7 @@ public class TelemetryManager {
         }
     }
 
-    private void init() {
+    public void init() {
         Attributes baseAttributes = Attributes.builder()
             .put(ResourceAttributes.SERVICE_NAME, clusterId)
             .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
@@ -132,9 +131,9 @@ public class TelemetryManager {
         traceEnable = kafkaConfig.s3TracerEnable();
 
         if (kafkaConfig.s3MetricsEnable()) {
-            SdkMeterProvider sdkMeterProvider = getMetricsProvider(resource);
-            if (sdkMeterProvider != null) {
-                openTelemetrySdkBuilder.setMeterProvider(sdkMeterProvider);
+            SdkMeterProviderBuilder sdkMeterProviderBuilder = buildMetricsProvider(resource);
+            if (sdkMeterProviderBuilder != null) {
+                openTelemetrySdkBuilder.setMeterProvider(sdkMeterProviderBuilder.build());
             }
         }
         if (kafkaConfig.s3TracerEnable()) {
@@ -245,26 +244,24 @@ public class TelemetryManager {
             .build();
     }
 
-    private SdkMeterProvider getMetricsProvider(Resource resource) {
+    protected SdkMeterProviderBuilder buildMetricsProvider(Resource resource) {
         SdkMeterProviderBuilder sdkMeterProviderBuilder = SdkMeterProvider.builder().setResource(resource);
         String exporterTypes = kafkaConfig.s3MetricsExporterType();
-        if (StringUtils.isBlank(exporterTypes)) {
-            LOGGER.info("Metrics exporter not configured");
-            return null;
-        }
-        String[] exporterTypeArray = exporterTypes.split(",");
-        for (String exporterType : exporterTypeArray) {
-            exporterType = exporterType.trim();
-            switch (exporterType) {
-                case "otlp":
-                    initOTLPExporter(sdkMeterProviderBuilder, kafkaConfig);
-                    break;
-                case "prometheus":
-                    initPrometheusExporter(sdkMeterProviderBuilder, kafkaConfig);
-                    break;
-                default:
-                    LOGGER.error("illegal metrics exporter type: {}", exporterType);
-                    break;
+        if (!StringUtils.isBlank(exporterTypes)) {
+            String[] exporterTypeArray = exporterTypes.split(",");
+            for (String exporterType : exporterTypeArray) {
+                exporterType = exporterType.trim();
+                switch (exporterType) {
+                    case "otlp":
+                        initOTLPExporter(sdkMeterProviderBuilder, kafkaConfig);
+                        break;
+                    case "prometheus":
+                        initPrometheusExporter(sdkMeterProviderBuilder, kafkaConfig);
+                        break;
+                    default:
+                        LOGGER.error("illegal metrics exporter type: {}", exporterType);
+                        break;
+                }
             }
         }
 
@@ -272,7 +269,7 @@ public class TelemetryManager {
             initS3Exporter(sdkMeterProviderBuilder, kafkaConfig);
         }
 
-        return sdkMeterProviderBuilder.build();
+        return sdkMeterProviderBuilder;
     }
 
     private void initS3Exporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {

@@ -123,6 +123,10 @@ class SharedServer(
 
   def nodeId: Int = metaPropsEnsemble.nodeId().getAsInt
 
+  protected def buildTelemetryManager(config: KafkaConfig, clusterId: String): TelemetryManager = {
+    new TelemetryManager(config, clusterId)
+  }
+
   private def isUsed(): Boolean = synchronized {
     usedByController || usedByBroker
   }
@@ -260,7 +264,8 @@ class SharedServer(
         if (sharedServerConfig.processRoles.contains(ProcessRole.ControllerRole)) {
           controllerServerMetrics = new ControllerMetadataMetrics(Optional.of(KafkaYammerMetrics.defaultRegistry()))
         }
-        telemetryManager = new TelemetryManager(sharedServerConfig, metaPropsEnsemble.clusterId.orElse(""))
+        telemetryManager = buildTelemetryManager(sharedServerConfig, clusterId)
+        telemetryManager.init()
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
           clusterId,
           sharedServerConfig,
