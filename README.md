@@ -54,9 +54,9 @@
     <td>Yes</td>
   </tr>
   <tr>
-    <td>P99 Latency</td>
+    <td>Publisher Latency(P99)</td>
     <td colspan="5">Single-digit ms latency</td>
-    <td><a href="https://www.warpstream.com/blog/warpstream-benchmarks-and-tco">> 1200ms</a></td>
+    <td><a href="https://www.warpstream.com/blog/warpstream-benchmarks-and-tco">> 620ms</a></td>
   </tr>
   <tr>
     <td>Continuous Self-Balancing</td>
