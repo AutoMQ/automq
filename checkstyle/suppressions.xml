@@ -374,4 +374,5 @@
               files="(S3StreamMetricsManager|BlockWALServiceTest).java"/>
     <suppress id="dontUseSystemExit"
               files="(BenchTool|S3Utils|AutoMQCLI).java"/>
+    <suppress checks="ClassDataAbstractionCoupling" files="StreamControlManagerTest.java"/>
 </suppressions>

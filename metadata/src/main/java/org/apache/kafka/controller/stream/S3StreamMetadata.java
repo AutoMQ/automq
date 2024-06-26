@@ -41,6 +41,7 @@ public class S3StreamMetadata {
      * The visible start offset of stream, it may be larger than the start offset of current range.
      */
     private final TimelineLong startOffset;
+    private final TimelineLong endOffset;
     private final TimelineObject<StreamState> currentState;
     private Map<String, String> tags;
     private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
@@ -55,6 +56,7 @@ public class S3StreamMetadata {
         this.currentRangeIndex.set(currentRangeIndex);
         this.startOffset = new TimelineLong(registry);
         this.startOffset.set(startOffset);
+        this.endOffset = new TimelineLong(registry);
         this.currentState = new TimelineObject<StreamState>(registry, currentState);
         this.tags = tags;
         this.ranges = new TimelineHashMap<>(registry, 0);
@@ -96,6 +98,10 @@ public class S3StreamMetadata {
         this.startOffset.set(offset);
     }
 
+    public long endOffset() {
+        return this.endOffset.get();
+    }
+
     public StreamState currentState() {
         return currentState.get();
     }
@@ -120,21 +126,10 @@ public class S3StreamMetadata {
         return ranges.get(currentRangeIndex.get());
     }
 
-    public void updateEndOffset(long newEndOffset) {
-        RangeMetadata rangeMetadata = ranges.get(currentRangeIndex.get());
-        if (rangeMetadata == null) {
-            LOGGER.error("[UNEXPECTED] cannot find range={}", currentRangeIndex.get());
-            return;
-        }
-        if (rangeMetadata.endOffset() < newEndOffset) {
-            ranges.put(rangeMetadata.rangeIndex(), new RangeMetadata(
-                    rangeMetadata.streamId(),
-                    rangeMetadata.epoch(),
-                    rangeMetadata.rangeIndex(),
-                    rangeMetadata.startOffset(),
-                    newEndOffset,
-                    rangeMetadata.nodeId()
-            ));
+    public void endOffset(long newEndOffset) {
+        long oldEndOffset = endOffset.get();
+        if (newEndOffset > oldEndOffset) {
+            endOffset.set(newEndOffset);
         }
     }
 

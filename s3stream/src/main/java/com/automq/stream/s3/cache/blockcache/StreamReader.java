@@ -38,7 +38,6 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -67,7 +66,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
     private final long streamId;
     private final EventLoop eventLoop;
     private final ObjectManager objectManager;
-    private final Function<S3ObjectMetadata, ObjectReader> objectReaderFactory;
+    private final ObjectReaderFactory objectReaderFactory;
     private final DataBlockCache dataBlockCache;
     long nextReadOffset;
     private CompletableFuture<Void> inflightLoadIndexCf;
@@ -77,7 +76,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
     private boolean closed = false;
 
     public StreamReader(long streamId, long nextReadOffset, EventLoop eventLoop, ObjectManager objectManager,
-        Function<S3ObjectMetadata, ObjectReader> objectReaderFactory, DataBlockCache dataBlockCache) {
+        ObjectReaderFactory objectReaderFactory, DataBlockCache dataBlockCache) {
         this.streamId = streamId;
         this.nextReadOffset = nextReadOffset;
         this.readahead = new Readahead();
@@ -365,7 +364,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             CompletableFuture<Void> prevCf = CompletableFuture.completedFuture(null);
             for (S3ObjectMetadata objectMetadata : objects) {
                 // the object reader will be release in the whenComplete
-                @SuppressWarnings("resource") ObjectReader objectReader = objectReaderFactory.apply(objectMetadata);
+                @SuppressWarnings("resource") ObjectReader objectReader = objectReaderFactory.get(objectMetadata);
                 // invoke basicObjectInfo to warm up the objectReader
                 objectReader.basicObjectInfo();
                 prevCf = prevCf.thenCompose(nil -> {
@@ -500,7 +499,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             // We need to create a new block with consistent data to avoid duplicated release or leak,
             // cause of the loaded data maybe evicted and reloaded.
             Block newBlock = new Block(metadata, index);
-            ObjectReader objectReader = objectReaderFactory.apply(metadata);
+            ObjectReader objectReader = objectReaderFactory.get(metadata);
             DataBlockCache.GetOptions getOptions = DataBlockCache.GetOptions.builder().readahead(readahead).build();
             loadCf = dataBlockCache.getBlock(getOptions, objectReader, index).thenAccept(db -> {
                 newBlock.data = db;

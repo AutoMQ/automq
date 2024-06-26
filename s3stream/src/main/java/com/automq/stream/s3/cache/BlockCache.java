@@ -280,7 +280,7 @@ public class BlockCache implements ByteBufAlloc.OOMHandler {
         boolean matched = false;
         StreamRecordBatchList streamRecordBatchList = new StreamRecordBatchList(cacheBlock.records);
         int startIndex = streamRecordBatchList.search(nextStartOffset);
-        if (startIndex == -1) {
+        if (startIndex < 0) {
             // mismatched
             return nextMaxBytes;
         }

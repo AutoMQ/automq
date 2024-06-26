@@ -17,13 +17,13 @@
 
 package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -31,10 +31,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.kafka.common.Uuid;
@@ -67,10 +68,12 @@ import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.controller.ClusterControlManager;
@@ -79,8 +82,10 @@ import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.ReplicationControlManager;
 import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
@@ -110,6 +115,8 @@ public class StreamControlManager {
     private final TimelineHashMap<Long/*streamId*/, S3StreamMetadata> streamsMetadata;
 
     private final TimelineHashMap<Integer/*nodeId*/, NodeMetadata> nodesMetadata;
+
+    private Set<Integer> cleaningUpNodes = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     private final QuorumController quorumController;
 
@@ -263,35 +270,7 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         if (streamMetadata.currentEpoch() == epoch) {
-            // node may use the same epoch to open -> close -> open stream.
-            // verify node
-            RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
-            if (rangeMetadata == null) {
-                // should not happen
-                log.error("[OpenStream] the current range not exist. streamId={}, streamEpoch={}, currentRangeIndex={}, nodeId={}, nodeEpoch={}",
-                    streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeIndex(), nodeId, nodeEpoch);
-                resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
-                return ControllerResult.of(Collections.emptyList(), resp);
-            }
-            if (rangeMetadata.nodeId() != nodeId) {
-                log.warn("[OpenStream] the current range owner mismatch. streamId={}, streamEpoch={}, currentRangeIndex={}, ownerId={}, nodeId={}, nodeEpoch={}",
-                    streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId, nodeEpoch);
-                resp.setErrorCode(Errors.STREAM_FENCED.code());
-                return ControllerResult.of(Collections.emptyList(), resp);
-            }
-            // epoch equals, node equals, regard it as redundant open operation, just return success
-            resp.setStartOffset(streamMetadata.startOffset());
-            resp.setNextOffset(rangeMetadata.endOffset());
-            List<ApiMessageAndVersion> records = new ArrayList<>();
-            if (streamMetadata.currentState() == StreamState.CLOSED) {
-                records.add(new ApiMessageAndVersion(new S3StreamRecord()
-                    .setStreamId(streamId)
-                    .setEpoch(epoch)
-                    .setRangeIndex(streamMetadata.currentRangeIndex())
-                    .setStartOffset(streamMetadata.startOffset())
-                    .setStreamState(StreamState.OPENED.toByte()), version.streamRecordVersion()));
-            }
-            return ControllerResult.of(records, resp);
+            return retryOpen(streamMetadata, nodeId, nodeEpoch, request, resp, version);
         }
         if (streamMetadata.currentState() == StreamState.OPENED) {
             // the stream still in opened state, so it can't open until it is closed
@@ -320,36 +299,73 @@ public class StreamControlManager {
         records.add(new ApiMessageAndVersion(s3StreamRecord, autoMQVersion.streamRecordVersion()));
         // get new range's start offset
         // default regard this range is the first range in stream, use 0 as start offset
-        long startOffset = 0;
+        long nextRangeStartOffset = 0;
         if (newRangeIndex > 0) {
             // means that the new range is not the first range in stream, get the last range's end offset
             RangeMetadata lastRangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
-            startOffset = lastRangeMetadata.endOffset();
             // the RangeMetadata in S3StreamMetadataImage is only update when create, rollToNext and trim
             records.add(new ApiMessageAndVersion(new RangeRecord()
                 .setStreamId(streamId)
                 .setNodeId(lastRangeMetadata.nodeId())
                 .setStartOffset(lastRangeMetadata.startOffset())
-                .setEndOffset(lastRangeMetadata.endOffset())
+                .setEndOffset(streamMetadata.endOffset())
                 .setEpoch(lastRangeMetadata.epoch())
                 .setRangeIndex(lastRangeMetadata.rangeIndex()), (short) 0));
+            nextRangeStartOffset = streamMetadata.endOffset();
         }
         // Fix https://github.com/AutoMQ/automq/issues/1222
         // Handle the case: trim offset beyond the range end offset
-        startOffset = Math.max(streamMetadata.startOffset(), startOffset);
+        nextRangeStartOffset = Math.max(streamMetadata.startOffset(), nextRangeStartOffset);
         // range create record
         records.add(new ApiMessageAndVersion(new RangeRecord()
             .setStreamId(streamId)
             .setNodeId(nodeId)
-            .setStartOffset(startOffset)
-            .setEndOffset(startOffset)
+            .setStartOffset(nextRangeStartOffset)
+            .setEndOffset(nextRangeStartOffset)
             .setEpoch(epoch)
             .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(streamMetadata.startOffset());
-        resp.setNextOffset(startOffset);
+        resp.setNextOffset(nextRangeStartOffset);
         log.info("[OpenStream] successfully open the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
             streamId, epoch, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
+    }
+
+    private ControllerResult<OpenStreamResponse> retryOpen(S3StreamMetadata streamMetadata, long nodeId, long nodeEpoch,
+        OpenStreamRequest req, OpenStreamResponse resp, AutoMQVersion version) {
+        long streamId = req.streamId();
+        long epoch = req.streamEpoch();
+        // node may use the same epoch to open -> close -> open stream.
+        // verify node
+        RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
+        if (rangeMetadata == null) {
+            // should not happen
+            log.error("[OpenStream] the current range not exist. streamId={}, streamEpoch={}, currentRangeIndex={}, nodeId={}, nodeEpoch={}",
+                streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeIndex(), nodeId, nodeEpoch);
+            resp.setErrorCode(Errors.STREAM_INNER_ERROR.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        if (rangeMetadata.nodeId() != nodeId) {
+            log.warn("[OpenStream] the current range owner mismatch. streamId={}, streamEpoch={}, currentRangeIndex={}, ownerId={}, nodeId={}, nodeEpoch={}",
+                streamId, streamMetadata.currentEpoch(), streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId, nodeEpoch);
+            resp.setErrorCode(Errors.STREAM_FENCED.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        // epoch equals, node equals, regard it as redundant open operation, just return success
+        resp.setStartOffset(streamMetadata.startOffset());
+        // Fix https://github.com/AutoMQ/automq/issues/1222
+        // Handle the case: trim offset beyond the end offset
+        resp.setNextOffset(Math.max(streamMetadata.startOffset(), streamMetadata.endOffset()));
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        if (streamMetadata.currentState() == StreamState.CLOSED) {
+            records.add(new ApiMessageAndVersion(new S3StreamRecord()
+                .setStreamId(streamMetadata.streamId())
+                .setEpoch(epoch)
+                .setRangeIndex(streamMetadata.currentRangeIndex())
+                .setStartOffset(streamMetadata.startOffset())
+                .setStreamState(StreamState.OPENED.toByte()), version.streamRecordVersion()));
+        }
+        return ControllerResult.of(records, resp);
     }
 
     /**
@@ -479,14 +495,14 @@ public class StreamControlManager {
                 // 1. try to trim to 60, then the current range will be [60, 100)
                 // 2. try to trim to 100, then the current range will be [100, 100)
                 // 3. try to trim to 110, then current range will be [100, 100)
-                long newRangeStartOffset = Math.min(newStartOffset, range.endOffset());
+                long newRangeStartOffset = Math.min(newStartOffset, streamMetadata.endOffset());
                 records.add(new ApiMessageAndVersion(new RangeRecord()
                     .setStreamId(streamId)
                     .setRangeIndex(rangeIndex)
                     .setNodeId(range.nodeId())
                     .setEpoch(range.epoch())
                     .setStartOffset(newRangeStartOffset)
-                    .setEndOffset(range.endOffset()), (short) 0));
+                    .setEndOffset(streamMetadata.endOffset()), (short) 0));
                 continue;
             }
             if (newStartOffset >= range.endOffset()) {
@@ -585,6 +601,7 @@ public class StreamControlManager {
         long objectSize = data.objectSize();
         long orderId = data.orderId();
 
+        AutoMQVersion version = featureControlManager.autoMQVersion();
         // verify node epoch
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, !data.failoverMode());
         if (nodeEpochCheckResult != Errors.NONE) {
@@ -630,41 +647,38 @@ public class StreamControlManager {
                 .map(S3StreamSetObject::dataTimeInMs)
                 .min(Long::compareTo).get();
         }
-        List<StreamOffsetRange> indexes = streamRanges.stream()
-            .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset()))
-            .collect(Collectors.toList());
         if (objectId != NOOP_OBJECT_ID) {
             // generate node's stream set object record
-            S3StreamSetObject s3StreamSetObject = new S3StreamSetObject(objectId, nodeId, indexes, orderId, dataTs);
-            records.add(s3StreamSetObject.toRecord());
+            S3StreamSetObject s3StreamSetObject;
+            if (version.isHugeClusterSupported()) {
+                s3StreamSetObject = new S3StreamSetObject(objectId, nodeId, Bytes.EMPTY, orderId, dataTs);
+                records.add(s3StreamSetObject.toRecord(version));
+                // generate S3StreamEndOffsetsRecord to move stream endOffset
+                if (compactedObjectIds.isEmpty()) {
+                    S3StreamEndOffsetsRecord record = new S3StreamEndOffsetsRecord().setEndOffsets(
+                        S3StreamEndOffsetsCodec.encode(
+                            Stream.concat(
+                                    streamRanges.stream().map(s -> new StreamEndOffset(s.streamId(), s.endOffset())),
+                                    streamObjects.stream().map(s -> new StreamEndOffset(s.streamId(), s.endOffset()))
+                                )
+                                .collect(Collectors.toList()))
+                    );
+                    records.add(new ApiMessageAndVersion(record, (short) 0));
+                }
+            } else {
+                List<StreamOffsetRange> indexes = streamRanges.stream()
+                    .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset()))
+                    .collect(Collectors.toList());
+                s3StreamSetObject = new S3StreamSetObject(objectId, nodeId, indexes, orderId, dataTs);
+                records.add(s3StreamSetObject.toRecord(version));
+            }
         }
         // commit stream objects
         if (streamObjects != null && !streamObjects.isEmpty()) {
             // commit objects
-            for (StreamObject streamObject : streamObjects) {
-                if (streamsMetadata.containsKey(streamObject.streamId())) {
-                    ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
-                        streamObject.objectSize(), committedTs, streamObject.attributes());
-                    if (streamObjectCommitResult.response() == Errors.REDUNDANT_OPERATION) {
-                        // regard it as redundant commit operation, return success
-                        log.warn("[CommitStreamSetObject]: stream object already committed. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
-                            streamObject.objectId(), objectId, nodeId, nodeEpoch);
-                        return ControllerResult.of(Collections.emptyList(), resp);
-                    }
-                    if (streamObjectCommitResult.response() != Errors.NONE) {
-                        log.error("[CommitStreamSetObject]: failed to commit srteam object. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
-                            streamObject.objectId(), objectId, nodeId, nodeEpoch, streamObjectCommitResult.response());
-                        resp.setErrorCode(streamObjectCommitResult.response().code());
-                        return ControllerResult.of(Collections.emptyList(), resp);
-                    }
-                    records.addAll(streamObjectCommitResult.records());
-                    records.add(new S3StreamObject(streamObject.objectId(), streamObject.streamId(), streamObject.startOffset(), streamObject.endOffset(), committedTs).toRecord());
-                } else {
-                    log.info("stream already deleted, then fast delete the stream object from compaction. streamId={}, streamObject={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
-                        streamObject.streamId(), streamObject, objectId, nodeId, nodeEpoch);
-                    ControllerResult<Boolean> deleteRst = this.s3ObjectControlManager.markDestroyObjects(List.of(streamObject.objectId()));
-                    records.addAll(deleteRst.records());
-                }
+            ControllerResult<CommitStreamSetObjectResponseData> ret = generateStreamObject(streamObjects, records, data, resp, committedTs);
+            if (ret != null) {
+                return ret;
             }
         }
         // generate compacted objects' remove record
@@ -674,24 +688,65 @@ public class StreamControlManager {
                 .setObjectId(id), (short) 0)));
         } else {
             // verify stream continuity
-            List<StreamOffsetRange> offsetRanges = Stream.concat(
-                    streamRanges
-                        .stream()
-                        .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
-                    streamObjects
-                        .stream()
-                        .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
-                .collect(Collectors.toList());
-            Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, data.nodeId());
-            if (continuityCheckResult != Errors.NONE) {
-                log.error("[CommitStreamSetObject] advance check failed. streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
-                    objectId, nodeId, nodeEpoch, continuityCheckResult);
-                resp.setErrorCode(continuityCheckResult.code());
-                return ControllerResult.of(Collections.emptyList(), resp);
+            ControllerResult<CommitStreamSetObjectResponseData> ret = verifyStreamContinuous(streamRanges, streamObjects, data, resp);
+            if (ret != null) {
+                return ret;
             }
         }
         logCommitStreamSetObject(data);
         return ControllerResult.atomicOf(records, resp);
+    }
+
+    private ControllerResult<CommitStreamSetObjectResponseData> generateStreamObject(List<StreamObject> streamObjects,
+        List<ApiMessageAndVersion> records,
+        CommitStreamSetObjectRequestData req, CommitStreamSetObjectResponseData resp, long committedTs) {
+        for (StreamObject streamObject : streamObjects) {
+            if (streamsMetadata.containsKey(streamObject.streamId())) {
+                ControllerResult<Errors> streamObjectCommitResult = this.s3ObjectControlManager.commitObject(streamObject.objectId(),
+                    streamObject.objectSize(), committedTs, streamObject.attributes());
+                if (streamObjectCommitResult.response() == Errors.REDUNDANT_OPERATION) {
+                    // regard it as redundant commit operation, return success
+                    log.warn("[CommitStreamSetObject]: stream object already committed. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
+                        streamObject.objectId(), req.objectId(), req.nodeId(), req.nodeEpoch());
+                    return ControllerResult.of(Collections.emptyList(), resp);
+                }
+                if (streamObjectCommitResult.response() != Errors.NONE) {
+                    log.error("[CommitStreamSetObject]: failed to commit srteam object. streamObjectId={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
+                        streamObject.objectId(), req.objectId(), req.nodeId(), req.nodeEpoch(), streamObjectCommitResult.response());
+                    resp.setErrorCode(streamObjectCommitResult.response().code());
+                    return ControllerResult.of(Collections.emptyList(), resp);
+                }
+                records.addAll(streamObjectCommitResult.records());
+                records.add(new S3StreamObject(streamObject.objectId(), streamObject.streamId(), streamObject.startOffset(), streamObject.endOffset(), committedTs).toRecord());
+            } else {
+                log.info("stream already deleted, then fast delete the stream object from compaction. streamId={}, streamObject={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
+                    streamObject.streamId(), streamObject, req.objectId(), req.nodeId(), req.nodeEpoch());
+                ControllerResult<Boolean> deleteRst = this.s3ObjectControlManager.markDestroyObjects(List.of(streamObject.objectId()));
+                records.addAll(deleteRst.records());
+            }
+        }
+        return null;
+    }
+
+    private ControllerResult<CommitStreamSetObjectResponseData> verifyStreamContinuous(
+        List<ObjectStreamRange> streamRanges, List<StreamObject> streamObjects,
+        CommitStreamSetObjectRequestData req, CommitStreamSetObjectResponseData resp) {
+        List<StreamOffsetRange> offsetRanges = Stream.concat(
+                streamRanges
+                    .stream()
+                    .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
+                streamObjects
+                    .stream()
+                    .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
+            .collect(Collectors.toList());
+        Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, req.nodeId());
+        if (continuityCheckResult != Errors.NONE) {
+            log.error("[CommitStreamSetObject] advance check failed. streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
+                req.objectId(), req.nodeId(), req.nodeEpoch(), continuityCheckResult);
+            resp.setErrorCode(continuityCheckResult.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        return null;
     }
 
     /**
@@ -823,7 +878,7 @@ public class StreamControlManager {
                 if (streamMetadata.currentRangeIndex() >= 0) {
                     RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
                     nodeId = rangeMetadata.nodeId();
-                    endOffset = rangeMetadata.endOffset();
+                    endOffset = streamMetadata.endOffset();
                 }
 
                 Uuid topicId = Uuid.ZERO_UUID;
@@ -979,7 +1034,7 @@ public class StreamControlManager {
                 .setEpoch(streamMetadata.currentEpoch())
                 .setStartOffset(streamMetadata.startOffset())
                 // Fix https://github.com/AutoMQ/automq/issues/1222#issuecomment-2132812938
-                .setEndOffset(Math.max(rangeMetadata.endOffset(), streamMetadata.startOffset()));
+                .setEndOffset(Math.max(streamMetadata.endOffset(), streamMetadata.startOffset()));
         }).collect(Collectors.toList());
         resp.setStreamMetadataList(streamStatusList);
         return ControllerResult.atomicOf(records, resp);
@@ -1067,11 +1122,11 @@ public class StreamControlManager {
                     range.streamId(), rangeMetadata.nodeId(), nodeId);
                 return Errors.STREAM_INNER_ERROR;
             }
-            if (!(rangeMetadata.endOffset() == range.startOffset() || range.startOffset() <= streamMetadata.startOffset())) {
+            long streamEndOffset = streamMetadata.endOffset();
+            if (!(streamEndOffset == range.startOffset() || range.startOffset() <= streamMetadata.startOffset())) {
                 // Fix https://github.com/AutoMQ/automq/issues/1222#issuecomment-2132812938
-                log.warn("[streamAdvanceCheck]: streamId={}'s current range={}'s end offset {} is not equal to request start offset {}, stream's startOffset={}",
-                    range.streamId(), this.streamsMetadata.get(range.streamId()).currentRangeIndex(),
-                    rangeMetadata.endOffset(), range.startOffset(), streamMetadata.startOffset());
+                log.warn("[streamAdvanceCheck]: streamId={}'s end offset {} is not equal to request start offset {}, stream's startOffset={}",
+                    range.streamId(), streamEndOffset, range.startOffset(), streamMetadata.startOffset());
                 return Errors.OFFSET_NOT_MATCHED;
             }
         }
@@ -1113,41 +1168,25 @@ public class StreamControlManager {
 
     public ControllerResult<Void> cleanupScaleInNodes() {
         List<ApiMessageAndVersion> records = new LinkedList<>();
-        List<S3StreamSetObject> cleanupObjects = new LinkedList<>();
         nodesMetadata.forEach((nodeId, nodeMetadata) -> {
-            if (!clusterControlManager.isActive(nodeId)) {
-                Collection<S3StreamSetObject> objects = nodeMetadata.streamSetObjects().values();
-                boolean alive = false;
-                for (S3StreamSetObject object : objects) {
-                    if (alive) {
-                        // if the last object is not expired, the likelihood of the subsequent object expiring is also quite low.
-                        break;
-                    }
-                    long objectId = object.objectId();
-                    AtomicBoolean expired = new AtomicBoolean(true);
-                    List<StreamOffsetRange> streamOffsetRanges = object.offsetRangeList();
-                    for (StreamOffsetRange streamOffsetRange : streamOffsetRanges) {
-                        S3StreamMetadata stream = streamsMetadata.get(streamOffsetRange.streamId());
-                        if (stream != null && stream.startOffset() < streamOffsetRange.endOffset()) {
-                            expired.set(false);
-                            alive = true;
-                        }
-                    }
-                    if (expired.get()) {
-                        cleanupObjects.add(object);
-                        records.add(new ApiMessageAndVersion(new RemoveStreamSetObjectRecord()
-                            .setNodeId(nodeId)
-                            .setObjectId(objectId), (short) 0));
-                        records.addAll(this.s3ObjectControlManager.markDestroyObjects(List.of(objectId)).records());
-                    }
-                }
+            if (clusterControlManager.isActive(nodeId) || cleaningUpNodes.contains(nodeId)) {
+                return;
             }
+            List<S3StreamSetObject> objects = new ArrayList<>(nodeMetadata.streamSetObjects().values());
+            if (objects.isEmpty()) {
+                return;
+            }
+            CleanUpScaleInNodeContext ctx = new CleanUpScaleInNodeContext(nodeId, objects);
+            cleaningUpNodes.add(nodeId);
+            cleanupScaleInNode0(ctx);
+            ctx.cf.whenComplete((nil, ex) -> {
+                if (ex != null) {
+                    log.error("cleanupScaleInNode failed", ex);
+                }
+                cleaningUpNodes.remove(nodeId);
+            });
+
         });
-        if (!cleanupObjects.isEmpty()) {
-            LOGGER.info("clean up scaled-in nodes objects: {}", cleanupObjects);
-        } else {
-            LOGGER.debug("clean up scaled-in nodes objects: []");
-        }
         return ControllerResult.of(records, null);
     }
 
@@ -1244,7 +1283,7 @@ public class StreamControlManager {
             }
             // the offset continuous is ensured by the process layer
             // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
-            metadata.updateEndOffset(index.endOffset());
+            metadata.endOffset(index.endOffset());
         });
     }
 
@@ -1275,7 +1314,7 @@ public class StreamControlManager {
         streamMetadata.streamObjects().put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset, dataTs));
         // the offset continuous is ensured by the process layer
         // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
-        streamMetadata.updateEndOffset(endOffset);
+        streamMetadata.endOffset(endOffset);
     }
 
     public void replay(RemoveS3StreamObjectRecord record) {
@@ -1295,6 +1334,18 @@ public class StreamControlManager {
         this.nodesMetadata.remove(nodeId);
     }
 
+    public void replay(S3StreamEndOffsetsRecord record) {
+        for (StreamEndOffset streamEndOffset : S3StreamEndOffsetsCodec.decode(record.endOffsets())) {
+            S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamEndOffset.streamId());
+            if (streamMetadata == null) {
+                // should not happen
+                log.error("streamId={} not exist when replay S3StreamEndOffsetsRecord", streamEndOffset.streamId());
+                return;
+            }
+            streamMetadata.endOffset(streamEndOffset.endOffset());
+        }
+    }
+
     public TimelineHashMap<Long, S3StreamMetadata> streamsMetadata() {
         return streamsMetadata;
     }
@@ -1310,12 +1361,26 @@ public class StreamControlManager {
     @Override
     public String toString() {
         return "StreamControlManager{" +
-               "snapshotRegistry=" + snapshotRegistry +
-               ", s3ObjectControlManager=" + s3ObjectControlManager +
-               ", streamsMetadata=" + streamsMetadata +
-               ", nodesMetadata=" + nodesMetadata +
-               '}';
+            "snapshotRegistry=" + snapshotRegistry +
+            ", s3ObjectControlManager=" + s3ObjectControlManager +
+            ", streamsMetadata=" + streamsMetadata +
+            ", nodesMetadata=" + nodesMetadata +
+            '}';
     }
+
+    static class CleanUpScaleInNodeContext {
+        int nodeId;
+        List<S3StreamSetObject> objects;
+        int index;
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+
+        public CleanUpScaleInNodeContext(int nodeId, List<S3StreamSetObject> objects) {
+            this.nodeId = nodeId;
+            this.objects = objects;
+            this.index = 0;
+        }
+    }
+
 
     private void logCommitStreamSetObject(CommitStreamSetObjectRequestData req) {
         if (!log.isInfoEnabled()) {
@@ -1338,4 +1403,51 @@ public class StreamControlManager {
         log.info(sb.toString());
     }
 
+    void cleanupScaleInNode0(CleanUpScaleInNodeContext ctx) {
+        if (ctx.index >= ctx.objects.size()) {
+            ctx.cf.complete(null);
+            return;
+        }
+        S3StreamSetObject object = ctx.objects.get(ctx.index);
+        ObjectReader objectReader = s3ObjectControlManager.objectReader(object.objectId());
+        objectReader.basicObjectInfo().thenAccept(info -> {
+            List<StreamOffsetRange> streamOffsetRanges = info.indexBlock().streamOffsetRanges();
+            quorumController.appendWriteEvent("checkStreamSetObjectExpired", OptionalLong.empty(), () -> {
+                return checkStreamSetObjectExpired(object, streamOffsetRanges);
+            }).thenAccept(rst -> {
+                // try clean up the node next object
+                ctx.index = ctx.index + 1;
+                quorumController.appendWriteEvent("cleanupScaleInNode0", OptionalLong.empty(), () -> {
+                    cleanupScaleInNode0(ctx);
+                    return ControllerResult.of(Collections.emptyList(), null);
+                });
+            }).exceptionally(ex -> {
+                ctx.cf.completeExceptionally(ex);
+                return null;
+            }).whenComplete((nil, ex) -> {
+                objectReader.release();
+            });
+        }).exceptionally(ex -> {
+            ctx.cf.completeExceptionally(ex);
+            return null;
+        });
+    }
+
+    ControllerResult<Boolean> checkStreamSetObjectExpired(S3StreamSetObject object,
+        List<StreamOffsetRange> streamOffsetRanges) {
+        boolean alive = false;
+        for (StreamOffsetRange streamOffsetRange : streamOffsetRanges) {
+            S3StreamMetadata stream = streamsMetadata.get(streamOffsetRange.streamId());
+            if (stream != null && stream.startOffset() < streamOffsetRange.endOffset()) {
+                return ControllerResult.of(Collections.emptyList(), false);
+            }
+        }
+        List<ApiMessageAndVersion> records = new ArrayList<>(2);
+        records.add(new ApiMessageAndVersion(new RemoveStreamSetObjectRecord()
+            .setNodeId(object.nodeId())
+            .setObjectId(object.objectId()), (short) 0));
+        records.addAll(this.s3ObjectControlManager.markDestroyObjects(List.of(object.objectId())).records());
+        LOGGER.info("clean up scaled-in node={} object={}", object.nodeId(), object.objectId());
+        return ControllerResult.of(records, true);
+    }
 }
