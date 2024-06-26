@@ -57,7 +57,6 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
@@ -133,18 +132,24 @@ public class CompactionManagerTest extends CompactionTestBase {
         when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(0)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
         Assertions.assertEquals(-1, request.getObjectId());
         Assertions.assertEquals(List.of(OBJECT_0), request.getCompactedObjectIds());
         Assertions.assertEquals(3, request.getStreamObjects().size());
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(0)), request));
 
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(1)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(1));
         Assertions.assertEquals(-1, request.getObjectId());
         Assertions.assertEquals(List.of(OBJECT_1), request.getCompactedObjectIds());
         Assertions.assertEquals(2, request.getStreamObjects().size());
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(1)), request));
 
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(2)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(2));
         Assertions.assertEquals(-1, request.getObjectId());
         Assertions.assertEquals(List.of(OBJECT_2), request.getCompactedObjectIds());
@@ -164,18 +169,24 @@ public class CompactionManagerTest extends CompactionTestBase {
         when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(0)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
         Assertions.assertEquals(-1, request.getObjectId());
         Assertions.assertEquals(List.of(OBJECT_0), request.getCompactedObjectIds());
         Assertions.assertTrue(request.getStreamObjects().isEmpty());
         Assertions.assertTrue(request.getStreamRanges().isEmpty());
 
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(1)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(1));
         Assertions.assertEquals(-1, request.getObjectId());
         Assertions.assertEquals(List.of(OBJECT_1), request.getCompactedObjectIds());
         Assertions.assertTrue(request.getStreamObjects().isEmpty());
         Assertions.assertTrue(request.getStreamRanges().isEmpty());
 
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(2)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(2));
         Assertions.assertEquals(-1, request.getObjectId());
         Assertions.assertEquals(List.of(OBJECT_2), request.getCompactedObjectIds());
@@ -205,6 +216,8 @@ public class CompactionManagerTest extends CompactionTestBase {
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(0)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
         Assertions.assertNull(request);
     }
@@ -217,6 +230,8 @@ public class CompactionManagerTest extends CompactionTestBase {
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(0)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
         Assertions.assertEquals(-1, request.getObjectId());
         Assertions.assertEquals(List.of(OBJECT_0), request.getCompactedObjectIds());
@@ -229,6 +244,8 @@ public class CompactionManagerTest extends CompactionTestBase {
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(s3ObjectMetadata);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadata);
 
         assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
@@ -267,6 +284,8 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_3, 0, 1024, 2048, StreamState.OPENED))));
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(s3ObjectMetadataList);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadataList);
         assertEquals(-1L, request.getObjectId());
         assertEquals(List.of(OBJECT_3), request.getCompactedObjectIds());
@@ -284,6 +303,8 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(S3_WAL_OBJECT_METADATA_LIST);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
         assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
@@ -304,6 +325,8 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(S3_WAL_OBJECT_METADATA_LIST);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
         assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
@@ -343,8 +366,9 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_3, 0, 10, 20, StreamState.OPENED))));
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
-        CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
-        assertNull(request);
+        compactionManager.updateStreamDataBlockMap(S3_WAL_OBJECT_METADATA_LIST);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
+        Assertions.assertThrows(IllegalStateException.class, () -> compactionManager.collectStreamIdsAndCheckBlockSize());
     }
 
     @Test
@@ -374,6 +398,8 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_3, 0, 10, 20, StreamState.OPENED))));
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(S3_WAL_OBJECT_METADATA_LIST);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
         assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2, OBJECT_3), request.getCompactedObjectIds());
@@ -394,6 +420,8 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_2, 0, 60, 270, StreamState.OPENED))));
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(S3_WAL_OBJECT_METADATA_LIST);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
         assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
@@ -413,6 +441,8 @@ public class CompactionManagerTest extends CompactionTestBase {
                 new StreamMetadata(STREAM_2, 0, 30, 270, StreamState.OPENED))));
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(S3_WAL_OBJECT_METADATA_LIST);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
 
         Set<Long> streamIds = request.getStreamObjects().stream().map(StreamObject::getStreamId).collect(Collectors.toSet());
@@ -508,6 +538,8 @@ public class CompactionManagerTest extends CompactionTestBase {
         List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        compactionManager.updateStreamDataBlockMap(s3ObjectMetadata);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
         CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, s3ObjectMetadata);
 
         assertEquals(List.of(OBJECT_0, OBJECT_1), request.getCompactedObjectIds());
@@ -577,7 +609,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
 
         CompletableFuture<Void> cf = compactionManager.compact();
-        Thread.sleep(2000);
+        Thread.sleep(3000);
         compactionManager.shutdown();
         for (Pair<InvocationOnMock, CompletableFuture<ByteBuf>> pair : invocations) {
             CompletableFuture<ByteBuf> realCf = (CompletableFuture<ByteBuf>) pair.getLeft().callRealMethod();

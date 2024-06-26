@@ -58,18 +58,16 @@ public class CompactionUtils {
         return objectStreamRanges;
     }
 
-    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList,
-        List<S3ObjectMetadata> objectMetadataList,
+    // test only
+    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectMetadataList,
         ObjectStorage objectStorage) {
-        return blockWaitObjectIndices(streamMetadataList, objectMetadataList, objectStorage, null);
+        Map<Long, List<StreamDataBlock>> map = blockWaitObjectIndices(objectMetadataList, objectStorage, null);
+        filterInvalidStreamDataBlocks(streamMetadataList, map);
+        return map;
     }
 
-    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList,
-        List<S3ObjectMetadata> objectMetadataList,
-        ObjectStorage objectStorage,
-        Logger logger) {
-        Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
-            .collect(Collectors.toMap(StreamMetadata::streamId, s -> s));
+    public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<S3ObjectMetadata> objectMetadataList,
+        ObjectStorage objectStorage, Logger logger) {
         Map<Long, CompletableFuture<List<StreamDataBlock>>> objectStreamRangePositionFutures = new HashMap<>();
         for (S3ObjectMetadata objectMetadata : objectMetadataList) {
             DataBlockReader dataBlockReader = new DataBlockReader(objectMetadata, objectStorage);
@@ -80,20 +78,7 @@ public class CompactionUtils {
             .map(f -> {
                 try {
                     List<StreamDataBlock> streamDataBlocks = f.getValue().join();
-                    List<StreamDataBlock> validStreamDataBlocks = new ArrayList<>();
-                    // filter out invalid stream data blocks in case metadata is inconsistent with S3 index block
-                    for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-                        if (!streamMetadataMap.containsKey(streamDataBlock.getStreamId())) {
-                            // non-exist stream
-                            continue;
-                        }
-                        if (streamDataBlock.getEndOffset() <= streamMetadataMap.get(streamDataBlock.getStreamId()).startOffset()) {
-                            // trimmed stream data block
-                            continue;
-                        }
-                        validStreamDataBlocks.add(streamDataBlock);
-                    }
-                    return new AbstractMap.SimpleEntry<>(f.getKey(), validStreamDataBlocks);
+                    return new AbstractMap.SimpleEntry<>(f.getKey(), streamDataBlocks);
                 } catch (Exception ex) {
                     // continue compaction without invalid object
                     if (logger != null) {
@@ -104,6 +89,17 @@ public class CompactionUtils {
             })
             .filter(Objects::nonNull)
             .collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue));
+    }
+
+    public static void filterInvalidStreamDataBlocks(List<StreamMetadata> streamMetadataList, Map<Long, List<StreamDataBlock>> streamDataBlocks) {
+        Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
+            .collect(Collectors.toMap(StreamMetadata::streamId, s -> s));
+        streamDataBlocks.values().forEach(streamDataBlockList -> streamDataBlockList.removeIf(streamDataBlock -> {
+            if (!streamMetadataMap.containsKey(streamDataBlock.getStreamId())) {
+                return true;
+            }
+            return streamDataBlock.getEndOffset() <= streamMetadataMap.get(streamDataBlock.getStreamId()).startOffset();
+        }));
     }
 
     /**
