@@ -17,13 +17,13 @@
 
 package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -31,10 +31,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.kafka.common.Uuid;
@@ -82,9 +83,9 @@ import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.ReplicationControlManager;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
-import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
@@ -114,6 +115,8 @@ public class StreamControlManager {
     private final TimelineHashMap<Long/*streamId*/, S3StreamMetadata> streamsMetadata;
 
     private final TimelineHashMap<Integer/*nodeId*/, NodeMetadata> nodesMetadata;
+
+    private Set<Integer> cleaningUpNodes = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     private final QuorumController quorumController;
 
@@ -1165,41 +1168,25 @@ public class StreamControlManager {
 
     public ControllerResult<Void> cleanupScaleInNodes() {
         List<ApiMessageAndVersion> records = new LinkedList<>();
-        List<S3StreamSetObject> cleanupObjects = new LinkedList<>();
         nodesMetadata.forEach((nodeId, nodeMetadata) -> {
-            if (!clusterControlManager.isActive(nodeId)) {
-                Collection<S3StreamSetObject> objects = nodeMetadata.streamSetObjects().values();
-                boolean alive = false;
-                for (S3StreamSetObject object : objects) {
-                    if (alive) {
-                        // if the last object is not expired, the likelihood of the subsequent object expiring is also quite low.
-                        break;
-                    }
-                    long objectId = object.objectId();
-                    AtomicBoolean expired = new AtomicBoolean(true);
-                    List<StreamOffsetRange> streamOffsetRanges = object.offsetRangeList();
-                    for (StreamOffsetRange streamOffsetRange : streamOffsetRanges) {
-                        S3StreamMetadata stream = streamsMetadata.get(streamOffsetRange.streamId());
-                        if (stream != null && stream.startOffset() < streamOffsetRange.endOffset()) {
-                            expired.set(false);
-                            alive = true;
-                        }
-                    }
-                    if (expired.get()) {
-                        cleanupObjects.add(object);
-                        records.add(new ApiMessageAndVersion(new RemoveStreamSetObjectRecord()
-                            .setNodeId(nodeId)
-                            .setObjectId(objectId), (short) 0));
-                        records.addAll(this.s3ObjectControlManager.markDestroyObjects(List.of(objectId)).records());
-                    }
-                }
+            if (clusterControlManager.isActive(nodeId) || cleaningUpNodes.contains(nodeId)) {
+                return;
             }
+            List<S3StreamSetObject> objects = new ArrayList<>(nodeMetadata.streamSetObjects().values());
+            if (objects.isEmpty()) {
+                return;
+            }
+            CleanUpScaleInNodeContext ctx = new CleanUpScaleInNodeContext(nodeId, objects);
+            cleaningUpNodes.add(nodeId);
+            cleanupScaleInNode0(ctx);
+            ctx.cf.whenComplete((nil, ex) -> {
+                if (ex != null) {
+                    log.error("cleanupScaleInNode failed", ex);
+                }
+                cleaningUpNodes.remove(nodeId);
+            });
+
         });
-        if (!cleanupObjects.isEmpty()) {
-            LOGGER.info("clean up scaled-in nodes objects: {}", cleanupObjects);
-        } else {
-            LOGGER.debug("clean up scaled-in nodes objects: []");
-        }
         return ControllerResult.of(records, null);
     }
 
@@ -1381,6 +1368,20 @@ public class StreamControlManager {
             '}';
     }
 
+    static class CleanUpScaleInNodeContext {
+        int nodeId;
+        List<S3StreamSetObject> objects;
+        int index;
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+
+        public CleanUpScaleInNodeContext(int nodeId, List<S3StreamSetObject> objects) {
+            this.nodeId = nodeId;
+            this.objects = objects;
+            this.index = 0;
+        }
+    }
+
+
     private void logCommitStreamSetObject(CommitStreamSetObjectRequestData req) {
         if (!log.isInfoEnabled()) {
             return;
@@ -1402,4 +1403,51 @@ public class StreamControlManager {
         log.info(sb.toString());
     }
 
+    void cleanupScaleInNode0(CleanUpScaleInNodeContext ctx) {
+        if (ctx.index >= ctx.objects.size()) {
+            ctx.cf.complete(null);
+            return;
+        }
+        S3StreamSetObject object = ctx.objects.get(ctx.index);
+        ObjectReader objectReader = s3ObjectControlManager.objectReader(object.objectId());
+        objectReader.basicObjectInfo().thenAccept(info -> {
+            List<StreamOffsetRange> streamOffsetRanges = info.indexBlock().streamOffsetRanges();
+            quorumController.appendWriteEvent("checkStreamSetObjectExpired", OptionalLong.empty(), () -> {
+                return checkStreamSetObjectExpired(object, streamOffsetRanges);
+            }).thenAccept(rst -> {
+                // try clean up the node next object
+                ctx.index = ctx.index + 1;
+                quorumController.appendWriteEvent("cleanupScaleInNode0", OptionalLong.empty(), () -> {
+                    cleanupScaleInNode0(ctx);
+                    return ControllerResult.of(Collections.emptyList(), null);
+                });
+            }).exceptionally(ex -> {
+                ctx.cf.completeExceptionally(ex);
+                return null;
+            }).whenComplete((nil, ex) -> {
+                objectReader.release();
+            });
+        }).exceptionally(ex -> {
+            ctx.cf.completeExceptionally(ex);
+            return null;
+        });
+    }
+
+    ControllerResult<Boolean> checkStreamSetObjectExpired(S3StreamSetObject object,
+        List<StreamOffsetRange> streamOffsetRanges) {
+        boolean alive = false;
+        for (StreamOffsetRange streamOffsetRange : streamOffsetRanges) {
+            S3StreamMetadata stream = streamsMetadata.get(streamOffsetRange.streamId());
+            if (stream != null && stream.startOffset() < streamOffsetRange.endOffset()) {
+                return ControllerResult.of(Collections.emptyList(), false);
+            }
+        }
+        List<ApiMessageAndVersion> records = new ArrayList<>(2);
+        records.add(new ApiMessageAndVersion(new RemoveStreamSetObjectRecord()
+            .setNodeId(object.nodeId())
+            .setObjectId(object.objectId()), (short) 0));
+        records.addAll(this.s3ObjectControlManager.markDestroyObjects(List.of(object.objectId())).records());
+        LOGGER.info("clean up scaled-in node={} object={}", object.nodeId(), object.objectId());
+        return ControllerResult.of(records, true);
+    }
 }

@@ -400,6 +400,30 @@ public interface ObjectReader extends AutoCloseable {
             }
         }
 
+        public List<StreamOffsetRange> streamOffsetRanges() {
+            List<StreamOffsetRange> ranges = new ArrayList<>(count);
+            Iterator<DataBlockIndex> it = iterator();
+            long streamId = Constants.NOOP_STREAM_ID;
+            long startOffset = Constants.NOOP_OFFSET;
+            long endOffset = Constants.NOOP_OFFSET;
+            while (it.hasNext()) {
+                DataBlockIndex index = it.next();
+                if (index.streamId() != streamId && streamId != Constants.NOOP_STREAM_ID) {
+                    ranges.add(new StreamOffsetRange(streamId, startOffset, endOffset));
+                    startOffset = Constants.NOOP_OFFSET;
+                }
+                streamId = index.streamId();
+                if (startOffset == Constants.NOOP_OFFSET) {
+                    startOffset = index.startOffset();
+                }
+                endOffset = index.endOffset();
+            }
+            if (streamId != Constants.NOOP_STREAM_ID) {
+                ranges.add(new StreamOffsetRange(streamId, startOffset, endOffset));
+            }
+            return ranges;
+        }
+
         public int size() {
             return size;
         }

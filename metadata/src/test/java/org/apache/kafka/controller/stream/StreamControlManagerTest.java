@@ -1,29 +1,33 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Copyright 2024, AutoMQ CO.,LTD.
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.controller;
+package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import io.netty.buffer.Unpooled;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
@@ -64,9 +68,11 @@ import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.controller.stream.S3ObjectControlManager;
-import org.apache.kafka.controller.stream.S3StreamMetadata;
-import org.apache.kafka.controller.stream.StreamControlManager;
+import org.apache.kafka.controller.ClusterControlManager;
+import org.apache.kafka.controller.ControllerResult;
+import org.apache.kafka.controller.FeatureControlManager;
+import org.apache.kafka.controller.QuorumController;
+import org.apache.kafka.controller.ReplicationControlManager;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.StreamTags;
@@ -85,11 +91,18 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Timeout(value = 40)
@@ -126,6 +139,7 @@ public class StreamControlManagerTest {
         LogContext context = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(context);
         quorumController = mock(QuorumController.class);
+
         objectControlManager = mock(S3ObjectControlManager.class);
         clusterControlManager = mock(ClusterControlManager.class);
         featureControlManager = mock(FeatureControlManager.class);
@@ -136,6 +150,12 @@ public class StreamControlManagerTest {
 
         manager = new StreamControlManager(quorumController, registry, context, objectControlManager,
             clusterControlManager, featureControlManager, replicationControlManager);
+        doAnswer(args -> {
+            QuorumController.ControllerWriteOperation<?> op = args.getArgument(2);
+            ControllerResult<?> rst = op.generateRecordsAndResult();
+            replay(manager, rst.records());
+            return CompletableFuture.completedFuture(rst.response());
+        }).when(quorumController).appendWriteEvent(anyString(), any(), any());
     }
 
     @Test
@@ -357,7 +377,7 @@ public class StreamControlManagerTest {
         assertEquals(1, streamMetadata0.ranges().size());
         RangeMetadata rangeMetadata0 = streamMetadata0.ranges().get(0);
         assertEquals(0L, rangeMetadata0.startOffset());
-        assertEquals(100L, rangeMetadata0.endOffset());
+        assertEquals(100L, streamMetadata0.endOffset());
         assertEquals(1, manager.nodesMetadata().get(BROKER0).streamSetObjects().size());
         // 3. commit a stream set object that doesn't exist
         List<ObjectStreamRange> streamRanges1 = List.of(new ObjectStreamRange()
@@ -404,7 +424,7 @@ public class StreamControlManagerTest {
         assertEquals(100L, streamMetadata0.ranges().get(0).endOffset());
         RangeMetadata rangeMetadata1 = streamMetadata0.ranges().get(1);
         assertEquals(100L, rangeMetadata1.startOffset());
-        assertEquals(300L, rangeMetadata1.endOffset());
+        assertEquals(300L, streamMetadata0.endOffset());
         assertEquals(1, manager.nodesMetadata().get(BROKER1).streamSetObjects().size());
 
         // 6. get stream's offset
@@ -634,7 +654,7 @@ public class StreamControlManagerTest {
             )
         ));
         replay(manager, commitRst.records());
-        assertEquals(10L, manager.streamsMetadata().get(STREAM0).ranges().get(0).endOffset());
+        assertEquals(10L, manager.streamsMetadata().get(STREAM0).endOffset());
         assertEquals((short) 0, commitRst.response().errorCode());
     }
 
@@ -1145,7 +1165,7 @@ public class StreamControlManagerTest {
         rangeMetadata = streamMetadata.currentRangeMetadata();
         assertEquals(1, rangeMetadata.rangeIndex());
         assertEquals(70, rangeMetadata.startOffset());
-        assertEquals(100, rangeMetadata.endOffset());
+        assertEquals(100, streamMetadata.endOffset());
     }
 
     @Test
@@ -1300,7 +1320,7 @@ public class StreamControlManagerTest {
     }
 
     @Test
-    public void testCleanupScaleInNodes() {
+    public void testCleanupScaleInNodes() throws ExecutionException, InterruptedException {
         when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).thenReturn(ControllerResult.of(Collections.emptyList(), null));
 
         registerAlwaysSuccessEpoch(BROKER0);
@@ -1339,13 +1359,18 @@ public class StreamControlManagerTest {
         ApiMessageAndVersion record = new ApiMessageAndVersion(new S3ObjectRecord().setObjectId(2L).setObjectState(S3ObjectState.MARK_DESTROYED.toByte()), (short) 0);
         when(objectControlManager.markDestroyObjects(eq(List.of(2L)))).thenReturn(ControllerResult.of(List.of(record), null));
 
-        rst = manager.cleanupScaleInNodes();
-        List<ApiMessageAndVersion> records = rst.records();
-        assertEquals(2, records.size());
-        RemoveStreamSetObjectRecord r0 = (RemoveStreamSetObjectRecord) records.get(0).message();
-        assertEquals(2, r0.objectId());
-        S3ObjectRecord r1 = (S3ObjectRecord) records.get(1).message();
-        assertEquals(2, r1.objectId());
+        when(objectControlManager.objectReader(eq(1L))).thenReturn(mockObjectReader(List.of(
+            new StreamOffsetRange(STREAM0, 0, 100), new StreamOffsetRange(STREAM1, 0, 100))));
+        when(objectControlManager.objectReader(eq(2L))).thenReturn(mockObjectReader(List.of(
+            new StreamOffsetRange(STREAM0, 100, 200))));
+        when(objectControlManager.objectReader(eq(3L))).thenReturn(mockObjectReader(List.of(
+            new StreamOffsetRange(STREAM0, 200, 300))));
+
+        manager = spy(manager);
+        manager.cleanupScaleInNodes();
+
+        verify(manager, timeout(1000).times(3)).checkStreamSetObjectExpired(any(), anyList());
+        verify(objectControlManager, times(1)).markDestroyObjects(eq(List.of(2L)));
     }
 
     private void registerAlwaysSuccessEpoch(int nodeId) {
@@ -1450,5 +1475,21 @@ public class StreamControlManagerTest {
         assertEquals(0, rangeMetadata0.rangeIndex());
         assertEquals(0L, rangeMetadata0.startOffset());
         assertEquals(0L, rangeMetadata0.endOffset());
+    }
+
+    private ObjectReader mockObjectReader(
+        List<StreamOffsetRange> ranges) throws ExecutionException, InterruptedException {
+        MemoryObjectStorage objectStorage = new MemoryObjectStorage();
+        ObjectWriter objectWriter = new ObjectWriter.DefaultObjectWriter(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        ranges.forEach(range ->
+            objectWriter.write(
+                range.streamId(),
+                List.of(
+                    new StreamRecordBatch(range.streamId(), 0, range.startOffset(), (int) (range.endOffset() - range.startOffset()), Unpooled.buffer(1))
+                )
+            )
+        );
+        objectWriter.close().get();
+        return new ObjectReader.DefaultObjectReader(new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.STREAM_SET), objectStorage);
     }
 }

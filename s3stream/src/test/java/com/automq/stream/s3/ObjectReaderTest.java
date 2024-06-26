@@ -137,7 +137,7 @@ public class ObjectReaderTest {
     }
 
     @Test
-    public void testFindStreamOffsetRange() throws ExecutionException, InterruptedException {
+    public void testStreamOffsetRange() throws ExecutionException, InterruptedException {
         // prepare data
         S3ObjectMetadata metadata = new S3ObjectMetadata(1, 0, S3ObjectType.STREAM_SET);
         ObjectStorage objectStorage = new MemoryObjectStorage();
@@ -162,12 +162,23 @@ public class ObjectReaderTest {
         ObjectReader objectReader = ObjectReader.reader(metadata, objectStorage);
         ObjectReader.BasicObjectInfo info = objectReader.basicObjectInfo().get();
 
+        // check find
         assertEquals(new StreamOffsetRange(200, 10, 15), info.indexBlock().findStreamOffsetRange(200).get());
         assertEquals(new StreamOffsetRange(234, 0, 25), info.indexBlock().findStreamOffsetRange(234).get());
         assertEquals(new StreamOffsetRange(250, 30, 35), info.indexBlock().findStreamOffsetRange(250).get());
         assertTrue(info.indexBlock().findStreamOffsetRange(100).isEmpty());
         assertTrue(info.indexBlock().findStreamOffsetRange(230).isEmpty());
         assertTrue(info.indexBlock().findStreamOffsetRange(300).isEmpty());
+
+        // check ranges
+        assertEquals(
+            List.of(
+                new StreamOffsetRange(200, 10, 15),
+                new StreamOffsetRange(234, 0, 25),
+                new StreamOffsetRange(250, 30, 35)
+            ),
+            info.indexBlock().streamOffsetRanges()
+        );
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
