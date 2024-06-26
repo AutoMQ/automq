@@ -1,0 +1,11 @@
+connect_test_suite:
+  included:
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_bounce
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_exactly_once_source
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_file_source_and_sink
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_transformations
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_broker_compatibility
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_dynamic_logging
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_pause_and_resume_sink
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_pause_and_resume_source
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_pause_state_persistent
