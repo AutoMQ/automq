@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl.block;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Config;
@@ -18,6 +18,16 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.trace.TraceUtils;
 import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.common.RecordHeader;
+import com.automq.stream.s3.wal.common.ShutdownType;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.UnmarshalException;
+import com.automq.stream.s3.wal.common.WALMetadata;
+import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.impl.AppendResultImpl;
+import com.automq.stream.s3.wal.impl.RecoverResultImpl;
 import com.automq.stream.s3.wal.util.WALCachedChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
@@ -45,6 +55,9 @@ import org.slf4j.LoggerFactory;
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 import static com.automq.stream.s3.Constants.NOOP_EPOCH;
 import static com.automq.stream.s3.Constants.NOOP_NODE_ID;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
 /**
  * /**
@@ -84,23 +97,20 @@ import static com.automq.stream.s3.Constants.NOOP_NODE_ID;
  * <p>
  * Layout:
  * <p>
- * 0 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#getMagicCode} Magic code of the record header,
+ * 0 - [4B] {@link RecordHeader#getMagicCode} Magic code of the record header,
  * used to verify the start of the record header
  * <p>
- * 1 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#getRecordBodyLength} The length of the record body
+ * 1 - [4B] {@link RecordHeader#getRecordBodyLength} The length of the record body
  * <p>
- * 2 - [8B] {@link SlidingWindowService.RecordHeaderCoreData#getRecordBodyOffset} The logical start offset of the record body
+ * 2 - [8B] {@link RecordHeader#getRecordBodyOffset} The logical start offset of the record body
  * <p>
- * 3 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#getRecordBodyCRC} CRC of the record body, used to verify
+ * 3 - [4B] {@link RecordHeader#getRecordBodyCRC} CRC of the record body, used to verify
  * the correctness of the record body
  * <p>
- * 4 - [4B] {@link SlidingWindowService.RecordHeaderCoreData#getRecordHeaderCRC} CRC of the rest of the record header,
+ * 4 - [4B] {@link RecordHeader#getRecordHeaderCRC} CRC of the rest of the record header,
  * used to verify the correctness of the record header
  */
 public class BlockWALService implements WriteAheadLog {
-    public static final int RECORD_HEADER_SIZE = 4 + 4 + 8 + 4 + 4;
-    public static final int RECORD_HEADER_WITHOUT_CRC_SIZE = RECORD_HEADER_SIZE - 4;
-    public static final int RECORD_HEADER_MAGIC_CODE = 0x87654321;
     public static final int WAL_HEADER_COUNT = 2;
     public static final int WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
     public static final int WAL_HEADER_TOTAL_CAPACITY = WAL_HEADER_CAPACITY * WAL_HEADER_COUNT;
@@ -112,7 +122,7 @@ public class BlockWALService implements WriteAheadLog {
     private long initialWindowSize;
     private WALCachedChannel walChannel;
     private SlidingWindowService slidingWindowService;
-    private WALHeader walHeader;
+    private BlockWALHeader walHeader;
     private boolean recoveryMode;
     private boolean firstStart;
     private int nodeId = NOOP_NODE_ID;
@@ -173,7 +183,7 @@ public class BlockWALService implements WriteAheadLog {
     private ByteBuf readRecord(long recoverStartOffset,
         Function<Long, Long> logicalToPhysical) throws ReadRecordException {
         final ByteBuf recordHeader = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
-        SlidingWindowService.RecordHeaderCoreData readRecordHeader;
+        RecordHeader readRecordHeader;
         try {
             readRecordHeader = parseRecordHeader(recoverStartOffset, recordHeader, logicalToPhysical);
         } finally {
@@ -192,7 +202,7 @@ public class BlockWALService implements WriteAheadLog {
         return recordBody;
     }
 
-    private SlidingWindowService.RecordHeaderCoreData parseRecordHeader(long recoverStartOffset, ByteBuf recordHeader,
+    private RecordHeader parseRecordHeader(long recoverStartOffset, ByteBuf recordHeader,
         Function<Long, Long> logicalToPhysical) throws ReadRecordException {
         final long position = logicalToPhysical.apply(recoverStartOffset);
         int read = walChannel.retryRead(recordHeader, position);
@@ -203,7 +213,7 @@ public class BlockWALService implements WriteAheadLog {
             );
         }
 
-        SlidingWindowService.RecordHeaderCoreData readRecordHeader = SlidingWindowService.RecordHeaderCoreData.unmarshal(recordHeader);
+        RecordHeader readRecordHeader = RecordHeader.unmarshal(recordHeader);
         if (readRecordHeader.getMagicCode() != RECORD_HEADER_MAGIC_CODE) {
             throw new ReadRecordException(
                 WALUtil.alignNextBlock(recoverStartOffset),
@@ -238,7 +248,7 @@ public class BlockWALService implements WriteAheadLog {
         return readRecordHeader;
     }
 
-    private void parseRecordBody(long recoverStartOffset, SlidingWindowService.RecordHeaderCoreData readRecordHeader,
+    private void parseRecordBody(long recoverStartOffset, RecordHeader readRecordHeader,
         ByteBuf recordBody, Function<Long, Long> logicalToPhysical) throws ReadRecordException {
         long recordBodyOffset = readRecordHeader.getRecordBodyOffset();
         int recordBodyLength = readRecordHeader.getRecordBodyLength();
@@ -270,10 +280,10 @@ public class BlockWALService implements WriteAheadLog {
         StopWatch stopWatch = StopWatch.createStarted();
 
         walChannel.open(channel -> Optional.ofNullable(tryReadWALHeader(walChannel))
-            .map(WALHeader::getCapacity)
+            .map(BlockWALHeader::getCapacity)
             .orElse(null));
 
-        WALHeader header = tryReadWALHeader(walChannel);
+        BlockWALHeader header = tryReadWALHeader(walChannel);
         if (null == header) {
             assert !recoveryMode;
             header = newWALHeader();
@@ -314,23 +324,23 @@ public class BlockWALService implements WriteAheadLog {
     /**
      * Protected method for testing purpose.
      */
-    protected WALHeader tryReadWALHeader() {
+    protected BlockWALHeader tryReadWALHeader() {
         return tryReadWALHeader(walChannel);
     }
 
     /**
      * Try to read the header from WAL, return the latest one.
      */
-    private WALHeader tryReadWALHeader(WALChannel walChannel) {
-        WALHeader header = null;
+    private BlockWALHeader tryReadWALHeader(WALChannel walChannel) {
+        BlockWALHeader header = null;
         for (int i = 0; i < WAL_HEADER_COUNT; i++) {
-            ByteBuf buf = ByteBufAlloc.byteBuffer(WALHeader.WAL_HEADER_SIZE);
+            ByteBuf buf = ByteBufAlloc.byteBuffer(BlockWALHeader.WAL_HEADER_SIZE);
             try {
                 int read = walChannel.retryRead(buf, i * WAL_HEADER_CAPACITY);
-                if (read != WALHeader.WAL_HEADER_SIZE) {
+                if (read != BlockWALHeader.WAL_HEADER_SIZE) {
                     continue;
                 }
-                WALHeader tmpHeader = WALHeader.unmarshal(buf);
+                BlockWALHeader tmpHeader = BlockWALHeader.unmarshal(buf);
                 if (header == null || header.getLastWriteTimestamp() < tmpHeader.getLastWriteTimestamp()) {
                     header = tmpHeader;
                 }
@@ -343,11 +353,11 @@ public class BlockWALService implements WriteAheadLog {
         return header;
     }
 
-    private WALHeader newWALHeader() {
-        return new WALHeader(walChannel.capacity(), initialWindowSize);
+    private BlockWALHeader newWALHeader() {
+        return new BlockWALHeader(walChannel.capacity(), initialWindowSize);
     }
 
-    private void walHeaderReady(WALHeader header) {
+    private void walHeaderReady(BlockWALHeader header) {
         if (nodeId != NOOP_NODE_ID) {
             header.setNodeId(nodeId);
             header.setEpoch(epoch);
@@ -438,7 +448,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private ByteBuf recordHeader(ByteBuf body, int crc, long start) {
-        return new SlidingWindowService.RecordHeaderCoreData()
+        return new RecordHeader()
             .setMagicCode(RECORD_HEADER_MAGIC_CODE)
             .setRecordBodyLength(body.readableBytes())
             .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
@@ -712,97 +722,6 @@ public class BlockWALService implements WriteAheadLog {
                 + ", recoveryMode=" + recoveryMode
                 + '}';
         }
-    }
-
-    static final class AppendResultImpl implements AppendResult {
-        private final long recordOffset;
-        private final CompletableFuture<CallbackResult> future;
-
-        AppendResultImpl(long recordOffset, CompletableFuture<CallbackResult> future) {
-            this.recordOffset = recordOffset;
-            this.future = future;
-        }
-
-        @Override
-        public String toString() {
-            return "AppendResultImpl{" + "recordOffset=" + recordOffset + '}';
-        }
-
-        @Override
-        public long recordOffset() {
-            return recordOffset;
-        }
-
-        @Override
-        public CompletableFuture<CallbackResult> future() {
-            return future;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == this) {
-                return true;
-            }
-            if (obj == null || obj.getClass() != this.getClass()) {
-                return false;
-            }
-            var that = (AppendResultImpl) obj;
-            return this.recordOffset == that.recordOffset &&
-                Objects.equals(this.future, that.future);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(recordOffset, future);
-        }
-
-    }
-
-    static class RecoverResultImpl implements RecoverResult {
-        private final ByteBuf record;
-        private final long recordOffset;
-
-        RecoverResultImpl(ByteBuf record, long recordOffset) {
-            this.record = record;
-            this.recordOffset = recordOffset;
-        }
-
-        @Override
-        public String toString() {
-            return "RecoverResultImpl{"
-                + "record=" + record
-                + ", recordOffset=" + recordOffset
-                + '}';
-        }
-
-        @Override
-        public ByteBuf record() {
-            return record;
-        }
-
-        @Override
-        public long recordOffset() {
-            return recordOffset;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == this) {
-                return true;
-            }
-            if (obj == null || obj.getClass() != this.getClass()) {
-                return false;
-            }
-            var that = (RecoverResultImpl) obj;
-            return Objects.equals(this.record, that.record) &&
-                this.recordOffset == that.recordOffset;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(record, recordOffset);
-        }
-
     }
 
     /**

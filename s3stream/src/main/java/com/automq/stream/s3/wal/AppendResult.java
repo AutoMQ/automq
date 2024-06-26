@@ -11,12 +11,16 @@
 
 package com.automq.stream.s3.wal;
 
-import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
-public class WALNotInitializedException extends IOException {
+public interface AppendResult {
+    // The pre-allocated starting offset of the record
+    long recordOffset();
 
-    public WALNotInitializedException(String message) {
-        super(message);
+    CompletableFuture<CallbackResult> future();
+
+    interface CallbackResult {
+        // The record before this offset has been flushed to disk
+        long flushedOffset();
     }
-
 }

@@ -9,11 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl.block;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -38,7 +39,7 @@ public class BlockImpl implements Block {
      * unless the block is empty.
      */
     private final long softLimit;
-    private final List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures = new LinkedList<>();
+    private final List<CompletableFuture<AppendResult.CallbackResult>> futures = new LinkedList<>();
     private final List<Supplier<ByteBuf>> records = new LinkedList<>();
     private final long startTime;
     /**
@@ -69,7 +70,7 @@ public class BlockImpl implements Block {
      */
     @Override
     public long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier,
-        CompletableFuture<WriteAheadLog.AppendResult.CallbackResult> future) {
+        CompletableFuture<AppendResult.CallbackResult> future) {
         assert data == null;
         long requiredCapacity = nextOffset + recordSize;
         if (requiredCapacity > maxSize) {
@@ -89,7 +90,7 @@ public class BlockImpl implements Block {
     }
 
     @Override
-    public List<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures() {
+    public List<CompletableFuture<AppendResult.CallbackResult>> futures() {
         return futures;
     }
 

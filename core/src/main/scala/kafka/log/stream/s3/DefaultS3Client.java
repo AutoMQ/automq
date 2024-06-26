@@ -31,7 +31,7 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
-import com.automq.stream.s3.wal.BlockWALService;
+import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.PingS3Helper;

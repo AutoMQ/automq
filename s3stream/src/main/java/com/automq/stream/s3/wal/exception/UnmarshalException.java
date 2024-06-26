@@ -9,14 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.exception;
 
-import java.io.IOException;
-
-public class WALCapacityMismatchException extends IOException {
-
-    public WALCapacityMismatchException(String path, long expected, long actual) {
-        super(String.format("WAL capacity mismatch for %s: expected %d, actual %d", path, expected, actual));
+public class UnmarshalException extends Exception {
+    public UnmarshalException(String message) {
+        super(message);
     }
-
 }

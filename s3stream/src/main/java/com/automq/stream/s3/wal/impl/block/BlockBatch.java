@@ -9,15 +9,15 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl.block;
 
+import com.automq.stream.s3.wal.AppendResult;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 public class BlockBatch {
-
     private final Collection<Block> blocks;
     private final long startOffset;
     private final long endOffset;
@@ -47,10 +47,10 @@ public class BlockBatch {
         return Collections.unmodifiableCollection(blocks);
     }
 
-    public Iterator<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futures() {
+    public Iterator<CompletableFuture<AppendResult.CallbackResult>> futures() {
         return new Iterator<>() {
             private final Iterator<Block> blockIterator = blocks.iterator();
-            private Iterator<CompletableFuture<WriteAheadLog.AppendResult.CallbackResult>> futureIterator = blockIterator.next().futures().iterator();
+            private Iterator<CompletableFuture<AppendResult.CallbackResult>> futureIterator = blockIterator.next().futures().iterator();
 
             @Override
             public boolean hasNext() {
@@ -67,7 +67,7 @@ public class BlockBatch {
             }
 
             @Override
-            public CompletableFuture<WriteAheadLog.AppendResult.CallbackResult> next() {
+            public CompletableFuture<AppendResult.CallbackResult> next() {
                 return futureIterator.next();
             }
         };

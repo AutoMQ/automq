@@ -9,24 +9,26 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl.block;
 
+import com.automq.stream.s3.wal.common.ShutdownType;
+import com.automq.stream.s3.wal.exception.UnmarshalException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class WALHeaderTest {
+public class BlockWALHeaderTest {
 
     @Test
     public void test() throws UnmarshalException {
-        WALHeader header = new WALHeader(128 * 1024, 100);
+        BlockWALHeader header = new BlockWALHeader(128 * 1024, 100);
         header.updateTrimOffset(10);
         header.setLastWriteTimestamp(11);
         header.setShutdownType(ShutdownType.GRACEFULLY);
         header.setNodeId(233);
         header.setEpoch(234);
 
-        WALHeader unmarshal = WALHeader.unmarshal(header.marshal().duplicate());
+        BlockWALHeader unmarshal = BlockWALHeader.unmarshal(header.marshal().duplicate());
         assertEquals(header.getCapacity(), unmarshal.getCapacity());
         assertEquals(header.getTrimOffset(), unmarshal.getTrimOffset());
         assertEquals(header.getLastWriteTimestamp(), unmarshal.getLastWriteTimestamp());
