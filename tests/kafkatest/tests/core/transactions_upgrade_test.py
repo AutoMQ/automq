@@ -25,6 +25,7 @@ from kafkatest.version import LATEST_3_1, LATEST_3_2, LATEST_3_3, LATEST_3_4, LA
 
 from ducktape.tests.test import Test
 from ducktape.mark import matrix
+from ducktape.mark import ignore
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -197,6 +198,7 @@ class TransactionsUpgradeTest(Test):
             }
         }
 
+    @ignore # Don't support upgrade from Apache Kafka to AutoMQ
     @cluster(num_nodes=10)
     @matrix(
         from_kafka_version=[str(LATEST_3_7), str(LATEST_3_6), str(LATEST_3_5), str(LATEST_3_4), str(LATEST_3_3), str(LATEST_3_2), str(LATEST_3_1)],
