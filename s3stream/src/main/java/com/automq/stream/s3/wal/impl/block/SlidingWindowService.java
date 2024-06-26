@@ -9,17 +9,17 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl.block;
 
-import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import io.netty.buffer.ByteBuf;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.PriorityQueue;
@@ -34,12 +34,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.automq.stream.s3.wal.BlockWALService.RECORD_HEADER_MAGIC_CODE;
-import static com.automq.stream.s3.wal.BlockWALService.RECORD_HEADER_SIZE;
-import static com.automq.stream.s3.wal.BlockWALService.RECORD_HEADER_WITHOUT_CRC_SIZE;
-import static com.automq.stream.s3.wal.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
-import static com.automq.stream.s3.wal.WriteAheadLog.AppendResult;
-import static com.automq.stream.s3.wal.WriteAheadLog.OverCapacityException;
+import static com.automq.stream.s3.wal.impl.block.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 
 /**
  * The sliding window contains all records that have not been flushed to the disk yet.
@@ -371,92 +366,6 @@ public class SlidingWindowService {
 
     public interface WALHeaderFlusher {
         void flush();
-    }
-
-    public static class RecordHeaderCoreData {
-        private int magicCode0 = RECORD_HEADER_MAGIC_CODE;
-        private int recordBodyLength1;
-        private long recordBodyOffset2;
-        private int recordBodyCRC3;
-        private int recordHeaderCRC4;
-
-        public static RecordHeaderCoreData unmarshal(ByteBuf byteBuf) {
-            RecordHeaderCoreData recordHeaderCoreData = new RecordHeaderCoreData();
-            byteBuf.markReaderIndex();
-            recordHeaderCoreData.magicCode0 = byteBuf.readInt();
-            recordHeaderCoreData.recordBodyLength1 = byteBuf.readInt();
-            recordHeaderCoreData.recordBodyOffset2 = byteBuf.readLong();
-            recordHeaderCoreData.recordBodyCRC3 = byteBuf.readInt();
-            recordHeaderCoreData.recordHeaderCRC4 = byteBuf.readInt();
-            byteBuf.resetReaderIndex();
-            return recordHeaderCoreData;
-        }
-
-        public int getMagicCode() {
-            return magicCode0;
-        }
-
-        public RecordHeaderCoreData setMagicCode(int magicCode) {
-            this.magicCode0 = magicCode;
-            return this;
-        }
-
-        public int getRecordBodyLength() {
-            return recordBodyLength1;
-        }
-
-        public RecordHeaderCoreData setRecordBodyLength(int recordBodyLength) {
-            this.recordBodyLength1 = recordBodyLength;
-            return this;
-        }
-
-        public long getRecordBodyOffset() {
-            return recordBodyOffset2;
-        }
-
-        public RecordHeaderCoreData setRecordBodyOffset(long recordBodyOffset) {
-            this.recordBodyOffset2 = recordBodyOffset;
-            return this;
-        }
-
-        public int getRecordBodyCRC() {
-            return recordBodyCRC3;
-        }
-
-        public RecordHeaderCoreData setRecordBodyCRC(int recordBodyCRC) {
-            this.recordBodyCRC3 = recordBodyCRC;
-            return this;
-        }
-
-        public int getRecordHeaderCRC() {
-            return recordHeaderCRC4;
-        }
-
-        @Override
-        public String toString() {
-            return "RecordHeaderCoreData{" +
-                "magicCode=" + magicCode0 +
-                ", recordBodyLength=" + recordBodyLength1 +
-                ", recordBodyOffset=" + recordBodyOffset2 +
-                ", recordBodyCRC=" + recordBodyCRC3 +
-                ", recordHeaderCRC=" + recordHeaderCRC4 +
-                '}';
-        }
-
-        private ByteBuf marshalHeaderExceptCRC() {
-            ByteBuf buf = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
-            buf.writeInt(magicCode0);
-            buf.writeInt(recordBodyLength1);
-            buf.writeLong(recordBodyOffset2);
-            buf.writeInt(recordBodyCRC3);
-            return buf;
-        }
-
-        public ByteBuf marshal() {
-            ByteBuf buf = marshalHeaderExceptCRC();
-            buf.writeInt(WALUtil.crc32(buf, RECORD_HEADER_WITHOUT_CRC_SIZE));
-            return buf;
-        }
     }
 
     public static class WindowCoreData {

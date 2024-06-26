@@ -28,7 +28,10 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
@@ -135,9 +138,9 @@ public class S3Storage implements Storage {
     /**
      * Only for test.
      */
-    static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it,
+    static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<RecoverResult> it,
         List<StreamMetadata> openingStreams) {
-        RecoverResult result = recoverContinuousRecords(it, openingStreams, LOGGER);
+        InnerRecoverResult result = recoverContinuousRecords(it, openingStreams, LOGGER);
         result.firstException().ifPresent(e -> {
             throw e;
         });
@@ -170,7 +173,7 @@ public class S3Storage implements Storage {
      *     <li>The record 5 and 4 are reordered because they are out of order, and we handle this bug here</li>
      * </ul>
      */
-    static RecoverResult recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it,
+    static InnerRecoverResult recoverContinuousRecords(Iterator<RecoverResult> it,
         List<StreamMetadata> openingStreams, Logger logger) {
         Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
@@ -190,7 +193,7 @@ public class S3Storage implements Storage {
             cacheBlock.confirmOffset(logEndOffset);
         }
 
-        RecoverResult result = new RecoverResult();
+        InnerRecoverResult result = new InnerRecoverResult();
         cacheBlock.records().forEach((streamId, records) -> {
             if (!records.isEmpty()) {
                 long startOffset = records.get(0).getBaseOffset();
@@ -232,7 +235,7 @@ public class S3Storage implements Storage {
      * @param cacheBlock                 the cache block (to be filled)
      * @return the end offset of the last record recovered
      */
-    private static long recoverContinuousRecords(Iterator<WriteAheadLog.RecoverResult> it,
+    private static long recoverContinuousRecords(Iterator<RecoverResult> it,
         Map<Long, Long> openingStreamEndOffsets,
         Map<Long, Long> streamNextOffsets,
         Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
@@ -240,7 +243,7 @@ public class S3Storage implements Storage {
         Logger logger) {
         long logEndOffset = -1L;
         while (it.hasNext()) {
-            WriteAheadLog.RecoverResult recoverResult = it.next();
+            RecoverResult recoverResult = it.next();
             logEndOffset = recoverResult.recordOffset();
             ByteBuf recordBuf = recoverResult.record().duplicate();
             StreamRecordBatch streamRecordBatch = StreamRecordBatchCodec.decode(recordBuf);
@@ -329,7 +332,7 @@ public class S3Storage implements Storage {
         Logger logger) throws Throwable {
         List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
 
-        RecoverResult recoverResult = recoverContinuousRecords(deltaWAL.recover(), streams, logger);
+        InnerRecoverResult recoverResult = recoverContinuousRecords(deltaWAL.recover(), streams, logger);
         LogCache.LogCacheBlock cacheBlock = recoverResult.cacheBlock;
 
         Map<Long, Long> streamEndOffsets = new HashMap<>();
@@ -421,7 +424,7 @@ public class S3Storage implements Storage {
             }
             return true;
         }
-        WriteAheadLog.AppendResult appendResult;
+        AppendResult appendResult;
         try {
             try {
                 StreamRecordBatch streamRecord = request.record;
@@ -433,7 +436,7 @@ public class S3Storage implements Storage {
                 } finally {
                     lock.unlock();
                 }
-            } catch (WriteAheadLog.OverCapacityException e) {
+            } catch (OverCapacityException e) {
                 // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
                 confirmOffsetCalculator.update();
                 forceUpload(LogCache.MATCH_ALL_STREAMS);
@@ -1017,7 +1020,7 @@ public class S3Storage implements Storage {
      * Recover result of {@link #recoverContinuousRecords(Iterator, List, Logger)}
      * Only streams not in {@link #invalidStreams} should be uploaded and closed.
      */
-    static class RecoverResult {
+    static class InnerRecoverResult {
         /**
          * Recovered records. All {@link #invalidStreams} have been filtered out.
          */

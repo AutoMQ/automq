@@ -9,15 +9,14 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl.block;
 
+import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
-
-import static com.automq.stream.s3.wal.WriteAheadLog.AppendResult;
 
 /**
  * A Block contains multiple records, and will be written to the WAL in one batch.

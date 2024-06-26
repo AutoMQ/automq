@@ -9,11 +9,18 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl.block;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.TestUtils;
-import com.automq.stream.s3.wal.BlockWALService.RecoverIterator;
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.common.RecordHeader;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
+import com.automq.stream.s3.wal.exception.WALNotInitializedException;
+import com.automq.stream.s3.wal.impl.block.BlockWALService.RecoverIterator;
 import com.automq.stream.s3.wal.benchmark.WriteBench;
 import com.automq.stream.s3.wal.util.WALBlockDeviceChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
@@ -45,11 +52,9 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import static com.automq.stream.s3.wal.BlockWALService.RECORD_HEADER_SIZE;
-import static com.automq.stream.s3.wal.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
-import static com.automq.stream.s3.wal.WriteAheadLog.AppendResult;
-import static com.automq.stream.s3.wal.WriteAheadLog.OverCapacityException;
-import static com.automq.stream.s3.wal.WriteAheadLog.RecoverResult;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
+import static com.automq.stream.s3.wal.impl.block.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 import static com.automq.stream.s3.wal.util.WALChannelTest.TEST_BLOCK_DEVICE_KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -902,10 +907,10 @@ class BlockWALServiceTest {
     }
 
     private ByteBuf recordHeader(ByteBuf body, long offset) {
-        return new SlidingWindowService.RecordHeaderCoreData()
-            .setMagicCode(BlockWALService.RECORD_HEADER_MAGIC_CODE)
+        return new RecordHeader()
+            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
             .setRecordBodyLength(body.readableBytes())
-            .setRecordBodyOffset(offset + BlockWALService.RECORD_HEADER_SIZE)
+            .setRecordBodyOffset(offset + RECORD_HEADER_SIZE)
             .setRecordBodyCRC(WALUtil.crc32(body))
             .marshal();
     }
@@ -922,7 +927,7 @@ class BlockWALServiceTest {
     }
 
     private void writeWALHeader(WALChannel walChannel, long trimOffset, long maxLength) throws IOException {
-        ByteBuf header = new WALHeader(walChannel.capacity(), maxLength)
+        ByteBuf header = new BlockWALHeader(walChannel.capacity(), maxLength)
             .updateTrimOffset(trimOffset)
             .marshal();
         walChannel.writeAndFlush(header, 0);
@@ -1223,7 +1228,7 @@ class BlockWALServiceTest {
             .direct(directIO)
             .build();
         walChannel.open();
-        walChannel.writeAndFlush(new WALHeader(capacity2, 42).marshal(), 0);
+        walChannel.writeAndFlush(new BlockWALHeader(capacity2, 42).marshal(), 0);
         walChannel.close();
 
         // try to open it with capacity1
