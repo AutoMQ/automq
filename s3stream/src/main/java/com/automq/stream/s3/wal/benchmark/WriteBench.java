@@ -11,6 +11,8 @@
 
 package com.automq.stream.s3.wal.benchmark;
 
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.ThreadUtils;
@@ -164,10 +166,10 @@ public class WriteBench implements AutoCloseable {
             }
 
             long appendStartTimeNanos = System.nanoTime();
-            WriteAheadLog.AppendResult result;
+            AppendResult result;
             try {
                 result = log.append(payload.retainedDuplicate());
-            } catch (WriteAheadLog.OverCapacityException e) {
+            } catch (OverCapacityException e) {
                 System.err.printf("Append task %d failed, retry it, %s\n", index, e.getMessage());
                 continue;
             }

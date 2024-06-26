@@ -13,6 +13,7 @@ package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.impl.block.BlockWALHeader;
 import com.automq.stream.s3.wal.util.WALUtil;

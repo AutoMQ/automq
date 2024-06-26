@@ -12,6 +12,7 @@
 package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.util.WALChannel;
@@ -43,7 +44,7 @@ public class BenchTool {
 
     public static int recoverAndReset(WriteAheadLog wal) {
         int recovered = 0;
-        for (Iterator<WriteAheadLog.RecoverResult> it = wal.recover(); it.hasNext(); ) {
+        for (Iterator<RecoverResult> it = wal.recover(); it.hasNext(); ) {
             it.next().record().release();
             recovered++;
         }

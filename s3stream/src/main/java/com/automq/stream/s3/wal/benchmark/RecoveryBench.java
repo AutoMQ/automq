@@ -11,6 +11,8 @@
 
 package com.automq.stream.s3.wal.benchmark;
 
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
@@ -55,7 +57,7 @@ public class RecoveryBench implements AutoCloseable {
         recoverRecords(config.path);
     }
 
-    private void writeRecords(int numRecords, int recordSizeBytes) throws WriteAheadLog.OverCapacityException {
+    private void writeRecords(int numRecords, int recordSizeBytes) throws OverCapacityException {
         System.out.println("Writing " + numRecords + " records of size " + recordSizeBytes + " bytes");
         byte[] bytes = new byte[recordSizeBytes];
         random.nextBytes(bytes);
@@ -63,7 +65,7 @@ public class RecoveryBench implements AutoCloseable {
 
         AtomicInteger appended = new AtomicInteger();
         for (int i = 0; i < numRecords; i++) {
-            WriteAheadLog.AppendResult result = log.append(payload.retainedDuplicate());
+            AppendResult result = log.append(payload.retainedDuplicate());
             result.future().whenComplete((r, e) -> {
                 if (e != null) {
                     System.err.println("Failed to append record: " + e.getMessage());

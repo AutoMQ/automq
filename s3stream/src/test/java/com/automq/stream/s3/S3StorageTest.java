@@ -25,6 +25,8 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.MemoryWriteAheadLog;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
@@ -214,7 +216,7 @@ public class S3StorageTest {
 
     @Test
     public void testRecoverContinuousRecords() {
-        List<WriteAheadLog.RecoverResult> recoverResults = List.of(
+        List<RecoverResult> recoverResults = List.of(
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 10L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 11L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 12L))),
@@ -245,7 +247,7 @@ public class S3StorageTest {
 
     @Test
     public void testRecoverOutOfOrderRecords() {
-        List<WriteAheadLog.RecoverResult> recoverResults = List.of(
+        List<RecoverResult> recoverResults = List.of(
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 9L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 10L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 13L))),
@@ -269,10 +271,10 @@ public class S3StorageTest {
     }
 
     @Test
-    public void testWALOverCapacity() throws WriteAheadLog.OverCapacityException {
+    public void testWALOverCapacity() throws OverCapacityException {
         storage.append(newRecord(233L, 10L));
         storage.append(newRecord(233L, 11L));
-        doThrow(new WriteAheadLog.OverCapacityException("test")).when(wal).append(any(), any());
+        doThrow(new OverCapacityException("test")).when(wal).append(any(), any());
 
         Mockito.when(objectManager.prepareObject(eq(1), anyLong())).thenReturn(CompletableFuture.completedFuture(16L));
         CommitStreamSetObjectResponse resp = new CommitStreamSetObjectResponse();
@@ -291,7 +293,7 @@ public class S3StorageTest {
         assertEquals(12L, range.getEndOffset());
     }
 
-    static class TestRecoverResult implements WriteAheadLog.RecoverResult {
+    static class TestRecoverResult implements RecoverResult {
         private final ByteBuf record;
 
         public TestRecoverResult(ByteBuf record) {

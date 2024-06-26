@@ -13,6 +13,7 @@ package com.automq.stream.s3.wal.impl;
 
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
