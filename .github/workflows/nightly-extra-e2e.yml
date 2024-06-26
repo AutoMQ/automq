@@ -14,13 +14,31 @@ jobs:
       test-path: "tests/kafkatest/benchmarks"
       storage-path: "/data/github-actions/reports"
       runner: "extra"
-  connect_e2e:
-    name: "Run connect E2E Tests"
+  connect_e2e_1:
+    name: "Run connect E2E Tests 1"
     uses: ./.github/workflows/e2e-run.yml
     if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
-      suite-id: "connect"
-      test-path: "tests/kafkatest/tests/connect"
+      suite-id: "connect1"
+      test-yaml: "tests/suites/connect_test_suite1.yml"
+      storage-path: "/data/github-actions/reports"
+      runner: "extra"
+  connect_e2e_2:
+    name: "Run connect E2E Tests 2"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "connect2"
+      test-yaml: "tests/suites/connect_test_suite2.yml"
+      storage-path: "/data/github-actions/reports"
+      runner: "extra"
+  connect_e2e_3:
+    name: "Run connect E2E Tests 3"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "connect3"
+      test-yaml: "tests/suites/connect_test_suite3.yml"
       storage-path: "/data/github-actions/reports"
       runner: "extra"
   streams_e2e:
@@ -36,7 +54,7 @@ jobs:
     name: "E2E Tests Summary"
     runs-on: [ self-hosted, extra ]
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
-    needs: [ benchmarks_e2e, connect_e2e, streams_e2e ]
+    needs: [ benchmarks_e2e, connect_e2e_1, connect_e2e_2, connect_e2e_3, streams_e2e ]
     steps:
       - name: Report results
         run: python3 tests/report_e2e_results.py
