@@ -12,7 +12,6 @@
 package com.automq.stream.s3.wal.impl.block;
 
 import com.automq.stream.s3.wal.AppendResult;
-import com.automq.stream.s3.wal.WriteAheadLog;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
