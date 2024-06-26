@@ -14,7 +14,6 @@ package com.automq.stream.s3.wal.impl.s3;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
-import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
