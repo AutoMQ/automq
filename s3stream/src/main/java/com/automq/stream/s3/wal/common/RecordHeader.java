@@ -27,15 +27,15 @@ public class RecordHeader {
     private int recordHeaderCRC4;
 
     public static RecordHeader unmarshal(ByteBuf byteBuf) {
-        RecordHeader recordHeaderCoreData = new RecordHeader();
+        RecordHeader recordHeader = new RecordHeader();
         byteBuf.markReaderIndex();
-        recordHeaderCoreData.magicCode0 = byteBuf.readInt();
-        recordHeaderCoreData.recordBodyLength1 = byteBuf.readInt();
-        recordHeaderCoreData.recordBodyOffset2 = byteBuf.readLong();
-        recordHeaderCoreData.recordBodyCRC3 = byteBuf.readInt();
-        recordHeaderCoreData.recordHeaderCRC4 = byteBuf.readInt();
+        recordHeader.magicCode0 = byteBuf.readInt();
+        recordHeader.recordBodyLength1 = byteBuf.readInt();
+        recordHeader.recordBodyOffset2 = byteBuf.readLong();
+        recordHeader.recordBodyCRC3 = byteBuf.readInt();
+        recordHeader.recordHeaderCRC4 = byteBuf.readInt();
         byteBuf.resetReaderIndex();
-        return recordHeaderCoreData;
+        return recordHeader;
     }
 
     public int getMagicCode() {
