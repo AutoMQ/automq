@@ -150,8 +150,8 @@ public class CompactionTestBase {
             return false;
         }
         try {
-            block1.getDataCf().get(1, TimeUnit.SECONDS);
-            block2.getDataCf().get(1, TimeUnit.SECONDS);
+            block1.getDataCf().get(100, TimeUnit.MILLISECONDS);
+            block2.getDataCf().get(100, TimeUnit.MILLISECONDS);
         } catch (Throwable e) {
             // ignore
         }

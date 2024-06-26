@@ -70,7 +70,7 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
     @Test
     public void testReadObjectIndices() {
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, objectStorage, null);
+        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, objectStorage);
         Map<Long, List<StreamDataBlock>> expectedBlocksMap = Map.of(
             OBJECT_0, List.of(
                 new StreamDataBlock(STREAM_0, 0, 15, OBJECT_0, -1, -1, 1),
@@ -144,7 +144,6 @@ public class CompactionAnalyzerTest extends CompactionTestBase {
 
     @Test
     public void testSortStreamRangePositions() {
-        CompactionAnalyzer compactionAnalyzer = new CompactionAnalyzer(CACHE_SIZE, STREAM_SPLIT_SIZE, MAX_STREAM_NUM_IN_WAL, MAX_STREAM_OBJECT_NUM);
         List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
         Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, objectStorage);
         List<StreamDataBlock> sortedStreamDataBlocks = CompactionUtils.sortStreamRangePositions(streamDataBlocksMap);
