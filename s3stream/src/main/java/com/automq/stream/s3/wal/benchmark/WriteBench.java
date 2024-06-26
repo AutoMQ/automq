@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.wal.benchmark;
 
-import com.automq.stream.s3.wal.BlockWALService;
+import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;

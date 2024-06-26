@@ -25,7 +25,7 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
-import com.automq.stream.s3.wal.MemoryWriteAheadLog;
+import com.automq.stream.s3.wal.impl.MemoryWriteAheadLog;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
 import java.util.Collections;

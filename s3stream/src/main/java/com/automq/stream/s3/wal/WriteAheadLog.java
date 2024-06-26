@@ -12,6 +12,8 @@
 package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.s3.wal.common.WALMetadata;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.util.Iterator;
@@ -68,32 +70,4 @@ public interface WriteAheadLog {
      * @return future complete when trim done.
      */
     CompletableFuture<Void> trim(long offset);
-
-    interface AppendResult {
-        // The pre-allocated starting offset of the record
-        long recordOffset();
-
-        CompletableFuture<CallbackResult> future();
-
-        interface CallbackResult {
-            // The record before this offset has been flushed to disk
-            long flushedOffset();
-        }
-    }
-
-    interface RecoverResult {
-        ByteBuf record();
-
-        /**
-         * @see AppendResult#recordOffset()
-         */
-        long recordOffset();
-    }
-
-    class OverCapacityException extends Exception {
-        public OverCapacityException(String message) {
-            super(message);
-        }
-    }
-
 }

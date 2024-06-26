@@ -12,7 +12,7 @@
 package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.wal.BlockWALService;
+import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.util.WALChannel;
 import io.netty.buffer.ByteBuf;

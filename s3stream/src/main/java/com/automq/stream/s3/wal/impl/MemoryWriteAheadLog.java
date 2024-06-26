@@ -9,9 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl;
 
 import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.common.WALMetadata;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.util.Collections;

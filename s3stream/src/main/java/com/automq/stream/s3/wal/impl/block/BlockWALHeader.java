@@ -9,9 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal;
+package com.automq.stream.s3.wal.impl.block;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.wal.common.ShutdownType;
+import com.automq.stream.s3.wal.exception.UnmarshalException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import java.util.concurrent.atomic.AtomicLong;
@@ -20,31 +22,31 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>
  * Layout:
  * <p>
- * 0 - [4B] {@link WALHeader#magicCode0} Magic code of the WAL header, used to verify the start of the WAL header
+ * 0 - [4B] {@link BlockWALHeader#magicCode0} Magic code of the WAL header, used to verify the start of the WAL header
  * <p>
- * 1 - [8B] {@link WALHeader#capacity1} Capacity of the block device, which is configured by the application
+ * 1 - [8B] {@link BlockWALHeader#capacity1} Capacity of the block device, which is configured by the application
  * and should not be modified after the first start of the service
  * <p>
- * 2 - [8B] {@link WALHeader#trimOffset2} The logical start offset of the WAL, records before which are
+ * 2 - [8B] {@link BlockWALHeader#trimOffset2} The logical start offset of the WAL, records before which are
  * considered useless and have been deleted
  * <p>
- * 3 - [8B] {@link WALHeader#lastWriteTimestamp3} The timestamp of the last write to the WAL header, used to
+ * 3 - [8B] {@link BlockWALHeader#lastWriteTimestamp3} The timestamp of the last write to the WAL header, used to
  * determine which WAL header is the latest when recovering
  * <p>
- * 4 - [8B] {@link WALHeader#slidingWindowMaxLength4} The maximum size of the sliding window, which can be
+ * 4 - [8B] {@link BlockWALHeader#slidingWindowMaxLength4} The maximum size of the sliding window, which can be
  * scaled up when needed, and is used to determine when to stop recovering
  * <p>
- * 5 - [4B] {@link WALHeader#shutdownType5} The shutdown type of the service, {@link ShutdownType#GRACEFULLY} or
+ * 5 - [4B] {@link BlockWALHeader#shutdownType5} The shutdown type of the service, {@link ShutdownType#GRACEFULLY} or
  * {@link ShutdownType#UNGRACEFULLY}
  * <p>
- * 6 - [4B] {@link WALHeader#nodeId6} the node id of the WAL
+ * 6 - [4B] {@link BlockWALHeader#nodeId6} the node id of the WAL
  * <p>
- * 7 - [4B] {@link WALHeader#epoch7} the epoch id of the node
+ * 7 - [4B] {@link BlockWALHeader#epoch7} the epoch id of the node
  * <p>
- * 8 - [4B] {@link WALHeader#crc8} CRC of the rest of the WAL header, used to verify the correctness of the
+ * 8 - [4B] {@link BlockWALHeader#crc8} CRC of the rest of the WAL header, used to verify the correctness of the
  * WAL header
  */
-public class WALHeader {
+public class BlockWALHeader {
     public static final int WAL_HEADER_MAGIC_CODE = 0x12345678;
     public static final int WAL_HEADER_SIZE = 4 // magic code
         + 8 // capacity
@@ -67,37 +69,37 @@ public class WALHeader {
     private long epoch7;
     private int crc8;
 
-    public WALHeader(long capacity, long windowMaxLength) {
+    public BlockWALHeader(long capacity, long windowMaxLength) {
         this.capacity1 = capacity;
         this.slidingWindowMaxLength4.set(windowMaxLength);
     }
 
-    public static WALHeader unmarshal(ByteBuf buf) throws UnmarshalException {
-        WALHeader walHeader = new WALHeader(0, 0);
+    public static BlockWALHeader unmarshal(ByteBuf buf) throws UnmarshalException {
+        BlockWALHeader blockWalHeader = new BlockWALHeader(0, 0);
         buf.markReaderIndex();
-        walHeader.magicCode0 = buf.readInt();
-        walHeader.capacity1 = buf.readLong();
+        blockWalHeader.magicCode0 = buf.readInt();
+        blockWalHeader.capacity1 = buf.readLong();
         long trimOffset = buf.readLong();
-        walHeader.trimOffset2.set(trimOffset);
-        walHeader.flushedTrimOffset.set(trimOffset);
-        walHeader.lastWriteTimestamp3 = buf.readLong();
-        walHeader.slidingWindowMaxLength4.set(buf.readLong());
-        walHeader.shutdownType5 = ShutdownType.fromCode(buf.readInt());
-        walHeader.nodeId6 = buf.readInt();
-        walHeader.epoch7 = buf.readLong();
-        walHeader.crc8 = buf.readInt();
+        blockWalHeader.trimOffset2.set(trimOffset);
+        blockWalHeader.flushedTrimOffset.set(trimOffset);
+        blockWalHeader.lastWriteTimestamp3 = buf.readLong();
+        blockWalHeader.slidingWindowMaxLength4.set(buf.readLong());
+        blockWalHeader.shutdownType5 = ShutdownType.fromCode(buf.readInt());
+        blockWalHeader.nodeId6 = buf.readInt();
+        blockWalHeader.epoch7 = buf.readLong();
+        blockWalHeader.crc8 = buf.readInt();
         buf.resetReaderIndex();
 
-        if (walHeader.magicCode0 != WAL_HEADER_MAGIC_CODE) {
-            throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", walHeader.magicCode0, WAL_HEADER_MAGIC_CODE));
+        if (blockWalHeader.magicCode0 != WAL_HEADER_MAGIC_CODE) {
+            throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", blockWalHeader.magicCode0, WAL_HEADER_MAGIC_CODE));
         }
 
         int crc = WALUtil.crc32(buf, WAL_HEADER_WITHOUT_CRC_SIZE);
-        if (crc != walHeader.crc8) {
-            throw new UnmarshalException(String.format("WALHeader CRC not match, Recovered: [%d] expect: [%d]", walHeader.crc8, crc));
+        if (crc != blockWalHeader.crc8) {
+            throw new UnmarshalException(String.format("WALHeader CRC not match, Recovered: [%d] expect: [%d]", blockWalHeader.crc8, crc));
         }
 
-        return walHeader;
+        return blockWalHeader;
     }
 
     public long getCapacity() {
@@ -109,7 +111,7 @@ public class WALHeader {
     }
 
     // Update the trim offset if the given trim offset is larger than the current one.
-    public WALHeader updateTrimOffset(long trimOffset) {
+    public BlockWALHeader updateTrimOffset(long trimOffset) {
         trimOffset2.accumulateAndGet(trimOffset, Math::max);
         return this;
     }
@@ -126,7 +128,7 @@ public class WALHeader {
         return lastWriteTimestamp3;
     }
 
-    public WALHeader setLastWriteTimestamp(long lastWriteTimestamp) {
+    public BlockWALHeader setLastWriteTimestamp(long lastWriteTimestamp) {
         this.lastWriteTimestamp3 = lastWriteTimestamp;
         return this;
     }
@@ -143,7 +145,7 @@ public class WALHeader {
         return shutdownType5;
     }
 
-    public WALHeader setShutdownType(ShutdownType shutdownType) {
+    public BlockWALHeader setShutdownType(ShutdownType shutdownType) {
         this.shutdownType5 = shutdownType;
         return this;
     }
@@ -152,7 +154,7 @@ public class WALHeader {
         return nodeId6;
     }
 
-    public WALHeader setNodeId(int nodeId) {
+    public BlockWALHeader setNodeId(int nodeId) {
         this.nodeId6 = nodeId;
         return this;
     }
@@ -161,7 +163,7 @@ public class WALHeader {
         return epoch7;
     }
 
-    public WALHeader setEpoch(long epoch) {
+    public BlockWALHeader setEpoch(long epoch) {
         this.epoch7 = epoch;
         return this;
     }

@@ -11,8 +11,13 @@
 
 package com.automq.stream.s3.wal;
 
-public class UnmarshalException extends Exception {
-    public UnmarshalException(String message) {
-        super(message);
-    }
+import io.netty.buffer.ByteBuf;
+
+public interface RecoverResult {
+    ByteBuf record();
+
+    /**
+     * @see AppendResult#recordOffset()
+     */
+    long recordOffset();
 }
