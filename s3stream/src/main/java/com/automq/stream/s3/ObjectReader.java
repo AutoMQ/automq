@@ -12,6 +12,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.ObjectAttributes;
@@ -26,6 +27,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
@@ -339,7 +341,7 @@ public interface ObjectReader extends AutoCloseable {
             List<StreamDataBlock> rst = new LinkedList<>();
             IndexBlockOrderedBytes indexBlockOrderedBytes = new IndexBlockOrderedBytes(this);
             int startIndex = indexBlockOrderedBytes.search(new IndexBlockOrderedBytes.TargetStreamOffset(streamId, startOffset));
-            if (startIndex == -1) {
+            if (startIndex < 0) {
                 // mismatched
                 return new FindIndexResult(false, nextStartOffset, nextMaxBytes, rst);
             }
@@ -373,6 +375,53 @@ public interface ObjectReader extends AutoCloseable {
                 }
             }
             return new FindIndexResult(isFulfilled, nextStartOffset, nextMaxBytes, rst);
+        }
+
+        public Optional<StreamOffsetRange> findStreamOffsetRange(long streamId) {
+            IndexBlockOrderedBytes indexBlockOrderedBytes = new IndexBlockOrderedBytes(this);
+            int searchRst = indexBlockOrderedBytes.search(new IndexBlockOrderedBytes.TargetStreamOffset(streamId, Long.MIN_VALUE));
+            int insertPoint = -searchRst - 1;
+            long startOffset = Constants.NOOP_OFFSET;
+            long endOffset = Constants.NOOP_OFFSET;
+            for (int i = insertPoint; i < count; i++) {
+                DataBlockIndex dataBlockIndex = get(i);
+                if (dataBlockIndex.streamId() != streamId) {
+                    break;
+                }
+                if (startOffset == Constants.NOOP_OFFSET) {
+                    startOffset = dataBlockIndex.startOffset();
+                }
+                endOffset = dataBlockIndex.endOffset();
+            }
+            if (startOffset == Constants.NOOP_OFFSET) {
+                return Optional.empty();
+            } else {
+                return Optional.of(new StreamOffsetRange(streamId, startOffset, endOffset));
+            }
+        }
+
+        public List<StreamOffsetRange> streamOffsetRanges() {
+            List<StreamOffsetRange> ranges = new ArrayList<>(count);
+            Iterator<DataBlockIndex> it = iterator();
+            long streamId = Constants.NOOP_STREAM_ID;
+            long startOffset = Constants.NOOP_OFFSET;
+            long endOffset = Constants.NOOP_OFFSET;
+            while (it.hasNext()) {
+                DataBlockIndex index = it.next();
+                if (index.streamId() != streamId && streamId != Constants.NOOP_STREAM_ID) {
+                    ranges.add(new StreamOffsetRange(streamId, startOffset, endOffset));
+                    startOffset = Constants.NOOP_OFFSET;
+                }
+                streamId = index.streamId();
+                if (startOffset == Constants.NOOP_OFFSET) {
+                    startOffset = index.startOffset();
+                }
+                endOffset = index.endOffset();
+            }
+            if (streamId != Constants.NOOP_STREAM_ID) {
+                ranges.add(new StreamOffsetRange(streamId, startOffset, endOffset));
+            }
+            return ranges;
         }
 
         public int size() {

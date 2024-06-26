@@ -593,6 +593,7 @@ public enum MetadataVersion {
     }
 
     public static MetadataVersion latestProduction() {
+        LATEST_PRODUCTION.setAutoMQVersion(AutoMQVersion.LATEST);
         return LATEST_PRODUCTION;
     }
 

@@ -21,32 +21,44 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.utils.biniarysearch.AbstractOrderedCollection;
-import com.automq.stream.utils.biniarysearch.ComparableItem;
-import com.google.common.annotations.VisibleForTesting;
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.timeline.TimelineHashMap;
 
-public final class S3StreamsMetadataImage {
+public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     public static final S3StreamsMetadataImage EMPTY =
-        new S3StreamsMetadataImage(-1, new DeltaMap<>(new int[] {1000, 10000}), new DeltaMap<>(new int[] {1000, 10000}),
-            new DeltaMap<>(new int[] {1000, 10000}), new DeltaMap<>(new int[] {1000, 10000}));
+        new S3StreamsMetadataImage(
+            -1,
+            RegistryRef.NOOP,
+            new DeltaMap<>(new int[] {1000, 10000}), new DeltaMap<>(new int[] {1000, 10000}),
+            new DeltaMap<>(new int[] {1000, 10000}), new DeltaMap<>(new int[] {1000, 10000}),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0)
+        );
 
     private final long nextAssignedStreamId;
 
@@ -60,28 +72,25 @@ public final class S3StreamsMetadataImage {
     // this should be created only once in each image and not be modified
     private final DeltaMap<Long, TopicIdPartition> stream2partition;
 
-    @VisibleForTesting
-    public S3StreamsMetadataImage(
-        long assignedStreamId,
-        DeltaMap<Long, S3StreamMetadataImage> streamsMetadata,
-        DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata
-    ) {
-        this(assignedStreamId, streamsMetadata, nodeStreamSetObjectMetadata, new DeltaMap<>(), new DeltaMap<>());
-    }
+    private final TimelineHashMap<Long, Long> streamEndOffsets;
+    private final RegistryRef registry;
 
     public S3StreamsMetadataImage(
         long assignedStreamId,
+        RegistryRef registry,
         DeltaMap<Long, S3StreamMetadataImage> streamsMetadata,
         DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata,
-
         DeltaMap<TopicIdPartition, Set<Long>> partition2streams,
-        DeltaMap<Long, TopicIdPartition> stream2partition
+        DeltaMap<Long, TopicIdPartition> stream2partition,
+        TimelineHashMap<Long, Long> streamEndOffsets
     ) {
         this.nextAssignedStreamId = assignedStreamId + 1;
         this.streamsMetadata = streamsMetadata;
         this.nodeStreamSetObjectMetadata = nodeStreamSetObjectMetadata;
         this.partition2streams = partition2streams;
         this.stream2partition = stream2partition;
+        this.streamEndOffsets = streamEndOffsets;
+        this.registry = registry;
     }
 
     boolean isEmpty() {
@@ -94,26 +103,52 @@ public final class S3StreamsMetadataImage {
                 new AssignedStreamIdRecord().setAssignedStreamId(nextAssignedStreamId - 1), (short) 0));
         streamsMetadata.forEach((k, v) -> v.write(writer, options));
         nodeStreamSetObjectMetadata.forEach((k, v) -> v.write(writer, options));
+        if (registry != RegistryRef.NOOP && options.metadataVersion().autoMQVersion().isHugeClusterSupported()) {
+            List<StreamEndOffset> endOffsets = registry.inLock(() -> streamEndOffsets.entrySet(registry.epoch()).stream()
+                .map(e -> new StreamEndOffset(e.getKey(), e.getValue()))
+                .collect(Collectors.toList()));
+            writer.write(new ApiMessageAndVersion(
+                new S3StreamEndOffsetsRecord().setEndOffsets(S3StreamEndOffsetsCodec.encode(endOffsets)),
+                (short) 0
+            ));
+        }
     }
 
     /**
      * Get objects in range [startOffset, endOffset) with limit.
      *
-     * @param streamId stream id
+     * @param streamId    stream id
      * @param startOffset inclusive start offset of the stream
-     * @param endOffset exclusive end offset of the stream.
-     *                  NOTE: NOOP_OFFSET means to retrieve as many objects as it's within the limit.
-     * @param limit max number of s3 objects to return
+     * @param endOffset   exclusive end offset of the stream.
+     *                    NOTE: NOOP_OFFSET means to retrieve as many objects as it's within the limit.
+     * @param limit       max number of s3 objects to return
      * @return s3 objects within the range
      */
+    public CompletableFuture<InRangeObjects> getObjects(long streamId, long startOffset, long endOffset, int limit,
+        RangeGetter rangeGetter) {
+        GetObjectsContext ctx = new GetObjectsContext(streamId, startOffset, endOffset, limit, rangeGetter);
+        try {
+            getObjects0(ctx);
+        } catch (Throwable e) {
+            ctx.cf.completeExceptionally(e);
+        }
+        return ctx.cf;
+    }
+
     @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
-    public InRangeObjects getObjects(long streamId, long startOffset, long endOffset, int limit) {
+    void getObjects0(GetObjectsContext ctx) {
+        long streamId = ctx.streamId;
+        long startOffset = ctx.startOffset;
+        long endOffset = ctx.endOffset;
+        int limit = ctx.limit;
         if (streamId < 0 || limit < 0 || (endOffset != ObjectUtils.NOOP_OFFSET && startOffset > endOffset)) {
-            return InRangeObjects.INVALID;
+            ctx.cf.complete(InRangeObjects.INVALID);
+            return;
         }
         S3StreamMetadataImage stream = streamsMetadata.get(streamId);
         if (stream == null || startOffset < stream.startOffset()) {
-            return InRangeObjects.INVALID;
+            ctx.cf.complete(InRangeObjects.INVALID);
+            return;
         }
         List<S3ObjectMetadata> objects = new LinkedList<>();
         long nextStartOffset = startOffset;
@@ -149,7 +184,8 @@ public final class S3StreamsMetadataImage {
                 objects.add(streamObject.toMetadata());
                 nextStartOffset = streamObject.endOffset();
                 if (objects.size() >= limit || (endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= endOffset)) {
-                    return new InRangeObjects(streamId, objects);
+                    ctx.cf.complete(new InRangeObjects(streamId, objects));
+                    return;
                 }
             }
 
@@ -172,24 +208,29 @@ public final class S3StreamsMetadataImage {
             }
 
             final int streamSetObjectsSize = streamSetObjects.size();
+            // load stream set object index
+            if (loadStreamSetObjectInfo(ctx, streamSetObjects, streamSetObjectIndex)) {
+                return;
+            }
 
             for (; streamSetObjectIndex < streamSetObjectsSize; streamSetObjectIndex++) {
                 S3StreamSetObject streamSetObject = streamSetObjects.get(streamSetObjectIndex);
-                StreamOffsetRange streamOffsetRange = streamSetObject.find(streamId).orElse(null);
+                StreamOffsetRange streamOffsetRange = findStreamInStreamSetObject(ctx, streamSetObject).orElse(null);
                 // skip the stream set object not containing the stream or the range is before the nextStartOffset
                 if (streamOffsetRange == null || streamOffsetRange.endOffset() <= nextStartOffset) {
                     continue;
                 }
                 if ((streamOffsetRange.startOffset() == nextStartOffset)
-                        || (objects.isEmpty() && streamOffsetRange.startOffset() < nextStartOffset)) {
+                    || (objects.isEmpty() && streamOffsetRange.startOffset() < nextStartOffset)) {
                     if (node != null) {
                         node.recordStreamSetObjectIndex(streamId, nextStartOffset, streamSetObjectIndex);
                     }
                     objects.add(new S3ObjectMetadata(streamSetObject.objectId(), S3ObjectType.STREAM_SET, List.of(streamOffsetRange),
-                            streamSetObject.dataTimeInMs()));
+                        streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
                     if (objects.size() >= limit || (endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= endOffset)) {
-                        return new InRangeObjects(streamId, objects);
+                        ctx.cf.complete(new InRangeObjects(streamId, objects));
+                        return;
                     }
                 } else {
                     // We keep the corresponding object ( with a range startOffset > nextStartOffset) by not changing
@@ -205,7 +246,50 @@ public final class S3StreamsMetadataImage {
                 streamSetObjects = null;
             }
         }
-        return new InRangeObjects(streamId, objects);
+        ctx.cf.complete(new InRangeObjects(streamId, objects));
+    }
+
+    /**
+     * Load the stream set object range info is missing
+     *
+     * @return async load
+     */
+    private boolean loadStreamSetObjectInfo(GetObjectsContext ctx, List<S3StreamSetObject> streamSetObjects,
+        int startSearchIndex) {
+        final int streamSetObjectsSize = streamSetObjects.size();
+        List<CompletableFuture<Void>> loadIndexCfList = new LinkedList<>();
+        for (int i = startSearchIndex; i < streamSetObjectsSize; i++) {
+            S3StreamSetObject streamSetObject = streamSetObjects.get(i);
+            if (streamSetObject.ranges().length != 0) {
+                continue;
+            }
+            if (ctx.object2range.containsKey(streamSetObject.objectId())) {
+                continue;
+            }
+            loadIndexCfList.add(
+                ctx.rangeGetter
+                    .find(streamSetObject.objectId(), ctx.streamId)
+                    .thenAccept(range -> ctx.object2range.put(streamSetObject.objectId(), range))
+            );
+        }
+        if (loadIndexCfList.isEmpty()) {
+            return false;
+        }
+        CompletableFuture.allOf(loadIndexCfList.toArray(new CompletableFuture[0]))
+            .thenAccept(nil -> getObjects0(ctx))
+            .exceptionally(ex -> {
+                ctx.cf.completeExceptionally(ex);
+                return null;
+            });
+        return true;
+    }
+
+    private Optional<StreamOffsetRange> findStreamInStreamSetObject(GetObjectsContext ctx, S3StreamSetObject object) {
+        if (object.ranges().length == 0) {
+            return ctx.object2range.get(object.objectId());
+        } else {
+            return object.find(ctx.streamId);
+        }
     }
 
     /**
@@ -267,12 +351,13 @@ public final class S3StreamsMetadataImage {
         S3StreamsMetadataImage other = (S3StreamsMetadataImage) obj;
         return this.nextAssignedStreamId == other.nextAssignedStreamId
             && this.streamsMetadata.equals(other.streamsMetadata)
-            && this.nodeStreamSetObjectMetadata.equals(other.nodeStreamSetObjectMetadata);
+            && this.nodeStreamSetObjectMetadata.equals(other.nodeStreamSetObjectMetadata)
+            && this.streamEndOffsets().equals(other.streamEndOffsets());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nextAssignedStreamId, streamsMetadata, nodeStreamSetObjectMetadata);
+        return Objects.hash(nextAssignedStreamId, streamsMetadata, nodeStreamSetObjectMetadata, streamEndOffsets());
     }
 
     public DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeWALMetadata() {
@@ -295,38 +380,60 @@ public final class S3StreamsMetadataImage {
         return stream2partition;
     }
 
+    RegistryRef registry() {
+        return registry;
+    }
+
+    TimelineHashMap<Long, Long> timelineStreamEndOffsets() {
+        return streamEndOffsets;
+    }
+
+    Map<Long, Long> streamEndOffsets() {
+        if (registry == RegistryRef.NOOP) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Long> map = new HashMap<>();
+        streamEndOffsets.entrySet(registry.epoch()).forEach(e -> map.put(e.getKey(), e.getValue()));
+        return map;
+    }
+
     @Override
     public String toString() {
         return "S3StreamsMetadataImage{nextAssignedStreamId=" + nextAssignedStreamId + '}';
     }
 
-    static class StreamOffsetRanges extends AbstractOrderedCollection<Long> {
-        private final List<StreamOffsetRange> ranges;
+    @Override
+    protected void deallocate() {
+        registry.release();
+    }
 
-        public StreamOffsetRanges(List<StreamOffsetRange> ranges) {
-            this.ranges = ranges;
+    @Override
+    public ReferenceCounted touch(Object o) {
+        return this;
+    }
+
+    static class GetObjectsContext {
+        long streamId;
+        long startOffset;
+        long endOffset;
+        int limit;
+        RangeGetter rangeGetter;
+
+        CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
+        Map<Long, Optional<StreamOffsetRange>> object2range = new HashMap<>();
+
+        GetObjectsContext(long streamId, long startOffset, long endOffset, int limit,
+            RangeGetter rangeGetter) {
+            this.streamId = streamId;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.limit = limit;
+            this.rangeGetter = rangeGetter;
         }
+    }
 
-        @Override
-        protected int size() {
-            return ranges.size();
-        }
-
-        @Override
-        protected ComparableItem<Long> get(int index) {
-            StreamOffsetRange range = ranges.get(index);
-            return new ComparableItem<>() {
-                @Override
-                public boolean isLessThan(Long o) {
-                    return range.streamId() < o;
-                }
-
-                @Override
-                public boolean isGreaterThan(Long o) {
-                    return range.streamId() > o;
-                }
-            };
-        }
+    public interface RangeGetter {
+        CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId);
     }
 
 }

@@ -28,6 +28,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -37,6 +38,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     private static final Cache<Long, List<StreamOffsetRange>> RANGES_CACHE = CacheBuilder.newBuilder()
@@ -86,6 +88,10 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     }
 
     public List<StreamOffsetRange> offsetRangeList() {
+        if (ranges.length == 0) {
+            // {@link AutoMQVersion.V2} won't record ranges in metadata.
+            return Collections.emptyList();
+        }
         try {
             return RANGES_CACHE.get(objectId, () -> decode(ranges));
         } catch (ExecutionException e) {
@@ -108,13 +114,13 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         }
     }
 
-    public ApiMessageAndVersion toRecord() {
+    public ApiMessageAndVersion toRecord(AutoMQVersion version) {
         return new ApiMessageAndVersion(new S3StreamSetObjectRecord()
             .setObjectId(objectId)
             .setNodeId(nodeId)
             .setOrderId(orderId)
             .setDataTimeInMs(dataTimeInMs)
-            .setRanges(ranges), (short) 0);
+            .setRanges(ranges), version.streamSetObjectRecordVersion());
     }
 
     public static S3StreamSetObject of(S3StreamSetObjectRecord record) {
@@ -140,6 +146,10 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
 
     public long dataTimeInMs() {
         return dataTimeInMs;
+    }
+
+    public byte[] ranges() {
+        return ranges;
     }
 
     @Override

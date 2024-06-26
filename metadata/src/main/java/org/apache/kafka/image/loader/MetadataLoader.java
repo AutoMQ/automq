@@ -355,9 +355,12 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
         }
         // AutoMQ inject start
         // Expect the old image is already replaced by the new image.
-        // If there is any reference to the old image, it should invoke the S3ObjectsImage#retain and release after used.
+        // If there is any reference to the old image, it should invoke the #retain and release after used.
         if (oldImage != null && image.objectsMetadata() != oldImage.objectsMetadata()) {
             oldImage.objectsMetadata().release();
+        }
+        if (oldImage != null && image.streamsMetadata() != oldImage.streamsMetadata()) {
+            oldImage.streamsMetadata().release();
         }
         // AutoMQ inject end
     }

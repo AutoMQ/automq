@@ -434,7 +434,7 @@ public class LogCache {
                 return Collections.emptyList();
             }
             int startIndex = searchStartIndex(startOffset);
-            if (startIndex == -1) {
+            if (startIndex < 0) {
                 // mismatched
                 return Collections.emptyList();
             }
