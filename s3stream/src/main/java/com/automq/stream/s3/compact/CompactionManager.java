@@ -33,6 +33,7 @@ import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.biniarysearch.StreamOffsetRangeSearchList;
 import io.github.bucket4j.Bucket;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import java.time.Duration;
@@ -87,6 +88,7 @@ public class CompactionManager {
     private volatile CompletableFuture<Void> compactionCf = null;
     private Bucket compactionBucket = null;
     private boolean hasRemainingObjects = false;
+    private Map<Long, List<StreamDataBlock>> streamDataBlockMap = new HashMap<>();
 
     public CompactionManager(Config config, ObjectManager objectManager, StreamManager streamManager,
         ObjectStorage objectStorage) {
@@ -144,6 +146,7 @@ public class CompactionManager {
             } catch (Exception ex) {
                 logger.error("Error while compacting objects ", ex);
             }
+            cleanUp();
             long nextDelay = Math.max(MIN_COMPACTION_DELAY_MS, (long) this.compactionInterval * 60 * 1000 - timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             if (hasRemainingObjects) {
                 nextDelay = MIN_COMPACTION_DELAY_MS;
@@ -184,26 +187,64 @@ public class CompactionManager {
         } catch (InterruptedException ignored) {
         }
         this.uploader.shutdown();
+        cleanUp();
         logger.info("Compaction manager shutdown complete");
     }
 
     public CompletableFuture<Void> compact() {
         return this.objectManager.getServerObjects().thenComposeAsync(objectMetadataList -> {
-            List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
-                .map(StreamOffsetRange::streamId).distinct().collect(Collectors.toList());
-            return this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList ->
-                this.compact(streamMetadataList, objectMetadataList), compactThreadPool);
+            logger.info("Get {} stream set objects from metadata", objectMetadataList.size());
+            if (objectMetadataList.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            updateStreamDataBlockMap(objectMetadataList);
+            List<Long> streamIds;
+            try {
+                streamIds = collectStreamIdsAndCheckBlockSize();
+            } catch (Exception e) {
+                return CompletableFuture.failedFuture(e);
+            }
+            return this.streamManager.getStreams(new ArrayList<>(streamIds)).thenAcceptAsync(streamMetadataList -> {
+                if (streamMetadataList.isEmpty()) {
+                    logger.info("No stream metadata found for stream set objects");
+                    return;
+                }
+                filterInvalidStreamDataBlocks(streamMetadataList);
+                this.compact(streamMetadataList, objectMetadataList);
+            }, compactThreadPool);
         }, compactThreadPool);
+    }
+
+    List<Long> collectStreamIdsAndCheckBlockSize() throws IllegalStateException {
+        Set<Long> streamIds = new HashSet<>();
+        for (List<StreamDataBlock> blocks : streamDataBlockMap.values()) {
+            for (StreamDataBlock block : blocks) {
+                if (block.getBlockSize() > compactionCacheSize) {
+                    logger.error("Block {} size exceeds compaction cache size {}, skip compaction", block, compactionCacheSize);
+                    throw new IllegalStateException("Block size exceeds compaction cache size");
+                }
+                streamIds.add(block.getStreamId());
+            }
+        }
+        return new ArrayList<>(streamIds);
+    }
+
+    void updateStreamDataBlockMap(List<S3ObjectMetadata> objectMetadataList) {
+        this.streamDataBlockMap = CompactionUtils.blockWaitObjectIndices(objectMetadataList, objectStorage, logger);
+    }
+
+    void filterInvalidStreamDataBlocks(List<StreamMetadata> streamMetadataList) {
+        CompactionUtils.filterInvalidStreamDataBlocks(streamMetadataList, streamDataBlockMap);
+    }
+
+    void cleanUp() {
+        this.streamDataBlockMap.clear();
     }
 
     private void compact(List<StreamMetadata> streamMetadataList,
         List<S3ObjectMetadata> objectMetadataList) throws CompletionException {
         if (!running.get()) {
             logger.info("Compaction manager is shutdown, skip compaction");
-            return;
-        }
-        logger.info("Get {} stream set objects from metadata", objectMetadataList.size());
-        if (objectMetadataList.isEmpty()) {
             return;
         }
         Map<Boolean, List<S3ObjectMetadata>> objectMetadataFilterMap = convertS3Objects(objectMetadataList);
@@ -353,13 +394,20 @@ public class CompactionManager {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         //TODO: deal with metadata delay
         this.compactionScheduledExecutor.execute(() -> this.objectManager.getServerObjects().thenAcceptAsync(objectMetadataList -> {
-            List<Long> streamIds = objectMetadataList.stream().flatMap(e -> e.getOffsetRanges().stream())
-                .map(StreamOffsetRange::streamId).distinct().collect(Collectors.toList());
+            if (objectMetadataList.isEmpty()) {
+                logger.info("No stream set objects to force split");
+                cf.complete(null);
+                return;
+            }
+            updateStreamDataBlockMap(objectMetadataList);
+            List<Long> streamIds = streamDataBlockMap.values().stream().flatMap(Collection::stream)
+                .map(StreamDataBlock::getStreamId).distinct().collect(Collectors.toList());
             this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList -> {
-                if (objectMetadataList.isEmpty()) {
-                    logger.info("No stream set objects to force split");
+                if (streamMetadataList.isEmpty()) {
+                    logger.info("No stream metadata found for stream set objects");
                     return;
                 }
+                filterInvalidStreamDataBlocks(streamMetadataList);
                 forceSplitObjects(streamMetadataList, objectMetadataList);
                 cf.complete(null);
             }, forceSplitThreadPool);
@@ -375,24 +423,16 @@ public class CompactionManager {
     /**
      * Split specified stream set object into stream objects.
      *
-     * @param streamMetadataList metadata of opened streams
      * @param objectMetadata     stream set object to split
      * @param cfs                List of CompletableFuture of StreamObject
      * @return true if split succeed, false otherwise
      */
-    private boolean splitStreamSetObject(List<StreamMetadata> streamMetadataList,
-        S3ObjectMetadata objectMetadata, Collection<CompletableFuture<StreamObject>> cfs) {
+    private boolean splitStreamSetObject(S3ObjectMetadata objectMetadata, Collection<CompletableFuture<StreamObject>> cfs) {
         if (objectMetadata == null) {
             return false;
         }
 
-        Map<Long, List<StreamDataBlock>> streamDataBlocksMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList,
-            Collections.singletonList(objectMetadata), objectStorage, logger);
-        if (streamDataBlocksMap.isEmpty()) {
-            logger.warn("Read index for object {} failed", objectMetadata.objectId());
-            return false;
-        }
-        List<StreamDataBlock> streamDataBlocks = streamDataBlocksMap.get(objectMetadata.objectId());
+        List<StreamDataBlock> streamDataBlocks = streamDataBlockMap.get(objectMetadata.objectId());
         if (streamDataBlocks.isEmpty()) {
             // object is empty, metadata is out of date
             logger.info("Object {} is out of date, will be deleted after compaction", objectMetadata.objectId());
@@ -480,7 +520,7 @@ public class CompactionManager {
     CommitStreamSetObjectRequest buildSplitRequest(List<StreamMetadata> streamMetadataList,
         S3ObjectMetadata objectToSplit) throws CompletionException {
         List<CompletableFuture<StreamObject>> cfs = new ArrayList<>();
-        boolean status = splitStreamSetObject(streamMetadataList, objectToSplit, cfs);
+        boolean status = splitStreamSetObject(objectToSplit, cfs);
         if (!status) {
             logger.error("Force split object {} failed, no stream object generated", objectToSplit.objectId());
             return null;
@@ -513,7 +553,7 @@ public class CompactionManager {
         }).filter(Objects::nonNull).forEach(request::addStreamObject);
 
         request.setCompactedObjectIds(Collections.singletonList(objectToSplit.objectId()));
-        if (isSanityCheckFailed(streamMetadataList, Collections.singletonList(objectToSplit), request)) {
+        if (isSanityCheckFailed(streamMetadataList, request)) {
             logger.error("Sanity check failed, force split result is illegal");
             return null;
         }
@@ -530,19 +570,18 @@ public class CompactionManager {
         Set<Long> compactedObjectIds = new HashSet<>();
         logger.info("{} stream set objects as compact candidates, total compaction size: {}",
             objectsToCompact.size(), objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum());
-        Map<Long, List<StreamDataBlock>> streamDataBlockMap = CompactionUtils.blockWaitObjectIndices(streamMetadataList,
-            objectsToCompact, objectStorage, logger);
-        for (List<StreamDataBlock> blocks : streamDataBlockMap.values()) {
-            for (StreamDataBlock block : blocks) {
-                if (block.getBlockSize() > compactionCacheSize) {
-                    logger.error("Block {} size exceeds compaction cache size {}, skip compaction", block, compactionCacheSize);
-                    return null;
-                }
+        Map<Long, List<StreamDataBlock>> streamDataBlockMapToCompact = new HashMap<>();
+        for (S3ObjectMetadata objectMetadata : objectsToCompact) {
+            List<StreamDataBlock> streamDataBlocks = streamDataBlockMap.get(objectMetadata.objectId());
+            if (streamDataBlocks == null) {
+                continue;
             }
+            streamDataBlockMapToCompact.put(objectMetadata.objectId(), streamDataBlocks);
         }
+
         long now = System.currentTimeMillis();
         Set<Long> excludedObjectIds = new HashSet<>();
-        List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(streamDataBlockMap, excludedObjectIds);
+        List<CompactionPlan> compactionPlans = this.compactionAnalyzer.analyze(streamDataBlockMapToCompact, excludedObjectIds);
         logger.info("Analyze compaction plans complete, cost {}ms", System.currentTimeMillis() - now);
         logCompactionPlans(compactionPlans, excludedObjectIds);
         objectsToCompact = objectsToCompact.stream().filter(e -> !excludedObjectIds.contains(e.objectId())).collect(Collectors.toList());
@@ -556,15 +595,13 @@ public class CompactionManager {
         compactionPlans.forEach(c -> c.streamDataBlocksMap().values().forEach(v -> v.forEach(b -> compactedObjectIds.add(b.getObjectId()))));
 
         // compact out-dated objects directly
-        streamDataBlockMap.entrySet().stream().filter(e -> e.getValue().isEmpty()).forEach(e -> {
+        streamDataBlockMapToCompact.entrySet().stream().filter(e -> e.getValue().isEmpty()).forEach(e -> {
             logger.info("Object {} is out of date, will be deleted after compaction", e.getKey());
             compactedObjectIds.add(e.getKey());
         });
 
         request.setCompactedObjectIds(new ArrayList<>(compactedObjectIds));
-        List<S3ObjectMetadata> compactedObjectMetadata = objectsToCompact.stream()
-            .filter(e -> compactedObjectIds.contains(e.objectId())).collect(Collectors.toList());
-        if (isSanityCheckFailed(streamMetadataList, compactedObjectMetadata, request)) {
+        if (isSanityCheckFailed(streamMetadataList, request)) {
             logger.error("Sanity check failed, compaction result is illegal");
             return null;
         }
@@ -572,49 +609,38 @@ public class CompactionManager {
         return request;
     }
 
-    boolean isSanityCheckFailed(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> compactedObjects,
-        CommitStreamSetObjectRequest request) {
+    boolean isSanityCheckFailed(List<StreamMetadata> streamMetadataList, CommitStreamSetObjectRequest request) {
         Map<Long, StreamMetadata> streamMetadataMap = streamMetadataList.stream()
             .collect(Collectors.toMap(StreamMetadata::streamId, e -> e));
-        Map<Long, S3ObjectMetadata> objectMetadataMap = compactedObjects.stream()
-            .collect(Collectors.toMap(S3ObjectMetadata::objectId, e -> e));
 
         List<StreamOffsetRange> compactedStreamOffsetRanges = new ArrayList<>();
         request.getStreamRanges().forEach(o -> compactedStreamOffsetRanges.add(new StreamOffsetRange(o.getStreamId(), o.getStartOffset(), o.getEndOffset())));
         request.getStreamObjects().forEach(o -> compactedStreamOffsetRanges.add(new StreamOffsetRange(o.getStreamId(), o.getStartOffset(), o.getEndOffset())));
-        Map<Long, List<StreamOffsetRange>> sortedStreamOffsetRanges = compactedStreamOffsetRanges.stream()
-            .collect(Collectors.groupingBy(StreamOffsetRange::streamId));
-        sortedStreamOffsetRanges.replaceAll((k, v) -> sortAndMerge(v));
+        Map<Long, StreamOffsetRangeSearchList> searchListMap = compactedStreamOffsetRanges
+            .stream()
+            .collect(Collectors.groupingBy(StreamOffsetRange::streamId))
+            .entrySet()
+            .stream()
+            .collect(Collectors.toMap(Map.Entry::getKey, e -> sortAndMerge(e.getValue())));
         for (long objectId : request.getCompactedObjectIds()) {
-            S3ObjectMetadata metadata = objectMetadataMap.get(objectId);
-            for (StreamOffsetRange streamOffsetRange : metadata.getOffsetRanges()) {
-                if (!streamMetadataMap.containsKey(streamOffsetRange.streamId())) {
+            for (StreamDataBlock originalBlock : streamDataBlockMap.get(objectId)) {
+                long streamId = originalBlock.getStreamId();
+                if (!streamMetadataMap.containsKey(streamId)) {
                     // skip non-exist stream
                     continue;
                 }
-                long streamStartOffset = streamMetadataMap.get(streamOffsetRange.streamId()).startOffset();
-                if (streamOffsetRange.endOffset() <= streamStartOffset) {
-                    // skip stream offset range that has been trimmed
+                long streamStartOffset = streamMetadataMap.get(streamId).startOffset();
+                if (originalBlock.getEndOffset() <= streamStartOffset) {
+                    // skip block that has been trimmed
                     continue;
                 }
-                if (streamOffsetRange.startOffset() < streamStartOffset) {
-                    // trim stream offset range
-                    streamOffsetRange = new StreamOffsetRange(streamOffsetRange.streamId(), streamStartOffset, streamOffsetRange.endOffset());
-                }
-                if (!sortedStreamOffsetRanges.containsKey(streamOffsetRange.streamId())) {
-                    logger.error("Sanity check failed, stream {} is missing after compact", streamOffsetRange.streamId());
+                StreamOffsetRangeSearchList searchList = searchListMap.get(streamId);
+                if (searchList == null) {
+                    logger.error("Sanity check failed, stream {} is missing after compact", streamId);
                     return true;
                 }
-                boolean contained = false;
-                for (StreamOffsetRange compactedStreamOffsetRange : sortedStreamOffsetRanges.get(streamOffsetRange.streamId())) {
-                    if (streamOffsetRange.startOffset() >= compactedStreamOffsetRange.startOffset()
-                        && streamOffsetRange.endOffset() <= compactedStreamOffsetRange.endOffset()) {
-                        contained = true;
-                        break;
-                    }
-                }
-                if (!contained) {
-                    logger.error("Sanity check failed, object {} offset range {} is missing after compact", objectId, streamOffsetRange);
+                if (searchList.search(originalBlock) < 0) {
+                    logger.error("Sanity check failed, object {} block {} is missing after compact", objectId, originalBlock);
                     return true;
                 }
             }
@@ -623,9 +649,9 @@ public class CompactionManager {
         return false;
     }
 
-    private List<StreamOffsetRange> sortAndMerge(List<StreamOffsetRange> streamOffsetRangeList) {
+    private StreamOffsetRangeSearchList sortAndMerge(List<StreamOffsetRange> streamOffsetRangeList) {
         if (streamOffsetRangeList.size() < 2) {
-            return streamOffsetRangeList;
+            return new StreamOffsetRangeSearchList(streamOffsetRangeList);
         }
         long streamId = streamOffsetRangeList.get(0).streamId();
         Collections.sort(streamOffsetRangeList);
@@ -647,7 +673,7 @@ public class CompactionManager {
         }
         mergedList.add(new StreamOffsetRange(streamId, start, end));
 
-        return mergedList;
+        return new StreamOffsetRangeSearchList(mergedList);
     }
 
     Map<Boolean, List<S3ObjectMetadata>> convertS3Objects(List<S3ObjectMetadata> streamSetObjectMetadata) {
