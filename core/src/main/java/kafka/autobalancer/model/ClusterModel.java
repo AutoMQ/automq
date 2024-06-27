@@ -369,11 +369,11 @@ public class ClusterModel {
             if (oldBrokerId == brokerId) {
                 return;
             }
+            TopicPartition tp = new TopicPartition(topicName, partitionId);
             if (oldBrokerId != -1) {
-                TopicPartition tp = new TopicPartition(topicName, partitionId);
-                brokerReplicaMap.get(brokerId).put(tp, createReplicaUpdater(tp));
                 brokerReplicaMap.get(oldBrokerId).remove(tp);
             }
+            brokerReplicaMap.get(brokerId).put(tp, createReplicaUpdater(tp));
             topicPartitionReplicaMap.get(topicName).put(partitionId, brokerId);
         } finally {
             clusterLock.unlock();
