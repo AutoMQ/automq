@@ -375,18 +375,20 @@ public class S3ObjectControlManager {
                     log.error("Failed to delete the S3Object from S3, objectKeys: {}",
                         String.join(",", objectKeys), e);
                     return null;
-                }).thenAccept(resp -> {
+                }).thenCompose(resp -> {
                     if (resp != null && !resp.isEmpty()) {
                         List<Long> deletedObjectIds = resp.stream().map(key -> ObjectUtils.parseObjectId(0, key)).collect(Collectors.toList());
                         // notify the controller an objects deletion event to drive the removal of the objects
                         ControllerRequestContext ctx = new ControllerRequestContext(
                             null, null, OptionalLong.empty());
-                        quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
+                        return quorumController.notifyS3ObjectDeleted(ctx, deletedObjectIds).whenComplete((ignore, exp) -> {
                             if (exp != null) {
                                 log.error("Failed to notify the controller the S3Object deletion event, objectIds: {}",
                                     Arrays.toString(deletedObjectIds.toArray()), exp);
                             }
                         });
+                    } else {
+                        return CompletableFuture.completedFuture(null);
                     }
                 });
         }
