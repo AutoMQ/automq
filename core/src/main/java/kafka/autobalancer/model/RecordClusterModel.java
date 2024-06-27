@@ -75,7 +75,6 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
     @Override
     public void onPartitionCreate(PartitionRecord record) {
         if (record.leader() < 0) {
-            logger.error("Illegal replica leader {} for {}-{}", record.leader(), record.topicId(), record.partitionId());
             return;
         }
         createPartition(record.topicId(), record.partitionId(), record.leader());
