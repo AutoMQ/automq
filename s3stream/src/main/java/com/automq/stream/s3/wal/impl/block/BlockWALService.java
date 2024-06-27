@@ -292,6 +292,8 @@ public class BlockWALService implements WriteAheadLog {
         } else {
             LOGGER.info("read WALHeader from WAL: {}", header);
         }
+
+        header.setShutdownType(ShutdownType.UNGRACEFULLY);
         walHeaderReady(header);
 
         started.set(true);
