@@ -50,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.when;
 
 @Timeout(40)
 @Tag("S3Unit")
@@ -71,6 +72,7 @@ public class S3ObjectControlManagerTest {
     @BeforeEach
     public void setUp() {
         controller = Mockito.mock(QuorumController.class);
+        when(controller.notifyS3ObjectDeleted(any(), anyList())).thenReturn(CompletableFuture.completedFuture(null));
         operator = Mockito.mock(S3Operator.class);
         Mockito.when(operator.delete(anyList())).then(inv -> {
             List<String> objectKeys = inv.getArgument(0);
