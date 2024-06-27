@@ -215,8 +215,8 @@ public class S3ObjectControlManagerTest {
         assertEquals(1, manager.objectsMetadata().size());
         S3Object object = manager.objectsMetadata().get(0L);
         assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
-        // 3. 5s later, it should be removed
-        Thread.sleep(5 * 1000);
+        // 3. 10s later, it should be removed
+        Thread.sleep(10 * 1000);
         assertEquals(0, manager.objectsMetadata().size());
         Mockito.verify(operator, times(1)).delete(anyList());
     }
@@ -245,8 +245,10 @@ public class S3ObjectControlManagerTest {
         genMarkDestroyObject();
         // TODO: use MockTime instead of sleep
         Thread.sleep(1001L);
-
         manager.checkS3ObjectsLifecycle();
+        Thread.sleep(1001L);
+        manager.checkS3ObjectsLifecycle();
+
         @SuppressWarnings("unchecked") ArgumentCaptor<List<String>> ac = ArgumentCaptor.forClass(List.class);
         Mockito.verify(operator, times(1)).delete(ac.capture());
         assertEquals(List.of(ObjectUtils.genKey(0, 0L)), ac.getValue());
@@ -262,6 +264,9 @@ public class S3ObjectControlManagerTest {
         delayTrigger.complete(null);
 
         manager.checkS3ObjectsLifecycle();
+        Thread.sleep(1001L);
+        manager.checkS3ObjectsLifecycle();
+
         Mockito.verify(operator, times(2)).delete(ac.capture());
         assertEquals(List.of(ObjectUtils.genKey(0, 1L)), ac.getValue());
     }
