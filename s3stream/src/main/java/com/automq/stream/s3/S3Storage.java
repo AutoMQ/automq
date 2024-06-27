@@ -121,6 +121,7 @@ public class S3Storage implements Storage {
     private long lastLogTimestamp = 0L;
     private volatile double maxDataWriteRate = 0.0;
 
+    @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         S3BlockCache blockCache, ObjectStorage objectStorage) {
         this.config = config;
