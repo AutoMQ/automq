@@ -104,6 +104,10 @@ public class TelemetryManager {
         return traceEnable;
     }
 
+    public static void setTraceEnable(boolean traceEnable) {
+        TelemetryManager.traceEnable = traceEnable;
+    }
+
     private String getHostName() {
         try {
             return InetAddress.getLocalHost().getHostName();
@@ -128,8 +132,6 @@ public class TelemetryManager {
 
         OpenTelemetrySdkBuilder openTelemetrySdkBuilder = OpenTelemetrySdk.builder();
 
-        traceEnable = kafkaConfig.s3TracerEnable();
-
         if (kafkaConfig.s3MetricsEnable()) {
             SdkMeterProviderBuilder sdkMeterProviderBuilder = buildMetricsProvider(resource);
             if (sdkMeterProviderBuilder != null) {
@@ -143,10 +145,10 @@ public class TelemetryManager {
             }
         }
 
-        openTelemetrySdk = openTelemetrySdkBuilder
+        setOpenTelemetrySdk(openTelemetrySdkBuilder
             .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
                 W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
-            .build();
+            .build());
 
         if (kafkaConfig.s3MetricsEnable()) {
             addJmxMetrics(openTelemetrySdk);
@@ -154,19 +156,29 @@ public class TelemetryManager {
 
             // initialize S3Stream metrics
             Meter meter = openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);
-            S3StreamMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
-            S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
-
-            S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
-            S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
+            initializeMetricsManager(meter);
         }
+
+        setTraceEnable(kafkaConfig.s3TracerEnable());
 
         LOGGER.info("Instrument manager initialized with metrics: {} (level: {}), trace: {} report interval: {}",
             kafkaConfig.s3MetricsEnable(), kafkaConfig.s3MetricsLevel(), kafkaConfig.s3TracerEnable(), kafkaConfig.s3ExporterReportIntervalMs());
     }
 
+    protected void initializeMetricsManager(Meter meter) {
+        S3StreamMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
+        S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
+
+        S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
+        S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
+    }
+
     public static OpenTelemetrySdk getOpenTelemetrySdk() {
         return openTelemetrySdk;
+    }
+
+    public static void setOpenTelemetrySdk(OpenTelemetrySdk openTelemetrySdk) {
+        TelemetryManager.openTelemetrySdk = openTelemetrySdk;
     }
 
     private void addJmxMetrics(OpenTelemetry ot) {
@@ -202,7 +214,7 @@ public class TelemetryManager {
         autoCloseables.addAll(Threads.registerObservers(openTelemetrySdk));
     }
 
-    private MetricsLevel metricsLevel() {
+    protected MetricsLevel metricsLevel() {
         String levelStr = kafkaConfig.s3MetricsLevel();
         if (StringUtils.isBlank(levelStr)) {
             return MetricsLevel.INFO;
