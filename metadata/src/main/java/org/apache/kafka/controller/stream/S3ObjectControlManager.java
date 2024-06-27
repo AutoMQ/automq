@@ -27,10 +27,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
-import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -85,9 +83,9 @@ public class S3ObjectControlManager {
     private final TimelineLong nextAssignedObjectId;
 
     private final TimelineHashSet<Long /* objectId */> preparedObjects;
-
-    // TODO: support different deletion policies, based on time dimension or space dimension?
-    private final Queue<Long/*objectId*/> markDestroyedObjects;
+    private TimelineHashSet<Long /* objectId */> markDestroyedObjects;
+    private TimelineHashSet<Long /* objectId */> markDestroyedObjectsWaitingExpired;
+    private long markDestroyedLastSwitchTimestamp = System.currentTimeMillis();
 
     private final S3Operator operator;
 
@@ -115,7 +113,8 @@ public class S3ObjectControlManager {
         this.nextAssignedObjectId = new TimelineLong(snapshotRegistry);
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.preparedObjects = new TimelineHashSet<>(snapshotRegistry, 0);
-        this.markDestroyedObjects = new LinkedBlockingDeque<>();
+        this.markDestroyedObjects = new TimelineHashSet<>(snapshotRegistry, 0);
+        this.markDestroyedObjectsWaitingExpired = new TimelineHashSet<>(snapshotRegistry, 0);
         this.operator = operator;
         this.lifecycleListeners = new ArrayList<>();
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor(
@@ -125,9 +124,9 @@ public class S3ObjectControlManager {
         this.objectCleaner = new ObjectCleaner();
         S3StreamKafkaMetricsManager.setS3ObjectCountMapSupplier(() -> Map.of(
                 S3StreamKafkaMetricsConstants.S3_OBJECT_PREPARED_STATE, preparedObjects.size(),
-                S3StreamKafkaMetricsConstants.S3_OBJECT_MARK_DESTROYED_STATE, markDestroyedObjects.size(),
+                S3StreamKafkaMetricsConstants.S3_OBJECT_MARK_DESTROYED_STATE, markDestroyedObjects.size() + markDestroyedObjectsWaitingExpired.size(),
                 S3StreamKafkaMetricsConstants.S3_OBJECT_COMMITTED_STATE, objectsMetadata.size()
-                        - preparedObjects.size() - markDestroyedObjects.size()));
+                        - preparedObjects.size() - markDestroyedObjects.size() - markDestroyedObjectsWaitingExpired.size()));
         S3StreamKafkaMetricsManager.setS3ObjectSizeSupplier(s3ObjectSize::get);
     }
 
@@ -258,6 +257,8 @@ public class S3ObjectControlManager {
             s3ObjectSize.addAndGet(-object.getObjectSize());
         }
         preparedObjects.remove(record.objectId());
+        markDestroyedObjects.remove(record.objectId());
+        markDestroyedObjectsWaitingExpired.remove(record.objectId());
     }
 
     /**
@@ -298,31 +299,20 @@ public class S3ObjectControlManager {
             log.info("objects TTL is reached, objects={}", ttlReachedObjects);
         }
         // check the mark destroyed objects
-        List<String> requiredDeleteKeys = new LinkedList<>();
-        while (true) {
-            Long objectId = this.markDestroyedObjects.peek();
-            if (objectId == null) {
-                break;
-            }
-            S3Object object = this.objectsMetadata.get(objectId);
-            if (object == null) {
-                // markDestroyedObjects isn't Timeline structure, so it may contains dirty / duplicated objectId
-                this.markDestroyedObjects.poll();
-                continue;
-            }
-            if (object.getMarkDestroyedTimeInMs() + (this.config.objectRetentionTimeInSecond() * 1000L) < System.currentTimeMillis()) {
-                this.markDestroyedObjects.poll();
-                // exceed delete retention time, trigger the truly deletion
-                requiredDeleteKeys.add(object.getObjectKey());
-            } else {
-                // the following objects' mark destroyed time is not expired, so break the loop
-                break;
-            }
-        }
+        // The mark destroyed object will be truly deleted after the [retention time, 2 * retention time]
+        long now = System.currentTimeMillis();
+        if (now - markDestroyedLastSwitchTimestamp > this.config.objectRetentionTimeInSecond() * 1000L) {
+            TimelineHashSet<Long> expired = this.markDestroyedObjectsWaitingExpired;
+            // switch two mark destroyed objects set
+            this.markDestroyedObjectsWaitingExpired = this.markDestroyedObjects;
+            this.markDestroyedObjects = expired;
+            markDestroyedLastSwitchTimestamp = now;
 
-        if (!requiredDeleteKeys.isEmpty()) {
-            this.lastCleanStartTimestamp = System.currentTimeMillis();
-            this.lastCleanCf = this.objectCleaner.clean(requiredDeleteKeys);
+            if (!expired.isEmpty()) {
+                List<String> requiredDeleteKeys = expired.stream().map(id -> ObjectUtils.genKey(0, id)).collect(Collectors.toList());
+                this.lastCleanStartTimestamp = System.currentTimeMillis();
+                this.lastCleanCf = this.objectCleaner.clean(requiredDeleteKeys);
+            }
         }
         return ControllerResult.of(records, null);
     }

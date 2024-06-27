@@ -320,7 +320,7 @@ object Defaults {
   val S3StreamSetObjectCompactionMaxObjectNum: Int = 500
   val S3MaxStreamNumPerStreamSetObject: Int = 100000
   val S3MaxStreamObjectNumPerCommit: Int = 10000
-  val S3ObjectDeleteRetentionMinutes: Long = 5 // 5min
+  val S3ObjectDeleteRetentionMinutes: Long = 1 // 1min
   val S3NetworkBaselineBandwidth: Long = 100 * 1024 * 1024 // 100MB/s
   val S3RefillPeriodMs: Int = 1000 // 1s
   val S3MetricsExporterReportIntervalMs = 30000 // 30s
