@@ -43,6 +43,7 @@ import org.slf4j.LoggerFactory;
  * 3. {@link TopicDeletionManager} schedule scan the waiting cleanup topics and delete the streams related to topic
  * 4. After the streams related to the topic are deleted, {@link TopicDeletionManager} generate RemoveKvRecord to remove the topicId from {@link TopicDeletionManager#waitingCleanupTopics}
  */
+@SuppressWarnings("this-escape")
 public class TopicDeletionManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicDeletionManager.class);
     final TimelineHashMap<Uuid, Status> waitingCleanupTopics;

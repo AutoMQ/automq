@@ -63,6 +63,7 @@ import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.utils.FutureUtil.cause;
 
+@SuppressWarnings("this-escape")
 public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
 

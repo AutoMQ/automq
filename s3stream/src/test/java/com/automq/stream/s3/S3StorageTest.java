@@ -11,9 +11,10 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
+import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
+import com.automq.stream.s3.cache.blockcache.StreamReaders;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -78,7 +79,7 @@ public class S3StorageTest {
         wal = spy(new MemoryWriteAheadLog());
         objectStorage = new MemoryObjectStorage();
         storage = new S3Storage(config, wal,
-            streamManager, objectManager, new DefaultS3BlockCache(config, objectManager, objectStorage), objectStorage);
+            streamManager, objectManager, new StreamReaders(config.blockCacheSize(), objectManager, objectStorage, new DefaultObjectReaderFactory(objectStorage)), objectStorage);
     }
 
     @Test

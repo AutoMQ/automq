@@ -54,6 +54,7 @@ public class AsyncNetworkBandwidthLimiter {
         this(type, tokenSize, refillIntervalMs, tokenSize);
     }
 
+    @SuppressWarnings("this-escape")
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokens) {
         this.type = type;
         long tokenPerSec = tokenSize * 1000 / (long) refillIntervalMs;

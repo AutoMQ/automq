@@ -47,6 +47,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
     static final Logger LOGGER = LoggerFactory.getLogger(AbstractObjectStorage.class);
     private static final AtomicInteger INDEX = new AtomicInteger(-1);

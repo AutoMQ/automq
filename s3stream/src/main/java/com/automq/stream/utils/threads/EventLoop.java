@@ -25,6 +25,7 @@ public class EventLoop extends Thread implements Executor {
     private boolean shutdown = false;
     private CompletableFuture<Void> shutdownCf = new CompletableFuture<>();
 
+    @SuppressWarnings("this-escape")
     public EventLoop(String name) {
         super(name);
         this.logger = new LogContext("[" + name + "]").logger(EventLoop.class);
