@@ -35,6 +35,7 @@ import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
  */
 public class RecoverTool extends BlockWALService implements AutoCloseable {
 
+    @SuppressWarnings("this-escape")
     public RecoverTool(Config config) throws IOException {
         super(BlockWALService.recoveryBuilder(config.path));
         super.start();

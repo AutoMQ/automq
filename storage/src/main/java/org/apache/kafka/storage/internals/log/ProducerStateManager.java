@@ -70,6 +70,7 @@ import java.util.stream.Stream;
  * or if the topic also is configured for deletion, the segment containing the last written offset has
  * been deleted.
  */
+@SuppressWarnings("this-escape")
 public class ProducerStateManager {
 
     public static final long LATE_TRANSACTION_BUFFER_MS = 5 * 60 * 1000;

@@ -101,7 +101,7 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 /**
  * The StreamControlManager manages all Stream's lifecycle, such as create, open, delete, etc.
  */
-@SuppressWarnings("all")
+@SuppressWarnings({"all", "this-escape"})
 public class StreamControlManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamControlManager.class);
 
