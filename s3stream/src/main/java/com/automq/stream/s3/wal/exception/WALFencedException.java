@@ -11,8 +11,8 @@
 
 package com.automq.stream.s3.wal.exception;
 
-public class UnmarshalException extends RuntimeException {
-    public UnmarshalException(String message) {
+public class WALFencedException extends RuntimeException {
+    public WALFencedException(String message) {
         super(message);
     }
 }

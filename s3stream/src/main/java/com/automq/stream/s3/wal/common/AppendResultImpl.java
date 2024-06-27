@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal.impl;
+package com.automq.stream.s3.wal.common;
 
 import com.automq.stream.s3.wal.AppendResult;
 import java.util.Objects;

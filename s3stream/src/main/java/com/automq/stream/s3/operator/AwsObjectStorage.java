@@ -73,8 +73,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient writeS3Client;
     private boolean deleteObjectsReturnSuccessKeys;
 
-
-    public AwsObjectStorage(String endpoint, Map<String, String> tagging, String region, String bucket, boolean forcePathStyle,
+    public AwsObjectStorage(String endpoint, Map<String, String> tagging, String region, String bucket,
+        boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders,
         AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
         AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter,
@@ -104,6 +104,77 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     public static Builder builder() {
         return new Builder();
+    }
+
+    static void handleDeleteObjectsResponse(DeleteObjectsResponse response,
+        boolean deleteObjectsReturnSuccessKeys) throws Exception {
+        int errDeleteCount = 0;
+        ArrayList<String> failedKeys = new ArrayList<>();
+        ArrayList<String> errorsMessages = new ArrayList<>();
+        if (deleteObjectsReturnSuccessKeys) {
+            // expect NoSuchKey is not response because s3 api won't return this in errors.
+            for (S3Error error : response.errors()) {
+                if (errDeleteCount < 30) {
+                    LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
+                        error.key(), error.code(), error.message());
+                }
+                failedKeys.add(error.key());
+                errorsMessages.add(error.message());
+                errDeleteCount++;
+
+            }
+        } else {
+            for (S3Error error : response.errors()) {
+                if (S3_API_NO_SUCH_KEY.equals(error.code())) {
+                    // ignore for delete objects.
+                    continue;
+                }
+                if (errDeleteCount < 30) {
+                    LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
+                        error.key(), error.code(), error.message());
+                }
+                failedKeys.add(error.key());
+                errorsMessages.add(error.message());
+                errDeleteCount++;
+            }
+        }
+        if (errDeleteCount > 0) {
+            throw new DeleteObjectsException("Failed to delete objects", failedKeys, errorsMessages);
+        }
+    }
+
+    static boolean checkIfDeleteObjectsWillReturnSuccessDeleteKeys(List<String> path, DeleteObjectsResponse resp) {
+        // BOS S3 API works as quiet mode
+        // in this mode success delete objects won't be returned.
+        // which could cause object not deleted in metadata.
+        //
+        // BOS doc: https://cloud.baidu.com/doc/BOS/s/tkc5twspg
+        // S3 doc: https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html#API_DeleteObjects_RequestBody
+
+        boolean hasDeleted = resp.hasDeleted() && !resp.deleted().isEmpty();
+        boolean hasErrors = resp.hasErrors() && !resp.errors().isEmpty();
+        boolean hasErrorsWithoutNoSuchKey = resp.errors().stream().filter(s3Error -> !S3_API_NO_SUCH_KEY.equals(s3Error.code())).count() != 0;
+        boolean allDeleteKeyMatch = resp.deleted().stream().map(DeletedObject::key).sorted().collect(Collectors.toList()).equals(path);
+
+        if (hasDeleted && !hasErrors && allDeleteKeyMatch) {
+            LOGGER.info("call deleteObjects deleteObjectKeys returned.");
+
+            return true;
+
+        } else if (!hasDeleted && !hasErrorsWithoutNoSuchKey) {
+            LOGGER.info("call deleteObjects but deleteObjectKeys not returned. set deleteObjectsReturnSuccessKeys = false");
+
+            return false;
+        }
+
+        IllegalStateException exception = new IllegalStateException();
+
+        LOGGER.error("error when check if delete objects will return success." +
+                     " delete keys {} resp {}, requestId {}，httpCode {} httpText {}",
+            path, resp, resp.responseMetadata().requestId(),
+            resp.sdkHttpResponse().statusCode(), resp.sdkHttpResponse().statusText(), exception);
+
+        throw exception;
     }
 
     @Override
@@ -184,7 +255,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber, long apiCallAttemptTimeout,
+    void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber,
+        long apiCallAttemptTimeout,
         Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler) {
         UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
             .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, end)).uploadId(uploadId).partNumber(partNumber)
@@ -264,45 +336,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     @Override
     CompletableFuture<List<ObjectInfo>> doList(String prefix) {
         return readS3Client.listObjectsV2(builder -> builder.bucket(bucket).prefix(prefix))
-            .thenApply(resp -> resp.contents().stream().map(object -> new ObjectInfo((short) 0, object.key(), object.lastModified().toEpochMilli())).collect(Collectors.toList()));
+            .thenApply(resp ->
+                resp.contents()
+                    .stream()
+                    .map(object -> new ObjectInfo((short) 0, object.key(), object.lastModified().toEpochMilli(), object.size()))
+                    .collect(Collectors.toList()));
     }
-
-    static void handleDeleteObjectsResponse(DeleteObjectsResponse response, boolean deleteObjectsReturnSuccessKeys) throws Exception {
-        int errDeleteCount = 0;
-        ArrayList<String> failedKeys = new ArrayList<>();
-        ArrayList<String> errorsMessages = new ArrayList<>();
-        if (deleteObjectsReturnSuccessKeys) {
-            // expect NoSuchKey is not response because s3 api won't return this in errors.
-            for (S3Error error : response.errors()) {
-                if (errDeleteCount < 30) {
-                    LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
-                        error.key(), error.code(), error.message());
-                }
-                failedKeys.add(error.key());
-                errorsMessages.add(error.message());
-                errDeleteCount++;
-
-            }
-        } else {
-            for (S3Error error : response.errors()) {
-                if (S3_API_NO_SUCH_KEY.equals(error.code())) {
-                    // ignore for delete objects.
-                    continue;
-                }
-                if (errDeleteCount < 30) {
-                    LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
-                        error.key(), error.code(), error.message());
-                }
-                failedKeys.add(error.key());
-                errorsMessages.add(error.message());
-                errDeleteCount++;
-            }
-        }
-        if (errDeleteCount > 0) {
-            throw new DeleteObjectsException("Failed to delete objects", failedKeys, errorsMessages);
-        }
-    }
-
 
     private String range(long start, long end) {
         if (end == -1L) {
@@ -343,40 +382,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             )
             .thenCompose(__ -> this.writeS3Client.deleteObjects(request))
             .thenApply(resp -> checkIfDeleteObjectsWillReturnSuccessDeleteKeys(path, resp));
-    }
-
-    static boolean checkIfDeleteObjectsWillReturnSuccessDeleteKeys(List<String> path, DeleteObjectsResponse resp) {
-        // BOS S3 API works as quiet mode
-        // in this mode success delete objects won't be returned.
-        // which could cause object not deleted in metadata.
-        //
-        // BOS doc: https://cloud.baidu.com/doc/BOS/s/tkc5twspg
-        // S3 doc: https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html#API_DeleteObjects_RequestBody
-
-        boolean hasDeleted = resp.hasDeleted() && !resp.deleted().isEmpty();
-        boolean hasErrors = resp.hasErrors() && !resp.errors().isEmpty();
-        boolean hasErrorsWithoutNoSuchKey = resp.errors().stream().filter(s3Error -> !S3_API_NO_SUCH_KEY.equals(s3Error.code())).count() != 0;
-        boolean allDeleteKeyMatch = resp.deleted().stream().map(DeletedObject::key).sorted().collect(Collectors.toList()).equals(path);
-
-        if (hasDeleted && !hasErrors && allDeleteKeyMatch) {
-            LOGGER.info("call deleteObjects deleteObjectKeys returned.");
-
-            return true;
-
-        } else if (!hasDeleted && !hasErrorsWithoutNoSuchKey) {
-            LOGGER.info("call deleteObjects but deleteObjectKeys not returned. set deleteObjectsReturnSuccessKeys = false");
-
-            return false;
-        }
-
-        IllegalStateException exception = new IllegalStateException();
-
-        LOGGER.error("error when check if delete objects will return success." +
-                " delete keys {} resp {}, requestId {}，httpCode {} httpText {}",
-            path, resp, resp.responseMetadata().requestId(),
-            resp.sdkHttpResponse().statusCode(), resp.sdkHttpResponse().statusText(), exception);
-
-        throw exception;
     }
 
     private S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
