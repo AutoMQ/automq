@@ -12,20 +12,21 @@
 package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.utils.threads.EventLoop;
-import java.util.LinkedList;
-import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 class AsyncSemaphore {
     private static final Logger LOGGER = LoggerFactory.getLogger(AsyncSemaphore.class);
-    private final Queue<AsyncSemaphoreTask> tasks = new LinkedList<>();
-    private long permits;
+    private final ConcurrentLinkedQueue<AsyncSemaphoreTask> tasks = new ConcurrentLinkedQueue<>();
+    private final AtomicLong permits;
 
     public AsyncSemaphore(long permits) {
-        this.permits = permits;
+        this.permits = new AtomicLong(permits);
     }
 
     /**
@@ -37,34 +38,37 @@ class AsyncSemaphore {
      * @param eventLoop       the eventLoop to run the task when the permits are available
      * @return true if the permits are acquired, false if the task is added to the waiting queue.
      */
-    public synchronized boolean acquire(long requiredPermits, Supplier<CompletableFuture<?>> task,
-        EventLoop eventLoop) {
-        if (permits >= 0) {
-            // allow permits minus to negative
-            permits -= requiredPermits;
-            try {
-                task.get().whenComplete((nil, ex) -> release(requiredPermits));
-            } catch (Throwable e) {
-                LOGGER.error("Error in task", e);
+    public boolean acquire(long requiredPermits, Supplier<CompletableFuture<?>> task,
+                           EventLoop eventLoop) {
+        for (; ; ) {
+            long current = permits.get();
+            if (current <= 0) {
+                tasks.add(new AsyncSemaphoreTask(requiredPermits, task, eventLoop));
+                return false;
             }
-            return true;
-        } else {
-            tasks.add(new AsyncSemaphoreTask(requiredPermits, task, eventLoop));
-            return false;
+
+            if (permits.compareAndSet(current, current - requiredPermits)) {
+                try {
+                    task.get().whenComplete((nil, ex) -> release(requiredPermits));
+                } catch (Throwable e) {
+                    LOGGER.error("Error in task", e);
+                    release(requiredPermits); // Release permits on error
+                }
+                return true;
+            }
         }
     }
 
-    public synchronized boolean requiredRelease() {
-        return permits <= 0 || !tasks.isEmpty();
+    public boolean requiredRelease() {
+        return permits.get() <= 0 || !tasks.isEmpty();
     }
 
-    public synchronized long permits() {
-        return permits;
+    public long permits() {
+        return permits.get();
     }
 
-    synchronized void release(long requiredPermits) {
-        permits += requiredPermits;
-        if (permits > 0) {
+    void release(long requiredPermits) {
+        if (permits.addAndGet(requiredPermits) > 0) {
             AsyncSemaphoreTask t = tasks.poll();
             if (t != null) {
                 // use eventLoop to reset the thread stack to avoid stack overflow
@@ -83,5 +87,10 @@ class AsyncSemaphore {
             this.task = task;
             this.eventLoop = eventLoop;
         }
+    }
+
+    @VisibleForTesting
+    public int pendingTaskNumber() {
+        return tasks.size();
     }
 }

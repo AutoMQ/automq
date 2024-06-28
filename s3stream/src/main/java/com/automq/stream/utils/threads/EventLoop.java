@@ -17,13 +17,18 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
+
 import org.slf4j.Logger;
 
 public class EventLoop extends Thread implements Executor {
     private final Logger logger;
-    private BlockingQueue<Runnable> tasks;
+    private final BlockingQueue<Runnable> tasks;
     private boolean shutdown = false;
-    private CompletableFuture<Void> shutdownCf = new CompletableFuture<>();
+    private final CompletableFuture<Void> shutdownCf = new CompletableFuture<>();
+
+    private final LongAdder finishedTask = new LongAdder();
+    private final LongAdder exceptionedTask = new LongAdder();
 
     public EventLoop(String name) {
         super(name);
@@ -46,8 +51,10 @@ public class EventLoop extends Thread implements Executor {
                 }
                 try {
                     task.run();
+                    finishedTask.increment();
                 } catch (Throwable e) {
                     logger.error("Error running task", e);
+                    exceptionedTask.increment();
                 }
             } catch (InterruptedException e) {
                 logger.info("EventLoop exit", e);
@@ -85,6 +92,18 @@ public class EventLoop extends Thread implements Executor {
         if (shutdown) {
             throw new IllegalStateException("EventLoop is shutdown");
         }
+    }
+
+    public long finishedTask() {
+        return this.finishedTask.sum();
+    }
+
+    public long exceptionedTask() {
+        return this.exceptionedTask.sum();
+    }
+
+    public long queuedTask() {
+        return tasks.size();
     }
 
 }
