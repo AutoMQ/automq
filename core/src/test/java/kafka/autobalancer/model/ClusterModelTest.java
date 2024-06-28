@@ -240,6 +240,10 @@ public class ClusterModelTest {
         clusterModel.onPartitionChange(partitionChangeRecord);
         Assertions.assertEquals(tp, clusterModel.replicaUpdater(newBrokerId, tp).topicPartition());
         Assertions.assertNull(clusterModel.replicaUpdater(oldBrokerId, tp));
+
+        partitionChangeRecord.setLeader(-1);
+        clusterModel.onPartitionChange(partitionChangeRecord);
+        Assertions.assertNull(clusterModel.replicaUpdater(newBrokerId, tp));
     }
 
     @Test
