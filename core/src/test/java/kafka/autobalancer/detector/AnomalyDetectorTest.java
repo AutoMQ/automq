@@ -201,7 +201,7 @@ public class AnomalyDetectorTest {
 
         int brokerNum = 20;
         for (int i = 0; i < brokerNum; i++) {
-            clusterModel.registerBroker(i, "");
+            clusterModel.registerBroker(i, "", true);
             clusterModel.updateBrokerMetrics(i, Map.of(
                     RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
                     RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
