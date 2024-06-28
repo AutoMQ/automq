@@ -36,7 +36,8 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
 
     @Override
     public void onBrokerRegister(RegisterBrokerRecord record) {
-        registerBroker(record.brokerId(), record.rack());
+        boolean isActive = !record.fenced() && !record.inControlledShutdown();
+        registerBroker(record.brokerId(), record.rack(), isActive);
     }
 
     @Override
