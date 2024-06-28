@@ -18,6 +18,7 @@
 package org.apache.kafka.common.requests.s3;
 
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.kafka.common.message.GetKVsResponseData;
@@ -47,7 +48,10 @@ public class GetKVsResponse extends AbstractBatchResponse<GetKVResponse> {
 
     @Override
     public Map<Errors, Integer> errorCounts() {
-        return errorCounts(Errors.forCode(data.errorCode()));
+        Map<Errors, Integer> errorCounts = new HashMap<>();
+        updateErrorCounts(errorCounts, Errors.forCode(data.errorCode()));
+        data.getKVResponses().forEach(response -> updateErrorCounts(errorCounts, Errors.forCode(response.errorCode())));
+        return errorCounts;
     }
 
     @Override
