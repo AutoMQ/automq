@@ -375,8 +375,11 @@ public class ClusterModel {
                 logger.error("Failed to find topic name for id {} when deleting partition", topicId);
                 return;
             }
+            if (!partitionReplicaMap.containsKey(partitionId)) {
+                return;
+            }
             int brokerId = partitionReplicaMap.remove(partitionId);
-            if (brokerId != -1 && brokerReplicaMap.containsKey(brokerId)) {
+            if (brokerReplicaMap.containsKey(brokerId)) {
                 brokerReplicaMap.get(brokerId).remove(new TopicPartition(topicName, partitionId));
             }
         } finally {
