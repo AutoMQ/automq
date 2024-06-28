@@ -220,7 +220,7 @@ public class AnomalyDetectorTest {
             String topicName = "topic-" + i;
             clusterModel.createTopic(topicId, topicName);
             for (int j = 0; j < partitionNumPerTopic; j++) {
-                clusterModel.createPartition(topicId, j, brokerIndex);
+                clusterModel.reassignPartition(topicId, j, brokerIndex);
                 Map<Byte, Double> metrics = generateRandomMetrics(r);
                 clusterModel.updateTopicPartitionMetrics(brokerIndex, new TopicPartition(topicName, j), metrics.entrySet(), System.currentTimeMillis());
                 currPartitionNum++;
