@@ -16,6 +16,7 @@ import com.automq.shell.auth.CredentialsProviderHolder;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
+import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.charset.StandardCharsets;
@@ -240,7 +241,15 @@ public class LogUploader implements LogRecorder {
                             .filter(pair -> pair.getRight() < expiredTime)
                             .map(Pair::getLeft)
                             .collect(Collectors.toList());
-                        s3Operator.delete(keyList).join();
+
+                        if (!keyList.isEmpty()) {
+                            // Some of s3 implements allow only 1000 keys per request.
+                            CompletableFuture<?>[] deleteFutures = Lists.partition(keyList, 1000)
+                                .stream()
+                                .map(s3Operator::delete)
+                                .toArray(CompletableFuture[]::new);
+                            CompletableFuture.allOf(deleteFutures).join();
+                        }
                     }
 
                     Thread.sleep(Duration.ofMinutes(1).toMillis());
