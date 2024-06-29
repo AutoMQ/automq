@@ -20,6 +20,7 @@ import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.opentelemetry.api.common.Attributes;
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -146,7 +148,15 @@ public class S3MetricsExporter implements MetricExporter {
                             .filter(object -> object.timestamp() < expiredTime)
                             .map(object -> new ObjectPath(object.bucket(), object.key()))
                             .collect(Collectors.toList());
-                        objectStorage.delete(keyList).join();
+
+                        if (!keyList.isEmpty()) {
+                            // Some of s3 implements allow only 1000 keys per request.
+                            CompletableFuture<?>[] deleteFutures = Lists.partition(keyList, 1000)
+                                .stream()
+                                .map(objectStorage::delete)
+                                .toArray(CompletableFuture[]::new);
+                            CompletableFuture.allOf(deleteFutures).join();
+                        }
                     }
 
                     Thread.sleep(Duration.ofMinutes(1).toMillis());
