@@ -271,7 +271,9 @@ public class AnomalyDetector extends AbstractResumableService {
         snapshot.markSlowBrokers();
 
         Map<Integer, Boolean> slowBrokers = new HashMap<>();
+        Map<Integer, BrokerUpdater.Broker> beforeBrokers = new HashMap<>();
         for (BrokerUpdater.Broker broker : snapshot.brokers()) {
+            beforeBrokers.put(broker.getBrokerId(), broker.copy());
             String brokerStr = logger.isDebugEnabled() ? broker.toString() : broker.shortString();
             slowBrokers.put(broker.getBrokerId(), broker.isSlowBroker());
             logger.info("Broker status: {}", brokerStr);
@@ -297,6 +299,14 @@ public class AnomalyDetector extends AbstractResumableService {
         if (!isRunnable()) {
             return detectInterval;
         }
+
+        for (BrokerUpdater.Broker broker : snapshot.brokers()) {
+            if (beforeBrokers.containsKey(broker.getBrokerId())) {
+                BrokerUpdater.Broker beforeBroker = beforeBrokers.get(broker.getBrokerId());
+                logger.info("Expected load change: brokerId={}, {}", broker.getBrokerId(), broker.deltaLoadString(beforeBroker));
+            }
+        }
+
         int totalActionSize = totalActions.size();
         List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency, getTopicPartitionCount(snapshot));
         logger.info("Total actions num: {}, split to {} batches", totalActionSize, actionsToExecute.size());

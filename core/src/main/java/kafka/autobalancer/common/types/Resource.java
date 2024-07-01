@@ -29,6 +29,10 @@ public class Resource {
         if (!HUMAN_READABLE_RESOURCE_NAMES.containsKey(type)) {
             return "";
         }
+        return HUMAN_READABLE_RESOURCE_NAMES.get(type) + "=" + valueString(type, value);
+    }
+
+    public static String valueString(byte type, double value) {
         String valueStr = String.valueOf(value);
         if (value == IGNORED_VALUE) {
             valueStr = "ignored";
@@ -42,6 +46,6 @@ public class Resource {
                     break;
             }
         }
-        return HUMAN_READABLE_RESOURCE_NAMES.get(type) + "=" + valueStr;
+        return valueStr;
     }
 }
