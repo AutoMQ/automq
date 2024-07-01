@@ -17,18 +17,14 @@
 
 package org.apache.kafka.image;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
-import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.metadata.stream.S3Object;
-import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,29 +73,27 @@ public final class S3ObjectsDelta {
     }
 
     public S3ObjectsImage apply() {
+        RegistryRef registry = image.registryRef();
         // get original objects first
-        TimelineHashMap<Long, S3Object> newObjects = image.timelineObjects();
-        SnapshotRegistry registry = image.registry();
-        List<Long> liveEpochs = image.liveEpochs();
-        if (newObjects == null) {
-            registry = new SnapshotRegistry(new LogContext());
-            newObjects = new TimelineHashMap<>(registry, 100000);
-            liveEpochs = new ArrayList<>();
-        }
-        long newEpoch = image.epoch() + 1;
-        synchronized (registry) {
-            if (registry.latestEpoch() > image.epoch()) {
-                LOGGER.error("Don't expect duplicated apply in non-test code");
-                registry.revertToSnapshot(image.epoch());
-            }
+        TimelineHashMap<Long, S3Object> newObjects;
 
+        if (registry == RegistryRef.NOOP) {
+            registry = new RegistryRef();
+            newObjects = new TimelineHashMap<>(registry.registry(), 100000);
+        } else {
+            newObjects = image.timelineObjects();
+        }
+
+        registry.inLock(() -> {
             // put all new changed objects
             newObjects.putAll(changedObjects);
             // remove all removed objects
             removedObjectIds.forEach(newObjects::remove);
-            registry.getOrCreateSnapshot(newEpoch);
-            return new S3ObjectsImage(currentAssignedObjectId, newObjects, registry, newEpoch, liveEpochs);
-        }
+        });
+
+        registry = registry.next();
+
+        return new S3ObjectsImage(currentAssignedObjectId, newObjects, registry);
     }
 
 }

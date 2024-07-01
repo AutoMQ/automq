@@ -73,11 +73,11 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     private final DeltaMap<Long, TopicIdPartition> stream2partition;
 
     private final TimelineHashMap<Long, Long> streamEndOffsets;
-    private final RegistryRef registry;
+    private final RegistryRef registryRef;
 
     public S3StreamsMetadataImage(
         long assignedStreamId,
-        RegistryRef registry,
+        RegistryRef registryRef,
         DeltaMap<Long, S3StreamMetadataImage> streamsMetadata,
         DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata,
         DeltaMap<TopicIdPartition, Set<Long>> partition2streams,
@@ -90,7 +90,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         this.partition2streams = partition2streams;
         this.stream2partition = stream2partition;
         this.streamEndOffsets = streamEndOffsets;
-        this.registry = registry;
+        this.registryRef = registryRef;
     }
 
     boolean isEmpty() {
@@ -103,8 +103,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 new AssignedStreamIdRecord().setAssignedStreamId(nextAssignedStreamId - 1), (short) 0));
         streamsMetadata.forEach((k, v) -> v.write(writer, options));
         nodeStreamSetObjectMetadata.forEach((k, v) -> v.write(writer, options));
-        if (registry != RegistryRef.NOOP && options.metadataVersion().autoMQVersion().isHugeClusterSupported()) {
-            List<StreamEndOffset> endOffsets = registry.inLock(() -> streamEndOffsets.entrySet(registry.epoch()).stream()
+        if (registryRef != RegistryRef.NOOP && options.metadataVersion().autoMQVersion().isHugeClusterSupported()) {
+            List<StreamEndOffset> endOffsets = registryRef.inLock(() -> streamEndOffsets.entrySet(registryRef.epoch()).stream()
                 .map(e -> new StreamEndOffset(e.getKey(), e.getValue()))
                 .collect(Collectors.toList()));
             writer.write(new ApiMessageAndVersion(
@@ -380,21 +380,25 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return stream2partition;
     }
 
-    RegistryRef registry() {
-        return registry;
+    RegistryRef registryRef() {
+        return registryRef;
     }
 
+    // caller use this value should be protected by registryRef lock
     TimelineHashMap<Long, Long> timelineStreamEndOffsets() {
         return streamEndOffsets;
     }
 
     Map<Long, Long> streamEndOffsets() {
-        if (registry == RegistryRef.NOOP) {
+        if (registryRef == RegistryRef.NOOP) {
             return Collections.emptyMap();
         }
-        Map<Long, Long> map = new HashMap<>();
-        streamEndOffsets.entrySet(registry.epoch()).forEach(e -> map.put(e.getKey(), e.getValue()));
-        return map;
+
+        return registryRef.inLock(() -> {
+            Map<Long, Long> map = new HashMap<>();
+            streamEndOffsets.entrySet(registryRef.epoch()).forEach(e -> map.put(e.getKey(), e.getValue()));
+            return map;
+        });
     }
 
     @Override
@@ -404,7 +408,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     @Override
     protected void deallocate() {
-        registry.release();
+        registryRef.release();
     }
 
     @Override
