@@ -61,7 +61,9 @@ public final class S3ObjectsImage extends AbstractReferenceCounted {
             if (liveEpochs == null) {
                 throw new IllegalArgumentException("Require null liveEpochs for non-empty epoch");
             } else {
-                this.liveEpochs.add(epoch);
+                synchronized (this.registry) {
+                    this.liveEpochs.add(epoch);
+                }
             }
         }
     }

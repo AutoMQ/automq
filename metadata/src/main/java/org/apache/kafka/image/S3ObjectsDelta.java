@@ -98,8 +98,8 @@ public final class S3ObjectsDelta {
             // remove all removed objects
             removedObjectIds.forEach(newObjects::remove);
             registry.getOrCreateSnapshot(newEpoch);
+            return new S3ObjectsImage(currentAssignedObjectId, newObjects, registry, newEpoch, liveEpochs);
         }
-        return new S3ObjectsImage(currentAssignedObjectId, newObjects, registry, newEpoch, liveEpochs);
     }
 
 }
