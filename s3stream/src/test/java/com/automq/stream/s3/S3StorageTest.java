@@ -11,9 +11,10 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.cache.DefaultS3BlockCache;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
+import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
+import com.automq.stream.s3.cache.blockcache.StreamReaders;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -25,7 +26,9 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
-import com.automq.stream.s3.wal.MemoryWriteAheadLog;
+import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.impl.MemoryWriteAheadLog;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
 import java.util.Collections;
@@ -76,7 +79,7 @@ public class S3StorageTest {
         wal = spy(new MemoryWriteAheadLog());
         objectStorage = new MemoryObjectStorage();
         storage = new S3Storage(config, wal,
-            streamManager, objectManager, new DefaultS3BlockCache(config, objectManager, objectStorage), objectStorage);
+            streamManager, objectManager, new StreamReaders(config.blockCacheSize(), objectManager, objectStorage, new DefaultObjectReaderFactory(objectStorage)), objectStorage);
     }
 
     @Test
@@ -214,7 +217,7 @@ public class S3StorageTest {
 
     @Test
     public void testRecoverContinuousRecords() {
-        List<WriteAheadLog.RecoverResult> recoverResults = List.of(
+        List<RecoverResult> recoverResults = List.of(
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 10L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 11L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 12L))),
@@ -245,7 +248,7 @@ public class S3StorageTest {
 
     @Test
     public void testRecoverOutOfOrderRecords() {
-        List<WriteAheadLog.RecoverResult> recoverResults = List.of(
+        List<RecoverResult> recoverResults = List.of(
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 9L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 10L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 13L))),
@@ -269,10 +272,10 @@ public class S3StorageTest {
     }
 
     @Test
-    public void testWALOverCapacity() throws WriteAheadLog.OverCapacityException {
+    public void testWALOverCapacity() throws OverCapacityException {
         storage.append(newRecord(233L, 10L));
         storage.append(newRecord(233L, 11L));
-        doThrow(new WriteAheadLog.OverCapacityException("test")).when(wal).append(any(), any());
+        doThrow(new OverCapacityException("test")).when(wal).append(any(), any());
 
         Mockito.when(objectManager.prepareObject(eq(1), anyLong())).thenReturn(CompletableFuture.completedFuture(16L));
         CommitStreamSetObjectResponse resp = new CommitStreamSetObjectResponse();
@@ -291,7 +294,7 @@ public class S3StorageTest {
         assertEquals(12L, range.getEndOffset());
     }
 
-    static class TestRecoverResult implements WriteAheadLog.RecoverResult {
+    static class TestRecoverResult implements RecoverResult {
         private final ByteBuf record;
 
         public TestRecoverResult(ByteBuf record) {

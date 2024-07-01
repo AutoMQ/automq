@@ -31,7 +31,6 @@ public interface ObjectStorage {
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
-
     // Low level API
     CompletableFuture<Void> write(WriteOptions options, String objectPath, ByteBuf buf);
 
@@ -59,14 +58,20 @@ public interface ObjectStorage {
 
     class ObjectInfo extends ObjectPath {
         private final long timestamp;
+        private final long size;
 
-        public ObjectInfo(short bucket, String key, long timestamp) {
+        public ObjectInfo(short bucket, String key, long timestamp, long size) {
             super(bucket, key);
             this.timestamp = timestamp;
+            this.size = size;
         }
 
         public long timestamp() {
             return timestamp;
+        }
+
+        public long size() {
+            return size;
         }
     }
 

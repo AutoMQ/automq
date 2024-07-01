@@ -23,6 +23,7 @@ import kafka.metrics.KafkaMetricsReporter
 import kafka.utils.{CoreUtils, Logging, Mx4jLoader, VerifiableProperties}
 import org.apache.kafka.common.config.{ConfigDef, ConfigResource}
 import org.apache.kafka.common.internals.Topic
+import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.utils.{AppInfoParser, Time}
 import org.apache.kafka.common.{KafkaException, Uuid}
 import org.apache.kafka.metadata.KafkaConfigSchema
@@ -59,20 +60,13 @@ class KafkaRaftServer(
   val (metaPropsEnsemble, bootstrapMetadata) =
     KafkaRaftServer.initializeLogDirs(config, this.logger.underlying, this.logIdent)
 
-  private val metrics = Server.initializeMetrics(
+  val metrics: Metrics = Server.initializeMetrics(
     config,
     time,
     metaPropsEnsemble.clusterId().get()
   )
 
-  private val sharedServer = new SharedServer(
-    config,
-    metaPropsEnsemble,
-    time,
-    metrics,
-    CompletableFuture.completedFuture(QuorumConfig.parseVoterConnections(config.quorumVoters)),
-    new StandardFaultHandlerFactory(),
-  )
+  private val sharedServer = buildSharedServer()
 
   private val broker: Option[BrokerServer] = if (config.processRoles.contains(ProcessRole.BrokerRole)) {
     Some(brokerServer())
@@ -111,6 +105,17 @@ class KafkaRaftServer(
   // AutoMQ inject start
   def getSharedServer(): SharedServer = {
     sharedServer
+  }
+
+  protected def buildSharedServer(): SharedServer = {
+    new SharedServer(
+      config,
+      metaPropsEnsemble,
+      time,
+      metrics,
+      CompletableFuture.completedFuture(QuorumConfig.parseVoterConnections(config.quorumVoters)),
+      new StandardFaultHandlerFactory(),
+    )
   }
 
   protected def brokerServer(): BrokerServer = {

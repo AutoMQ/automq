@@ -13,9 +13,9 @@ package com.automq.stream.s3.failover;
 
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.streams.StreamManager;
-import com.automq.stream.s3.wal.BlockWALService;
-import com.automq.stream.s3.wal.WALMetadata;
-import com.automq.stream.s3.wal.WALNotInitializedException;
+import com.automq.stream.s3.wal.impl.block.BlockWALService;
+import com.automq.stream.s3.wal.common.WALMetadata;
+import com.automq.stream.s3.wal.exception.WALNotInitializedException;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;

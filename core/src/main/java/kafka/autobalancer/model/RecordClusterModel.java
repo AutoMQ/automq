@@ -36,7 +36,8 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
 
     @Override
     public void onBrokerRegister(RegisterBrokerRecord record) {
-        registerBroker(record.brokerId(), record.rack());
+        boolean isActive = !record.fenced() && !record.inControlledShutdown();
+        registerBroker(record.brokerId(), record.rack(), isActive);
     }
 
     @Override
@@ -75,16 +76,16 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
     @Override
     public void onPartitionCreate(PartitionRecord record) {
         if (record.leader() < 0) {
-            logger.error("Illegal replica leader {} for {}-{}", record.leader(), record.topicId(), record.partitionId());
+            deletePartition(record.topicId(), record.partitionId());
             return;
         }
-        createPartition(record.topicId(), record.partitionId(), record.leader());
+        reassignPartition(record.topicId(), record.partitionId(), record.leader());
     }
 
     @Override
     public void onPartitionChange(PartitionChangeRecord record) {
         if (record.leader() < 0) {
-            // simply ignore the record if the leader is illegal
+            deletePartition(record.topicId(), record.partitionId());
             return;
         }
         reassignPartition(record.topicId(), record.partitionId(), record.leader());

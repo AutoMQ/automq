@@ -1,0 +1,6 @@
+connect_test_suite:
+  included:
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_restart_failed_connector
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_restart_failed_task
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_restart_connector_and_tasks_failed_connector
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_restart_connector_and_tasks_failed_task

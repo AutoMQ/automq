@@ -17,9 +17,11 @@
 
 package org.apache.kafka.image;
 
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -32,10 +34,15 @@ import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.StreamTags;
+import org.apache.kafka.timeline.TimelineHashMap;
 
 public final class S3StreamsMetadataDelta {
 
@@ -54,6 +61,8 @@ public final class S3StreamsMetadataDelta {
     // we create NodeStreamMetadataImage when we create the first StreamSetObjectRecord for a node,
     // so we should decide when to recycle the node's memory data structure
     private final Set<Integer> deletedNodes = new HashSet<>();
+
+    private final Map<Long, Long> changedStreamEndOffsets = new HashMap<>();
 
     public S3StreamsMetadataDelta(S3StreamsMetadataImage image) {
         this.image = image;
@@ -105,10 +114,29 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(S3StreamSetObjectRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
+        if (record.ranges().length != 0) {
+            List<StreamOffsetRange> range = S3StreamSetObject.decode(record.ranges());
+            range.forEach(r -> updateStreamEndOffset(r.streamId(), r.endOffset()));
+        }
     }
 
     public void replay(RemoveStreamSetObjectRecord record) {
         getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
+    }
+
+    public void replay(S3StreamEndOffsetsRecord record) {
+        for (StreamEndOffset streamEndOffset : S3StreamEndOffsetsCodec.decode(record.endOffsets())) {
+            updateStreamEndOffset(streamEndOffset.streamId(), streamEndOffset.endOffset());
+        }
+    }
+
+    private void updateStreamEndOffset(long streamId, long newEndOffset) {
+        changedStreamEndOffsets.compute(streamId, (id, offset) -> {
+            if (offset == null) {
+                return newEndOffset;
+            }
+            return Math.max(offset, newEndOffset);
+        });
     }
 
     private S3StreamMetadataDelta getOrCreateStreamMetadataDelta(Long streamId) {
@@ -182,7 +210,20 @@ public final class S3StreamsMetadataDelta {
             }
         }
 
-        return new S3StreamsMetadataImage(currentAssignedStreamId, streams, nodes, partition2streams, stream2partition);
+        RegistryRef registry = image.registry();
+        TimelineHashMap<Long, Long> newStreamEndOffsets;
+        if (registry == RegistryRef.NOOP) {
+            registry = new RegistryRef();
+            newStreamEndOffsets = new TimelineHashMap<>(registry.registry(), 100000);
+        } else {
+            newStreamEndOffsets = image.timelineStreamEndOffsets();
+        }
+        registry.inLock(() -> {
+            newStreamEndOffsets.putAll(changedStreamEndOffsets);
+            deletedStreams.forEach(newStreamEndOffsets::remove);
+        });
+        registry = registry.next();
+        return new S3StreamsMetadataImage(currentAssignedStreamId, registry, streams, nodes, partition2streams, stream2partition, newStreamEndOffsets);
     }
 
     @Override

@@ -14,7 +14,7 @@ package com.automq.stream.s3.metrics;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class TimerUtil {
+public final class TimerUtil {
     private final AtomicLong last = new AtomicLong(System.nanoTime());
 
     public TimerUtil() {

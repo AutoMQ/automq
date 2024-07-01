@@ -13,8 +13,9 @@ package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.wal.BlockWALService;
-import com.automq.stream.s3.wal.WALHeader;
+import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.impl.block.BlockWALService;
+import com.automq.stream.s3.wal.impl.block.BlockWALHeader;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
@@ -34,6 +35,7 @@ import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
  */
 public class RecoverTool extends BlockWALService implements AutoCloseable {
 
+    @SuppressWarnings("this-escape")
     public RecoverTool(Config config) throws IOException {
         super(BlockWALService.recoveryBuilder(config.path));
         super.start();
@@ -49,7 +51,7 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
     }
 
     private void run(Config config) {
-        WALHeader header = super.tryReadWALHeader();
+        BlockWALHeader header = super.tryReadWALHeader();
         System.out.println(header);
 
         Iterable<RecoverResult> recordsSupplier = () -> recover(header, config);
@@ -62,7 +64,7 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
             .forEach(RecoverResultWrapper::release);
     }
 
-    private Iterator<RecoverResult> recover(WALHeader header, Config config) {
+    private Iterator<RecoverResult> recover(BlockWALHeader header, Config config) {
         long recoverOffset = config.offset != null ? config.offset : header.getTrimOffset();
         long windowLength = config.windowLength != -1 ? config.windowLength : header.getSlidingWindowMaxLength();
         RecoverIterator iterator = new RecoverIterator(recoverOffset, windowLength, -1);

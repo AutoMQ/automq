@@ -48,9 +48,11 @@ public class ClusterModelTest {
     public void testRegisterBroker() {
         RecordClusterModel clusterModel = new RecordClusterModel();
         RegisterBrokerRecord record1 = new RegisterBrokerRecord()
-                .setBrokerId(1);
+            .setFenced(false)
+            .setBrokerId(1);
         RegisterBrokerRecord record2 = new RegisterBrokerRecord()
-                .setBrokerId(2);
+            .setFenced(false)
+            .setBrokerId(2);
         clusterModel.onBrokerRegister(record1);
         clusterModel.onBrokerRegister(record2);
         clusterModel.onBrokerRegister(record1);
@@ -63,9 +65,11 @@ public class ClusterModelTest {
     public void testUnregisterBroker() {
         RecordClusterModel clusterModel = new RecordClusterModel();
         RegisterBrokerRecord record1 = new RegisterBrokerRecord()
-                .setBrokerId(1);
+            .setFenced(false)
+            .setBrokerId(1);
         RegisterBrokerRecord record2 = new RegisterBrokerRecord()
-                .setBrokerId(2);
+            .setFenced(false)
+            .setBrokerId(2);
         clusterModel.onBrokerRegister(record1);
         clusterModel.onBrokerRegister(record2);
         clusterModel.onBrokerRegister(record1);
@@ -85,9 +89,11 @@ public class ClusterModelTest {
     public void testFencedBroker() {
         RecordClusterModel clusterModel = new RecordClusterModel();
         RegisterBrokerRecord record1 = new RegisterBrokerRecord()
-                .setBrokerId(1);
+            .setFenced(false)
+            .setBrokerId(1);
         RegisterBrokerRecord record2 = new RegisterBrokerRecord()
-                .setBrokerId(2);
+            .setFenced(false)
+            .setBrokerId(2);
         clusterModel.onBrokerRegister(record1);
         clusterModel.onBrokerRegister(record2);
 
@@ -205,7 +211,8 @@ public class ClusterModelTest {
 
         // create on non-exist topic
         RegisterBrokerRecord brokerRecord = new RegisterBrokerRecord()
-                .setBrokerId(newBrokerId);
+            .setFenced(false)
+            .setBrokerId(newBrokerId);
         clusterModel.onBrokerRegister(brokerRecord);
         clusterModel.onPartitionChange(partitionChangeRecord);
         Assertions.assertNull(clusterModel.replicaUpdater(newBrokerId, tp));
@@ -219,7 +226,8 @@ public class ClusterModelTest {
         Assertions.assertNull(clusterModel.replicaUpdater(newBrokerId, tp));
 
         RegisterBrokerRecord brokerRecord2 = new RegisterBrokerRecord()
-                .setBrokerId(oldBrokerId);
+            .setFenced(false)
+            .setBrokerId(oldBrokerId);
         clusterModel.onBrokerRegister(brokerRecord2);
         PartitionRecord partitionRecord = new PartitionRecord()
                 .setLeader(oldBrokerId)
@@ -232,6 +240,10 @@ public class ClusterModelTest {
         clusterModel.onPartitionChange(partitionChangeRecord);
         Assertions.assertEquals(tp, clusterModel.replicaUpdater(newBrokerId, tp).topicPartition());
         Assertions.assertNull(clusterModel.replicaUpdater(oldBrokerId, tp));
+
+        partitionChangeRecord.setLeader(-1);
+        clusterModel.onPartitionChange(partitionChangeRecord);
+        Assertions.assertNull(clusterModel.replicaUpdater(newBrokerId, tp));
     }
 
     @Test
@@ -252,7 +264,8 @@ public class ClusterModelTest {
                 new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time()));
 
         RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
-                .setBrokerId(brokerId);
+            .setFenced(false)
+            .setBrokerId(brokerId);
         clusterModel.onBrokerRegister(registerBrokerRecord);
         TopicRecord topicRecord = new TopicRecord()
                 .setName(topicName)
@@ -278,7 +291,8 @@ public class ClusterModelTest {
         int brokerId = 1;
 
         RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
-                .setBrokerId(brokerId);
+            .setBrokerId(brokerId)
+            .setFenced(false);
         clusterModel.onBrokerRegister(registerBrokerRecord);
         TopicRecord topicRecord = new TopicRecord()
                 .setName(topicName)
@@ -338,7 +352,8 @@ public class ClusterModelTest {
         int brokerId = 1;
 
         RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
-                .setBrokerId(brokerId);
+            .setFenced(false)
+            .setBrokerId(brokerId);
         clusterModel.onBrokerRegister(registerBrokerRecord);
         TopicRecord topicRecord = new TopicRecord()
                 .setName(topicName)
@@ -384,7 +399,9 @@ public class ClusterModelTest {
     public void testSlowBroker() {
         RecordClusterModel clusterModel = new RecordClusterModel();
 
-        RegisterBrokerRecord registerBrokerRecord0 = new RegisterBrokerRecord().setBrokerId(0);
+        RegisterBrokerRecord registerBrokerRecord0 = new RegisterBrokerRecord()
+            .setFenced(false)
+            .setBrokerId(0);
         clusterModel.onBrokerRegister(registerBrokerRecord0);
 
         // test not enough samples
@@ -473,7 +490,8 @@ public class ClusterModelTest {
         int brokerId = 1;
 
         RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
-                .setBrokerId(brokerId);
+            .setBrokerId(brokerId)
+            .setFenced(false);
         clusterModel.onBrokerRegister(registerBrokerRecord);
         TopicRecord topicRecord = new TopicRecord()
                 .setName(topicName)

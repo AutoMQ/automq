@@ -20,6 +20,7 @@ import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.opentelemetry.api.common.Attributes;
@@ -42,15 +43,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class S3MetricsExporter implements MetricExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3MetricsExporter.class);
-    private static final String TOTAL_SUFFIX = "_total";
 
     public static final int UPLOAD_INTERVAL = System.getenv("AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL") != null ? Integer.parseInt(System.getenv("AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL")) : 60 * 1000;
     public static final int CLEANUP_INTERVAL = System.getenv("AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL") != null ? Integer.parseInt(System.getenv("AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL")) : 2 * 60 * 1000;
@@ -148,7 +148,15 @@ public class S3MetricsExporter implements MetricExporter {
                             .filter(object -> object.timestamp() < expiredTime)
                             .map(object -> new ObjectPath(object.bucket(), object.key()))
                             .collect(Collectors.toList());
-                        objectStorage.delete(keyList).join();
+
+                        if (!keyList.isEmpty()) {
+                            // Some of s3 implements allow only 1000 keys per request.
+                            CompletableFuture<?>[] deleteFutures = Lists.partition(keyList, 1000)
+                                .stream()
+                                .map(objectStorage::delete)
+                                .toArray(CompletableFuture[]::new);
+                            CompletableFuture.allOf(deleteFutures).join();
+                        }
                     }
 
                     Thread.sleep(Duration.ofMinutes(1).toMillis());
@@ -183,31 +191,31 @@ public class S3MetricsExporter implements MetricExporter {
                     case LONG_SUM:
                         metric.getLongSumData().getPoints().forEach(point ->
                             lineList.add(serializeCounter(
-                                mapMetricsName(metric.getName(), metric.getUnit(), metric.getLongSumData().isMonotonic(), false),
+                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), metric.getLongSumData().isMonotonic(), false),
                                 point.getValue(), point.getAttributes(), point.getEpochNanos())));
                         break;
                     case DOUBLE_SUM:
                         metric.getDoubleSumData().getPoints().forEach(point ->
                             lineList.add(serializeCounter(
-                                mapMetricsName(metric.getName(), metric.getUnit(), metric.getDoubleSumData().isMonotonic(), false),
+                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), metric.getDoubleSumData().isMonotonic(), false),
                                 point.getValue(), point.getAttributes(), point.getEpochNanos())));
                         break;
                     case LONG_GAUGE:
                         metric.getLongGaugeData().getPoints().forEach(point ->
                             lineList.add(serializeGauge(
-                                mapMetricsName(metric.getName(), metric.getUnit(), false, true),
+                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, true),
                                 point.getValue(), point.getAttributes(), point.getEpochNanos())));
                         break;
                     case DOUBLE_GAUGE:
                         metric.getDoubleGaugeData().getPoints().forEach(point ->
                             lineList.add(serializeGauge(
-                                mapMetricsName(metric.getName(), metric.getUnit(), false, true),
+                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, true),
                                 point.getValue(), point.getAttributes(), point.getEpochNanos())));
                         break;
                     case HISTOGRAM:
                         metric.getHistogramData().getPoints().forEach(point ->
                             lineList.add(serializeHistogram(
-                                mapMetricsName(metric.getName(), metric.getUnit(), false, false),
+                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, false),
                                 point)));
                         break;
                     default:
@@ -268,98 +276,6 @@ public class S3MetricsExporter implements MetricExporter {
     private String getObjectKey() {
         String hour = LocalDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyyMMddHH"));
         return String.format("automq/metrics/%s/%s/%s/%s", config.clusterId(), config.nodeId(), hour, UUID.randomUUID());
-    }
-
-    private String getPrometheusUnit(String unit) {
-        if (unit.contains("{")) {
-            return "";
-        }
-        switch (unit) {
-            // Time
-            case "d":
-                return "days";
-            case "h":
-                return "hours";
-            case "min":
-                return "minutes";
-            case "s":
-                return "seconds";
-            case "ms":
-                return "milliseconds";
-            case "us":
-                return "microseconds";
-            case "ns":
-                return "nanoseconds";
-            // Bytes
-            case "By":
-                return "bytes";
-            case "KiBy":
-                return "kibibytes";
-            case "MiBy":
-                return "mebibytes";
-            case "GiBy":
-                return "gibibytes";
-            case "TiBy":
-                return "tibibytes";
-            case "KBy":
-                return "kilobytes";
-            case "MBy":
-                return "megabytes";
-            case "GBy":
-                return "gigabytes";
-            case "TBy":
-                return "terabytes";
-            // SI
-            case "m":
-                return "meters";
-            case "V":
-                return "volts";
-            case "A":
-                return "amperes";
-            case "J":
-                return "joules";
-            case "W":
-                return "watts";
-            case "g":
-                return "grams";
-            // Misc
-            case "Cel":
-                return "celsius";
-            case "Hz":
-                return "hertz";
-            case "1":
-                return "";
-            case "%":
-                return "percent";
-            default:
-                return unit;
-        }
-    }
-
-    private String mapMetricsName(String name, String unit, boolean isCounter, boolean isGauge) {
-        // Replace "." into "_"
-        name = name.replaceAll("\\.", "_");
-
-        String prometheusUnit = getPrometheusUnit(unit);
-        boolean shouldAppendUnit = StringUtils.isNotBlank(prometheusUnit) && !name.contains(prometheusUnit);
-        // trim counter's _total suffix so the unit is placed before it.
-        if (isCounter && name.endsWith(TOTAL_SUFFIX)) {
-            name = name.substring(0, name.length() - TOTAL_SUFFIX.length());
-        }
-        // append prometheus unit if not null or empty.
-        if (shouldAppendUnit) {
-            name = name + "_" + prometheusUnit;
-        }
-
-        // replace _total suffix, or add if it wasn't already present.
-        if (isCounter) {
-            name = name + TOTAL_SUFFIX;
-        }
-        // special case - gauge
-        if (unit.equals("1") && isGauge && !name.contains("ratio")) {
-            name = name + "_ratio";
-        }
-        return name;
     }
 
     private String serializeCounter(String name, double value, Attributes attributes, long timestampNanos) {

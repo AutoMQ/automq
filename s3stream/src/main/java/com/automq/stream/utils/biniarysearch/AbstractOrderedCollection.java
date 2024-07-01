@@ -11,12 +11,18 @@
 
 package com.automq.stream.utils.biniarysearch;
 
+import java.util.Collections;
+import java.util.List;
+
 public abstract class AbstractOrderedCollection<T> {
 
     protected abstract int size();
 
     protected abstract ComparableItem<T> get(int index);
 
+    /**
+     * @see Collections#binarySearch(List, Object)
+     */
     public int search(T target) {
         int low = 0;
         int high = size() - 1;
@@ -33,7 +39,7 @@ public abstract class AbstractOrderedCollection<T> {
             }
         }
         if (low > high) {
-            return -1;
+            return -(low + 1);
         }
         return low;
     }

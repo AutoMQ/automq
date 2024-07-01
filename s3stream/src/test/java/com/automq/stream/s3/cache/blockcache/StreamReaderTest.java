@@ -11,11 +11,9 @@
 
 package com.automq.stream.s3.cache.blockcache;
 
-import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.utils.FutureUtil;
@@ -29,7 +27,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -51,13 +48,14 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@Tag("S3Unit") public class StreamReaderTest {
+@Tag("S3Unit")
+public class StreamReaderTest {
     private static final long STREAM_ID = 233;
     private static final int BLOCK_SIZE_THRESHOLD = 1024;
     private Map<Long, MockObject> objects;
     private EventLoop[] eventLoops;
     private ObjectManager objectManager;
-    private Function<S3ObjectMetadata, ObjectReader> objectReaderFactory;
+    private ObjectReaderFactory objectReaderFactory;
     private DataBlockCache dataBlockCache;
 
     private StreamReader streamReader;

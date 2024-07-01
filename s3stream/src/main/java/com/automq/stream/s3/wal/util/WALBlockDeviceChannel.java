@@ -11,8 +11,8 @@
 
 package com.automq.stream.s3.wal.util;
 
-import com.automq.stream.s3.wal.WALCapacityMismatchException;
-import com.automq.stream.s3.wal.WALNotInitializedException;
+import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
+import com.automq.stream.s3.wal.exception.WALNotInitializedException;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOLib;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOUtils;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectRandomAccessFile;

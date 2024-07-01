@@ -26,7 +26,7 @@ public class ConfigurableMetric implements ConfigListener {
         this.attributes = buildAttributes(metricsConfig.getBaseAttributes());
     }
 
-    Attributes buildAttributes(Attributes baseAttributes) {
+    private Attributes buildAttributes(Attributes baseAttributes) {
         return Attributes.builder()
             .putAll(baseAttributes)
             .putAll(this.extraAttributes).build();

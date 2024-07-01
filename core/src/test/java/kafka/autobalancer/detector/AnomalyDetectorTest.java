@@ -201,7 +201,7 @@ public class AnomalyDetectorTest {
 
         int brokerNum = 20;
         for (int i = 0; i < brokerNum; i++) {
-            clusterModel.registerBroker(i, "");
+            clusterModel.registerBroker(i, "", true);
             clusterModel.updateBrokerMetrics(i, Map.of(
                     RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
                     RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
@@ -220,7 +220,7 @@ public class AnomalyDetectorTest {
             String topicName = "topic-" + i;
             clusterModel.createTopic(topicId, topicName);
             for (int j = 0; j < partitionNumPerTopic; j++) {
-                clusterModel.createPartition(topicId, j, brokerIndex);
+                clusterModel.reassignPartition(topicId, j, brokerIndex);
                 Map<Byte, Double> metrics = generateRandomMetrics(r);
                 clusterModel.updateTopicPartitionMetrics(brokerIndex, new TopicPartition(topicName, j), metrics.entrySet(), System.currentTimeMillis());
                 currPartitionNum++;

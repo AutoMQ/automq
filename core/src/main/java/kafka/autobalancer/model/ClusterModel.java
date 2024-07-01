@@ -246,7 +246,7 @@ public class ClusterModel {
         return false;
     }
 
-    public void registerBroker(int brokerId, String rackId) {
+    public void registerBroker(int brokerId, String rackId, boolean active) {
         clusterLock.lock();
         try {
             if (brokerMap.containsKey(brokerId)) {
@@ -255,7 +255,7 @@ public class ClusterModel {
             if (Utils.isBlank(rackId)) {
                 rackId = DEFAULT_RACK_ID;
             }
-            BrokerUpdater brokerUpdater = createBrokerUpdater(brokerId, rackId);
+            BrokerUpdater brokerUpdater = createBrokerUpdater(brokerId, rackId, active);
             brokerMap.putIfAbsent(brokerId, brokerUpdater);
             brokerReplicaMap.put(brokerId, new HashMap<>());
         } finally {
@@ -263,8 +263,8 @@ public class ClusterModel {
         }
     }
 
-    public BrokerUpdater createBrokerUpdater(int brokerId, String rack) {
-        return new BrokerUpdater(brokerId, rack, true);
+    public BrokerUpdater createBrokerUpdater(int brokerId, String rack, boolean active) {
+        return new BrokerUpdater(brokerId, rack, active);
     }
 
     public void unregisterBroker(int brokerId) {
@@ -307,7 +307,12 @@ public class ClusterModel {
                 return;
             }
             idToTopicNameMap.remove(topicId);
-            for (Map.Entry<Integer, Integer> entry : topicPartitionReplicaMap.get(topicName).entrySet()) {
+            Map<Integer, Integer> partitionReplicaMap = topicPartitionReplicaMap.get(topicName);
+            if (partitionReplicaMap == null) {
+                logger.error("Failed to find topic name for id {} when deleting topic", topicId);
+                return;
+            }
+            for (Map.Entry<Integer, Integer> entry : partitionReplicaMap.entrySet()) {
                 int partitionId = entry.getKey();
                 int brokerId = entry.getValue();
                 Map<TopicPartition, TopicPartitionReplicaUpdater> replicaMap = brokerReplicaMap.get(brokerId);
@@ -316,29 +321,6 @@ public class ClusterModel {
                 }
             }
             topicPartitionReplicaMap.remove(topicName);
-        } finally {
-            clusterLock.unlock();
-        }
-    }
-
-    public void createPartition(Uuid topicId, int partitionId, int brokerId) {
-        clusterLock.lock();
-        try {
-            String topicName = idToTopicNameMap.get(topicId);
-            if (topicName == null) {
-                return;
-            }
-            if (!topicPartitionReplicaMap.containsKey(topicName)) {
-                logger.error("Create partition on invalid topic {}", topicName);
-                return;
-            }
-            if (!brokerMap.containsKey(brokerId)) {
-                logger.error("Create partition for topic {} on invalid broker {}", topicName, brokerId);
-                return;
-            }
-            topicPartitionReplicaMap.get(topicName).put(partitionId, brokerId);
-            TopicPartition tp = new TopicPartition(topicName, partitionId);
-            brokerReplicaMap.get(brokerId).put(tp, createReplicaUpdater(tp));
         } finally {
             clusterLock.unlock();
         }
@@ -356,8 +338,9 @@ public class ClusterModel {
                 return;
             }
 
-            if (!topicPartitionReplicaMap.containsKey(topicName)) {
-                logger.error("Reassign partition {} on invalid topic {}", partitionId, topicName);
+            Map<Integer, Integer> partitionReplicaMap = topicPartitionReplicaMap.get(topicName);
+            if (partitionReplicaMap == null) {
+                logger.error("Failed to find topic name for id {} when reassigning partition", topicId);
                 return;
             }
 
@@ -365,16 +348,40 @@ public class ClusterModel {
                 logger.error("Reassign partition {} for topic {} on invalid broker {}", partitionId, topicName, brokerId);
                 return;
             }
-            int oldBrokerId = topicPartitionReplicaMap.get(topicName).getOrDefault(partitionId, -1);
+            int oldBrokerId = partitionReplicaMap.getOrDefault(partitionId, -1);
             if (oldBrokerId == brokerId) {
                 return;
             }
-            if (oldBrokerId != -1) {
-                TopicPartition tp = new TopicPartition(topicName, partitionId);
-                brokerReplicaMap.get(brokerId).put(tp, createReplicaUpdater(tp));
+            TopicPartition tp = new TopicPartition(topicName, partitionId);
+            if (oldBrokerId != -1 && brokerReplicaMap.containsKey(oldBrokerId)) {
                 brokerReplicaMap.get(oldBrokerId).remove(tp);
             }
-            topicPartitionReplicaMap.get(topicName).put(partitionId, brokerId);
+            brokerReplicaMap.get(brokerId).put(tp, createReplicaUpdater(tp));
+            partitionReplicaMap.put(partitionId, brokerId);
+        } finally {
+            clusterLock.unlock();
+        }
+    }
+
+    public void deletePartition(Uuid topicId, int partitionId) {
+        clusterLock.lock();
+        try {
+            String topicName = idToTopicNameMap.get(topicId);
+            if (topicName == null) {
+                return;
+            }
+            Map<Integer, Integer> partitionReplicaMap = topicPartitionReplicaMap.get(topicName);
+            if (partitionReplicaMap == null) {
+                logger.error("Failed to find topic name for id {} when deleting partition", topicId);
+                return;
+            }
+            if (!partitionReplicaMap.containsKey(partitionId)) {
+                return;
+            }
+            int brokerId = partitionReplicaMap.remove(partitionId);
+            if (brokerReplicaMap.containsKey(brokerId)) {
+                brokerReplicaMap.get(brokerId).remove(new TopicPartition(topicName, partitionId));
+            }
         } finally {
             clusterLock.unlock();
         }

@@ -297,7 +297,7 @@ public class ReplicationControlManager {
         private final Uuid id;
         private final TimelineHashMap<Integer, PartitionRegistration> parts;
 
-        TopicControlInfo(String name, SnapshotRegistry snapshotRegistry, Uuid id) {
+        public TopicControlInfo(String name, SnapshotRegistry snapshotRegistry, Uuid id) {
             this.name = name;
             this.id = id;
             this.parts = new TimelineHashMap<>(snapshotRegistry, 0);

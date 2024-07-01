@@ -20,6 +20,8 @@ import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.S3StreamClient;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
+import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
 import com.automq.stream.s3.cache.blockcache.StreamReaders;
 import com.automq.stream.s3.compact.CompactionManager;
 import com.automq.stream.s3.failover.Failover;
@@ -31,7 +33,7 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
-import com.automq.stream.s3.wal.BlockWALService;
+import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.PingS3Helper;
@@ -60,6 +62,7 @@ public class DefaultS3Client implements Client {
     private final WriteAheadLog writeAheadLog;
     private final S3Storage storage;
 
+    private final ObjectReaderFactory objectReaderFactory;
     private final S3BlockCache blockCache;
 
     private final ObjectManager objectManager;
@@ -82,7 +85,6 @@ public class DefaultS3Client implements Client {
     public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;
         this.config = config;
-        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId());
         String endpoint = config.endpoint();
         String region = config.region();
         String bucket = config.bucket();
@@ -114,10 +116,12 @@ public class DefaultS3Client implements Client {
                 .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).forcePathStyle(forcePathStyle).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
                 config.controllerRequestRetryBaseDelayMs());
+        this.objectReaderFactory = new DefaultObjectReaderFactory(objectStorage);
+        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory);
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = newStreamManager(config.nodeId(), config.nodeEpoch(), false);
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
-        this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage);
+        this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
         this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);

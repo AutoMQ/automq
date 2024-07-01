@@ -12,13 +12,13 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.CloseableIterator;
-import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
 import io.netty.buffer.ByteBuf;
 import java.util.ArrayList;
@@ -27,8 +27,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,8 +80,6 @@ public interface ObjectReader extends AutoCloseable {
     class DefaultObjectReader implements ObjectReader {
 
         private static final Logger LOGGER = LoggerFactory.getLogger(ObjectReader.class);
-        private static final int MAX_RETRY_TIMES = 10;
-        private static final long RETRY_INTERVAL_MILLS = TimeUnit.SECONDS.toMillis(3);
         private final S3ObjectMetadata metadata;
         private final String objectKey;
         private final ObjectStorage objectStorage;
@@ -134,10 +132,10 @@ public interface ObjectReader extends AutoCloseable {
 
         void asyncGetBasicObjectInfo() {
             int guessIndexBlockSize = 1024 + (int) (metadata.objectSize() / (1024 * 1024 /* 1MB */) * 36 /* index unit size*/);
-            asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - guessIndexBlockSize), true, MAX_RETRY_TIMES);
+            asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - guessIndexBlockSize), true);
         }
 
-        private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt, int leftRetryTimes) {
+        private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt) {
             CompletableFuture<ByteBuf> cf = objectStorage.rangeRead(new ReadOptions().bucket(metadata.bucket()), metadata.key(), startPosition, metadata.objectSize());
             cf.thenAccept(buf -> {
                 try {
@@ -148,18 +146,11 @@ public interface ObjectReader extends AutoCloseable {
                         basicObjectInfo().completeExceptionally(ex);
                         return;
                     }
-                    // the first attempt get index data is not enough,
-                    asyncGetBasicObjectInfo0(ex.indexBlockPosition, false, leftRetryTimes);
+                    // retry with corrected position.
+                    asyncGetBasicObjectInfo0(ex.indexBlockPosition, false);
                 }
             }).exceptionally(ex -> {
-                // The object might be invisible after put for a few seconds, so we need to retry get index later.
-                if (leftRetryTimes > 0) {
-                    LOGGER.warn("[GET_OBJECT_INDEX_FAIL] s3 range read from {} [{}, {}) failed, leftRetryTimes={}", objectKey, startPosition, metadata.objectSize(), leftRetryTimes, ex);
-                    Threads.COMMON_SCHEDULER.schedule(() -> asyncGetBasicObjectInfo0(startPosition, firstAttempt, leftRetryTimes - 1), RETRY_INTERVAL_MILLS, TimeUnit.MILLISECONDS);
-                } else {
-                    LOGGER.error("[GET_OBJECT_INDEX_FAIL] s3 range read from {} [{}, {}) failed, leftRetryTimes={}", objectKey, startPosition, metadata.objectSize(), leftRetryTimes, ex);
-                    basicObjectInfo().completeExceptionally(ex);
-                }
+                basicObjectInfo().completeExceptionally(ex);
                 return null;
             });
         }
@@ -350,7 +341,7 @@ public interface ObjectReader extends AutoCloseable {
             List<StreamDataBlock> rst = new LinkedList<>();
             IndexBlockOrderedBytes indexBlockOrderedBytes = new IndexBlockOrderedBytes(this);
             int startIndex = indexBlockOrderedBytes.search(new IndexBlockOrderedBytes.TargetStreamOffset(streamId, startOffset));
-            if (startIndex == -1) {
+            if (startIndex < 0) {
                 // mismatched
                 return new FindIndexResult(false, nextStartOffset, nextMaxBytes, rst);
             }
@@ -384,6 +375,53 @@ public interface ObjectReader extends AutoCloseable {
                 }
             }
             return new FindIndexResult(isFulfilled, nextStartOffset, nextMaxBytes, rst);
+        }
+
+        public Optional<StreamOffsetRange> findStreamOffsetRange(long streamId) {
+            IndexBlockOrderedBytes indexBlockOrderedBytes = new IndexBlockOrderedBytes(this);
+            int searchRst = indexBlockOrderedBytes.search(new IndexBlockOrderedBytes.TargetStreamOffset(streamId, Long.MIN_VALUE));
+            int insertPoint = -searchRst - 1;
+            long startOffset = Constants.NOOP_OFFSET;
+            long endOffset = Constants.NOOP_OFFSET;
+            for (int i = insertPoint; i < count; i++) {
+                DataBlockIndex dataBlockIndex = get(i);
+                if (dataBlockIndex.streamId() != streamId) {
+                    break;
+                }
+                if (startOffset == Constants.NOOP_OFFSET) {
+                    startOffset = dataBlockIndex.startOffset();
+                }
+                endOffset = dataBlockIndex.endOffset();
+            }
+            if (startOffset == Constants.NOOP_OFFSET) {
+                return Optional.empty();
+            } else {
+                return Optional.of(new StreamOffsetRange(streamId, startOffset, endOffset));
+            }
+        }
+
+        public List<StreamOffsetRange> streamOffsetRanges() {
+            List<StreamOffsetRange> ranges = new ArrayList<>(count);
+            Iterator<DataBlockIndex> it = iterator();
+            long streamId = Constants.NOOP_STREAM_ID;
+            long startOffset = Constants.NOOP_OFFSET;
+            long endOffset = Constants.NOOP_OFFSET;
+            while (it.hasNext()) {
+                DataBlockIndex index = it.next();
+                if (index.streamId() != streamId && streamId != Constants.NOOP_STREAM_ID) {
+                    ranges.add(new StreamOffsetRange(streamId, startOffset, endOffset));
+                    startOffset = Constants.NOOP_OFFSET;
+                }
+                streamId = index.streamId();
+                if (startOffset == Constants.NOOP_OFFSET) {
+                    startOffset = index.startOffset();
+                }
+                endOffset = index.endOffset();
+            }
+            if (streamId != Constants.NOOP_STREAM_ID) {
+                ranges.add(new StreamOffsetRange(streamId, startOffset, endOffset));
+            }
+            return ranges;
         }
 
         public int size() {

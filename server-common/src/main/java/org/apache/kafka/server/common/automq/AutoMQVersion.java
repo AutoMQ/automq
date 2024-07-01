@@ -21,6 +21,7 @@ public enum AutoMQVersion {
     V1((short) 2),
     // Support composite object
     // Support object bucket index
+    // Support huge cluster
     V2((short) 3);
 
     public static final String FEATURE_NAME = "automq.version";
@@ -75,6 +76,10 @@ public enum AutoMQVersion {
         return isAtLeast(V2);
     }
 
+    public boolean isHugeClusterSupported() {
+        return isAtLeast(V2);
+    }
+
     public short streamRecordVersion() {
         if (isReassignmentV1Supported()) {
             return 1;
@@ -85,6 +90,14 @@ public enum AutoMQVersion {
 
     public short objectRecordVersion() {
         if (isObjectAttributesSupported()) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
+    public short streamSetObjectRecordVersion() {
+        if (isAtLeast(V2)) {
             return 1;
         } else {
             return 0;
