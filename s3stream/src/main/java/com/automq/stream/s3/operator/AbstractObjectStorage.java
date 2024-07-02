@@ -60,8 +60,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
     private final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
     private final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
-    private final ExecutorService readLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-        "s3-read-limiter-cb-executor", true, LOGGER);
     private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-limiter-cb-executor", true, LOGGER);
     private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
@@ -130,7 +128,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
 
         TimerUtil timerUtil = new TimerUtil();
-        networkInboundBandwidthLimiter.consume(options.throttleStrategy(), end - start).whenCompleteAsync((v, ex) -> {
+        networkInboundBandwidthLimiter.consume(options.throttleStrategy(), end - start).whenComplete((v, ex) -> {
             NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, options.throttleStrategy())
                 .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             if (ex != null) {
@@ -140,7 +138,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     waitingReadTasks.add(new AbstractObjectStorage.ReadTask(options, objectPath, start, end, cf));
                 }
             }
-        }, readLimiterCallbackExecutor);
+        });
         Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end), 1, TimeUnit.MINUTES);
         return cf.whenComplete((rst, ex) -> timeout.cancel());
     }
@@ -372,7 +370,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public void close() {
-        readLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
         scheduler.shutdown();
         doClose();

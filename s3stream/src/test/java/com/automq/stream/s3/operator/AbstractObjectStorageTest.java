@@ -11,18 +11,16 @@
 
 package com.automq.stream.s3.operator;
 
-
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import io.netty.buffer.ByteBuf;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,7 +30,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
-
 
 class AbstractObjectStorageTest {
 
@@ -84,15 +81,13 @@ class AbstractObjectStorageTest {
 
     @Test
     void testMergeRead() throws ExecutionException, InterruptedException {
-        objectStorage = new MemoryObjectStorage(true) {
-            @Override
-            CompletableFuture<ByteBuf> mergedRangeRead(ReadOptions options, String path, long start, long end) {
-                return CompletableFuture.completedFuture(TestUtils.random((int) (end - start + 1)));
-            }
-        };
-        objectStorage = spy(objectStorage);
         S3ObjectMetadata s3ObjectMetadata1 = new S3ObjectMetadata(1, 33554944, S3ObjectType.STREAM);
         S3ObjectMetadata s3ObjectMetadata2 = new S3ObjectMetadata(2, 3072, S3ObjectType.STREAM);
+        objectStorage = new MemoryObjectStorage(true);
+        objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata1.key(), TestUtils.random((int) s3ObjectMetadata1.objectSize())).get();
+        objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata2.key(), TestUtils.random((int) s3ObjectMetadata2.objectSize())).get();
+
+        objectStorage = spy(objectStorage);
         // obj0_0_1024 obj_1_1024_2048 obj_0_16776192_16777216 obj_0_2048_4096 obj_0_16777216_16778240
         CompletableFuture<ByteBuf> cf1 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata1.key(), 0, 1024);
         CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata2.key(), 1024, 3072);
@@ -123,7 +118,6 @@ class AbstractObjectStorageTest {
         assertEquals(512, buf.readableBytes());
         buf.release();
     }
-
 
     @Test
     void testReadToEndOfObject() throws ExecutionException, InterruptedException {
