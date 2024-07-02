@@ -408,6 +408,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     @Override
     protected void deallocate() {
+        if (registryRef == RegistryRef.NOOP) {
+            return;
+        }
         registryRef.release();
     }
 
