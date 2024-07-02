@@ -18,10 +18,18 @@
 package org.apache.kafka.image;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.automq.stream.s3.objects.ObjectAttributes;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
@@ -61,7 +69,10 @@ public class S3ObjectsImageTest {
             map.put(object.getObjectId(), object);
         }
         registry.getOrCreateSnapshot(0);
-        IMAGE1 = new S3ObjectsImage(3, map, registry, 0, new ArrayList<>());
+
+        RegistryRef ref1 = new RegistryRef(registry, 0, new ArrayList<>());
+
+        IMAGE1 = new S3ObjectsImage(3, map, ref1);
         DELTA1_RECORDS = new ArrayList<>();
         // try to update object0 and object1 to committed
         // try to make object2 expired and mark it to be destroyed
@@ -89,6 +100,8 @@ public class S3ObjectsImageTest {
 
         registry = new SnapshotRegistry(new LogContext());
         TimelineHashMap<Long/*objectId*/, S3Object> map2 = new TimelineHashMap<>(registry, 10);
+
+        RegistryRef ref2 = new RegistryRef(registry, 1, new ArrayList<>());
         map2.put(0L, new S3Object(
             0L, -1, null,
             -1, -1, -1, -1,
@@ -106,7 +119,7 @@ public class S3ObjectsImageTest {
             -1, -1, -1, -1,
             S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes()));
         registry.getOrCreateSnapshot(1);
-        IMAGE2 = new S3ObjectsImage(4L, map2, registry, 1, new ArrayList<>());
+        IMAGE2 = new S3ObjectsImage(4L, map2, ref2);
     }
 
     @Test
@@ -137,6 +150,84 @@ public class S3ObjectsImageTest {
         RecordTestUtils.replayAll(delta, writer.records());
         S3ObjectsImage newImage = delta.apply();
         assertEquals(image, newImage);
+    }
+
+    @Test
+    public void testConcurrentRefRetainAndReleaseNotThrowException() throws InterruptedException {
+        SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
+        AtomicReference<S3ObjectsImage> current = new AtomicReference<>();
+        TimelineHashMap<Long/*objectId*/, S3Object> map = new TimelineHashMap<>(registry, 10);
+        RegistryRef ref = new RegistryRef(registry, 0, new ArrayList<>());
+
+        S3ObjectsImage start = new S3ObjectsImage(4L, map, ref);
+        current.set(start);
+
+        AtomicBoolean running = new AtomicBoolean(true);
+
+        AtomicLong counter = new AtomicLong();
+
+        // this logic is like kraft MetadataLoader.maybePublishMetadata
+        Runnable updateImageTask = () -> {
+            while (running.get()) {
+                S3ObjectsImage image = current.get();
+                try {
+                    TimeUnit.MILLISECONDS.sleep(1);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                current.set(new S3ObjectsImage(1, map, ref.next()));
+
+                try {
+                    TimeUnit.MILLISECONDS.sleep(1);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+
+                if (image != current.get()) {
+                    try {
+                        image.release();
+                    } catch (Throwable e) {
+                        counter.incrementAndGet();
+                        throw e;
+                    }
+                }
+            }
+        };
+
+        // retain first and after access finished should release.
+        Runnable accessImageTask = () -> {
+            while (running.get()) {
+                S3ObjectsImage image = current.get();
+                try {
+                    image.retain();
+                    TimeUnit.MILLISECONDS.sleep(10);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    try {
+                        image.release();
+                    } catch (Throwable e) {
+                        counter.incrementAndGet();
+                        throw e;
+                    }
+                }
+            }
+        };
+
+        ExecutorService es = Executors.newFixedThreadPool(10);
+
+        es.submit(updateImageTask);
+
+        for (int i = 0; i < 8; i++) {
+            es.submit(accessImageTask);
+        }
+
+        TimeUnit.SECONDS.sleep(10);
+        running.set(false);
+
+        es.shutdown();
+
+        assertTrue(counter.get() == 0);
     }
 
 }
