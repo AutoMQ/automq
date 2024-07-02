@@ -12,7 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
@@ -25,8 +25,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -46,10 +44,10 @@ import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
-import software.amazon.awssdk.services.s3.model.DeletedObject;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -58,7 +56,6 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.Tagging;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
-import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.utils.FutureUtil.cause;
@@ -71,13 +68,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final Tagging tagging;
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
-    private boolean deleteObjectsReturnSuccessKeys;
 
     public AwsObjectStorage(String endpoint, Map<String, String> tagging, String region, String bucket,
         boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders,
-        AsyncNetworkBandwidthLimiter networkInboundBandwidthLimiter,
-        AsyncNetworkBandwidthLimiter networkOutboundBandwidthLimiter,
+        NetworkBandwidthLimiter networkInboundBandwidthLimiter,
+        NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate,
         boolean checkMode) {
         super(networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
@@ -85,7 +81,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.tagging = tagging(tagging);
         this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency());
         this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency()) : writeS3Client;
-        this.deleteObjectsReturnSuccessKeys = getDeleteObjectsMode();
+        readinessCheck();
     }
 
     // used for test only
@@ -106,189 +102,111 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return new Builder();
     }
 
-    static void handleDeleteObjectsResponse(DeleteObjectsResponse response,
-        boolean deleteObjectsReturnSuccessKeys) throws Exception {
+    static void checkDeleteObjectsResponse(DeleteObjectsResponse response) throws Exception {
         int errDeleteCount = 0;
         ArrayList<String> failedKeys = new ArrayList<>();
         ArrayList<String> errorsMessages = new ArrayList<>();
-        if (deleteObjectsReturnSuccessKeys) {
-            // expect NoSuchKey is not response because s3 api won't return this in errors.
-            for (S3Error error : response.errors()) {
-                if (errDeleteCount < 30) {
-                    LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
-                        error.key(), error.code(), error.message());
-                }
-                failedKeys.add(error.key());
-                errorsMessages.add(error.message());
-                errDeleteCount++;
-
+        for (S3Error error : response.errors()) {
+            if (S3_API_NO_SUCH_KEY.equals(error.code())) {
+                // ignore for delete objects.
+                continue;
             }
-        } else {
-            for (S3Error error : response.errors()) {
-                if (S3_API_NO_SUCH_KEY.equals(error.code())) {
-                    // ignore for delete objects.
-                    continue;
-                }
-                if (errDeleteCount < 30) {
-                    LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
-                        error.key(), error.code(), error.message());
-                }
-                failedKeys.add(error.key());
-                errorsMessages.add(error.message());
-                errDeleteCount++;
+            if (errDeleteCount < 5) {
+                LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
+                    error.key(), error.code(), error.message());
             }
+            failedKeys.add(error.key());
+            errorsMessages.add(error.message());
+            errDeleteCount++;
         }
         if (errDeleteCount > 0) {
             throw new DeleteObjectsException("Failed to delete objects", failedKeys, errorsMessages);
         }
     }
 
-    static boolean checkIfDeleteObjectsWillReturnSuccessDeleteKeys(List<String> path, DeleteObjectsResponse resp) {
-        // BOS S3 API works as quiet mode
-        // in this mode success delete objects won't be returned.
-        // which could cause object not deleted in metadata.
-        //
-        // BOS doc: https://cloud.baidu.com/doc/BOS/s/tkc5twspg
-        // S3 doc: https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html#API_DeleteObjects_RequestBody
-
-        boolean hasDeleted = resp.hasDeleted() && !resp.deleted().isEmpty();
-        boolean hasErrors = resp.hasErrors() && !resp.errors().isEmpty();
-        boolean hasErrorsWithoutNoSuchKey = resp.errors().stream().filter(s3Error -> !S3_API_NO_SUCH_KEY.equals(s3Error.code())).count() != 0;
-        boolean allDeleteKeyMatch = resp.deleted().stream().map(DeletedObject::key).sorted().collect(Collectors.toList()).equals(path);
-
-        if (hasDeleted && !hasErrors && allDeleteKeyMatch) {
-            LOGGER.info("call deleteObjects deleteObjectKeys returned.");
-
-            return true;
-
-        } else if (!hasDeleted && !hasErrorsWithoutNoSuchKey) {
-            LOGGER.info("call deleteObjects but deleteObjectKeys not returned. set deleteObjectsReturnSuccessKeys = false");
-
-            return false;
-        }
-
-        IllegalStateException exception = new IllegalStateException();
-
-        LOGGER.error("error when check if delete objects will return success." +
-                     " delete keys {} resp {}, requestId {}，httpCode {} httpText {}",
-            path, resp, resp.responseMetadata().requestId(),
-            resp.sdkHttpResponse().statusCode(), resp.sdkHttpResponse().statusText(), exception);
-
-        throw exception;
-    }
-
     @Override
-    void doRangeRead(String path, long start, long end,
-        Consumer<Throwable> failHandler, Consumer<CompositeByteBuf> successHandler) {
-        GetObjectRequest request = GetObjectRequest.builder()
-            .bucket(bucket)
-            .key(path)
-            .range(range(start, end))
-            .build();
+    CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
+        GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
+        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
                 CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
                 responsePublisher.subscribe(bytes -> {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
                     buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
-                }).thenAccept(v -> {
-                    successHandler.accept(buf);
-                }).exceptionally(ex -> {
-                    buf.release();
-                    failHandler.accept(ex);
-                    return null;
+                }).whenComplete((rst, ex) -> {
+                    if (ex != null) {
+                        buf.release();
+                        cf.completeExceptionally(ex);
+                    } else {
+                        cf.complete(buf);
+                    }
                 });
             })
             .exceptionally(ex -> {
-                failHandler.accept(ex);
+                cf.completeExceptionally(ex);
                 return null;
             });
+        return cf;
     }
 
     @Override
-    void doWrite(String path, ByteBuf data,
-        Consumer<Throwable> failHandler, Runnable successHandler) {
+    CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data) {
         PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
         if (null != tagging) {
             builder.tagging(tagging);
         }
         PutObjectRequest request = builder.build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
-        writeS3Client.putObject(request, body).thenAccept(putObjectResponse -> {
-            successHandler.run();
-        }).exceptionally(ex -> {
-            failHandler.accept(ex);
-            return null;
-        });
+        return writeS3Client.putObject(request, body).thenApply(rst -> null);
     }
 
     @Override
-    void doCreateMultipartUpload(String path,
-        Consumer<Throwable> failHandler, Consumer<String> successHandler) {
+    CompletableFuture<String> doCreateMultipartUpload(WriteOptions options, String path) {
         CreateMultipartUploadRequest.Builder builder = CreateMultipartUploadRequest.builder().bucket(bucket).key(path);
         if (null != tagging) {
             builder.tagging(tagging);
         }
         CreateMultipartUploadRequest request = builder.build();
-        writeS3Client.createMultipartUpload(request).thenAccept(createMultipartUploadResponse -> {
-            successHandler.accept(createMultipartUploadResponse.uploadId());
-        }).exceptionally(ex -> {
-            failHandler.accept(ex);
-            return null;
-        });
+        return writeS3Client.createMultipartUpload(request).thenApply(CreateMultipartUploadResponse::uploadId);
     }
 
     @Override
-    void doUploadPart(String path, String uploadId, int partNumber, ByteBuf part,
-        Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler) {
+    CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
+        int partNumber, ByteBuf part) {
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
         UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
             .partNumber(partNumber).build();
-        CompletableFuture<UploadPartResponse> uploadPartCf = writeS3Client.uploadPart(request, body);
-        uploadPartCf.thenAccept(uploadPartResponse -> {
-            ObjectStorageCompletedPart objectStorageCompletedPart = new ObjectStorageCompletedPart(partNumber, uploadPartResponse.eTag());
-            successHandler.accept(objectStorageCompletedPart);
-        }).exceptionally(ex -> {
-            failHandler.accept(ex);
-            return null;
-        });
+        return writeS3Client.uploadPart(request, body)
+            .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag()));
     }
 
     @Override
-    void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber,
-        long apiCallAttemptTimeout,
-        Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler) {
+    CompletableFuture<ObjectStorageCompletedPart> doUploadPartCopy(WriteOptions options, String sourcePath, String path,
+        long start, long end, String uploadId, int partNumber) {
         UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
             .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, end)).uploadId(uploadId).partNumber(partNumber)
-            .overrideConfiguration(AwsRequestOverrideConfiguration.builder().apiCallAttemptTimeout(Duration.ofMillis(apiCallAttemptTimeout)).apiCallTimeout(Duration.ofMillis(apiCallAttemptTimeout)).build())
+            .overrideConfiguration(
+                AwsRequestOverrideConfiguration.builder()
+                    .apiCallAttemptTimeout(Duration.ofMillis(options.apiCallAttemptTimeout()))
+                    .apiCallTimeout(Duration.ofMillis(options.apiCallAttemptTimeout())).build()
+            )
             .build();
-        writeS3Client.uploadPartCopy(request).thenAccept(uploadPartCopyResponse -> {
-            ObjectStorageCompletedPart completedPart = new ObjectStorageCompletedPart(partNumber, uploadPartCopyResponse.copyPartResult().eTag());
-            successHandler.accept(completedPart);
-        }).exceptionally(ex -> {
-            failHandler.accept(ex);
-            return null;
-        });
+        return writeS3Client.uploadPartCopy(request).thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag()));
     }
 
     @Override
-    public void doCompleteMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts,
-        Consumer<Throwable> failHandler, Runnable successHandler) {
+    public CompletableFuture<Void> doCompleteMultipartUpload(WriteOptions options, String path, String uploadId,
+        List<ObjectStorageCompletedPart> parts) {
         List<CompletedPart> completedParts = parts.stream()
             .map(part -> CompletedPart.builder().partNumber(part.getPartNumber()).eTag(part.getPartId()).build())
             .collect(Collectors.toList());
         CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(completedParts).build();
         CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
-        writeS3Client.completeMultipartUpload(request).thenAccept(completeMultipartUploadResponse -> {
-            successHandler.run();
-        }).exceptionally(ex -> {
-            failHandler.accept(ex);
-            return null;
-        });
+        return writeS3Client.completeMultipartUpload(request).thenApply(resp -> null);
     }
 
-    public void doDeleteObjects(List<String> objectKeys,
-        Consumer<Throwable> failHandler, Runnable successHandler) {
+    public CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
             ObjectIdentifier.builder()
                 .key(key)
@@ -300,19 +218,21 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .delete(Delete.builder().objects(toDeleteKeys).build())
             .build();
 
+        CompletableFuture<Void> cf = new CompletableFuture<>();
         this.writeS3Client.deleteObjects(request)
             .thenAccept(resp -> {
                 try {
-                    handleDeleteObjectsResponse(resp, deleteObjectsReturnSuccessKeys);
-                    successHandler.run();
-                } catch (Exception ex) {
-                    failHandler.accept(ex);
+                    checkDeleteObjectsResponse(resp);
+                    cf.complete(null);
+                } catch (Throwable ex) {
+                    cf.completeExceptionally(ex);
                 }
             })
             .exceptionally(ex -> {
-                failHandler.accept(ex);
+                cf.completeExceptionally(ex);
                 return null;
             });
+        return cf;
     }
 
     @Override
@@ -351,37 +271,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return "bytes=" + start + "-" + (end - 1);
     }
 
-    private boolean getDeleteObjectsMode() {
+    private void readinessCheck() {
         try {
-            return asyncCheckDeleteObjectsReturnSuccessDeleteKeys().get(30, TimeUnit.SECONDS);
+            String path = "/automq/readiness_check/%d" + System.nanoTime();
+            byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+            doWrite(new WriteOptions(), path, Unpooled.wrappedBuffer(content)).get();
+            doDeleteObjects(List.of(path)).get();
         } catch (Throwable e) {
-            LOGGER.error("Failed to check if the s3 `deleteObjects` api will return deleteKeys", e);
             throw new RuntimeException(e);
         }
-    }
-
-    private CompletableFuture<Boolean> asyncCheckDeleteObjectsReturnSuccessDeleteKeys() {
-        byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
-        String path1 = String.format("check_available/deleteObjectsMode/%d", System.nanoTime());
-        String path2 = String.format("check_available/deleteObjectsMode/%d", System.nanoTime() + 1);
-        List<String> path = List.of(path1, path2);
-
-        ObjectIdentifier[] toDeleteKeys = path.stream().map(key ->
-            ObjectIdentifier.builder()
-                .key(key)
-                .build()
-        ).toArray(ObjectIdentifier[]::new);
-        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-            .bucket(bucket)
-            .delete(Delete.builder().objects(toDeleteKeys).build())
-            .build();
-
-        return CompletableFuture.allOf(
-                write(path1, Unpooled.wrappedBuffer(content), WriteOptions.DEFAULT.throttleStrategy()),
-                write(path2, Unpooled.wrappedBuffer(content), WriteOptions.DEFAULT.throttleStrategy())
-            )
-            .thenCompose(__ -> this.writeS3Client.deleteObjects(request))
-            .thenApply(resp -> checkIfDeleteObjectsWillReturnSuccessDeleteKeys(path, resp));
     }
 
     private S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
@@ -422,8 +320,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         private boolean forcePathStyle;
         private List<AwsCredentialsProvider> credentialsProviders;
         private Map<String, String> tagging;
-        private AsyncNetworkBandwidthLimiter inboundLimiter;
-        private AsyncNetworkBandwidthLimiter outboundLimiter;
+        private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
+        private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
         private boolean readWriteIsolate;
         private int maxReadConcurrency = 50;
         private int maxWriteConcurrency = 50;
@@ -459,12 +357,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return this;
         }
 
-        public Builder inboundLimiter(AsyncNetworkBandwidthLimiter inboundLimiter) {
+        public Builder inboundLimiter(NetworkBandwidthLimiter inboundLimiter) {
             this.inboundLimiter = inboundLimiter;
             return this;
         }
 
-        public Builder outboundLimiter(AsyncNetworkBandwidthLimiter outboundLimiter) {
+        public Builder outboundLimiter(NetworkBandwidthLimiter outboundLimiter) {
             this.outboundLimiter = outboundLimiter;
             return this;
         }

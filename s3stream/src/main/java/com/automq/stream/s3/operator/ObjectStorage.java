@@ -80,6 +80,7 @@ public interface ObjectStorage {
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private int allocType = ByteBufAlloc.DEFAULT;
+        private long apiCallAttemptTimeout = -1L;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -91,12 +92,21 @@ public interface ObjectStorage {
             return this;
         }
 
+        public WriteOptions apiCallAttemptTimeout(long apiCallAttemptTimeout) {
+            this.apiCallAttemptTimeout = apiCallAttemptTimeout;
+            return this;
+        }
+
         public ThrottleStrategy throttleStrategy() {
             return throttleStrategy;
         }
 
         public int allocType() {
             return allocType;
+        }
+
+        public long apiCallAttemptTimeout() {
+            return apiCallAttemptTimeout;
         }
 
     }
