@@ -273,7 +273,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     private void readinessCheck() {
         try {
-            String path = "/automq/readiness_check/%d" + System.nanoTime();
+            String path = "__automq/readiness_check/%d" + System.nanoTime();
             byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
             doWrite(new WriteOptions(), path, Unpooled.wrappedBuffer(content)).get();
             doDeleteObjects(List.of(path)).get();
