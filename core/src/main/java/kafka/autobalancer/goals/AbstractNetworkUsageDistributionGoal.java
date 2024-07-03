@@ -11,7 +11,7 @@
 
 package kafka.autobalancer.goals;
 
-import kafka.server.KafkaConfig;
+import kafka.automq.AutoMQConfig;
 
 import java.util.Map;
 
@@ -21,8 +21,8 @@ public abstract class AbstractNetworkUsageDistributionGoal extends AbstractResou
 
     @Override
     public void configure(Map<String, ?> configs) {
-        if (configs.containsKey(KafkaConfig.S3NetworkBaselineBandwidthProp())) {
-            Object nwBandwidth = configs.get(KafkaConfig.S3NetworkBaselineBandwidthProp());
+        if (configs.containsKey(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG)) {
+            Object nwBandwidth = configs.get(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG);
             try {
                 if (nwBandwidth instanceof Long) {
                     this.linearNormalizerThreshold = (Long) nwBandwidth;
