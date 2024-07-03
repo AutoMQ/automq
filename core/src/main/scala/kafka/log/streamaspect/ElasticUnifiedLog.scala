@@ -185,8 +185,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
         asyncClose().get()
     }
 
-    // TODO: invoke async close
-    def asyncClose(): CompletableFuture[Void] = {
+    override def asyncClose(): CompletableFuture[Void] = {
         ElasticUnifiedLog.Logs.remove(elasticLog.topicPartition, this)
         val closeFuture = lock synchronized {
             maybeFlushMetadataFile()
@@ -200,7 +199,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             }
             // flush all inflight data/index
             flush(true)
-            elasticLog.close()
+            elasticLog.asyncClose()
         }
         elasticLog.segments.clear()
         closeFuture.whenComplete((_, _) => {
