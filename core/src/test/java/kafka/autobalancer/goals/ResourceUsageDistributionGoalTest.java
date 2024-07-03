@@ -24,7 +24,7 @@ import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
-import kafka.server.KafkaConfig;
+import kafka.automq.AutoMQConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +58,7 @@ public class ResourceUsageDistributionGoalTest extends GoalTestBase {
         config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, NetworkInUsageDistributionGoal.class.getName());
         config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 5 * 1024 * 1024);
         config.put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_DISTRIBUTION_DETECT_AVG_DEVIATION, 0.1);
-        config.put(KafkaConfig.S3NetworkBaselineBandwidthProp(), 50 * 1024 * 1024);
+        config.put(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, 50 * 1024 * 1024);
 
         AutoBalancerControllerConfig controllerConfig = new AutoBalancerControllerConfig(config, false);
         List<Goal> goals = controllerConfig.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
@@ -69,7 +69,7 @@ public class ResourceUsageDistributionGoalTest extends GoalTestBase {
         Assertions.assertEquals(0.1, networkInUsageDistributionGoal.usageAvgDeviationRatio);
         Assertions.assertEquals(50 * 1024 * 1024, networkInUsageDistributionGoal.linearNormalizerThreshold);
 
-        config.remove(KafkaConfig.S3NetworkBaselineBandwidthProp());
+        config.remove(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG);
         controllerConfig = new AutoBalancerControllerConfig(config, false);
         goals = controllerConfig.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
         Assertions.assertEquals(1, goals.size());
@@ -77,7 +77,7 @@ public class ResourceUsageDistributionGoalTest extends GoalTestBase {
         networkInUsageDistributionGoal = (NetworkInUsageDistributionGoal) goals.get(0);
         Assertions.assertEquals(100 * 1024 * 1024, networkInUsageDistributionGoal.linearNormalizerThreshold);
 
-        config.put(KafkaConfig.S3NetworkBaselineBandwidthProp(), String.valueOf(60 * 1024 * 1024));
+        config.put(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, String.valueOf(60 * 1024 * 1024));
         controllerConfig = new AutoBalancerControllerConfig(config, false);
         goals = controllerConfig.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
         Assertions.assertEquals(1, goals.size());
@@ -122,7 +122,7 @@ public class ResourceUsageDistributionGoalTest extends GoalTestBase {
                 "autobalancer.controller.network.in.usage.distribution.detect.threshold", 2 * 1024 * 1024,
                 "autobalancer.controller.network.out.distribution.detect.avg.deviation", 0.15,
                 "autobalancer.controller.network.out.usage.distribution.detect.threshold", 2 * 1024 * 1024,
-                KafkaConfig.S3NetworkBaselineBandwidthProp(), 50 * 1024 * 1024));
+            AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, 50 * 1024 * 1024));
         goal.initialize(Set.of(broker0, broker1, broker2));
         Assertions.assertEquals(2 * 1024 * 1024, goal.usageDetectThreshold);
         Assertions.assertEquals(0.15, goal.usageAvgDeviationRatio);
