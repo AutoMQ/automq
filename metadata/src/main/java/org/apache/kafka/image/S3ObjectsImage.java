@@ -139,6 +139,9 @@ public final class S3ObjectsImage extends AbstractReferenceCounted {
 
     @Override
     protected void deallocate() {
+        if (registryRef == RegistryRef.NOOP) {
+            return;
+        }
         registryRef.release();
     }
 
