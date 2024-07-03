@@ -54,10 +54,39 @@ public class RegistryRef extends AbstractReferenceCounted {
     }
 
     @Override
-    protected void deallocate() {
+    public ReferenceCounted retain(int increment) {
         if (this == NOOP) {
-            return;
+            throw new UnsupportedOperationException("retain is not supported for NOOP");
         }
+        return super.retain(increment);
+    }
+
+    @Override
+    public ReferenceCounted retain() {
+        if (this == NOOP) {
+            throw new UnsupportedOperationException("retain is not supported for NOOP");
+        }
+        return super.retain();
+    }
+
+    @Override
+    public boolean release() {
+        if (this == NOOP) {
+            throw new UnsupportedOperationException("release is not supported for NOOP");
+        }
+        return super.release();
+    }
+
+    @Override
+    public boolean release(int decrement) {
+        if (this == NOOP) {
+            throw new UnsupportedOperationException("release is not supported for NOOP");
+        }
+        return super.release(decrement);
+    }
+
+    @Override
+    protected void deallocate() {
         inLock(() -> {
             if (liveEpochs.isEmpty()) {
                 throw new IllegalStateException("liveEpochs is empty");
