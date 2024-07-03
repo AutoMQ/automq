@@ -18,6 +18,7 @@ package kafka.utils
 
 import com.yammer.metrics.core.{Histogram, Meter}
 import kafka.api._
+import kafka.automq.AutoMQConfig
 import kafka.controller.ControllerEventManager
 import kafka.log._
 import kafka.network.RequestChannel
@@ -1922,9 +1923,9 @@ object TestUtils extends Logging {
       kvEndpoint: String = "",
       namespace: String = "__esk_test__"): Properties = {
     val props = createBrokerConfig(nodeId, "")
-    props.put(KafkaConfig.ElasticStreamEnableProp, true)
-    props.put(KafkaConfig.ElasticStreamEndpointProp, endpoint)
-    props.put(KafkaConfig.ElasticStreamNamespaceProp, namespace)
+    props.put(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, true)
+    props.put(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG, endpoint)
+    props.put(AutoMQConfig.ELASTIC_STREAM_NAMESPACE_CONFIG, namespace)
     props
   }
   // AutoMQ inject end
