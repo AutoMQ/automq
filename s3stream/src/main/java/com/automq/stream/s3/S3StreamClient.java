@@ -55,6 +55,7 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
+    private static final long COMPACTION_COOLDOWN_AFTER_OPEN_STREAM = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_COOLDOWN_AFTER_OPEN_STREAM", TimeUnit.MINUTES.toMillis(1));
     private static final long MINOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(10));
     private static final long MAJOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(60));
     /**
@@ -237,6 +238,7 @@ public class S3StreamClient implements StreamClient {
 
     public class StreamWrapper implements Stream {
         private final S3Stream stream;
+        private final long openedTimestamp = System.currentTimeMillis();
         private long lastMinorCompactionTimestamp = System.currentTimeMillis();
         private long lastMajorCompactionTimestamp = System.currentTimeMillis();
         private long lastMinorV1CompactionTimestamp = System.currentTimeMillis();
@@ -323,16 +325,20 @@ public class S3StreamClient implements StreamClient {
                 // so we need to check if the stream is closed before starting the compaction.
                 return;
             }
+            long now = System.currentTimeMillis();
+            if (now - openedTimestamp < COMPACTION_COOLDOWN_AFTER_OPEN_STREAM) {
+                // skip compaction in the first few minutes after the stream is opened
+                return;
+            }
             if (config.version().isStreamObjectCompactV1Supported()) {
-                compactV1(hint);
+                compactV1(hint, now);
             } else {
-                compactV0();
+                compactV0(now);
             }
 
         }
 
-        private void compactV0() {
-            long now = System.currentTimeMillis();
+        private void compactV0(long now) {
             if (now - lastMajorCompactionTimestamp > TimeUnit.MINUTES.toMillis(config.streamObjectCompactionIntervalMinutes())) {
                 compact(MAJOR);
                 lastMajorCompactionTimestamp = System.currentTimeMillis();
@@ -344,8 +350,7 @@ public class S3StreamClient implements StreamClient {
             }
         }
 
-        private void compactV1(CompactionHint hint) {
-            long now = System.currentTimeMillis();
+        private void compactV1(CompactionHint hint, long now) {
             if (now - lastMajorV1CompactionTimestamp > MAJOR_V1_COMPACTION_INTERVAL || hint.objectsCount >= MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD) {
                 compact(MAJOR_V1);
                 lastMajorV1CompactionTimestamp = System.currentTimeMillis();
