@@ -21,6 +21,7 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import java.util.Objects;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * S3Object is the base class of object in S3. Manages the lifecycle of S3Object.
@@ -78,15 +79,19 @@ public class S3Object implements Comparable<S3Object> {
         this.attributes = attributes;
     }
 
-    public ApiMessageAndVersion toRecord() {
-        return new ApiMessageAndVersion(new S3ObjectRecord()
+    public ApiMessageAndVersion toRecord(AutoMQVersion version) {
+        S3ObjectRecord record = new S3ObjectRecord()
             .setObjectId(objectId)
             .setObjectSize(objectSize)
             .setObjectState(s3ObjectState.toByte())
             .setPreparedTimeInMs(preparedTimeInMs)
             .setExpiredTimeInMs(expiredTimeInMs)
             .setCommittedTimeInMs(committedTimeInMs)
-            .setMarkDestroyedTimeInMs(markDestroyedTimeInMs), (short) 0);
+            .setMarkDestroyedTimeInMs(markDestroyedTimeInMs);
+        if (version.isObjectAttributesSupported()) {
+            record.setAttributes(attributes);
+        }
+        return new ApiMessageAndVersion(record, version.objectRecordVersion());
     }
 
     public static S3Object of(S3ObjectRecord record) {

@@ -115,12 +115,15 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     }
 
     public ApiMessageAndVersion toRecord(AutoMQVersion version) {
-        return new ApiMessageAndVersion(new S3StreamSetObjectRecord()
+        S3StreamSetObjectRecord record = new S3StreamSetObjectRecord()
             .setObjectId(objectId)
             .setNodeId(nodeId)
             .setOrderId(orderId)
-            .setDataTimeInMs(dataTimeInMs)
-            .setRanges(ranges), version.streamSetObjectRecordVersion());
+            .setDataTimeInMs(dataTimeInMs);
+        if (version.streamSetObjectRecordVersion() < (short) 1) {
+            record.setRanges(ranges);
+        }
+        return new ApiMessageAndVersion(record, version.streamSetObjectRecordVersion());
     }
 
     public static S3StreamSetObject of(S3StreamSetObjectRecord record) {
