@@ -267,7 +267,7 @@ public interface ObjectWriter {
 
     class Footer {
         public static final int FOOTER_SIZE = 48;
-        private static final long MAGIC = 0x88e241b785f4cff7L;
+        public static final long MAGIC = 0x88e241b785f4cff7L;
         private final ByteBuf buf;
 
         public Footer(long indexStartPosition, int indexBlockLength) {

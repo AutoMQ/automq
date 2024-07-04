@@ -77,7 +77,7 @@ public final class S3ObjectsImage extends AbstractReferenceCounted {
         // the writer#write maybe slow, so we use a copy to avoid holding the lock for a long time
         List<S3Object> copy = registryRef.inLock(() -> new ArrayList<>(objects.values(registryRef.epoch())));
 
-        copy.forEach(v -> writer.write(v.toRecord()));
+        copy.forEach(v -> writer.write(v.toRecord(options.metadataVersion().autoMQVersion())));
     }
 
     @Override
