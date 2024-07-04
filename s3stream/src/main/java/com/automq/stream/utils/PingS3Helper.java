@@ -12,6 +12,7 @@
 package com.automq.stream.utils;
 
 import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
@@ -40,10 +41,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 public class PingS3Helper {
     private static final Logger LOGGER = LoggerFactory.getLogger(PingS3Helper.class);
     private ObjectStorage objectStorage;
-    private String endpoint;
-    private String region;
-    private String bucket;
-    private boolean isForcePathStyle;
+    private BucketURI bucket;
     private List<AwsCredentialsProvider> credentialsProviders;
     private Map<String, String> tagging;
     private final boolean needPrintToConsole;
@@ -58,10 +56,7 @@ public class PingS3Helper {
 
     public static class Builder {
         private boolean needPrintToConsole;
-        private String endpoint;
-        private String region;
-        private String bucket;
-        private boolean isForcePathStyle;
+        private BucketURI bucket;
         private List<AwsCredentialsProvider> credentialsProviders;
         private Map<String, String> tagging;
 
@@ -70,23 +65,8 @@ public class PingS3Helper {
             return this;
         }
 
-        public Builder endpoint(String endpoint) {
-            this.endpoint = endpoint;
-            return this;
-        }
-
-        public Builder region(String region) {
-            this.region = region;
-            return this;
-        }
-
-        public Builder bucket(String bucket) {
-            this.bucket = bucket;
-            return this;
-        }
-
-        public Builder isForcePathStyle(boolean isForcePathStyle) {
-            this.isForcePathStyle = isForcePathStyle;
+        public Builder bucket(BucketURI bucketURI) {
+            this.bucket = bucketURI;
             return this;
         }
 
@@ -102,10 +82,7 @@ public class PingS3Helper {
 
         public PingS3Helper build() {
             PingS3Helper pingS3Helper = new PingS3Helper(this);
-            pingS3Helper.endpoint = this.endpoint;
-            pingS3Helper.region = this.region;
-            pingS3Helper.bucket = this.bucket;
-            pingS3Helper.isForcePathStyle = this.isForcePathStyle;
+            pingS3Helper.bucket = bucket;
             pingS3Helper.credentialsProviders = this.credentialsProviders;
             pingS3Helper.tagging = this.tagging;
             return pingS3Helper;
@@ -115,10 +92,7 @@ public class PingS3Helper {
     @Override
     public String toString() {
         return "s3 parameters{" +
-            "endpoint='" + endpoint + '\'' +
-            ", region='" + region + '\'' +
             ", bucket='" + bucket + '\'' +
-            ", isForcePathStyle=" + isForcePathStyle +
             ", credentialsProviders=" + credentialsProviders +
             ", tagging=" + tagging +
             '}';
@@ -128,10 +102,7 @@ public class PingS3Helper {
         // TODO: better ping to support multiple buckets and multiple cloud
         try {
             objectStorage = AwsObjectStorage.builder()
-                .endpoint(endpoint)
-                .region(region)
                 .bucket(bucket)
-                .forcePathStyle(isForcePathStyle)
                 .credentialsProviders(credentialsProviders)
                 .tagging(tagging)
                 .checkS3ApiModel(true)
@@ -376,13 +347,13 @@ public class PingS3Helper {
     }
 
     private void checkBucketName(List<String> advises) {
-        if (StringUtils.isBlank(bucket)) {
+        if (StringUtils.isBlank(bucket.bucket())) {
             advises.add("bucketName is blank. Please supply a valid bucketName.");
         }
     }
 
     private void checkEndpoint(List<String> advises) {
-        if (StringUtils.isBlank(endpoint)) {
+        if (StringUtils.isBlank(bucket.endpoint())) {
             advises.add("endpoint is blank. Please supply a valid endpoint.");
         } else {
             validateEndpoint(advises);
@@ -390,17 +361,17 @@ public class PingS3Helper {
     }
 
     private void validateEndpoint(List<String> advises) {
-        if (endpoint.startsWith("https")) {
+        if (bucket.endpoint().startsWith("https")) {
             advises.add("You are using https endpoint. Please make sure your object storage service supports https.");
         }
-        String[] splits = endpoint.split("//");
+        String[] splits = bucket.endpoint().split("//");
         if (splits.length < 2) {
             advises.add("endpoint is invalid. Please supply a valid endpoint.");
         } else {
             String[] dotSplits = splits[1].split("\\.");
             if (dotSplits.length == 0 || StringUtils.isBlank(dotSplits[0])) {
                 advises.add("endpoint is invalid. Please supply a valid endpoint.");
-            } else if (!StringUtils.isBlank(bucket) && Objects.equals(bucket.toLowerCase(Locale.ENGLISH), dotSplits[0].toLowerCase(Locale.ENGLISH))) {
+            } else if (!StringUtils.isBlank(bucket.bucket()) && Objects.equals(bucket.bucket().toLowerCase(Locale.ENGLISH), dotSplits[0].toLowerCase(Locale.ENGLISH))) {
                 advises.add("bucket name should not be included in endpoint.");
             }
         }
@@ -420,13 +391,13 @@ public class PingS3Helper {
     }
 
     private void checkRegion(List<String> advises) {
-        if (StringUtils.isBlank(region)) {
+        if (StringUtils.isBlank(bucket.region())) {
             advises.add("region is blank. Please supply a valid region.");
         }
     }
 
     private void checkForcePathStyle(List<String> advises) {
-        if (!isForcePathStyle) {
+        if (!bucket.extensionBool(AwsObjectStorage.PATH_STYLE, false)) {
             advises.add("forcePathStyle is set as false. Please set it as true if you are using minio.");
         }
     }

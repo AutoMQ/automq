@@ -11,6 +11,8 @@
 
 package com.automq.shell.log;
 
+import com.automq.stream.s3.operator.BucketURI;
+
 public interface S3LogConfig {
 
     boolean isEnabled();
@@ -21,11 +23,5 @@ public interface S3LogConfig {
 
     int nodeId();
 
-    String s3Endpoint();
-
-    String s3Region();
-
-    String s3OpsBucket();
-
-    boolean s3PathStyle();
+    BucketURI bucket();
 }

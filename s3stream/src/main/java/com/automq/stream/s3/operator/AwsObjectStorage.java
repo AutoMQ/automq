@@ -25,6 +25,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -63,24 +64,25 @@ import static com.automq.stream.utils.FutureUtil.cause;
 @SuppressWarnings("this-escape")
 public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
+    public static final String PATH_STYLE = "pathStyle";
 
+    private final BucketURI bucketURI;
     private final String bucket;
     private final Tagging tagging;
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
 
-    public AwsObjectStorage(String endpoint, Map<String, String> tagging, String region, String bucket,
-        boolean forcePathStyle,
+    public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
         List<AwsCredentialsProvider> credentialsProviders,
-        NetworkBandwidthLimiter networkInboundBandwidthLimiter,
-        NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
-        boolean readWriteIsolate,
-        boolean checkMode) {
+        NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
+        boolean readWriteIsolate, boolean checkMode) {
         super(networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
-        this.bucket = bucket;
+        this.bucketURI = bucketURI;
+        this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
-        this.writeS3Client = newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency());
-        this.readS3Client = readWriteIsolate ? newS3Client(endpoint, region, forcePathStyle, credentialsProviders, getMaxObjectStorageConcurrency()) : writeS3Client;
+        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE, false), credentialsProviders, getMaxObjectStorageConcurrency());
+        this.writeS3Client = clientSupplier.get();
+        this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
         readinessCheck();
     }
 
@@ -92,6 +94,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     // used for test only
     public AwsObjectStorage(S3AsyncClient s3Client, String bucket, boolean manualMergeRead) {
         super(manualMergeRead);
+        this.bucketURI = null;
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
@@ -314,10 +317,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     public static class Builder {
-        private String endpoint;
-        private String region;
-        private String bucket;
-        private boolean forcePathStyle;
+        private BucketURI bucketURI;
         private List<AwsCredentialsProvider> credentialsProviders;
         private Map<String, String> tagging;
         private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
@@ -327,23 +327,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         private int maxWriteConcurrency = 50;
         private boolean checkS3ApiModel = false;
 
-        public Builder endpoint(String endpoint) {
-            this.endpoint = endpoint;
-            return this;
-        }
-
-        public Builder region(String region) {
-            this.region = region;
-            return this;
-        }
-
-        public Builder bucket(String bucket) {
-            this.bucket = bucket;
-            return this;
-        }
-
-        public Builder forcePathStyle(boolean forcePathStyle) {
-            this.forcePathStyle = forcePathStyle;
+        public Builder bucket(BucketURI bucketURI) {
+            this.bucketURI = bucketURI;
             return this;
         }
 
@@ -378,7 +363,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         public AwsObjectStorage build() {
-            return new AwsObjectStorage(endpoint, tagging, region, bucket, forcePathStyle, credentialsProviders,
+            return new AwsObjectStorage(bucketURI, tagging, credentialsProviders,
                 inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel);
         }
     }

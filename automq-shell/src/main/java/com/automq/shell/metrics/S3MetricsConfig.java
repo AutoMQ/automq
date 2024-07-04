@@ -11,6 +11,8 @@
 
 package com.automq.shell.metrics;
 
+import com.automq.stream.s3.operator.BucketURI;
+
 public interface S3MetricsConfig {
 
     String clusterId();
@@ -19,11 +21,5 @@ public interface S3MetricsConfig {
 
     int nodeId();
 
-    String s3Endpoint();
-
-    String s3Region();
-
-    String s3OpsBucket();
-
-    boolean s3PathStyle();
+    BucketURI bucket();
 }

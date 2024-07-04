@@ -12,8 +12,14 @@
 package kafka.automq;
 
 import com.automq.stream.s3.ByteBufAllocPolicy;
+import com.automq.stream.s3.operator.BucketURI;
+import java.util.List;
+import kafka.server.KafkaConfig;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.server.config.Defaults;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;
@@ -24,6 +30,8 @@ import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 
 public class AutoMQConfig {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AutoMQConfig.class);
+
     public static final String ELASTIC_STREAM_ENABLE_CONFIG = "elasticstream.enable";
     public static final String ELASTIC_STREAM_ENABLE_DOC = "Whether to enable AutoMQ, it has to be set to true";
 
@@ -34,20 +42,14 @@ public class AutoMQConfig {
     public static final String ELASTIC_STREAM_NAMESPACE_CONFIG = "elasticstream.namespace";
     public static final String ELASTIC_STREAM_NAMESPACE_DOC = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream.";
 
-    public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";
-    public static final String S3_ENDPOINT_DOC = "The object storage endpoint, ex. <code>https://s3.us-east-1.amazonaws.com</code>.";
+    public static final String S3_DATA_BUCKETS_CONFIG = "s3.data.buckets";
+    public static final String S3_DATA_BUCKETS_DOC = "The data buckets url with format 0@s3://$bucket?region=$region. \n" +
+        "the full url format for s3 is 0@s3://$bucket?region=$region[&endpoint=$endpoint][&pathStyle=$enablePathStyle][&authType=$authType][&accessKey=$accessKey][&secretKey=$secretKey]" +
+        "- pathStyle: true|false. The object storage access path style. When using MinIO, it should be set to true.\n" +
+        "- authType: instance|static. When set to instance, it will use instance profile to auth. When set to static, it will get accessKey and secretKey from the url or from system environment KAFKA_S3_ACCESS_KEY/KAFKA_S3_SECRET_KEY.";
 
-    public static final String S3_REGION_CONFIG = "s3.region";
-    public static final String S3_REGION_DOC = "The object storage region, ex. <code>us-east-1</code>.";
-
-    public static final String S3_PATH_STYLE_CONFIG = "s3.path.style";
-    public static final String S3_PATH_STYLE_DOC = "The object storage access path style. When using MinIO, it should be set to true.";
-
-    public static final String S3_BUCKET_CONFIG = "s3.bucket";
-    public static final String S3_BUCKET_DOC = "The object storage bucket.";
-
-    public static final String S3_OPS_BUCKET_CONFIG = "s3.ops.bucket";
-    public static final String S3_OPS_BUCKET_DOC = "The object storage ops bucket.";
+    public static final String S3_OPS_BUCKETS_CONFIG = "s3.ops.buckets";
+    public static final String S3_OPS_BUCKETS_DOC = "With the same format as s3.data.buckets";
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
     public static final String S3_WAL_PATH_DOC = "The local WAL path for AutoMQ can be set to a block device path such as /dev/xxx or a filesystem file path." +
@@ -185,15 +187,29 @@ public class AutoMQConfig {
     public static final String S3_TELEMETRY_OPS_ENABLED_CONFIG = "s3.telemetry.ops.enabled";
     public static final String S3_TELEMETRY_OPS_ENABLED_DOC = "Enable ops telemetry.";
 
+    // Deprecated config start
+    public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";
+    public static final String S3_ENDPOINT_DOC = "[DEPRECATED]please use s3.data.buckets. The object storage endpoint, ex. <code>https://s3.us-east-1.amazonaws.com</code>.";
+
+    public static final String S3_REGION_CONFIG = "s3.region";
+    public static final String S3_REGION_DOC = "[DEPRECATED]please use s3.data.buckets. The object storage region, ex. <code>us-east-1</code>.";
+
+    public static final String S3_PATH_STYLE_CONFIG = "s3.path.style";
+    public static final String S3_PATH_STYLE_DOC = "[DEPRECATED]please use s3.data.buckets. The object storage access path style. When using MinIO, it should be set to true.";
+
+    public static final String S3_BUCKET_CONFIG = "s3.bucket";
+    public static final String S3_BUCKET_DOC = "[DEPRECATED]please use s3.data.buckets. The object storage bucket.";
+
+    public static final String S3_OPS_BUCKET_CONFIG = "s3.ops.bucket";
+    public static final String S3_OPS_BUCKET_DOC = "[DEPRECATED]please use s3.ops.buckets. The object storage ops bucket.";
+    // Deprecated config end
+
     public static void define(ConfigDef configDef) {
         configDef.define(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, BOOLEAN, false, HIGH, AutoMQConfig.ELASTIC_STREAM_ENABLE_DOC)
             .define(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG, STRING, "s3://", HIGH, AutoMQConfig.ELASTIC_STREAM_ENDPOINT_DOC)
             .define(AutoMQConfig.ELASTIC_STREAM_NAMESPACE_CONFIG, STRING, null, MEDIUM, AutoMQConfig.ELASTIC_STREAM_NAMESPACE_DOC)
-            .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
-            .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
-            .define(AutoMQConfig.S3_PATH_STYLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_PATH_STYLE_DOC)
-            .define(AutoMQConfig.S3_BUCKET_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_BUCKET_DOC)
-            .define(AutoMQConfig.S3_OPS_BUCKET_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_OPS_BUCKET_DOC)
+            .define(AutoMQConfig.S3_DATA_BUCKETS_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_DATA_BUCKETS_DOC)
+            .define(AutoMQConfig.S3_OPS_BUCKETS_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_OPS_BUCKETS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_CONFIG, BOOLEAN, true, HIGH, AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_DOC)
             .define(AutoMQConfig.S3_WAL_PATH_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_WAL_PATH_DOC)
             .define(AutoMQConfig.S3_WAL_CACHE_SIZE_CONFIG, LONG, -1L, MEDIUM, AutoMQConfig.S3_WAL_CACHE_SIZE_DOC)
@@ -209,7 +225,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_STREAM_OBJECT_COMPACTION_INTERVAL_MINUTES_CONFIG, INT, 30, MEDIUM, AutoMQConfig.S3_STREAM_OBJECT_COMPACTION_INTERVAL_MINUTES_DOC)
             .define(AutoMQConfig.S3_STREAM_OBJECT_COMPACTION_MAX_SIZE_BYTES_CONFIG, LONG, 1073741824L, MEDIUM, AutoMQConfig.S3_STREAM_OBJECT_COMPACTION_MAX_SIZE_BYTES_DOC)
             .define(AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_MAX_COUNT_CONFIG, INT, Integer.MAX_VALUE, MEDIUM, AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_MAX_COUNT_DOC)
-            .define(AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_BASE_DELAY_MS_CONFIG, LONG, 500, MEDIUM, AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_BASE_DELAY_MS_CONFIG)
+            .define(AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_BASE_DELAY_MS_CONFIG, LONG, 500, MEDIUM, AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_BASE_DELAY_MS_DOC)
             .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_CONFIG, INT, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_DOC)
             .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_CONFIG, LONG, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_DOC)
             .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE_CONFIG, LONG, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE_DOC)
@@ -235,6 +251,55 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG, INT, Defaults.S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG, INT, Defaults.S3_SPAN_SCHEDULED_DELAY_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG, INT, Defaults.S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG, INT, Defaults.S3_SPAN_MAX_BATCH_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_DOC);
+            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG, INT, Defaults.S3_SPAN_MAX_BATCH_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_DOC)
+            // Deprecated config start
+            .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
+            .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
+            .define(AutoMQConfig.S3_PATH_STYLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_PATH_STYLE_DOC)
+            .define(AutoMQConfig.S3_BUCKET_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_BUCKET_DOC)
+            .define(AutoMQConfig.S3_OPS_BUCKET_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_OPS_BUCKET_DOC);
     }
+
+    private List<BucketURI> dataBuckets;
+    private List<BucketURI> opsBuckets;
+
+    public AutoMQConfig setup(KafkaConfig config) {
+        dataBuckets = genDataBuckets(config);
+        opsBuckets = genOpsBuckets(config);
+        return this;
+    }
+
+    public List<BucketURI> dataBuckets() {
+        return dataBuckets;
+    }
+
+    public List<BucketURI> opsBuckets() {
+        return opsBuckets;
+    }
+
+    private static List<BucketURI> genDataBuckets(KafkaConfig config) {
+        String dataBuckets = config.getString(S3_DATA_BUCKETS_CONFIG);
+        String oldEndpoint = config.getString(S3_ENDPOINT_CONFIG);
+        String oldRegion = config.getString(S3_REGION_CONFIG);
+        String oldBucket = config.getString(S3_BUCKET_CONFIG);
+        boolean oldPathStyle = config.getBoolean(S3_PATH_STYLE_CONFIG);
+        boolean oldConfigNotExist = StringUtils.isAllBlank(oldEndpoint, oldRegion, oldBucket);
+        if (!oldConfigNotExist && StringUtils.isNotBlank(dataBuckets)) {
+            LOGGER.warn("The s3.endpoint, s3.region, s3.bucket and s3.path.style configs are deprecated. The new s3.data.buckets config should be used.");
+        }
+        if (StringUtils.isBlank(dataBuckets)) {
+            dataBuckets = "0@s3://" + oldBucket + "?region=" + oldRegion + "&endpoint=" + oldEndpoint + "&pathStyle=" + oldPathStyle;
+        }
+        return BucketURI.parseBuckets(dataBuckets);
+    }
+
+    private static List<BucketURI> genOpsBuckets(KafkaConfig config) {
+        String opsBuckets = config.getString(S3_OPS_BUCKETS_CONFIG);
+        String oldOpsBucket = config.getString(S3_OPS_BUCKET_CONFIG);
+        if (StringUtils.isNotBlank(oldOpsBucket)) {
+            LOGGER.warn("The s3.ops.bucket config is deprecated. The new s3.ops.buckets config should be used.");
+        }
+        return BucketURI.parseBuckets(opsBuckets);
+    }
+
 }
