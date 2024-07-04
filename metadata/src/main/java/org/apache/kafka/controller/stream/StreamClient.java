@@ -25,10 +25,7 @@ public class StreamClient {
     public StreamClient(Config streamConfig) {
         this.streamConfig = streamConfig;
         this.objectStorage = AwsObjectStorage.builder()
-            .endpoint(streamConfig.endpoint())
-            .region(streamConfig.region())
-            .bucket(streamConfig.bucket())
-            .forcePathStyle(streamConfig.forcePathStyle())
+            .bucket(streamConfig.dataBuckets().get(0))
             .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()))
             .tagging(streamConfig.objectTagging())
             .build();

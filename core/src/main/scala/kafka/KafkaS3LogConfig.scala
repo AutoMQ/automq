@@ -12,6 +12,7 @@
 package kafka
 
 import com.automq.shell.log.S3LogConfig
+import com.automq.stream.s3.operator.BucketURI
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer}
 
 class KafkaS3LogConfig(
@@ -41,11 +42,13 @@ class KafkaS3LogConfig(
 
   override def nodeId(): Int = config.nodeId
 
-  override def s3Endpoint(): String = config.s3Endpoint
+  override def bucket(): BucketURI = {
+    val buckets = config.automq.opsBuckets();
+    if (buckets.isEmpty) {
+      null
+    } else {
+      buckets.get(0)
+    }
+  }
 
-  override def s3Region(): String = config.s3Region
-
-  override def s3OpsBucket(): String = config.s3OpsBucket
-
-  override def s3PathStyle(): Boolean = config.s3PathStyle
 }

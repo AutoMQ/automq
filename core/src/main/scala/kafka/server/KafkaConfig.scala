@@ -1146,11 +1146,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val elasticStreamEndpoint = getString(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG)
   val elasticStreamNamespace = getString(AutoMQConfig.ELASTIC_STREAM_NAMESPACE_CONFIG)
 
-  val s3Endpoint = getString(AutoMQConfig.S3_ENDPOINT_CONFIG)
-  val s3Region = getString(AutoMQConfig.S3_REGION_CONFIG)
-  val s3PathStyle = getBoolean(AutoMQConfig.S3_PATH_STYLE_CONFIG)
-  val s3Bucket = getString(AutoMQConfig.S3_BUCKET_CONFIG)
-  val s3OpsBucket = getString(AutoMQConfig.S3_OPS_BUCKET_CONFIG)
+  val automq = new AutoMQConfig().setup(this)
+
   val s3OpsTelemetryEnabled = getBoolean(AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_CONFIG)
   val s3WALPath = getString(AutoMQConfig.S3_WAL_PATH_CONFIG)
   val s3WALCapacity = getLong(AutoMQConfig.S3_WAL_CAPACITY_CONFIG)
