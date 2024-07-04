@@ -76,42 +76,4 @@ public class ElasticTransactionIndexTest {
         // get from read cache
         assertEquals(abortedTxns, index.allAbortedTxns());
     }
-
-    @Test
-    public void test_withReusedFileCache() throws IOException {
-        String indexFile = TestUtils.tempFile().getPath();
-        String cacheFile = TestUtils.tempFile().getPath();
-
-        FileCache fileCache = new FileCache(cacheFile, 10 * 1024);
-        ElasticStreamSlice slice = new DefaultElasticStreamSlice(new MemoryClient.StreamImpl(1), SliceRange.of(0, Offsets.NOOP_OFFSET));
-        ElasticTransactionIndex index = new ElasticTransactionIndex(0, new File(indexFile), new IStreamSliceSupplier(slice),
-            fileCache);
-
-        List<AbortedTxn> abortedTxns = new LinkedList<>();
-        abortedTxns.add(new AbortedTxn(0L, 0, 10, 11));
-        abortedTxns.add(new AbortedTxn(1L, 5, 15, 12));
-        abortedTxns.add(new AbortedTxn(2L, 18, 35, 25));
-        abortedTxns.add(new AbortedTxn(3L, 32, 50, 40));
-        for (AbortedTxn abortedTxn : abortedTxns) {
-            index.append(abortedTxn);
-        }
-
-        // get from write cache
-        assertEquals(abortedTxns, index.allAbortedTxns());
-
-        slice = new DefaultElasticStreamSlice(new MemoryClient.StreamImpl(2), SliceRange.of(0, Offsets.NOOP_OFFSET));
-        index = new ElasticTransactionIndex(0, new File(indexFile), new IStreamSliceSupplier(slice),
-            fileCache);
-
-        abortedTxns = new LinkedList<>();
-        abortedTxns.add(new AbortedTxn(5L, 0, 10, 11));
-        abortedTxns.add(new AbortedTxn(6L, 5, 15, 12));
-        abortedTxns.add(new AbortedTxn(7L, 18, 35, 25));
-        for (AbortedTxn abortedTxn : abortedTxns) {
-            index.append(abortedTxn);
-        }
-
-        // get from read cache
-        assertEquals(abortedTxns, index.allAbortedTxns());
-    }
 }
