@@ -303,11 +303,11 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      */
     public List<S3StreamObject> getStreamObjects(long streamId, long startOffset, long endOffset, int limit) {
         if (limit <= 0) {
-            throw new IllegalArgumentException("limit must be positive");
+            throw new IllegalArgumentException(String.format("limit %d is invalid", limit));
         }
         S3StreamMetadataImage stream = streamsMetadata.get(streamId);
         if (stream == null) {
-            throw new IllegalArgumentException("stream not found");
+            throw new IllegalArgumentException(String.format("stream %d not found", streamId));
         }
         List<S3StreamObject> streamObjectsMetadata = stream.getStreamObjects();
         if (streamObjectsMetadata == null || streamObjectsMetadata.isEmpty()) {
