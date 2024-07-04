@@ -10,11 +10,13 @@
  */
 package kafka.log.streamaspect;
 
+import com.automq.stream.api.Stream;
 import java.io.IOException;
 import java.util.List;
 import kafka.log.streamaspect.cache.FileCache;
 import kafka.utils.TestUtils;
 import org.apache.kafka.storage.internals.log.TimestampOffset;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +47,29 @@ public class ElasticTimeIndexTest {
             assertEquals(new TimestampOffset(30L, 75L), idx.lookup(30));
         }
 
+    }
+
+    @Test
+    public void testUniqueFileCache() throws IOException {
+        FileCache cache = new FileCache(TestUtils.tempFile().getPath(), 10 * 1024);
+        Stream stream = new MemoryClient.StreamImpl(1);
+        ElasticStreamSlice slice1 = new DefaultElasticStreamSlice(stream, SliceRange.of(0, Offsets.NOOP_OFFSET));
+        ElasticTimeIndex idx1 = new ElasticTimeIndex(TestUtils.tempFile(), baseOffset, maxEntries * 12,
+            new IStreamSliceSupplier(slice1), TimestampOffset.UNKNOWN, cache);
+        long now = System.currentTimeMillis();
+        idx1.maybeAppend(System.currentTimeMillis(), 100L, false);
+        TimestampOffset to = idx1.tryGetEntryFromCache(0);
+        Assertions.assertEquals(now, to.timestamp);
+        Assertions.assertEquals(100L, to.offset);
+        Assertions.assertEquals(12, slice1.nextOffset());
+
+        ElasticStreamSlice slice2 = new DefaultElasticStreamSlice(stream, SliceRange.of(stream.nextOffset(), Offsets.NOOP_OFFSET));
+        ElasticTimeIndex idx2 = new ElasticTimeIndex(TestUtils.tempFile(), baseOffset, maxEntries * 12,
+            new IStreamSliceSupplier(slice2), TimestampOffset.UNKNOWN, cache);
+        Assertions.assertEquals(0, slice2.nextOffset());
+
+        to = idx2.tryGetEntryFromCache(0);
+        Assertions.assertEquals(TimestampOffset.UNKNOWN, to);
     }
 
     void appendEntries(ElasticTimeIndex idx, int numEntries) {
