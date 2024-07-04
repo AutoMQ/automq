@@ -75,10 +75,7 @@ public class S3MetricsExporter implements MetricExporter {
     public S3MetricsExporter(S3MetricsConfig config) {
         this.config = config;
         this.objectStorage = AwsObjectStorage.builder()
-            .endpoint(config.s3Endpoint())
-            .region(config.s3Region())
-            .bucket(config.s3OpsBucket())
-            .forcePathStyle(config.s3PathStyle())
+            .bucket(config.bucket())
             .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
             .build();
 
