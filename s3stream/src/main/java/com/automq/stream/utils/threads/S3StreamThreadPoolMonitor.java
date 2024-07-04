@@ -19,6 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -44,18 +45,19 @@ public class S3StreamThreadPoolMonitor {
         String name,
         boolean isDaemon,
         int queueCapacity) {
-        return createAndMonitor(corePoolSize, maximumPoolSize, keepAliveTime, unit, name, isDaemon, queueCapacity, throwable -> null);
+        return createAndMonitor(corePoolSize, maximumPoolSize, keepAliveTime, unit, name, isDaemon, queueCapacity, throwable -> null, false);
     }
 
     public static ThreadPoolExecutor createAndMonitor(int corePoolSize,
-        int maximumPoolSize,
-        long keepAliveTime,
-        TimeUnit unit,
-        String name,
-        boolean isDaemon,
-        int queueCapacity,
-        Function<Throwable, Void> afterExecutionHook) {
-        return createAndMonitor(corePoolSize, maximumPoolSize, keepAliveTime, unit, name, isDaemon, queueCapacity, afterExecutionHook, Collections.emptyList());
+                                                      int maximumPoolSize,
+                                                      long keepAliveTime,
+                                                      TimeUnit unit,
+                                                      String name,
+                                                      boolean isDaemon,
+                                                      int queueCapacity,
+                                                      Function<Throwable, Void> afterExecutionHook,
+                                                      boolean fastThreadLocalThread) {
+        return createAndMonitor(corePoolSize, maximumPoolSize, keepAliveTime, unit, name, isDaemon, queueCapacity, afterExecutionHook, Collections.emptyList(), fastThreadLocalThread);
     }
 
     public static ThreadPoolExecutor createAndMonitor(int corePoolSize,
@@ -67,7 +69,7 @@ public class S3StreamThreadPoolMonitor {
         int queueCapacity, Function<Throwable, Void> afterExecutionHook,
         ThreadPoolStatusMonitor... threadPoolStatusMonitors) {
         return createAndMonitor(corePoolSize, maximumPoolSize, keepAliveTime, unit, name, isDaemon, queueCapacity, afterExecutionHook,
-            List.of(threadPoolStatusMonitors));
+            List.of(threadPoolStatusMonitors), false);
     }
 
     public static ThreadPoolExecutor createAndMonitor(int corePoolSize,
@@ -78,14 +80,20 @@ public class S3StreamThreadPoolMonitor {
         boolean isDaemon,
         int queueCapacity,
         Function<Throwable, Void> afterExecutionHook,
-        List<ThreadPoolStatusMonitor> threadPoolStatusMonitors) {
+        List<ThreadPoolStatusMonitor> threadPoolStatusMonitors,
+        boolean fastThreadLocalThread) {
+
+        ThreadFactory threadFactory = fastThreadLocalThread ?
+                ThreadUtils.createFastThreadLocalThreadFactory(name + "-%d", isDaemon) :
+                ThreadUtils.createThreadFactory(name + "-%d", isDaemon);
+
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
             corePoolSize,
             maximumPoolSize,
             keepAliveTime,
             unit,
             new LinkedBlockingQueue<>(queueCapacity),
-            ThreadUtils.createThreadFactory(name + "-%d", isDaemon),
+            threadFactory,
             new ThreadPoolExecutor.DiscardOldestPolicy()) {
             @Override
             protected void afterExecute(Runnable r, Throwable t) {

@@ -13,6 +13,7 @@ package com.automq.stream.utils;
 
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicLong;
+import io.netty.util.concurrent.FastThreadLocalThread;
 import org.slf4j.Logger;
 
 /**
@@ -42,6 +43,25 @@ public class ThreadUtils {
                     threadName = pattern;
                 }
                 Thread thread = new Thread(r, threadName);
+                thread.setDaemon(daemon);
+                return thread;
+            }
+        };
+    }
+
+    public static ThreadFactory createFastThreadLocalThreadFactory(String pattern, final boolean daemon) {
+        return new ThreadFactory() {
+            private final AtomicLong threadEpoch = new AtomicLong(0);
+
+            @Override
+            public Thread newThread(Runnable r) {
+                String threadName;
+                if (pattern.contains("%d")) {
+                    threadName = String.format(pattern, threadEpoch.addAndGet(1));
+                } else {
+                    threadName = pattern;
+                }
+                FastThreadLocalThread thread = new FastThreadLocalThread(r, threadName);
                 thread.setDaemon(daemon);
                 return thread;
             }
