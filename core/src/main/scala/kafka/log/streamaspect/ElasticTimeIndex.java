@@ -251,7 +251,7 @@ public class ElasticTimeIndex extends TimeIndex {
         return parseEntry(n);
     }
 
-    private TimestampOffset tryGetEntryFromCache(int n) {
+    TimestampOffset tryGetEntryFromCache(int n) {
         Optional<ByteBuf> rst = cache.get(cacheId, (long) n * ENTRY_SIZE, ENTRY_SIZE);
         if (rst.isPresent()) {
             ByteBuf buffer = rst.get();
