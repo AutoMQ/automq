@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
+import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,7 +52,7 @@ public class WALBlockDeviceChannel implements WALChannel {
     long capacityFact = 0;
     DirectRandomAccessFile randomAccessFile;
 
-    ThreadLocal<ByteBuffer> threadLocalByteBuffer = new ThreadLocal<>() {
+    FastThreadLocal<ByteBuffer> threadLocalByteBuffer = new FastThreadLocal<>() {
         @Override
         protected ByteBuffer initialValue() {
             return DirectIOUtils.allocateForDirectIO(directIOLib, initTempBufferSize);

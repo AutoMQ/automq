@@ -118,7 +118,7 @@ public class SlidingWindowService {
 
     public void start(AtomicLong windowMaxLength, long windowStartOffset) {
         this.windowCoreData = new WindowCoreData(windowMaxLength, windowStartOffset, windowStartOffset);
-        this.ioExecutor = Threads.newFixedThreadPoolWithMonitor(ioThreadNums,
+        this.ioExecutor = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(ioThreadNums,
             "block-wal-io-thread", false, LOGGER);
 
         long scheduledInterval = Math.max(MIN_SCHEDULED_WRITE_INTERVAL_NANOS, minWriteIntervalNanos);
