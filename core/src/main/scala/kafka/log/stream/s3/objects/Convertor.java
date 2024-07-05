@@ -11,6 +11,7 @@
 
 package kafka.log.stream.s3.objects;
 
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
 import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
@@ -26,6 +27,9 @@ public class Convertor {
             .setObjectSize(s.getObjectSize())
             .setStartOffset(s.getStartOffset())
             .setEndOffset(s.getEndOffset());
+        if (s.getAttributes() == ObjectAttributes.UNSET.attributes()) {
+            throw new IllegalArgumentException("[BUG]attributes must be set");
+        }
         if (version.isObjectAttributesSupported()) {
             obj.setAttributes(s.getAttributes());
         }

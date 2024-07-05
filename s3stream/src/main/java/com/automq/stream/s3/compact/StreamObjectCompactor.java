@@ -314,7 +314,7 @@ public class StreamObjectCompactor {
             writer.close().get();
             List<CompactOperations> operations = compactedObjectIds.stream().map(id -> CompactOperations.DELETE).collect(Collectors.toList());
             return Optional.of(new CompactStreamObjectRequest(objectId, objectSize, streamId, streamEpoch,
-                compactedStartOffset, compactedEndOffset, compactedObjectIds, operations, ObjectAttributes.DEFAULT.attributes()));
+                compactedStartOffset, compactedEndOffset, compactedObjectIds, operations, ObjectAttributes.builder().bucket(writer.bucketId()).build().attributes()));
         }
     }
 
@@ -369,7 +369,7 @@ public class StreamObjectCompactor {
                         NOOP_OFFSET, NOOP_OFFSET, compactedObjectIds, operations, ObjectAttributes.DEFAULT.attributes()));
                 } else {
                     objectWriter.close().get();
-                    int attributes = ObjectAttributes.builder().bucket((short) 0).type(Composite).build().attributes();
+                    int attributes = ObjectAttributes.builder().bucket(objectWriter.bucketId()).type(Composite).build().attributes();
                     ObjectStreamRange range = ranges.get(0);
                     return Optional.of(new CompactStreamObjectRequest(objectId, objectWriter.size(), streamId, streamEpoch,
                         range.getStartOffset(), range.getEndOffset(), compactedObjectIds, operations, attributes));

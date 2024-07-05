@@ -155,7 +155,7 @@ public class PingS3Helper {
     }
 
     private CompletableFuture<Void> checkRead(String path, ByteBuf data) {
-        return objectStorage.rangeRead(ReadOptions.DEFAULT, path, 0, data.readableBytes()).thenAccept(buf -> {
+        return objectStorage.rangeRead(new ReadOptions().bucket(bucket.bucketId()), path, 0, data.readableBytes()).thenAccept(buf -> {
 
             if (data.equals(buf)) {
                 LOGGER.info("Successfully rangeRead object");
@@ -169,7 +169,7 @@ public class PingS3Helper {
     }
 
     private CompletableFuture<Void> checkDelete(String path) {
-        return objectStorage.delete(List.of(new ObjectStorage.ObjectPath((short) 0, path))).thenRun(() -> {
+        return objectStorage.delete(List.of(new ObjectStorage.ObjectPath(bucket.bucketId(), path))).thenRun(() -> {
             LOGGER.info("Successfully delete object to s3");
             printOperationStatus("Delete object", true);
         }).exceptionally(ex -> handleException(ex, "Delete object"));

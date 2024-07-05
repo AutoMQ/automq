@@ -25,6 +25,7 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
@@ -499,6 +500,7 @@ public class CompactionManager {
                             streamObject.setStartOffset(blocks.get(0).getStartOffset());
                             streamObject.setEndOffset(blocks.get(blocks.size() - 1).getEndOffset());
                             streamObject.setObjectSize(writer.size());
+                            streamObject.setAttributes(ObjectAttributes.builder().bucket(writer.bucketId()).build().attributes());
                             pair.getValue().complete(streamObject);
                         }));
                         objectId++;
@@ -768,5 +770,6 @@ public class CompactionManager {
         // set stream set object id to be the first object id of compacted objects
         request.setOrderId(s3ObjectMetadata.get(0).objectId());
         request.setObjectSize(uploader.complete());
+        request.setAttributes(ObjectAttributes.builder().bucket(uploader.bucketId()).build().attributes());
     }
 }

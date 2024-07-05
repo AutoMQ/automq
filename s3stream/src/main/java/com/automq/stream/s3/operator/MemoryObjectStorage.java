@@ -13,6 +13,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -30,7 +31,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     private long delay = 0;
 
     public MemoryObjectStorage(boolean manualMergeRead) {
-        super(manualMergeRead);
+        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, manualMergeRead);
     }
 
     public MemoryObjectStorage() {
@@ -107,6 +108,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             @Override
             public CompletableFuture<Void> release() {
                 return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public short bucketId() {
+                return 0;
             }
         };
     }

@@ -22,6 +22,7 @@ package com.automq.stream.s3.objects;
  */
 public class ObjectAttributes {
     public static final ObjectAttributes DEFAULT = new ObjectAttributes(0);
+    public static final ObjectAttributes UNSET = new ObjectAttributes(-1);
     private static final int DEEP_DELETE_MASK = 1 << 18;
     private final int attributes;
 

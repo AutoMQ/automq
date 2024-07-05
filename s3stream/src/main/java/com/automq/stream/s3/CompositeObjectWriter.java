@@ -84,6 +84,11 @@ public class CompositeObjectWriter implements ObjectWriter {
         return size;
     }
 
+    @Override
+    public short bucketId() {
+        return writer.bucketId();
+    }
+
     void continuousCheck(List<DataBlockIndex> newIndexes) {
         for (DataBlockIndex index : newIndexes) {
             if (expectStreamId == Constants.NOOP_STREAM_ID) {
