@@ -37,6 +37,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
@@ -188,6 +189,9 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     }
 
     public static byte[] sortAndEncode(long objectId, List<StreamOffsetRange> streamOffsetRanges) {
+        if (streamOffsetRanges == null || streamOffsetRanges.isEmpty()) {
+            return Bytes.EMPTY;
+        }
         streamOffsetRanges = new ArrayList<>(streamOffsetRanges);
         streamOffsetRanges.sort(Comparator.comparingLong(StreamOffsetRange::streamId));
         RANGES_CACHE.put(objectId, streamOffsetRanges);
