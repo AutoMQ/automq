@@ -116,9 +116,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     @Override
     public CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end) {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        if (options.bucket() != bucketURI.bucketId()) {
-            cf.completeExceptionally(new IllegalArgumentException(String.format("bucket not match, expect %d, actual %d",
-                bucketURI.bucketId(), options.bucket())));
+        if (!bucketCheck(options.bucket(), cf)) {
             return cf;
         }
         if (end != -1L && start > end) {
@@ -334,9 +332,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     public CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         for (ObjectPath objectPath: objectPaths) {
-            if (objectPath.bucketId() != bucketURI.bucketId()) {
-                cf.completeExceptionally(new IllegalArgumentException(String.format("bucket not match, expect %d, actual %d",
-                    bucketURI.bucketId(), objectPath.bucketId())));
+            if (!bucketCheck(objectPath.bucketId(), cf)) {
                 return cf;
             }
         }
@@ -580,6 +576,15 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             newCf.completeExceptionally(e);
             return newCf;
         }
+    }
+
+    protected <T> boolean bucketCheck(int bucketId, CompletableFuture<T> cf) {
+        if (bucketId != bucketURI.bucketId()) {
+            cf.completeExceptionally(new IllegalArgumentException(String.format("bucket not match, expect %d, actual %d",
+                bucketURI.bucketId(), bucketId)));
+            return false;
+        }
+        return true;
     }
 
     static class MergedReadTask {
