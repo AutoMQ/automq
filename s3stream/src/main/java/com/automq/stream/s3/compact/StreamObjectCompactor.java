@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +70,7 @@ public class StreamObjectCompactor {
     public static final int EXPIRED_OBJECTS_CLEAN_UP_STEP = 1000;
     public static final long MINOR_COMPACTION_SIZE_THRESHOLD = 128 * 1024 * 1024; // 128MiB
     public static final long MINOR_V1_COMPACTION_SIZE_THRESHOLD = 4 * 1024 * 1024; // 4MiB
+    public static final int DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 500;
     /**
      * max object count in one group, the group count will limit the compact request size to kraft and multipart object
      * part count (less than {@code Writer.MAX_PART_COUNT}).
@@ -77,6 +79,7 @@ public class StreamObjectCompactor {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectCompactor.class);
     public static final int DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD = 1024 * 1024; // 1MiB
     private static final long MAX_DIRTY_BYTES = 512 * 1024 * 1024;
+    public static final BooleanSupplier DEFAULT_CANCEL_STATUS_SUPPLIER = () -> false;
     private final Logger s3ObjectLogger;
     private final long maxStreamObjectSize;
     private final Stream stream;
@@ -392,6 +395,9 @@ public class StreamObjectCompactor {
             BasicObjectInfoExt info = (BasicObjectInfoExt) objectReader.basicObjectInfo().get();
             List<ObjectIndex> linkedObjectIndexes = info.objectsBlock().indexes();
             List<DataBlockIndex> dataBlockIndexes = info.indexBlock().indexes();
+
+            List<ObjectPath> needDeleteObject = new ArrayList<>();
+
             for (ObjectIndex linkedObjectIndex : linkedObjectIndexes) {
                 boolean hasLiveBlocks = false;
                 S3ObjectMetadata linkedObjectMetadata = new S3ObjectMetadata(linkedObjectIndex.objectId(), ObjectAttributes.builder().bucket(linkedObjectIndex.bucketId()).build().attributes());
@@ -406,7 +412,13 @@ public class StreamObjectCompactor {
                 if (!hasLiveBlocks) {
                     // The linked object is fully expired, and there won't be any access to it.
                     // So we could directly delete the object from object storage.
-                    objectStorage.delete(List.of(new ObjectPath(linkedObjectMetadata.bucket(), linkedObjectMetadata.key()))).get();
+                    needDeleteObject.add(new ObjectPath(linkedObjectMetadata.bucket(), linkedObjectMetadata.key()));
+
+                    if (needDeleteObject.size() > DEFAULT_BATCH_DELETE_OBJECTS_NUMBER) {
+                        objectStorage.delete(needDeleteObject).get();
+                        needDeleteObject.clear();
+                    }
+
                 } else {
                     // Keep all blocks in the linked object even part of them are expired.
                     // So we could get more precise composite object retained size.
@@ -417,6 +429,12 @@ public class StreamObjectCompactor {
                     // The linked object's metadata is already deleted from KRaft after the first time become a part of composite object.
                 }
             }
+
+            if (!needDeleteObject.isEmpty()) {
+                objectStorage.delete(needDeleteObject).get();
+                needDeleteObject.clear();
+            }
+
             // delete the old composite object
             compactedObjectIds.add(objectMetadata.objectId());
             operations.add(CompactOperations.DELETE);
