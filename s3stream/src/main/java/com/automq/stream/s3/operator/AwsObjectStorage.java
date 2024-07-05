@@ -209,33 +209,45 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return writeS3Client.completeMultipartUpload(request).thenApply(resp -> null);
     }
 
+    @Override
     public CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
-        ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
-            ObjectIdentifier.builder()
-                .key(key)
-                .build()
-        ).toArray(ObjectIdentifier[]::new);
+        final int BATCH_SIZE = 800;
 
-        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-            .bucket(bucket)
-            .delete(Delete.builder().objects(toDeleteKeys).build())
-            .build();
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
 
-        CompletableFuture<Void> cf = new CompletableFuture<>();
-        this.writeS3Client.deleteObjects(request)
-            .thenAccept(resp -> {
-                try {
-                    checkDeleteObjectsResponse(resp);
-                    cf.complete(null);
-                } catch (Throwable ex) {
+        for (int i = 0; i < objectKeys.size(); i += BATCH_SIZE) {
+            int end = Math.min(i + BATCH_SIZE, objectKeys.size());
+            List<String> batch = objectKeys.subList(i, end);
+
+            ObjectIdentifier[] toDeleteKeys = batch.stream().map(key ->
+                ObjectIdentifier.builder()
+                    .key(key)
+                    .build()
+            ).toArray(ObjectIdentifier[]::new);
+
+            DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+                .bucket(bucket)
+                .delete(Delete.builder().objects(toDeleteKeys).build())
+                .build();
+
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            futures.add(cf);
+
+            this.writeS3Client.deleteObjects(request)
+                .thenAccept(resp -> {
+                    try {
+                        checkDeleteObjectsResponse(resp);
+                        cf.complete(null);
+                    } catch (Throwable ex) {
+                        cf.completeExceptionally(ex);
+                    }
+                })
+                .exceptionally(ex -> {
                     cf.completeExceptionally(ex);
-                }
-            })
-            .exceptionally(ex -> {
-                cf.completeExceptionally(ex);
-                return null;
-            });
-        return cf;
+                    return null;
+                });
+        }
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
     }
 
     @Override
