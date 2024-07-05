@@ -79,7 +79,6 @@ public class StreamObjectCompactor {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectCompactor.class);
     public static final int DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD = 1024 * 1024; // 1MiB
     private static final long MAX_DIRTY_BYTES = 512 * 1024 * 1024;
-    public static final BooleanSupplier DEFAULT_CANCEL_STATUS_SUPPLIER = () -> false;
     private final Logger s3ObjectLogger;
     private final long maxStreamObjectSize;
     private final Stream stream;
