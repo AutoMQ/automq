@@ -1,21 +1,22 @@
 ## AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3 and EBS
 
-![GitHub release (with filter)](https://img.shields.io/github/v/release/AutoMQ/automq)
-[![](https://img.shields.io/badge/Document-blue)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
-[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison)
-[![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd)
-[![Twitter URL](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)
-[![](https://img.shields.io/badge/-%20Wechat%20-red?style=social&logo=discourse)](docs/images/automq-wechat.png)
+[![GitHub release](https://img.shields.io/github/v/release/AutoMQ/automq)](https://github.com/AutoMQ/automq/releases/latest)
+[![Documentation](https://img.shields.io/badge/Document-blue)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
+[![License](https://img.shields.io/badge/license-BSL-brightgreen)](licenses/BSL.md)
+[![Cost comparison](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison)
+[![Performance comparison](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd)
+[![Twitter](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)
+[![Wechat](https://img.shields.io/badge/-%20Wechat%20-red?style=social&logo=discourse)](docs/images/automq-wechat.png)
 
 ---
 
-![](https://img.shields.io/badge/AWS-%E2%9C%85-lightgray?logo=amazonaws)
-![](https://img.shields.io/badge/Google-%F0%9F%9A%A7-lightyellow?logo=googlecloud)
-![](https://img.shields.io/badge/Azure-%F0%9F%9A%A7-lightyellow?logo=microsoftazure)
-![](https://img.shields.io/badge/Aliyun-%E2%9C%85-lightgray?logo=alibabacloud)
-![](https://img.shields.io/badge/Huawei-%E2%9C%85-lightgray?logo=huawei)
-![](https://img.shields.io/badge/Baidu-%E2%9C%85-lightgray?logo=baidu)
-![](https://img.shields.io/badge/Tencent-%E2%9C%85-lightgray?logo=tencentqq)
+![AWS](https://img.shields.io/badge/AWS-%E2%9C%85-lightgray?logo=amazonaws)
+![GCP](https://img.shields.io/badge/Google-%F0%9F%9A%A7-lightyellow?logo=googlecloud)
+![Azure](https://img.shields.io/badge/Azure-%F0%9F%9A%A7-lightyellow?logo=microsoftazure)
+![Alibaba Cloud](https://img.shields.io/badge/Aliyun-%E2%9C%85-lightgray?logo=alibabacloud)
+![Huawei](https://img.shields.io/badge/Huawei-%E2%9C%85-lightgray?logo=huawei)
+![Baidu](https://img.shields.io/badge/Baidu-%E2%9C%85-lightgray?logo=baidu)
+![QQ](https://img.shields.io/badge/Tencent-%E2%9C%85-lightgray?logo=tencentqq)
 
 ## 🍵 AutoMQ vs Other Streaming Platforms
 
