@@ -32,9 +32,9 @@ public class BucketURITest {
         assertEquals("region1", buckets.get(0).region());
         assertEquals("https://aws.amazon.com:444", buckets.get(0).endpoint());
         assertEquals("s3", buckets.get(0).protocol());
-        assertEquals("v1", buckets.get(0).extensionString("k1"));
+        assertEquals("v1", buckets.get(0).extensionString("k1", null));
         assertEquals(List.of("v2", "v22"), buckets.get(0).extensionStringList("k2"));
-        assertEquals("", buckets.get(0).extensionString("k3"));
+        assertEquals("", buckets.get(0).extensionString("k3", ""));
         assertEquals(Collections.emptyList(), buckets.get(0).extensionStringList("k3"));
 
         assertEquals((short) 1, buckets.get(1).bucketId());

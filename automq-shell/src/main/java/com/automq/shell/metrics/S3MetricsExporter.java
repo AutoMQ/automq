@@ -11,7 +11,6 @@
 
 package com.automq.shell.metrics;
 
-import com.automq.shell.auth.CredentialsProviderHolder;
 import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
@@ -76,7 +75,6 @@ public class S3MetricsExporter implements MetricExporter {
         this.config = config;
         this.objectStorage = AwsObjectStorage.builder()
             .bucket(config.bucket())
-            .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
             .build();
 
         defalutTagMap.put("host_name", getHostName());
