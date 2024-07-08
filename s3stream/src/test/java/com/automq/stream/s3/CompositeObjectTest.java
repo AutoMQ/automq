@@ -44,7 +44,7 @@ public class CompositeObjectTest {
 
     @Test
     public void testCompositeObject_writeAndRead() throws ExecutionException, InterruptedException {
-        ObjectStorage objectStorage = new MemoryObjectStorage();
+        ObjectStorage objectStorage = new MemoryObjectStorage((short) 234);
         // generate two normal object
         S3ObjectMetadata obj1;
         {
@@ -81,7 +81,7 @@ public class CompositeObjectTest {
         // read composite object and verify
         S3ObjectMetadata metadata = new S3ObjectMetadata(3, objectId, S3ObjectType.COMPOSITE);
         metadata.setObjectSize(compositeObjectWriter.size());
-        CompositeObjectReader reader = new CompositeObjectReader(metadata, (metadata1, start, end) -> objectStorage.rangeRead(ReadOptions.DEFAULT, ObjectUtils.genKey(0, metadata1.objectId()), start, end));
+        CompositeObjectReader reader = new CompositeObjectReader(metadata, (metadata1, start, end) -> objectStorage.rangeRead(new ReadOptions().bucket(metadata1.bucket()), ObjectUtils.genKey(0, metadata1.objectId()), start, end));
         ObjectReader.BasicObjectInfo info = reader.basicObjectInfo().get();
         List<DataBlockIndex> indexes = info.indexBlock().indexes();
         assertEquals(3, indexes.size());

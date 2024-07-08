@@ -150,6 +150,7 @@ public interface ObjectReader extends AutoCloseable {
                     asyncGetBasicObjectInfo0(ex.indexBlockPosition, false);
                 }
             }).exceptionally(ex -> {
+                LOGGER.error("get {} object info failed", metadata, ex);
                 basicObjectInfo().completeExceptionally(ex);
                 return null;
             });

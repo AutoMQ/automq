@@ -564,12 +564,11 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager = Mockito.spy(MemoryMetadataManager.class);
         objectStorage = Mockito.spy(MemoryObjectStorage.class);
         List<Pair<InvocationOnMock, CompletableFuture<ByteBuf>>> invocations = new ArrayList<>();
-        when(objectStorage.rangeRead(any(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong()))
-            .thenAnswer(invocation -> {
-                CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-                invocations.add(Pair.of(invocation, cf));
-                return cf;
-            });
+        doAnswer(invocation -> {
+            CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+            invocations.add(Pair.of(invocation, cf));
+            return cf;
+        }).when(objectStorage).rangeRead(any(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong());
 
         List<S3ObjectMetadata> s3ObjectMetadataList = new ArrayList<>();
         // stream data for object 0

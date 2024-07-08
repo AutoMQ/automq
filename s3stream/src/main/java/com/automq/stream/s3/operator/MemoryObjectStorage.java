@@ -13,6 +13,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -28,13 +29,23 @@ import java.util.stream.Collectors;
 public class MemoryObjectStorage extends AbstractObjectStorage {
     private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
     private long delay = 0;
+    private final short bucketId;
 
-    public MemoryObjectStorage(boolean manualMergeRead) {
-        super(manualMergeRead);
+    public MemoryObjectStorage(boolean manualMergeRead, short bucketId) {
+        super(BucketURI.parse(bucketId + "@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, manualMergeRead);
+        this.bucketId = bucketId;
+    }
+
+    public MemoryObjectStorage(short bucketId) {
+        this(false, bucketId);
     }
 
     public MemoryObjectStorage() {
-        this(false);
+        this(false, (short) 0);
+    }
+
+    public MemoryObjectStorage(boolean manualMergeRead) {
+        this(manualMergeRead, (short) 0);
     }
 
     @Override
@@ -108,6 +119,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             public CompletableFuture<Void> release() {
                 return CompletableFuture.completedFuture(null);
             }
+
+            @Override
+            public short bucketId() {
+                return bucketId;
+            }
         };
     }
 
@@ -158,6 +174,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             .filter(entry -> entry.getKey().startsWith(prefix))
             .map(entry -> new ObjectInfo((short) 0, entry.getKey(), 0L, entry.getValue().readableBytes()))
             .collect(Collectors.toList()));
+    }
+
+    @Override
+    protected <T> boolean bucketCheck(int bucketId, CompletableFuture<T> cf) {
+        return true;
     }
 
     public ByteBuf get() {

@@ -18,7 +18,7 @@ public class StreamObject {
     private long streamId;
     private long startOffset;
     private long endOffset;
-    private int attributes = ObjectAttributes.DEFAULT.attributes();
+    private int attributes = ObjectAttributes.UNSET.attributes();
 
     public long getObjectId() {
         return objectId;

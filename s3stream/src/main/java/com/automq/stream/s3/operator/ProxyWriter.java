@@ -104,6 +104,11 @@ class ProxyWriter implements Writer {
         }
     }
 
+    @Override
+    public short bucketId() {
+        return writeOptions.bucketId();
+    }
+
     private void newMultiPartWriter() {
         this.multiPartWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
         if (objectWriter.data.readableBytes() > 0) {
@@ -153,7 +158,7 @@ class ProxyWriter implements Writer {
         public CompletableFuture<Void> close() {
             S3ObjectStats.getInstance().objectStageReadyCloseStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             int size = data.readableBytes();
-            FutureUtil.propagate(objectStorage.write(writeOptions, path, data), cf);
+            FutureUtil.propagate(objectStorage.write(writeOptions, path, data).thenApply(rst -> null), cf);
             cf.whenComplete((nil, e) -> {
                 S3ObjectStats.getInstance().objectStageTotalStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
@@ -170,6 +175,11 @@ class ProxyWriter implements Writer {
 
         public boolean isFull() {
             return data.readableBytes() > MAX_UPLOAD_SIZE;
+        }
+
+        @Override
+        public short bucketId() {
+            return writeOptions.bucketId();
         }
     }
 }

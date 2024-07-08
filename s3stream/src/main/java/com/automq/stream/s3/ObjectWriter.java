@@ -66,6 +66,8 @@ public interface ObjectWriter {
 
     long size();
 
+    short bucketId();
+
     class DefaultObjectWriter implements ObjectWriter {
 
         private final int blockSizeThreshold;
@@ -195,6 +197,11 @@ public interface ObjectWriter {
             return size;
         }
 
+        @Override
+        public short bucketId() {
+            return writer.bucketId();
+        }
+
         class IndexBlock {
             private final ByteBuf buf;
             private final long position;
@@ -314,6 +321,11 @@ public interface ObjectWriter {
 
         @Override
         public long size() {
+            return 0;
+        }
+
+        @Override
+        public short bucketId() {
             return 0;
         }
     }

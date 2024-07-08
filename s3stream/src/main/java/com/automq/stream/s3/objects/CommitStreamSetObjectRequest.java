@@ -55,7 +55,7 @@ public class CommitStreamSetObjectRequest {
     /**
      * The generated object's attributes.
      */
-    private int attributes = ObjectAttributes.DEFAULT.attributes();
+    private int attributes = ObjectAttributes.UNSET.attributes();
 
     public long getObjectId() {
         return objectId;

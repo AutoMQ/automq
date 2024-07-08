@@ -169,6 +169,11 @@ public class MultiPartWriter implements Writer {
         });
     }
 
+    @Override
+    public short bucketId() {
+        return writeOptions.bucketId();
+    }
+
     private List<AbstractObjectStorage.ObjectStorageCompletedPart> genCompleteParts() {
         return this.parts.stream().map(cf -> {
             try {

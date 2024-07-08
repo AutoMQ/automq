@@ -241,7 +241,7 @@ public class LogUploader implements LogRecorder {
                     if (!objects.isEmpty()) {
                         List<ObjectPath> keyList = objects.stream()
                             .filter(object -> object.timestamp() < expiredTime)
-                            .map(object -> new ObjectPath(object.bucket(), object.key()))
+                            .map(object -> new ObjectPath(object.bucketId(), object.key()))
                             .collect(Collectors.toList());
 
                         if (!keyList.isEmpty()) {
