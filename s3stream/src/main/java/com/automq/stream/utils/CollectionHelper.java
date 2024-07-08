@@ -28,12 +28,13 @@ public class CollectionHelper {
             throw new IllegalArgumentException("Invalid list or size");
         }
 
-        if (list.size() <= size) {
+        int listSize = list.size();
+        if (listSize <= size) {
             return Stream.of(list);
         }
 
         return IntStream.range(0, (list.size() + size - 1) / size)
-                .mapToObj(i -> list.subList(i * size, Math.min((i + 1) * size, list.size())));
+                .mapToObj(i -> list.subList(i * size, Math.min((i + 1) * size, listSize)));
     }
 
 }
