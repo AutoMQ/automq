@@ -322,7 +322,9 @@ public class S3ObjectControlManagerTest {
         // 3. 6s(3s * 2) later, they should be removed
         Thread.sleep(6 * 1000);
         assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
-        Mockito.verify(objectStorage, times(3)).delete(anyList());
+
+        // 1700 / 1000 + 1
+        Mockito.verify(objectStorage, times(2)).delete(anyList());
     }
 
     private long prepareOneObject(long ttl) {

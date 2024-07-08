@@ -338,7 +338,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
         TimerUtil timerUtil = new TimerUtil();
         List<String> objectKeys = objectPaths.stream().map(ObjectPath::key).collect(Collectors.toList());
-        doDeleteObjects(objectKeys).thenAccept(nil -> {
+        this.doDeleteObjects(objectKeys).thenAccept(nil -> {
             LOGGER.info("Delete objects finished, count: {}, cost: {}ms", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(null);
