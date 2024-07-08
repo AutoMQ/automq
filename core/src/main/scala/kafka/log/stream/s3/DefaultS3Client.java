@@ -11,8 +11,6 @@
 
 package kafka.log.stream.s3;
 
-import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.shell.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.StreamClient;
@@ -39,7 +37,6 @@ import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.PingS3Helper;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
@@ -49,7 +46,6 @@ import kafka.log.stream.s3.streams.ControllerStreamManager;
 import kafka.server.BrokerServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 
 public class DefaultS3Client implements Client {
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
@@ -94,18 +90,16 @@ public class DefaultS3Client implements Client {
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
-        List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
         // check s3 availability
         PingS3Helper pingS3Helper = PingS3Helper.builder()
             .bucket(dataBucket)
-            .credentialsProviders(credentialsProviders)
             .tagging(config.objectTagging())
             .needPrintToConsole(false)
             .build();
         pingS3Helper.pingS3();
-        ObjectStorage objectStorage = AwsObjectStorage.builder().bucket(dataBucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
+        ObjectStorage objectStorage = AwsObjectStorage.builder().bucket(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).build();
-        ObjectStorage compactionobjectStorage = AwsObjectStorage.builder().bucket(dataBucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
+        ObjectStorage compactionobjectStorage = AwsObjectStorage.builder().bucket(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
             config.controllerRequestRetryBaseDelayMs());

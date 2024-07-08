@@ -12,7 +12,6 @@
 package com.automq.shell.log;
 
 import com.automq.shell.AutoMQApplication;
-import com.automq.shell.auth.CredentialsProviderHolder;
 import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
@@ -122,7 +121,6 @@ public class LogUploader implements LogRecorder {
                         try {
                             objectStorage = AwsObjectStorage.builder()
                                 .bucket(config.bucket())
-                                .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
                                 .build();
                             uploadThread = new Thread(new UploadTask());
                             uploadThread.setName("log-uploader-upload-thread");
