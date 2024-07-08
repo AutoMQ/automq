@@ -20,6 +20,7 @@ import com.automq.stream.s3.operator.Writer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import com.automq.stream.utils.CollectionHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,6 +59,7 @@ public class CompositeObject {
 
     public static final int FOOTER_SIZE = 48;
     public static final long FOOTER_MAGIC = 0x88e241b785f4cff8L;
+    public static final int DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 800;
 
     public static CompositeObjectReader reader(S3ObjectMetadata objectMetadata, ObjectReader.RangeReader rangeReader) {
         return new CompositeObjectReader(objectMetadata, rangeReader);
@@ -87,8 +89,21 @@ public class CompositeObject {
                 .stream()
                 .map(o -> new ObjectPath(o.bucketId(), ObjectUtils.genKey(0, o.objectId())))
                 .collect(Collectors.toList());
-            return objectStorage.delete(objectPaths)
-                .thenApply(rst -> objectIndexes.stream().map(o -> o.bucketId() + "/" + o.objectId()).collect(Collectors.toList()));
+
+            CompletableFuture<Void> deleteCf;
+            if (objectPaths.size() > DEFAULT_BATCH_DELETE_OBJECTS_NUMBER) {
+                deleteCf = CompletableFuture.allOf(
+                        CollectionHelper
+                                .partitionListAsStream(objectPaths, DEFAULT_BATCH_DELETE_OBJECTS_NUMBER)
+                                .map(objectStorage::delete)
+                                .toArray(CompletableFuture[]::new)
+                );
+            } else {
+                deleteCf = objectStorage.delete(objectPaths);
+            }
+
+            return deleteCf
+                    .thenApply(rst -> objectIndexes.stream().map(o -> o.bucketId() + "/" + o.objectId()).collect(Collectors.toList()));
         }).thenCompose(linkedObjects -> {
             // 3. delete composite object
             return objectStorage.delete(List.of(new ObjectPath(objectMetadata.bucket(), objectMetadata.key()))).thenAccept(rst ->
