@@ -213,37 +213,37 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     public CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
         return CompletableFuture.allOf(
-                CollectionHelper.groupListByBatchSizeAsStream(objectKeys, getMaxDeleteObjectsNumber())
-                        .map(this::doDeleteObjects0).toArray(CompletableFuture[]::new)
+            CollectionHelper.groupListByBatchSizeAsStream(objectKeys, getMaxDeleteObjectsNumber())
+                .map(this::doDeleteObjects0).toArray(CompletableFuture[]::new)
         );
     }
 
     private CompletableFuture<Void> doDeleteObjects0(List<String> objectKeys) {
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
-                ObjectIdentifier.builder()
-                        .key(key)
-                        .build()
+            ObjectIdentifier.builder()
+                .key(key)
+                .build()
         ).toArray(ObjectIdentifier[]::new);
 
         DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-                .bucket(bucket)
-                .delete(Delete.builder().objects(toDeleteKeys).build())
-                .build();
+            .bucket(bucket)
+            .delete(Delete.builder().objects(toDeleteKeys).build())
+            .build();
 
         CompletableFuture<Void> cf = new CompletableFuture<>();
         this.writeS3Client.deleteObjects(request)
-                .thenAccept(resp -> {
-                    try {
-                        checkDeleteObjectsResponse(resp);
-                        cf.complete(null);
-                    } catch (Throwable ex) {
-                        cf.completeExceptionally(ex);
-                    }
-                })
-                .exceptionally(ex -> {
+            .thenAccept(resp -> {
+                try {
+                    checkDeleteObjectsResponse(resp);
+                    cf.complete(null);
+                } catch (Throwable ex) {
                     cf.completeExceptionally(ex);
-                    return null;
-                });
+                }
+            })
+            .exceptionally(ex -> {
+                cf.completeExceptionally(ex);
+                return null;
+            });
         return cf;
     }
 
