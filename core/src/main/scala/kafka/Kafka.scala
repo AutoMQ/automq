@@ -18,9 +18,7 @@
 package kafka
 
 import com.automq.shell.AutoMQApplication
-import com.automq.shell.auth.{CredentialsProviderHolder, EnvVariableCredentialsProvider}
 import com.automq.shell.log.{LogUploader, S3LogConfig}
-import com.automq.shell.model.S3Url
 import com.automq.stream.s3.ByteBufAlloc
 import joptsimple.OptionParser
 import kafka.s3shell.util.S3ShellPropUtil
@@ -29,7 +27,6 @@ import kafka.utils.Implicits._
 import kafka.utils.{Exit, Logging}
 import org.apache.kafka.common.utils._
 import org.apache.kafka.server.util.CommandLineUtils
-import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
 
 import java.util.Properties
 
@@ -140,13 +137,6 @@ object Kafka extends Logging {
     try {
       // AutoMQ for Kafka inject start
       val serverProps = getPropsFromArgs(args)
-      val s3UrlString = S3Url.parseS3UrlValFromArgs(args)
-      if (s3UrlString == null) {
-        CredentialsProviderHolder.create(EnvVariableCredentialsProvider.get())
-      } else {
-        val s3Url = S3Url.parse(s3UrlString)
-        CredentialsProviderHolder.create(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Url.getS3AccessKey, s3Url.getS3SecretKey)))
-      }
       val server = buildServer(serverProps)
       AutoMQApplication.registerSingleton(classOf[Server], server)
       // AutoMQ for Kafka inject end
