@@ -45,11 +45,6 @@ public interface ObjectStorage {
      */
     CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
 
-    /**
-     * return the max batch delete key number in single deleteObjectBatch.
-     */
-    int getMaxDeleteObjectsNumber();
-
     class ObjectPath {
         private final short bucket;
         private final String key;

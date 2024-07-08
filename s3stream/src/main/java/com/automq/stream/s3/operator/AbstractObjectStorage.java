@@ -19,7 +19,6 @@ import com.automq.stream.s3.metrics.stats.S3OperationStats;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.utils.CollectionHelper;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -53,7 +52,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private static final int DEFAULT_CONCURRENCY_PER_CORE = 25;
     private static final int MIN_CONCURRENCY = 50;
     private static final int MAX_CONCURRENCY = 1000;
-    public static final int DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 1000;
     private static final long DEFAULT_UPLOAD_PART_COPY_TIMEOUT = TimeUnit.MINUTES.toMillis(2);
     private final float maxMergeReadSparsityRate;
     private final int currentIndex;
@@ -353,11 +351,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return null;
         });
         return cf;
-    }
-
-    @Override
-    public int getMaxDeleteObjectsNumber() {
-        return DEFAULT_BATCH_DELETE_OBJECTS_NUMBER;
     }
 
     @Override

@@ -395,8 +395,6 @@ public class StreamObjectCompactor {
 
             List<ObjectPath> needDeleteObject = new ArrayList<>();
 
-            int maxDeleteObjectKeyNumber = objectStorage.getMaxDeleteObjectsNumber();
-
             for (ObjectIndex linkedObjectIndex : linkedObjectIndexes) {
                 boolean hasLiveBlocks = false;
                 S3ObjectMetadata linkedObjectMetadata = new S3ObjectMetadata(linkedObjectIndex.objectId(), ObjectAttributes.builder().bucket(linkedObjectIndex.bucketId()).build().attributes());
@@ -412,12 +410,6 @@ public class StreamObjectCompactor {
                     // The linked object is fully expired, and there won't be any access to it.
                     // So we could directly delete the object from object storage.
                     needDeleteObject.add(new ObjectPath(linkedObjectMetadata.bucket(), linkedObjectMetadata.key()));
-
-                    if (needDeleteObject.size() >= maxDeleteObjectKeyNumber) {
-                        objectStorage.delete(needDeleteObject).get();
-                        needDeleteObject.clear();
-                    }
-
                 } else {
                     // Keep all blocks in the linked object even part of them are expired.
                     // So we could get more precise composite object retained size.

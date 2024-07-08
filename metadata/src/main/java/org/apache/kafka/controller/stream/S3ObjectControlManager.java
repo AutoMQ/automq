@@ -26,6 +26,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectAttributes.Type;
+import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import java.util.ArrayList;
@@ -465,7 +466,7 @@ public class S3ObjectControlManager {
         private void batchDelete(List<S3Object> objects,
                                  Function<List<S3Object>, CompletableFuture<Void>> deleteFunc,
                                  List<CompletableFuture<Void>> cfList) {
-            CollectionHelper.groupListByBatchSizeAsStream(objects, objectStorage.getMaxDeleteObjectsNumber())
+            CollectionHelper.groupListByBatchSizeAsStream(objects, AwsObjectStorage.AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER)
                     .map(deleteFunc)
                     .forEach(cfList::add);
         }

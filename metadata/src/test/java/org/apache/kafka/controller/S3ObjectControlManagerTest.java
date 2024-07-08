@@ -72,7 +72,6 @@ public class S3ObjectControlManagerTest {
     public void setUp() {
         controller = Mockito.mock(QuorumController.class);
         objectStorage = Mockito.mock(ObjectStorage.class);
-        Mockito.when(objectStorage.getMaxDeleteObjectsNumber()).thenReturn(1000);
         Mockito.when(objectStorage.delete(anyList())).then(inv -> {
             return CompletableFuture.completedFuture(null);
         });

@@ -213,7 +213,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     public CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
         return CompletableFuture.allOf(
-            CollectionHelper.groupListByBatchSizeAsStream(objectKeys, getMaxDeleteObjectsNumber())
+            CollectionHelper.groupListByBatchSizeAsStream(objectKeys, AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER)
                 .map(this::doDeleteObjects0).toArray(CompletableFuture[]::new)
         );
     }
@@ -245,11 +245,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 return null;
             });
         return cf;
-    }
-
-    @Override
-    public int getMaxDeleteObjectsNumber() {
-        return AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER;
     }
 
     @Override
