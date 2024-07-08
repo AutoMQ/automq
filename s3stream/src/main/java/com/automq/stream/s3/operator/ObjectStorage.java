@@ -36,6 +36,13 @@ public interface ObjectStorage {
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
 
+    /**
+     * The deleteObjects API have max batch limit.
+     * see <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html"/>
+     * Implementation should handle the objectPaths size exceeded limit condition.
+     * When batch split logic is triggered the CompletableFuture means all the deleteBatch if success.
+     * The caller may do the batch split logic if the delete operation need fine-grained control
+     */
     CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
 
     class ObjectPath {
