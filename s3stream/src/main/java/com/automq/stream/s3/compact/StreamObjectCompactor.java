@@ -69,7 +69,6 @@ public class StreamObjectCompactor {
     public static final int EXPIRED_OBJECTS_CLEAN_UP_STEP = 1000;
     public static final long MINOR_COMPACTION_SIZE_THRESHOLD = 128 * 1024 * 1024; // 128MiB
     public static final long MINOR_V1_COMPACTION_SIZE_THRESHOLD = 4 * 1024 * 1024; // 4MiB
-    public static final int DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 500;
     /**
      * max object count in one group, the group count will limit the compact request size to kraft and multipart object
      * part count (less than {@code Writer.MAX_PART_COUNT}).
@@ -396,6 +395,8 @@ public class StreamObjectCompactor {
 
             List<ObjectPath> needDeleteObject = new ArrayList<>();
 
+            int maxDeleteObjectKeyNumber = objectStorage.getMaxDeleteObjectsNumber();
+
             for (ObjectIndex linkedObjectIndex : linkedObjectIndexes) {
                 boolean hasLiveBlocks = false;
                 S3ObjectMetadata linkedObjectMetadata = new S3ObjectMetadata(linkedObjectIndex.objectId(), ObjectAttributes.builder().bucket(linkedObjectIndex.bucketId()).build().attributes());
@@ -412,7 +413,7 @@ public class StreamObjectCompactor {
                     // So we could directly delete the object from object storage.
                     needDeleteObject.add(new ObjectPath(linkedObjectMetadata.bucket(), linkedObjectMetadata.key()));
 
-                    if (needDeleteObject.size() > DEFAULT_BATCH_DELETE_OBJECTS_NUMBER) {
+                    if (needDeleteObject.size() > maxDeleteObjectKeyNumber) {
                         objectStorage.delete(needDeleteObject).get();
                         needDeleteObject.clear();
                     }

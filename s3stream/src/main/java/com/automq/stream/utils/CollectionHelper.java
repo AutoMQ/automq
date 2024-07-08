@@ -18,18 +18,18 @@ import java.util.stream.Stream;
 
 public class CollectionHelper {
 
-    public static <T> List<List<T>> partitionList(List<T> list, int size) {
-        return partitionListAsStream(list, size)
+    public static <T> List<List<T>> groupListByBatchSize(List<T> list, int size) {
+        return groupListByBatchSizeAsStream(list, size)
                 .collect(Collectors.toList());
     }
 
-    public static <T> Stream<List<T>> partitionListAsStream(List<T> list, int size) {
+    public static <T> Stream<List<T>> groupListByBatchSizeAsStream(List<T> list, int size) {
         if (list == null || size <= 0) {
             throw new IllegalArgumentException("Invalid list or size");
         }
 
-        if (list.isEmpty()) {
-            return Stream.empty();
+        if (list.size() <= size) {
+            return Stream.of(list);
         }
 
         return IntStream.range(0, (list.size() + size - 1) / size)

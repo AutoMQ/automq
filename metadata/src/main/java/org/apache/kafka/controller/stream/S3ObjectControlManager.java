@@ -441,9 +441,6 @@ public class S3ObjectControlManager {
     }
 
     class ObjectCleaner {
-
-        public static final int MAX_BATCH_DELETE_SIZE = 800;
-
         CompletableFuture<Void> clean(List<S3Object> objects) {
             List<S3Object> deepDeleteCompositeObjects = new LinkedList<>();
             List<S3Object> shallowDeleteObjects = new ArrayList<>(objects.size());
@@ -468,7 +465,7 @@ public class S3ObjectControlManager {
         private void batchDelete(List<S3Object> objects,
                                  Function<List<S3Object>, CompletableFuture<Void>> deleteFunc,
                                  List<CompletableFuture<Void>> cfList) {
-            CollectionHelper.partitionListAsStream(objects, MAX_BATCH_DELETE_SIZE)
+            CollectionHelper.groupListByBatchSizeAsStream(objects, objectStorage.getMaxDeleteObjectsNumber())
                     .map(deleteFunc)
                     .forEach(cfList::add);
         }
