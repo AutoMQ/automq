@@ -20,7 +20,6 @@ import com.automq.stream.s3.operator.Writer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
-import com.automq.stream.utils.CollectionHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
