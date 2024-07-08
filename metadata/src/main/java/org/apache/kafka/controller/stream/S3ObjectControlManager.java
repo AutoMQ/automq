@@ -23,7 +23,6 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectAttributes.Type;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -421,7 +420,7 @@ public class S3ObjectControlManager {
         if (object == null) {
             return null;
         }
-        return ObjectReader.reader(new S3ObjectMetadata(objectId, object.getObjectSize(), S3ObjectType.STREAM_SET), objectStorage);
+        return ObjectReader.reader(new S3ObjectMetadata(objectId, object.getObjectSize(), object.getAttributes()), objectStorage);
     }
 
     /**

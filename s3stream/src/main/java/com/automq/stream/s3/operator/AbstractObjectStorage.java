@@ -71,8 +71,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("objectStorage", true), LOGGER);
     final boolean checkS3ApiMode;
+    protected final BucketURI bucketURI;
 
-    private AbstractObjectStorage(
+    protected AbstractObjectStorage(
+        BucketURI bucketURI,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter,
         NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         int maxObjectStorageConcurrency,
@@ -80,6 +82,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         boolean readWriteIsolate,
         boolean checkS3ApiMode,
         boolean manualMergeRead) {
+        this.bucketURI = bucketURI;
         this.currentIndex = currentIndex;
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.inflightWriteLimiter = new Semaphore(maxObjectStorageConcurrency);
@@ -95,28 +98,27 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
     }
 
-    public AbstractObjectStorage(
+    public AbstractObjectStorage(BucketURI bucketURI,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter,
         NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate,
         boolean checkS3ApiMode) {
-        this(networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, getMaxObjectStorageConcurrency(),
+        this(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, getMaxObjectStorageConcurrency(),
             INDEX.incrementAndGet(), readWriteIsolate, checkS3ApiMode, false);
-    }
-
-    // used for test only
-    public AbstractObjectStorage(boolean manualMergeRead) {
-        this(NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, manualMergeRead);
     }
 
     @Override
     public Writer writer(WriteOptions options, String objectPath) {
+        options = options.copy().bucketId(bucketURI.bucketId());
         return new ProxyWriter(options, this, objectPath);
     }
 
     @Override
     public CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end) {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        if (!bucketCheck(options.bucket(), cf)) {
+            return cf;
+        }
         if (end != -1L && start > end) {
             IllegalArgumentException ex = new IllegalArgumentException();
             LOGGER.error("[UNEXPECTED] rangeRead [{}, {})", start, end, ex);
@@ -144,9 +146,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public CompletableFuture<Void> write(WriteOptions options, String objectPath, ByteBuf data) {
+    public CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf data) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        CompletableFuture<Void> retCf = acquireWritePermit(cf);
+        CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
         if (retCf.isDone()) {
             return retCf;
         }
@@ -328,8 +330,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
-        TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        for (ObjectPath objectPath: objectPaths) {
+            if (!bucketCheck(objectPath.bucketId(), cf)) {
+                return cf;
+            }
+        }
+        TimerUtil timerUtil = new TimerUtil();
         List<String> objectKeys = objectPaths.stream().map(ObjectPath::key).collect(Collectors.toList());
         doDeleteObjects(objectKeys).thenAccept(nil -> {
             LOGGER.info("Delete objects finished, count: {}, cost: {}ms", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
@@ -472,7 +479,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return retCf;
     }
 
-    private void mergedRangeRead0(ReadOptions options, String path, long start, long end, CompletableFuture<ByteBuf> cf) {
+    private void mergedRangeRead0(ReadOptions options, String path, long start, long end,
+        CompletableFuture<ByteBuf> cf) {
         TimerUtil timerUtil = new TimerUtil();
         long size = end - start;
         doRangeRead(options, path, start, end).thenAccept(buf -> {
@@ -568,6 +576,15 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             newCf.completeExceptionally(e);
             return newCf;
         }
+    }
+
+    protected <T> boolean bucketCheck(int bucketId, CompletableFuture<T> cf) {
+        if (bucketId != bucketURI.bucketId()) {
+            cf.completeExceptionally(new IllegalArgumentException(String.format("bucket not match, expect %d, actual %d",
+                bucketURI.bucketId(), bucketId)));
+            return false;
+        }
+        return true;
     }
 
     static class MergedReadTask {

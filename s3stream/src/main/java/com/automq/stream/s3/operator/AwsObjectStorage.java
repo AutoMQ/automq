@@ -66,7 +66,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
     public static final String PATH_STYLE = "pathStyle";
 
-    private final BucketURI bucketURI;
     private final String bucket;
     private final Tagging tagging;
     private final S3AsyncClient readS3Client;
@@ -76,8 +75,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         List<AwsCredentialsProvider> credentialsProviders,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate, boolean checkMode) {
-        super(networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
-        this.bucketURI = bucketURI;
+        super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
         this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
         Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE, false), credentialsProviders, getMaxObjectStorageConcurrency());
@@ -88,13 +86,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     // used for test only
     public AwsObjectStorage(S3AsyncClient s3Client, String bucket) {
-        this(s3Client, bucket, false);
-    }
-
-    // used for test only
-    public AwsObjectStorage(S3AsyncClient s3Client, String bucket, boolean manualMergeRead) {
-        super(manualMergeRead);
-        this.bucketURI = null;
+        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false);
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
@@ -262,7 +254,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .thenApply(resp ->
                 resp.contents()
                     .stream()
-                    .map(object -> new ObjectInfo((short) 0, object.key(), object.lastModified().toEpochMilli(), object.size()))
+                    .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
                     .collect(Collectors.toList()));
     }
 
