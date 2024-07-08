@@ -88,7 +88,7 @@ public class CompositeObject {
                 .map(o -> new ObjectPath(o.bucketId(), ObjectUtils.genKey(0, o.objectId())))
                 .collect(Collectors.toList());
             return objectStorage.delete(objectPaths)
-                    .thenApply(rst -> objectIndexes.stream().map(o -> o.bucketId() + "/" + o.objectId()).collect(Collectors.toList()));
+                .thenApply(rst -> objectIndexes.stream().map(o -> o.bucketId() + "/" + o.objectId()).collect(Collectors.toList()));
         }).thenCompose(linkedObjects -> {
             // 3. delete composite object
             return objectStorage.delete(List.of(new ObjectPath(objectMetadata.bucket(), objectMetadata.key()))).thenAccept(rst ->
