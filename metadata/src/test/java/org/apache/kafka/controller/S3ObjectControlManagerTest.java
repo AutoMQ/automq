@@ -72,6 +72,7 @@ public class S3ObjectControlManagerTest {
     public void setUp() {
         controller = Mockito.mock(QuorumController.class);
         objectStorage = Mockito.mock(ObjectStorage.class);
+        Mockito.when(objectStorage.getMaxDeleteObjectsNumber()).thenReturn(1000);
         Mockito.when(objectStorage.delete(anyList())).then(inv -> {
             return CompletableFuture.completedFuture(null);
         });
@@ -322,7 +323,9 @@ public class S3ObjectControlManagerTest {
         // 3. 6s(3s * 2) later, they should be removed
         Thread.sleep(6 * 1000);
         assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
-        Mockito.verify(objectStorage, times(3)).delete(anyList());
+
+        // 1700 / 1000 + 1
+        Mockito.verify(objectStorage, times(2)).delete(anyList());
     }
 
     private long prepareOneObject(long ttl) {

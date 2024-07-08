@@ -13,6 +13,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.utils.CollectionHelper;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
@@ -65,6 +66,7 @@ import static com.automq.stream.utils.FutureUtil.cause;
 public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
     public static final String PATH_STYLE = "pathStyle";
+    public static final int AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 1000;
 
     private final BucketURI bucketURI;
     private final String bucket;
@@ -210,32 +212,44 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     public CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
+        return CompletableFuture.allOf(
+                CollectionHelper.groupListByBatchSizeAsStream(objectKeys, getMaxDeleteObjectsNumber())
+                        .map(this::doDeleteObjects0).toArray(CompletableFuture[]::new)
+        );
+    }
+
+    private CompletableFuture<Void> doDeleteObjects0(List<String> objectKeys) {
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
-            ObjectIdentifier.builder()
-                .key(key)
-                .build()
+                ObjectIdentifier.builder()
+                        .key(key)
+                        .build()
         ).toArray(ObjectIdentifier[]::new);
 
         DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-            .bucket(bucket)
-            .delete(Delete.builder().objects(toDeleteKeys).build())
-            .build();
+                .bucket(bucket)
+                .delete(Delete.builder().objects(toDeleteKeys).build())
+                .build();
 
         CompletableFuture<Void> cf = new CompletableFuture<>();
         this.writeS3Client.deleteObjects(request)
-            .thenAccept(resp -> {
-                try {
-                    checkDeleteObjectsResponse(resp);
-                    cf.complete(null);
-                } catch (Throwable ex) {
+                .thenAccept(resp -> {
+                    try {
+                        checkDeleteObjectsResponse(resp);
+                        cf.complete(null);
+                    } catch (Throwable ex) {
+                        cf.completeExceptionally(ex);
+                    }
+                })
+                .exceptionally(ex -> {
                     cf.completeExceptionally(ex);
-                }
-            })
-            .exceptionally(ex -> {
-                cf.completeExceptionally(ex);
-                return null;
-            });
+                    return null;
+                });
         return cf;
+    }
+
+    @Override
+    public int getMaxDeleteObjectsNumber() {
+        return AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER;
     }
 
     @Override
