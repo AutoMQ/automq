@@ -413,7 +413,7 @@ public class StreamObjectCompactor {
                     // So we could directly delete the object from object storage.
                     needDeleteObject.add(new ObjectPath(linkedObjectMetadata.bucket(), linkedObjectMetadata.key()));
 
-                    if (needDeleteObject.size() > maxDeleteObjectKeyNumber) {
+                    if (needDeleteObject.size() >= maxDeleteObjectKeyNumber) {
                         objectStorage.delete(needDeleteObject).get();
                         needDeleteObject.clear();
                     }
