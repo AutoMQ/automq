@@ -212,8 +212,8 @@ public class ControllerObjectManager implements ObjectManager {
         int limit) {
         return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
             if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
-                LOGGER.error("Unexpect getObjects result={} from streamId={} [{}, {}) limit={}", inRangeObjects, streamId, startOffset, endOffset, limit);
-                throw new AutoMQException("Unexpect getObjects result");
+                LOGGER.error("Unexpected getObjects result={} from streamId={} [{}, {}) limit={}", inRangeObjects, streamId, startOffset, endOffset, limit);
+                throw new AutoMQException("Unexpected getObjects result");
             }
             return inRangeObjects.objects();
         });

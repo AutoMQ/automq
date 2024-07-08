@@ -79,7 +79,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
         this.streamSlice = streamSlice;
         long nextOffset = streamSlice.nextOffset();
         // Note that size is generally used to
-        // 1) show the physical size of a segment. In these cases, size is refered to decide whether to roll a new
+        // 1) show the physical size of a segment. In these cases, size is referred to decide whether to roll a new
         // segment, or calculate the cleaned size in a cleaning task, etc. If size is not correctly recorded for any
         // reason, the worst thing will be just a bigger segment than configured.
         // 2) show whether this segment is empty, i.e., size == 0.

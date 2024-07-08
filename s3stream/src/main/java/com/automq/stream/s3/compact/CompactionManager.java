@@ -274,7 +274,7 @@ public class CompactionManager {
         }
 
         if (!objectsToForceSplit.isEmpty()) {
-            // split stream set objects to seperated stream objects
+            // split stream set objects to separated stream objects
             forceSplitObjects(streamMetadataList, objectsToForceSplit);
         }
         // compact stream set objects

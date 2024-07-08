@@ -117,7 +117,7 @@ Another crucial way to contribute is by reporting bugs and helping other users i
 
 You're welcome to enter
 the [Community Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA) and help other
-users or report bugs in Github.
+users or report bugs in GitHub.
 
 ## Attribution
 
