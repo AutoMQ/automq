@@ -31,8 +31,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -42,7 +40,6 @@ public class PingS3Helper {
     private static final Logger LOGGER = LoggerFactory.getLogger(PingS3Helper.class);
     private ObjectStorage objectStorage;
     private BucketURI bucket;
-    private List<AwsCredentialsProvider> credentialsProviders;
     private Map<String, String> tagging;
     private final boolean needPrintToConsole;
 
@@ -57,7 +54,6 @@ public class PingS3Helper {
     public static class Builder {
         private boolean needPrintToConsole;
         private BucketURI bucket;
-        private List<AwsCredentialsProvider> credentialsProviders;
         private Map<String, String> tagging;
 
         public Builder needPrintToConsole(boolean needPrintToConsole) {
@@ -70,11 +66,6 @@ public class PingS3Helper {
             return this;
         }
 
-        public Builder credentialsProviders(List<AwsCredentialsProvider> credentialsProviders) {
-            this.credentialsProviders = credentialsProviders;
-            return this;
-        }
-
         public Builder tagging(Map<String, String> tagging) {
             this.tagging = tagging;
             return this;
@@ -83,7 +74,6 @@ public class PingS3Helper {
         public PingS3Helper build() {
             PingS3Helper pingS3Helper = new PingS3Helper(this);
             pingS3Helper.bucket = bucket;
-            pingS3Helper.credentialsProviders = this.credentialsProviders;
             pingS3Helper.tagging = this.tagging;
             return pingS3Helper;
         }
@@ -93,7 +83,6 @@ public class PingS3Helper {
     public String toString() {
         return "s3 parameters{" +
             ", bucket='" + bucket + '\'' +
-            ", credentialsProviders=" + credentialsProviders +
             ", tagging=" + tagging +
             '}';
     }
@@ -103,7 +92,6 @@ public class PingS3Helper {
         try {
             objectStorage = AwsObjectStorage.builder()
                 .bucket(bucket)
-                .credentialsProviders(credentialsProviders)
                 .tagging(tagging)
                 .checkS3ApiModel(true)
                 .build();
@@ -339,7 +327,6 @@ public class PingS3Helper {
         List<String> advises = new ArrayList<>();
         checkBucketName(advises);
         checkEndpoint(advises);
-        checkCredentialsProvider(advises);
         checkRegion(advises);
         checkForcePathStyle(advises);
         checkTagging(advises);
@@ -377,19 +364,6 @@ public class PingS3Helper {
         }
     }
 
-    private void checkCredentialsProvider(List<String> advises) {
-        if (credentialsProviders == null || credentialsProviders.isEmpty()) {
-            advises.add("no credentials provider is supplied. Please supply a credentials provider.");
-        } else {
-            try {
-                AwsCredentialsProviderChain chain = AwsCredentialsProviderChain.builder().credentialsProviders(credentialsProviders).build();
-                chain.resolveCredentials();
-            } catch (SdkClientException e) {
-                advises.add("all provided credentials providers are invalid. Please supply a valid credentials provider. Error msg: " + e.getMessage());
-            }
-        }
-    }
-
     private void checkRegion(List<String> advises) {
         if (StringUtils.isBlank(bucket.region())) {
             advises.add("region is blank. Please supply a valid region.");
@@ -397,7 +371,7 @@ public class PingS3Helper {
     }
 
     private void checkForcePathStyle(List<String> advises) {
-        if (!bucket.extensionBool(AwsObjectStorage.PATH_STYLE, false)) {
+        if (!bucket.extensionBool(AwsObjectStorage.PATH_STYLE_KEY, false)) {
             advises.add("forcePathStyle is set as false. Please set it as true if you are using minio.");
         }
     }
