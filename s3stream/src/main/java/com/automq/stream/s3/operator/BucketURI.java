@@ -34,8 +34,9 @@ public class BucketURI {
     private static final Pattern BUCKET_URL_PATTERN = Pattern.compile("(\\d+)@(.+)");
     private static final String ENDPOINT_KEY = "endpoint";
     private static final String REGION_KEY = "region";
-    private static final String ACCESS_KEY_KEY = "accessKey";
-    private static final String SECRET_KEY_KEY = "secretKey";
+    public static final String ACCESS_KEY_KEY = "accessKey";
+    public static final String SECRET_KEY_KEY = "secretKey";
+    private static final String EMPTY_STRING = "";
     private final short bucketId;
     private final String protocol;
     private final String bucket;
@@ -70,9 +71,9 @@ public class BucketURI {
             }
             bucket = path.substring(2);
             Map<String, List<String>> queries = splitQuery(uri);
-            String endpoint = getString(queries, ENDPOINT_KEY);
+            String endpoint = getString(queries, ENDPOINT_KEY, EMPTY_STRING);
             queries.remove(ENDPOINT_KEY);
-            String region = getString(queries, REGION_KEY);
+            String region = getString(queries, REGION_KEY, EMPTY_STRING);
             queries.remove(REGION_KEY);
             return new BucketURI(bucketId, protocol, endpoint, bucket, region, queries);
         } catch (URISyntaxException e) {
@@ -116,8 +117,8 @@ public class BucketURI {
         return region;
     }
 
-    public String extensionString(String key) {
-        return getString(extension, key);
+    public String extensionString(String key, String defaultVal) {
+        return getString(extension, key, defaultVal);
     }
 
     public List<String> extensionStringList(String key) {
@@ -125,7 +126,7 @@ public class BucketURI {
     }
 
     public boolean extensionBool(String key, boolean defaultVal) {
-        String value = getString(extension, key);
+        String value = getString(extension, key, null);
         if (StringUtils.isBlank(value)) {
             return defaultVal;
         }
@@ -156,10 +157,10 @@ public class BucketURI {
         return sb.toString();
     }
 
-    private static String getString(Map<String, List<String>> queries, String key) {
+    private static String getString(Map<String, List<String>> queries, String key, String defaultValue) {
         List<String> value = queries.get(key);
         if (value == null) {
-            return "";
+            return defaultValue;
         }
         if (value.size() > 1) {
             throw new IllegalArgumentException("expect only one value for key: " + key + " but found " + value);

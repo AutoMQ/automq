@@ -23,6 +23,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -31,9 +32,11 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
@@ -66,7 +69,11 @@ import static com.automq.stream.utils.FutureUtil.cause;
 @SuppressWarnings("this-escape")
 public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
-    public static final String PATH_STYLE = "pathStyle";
+    public static final String PATH_STYLE_KEY = "pathStyle";
+    public static final String AUTH_TYPE_KEY = "authType";
+    public static final String STATIC_AUTH_TYPE = "static";
+    public static final String INSTANCE_AUTH_TYPE = "instance";
+
     public static final int AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 1000;
 
     private final String bucket;
@@ -74,14 +81,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
 
+    private volatile static InstanceProfileCredentialsProvider instanceProfileCredentialsProvider;
+
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
-        List<AwsCredentialsProvider> credentialsProviders,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate, boolean checkMode) {
         super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
         this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
-        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE, false), credentialsProviders, getMaxObjectStorageConcurrency());
+        List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
+        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, false), credentialsProviders, getMaxObjectStorageConcurrency());
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
         readinessCheck();
@@ -279,6 +288,36 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     .collect(Collectors.toList()));
     }
 
+    protected List<AwsCredentialsProvider> credentialsProviders() {
+        String authType = bucketURI.extensionString(AUTH_TYPE_KEY, STATIC_AUTH_TYPE);
+        switch (authType) {
+            case STATIC_AUTH_TYPE: {
+                String accessKey = bucketURI.extensionString(BucketURI.ACCESS_KEY_KEY, System.getenv("KAFKA_S3_ACCESS_KEY"));
+                String secretKey = bucketURI.extensionString(BucketURI.SECRET_KEY_KEY, System.getenv("KAFKA_S3_SECRET_KEY"));
+                if (StringUtils.isBlank(accessKey) || StringUtils.isBlank(secretKey)) {
+                    return Collections.emptyList();
+                }
+                return List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
+            }
+            case INSTANCE_AUTH_TYPE: {
+                return List.of(instanceProfileCredentialsProvider());
+            }
+            default:
+                throw new UnsupportedOperationException("Unsupported auth type: " + authType);
+        }
+    }
+
+    protected InstanceProfileCredentialsProvider instanceProfileCredentialsProvider() {
+        if (instanceProfileCredentialsProvider == null) {
+            synchronized (AwsObjectStorage.class) {
+                if (instanceProfileCredentialsProvider == null) {
+                    instanceProfileCredentialsProvider = InstanceProfileCredentialsProvider.builder().build();
+                }
+            }
+        }
+        return instanceProfileCredentialsProvider;
+    }
+
     private String range(long start, long end) {
         if (end == -1L) {
             return "bytes=" + start + "-";
@@ -331,7 +370,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     public static class Builder {
         private BucketURI bucketURI;
-        private List<AwsCredentialsProvider> credentialsProviders;
         private Map<String, String> tagging;
         private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
         private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
@@ -342,11 +380,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
         public Builder bucket(BucketURI bucketURI) {
             this.bucketURI = bucketURI;
-            return this;
-        }
-
-        public Builder credentialsProviders(List<AwsCredentialsProvider> credentialsProviders) {
-            this.credentialsProviders = credentialsProviders;
             return this;
         }
 
@@ -376,8 +409,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         public AwsObjectStorage build() {
-            return new AwsObjectStorage(bucketURI, tagging, credentialsProviders,
-                inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel);
+            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel);
         }
     }
 }

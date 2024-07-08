@@ -11,12 +11,9 @@
 
 package org.apache.kafka.controller.stream;
 
-import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.shell.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
-import java.util.List;
 
 public class StreamClient {
     private final Config streamConfig;
@@ -26,7 +23,6 @@ public class StreamClient {
         this.streamConfig = streamConfig;
         this.objectStorage = AwsObjectStorage.builder()
             .bucket(streamConfig.dataBuckets().get(0))
-            .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get()))
             .tagging(streamConfig.objectTagging())
             .build();
     }
