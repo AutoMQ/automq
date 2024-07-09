@@ -465,6 +465,9 @@ public class S3ObjectControlManager {
         private void batchDelete(List<S3Object> objects,
                                  Function<List<S3Object>, CompletableFuture<Void>> deleteFunc,
                                  List<CompletableFuture<Void>> cfList) {
+            if (objects.isEmpty()) {
+                return;
+            }
             CollectionHelper.groupListByBatchSizeAsStream(objects, AwsObjectStorage.AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER)
                     .map(deleteFunc)
                     .forEach(cfList::add);
