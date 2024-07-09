@@ -187,6 +187,9 @@ public class AutoMQConfig {
     public static final String S3_TELEMETRY_OPS_ENABLED_CONFIG = "s3.telemetry.ops.enabled";
     public static final String S3_TELEMETRY_OPS_ENABLED_DOC = "Enable ops telemetry.";
 
+    public static final String CLUSTER_ID_CONFIG = "cluster.id";
+    public static final String CLUSTER_ID_DOC = "If the cluster.id is set, Kafka will auto format the storage.";
+
     // Deprecated config start
     public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";
     public static final String S3_ENDPOINT_DOC = "[DEPRECATED]please use s3.data.buckets. The object storage endpoint, ex. <code>https://s3.us-east-1.amazonaws.com</code>.";
