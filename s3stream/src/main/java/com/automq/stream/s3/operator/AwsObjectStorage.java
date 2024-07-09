@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.CollectionHelper;
 import io.netty.buffer.ByteBuf;
@@ -240,13 +241,24 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    boolean isUnrecoverable(Throwable ex) {
+    RetryStrategy toRetryStrategy(Throwable ex, S3Operation operation) {
         ex = cause(ex);
         if (ex instanceof S3Exception) {
             S3Exception s3Ex = (S3Exception) ex;
-            return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND;
+            switch (operation) {
+                case COMPLETE_MULTI_PART_UPLOAD:
+                    if (s3Ex.statusCode() == HttpStatusCode.FORBIDDEN) {
+                        return RetryStrategy.ABORT;
+                    } else if (s3Ex.statusCode() == HttpStatusCode.NOT_FOUND) {
+                        return RetryStrategy.VISIBILITY_CHECK;
+                    }
+                    return RetryStrategy.RETRY;
+                default:
+                    return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND ?
+                        RetryStrategy.ABORT : RetryStrategy.RETRY;
+            }
         }
-        return false;
+        return RetryStrategy.RETRY;
     }
 
     @Override
