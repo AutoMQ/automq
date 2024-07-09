@@ -307,7 +307,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
     }
 
-    protected InstanceProfileCredentialsProvider instanceProfileCredentialsProvider() {
+    protected AwsCredentialsProvider instanceProfileCredentialsProvider() {
         if (instanceProfileCredentialsProvider == null) {
             synchronized (AwsObjectStorage.class) {
                 if (instanceProfileCredentialsProvider == null) {
