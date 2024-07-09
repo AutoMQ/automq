@@ -36,7 +36,7 @@ public interface StreamClient {
     CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions options);
 
     /**
-     * Retrive an opened stream.
+     * Retrieve an opened stream.
      *
      * @param streamId stream id.
      * @return {@link Optional<Stream>}.

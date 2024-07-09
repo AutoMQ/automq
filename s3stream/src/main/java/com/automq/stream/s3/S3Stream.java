@@ -420,7 +420,7 @@ public class S3Stream implements Stream {
             this.pooledBuf = pooledBuf;
             this.records = new ArrayList<>(streamRecords.size());
             for (StreamRecordBatch streamRecordBatch : streamRecords) {
-                RecordBatch recordBatch = covert(streamRecordBatch, pooledBuf);
+                RecordBatch recordBatch = convert(streamRecordBatch, pooledBuf);
                 records.add(new RecordBatchWithContextWrapper(recordBatch, streamRecordBatch.getBaseOffset()));
             }
             this.cacheAccessType = cacheAccessType;
@@ -431,7 +431,7 @@ public class S3Stream implements Stream {
             }
         }
 
-        private static RecordBatch covert(StreamRecordBatch streamRecordBatch, boolean pooledBuf) {
+        private static RecordBatch convert(StreamRecordBatch streamRecordBatch, boolean pooledBuf) {
             ByteBuffer buf;
             if (pooledBuf) {
                 buf = streamRecordBatch.getPayload().nioBuffer();

@@ -70,7 +70,7 @@ public class TopicDeletionManager {
                 try {
                     return this.cleanupDeletedTopics0();
                 } catch (Throwable ex) {
-                    LOGGER.error("[CLEANUP_DELETED_TOPIC],[UNEXPECT]", ex);
+                    LOGGER.error("[CLEANUP_DELETED_TOPIC],[UNEXPECTED]", ex);
                     return ControllerResult.of(Collections.emptyList(), null);
                 }
             });

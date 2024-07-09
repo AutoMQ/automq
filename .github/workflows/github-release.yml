@@ -1,4 +1,4 @@
-name: Github Release
+name: GitHub Release
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   github-release:
-    name: Github Release with tgz
+    name: GitHub Release with tgz
     strategy:
       matrix:
         platform: [ "ubuntu-22.04" ]
