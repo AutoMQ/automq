@@ -60,6 +60,8 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
+
 public class CompactionManager {
     private static final int MIN_COMPACTION_DELAY_MS = 60000;
     // Max refill rate for Bucket: 1 token per nanosecond
@@ -529,7 +531,7 @@ public class CompactionManager {
         }
 
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
-        request.setObjectId(-1L);
+        request.setObjectId(NOOP_OBJECT_ID);
 
         // wait for all force split objects to complete
         synchronized (this) {

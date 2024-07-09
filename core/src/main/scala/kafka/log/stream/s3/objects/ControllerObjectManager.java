@@ -47,6 +47,8 @@ import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
+
 public class ControllerObjectManager implements ObjectManager {
 
     private final static Logger LOGGER = LoggerFactory.getLogger(ControllerObjectManager.class);
@@ -126,7 +128,7 @@ public class ControllerObjectManager implements ObjectManager {
                 .map(s -> Convertor.toStreamObjectInRequest(s, version.get())).collect(Collectors.toList()))
             .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
             .setFailoverMode(failoverMode);
-        if (commitStreamSetObjectRequest.getAttributes() == ObjectAttributes.UNSET.attributes()) {
+        if (commitStreamSetObjectRequest.getObjectId() != NOOP_OBJECT_ID && commitStreamSetObjectRequest.getAttributes() == ObjectAttributes.UNSET.attributes()) {
             throw new IllegalArgumentException("[BUG]attributes must be set");
         }
         if (version.get().isObjectAttributesSupported()) {
