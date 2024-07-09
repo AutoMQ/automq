@@ -237,9 +237,7 @@ class LocalLog(@volatile protected var _dir: File,
    * Asynchronously closes the segments of the log.
    */
   private[log] def asyncClose(): CompletableFuture[Void] = {
-    CompletableFuture.completedFuture(() -> {
-      close()
-    })
+    CompletableFuture.runAsync(() => close())
   }
 
   /**

@@ -473,9 +473,7 @@ class ElasticLog(val metaStream: MetaStream,
      * ref. LocalLog#asyncClose
      */
     override private[log] def asyncClose(): CompletableFuture[Void] = {
-        CompletableFuture.completedFuture(() -> {
-            close()
-        })
+        CompletableFuture.runAsync(() => close())
     }
 
     /**
