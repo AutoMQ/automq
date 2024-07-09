@@ -16,6 +16,7 @@ import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.charset.StandardCharsets;
@@ -90,11 +91,7 @@ public class PingS3Helper {
     public void pingS3() {
         // TODO: better ping to support multiple buckets and multiple cloud
         try {
-            objectStorage = AwsObjectStorage.builder()
-                .bucket(bucket)
-                .tagging(tagging)
-                .checkS3ApiModel(true)
-                .build();
+            objectStorage = ObjectStorageFactory.instance().builder(bucket).tagging(tagging).checkS3ApiModel(true).build();
         } catch (Exception e) {
             handleException(e, "Delete objects");
         }
