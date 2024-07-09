@@ -161,7 +161,6 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         int streamSetObjectIndex = 0;
         fillObjects(ctx, stream, objects, lastRangeIndex, streamObjectIndex, streamObjects, streamSetObjectIndex,
             null, null);
-        ctx.cf.complete(new InRangeObjects(streamId, objects));
     }
 
     void fillObjects(GetObjectsContext ctx, S3StreamMetadataImage stream, List<S3ObjectMetadata> objects, int lastRangeIndex,
@@ -200,6 +199,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 // 1. can not find the range containing nextStartOffset, or
                 // 2. the range is the same as the last one, which means the nextStartOffset does not move on.
                 if (rangeIndex < 0 || lastRangeIndex == rangeIndex) {
+                    ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
                     break;
                 }
                 lastRangeIndex = rangeIndex;
