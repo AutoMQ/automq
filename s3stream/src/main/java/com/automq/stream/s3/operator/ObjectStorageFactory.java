@@ -68,9 +68,17 @@ public class ObjectStorageFactory {
             return this;
         }
 
+        public BucketURI bucket() {
+            return bucketURI;
+        }
+
         public Builder tagging(Map<String, String> tagging) {
             this.tagging = tagging;
             return this;
+        }
+
+        public Map<String, String> tagging() {
+            return tagging;
         }
 
         public Builder inboundLimiter(NetworkBandwidthLimiter inboundLimiter) {
@@ -78,9 +86,17 @@ public class ObjectStorageFactory {
             return this;
         }
 
+        public NetworkBandwidthLimiter inboundLimiter() {
+            return inboundLimiter;
+        }
+
         public Builder outboundLimiter(NetworkBandwidthLimiter outboundLimiter) {
             this.outboundLimiter = outboundLimiter;
             return this;
+        }
+
+        public NetworkBandwidthLimiter outboundLimiter() {
+            return outboundLimiter;
         }
 
         public Builder readWriteIsolate(boolean readWriteIsolate) {
@@ -88,9 +104,17 @@ public class ObjectStorageFactory {
             return this;
         }
 
+        public boolean readWriteIsolate() {
+            return readWriteIsolate;
+        }
+
         public Builder checkS3ApiModel(boolean checkS3ApiModel) {
             this.checkS3ApiModel = checkS3ApiModel;
             return this;
+        }
+
+        public boolean checkS3ApiModel() {
+            return checkS3ApiModel;
         }
 
         public ObjectStorage build() {
