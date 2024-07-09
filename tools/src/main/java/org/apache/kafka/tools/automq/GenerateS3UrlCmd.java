@@ -152,7 +152,7 @@ public class GenerateS3UrlCmd {
 
         // precheck
         String bucketURLStr = "0@s3://" + parameter.s3DataBucket
-            + "?region=" + parameter.s3Endpoint
+            + "?region=" + parameter.s3Region
             + "&endpoint=" + parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint
             + "&pathStyle=" + parameter.s3PathStyle;
         PingS3Helper pingS3Helper = PingS3Helper.builder()
