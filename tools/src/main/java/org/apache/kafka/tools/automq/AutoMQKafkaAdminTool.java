@@ -31,6 +31,11 @@ public class AutoMQKafkaAdminTool {
     public static final String GENERATE_CONFIG_PROPERTIES_CMD = "generate-configuration-properties";
 
     public static void main(String[] args) {
+        // TODO: change to the bucket url
+        if (true) {
+            System.err.println("This tool is outdated. The new tool is coming soon");
+            return;
+        }
         // suppress slf4j inner warning log
         System.err.close();
         ArgumentParser parser = ArgumentParsers
