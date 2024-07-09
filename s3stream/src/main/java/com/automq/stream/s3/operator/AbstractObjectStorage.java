@@ -347,6 +347,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
+        if (objectPaths.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
         CompletableFuture<Void> cf = new CompletableFuture<>();
         for (ObjectPath objectPath: objectPaths) {
             if (!bucketCheck(objectPath.bucketId(), cf)) {
