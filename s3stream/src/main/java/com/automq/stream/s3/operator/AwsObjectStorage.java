@@ -362,8 +362,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
         private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
         private boolean readWriteIsolate;
-        private int maxReadConcurrency = 50;
-        private int maxWriteConcurrency = 50;
         private boolean checkS3ApiModel = false;
 
         public Builder bucket(BucketURI bucketURI) {
