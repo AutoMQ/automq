@@ -13,6 +13,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
@@ -157,9 +158,10 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    boolean isUnrecoverable(Throwable ex) {
+    RetryStrategy toRetryStrategy(Throwable ex, S3Operation operation) {
         Throwable cause = FutureUtil.cause(ex);
-        return cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException;
+        return cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException
+            ? RetryStrategy.ABORT : RetryStrategy.RETRY;
     }
 
     @Override
