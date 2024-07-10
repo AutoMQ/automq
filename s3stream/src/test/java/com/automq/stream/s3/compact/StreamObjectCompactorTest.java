@@ -51,12 +51,12 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.builder;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.group0;
 import static com.automq.stream.s3.objects.ObjectAttributes.Type.Composite;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -153,19 +153,21 @@ class StreamObjectCompactorTest {
         List<S3ObjectMetadata> objectMetadataGroup =
             List.of(s3ObjectMetadata);
 
-        boolean doCompact = StreamObjectCompactor.checkObjectGroupCouldBeCompact(objectMetadataGroup,
-            0, MAJOR_V1);
+        SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP.forEach(type -> {
+            boolean doCompact = StreamObjectCompactor.checkObjectGroupCouldBeCompact(objectMetadataGroup,
+                0, type);
 
-        // MAJOR_V1 compaction should not compact
-        // only one s3ObjectMetadata in group
-        // which may cause the object to be linked to itself.
-        assertFalse(doCompact);
+            // MAJOR_V1 compaction should not compact
+            // only one s3ObjectMetadata in group
+            // which may cause the object to be linked to itself.
+            assertFalse(doCompact);
+        });
 
         boolean doCleanupWhenMajorV1Compaction =
             StreamObjectCompactor.checkObjectGroupCouldBeCompact(objectMetadataGroup,
             512 * 1024 * 1024 * 3, MAJOR_V1);
-        // clean up only one s3ObjectMetadata in group when dirty bytes exceeded.
-        assertTrue(doCleanupWhenMajorV1Compaction);
+        // MAJOR_V1 should not trigger cleanup even exceeded threshold for now.
+        assertFalse(doCleanupWhenMajorV1Compaction);
     }
 
     @Test
