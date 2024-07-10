@@ -50,4 +50,14 @@ public class BucketURITest {
         assertEquals("azblob", buckets.get(2).protocol());
     }
 
+    @Test
+    public void testParseBucket() {
+        String bucketStr = "0@s3://bucket-1?region=region1";
+        BucketURI bucket = BucketURI.parse(bucketStr);
+        assertEquals("bucket-1", bucket.bucket());
+
+        bucketStr = "0@s3://bucket+1";
+        bucket = BucketURI.parse(bucketStr);
+        assertEquals("bucket+1", bucket.bucket());
+    }
 }
