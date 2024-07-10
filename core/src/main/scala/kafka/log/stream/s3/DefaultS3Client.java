@@ -120,7 +120,18 @@ public class DefaultS3Client implements Client {
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
+        this.writeAheadLog = buildWAL(credentialsProviders);
+        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
+        // stream object compactions share the same object storage with stream set object compactions
+        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
+        this.kvClient = new ControllerKVClient(this.requestSender);
+        this.failover = failover();
 
+        S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
+        S3StreamThreadPoolMonitor.init();
+    }
+
+    private WriteAheadLog buildWAL(List<AwsCredentialsProvider> credentialsProviders) {
         BucketURI bucketURI;
         try {
             bucketURI = BucketURI.parse(config.walPath());
@@ -129,8 +140,7 @@ public class DefaultS3Client implements Client {
         }
         switch (bucketURI.protocol()) {
             case "file":
-                this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
-                break;
+                return BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
             case "s3":
                 ObjectStorage walObjectStorage = AwsObjectStorage.builder()
                     .bucket(bucketURI)
@@ -159,20 +169,10 @@ public class DefaultS3Client implements Client {
                 if (StringUtils.isNumeric(maxInflightUploadCount)) {
                     configBuilder.withMaxInflightUploadCount(Integer.parseInt(maxInflightUploadCount));
                 }
-                this.writeAheadLog = new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
-                break;
+                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
             default:
                 throw new IllegalArgumentException("Invalid WAL schema: " + bucketURI.protocol());
         }
-
-        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
-        // stream object compactions share the same object storage with stream set object compactions
-        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
-        this.kvClient = new ControllerKVClient(this.requestSender);
-        this.failover = failover();
-
-        S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
-        S3StreamThreadPoolMonitor.init();
     }
 
     @Override
