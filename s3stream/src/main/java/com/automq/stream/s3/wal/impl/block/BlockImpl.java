@@ -54,6 +54,7 @@ public class BlockImpl implements Block {
      * {@link #release()} must be called when this block is no longer used.
      */
     public BlockImpl(long startOffset, long maxSize, long softLimit) {
+        assert maxSize >= softLimit;
         this.startOffset = startOffset;
         this.maxSize = maxSize;
         this.softLimit = softLimit;
