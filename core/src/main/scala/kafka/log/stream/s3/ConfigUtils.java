@@ -49,5 +49,4 @@ public class ConfigUtils {
             .refillPeriodMs(s.s3RefillPeriodMsProp())
             .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond());
     }
-
 }

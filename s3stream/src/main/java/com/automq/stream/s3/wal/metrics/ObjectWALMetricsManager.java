@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
-public class ObjectStorageWALMetricsManager {
+public class ObjectWALMetricsManager {
     private static ObservableLongGauge inflightuploadCount = new NoopObservableLongGauge();
     private static ObservableLongGauge bufferedDataSizeInBytes = new NoopObservableLongGauge();
     private static ObservableLongGauge objectDataSizeInBytes = new NoopObservableLongGauge();
@@ -80,14 +80,14 @@ public class ObjectStorageWALMetricsManager {
     }
 
     public static void setInflightUploadCountSupplier(Supplier<Long> inflightuploadCountSupplier) {
-        ObjectStorageWALMetricsManager.inflightUploadCountSupplier = inflightuploadCountSupplier;
+        ObjectWALMetricsManager.inflightUploadCountSupplier = inflightuploadCountSupplier;
     }
 
     public static void setBufferedDataInBytesSupplier(Supplier<Long> bufferedDataInBytesSupplier) {
-        ObjectStorageWALMetricsManager.bufferedDataInBytesSupplier = bufferedDataInBytesSupplier;
+        ObjectWALMetricsManager.bufferedDataInBytesSupplier = bufferedDataInBytesSupplier;
     }
 
     public static void setObjectDataInBytesSupplier(Supplier<Long> objectDataInBytesSupplier) {
-        ObjectStorageWALMetricsManager.objectDataInBytesSupplier = objectDataInBytesSupplier;
+        ObjectWALMetricsManager.objectDataInBytesSupplier = objectDataInBytesSupplier;
     }
 }

@@ -983,6 +983,7 @@ project(':core') {
     implementation libs.slf4jBridge
     implementation libs.nettyHttp2
     implementation project(':s3stream')
+    implementation libs.guava
 
     implementation libs.opentelemetryJava8
     implementation libs.opentelemetryOshi

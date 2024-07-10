@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal.impl.s3;
+package com.automq.stream.s3.wal.impl.object;
 
-public class ObjectStorageWALConfig {
+public class ObjectWALConfig {
     private final long batchInterval;
     private final long maxBytesInBatch;
     private final long maxUnflushedBytes;
@@ -25,7 +25,7 @@ public class ObjectStorageWALConfig {
         return new Builder();
     }
 
-    public ObjectStorageWALConfig(long batchInterval, long maxBytesInBatch, long maxUnflushedBytes, int maxInflightUploadCount,
+    public ObjectWALConfig(long batchInterval, long maxBytesInBatch, long maxUnflushedBytes, int maxInflightUploadCount,
         String clusterId, int nodeId, long epoch, boolean failover) {
         this.batchInterval = batchInterval;
         this.maxBytesInBatch = maxBytesInBatch;
@@ -122,8 +122,8 @@ public class ObjectStorageWALConfig {
             return this;
         }
 
-        public ObjectStorageWALConfig build() {
-            return new ObjectStorageWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, clusterId, nodeId, epoch, failover);
+        public ObjectWALConfig build() {
+            return new ObjectWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, clusterId, nodeId, epoch, failover);
         }
     }
 }
