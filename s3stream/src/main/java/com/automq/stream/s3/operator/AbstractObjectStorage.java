@@ -397,7 +397,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public void close() {
+        writeLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
+        writeCallbackExecutor.shutdown();
         scheduler.shutdown();
         doClose();
     }
