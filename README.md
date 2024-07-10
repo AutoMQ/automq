@@ -1,11 +1,29 @@
 ## AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3 and EBS
 
+</div>
+
+<p align="center">
+  🔥&nbsp <a
+    href="https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud"
+    target="_blank"
+  ><b>Free trail of AutoMQ Cloud</b></a>&nbsp&nbsp&nbsp
+  📑&nbsp <a
+    href="https://docs.automq.com/docs/automq-opensource/HSiEwHVfdiO7rWk34vKcVvcvn2Z"
+    target="_blank"
+  ><b>Documentation</b></a>
+
+
+</p>
+
+
 ![GitHub release (with filter)](https://img.shields.io/github/v/release/AutoMQ/automq)
 [![](https://img.shields.io/badge/Document-blue)](https://docs.automq.com/docs/automq-s3kafka/YUzOwI7AgiNIgDk1GJAcu6Uanog)
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison)
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd)
 [![Twitter URL](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)
 [![](https://img.shields.io/badge/-%20Wechat%20-red?style=social&logo=discourse)](docs/images/automq-wechat.png)
+[![](https://badgen.net/badge/Slack/Join%20AutoMQ/0abd59?icon=slack)]([docs/images/automq-wechat.png](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA))
+
 
 ---
 
@@ -172,6 +190,11 @@ You can join the following groups or channels to discuss or ask questions about 
 If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq/issues).
 To contribute to AutoMQ please see [Code of Conduct](CODE_OF_CONDUCT.md) and [Contributing Guide](CONTRIBUTING_GUIDE.md).
 We have a list of [good first issues](https://github.com/AutoMQ/automq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process. To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. If you have any questions about the 'good first issue' please feel free to ask. We will do our best to clarify any doubts you may have.
+
+## Commercial Version of AutoMQ
+The enterprise version of AutoMQ provides a powerful and easy-to-use control plane to help you manage clusters effortlessly. Meanwhile, the control plane is more powerful in terms of availability and observability compared to the community version.
+![]((docs/images/automq_dashboard.jpeg))
+To allow users interested in our enterprise version to experience the capabilities of the AutoMQ commercial version without any barriers, click here to apply for a no-obligation cluster trial, and note `AutoMQ Enterprise Free Trial` in the message input box. We will immediately initialize an AutoMQ enterprise control plane for you in the cloud and give you the address of control panel. No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh). We will further support your official POC.
 
 ## 🙋 Contact Us
 Want to learn more, [Talk with our product experts](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh).
