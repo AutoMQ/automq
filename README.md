@@ -8,7 +8,7 @@
     target="_blank"
   ><b>Free trail of AutoMQ Cloud</b></a>&nbsp&nbsp&nbsp
   📑&nbsp <a
-    href="https://docs.automq.com/docs/automq-opensource/HSiEwHVfdiO7rWk34vKcVvcvn2Z"
+    href="https://docs.automq.com/docs/automq-opensource/HSiEwHVfdiO7rWk34vKcVvcvn2Z?utm_source=github"
     target="_blank"
   ><b>Documentation</b></a>
 
@@ -194,7 +194,7 @@ We have a list of [good first issues](https://github.com/AutoMQ/automq/issues?q=
 ## Commercial Version of AutoMQ
 The enterprise version of AutoMQ provides a powerful and easy-to-use control plane to help you manage clusters effortlessly. Meanwhile, the control plane is more powerful in terms of availability and observability compared to the community version.
 ![]((docs/images/automq_dashboard.jpeg))
-To allow users interested in our enterprise version to experience the capabilities of the AutoMQ commercial version without any barriers, click here to apply for a no-obligation cluster trial, and note `AutoMQ Enterprise Free Trial` in the message input box. We will immediately initialize an AutoMQ enterprise control plane for you in the cloud and give you the address of control panel. No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh). We will further support your official POC.
+To allow users interested in our enterprise version to experience the capabilities of the AutoMQ commercial version without any barriers, click [here](https://www.automq.com/quick-start#Enterprise?utm_source=github_enterprise) to apply for a no-obligation cluster trial, and note `AutoMQ Enterprise Free Trial` in the message input box. We will immediately initialize an AutoMQ enterprise control plane for you in the cloud and give you the address of control panel. No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh?utm_source=github_poc). We will further support your official POC.
 
 ## 🙋 Contact Us
 Want to learn more, [Talk with our product experts](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh).
