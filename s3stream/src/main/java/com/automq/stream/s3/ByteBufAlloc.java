@@ -30,10 +30,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ByteBufAlloc {
-    public static void main(String[] args) {
 
-        System.out.println(ByteBufAlloc.MEMORY_USAGE_DETECTION_INTERVAL);
-    }
     public static final String AUTOMQ_MEMORY_USAGE_DETECT = "AUTOMQ_MEMORY_USAGE_DETECT";
     public static final String AUTOMQ_MEMORY_USAGE_DETECT_INTERVAL = "AUTOMQ_MEMORY_USAGE_DETECT_INTERVAL";
     public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv(AUTOMQ_MEMORY_USAGE_DETECT));
