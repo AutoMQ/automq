@@ -231,7 +231,7 @@ public class RecordAccumulator implements Closeable {
     }
 
     // Visible for testing
-    protected ScheduledExecutorService executorService() {
+    public ScheduledExecutorService executorService() {
         return executorService;
     }
 
@@ -333,7 +333,8 @@ public class RecordAccumulator implements Closeable {
     }
 
     // Not thread safe, caller should hold lock.
-    protected void unsafeUpload(boolean force) throws OverCapacityException {
+    // Visible for testing.
+    public void unsafeUpload(boolean force) throws OverCapacityException {
         if (!force) {
             checkWriteStatus();
         }

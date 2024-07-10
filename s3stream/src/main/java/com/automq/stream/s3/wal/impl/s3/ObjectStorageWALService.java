@@ -40,10 +40,9 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 public class ObjectStorageWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectStorageWALService.class);
 
-    private final ObjectStorage objectStorage;
-    private final RecordAccumulator accumulator;
+    protected ObjectStorage objectStorage;
+    protected RecordAccumulator accumulator;
 
-    // TODO: Mode: Write or Recover
     public ObjectStorageWALService(Time time, ObjectStorage objectStorage, ObjectStorageWALConfig config) {
         this.objectStorage = objectStorage;
         this.accumulator = new RecordAccumulator(time, objectStorage, config);
@@ -85,7 +84,6 @@ public class ObjectStorageWALService implements WriteAheadLog {
 
     @Override
     public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
-        // TODO: check wal mode
         final long recordSize = RECORD_HEADER_SIZE + data.readableBytes();
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
         long expectedWriteOffset = accumulator.append(recordSize, start -> record(data, crc, start), appendResultFuture);
@@ -95,7 +93,6 @@ public class ObjectStorageWALService implements WriteAheadLog {
 
     @Override
     public Iterator<RecoverResult> recover() {
-        // TODO: check wal mode
         return new Iterator<>() {
             // TODO: Recover only the objects with the latest epoch.
             private List<RecordAccumulator.WALObject> objectList = accumulator.objectList();
