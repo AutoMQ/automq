@@ -37,6 +37,7 @@ import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -77,6 +78,9 @@ public class StreamObjectCompactor {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectCompactor.class);
     public static final int DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD = 1024 * 1024; // 1MiB
     private static final long MAX_DIRTY_BYTES = 512 * 1024 * 1024;
+    protected static final EnumSet<CompactionType> SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP =
+        EnumSet.of(MINOR, MAJOR, MINOR_V1, MAJOR_V1);
+
     private final Logger s3ObjectLogger;
     private final long maxStreamObjectSize;
     private final Stream stream;
@@ -181,7 +185,7 @@ public class StreamObjectCompactor {
 
     static boolean checkObjectGroupCouldBeCompact(List<S3ObjectMetadata> objectGroup, long startOffset,
         CompactionType compactionType) {
-        if (objectGroup.size() == 1 && (MINOR.equals(compactionType) || MAJOR.equals(compactionType) || MINOR_V1.equals(compactionType))) {
+        if (objectGroup.size() == 1 && SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP.contains(compactionType)) {
             return false;
         }
         if (CLEANUP_V1.equals(compactionType)) {

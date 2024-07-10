@@ -332,6 +332,16 @@ public class CompositeObjectReader implements ObjectReader {
         public short bucketId() {
             return bucketId;
         }
+
+        @Override
+        public String toString() {
+            return "ObjectIndex{" +
+                "objectId=" + objectId +
+                ", blockStartIndex=" + blockStartIndex +
+                ", blockEndIndex=" + blockEndIndex +
+                ", bucketId=" + bucketId +
+                '}';
+        }
     }
 
 }
