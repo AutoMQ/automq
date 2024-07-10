@@ -81,9 +81,6 @@ public class GenerateS3UrlCmd {
     }
 
     public static ArgumentParser addArguments(Subparser parser) {
-        parser.addArgument("generate-s3-url")
-            .action(store())
-            .required(true);
         parser.addArgument("--s3-access-key")
             .action(store())
             .required(true)
