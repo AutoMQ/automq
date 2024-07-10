@@ -55,8 +55,8 @@ public class RecordAccumulator implements Closeable {
     private final String nodePrefix;
     private final String objectPrefix;
 
-    private final Time time;
-    private final ObjectStorage objectStorage;
+    protected final Time time;
+    protected final ObjectStorage objectStorage;
 
     private final ScheduledExecutorService executorService;
     private final ScheduledExecutorService monitorService;
