@@ -198,6 +198,7 @@ The enterprise version of AutoMQ provides a powerful and easy-to-use control pla
 
 ![](docs/images/automq_dashboard.jpeg)
 
+### Free trial of AutoMQ Enterprise
 To allow users interested in our enterprise version to experience the capabilities of the AutoMQ commercial version without any barriers, click [here](https://www.automq.com/quick-start#Enterprise?utm_source=github_enterprise) to apply for a no-obligation cluster trial, and note `AutoMQ Enterprise Free Trial` in the message input box. We will immediately initialize an AutoMQ enterprise control plane for you in the cloud and give you the address of control panel. No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh?utm_source=github_poc). We will further support your official POC.
 
 ## 🙋 Contact Us
