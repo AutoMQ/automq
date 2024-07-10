@@ -70,27 +70,11 @@ public class ObjectStorageWALService implements WriteAheadLog {
         return new WALMetadata(config.nodeId(), config.epoch());
     }
 
-    private ByteBuf recordHeader(ByteBuf body, int crc, long start) {
-        return new RecordHeader()
-            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-            .setRecordBodyLength(body.readableBytes())
-            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
-            .setRecordBodyCRC(crc)
-            .marshal();
-    }
-
-    private ByteBuf record(ByteBuf body, int crc, long start) {
-        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
-        crc = 0 == crc ? WALUtil.crc32(body) : crc;
-        record.addComponents(true, recordHeader(body, crc, start), body);
-        return record;
-    }
-
     @Override
     public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
         final long recordSize = RECORD_HEADER_SIZE + data.readableBytes();
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
-        long expectedWriteOffset = accumulator.append(recordSize, start -> record(data, crc, start), appendResultFuture);
+        long expectedWriteOffset = accumulator.append(recordSize, start -> WALUtil.generateRecord(data, crc, start), appendResultFuture);
 
         return new AppendResultImpl(expectedWriteOffset, appendResultFuture);
     }
