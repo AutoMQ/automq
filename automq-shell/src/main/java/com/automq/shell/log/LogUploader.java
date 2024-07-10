@@ -37,7 +37,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,7 +95,7 @@ public class LogUploader implements LogRecorder {
 
     private boolean couldUpload() {
         initConfiguration();
-        boolean enabled = config != null && config.isEnabled() && StringUtils.isNotBlank(config.s3OpsBucket());
+        boolean enabled = config != null && config.isEnabled() && config.bucket() != null;
 
         if (enabled) {
             initUploadComponent();
@@ -122,10 +121,7 @@ public class LogUploader implements LogRecorder {
                     startFuture = CompletableFuture.runAsync(() -> {
                         try {
                             objectStorage = AwsObjectStorage.builder()
-                                .endpoint(config.s3Endpoint())
-                                .region(config.s3Region())
-                                .bucket(config.s3OpsBucket())
-                                .forcePathStyle(config.s3PathStyle())
+                                .bucket(config.bucket())
                                 .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
                                 .build();
                             uploadThread = new Thread(new UploadTask());
@@ -245,7 +241,7 @@ public class LogUploader implements LogRecorder {
                     if (!objects.isEmpty()) {
                         List<ObjectPath> keyList = objects.stream()
                             .filter(object -> object.timestamp() < expiredTime)
-                            .map(object -> new ObjectPath(object.bucket(), object.key()))
+                            .map(object -> new ObjectPath(object.bucketId(), object.key()))
                             .collect(Collectors.toList());
 
                         if (!keyList.isEmpty()) {

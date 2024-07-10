@@ -110,6 +110,7 @@ public final class DataBlockIndex {
     @Override
     public String toString() {
         return "DataBlockIndex[" +
+            "blockId=" + blockId + ", " +
             "streamId=" + streamId + ", " +
             "startOffset=" + startOffset + ", " +
             "endOffsetDelta=" + endOffsetDelta + ", " +

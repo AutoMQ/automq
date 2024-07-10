@@ -22,7 +22,7 @@ import java.util.Collections;
 import java.util.Map;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
-import kafka.server.KafkaConfig;
+import kafka.automq.AutoMQConfig;
 import kafka.testkit.BrokerNode;
 import kafka.testkit.ControllerNode;
 import kafka.testkit.KafkaClusterTestKit;
@@ -58,8 +58,8 @@ public abstract class AutoBalancerIntegrationTestHarness {
                 broker.propertyOverrides().put(AutoBalancerMetricsReporterConfig.config(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG), HOST + ":" + port[i]);
                 broker.propertyOverrides().put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID,
                         AutoBalancerMetricsReporterConfig.DEFAULT_AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID + "-" + TestUtils.RANDOM.nextLong());
-                broker.propertyOverrides().put(KafkaConfig.ElasticStreamEndpointProp(), "memory://");
-                broker.propertyOverrides().put(KafkaConfig.ElasticStreamEnableProp(), "true");
+                broker.propertyOverrides().put(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG, "memory://");
+                broker.propertyOverrides().put(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, "true");
                 broker.propertyOverrides().putAll(overridingBrokerProps());
                 broker.propertyOverrides().putAll(overridingNodeProps());
                 i++;
@@ -68,8 +68,8 @@ public abstract class AutoBalancerIntegrationTestHarness {
                 controller.propertyOverrides().put(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, "true");
                 controller.propertyOverrides().putAll(overridingControllerProps());
                 controller.propertyOverrides().putAll(overridingNodeProps());
-                controller.propertyOverrides().put(KafkaConfig.ElasticStreamEnableProp(), "true");
-                controller.propertyOverrides().put(KafkaConfig.S3MockEnableProp(), "true");
+                controller.propertyOverrides().put(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, "true");
+                controller.propertyOverrides().put(AutoMQConfig.S3_MOCK_ENABLE_CONFIG, "true");
             }
 
             KafkaClusterTestKit.Builder builder = new KafkaClusterTestKit.Builder(nodes);

@@ -14,7 +14,6 @@ package kafka.log.stream.s3.metadata;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
@@ -143,6 +142,9 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                 pendingCf.thenAccept(nil -> fetch0(cf, streamId, startOffset, endOffset, limit));
                 cf.whenComplete((r, ex) ->
                     LOGGER.info("[FetchObjects],[COMPLETE_PENDING],streamId={} startOffset={} endOffset={} limit={}", streamId, startOffset, endOffset, limit));
+            }).exceptionally(ex -> {
+                cf.completeExceptionally(ex);
+                return null;
             }).whenComplete((nil, ex) -> image.close());
         } catch (Throwable e) {
             image.close();
@@ -292,7 +294,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             }
             // The reader will be release after the find operation
             @SuppressWarnings("resource")
-            ObjectReader reader = objectReaderFactory.get(new S3ObjectMetadata(objectId, s3Object.getObjectSize(), S3ObjectType.STREAM_SET));
+            ObjectReader reader = objectReaderFactory.get(new S3ObjectMetadata(objectId, s3Object.getObjectSize(), s3Object.getAttributes()));
             CompletableFuture<Optional<StreamOffsetRange>> cf = reader.basicObjectInfo().thenApply(info -> info.indexBlock().findStreamOffsetRange(streamId));
             cf.whenComplete((rst, ex) -> reader.release());
             return cf;

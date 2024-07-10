@@ -49,9 +49,12 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByCompos
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByPhysicalMerge;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.builder;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.group0;
+import static com.automq.stream.s3.objects.ObjectAttributes.Type.Composite;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
@@ -136,6 +139,35 @@ class StreamObjectCompactorTest {
                 System.currentTimeMillis(), System.currentTimeMillis(), writer.size(), 4));
         }
         return objects;
+    }
+
+    @Test
+    public void testCheckObjectGroupCouldBeCompact() {
+        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(10, S3ObjectType.COMPOSITE,
+            List.of(new StreamOffsetRange(1, 0, 512 * 1024 * 1024 * 4L)),
+            System.currentTimeMillis());
+        s3ObjectMetadata.setObjectSize(512 * 1024 * 1024 * 4L);
+        s3ObjectMetadata.setAttributes(ObjectAttributes.builder().type(Composite).build().attributes());
+
+        // check only one objectMetadata in group
+        List<S3ObjectMetadata> objectMetadataGroup =
+            List.of(s3ObjectMetadata);
+
+        SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP.forEach(type -> {
+            boolean doCompact = StreamObjectCompactor.checkObjectGroupCouldBeCompact(objectMetadataGroup,
+                0, type);
+
+            // MAJOR_V1 compaction should not compact
+            // only one s3ObjectMetadata in group
+            // which may cause the object to be linked to itself.
+            assertFalse(doCompact);
+        });
+
+        boolean doCleanupWhenMajorV1Compaction =
+            StreamObjectCompactor.checkObjectGroupCouldBeCompact(objectMetadataGroup,
+            512 * 1024 * 1024 * 3, MAJOR_V1);
+        // MAJOR_V1 should not trigger cleanup even exceeded threshold for now.
+        assertFalse(doCleanupWhenMajorV1Compaction);
     }
 
     @Test

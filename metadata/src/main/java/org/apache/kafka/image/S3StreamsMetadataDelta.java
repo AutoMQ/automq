@@ -210,7 +210,7 @@ public final class S3StreamsMetadataDelta {
             }
         }
 
-        RegistryRef registry = image.registry();
+        RegistryRef registry = image.registryRef();
         TimelineHashMap<Long, Long> newStreamEndOffsets;
         if (registry == RegistryRef.NOOP) {
             registry = new RegistryRef();

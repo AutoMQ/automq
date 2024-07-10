@@ -31,20 +31,20 @@ import java.util.concurrent.TimeUnit;
 class ProxyWriter implements Writer {
     final ObjectWriter objectWriter = new ObjectWriter();
     private final WriteOptions writeOptions;
-    private final AbstractObjectStorage operator;
+    private final AbstractObjectStorage objectStorage;
     private final String path;
     private final long minPartSize;
     Writer multiPartWriter = null;
 
-    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage operator, String path, long minPartSize) {
+    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path, long minPartSize) {
         this.writeOptions = writeOptions;
-        this.operator = operator;
+        this.objectStorage = objectStorage;
         this.path = path;
         this.minPartSize = minPartSize;
     }
 
-    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage operator, String path) {
-        this(writeOptions, operator, path, Writer.MIN_PART_SIZE);
+    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path) {
+        this(writeOptions, objectStorage, path, Writer.MIN_PART_SIZE);
     }
 
     @Override
@@ -104,8 +104,13 @@ class ProxyWriter implements Writer {
         }
     }
 
+    @Override
+    public short bucketId() {
+        return writeOptions.bucketId();
+    }
+
     private void newMultiPartWriter() {
-        this.multiPartWriter = new MultiPartWriter(writeOptions, operator, path, minPartSize);
+        this.multiPartWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
         if (objectWriter.data.readableBytes() > 0) {
             FutureUtil.propagate(multiPartWriter.write(objectWriter.data), objectWriter.cf);
         } else {
@@ -153,7 +158,7 @@ class ProxyWriter implements Writer {
         public CompletableFuture<Void> close() {
             S3ObjectStats.getInstance().objectStageReadyCloseStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             int size = data.readableBytes();
-            FutureUtil.propagate(operator.write(path, data, writeOptions.throttleStrategy()), cf);
+            FutureUtil.propagate(objectStorage.write(writeOptions, path, data).thenApply(rst -> null), cf);
             cf.whenComplete((nil, e) -> {
                 S3ObjectStats.getInstance().objectStageTotalStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
@@ -170,6 +175,11 @@ class ProxyWriter implements Writer {
 
         public boolean isFull() {
             return data.readableBytes() > MAX_UPLOAD_SIZE;
+        }
+
+        @Override
+        public short bucketId() {
+            return writeOptions.bucketId();
         }
     }
 }

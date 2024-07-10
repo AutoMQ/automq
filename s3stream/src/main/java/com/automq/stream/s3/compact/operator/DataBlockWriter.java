@@ -147,6 +147,10 @@ public class DataBlockWriter {
         return size;
     }
 
+    public short bucketId() {
+        return writer.bucketId();
+    }
+
     class IndexBlock {
         private static final int DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD = 1024 * 1024; // 1MiB
         private final ByteBuf buf;

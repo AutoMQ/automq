@@ -17,6 +17,7 @@ import com.automq.stream.s3.compact.objects.CompactedObject;
 import com.automq.stream.s3.compact.objects.CompactionType;
 import com.automq.stream.s3.compact.operator.DataBlockWriter;
 import com.automq.stream.s3.compact.utils.CompactionUtils;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -39,6 +40,7 @@ public class CompactionUploader {
     private DataBlockWriter streamSetObjectWriter = null;
     private volatile boolean isAborted = false;
     private volatile boolean isShutdown = false;
+    private volatile short bucketId;
 
     public CompactionUploader(ObjectManager objectManager, ObjectStorage objectStorage, Config config) {
         this.objectManager = objectManager;
@@ -118,6 +120,7 @@ public class CompactionUploader {
                     streamObject.setStartOffset(compactedObject.streamDataBlocks().get(0).getStartOffset());
                     streamObject.setEndOffset(compactedObject.streamDataBlocks().get(compactedObject.streamDataBlocks().size() - 1).getEndOffset());
                     streamObject.setObjectSize(dataBlockWriter.size());
+                    streamObject.setAttributes(ObjectAttributes.builder().bucket(dataBlockWriter.bucketId()).build().attributes());
                     return streamObject;
                 }).whenComplete((ret, ex) -> {
                     if (ex != null) {
@@ -143,6 +146,7 @@ public class CompactionUploader {
             return 0L;
         }
         streamSetObjectWriter.close().join();
+        bucketId = streamSetObjectWriter.bucketId();
         long writeSize = streamSetObjectWriter.size();
         reset();
         return writeSize;
@@ -168,5 +172,9 @@ public class CompactionUploader {
             return -1;
         }
         return streamSetObjectIdCf.getNow(-1L);
+    }
+
+    public short bucketId() {
+        return bucketId;
     }
 }

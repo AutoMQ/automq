@@ -58,7 +58,7 @@ public class S3MetricsExporter implements MetricExporter {
     public static final int DEFAULT_BUFFER_SIZE = 16 * 1024 * 1024;
 
     private final S3MetricsConfig config;
-    private final Map<String, String> defalutTagMap = new HashMap<>();
+    private final Map<String, String> defaultTagMap = new HashMap<>();
 
     private final ByteBuf uploadBuffer = Unpooled.directBuffer(DEFAULT_BUFFER_SIZE);
     private final Random random = new Random();
@@ -75,18 +75,15 @@ public class S3MetricsExporter implements MetricExporter {
     public S3MetricsExporter(S3MetricsConfig config) {
         this.config = config;
         this.objectStorage = AwsObjectStorage.builder()
-            .endpoint(config.s3Endpoint())
-            .region(config.s3Region())
-            .bucket(config.s3OpsBucket())
-            .forcePathStyle(config.s3PathStyle())
+            .bucket(config.bucket())
             .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
             .build();
 
-        defalutTagMap.put("host_name", getHostName());
-        defalutTagMap.put("service_name", config.clusterId());
-        defalutTagMap.put("job", config.clusterId());
-        defalutTagMap.put("service_instance_id", String.valueOf(config.nodeId()));
-        defalutTagMap.put("instance", String.valueOf(config.nodeId()));
+        defaultTagMap.put("host_name", getHostName());
+        defaultTagMap.put("service_name", config.clusterId());
+        defaultTagMap.put("job", config.clusterId());
+        defaultTagMap.put("service_instance_id", String.valueOf(config.nodeId()));
+        defaultTagMap.put("instance", String.valueOf(config.nodeId()));
 
         uploadThread = new Thread(new UploadTask());
         uploadThread.setName("s3-metrics-exporter-upload-thread");
@@ -146,7 +143,7 @@ public class S3MetricsExporter implements MetricExporter {
                     if (!objects.isEmpty()) {
                         List<ObjectPath> keyList = objects.stream()
                             .filter(object -> object.timestamp() < expiredTime)
-                            .map(object -> new ObjectPath(object.bucket(), object.key()))
+                            .map(object -> new ObjectPath(object.bucketId(), object.key()))
                             .collect(Collectors.toList());
 
                         if (!keyList.isEmpty()) {
@@ -287,7 +284,7 @@ public class S3MetricsExporter implements MetricExporter {
         root.set("counter", objectMapper.createObjectNode().put("value", value));
 
         ObjectNode tags = objectMapper.createObjectNode();
-        defalutTagMap.forEach(tags::put);
+        defaultTagMap.forEach(tags::put);
         attributes.forEach((k, v) -> tags.put(k.getKey(), v.toString()));
         root.set("tags", tags);
 
@@ -303,7 +300,7 @@ public class S3MetricsExporter implements MetricExporter {
         root.set("gauge", objectMapper.createObjectNode().put("value", value));
 
         ObjectNode tags = objectMapper.createObjectNode();
-        defalutTagMap.forEach(tags::put);
+        defaultTagMap.forEach(tags::put);
         attributes.forEach((k, v) -> tags.put(k.getKey(), v.toString()));
         root.set("tags", tags);
 
@@ -337,7 +334,7 @@ public class S3MetricsExporter implements MetricExporter {
         root.set("histogram", histogram);
 
         ObjectNode tags = objectMapper.createObjectNode();
-        defalutTagMap.forEach(tags::put);
+        defaultTagMap.forEach(tags::put);
         point.getAttributes().forEach((k, v) -> tags.put(k.getKey(), v.toString()));
         root.set("tags", tags);
 

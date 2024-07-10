@@ -39,6 +39,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Gradle wrapper validation
+        uses: gradle/actions/wrapper-validation@v3
       - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v3
         with:

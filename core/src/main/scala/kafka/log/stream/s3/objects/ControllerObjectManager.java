@@ -17,7 +17,9 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.utils.FutureUtil;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -44,6 +46,8 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class ControllerObjectManager implements ObjectManager {
 
@@ -101,6 +105,15 @@ public class ControllerObjectManager implements ObjectManager {
     @Override
     public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(
         CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
+        try {
+            return commitStreamSetObject0(commitStreamSetObjectRequest);
+        } catch (Throwable e) {
+            return FutureUtil.failedFuture(e);
+        }
+    }
+
+    public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject0(
+        CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
         CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
             .setNodeId(nodeId)
             .setNodeEpoch(nodeEpoch)
@@ -115,6 +128,9 @@ public class ControllerObjectManager implements ObjectManager {
                 .map(s -> Convertor.toStreamObjectInRequest(s, version.get())).collect(Collectors.toList()))
             .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
             .setFailoverMode(failoverMode);
+        if (commitStreamSetObjectRequest.getObjectId() != NOOP_OBJECT_ID && commitStreamSetObjectRequest.getAttributes() == ObjectAttributes.UNSET.attributes()) {
+            throw new IllegalArgumentException("[BUG]attributes must be set");
+        }
         if (version.get().isObjectAttributesSupported()) {
             request.setAttributes(commitStreamSetObjectRequest.getAttributes());
         }
@@ -212,8 +228,8 @@ public class ControllerObjectManager implements ObjectManager {
         int limit) {
         return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
             if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
-                LOGGER.error("Unexpect getObjects result={} from streamId={} [{}, {}) limit={}", inRangeObjects, streamId, startOffset, endOffset, limit);
-                throw new AutoMQException("Unexpect getObjects result");
+                LOGGER.error("Unexpected getObjects result={} from streamId={} [{}, {}) limit={}", inRangeObjects, streamId, startOffset, endOffset, limit);
+                throw new AutoMQException("Unexpected getObjects result");
             }
             return inRangeObjects.objects();
         });

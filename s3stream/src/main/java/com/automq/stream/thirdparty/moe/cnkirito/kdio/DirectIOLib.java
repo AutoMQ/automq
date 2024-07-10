@@ -98,7 +98,7 @@ public class DirectIOLib {
      *                   Should preferably BE the directory in which we'll be working.
      */
     public static DirectIOLib getLibForPath(String workingDir) {
-        int fsBlockSize = initilizeSoftBlockSize(workingDir);
+        int fsBlockSize = initializeSoftBlockSize(workingDir);
         if (fsBlockSize == -1) {
             LOGGER.warn("O_DIRECT support non available on your version of Linux (" + System.getProperty("os.version") + "), " +
                 "please upgrade your kernel in order to use jaydio.");
@@ -113,7 +113,7 @@ public class DirectIOLib {
      *
      * @param fileOrDir A file or directory within which O_DIRECT access will be performed.
      */
-    private static int initilizeSoftBlockSize(String fileOrDir) {
+    private static int initializeSoftBlockSize(String fileOrDir) {
 
         int fsBlockSize = -1;
 
@@ -237,7 +237,7 @@ public class DirectIOLib {
     /**
      * Interface into native pread function.
      *
-     * @param fd     A file discriptor to pass to native pread
+     * @param fd     A file descriptor to pass to native pread
      * @param buf    The direct buffer into which to record the file read
      * @param offset The file offset at which to read
      * @return The number of bytes successfully read from the file

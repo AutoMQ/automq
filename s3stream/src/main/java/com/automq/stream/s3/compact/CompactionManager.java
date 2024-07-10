@@ -25,6 +25,7 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
@@ -58,6 +59,8 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
+
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class CompactionManager {
     private static final int MIN_COMPACTION_DELAY_MS = 60000;
@@ -274,7 +277,7 @@ public class CompactionManager {
         }
 
         if (!objectsToForceSplit.isEmpty()) {
-            // split stream set objects to seperated stream objects
+            // split stream set objects to separated stream objects
             forceSplitObjects(streamMetadataList, objectsToForceSplit);
         }
         // compact stream set objects
@@ -499,6 +502,7 @@ public class CompactionManager {
                             streamObject.setStartOffset(blocks.get(0).getStartOffset());
                             streamObject.setEndOffset(blocks.get(blocks.size() - 1).getEndOffset());
                             streamObject.setObjectSize(writer.size());
+                            streamObject.setAttributes(ObjectAttributes.builder().bucket(writer.bucketId()).build().attributes());
                             pair.getValue().complete(streamObject);
                         }));
                         objectId++;
@@ -527,7 +531,7 @@ public class CompactionManager {
         }
 
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
-        request.setObjectId(-1L);
+        request.setObjectId(NOOP_OBJECT_ID);
 
         // wait for all force split objects to complete
         synchronized (this) {
@@ -768,5 +772,6 @@ public class CompactionManager {
         // set stream set object id to be the first object id of compacted objects
         request.setOrderId(s3ObjectMetadata.get(0).objectId());
         request.setObjectSize(uploader.complete());
+        request.setAttributes(ObjectAttributes.builder().bucket(uploader.bucketId()).build().attributes());
     }
 }

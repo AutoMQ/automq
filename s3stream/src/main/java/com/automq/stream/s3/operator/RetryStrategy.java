@@ -9,19 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.shell.log;
+package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.operator.BucketURI;
-
-public interface S3LogConfig {
-
-    boolean isEnabled();
-
-    boolean isActiveController();
-
-    String clusterId();
-
-    int nodeId();
-
-    BucketURI bucket();
+public enum RetryStrategy {
+    ABORT,
+    RETRY,
+    VISIBILITY_CHECK
 }

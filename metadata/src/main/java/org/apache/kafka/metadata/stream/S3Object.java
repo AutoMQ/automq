@@ -21,6 +21,7 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import java.util.Objects;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * S3Object is the base class of object in S3. Manages the lifecycle of S3Object.
@@ -78,15 +79,19 @@ public class S3Object implements Comparable<S3Object> {
         this.attributes = attributes;
     }
 
-    public ApiMessageAndVersion toRecord() {
-        return new ApiMessageAndVersion(new S3ObjectRecord()
+    public ApiMessageAndVersion toRecord(AutoMQVersion version) {
+        S3ObjectRecord record = new S3ObjectRecord()
             .setObjectId(objectId)
             .setObjectSize(objectSize)
             .setObjectState(s3ObjectState.toByte())
             .setPreparedTimeInMs(preparedTimeInMs)
             .setExpiredTimeInMs(expiredTimeInMs)
             .setCommittedTimeInMs(committedTimeInMs)
-            .setMarkDestroyedTimeInMs(markDestroyedTimeInMs), (short) 0);
+            .setMarkDestroyedTimeInMs(markDestroyedTimeInMs);
+        if (version.isObjectAttributesSupported()) {
+            record.setAttributes(attributes);
+        }
+        return new ApiMessageAndVersion(record, version.objectRecordVersion());
     }
 
     public static S3Object of(S3ObjectRecord record) {
@@ -103,19 +108,17 @@ public class S3Object implements Comparable<S3Object> {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) {
+        if (this == o)
             return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
+        if (o == null || getClass() != o.getClass())
             return false;
-        }
         S3Object s3Object = (S3Object) o;
-        return objectId == s3Object.objectId;
+        return objectId == s3Object.objectId && objectSize == s3Object.objectSize && preparedTimeInMs == s3Object.preparedTimeInMs && expiredTimeInMs == s3Object.expiredTimeInMs && committedTimeInMs == s3Object.committedTimeInMs && markDestroyedTimeInMs == s3Object.markDestroyedTimeInMs && attributes == s3Object.attributes && Objects.equals(objectKey, s3Object.objectKey) && s3ObjectState == s3Object.s3ObjectState;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(objectId);
+        return Objects.hash(objectId, objectSize, objectKey, preparedTimeInMs, expiredTimeInMs, committedTimeInMs, markDestroyedTimeInMs, s3ObjectState, attributes);
     }
 
     public long getObjectId() {

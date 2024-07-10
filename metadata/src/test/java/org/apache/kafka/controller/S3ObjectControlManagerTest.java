@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import java.util.List;
@@ -61,11 +62,7 @@ public class S3ObjectControlManagerTest {
     private static final int BROKER0 = 0;
     private static final int BROKER1 = 1;
     private static final String CLUSTER = "kafka-on-S3_cluster";
-    private static final String S3_ENDPOINT = "http://localhost:4066";
-    private static final String S3_REGION = "us-east-1";
-    private static final String S3_BUCKET = "kafka-on-S3-bucket";
-
-    private static final Config S3_CONFIG = new Config().endpoint(S3_ENDPOINT).region(S3_REGION).bucket(S3_BUCKET).objectRetentionTimeInSecond(1);
+    private static final Config S3_CONFIG = new Config().dataBuckets(BucketURI.parseBuckets("0@s3://bucket?region=us-east-1")).objectRetentionTimeInSecond(1);
     private S3ObjectControlManager manager;
     private QuorumController controller;
     private ObjectStorage objectStorage;
@@ -325,7 +322,9 @@ public class S3ObjectControlManagerTest {
         // 3. 6s(3s * 2) later, they should be removed
         Thread.sleep(6 * 1000);
         assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
-        Mockito.verify(objectStorage, times(3)).delete(anyList());
+
+        // 1700 / 1000 + 1
+        Mockito.verify(objectStorage, times(2)).delete(anyList());
     }
 
     private long prepareOneObject(long ttl) {

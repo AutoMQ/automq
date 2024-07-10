@@ -32,23 +32,30 @@ public interface ObjectStorage {
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
     // Low level API
-    CompletableFuture<Void> write(WriteOptions options, String objectPath, ByteBuf buf);
+    CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf);
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
 
+    /**
+     * The deleteObjects API have max batch limit.
+     * see <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html"/>
+     * Implementation should handle the objectPaths size exceeded limit condition.
+     * When batch split logic is triggered the CompletableFuture means all the deleteBatch if success.
+     * The caller may do the batch split logic if the delete operation need fine-grained control
+     */
     CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
 
     class ObjectPath {
-        private final short bucket;
+        private final short bucketId;
         private final String key;
 
-        public ObjectPath(short bucket, String key) {
-            this.bucket = bucket;
+        public ObjectPath(short bucketId, String key) {
+            this.bucketId = bucketId;
             this.key = key;
         }
 
-        public short bucket() {
-            return bucket;
+        public short bucketId() {
+            return bucketId;
         }
 
         public String key() {
@@ -60,8 +67,8 @@ public interface ObjectStorage {
         private final long timestamp;
         private final long size;
 
-        public ObjectInfo(short bucket, String key, long timestamp, long size) {
-            super(bucket, key);
+        public ObjectInfo(short bucketId, String key, long timestamp, long size) {
+            super(bucketId, key);
             this.timestamp = timestamp;
             this.size = size;
         }
@@ -80,6 +87,8 @@ public interface ObjectStorage {
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private int allocType = ByteBufAlloc.DEFAULT;
+        private long apiCallAttemptTimeout = -1L;
+        private short bucketId;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -91,6 +100,11 @@ public interface ObjectStorage {
             return this;
         }
 
+        public WriteOptions apiCallAttemptTimeout(long apiCallAttemptTimeout) {
+            this.apiCallAttemptTimeout = apiCallAttemptTimeout;
+            return this;
+        }
+
         public ThrottleStrategy throttleStrategy() {
             return throttleStrategy;
         }
@@ -99,6 +113,28 @@ public interface ObjectStorage {
             return allocType;
         }
 
+        public long apiCallAttemptTimeout() {
+            return apiCallAttemptTimeout;
+        }
+
+        // The value will be set by writer
+        WriteOptions bucketId(short bucketId) {
+            this.bucketId = bucketId;
+            return this;
+        }
+
+        public short bucketId() {
+            return bucketId;
+        }
+
+        public WriteOptions copy() {
+            WriteOptions copy = new WriteOptions();
+            copy.throttleStrategy = throttleStrategy;
+            copy.allocType = allocType;
+            copy.apiCallAttemptTimeout = apiCallAttemptTimeout;
+            copy.bucketId = bucketId;
+            return copy;
+        }
     }
 
     class ReadOptions {
@@ -119,6 +155,18 @@ public interface ObjectStorage {
 
         public ThrottleStrategy throttleStrategy() {
             return throttleStrategy;
+        }
+
+        public short bucket() {
+            return bucket;
+        }
+    }
+
+    class WriteResult {
+        private final short bucket;
+
+        public WriteResult(short bucket) {
+            this.bucket = bucket;
         }
 
         public short bucket() {

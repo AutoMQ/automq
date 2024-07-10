@@ -11,6 +11,7 @@
 
 package kafka.admin
 
+import com.automq.stream.s3.operator.BucketURI
 import com.automq.stream.utils.PingS3Helper
 import joptsimple.OptionSpec
 import kafka.utils.{Exit, Logging}
@@ -48,12 +49,11 @@ object S3TestCommand extends Logging {
         val forcePathStyle = opts.has(opts.forcePathStyleOpt)
         val tagging = opts.has(opts.tagging)
 
+        val bucketURLStr = "0@s3://" + s3Bucket + "?region=" + s3Region + "&endpoint=" + s3Endpoint + "&pathStyle=" + forcePathStyle
+
         val pingS3Helper = PingS3Helper.builder()
-          .endpoint(s3Endpoint)
-          .bucket(s3Bucket)
-          .region(s3Region)
+          .bucket(BucketURI.parse(bucketURLStr))
           .credentialsProviders(util.List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3AccessKey, s3SecretKey))))
-          .isForcePathStyle(forcePathStyle)
           .tagging(if (tagging) util.Map.of("test-tag-key", "test-tag-value") else null)
           .needPrintToConsole(true)
           .build()

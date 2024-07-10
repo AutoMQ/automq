@@ -23,9 +23,9 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectAttributes.Type;
+import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import java.util.ArrayList;
@@ -44,6 +44,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+
+import com.automq.stream.utils.CollectionHelper;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -421,7 +423,7 @@ public class S3ObjectControlManager {
         if (object == null) {
             return null;
         }
-        return ObjectReader.reader(new S3ObjectMetadata(objectId, object.getObjectSize(), S3ObjectType.STREAM_SET), objectStorage);
+        return ObjectReader.reader(new S3ObjectMetadata(objectId, object.getObjectSize(), object.getAttributes()), objectStorage);
     }
 
     /**
@@ -439,9 +441,6 @@ public class S3ObjectControlManager {
     }
 
     class ObjectCleaner {
-
-        public static final int MAX_BATCH_DELETE_SIZE = 800;
-
         CompletableFuture<Void> clean(List<S3Object> objects) {
             List<S3Object> deepDeleteCompositeObjects = new LinkedList<>();
             List<S3Object> shallowDeleteObjects = new ArrayList<>(objects.size());
@@ -463,15 +462,15 @@ public class S3ObjectControlManager {
             return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
         }
 
-        private void batchDelete(List<S3Object> objects, Function<List<S3Object>, CompletableFuture<Void>> deleteFunc, List<CompletableFuture<Void>> cfList) {
-            for (int i = 0; i < objects.size() / MAX_BATCH_DELETE_SIZE; i++) {
-                List<S3Object> batch = objects.subList(i * MAX_BATCH_DELETE_SIZE, (i + 1) * MAX_BATCH_DELETE_SIZE);
-                cfList.add(deleteFunc.apply(batch));
+        private void batchDelete(List<S3Object> objects,
+                                 Function<List<S3Object>, CompletableFuture<Void>> deleteFunc,
+                                 List<CompletableFuture<Void>> cfList) {
+            if (objects.isEmpty()) {
+                return;
             }
-            if (objects.size() % MAX_BATCH_DELETE_SIZE != 0) {
-                List<S3Object> batch = objects.subList(objects.size() / MAX_BATCH_DELETE_SIZE * MAX_BATCH_DELETE_SIZE, objects.size());
-                cfList.add(deleteFunc.apply(batch));
-            }
+            CollectionHelper.groupListByBatchSizeAsStream(objects, AwsObjectStorage.AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER)
+                    .map(deleteFunc)
+                    .forEach(cfList::add);
         }
 
         private CompletableFuture<Void> shallowlyDelete(List<S3Object> s3objects) {
