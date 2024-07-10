@@ -205,6 +205,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                  isolated_kafka=None,
                  controller_num_nodes_override=0,
                  allow_zk_with_kraft=True, # AutoMQ inject
+                 extra_env=None,  # AutoMQ inject
                  quorum_info_provider=None,
                  use_new_coordinator=None
                  ):
@@ -266,6 +267,8 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         :param KafkaService isolated_kafka: process.roles=controller for this cluster when not None; ignored when using ZooKeeper
         :param int controller_num_nodes_override: the number of nodes to use in the cluster, instead of 5, 3, or 1 based on num_nodes, if positive, not using ZooKeeper, and isolated_kafka is not None; ignored otherwise
         :param bool allow_zk_with_kraft: if True, then allow a KRaft broker or controller to also use ZooKeeper
+        :param list[str] extra_env: In addition to JVM parameters, additional environment variables added at startup.
+            e.g: extra_env=['AUTOMQ_MEMORY_USAGE_DETECT=\"true\"']
         :param quorum_info_provider: A function that takes this KafkaService as an argument and returns a ServiceQuorumInfo. If this is None, then the ServiceQuorumInfo is generated from the test context
         :param use_new_coordinator: When true, use the new implementation of the group coordinator as per KIP-848. If this is None, the default existing group coordinator is used.
         """
@@ -368,6 +371,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.zk_client_secure = zk_client_secure
         self.listener_security_config = listener_security_config
         self.extra_kafka_opts = extra_kafka_opts
+        self.extra_env = extra_env  # AutoMQ inject
 
         #
         # In a heavily loaded and not very fast machine, it is
@@ -838,7 +842,12 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
         cmd += fix_opts_for_new_jvm(node)
         cmd += "export KAFKA_OPTS=\"%s %s %s\"; " % (heap_kafka_opts, security_kafka_opts, self.extra_kafka_opts)
-        cmd += "export KAFKA_HEAP_OPTS=\"%s\"; " % self.KAFKA_HEAP_OPTS # AutoMQ inject
+        # AutoMQ inject start
+        cmd += "export KAFKA_HEAP_OPTS=\"%s\"; " % self.KAFKA_HEAP_OPTS
+        if self.extra_env is not None:
+            for env_var in self.extra_env:
+                cmd += "export %s; " % env_var
+        # AutoMQ inject end
         cmd += "%s %s 1>> %s 2>> %s &" % \
                (self.path.script("kafka-server-start.sh", node),
                 KafkaService.CONFIG_FILE,
