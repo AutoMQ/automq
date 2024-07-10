@@ -50,6 +50,7 @@ import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
 import kafka.server.BrokerServer;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -120,13 +121,17 @@ public class DefaultS3Client implements Client {
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
 
-        ConfigUtils.WALConfig walConfig = ConfigUtils.toWALConfig(config.walPath());
-        switch (walConfig.schema()) {
+        BucketURI bucketURI;
+        try {
+            bucketURI = BucketURI.parse(config.walPath());
+        } catch (Exception e) {
+            bucketURI = BucketURI.parse("0@file://" + config.walPath());
+        }
+        switch (bucketURI.protocol()) {
             case "file":
                 this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
                 break;
             case "s3":
-                BucketURI bucketURI = BucketURI.parse(config.walPath());
                 ObjectStorage walObjectStorage = AwsObjectStorage.builder()
                     .bucket(bucketURI)
                     .credentialsProviders(credentialsProviders)
@@ -138,15 +143,26 @@ public class DefaultS3Client implements Client {
                     .withNodeId(config.nodeId())
                     .withEpoch(config.nodeEpoch());
 
-                walConfig.parameter("batchInterval").ifPresent(s -> configBuilder.withBatchInterval(Long.parseLong(s)));
-                walConfig.parameter("maxBytesInBatch").ifPresent(s -> configBuilder.withMaxBytesInBatch(Long.parseLong(s)));
-                walConfig.parameter("maxUnflushedBytes").ifPresent(s -> configBuilder.withMaxUnflushedBytes(Long.parseLong(s)));
-                walConfig.parameter("maxInflightUploadCount").ifPresent(s -> configBuilder.withMaxInflightUploadCount(Integer.parseInt(s)));
-
+                String batchInterval = bucketURI.extensionString("batchInterval");
+                if (StringUtils.isNumeric(batchInterval)) {
+                    configBuilder.withBatchInterval(Long.parseLong(batchInterval));
+                }
+                String maxBytesInBatch = bucketURI.extensionString("maxBytesInBatch");
+                if (StringUtils.isNumeric(maxBytesInBatch)) {
+                    configBuilder.withBatchInterval(Long.parseLong(maxBytesInBatch));
+                }
+                String maxUnflushedBytes = bucketURI.extensionString("maxUnflushedBytes");
+                if (StringUtils.isNumeric(maxUnflushedBytes)) {
+                    configBuilder.withBatchInterval(Long.parseLong(maxUnflushedBytes));
+                }
+                String maxInflightUploadCount = bucketURI.extensionString("maxInflightUploadCount");
+                if (StringUtils.isNumeric(maxInflightUploadCount)) {
+                    configBuilder.withBatchInterval(Long.parseLong(maxInflightUploadCount));
+                }
                 this.writeAheadLog = new ObjectStorageWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
                 break;
             default:
-                throw new IllegalArgumentException("Invalid WAL schema: " + walConfig.schema());
+                throw new IllegalArgumentException("Invalid WAL schema: " + bucketURI.protocol());
         }
 
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);

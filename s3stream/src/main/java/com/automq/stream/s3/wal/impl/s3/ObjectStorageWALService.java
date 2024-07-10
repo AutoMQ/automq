@@ -11,7 +11,6 @@
 
 package com.automq.stream.s3.wal.impl.s3;
 
-import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
@@ -25,7 +24,6 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import java.io.IOException;
 import java.util.Iterator;
@@ -34,7 +32,6 @@ import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 
 public class ObjectStorageWALService implements WriteAheadLog {

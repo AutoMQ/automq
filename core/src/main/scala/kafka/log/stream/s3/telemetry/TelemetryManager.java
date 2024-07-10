@@ -175,8 +175,7 @@ public class TelemetryManager {
         S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
         S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
 
-        ConfigUtils.WALConfig walConfig = ConfigUtils.toWALConfig(kafkaConfig.s3WALPath());
-        if (walConfig.schema().equals("s3")) {
+        if (kafkaConfig.s3WALPath().startsWith("0@s3://")) {
             ObjectStorageWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
         }
     }
