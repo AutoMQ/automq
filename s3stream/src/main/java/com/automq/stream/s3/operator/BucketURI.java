@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.utils.SecretUtils;
+
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
 import org.apache.commons.lang3.StringUtils;
 
 public class BucketURI {
@@ -57,10 +59,16 @@ public class BucketURI {
             throw new IllegalArgumentException("Invalid bucket url: " + bucketStr);
         }
         short bucketId = Short.parseShort(matcher.group(1));
+        String bucket;
         try {
             URI uri = new URI(matcher.group(2));
             String protocol = uri.getScheme();
-            String bucket = uri.getHost();
+            String path = uri.getRawSchemeSpecificPart();
+            int queryIndex = path.indexOf('?');
+            if (queryIndex != -1) {
+                path = path.substring(0, queryIndex);
+            }
+            bucket = path.substring(2);
             Map<String, List<String>> queries = splitQuery(uri);
             String endpoint = getString(queries, ENDPOINT_KEY);
             queries.remove(ENDPOINT_KEY);
