@@ -280,10 +280,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 continue;
             }
             loadIndexCfList.add(
-                ctx.rangeGetter
-                    .find(streamSetObject.objectId(), ctx.streamId)
-                    .thenAccept(range -> ctx.object2range.put(streamSetObject.objectId(), range))
-            );
+                streamSetObject.findAsync(ctx.streamId, ctx.rangeGetter)
+                    .thenAccept(range -> ctx.object2range.put(streamSetObject.objectId(), Optional.ofNullable(range))
+            ));
         }
         if (loadIndexCfList.isEmpty()) {
             return CompletableFuture.completedFuture(null);

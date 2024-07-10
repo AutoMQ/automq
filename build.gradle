@@ -1309,6 +1309,7 @@ project(':metadata') {
     implementation libs.guava
     implementation libs.awsSdkAuth
     implementation project(':s3stream')
+    implementation libs.caffeine
 
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes

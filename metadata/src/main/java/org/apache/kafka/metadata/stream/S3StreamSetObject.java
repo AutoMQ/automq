@@ -20,6 +20,8 @@ package org.apache.kafka.metadata.stream;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.github.benmanes.caffeine.cache.AsyncCache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.luben.zstd.Zstd;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
@@ -27,6 +29,7 @@ import com.google.common.cache.Weigher;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.time.Duration;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -35,9 +38,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
@@ -52,6 +57,11 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         .maximumWeight(2500000) // expected max heap occupied size is 75MiB
         .weigher((Weigher<Long, Map<Long, StreamOffsetRange>>) (key, value) -> value.size())
         .build();
+    private static final AsyncCache<Map.Entry<Long, Long>, StreamOffsetRange> ASYNC_RANGE_CACHE = Caffeine.newBuilder()
+        .expireAfterAccess(Duration.ofMinutes(1))
+        .maximumSize(2000000) // expected max heap occupied size ~75MiB
+        .buildAsync();
+
     public static final byte MAGIC = 0x01;
     public static final byte ZSTD_COMPRESSED = 1 << 1;
     private static final int COMPRESSION_THRESHOLD = 50;
@@ -113,6 +123,11 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         } catch (ExecutionException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public CompletableFuture<StreamOffsetRange> findAsync(long streamId, S3StreamsMetadataImage.RangeGetter rangeGetter) {
+        return ASYNC_RANGE_CACHE.get(new AbstractMap.SimpleImmutableEntry<>(objectId, streamId),
+            (entry, executor) -> rangeGetter.find(objectId, streamId).thenApply(o -> o.orElse(null)));
     }
 
     public ApiMessageAndVersion toRecord(AutoMQVersion version) {
