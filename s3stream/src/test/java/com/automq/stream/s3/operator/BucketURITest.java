@@ -53,6 +53,9 @@ public class BucketURITest {
         bucketStr = "0@file:///path/to/wal?type=raw&size=1G";
         BucketURI uri = BucketURI.parse(bucketStr);
         assertEquals("file", uri.protocol());
+        assertEquals("/path/to/wal", uri.bucket());
+        assertEquals("", uri.endpoint());
+        assertEquals("", uri.region());
         assertEquals("raw", uri.extensionString("type"));
         assertEquals("1G", uri.extensionString("size"));
     }
