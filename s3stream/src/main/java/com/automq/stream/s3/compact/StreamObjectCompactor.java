@@ -184,7 +184,7 @@ public class StreamObjectCompactor {
         if (objectGroup.size() == 1 && (MINOR.equals(compactionType) || MAJOR.equals(compactionType) || MINOR_V1.equals(compactionType))) {
             return false;
         }
-        if (CLEANUP_V1.equals(compactionType)) {
+        if (CLEANUP_V1.equals(compactionType) || MAJOR_V1.equals(compactionType)) {
             S3ObjectMetadata metadata = objectGroup.get(0);
             if (ObjectAttributes.from(metadata.attributes()).type() != Composite) {
                 return false;
