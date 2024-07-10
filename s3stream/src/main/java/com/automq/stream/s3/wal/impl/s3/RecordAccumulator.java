@@ -25,6 +25,7 @@ import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -78,7 +79,7 @@ public class RecordAccumulator implements Closeable {
         this.time = time;
         this.objectStorage = objectStorage;
         this.config = config;
-        this.nodePrefix = DigestUtils.md5Hex(String.valueOf(config.nodeId())).toUpperCase() + "/" + config.clusterId() + "/" + config.nodeId() + "/";
+        this.nodePrefix = DigestUtils.md5Hex(String.valueOf(config.nodeId())).toUpperCase(Locale.ROOT) + "/" + config.clusterId() + "/" + config.nodeId() + "/";
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
         this.executorService = Threads.newSingleThreadScheduledExecutor("s3-wal-schedule", true, log);
         this.monitorService = Threads.newSingleThreadScheduledExecutor("s3-wal-monitor", true, log);
