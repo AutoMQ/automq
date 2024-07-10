@@ -34,7 +34,6 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;

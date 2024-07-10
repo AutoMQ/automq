@@ -12,10 +12,6 @@
 package kafka.log.stream.s3;
 
 import com.automq.stream.s3.Config;
-import com.google.common.base.Splitter;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Optional;
 import kafka.automq.AutoMQConfig;
 import kafka.server.KafkaConfig;
 
