@@ -31,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -55,6 +56,8 @@ import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Error;
@@ -64,6 +67,8 @@ import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
+import static com.automq.stream.s3.metrics.operations.S3Operation.COMPLETE_MULTI_PART_UPLOAD;
+import static com.automq.stream.s3.metrics.operations.S3Operation.GET_OBJECT;
 import static com.automq.stream.utils.FutureUtil.cause;
 
 @SuppressWarnings("this-escape")
@@ -250,24 +255,31 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    RetryStrategy toRetryStrategy(Throwable ex, S3Operation operation) {
-        ex = cause(ex);
-        if (ex instanceof S3Exception) {
-            S3Exception s3Ex = (S3Exception) ex;
-            switch (operation) {
-                case COMPLETE_MULTI_PART_UPLOAD:
-                    if (s3Ex.statusCode() == HttpStatusCode.FORBIDDEN) {
-                        return RetryStrategy.ABORT;
-                    } else if (s3Ex.statusCode() == HttpStatusCode.NOT_FOUND) {
-                        return RetryStrategy.VISIBILITY_CHECK;
-                    }
-                    return RetryStrategy.RETRY;
+    Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
+        Throwable cause = cause(ex);
+        RetryStrategy strategy = RetryStrategy.RETRY;
+        if (cause instanceof S3Exception) {
+            S3Exception s3Ex = (S3Exception) cause;
+            switch (s3Ex.statusCode()) {
+                case HttpStatusCode.FORBIDDEN:
+                case HttpStatusCode.NOT_FOUND:
+                    strategy = RetryStrategy.ABORT;
+                    break;
                 default:
-                    return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND ?
-                        RetryStrategy.ABORT : RetryStrategy.RETRY;
+                    strategy = RetryStrategy.RETRY;
+            }
+            if (COMPLETE_MULTI_PART_UPLOAD == operation) {
+                if (cause instanceof NoSuchUploadException) {
+                    strategy = RetryStrategy.VISIBILITY_CHECK;
+                }
+            }
+            if (GET_OBJECT == operation) {
+                if (cause instanceof NoSuchKeyException) {
+                    cause = new ObjectNotFoundException(cause);
+                }
             }
         }
-        return RetryStrategy.RETRY;
+        return Pair.of(strategy, cause);
     }
 
     @Override

@@ -28,6 +28,7 @@ public interface ObjectStorage {
 
     /**
      * Read object from the object storage.
+     * It will throw {@link ObjectNotFoundException} if the object not found.
      */
     default CompletableFuture<ByteBuf> read(ReadOptions options, String objectPath) {
         return rangeRead(options, objectPath, 0, -1);
@@ -35,6 +36,7 @@ public interface ObjectStorage {
 
     /**
      * Range read object from the object storage.
+     * It will throw {@link ObjectNotFoundException} if the object not found.
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
@@ -178,6 +180,12 @@ public interface ObjectStorage {
 
         public short bucket() {
             return bucket;
+        }
+    }
+
+    class ObjectNotFoundException extends Exception {
+        public ObjectNotFoundException(Throwable cause) {
+            super(cause);
         }
     }
 }
