@@ -9,9 +9,8 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal.impl.s3;
+package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
@@ -25,7 +24,6 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import java.io.IOException;
 import java.util.Iterator;
@@ -34,17 +32,20 @@ import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 
-public class ObjectStorageWALService implements WriteAheadLog {
-    private static final Logger log = LoggerFactory.getLogger(ObjectStorageWALService.class);
+public class ObjectWALService implements WriteAheadLog {
+    private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
 
     protected ObjectStorage objectStorage;
+    protected ObjectWALConfig config;
+
     protected RecordAccumulator accumulator;
 
-    public ObjectStorageWALService(Time time, ObjectStorage objectStorage, ObjectStorageWALConfig config) {
+    public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
         this.objectStorage = objectStorage;
+        this.config = config;
+
         this.accumulator = new RecordAccumulator(time, objectStorage, config);
     }
 
@@ -63,30 +64,14 @@ public class ObjectStorageWALService implements WriteAheadLog {
 
     @Override
     public WALMetadata metadata() {
-        return null;
-    }
-
-    private ByteBuf recordHeader(ByteBuf body, int crc, long start) {
-        return new RecordHeader()
-            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-            .setRecordBodyLength(body.readableBytes())
-            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
-            .setRecordBodyCRC(crc)
-            .marshal();
-    }
-
-    private ByteBuf record(ByteBuf body, int crc, long start) {
-        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
-        crc = 0 == crc ? WALUtil.crc32(body) : crc;
-        record.addComponents(true, recordHeader(body, crc, start), body);
-        return record;
+        return new WALMetadata(config.nodeId(), config.epoch());
     }
 
     @Override
     public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
         final long recordSize = RECORD_HEADER_SIZE + data.readableBytes();
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
-        long expectedWriteOffset = accumulator.append(recordSize, start -> record(data, crc, start), appendResultFuture);
+        long expectedWriteOffset = accumulator.append(recordSize, start -> WALUtil.generateRecord(data, crc, start), appendResultFuture);
 
         return new AppendResultImpl(expectedWriteOffset, appendResultFuture);
     }
