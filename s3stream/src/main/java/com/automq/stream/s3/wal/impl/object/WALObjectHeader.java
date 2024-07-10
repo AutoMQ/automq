@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal.impl.s3;
+package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.exception.UnmarshalException;

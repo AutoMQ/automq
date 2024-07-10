@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal.impl.s3;
+package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -46,7 +46,7 @@ public class RecordAccumulatorTest {
     @BeforeEach
     public void setUp() {
         objectStorage = new MemoryObjectStorage();
-        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectStorageWALConfig.builder().build());
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build());
         recordAccumulatorExt.start();
         generatedByteBufMap = new ConcurrentSkipListMap<>();
         random = new Random();

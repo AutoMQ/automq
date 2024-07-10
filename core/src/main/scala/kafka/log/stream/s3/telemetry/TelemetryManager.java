@@ -18,7 +18,7 @@ import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.operator.BucketURI;
-import com.automq.stream.s3.wal.metrics.ObjectStorageWALMetricsManager;
+import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.Attributes;
@@ -62,7 +62,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import kafka.log.stream.s3.ConfigUtils;
 import kafka.server.KafkaConfig;
 import kafka.server.KafkaRaftServer;
 import org.apache.commons.lang3.StringUtils;
@@ -176,7 +175,7 @@ public class TelemetryManager {
         S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
 
         if (kafkaConfig.s3WALPath().startsWith("0@s3://")) {
-            ObjectStorageWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
+            ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
         }
     }
 

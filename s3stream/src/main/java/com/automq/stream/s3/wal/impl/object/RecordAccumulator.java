@@ -9,14 +9,14 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal.impl.s3;
+package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.WALFencedException;
-import com.automq.stream.s3.wal.metrics.ObjectStorageWALMetricsManager;
+import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
@@ -52,7 +52,7 @@ public class RecordAccumulator implements Closeable {
     private final ConcurrentNavigableMap<Long /* inclusive first offset */, List<Record>> uploadMap = new ConcurrentSkipListMap<>();
     private final ConcurrentNavigableMap<Long /* exclusive end offset */, WALObject> objectMap = new ConcurrentSkipListMap<>();
 
-    protected final ObjectStorageWALConfig config;
+    protected final ObjectWALConfig config;
     private final String nodePrefix;
     private final String objectPrefix;
 
@@ -75,7 +75,7 @@ public class RecordAccumulator implements Closeable {
     protected volatile boolean fenced;
 
     public RecordAccumulator(Time time, ObjectStorage objectStorage,
-        ObjectStorageWALConfig config) {
+        ObjectWALConfig config) {
         this.time = time;
         this.objectStorage = objectStorage;
         this.config = config;
@@ -85,9 +85,9 @@ public class RecordAccumulator implements Closeable {
         this.monitorService = Threads.newSingleThreadScheduledExecutor("s3-wal-monitor", true, log);
         this.callbackService = Threads.newFixedThreadPoolWithMonitor(4, "s3-wal-callback", false, log);
 
-        ObjectStorageWALMetricsManager.setInflightUploadCountSupplier(() -> (long) pendingFutureMap.size());
-        ObjectStorageWALMetricsManager.setBufferedDataInBytesSupplier(bufferedDataBytes::get);
-        ObjectStorageWALMetricsManager.setObjectDataInBytesSupplier(objectDataBytes::get);
+        ObjectWALMetricsManager.setInflightUploadCountSupplier(() -> (long) pendingFutureMap.size());
+        ObjectWALMetricsManager.setBufferedDataInBytesSupplier(bufferedDataBytes::get);
+        ObjectWALMetricsManager.setObjectDataInBytesSupplier(objectDataBytes::get);
     }
 
     public void start() {
@@ -281,9 +281,9 @@ public class RecordAccumulator implements Closeable {
                 if (throwable != null) {
                     log.error("Failed to append record to S3 WAL: {}", offset, throwable);
                 } else {
-                    ObjectStorageWALMetricsManager.recordOperationDataSize(recordSize, "append");
+                    ObjectWALMetricsManager.recordOperationDataSize(recordSize, "append");
                 }
-                ObjectStorageWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "append", throwable == null);
+                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "append", throwable == null);
             });
 
             bufferList.add(new Record(offset, recordSupplier.apply(offset), future));
@@ -323,7 +323,7 @@ public class RecordAccumulator implements Closeable {
 
         return objectStorage.delete(deleteObjectList)
             .whenComplete((v, throwable) -> {
-                ObjectStorageWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
+                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
                 objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
 
                 // Never fail the delete task, the under layer storage will retry forever.
@@ -422,8 +422,8 @@ public class RecordAccumulator implements Closeable {
     protected CompletableFuture<ObjectStorage.WriteResult> recordUploadMetrics(CompletableFuture<ObjectStorage.WriteResult> future,
         long startTime, long objectLength) {
         return future.whenComplete((result, throwable) -> {
-            ObjectStorageWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "upload", throwable == null);
-            ObjectStorageWALMetricsManager.recordOperationDataSize(objectLength, "upload");
+            ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "upload", throwable == null);
+            ObjectWALMetricsManager.recordOperationDataSize(objectLength, "upload");
         });
     }
 

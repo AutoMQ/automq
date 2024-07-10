@@ -36,8 +36,8 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
-import com.automq.stream.s3.wal.impl.s3.ObjectStorageWALConfig;
-import com.automq.stream.s3.wal.impl.s3.ObjectStorageWALService;
+import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
+import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.PingS3Helper;
 import com.automq.stream.utils.Time;
@@ -138,7 +138,7 @@ public class DefaultS3Client implements Client {
                     .tagging(config.objectTagging())
                     .build();
 
-                ObjectStorageWALConfig.Builder configBuilder = ObjectStorageWALConfig.builder()
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder()
                     .withClusterId(brokerServer.clusterId())
                     .withNodeId(config.nodeId())
                     .withEpoch(config.nodeEpoch());
@@ -149,17 +149,17 @@ public class DefaultS3Client implements Client {
                 }
                 String maxBytesInBatch = bucketURI.extensionString("maxBytesInBatch");
                 if (StringUtils.isNumeric(maxBytesInBatch)) {
-                    configBuilder.withBatchInterval(Long.parseLong(maxBytesInBatch));
+                    configBuilder.withMaxBytesInBatch(Long.parseLong(maxBytesInBatch));
                 }
                 String maxUnflushedBytes = bucketURI.extensionString("maxUnflushedBytes");
                 if (StringUtils.isNumeric(maxUnflushedBytes)) {
-                    configBuilder.withBatchInterval(Long.parseLong(maxUnflushedBytes));
+                    configBuilder.withMaxUnflushedBytes(Long.parseLong(maxUnflushedBytes));
                 }
                 String maxInflightUploadCount = bucketURI.extensionString("maxInflightUploadCount");
                 if (StringUtils.isNumeric(maxInflightUploadCount)) {
-                    configBuilder.withBatchInterval(Long.parseLong(maxInflightUploadCount));
+                    configBuilder.withMaxInflightUploadCount(Integer.parseInt(maxInflightUploadCount));
                 }
-                this.writeAheadLog = new ObjectStorageWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
+                this.writeAheadLog = new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
                 break;
             default:
                 throw new IllegalArgumentException("Invalid WAL schema: " + bucketURI.protocol());

@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal.impl.s3;
+package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -34,15 +34,15 @@ import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 
-public class ObjectStorageWALService implements WriteAheadLog {
-    private static final Logger log = LoggerFactory.getLogger(ObjectStorageWALService.class);
+public class ObjectWALService implements WriteAheadLog {
+    private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
 
     protected ObjectStorage objectStorage;
-    protected ObjectStorageWALConfig config;
+    protected ObjectWALConfig config;
 
     protected RecordAccumulator accumulator;
 
-    public ObjectStorageWALService(Time time, ObjectStorage objectStorage, ObjectStorageWALConfig config) {
+    public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
         this.objectStorage = objectStorage;
         this.config = config;
 
