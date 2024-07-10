@@ -41,10 +41,14 @@ public class ObjectStorageWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectStorageWALService.class);
 
     protected ObjectStorage objectStorage;
+    protected ObjectStorageWALConfig config;
+
     protected RecordAccumulator accumulator;
 
     public ObjectStorageWALService(Time time, ObjectStorage objectStorage, ObjectStorageWALConfig config) {
         this.objectStorage = objectStorage;
+        this.config = config;
+
         this.accumulator = new RecordAccumulator(time, objectStorage, config);
     }
 
@@ -63,7 +67,7 @@ public class ObjectStorageWALService implements WriteAheadLog {
 
     @Override
     public WALMetadata metadata() {
-        return null;
+        return new WALMetadata(config.nodeId(), config.epoch());
     }
 
     private ByteBuf recordHeader(ByteBuf body, int crc, long start) {

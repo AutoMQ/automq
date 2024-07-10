@@ -36,8 +36,11 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
+import com.automq.stream.s3.wal.impl.s3.ObjectStorageWALConfig;
+import com.automq.stream.s3.wal.impl.s3.ObjectStorageWALService;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.PingS3Helper;
+import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -116,7 +119,36 @@ public class DefaultS3Client implements Client {
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
-        this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
+
+        ConfigUtils.WALConfig walConfig = ConfigUtils.toWALConfig(config.walPath());
+        switch (walConfig.schema()) {
+            case "file":
+                this.writeAheadLog = BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
+                break;
+            case "s3":
+                BucketURI bucketURI = BucketURI.parse(config.walPath());
+                ObjectStorage walObjectStorage = AwsObjectStorage.builder()
+                    .bucket(bucketURI)
+                    .credentialsProviders(credentialsProviders)
+                    .tagging(config.objectTagging())
+                    .build();
+
+                ObjectStorageWALConfig.Builder configBuilder = ObjectStorageWALConfig.builder()
+                    .withClusterId(brokerServer.clusterId())
+                    .withNodeId(config.nodeId())
+                    .withEpoch(config.nodeEpoch());
+
+                walConfig.parameter("batchInterval").ifPresent(s -> configBuilder.withBatchInterval(Long.parseLong(s)));
+                walConfig.parameter("maxBytesInBatch").ifPresent(s -> configBuilder.withMaxBytesInBatch(Long.parseLong(s)));
+                walConfig.parameter("maxUnflushedBytes").ifPresent(s -> configBuilder.withMaxUnflushedBytes(Long.parseLong(s)));
+                walConfig.parameter("maxInflightUploadCount").ifPresent(s -> configBuilder.withMaxInflightUploadCount(Integer.parseInt(s)));
+
+                this.writeAheadLog = new ObjectStorageWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid WAL schema: " + walConfig.schema());
+        }
+
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
