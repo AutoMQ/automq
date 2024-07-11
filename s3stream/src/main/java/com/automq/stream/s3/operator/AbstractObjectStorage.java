@@ -112,7 +112,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     @Override
     public Writer writer(WriteOptions options, String objectPath) {
         options = options.copy().bucketId(bucketURI.bucketId());
-        return new ProxyWriter(options, this, objectPath);
+        return new ProxyWriter(options, this, objectPath, new S3MultiPartWriterFactory());
     }
 
     @Override

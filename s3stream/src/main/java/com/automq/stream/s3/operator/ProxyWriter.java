@@ -34,17 +34,19 @@ class ProxyWriter implements Writer {
     private final AbstractObjectStorage objectStorage;
     private final String path;
     private final long minPartSize;
+    private final  MultiPartWriterFactory multiPartWriterFactory;
     Writer multiPartWriter = null;
 
-    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path, long minPartSize) {
+    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path, long minPartSize, MultiPartWriterFactory multiPartWriterFactory) {
         this.writeOptions = writeOptions;
         this.objectStorage = objectStorage;
         this.path = path;
         this.minPartSize = minPartSize;
+        this.multiPartWriterFactory = multiPartWriterFactory;
     }
 
-    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path) {
-        this(writeOptions, objectStorage, path, Writer.MIN_PART_SIZE);
+    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path, MultiPartWriterFactory multiPartWriterFactory) {
+        this(writeOptions, objectStorage, path, Writer.MIN_PART_SIZE, multiPartWriterFactory);
     }
 
     @Override
@@ -110,7 +112,7 @@ class ProxyWriter implements Writer {
     }
 
     private void newMultiPartWriter() {
-        this.multiPartWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
+        this.multiPartWriter = multiPartWriterFactory.multiPartWriter(writeOptions, objectStorage, path, minPartSize);
         if (objectWriter.data.readableBytes() > 0) {
             FutureUtil.propagate(multiPartWriter.write(objectWriter.data), objectWriter.cf);
         } else {
