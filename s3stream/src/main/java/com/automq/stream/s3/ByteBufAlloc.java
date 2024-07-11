@@ -25,11 +25,16 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
+import io.netty.util.internal.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ByteBufAlloc {
-    public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv("AUTOMQ_MEMORY_USAGE_DETECT"));
+
+    public static final String AUTOMQ_MEMORY_USAGE_DETECT = "AUTOMQ_MEMORY_USAGE_DETECT";
+    public static final String AUTOMQ_MEMORY_USAGE_DETECT_INTERVAL = "AUTOMQ_MEMORY_USAGE_DETECT_TIME_INTERVAL";
+    public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv(AUTOMQ_MEMORY_USAGE_DETECT));
+    public static long memoryUsageDetectionInterval = 60000;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ByteBufAlloc.class);
     private static final Map<Integer, LongAdder> USAGE_STATS = new ConcurrentHashMap<>();
@@ -76,6 +81,15 @@ public class ByteBufAlloc {
         registerAllocType(STREAM_SET_OBJECT_COMPACTION_READ, "stream_set_object_compaction_read");
         registerAllocType(STREAM_SET_OBJECT_COMPACTION_WRITE, "stream_set_object_compaction_write");
         registerAllocType(BLOCK_CACHE, "block_cache");
+
+        String interval = System.getenv(AUTOMQ_MEMORY_USAGE_DETECT_INTERVAL);
+        if (MEMORY_USAGE_DETECT && !StringUtil.isNullOrEmpty(interval)) {
+            try {
+                memoryUsageDetectionInterval = Long.parseLong(interval);
+            } catch (NumberFormatException e) {
+                //default to 60s
+            }
+        }
     }
 
     /**
@@ -122,7 +136,7 @@ public class ByteBufAlloc {
                     return v;
                 });
                 long now = System.currentTimeMillis();
-                if (now - lastMetricLogTime > 60000) {
+                if (now - lastMetricLogTime > memoryUsageDetectionInterval) {
                     // it's ok to be not thread safe
                     lastMetricLogTime = now;
                     ByteBufAlloc.byteBufAllocMetric = new ByteBufAllocMetric();
