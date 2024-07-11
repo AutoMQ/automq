@@ -20,7 +20,8 @@ public interface AppendResult {
     CompletableFuture<CallbackResult> future();
 
     interface CallbackResult {
-        // The record before this offset has been flushed to disk
+
+        // The record before this offset (exclusive) has been flushed to disk
         long flushedOffset();
     }
 }

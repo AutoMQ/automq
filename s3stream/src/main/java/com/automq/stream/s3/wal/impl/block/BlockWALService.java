@@ -34,7 +34,6 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
@@ -432,11 +431,11 @@ public class BlockWALService implements WriteAheadLog {
         lock.lock();
         try {
             Block block = slidingWindowService.getCurrentBlockLocked();
-            expectedWriteOffset = block.addRecord(recordSize, offset -> record(body, crc, offset), appendResultFuture);
+            expectedWriteOffset = block.addRecord(recordSize, offset -> WALUtil.generateRecord(body, crc, offset), appendResultFuture);
             if (expectedWriteOffset < 0) {
                 // this block is full, create a new one
                 block = slidingWindowService.sealAndNewBlockLocked(block, recordSize, walHeader.getFlushedTrimOffset(), walHeader.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
-                expectedWriteOffset = block.addRecord(recordSize, offset -> record(body, crc, offset), appendResultFuture);
+                expectedWriteOffset = block.addRecord(recordSize, offset -> WALUtil.generateRecord(body, crc, offset), appendResultFuture);
             }
         } finally {
             lock.unlock();
@@ -447,22 +446,6 @@ public class BlockWALService implements WriteAheadLog {
         appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
         StorageOperationStats.getInstance().appendWALBeforeStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
         return appendResult;
-    }
-
-    private ByteBuf recordHeader(ByteBuf body, int crc, long start) {
-        return new RecordHeader()
-            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-            .setRecordBodyLength(body.readableBytes())
-            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
-            .setRecordBodyCRC(crc)
-            .marshal();
-    }
-
-    private ByteBuf record(ByteBuf body, int crc, long start) {
-        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
-        crc = 0 == crc ? WALUtil.crc32(body) : crc;
-        record.addComponents(true, recordHeader(body, crc, start), body);
-        return record;
     }
 
     @Override

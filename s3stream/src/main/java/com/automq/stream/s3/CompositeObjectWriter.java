@@ -62,7 +62,6 @@ public class CompositeObjectWriter implements ObjectWriter {
         objBuf.addComponent(true, objectsBlock.buffer());
         objBuf.addComponent(true, indexesBlock.buffer());
         objBuf.addComponent(true, footer.buffer());
-        size = objBuf.readableBytes();
         writer.write(objBuf);
         return writer.close();
     }

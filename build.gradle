@@ -983,6 +983,7 @@ project(':core') {
     implementation libs.slf4jBridge
     implementation libs.nettyHttp2
     implementation project(':s3stream')
+    implementation libs.guava
 
     implementation libs.opentelemetryJava8
     implementation libs.opentelemetryOshi
@@ -2070,10 +2071,13 @@ project(':s3stream') {
     implementation 'org.aspectj:aspectjweaver:1.9.20.1'
     implementation 'com.github.jnr:jnr-posix:3.1.19'
     implementation 'com.yammer.metrics:metrics-core:2.2.0'
+    implementation 'commons-codec:commons-codec:1.17.0'
+
     testImplementation 'org.slf4j:slf4j-simple:2.0.9'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
     testImplementation 'org.mockito:mockito-core:5.5.0'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.5.0'
+    testImplementation 'org.awaitility:awaitility:4.2.1'
   }
 
   test {

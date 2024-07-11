@@ -14,11 +14,13 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.metrics.stats.S3OperationStats;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -180,7 +182,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(null);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            if (isUnrecoverable(ex) || checkS3ApiMode) {
+            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.PUT_OBJECT);
+            if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 LOGGER.error("PutObject for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
                 data.release();
@@ -209,7 +212,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(uploadId);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().createMultiPartUploadStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            if (isUnrecoverable(ex) || checkS3ApiMode) {
+            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.CREATE_MULTI_PART_UPLOAD);
+            if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 LOGGER.error("CreateMultipartUpload for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
             } else {
@@ -250,7 +254,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(part);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().uploadPartStats(size, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            if (isUnrecoverable(ex) || checkS3ApiMode) {
+            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.UPLOAD_PART);
+            if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, ex);
                 data.release();
                 cf.completeExceptionally(ex);
@@ -282,7 +287,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(part);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().uploadPartCopyStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            if (isUnrecoverable(ex) || checkS3ApiMode) {
+            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.UPLOAD_PART_COPY);
+            if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail", path, partNumber, start, end, ex);
                 cf.completeExceptionally(ex);
             } else {
@@ -314,12 +320,23 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(null);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().completeMultiPartUploadStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            if (isUnrecoverable(ex) || checkS3ApiMode) {
+            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.COMPLETE_MULTI_PART_UPLOAD);
+            if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 LOGGER.error("CompleteMultipartUpload for object {} fail", path, ex);
                 cf.completeExceptionally(ex);
             } else if (!checkPartNumbers(parts)) {
                 LOGGER.error("CompleteMultipartUpload for object {} fail, part numbers are not continuous", path);
                 cf.completeExceptionally(new IllegalArgumentException("Part numbers are not continuous"));
+            } else if (retryStrategy == RetryStrategy.VISIBILITY_CHECK) {
+                rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(options.bucketId()), path, 0, 1)
+                    .whenComplete((nil, t) -> {
+                        if (t != null) {
+                            LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, ex);
+                            scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), 100, TimeUnit.MILLISECONDS);
+                        } else {
+                            cf.complete(null);
+                        }
+                    });
             } else {
                 LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, ex);
                 scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), 100, TimeUnit.MILLISECONDS);
@@ -330,6 +347,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
+        if (objectPaths.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
         CompletableFuture<Void> cf = new CompletableFuture<>();
         for (ObjectPath objectPath: objectPaths) {
             if (!bucketCheck(objectPath.bucketId(), cf)) {
@@ -377,7 +397,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public void close() {
+        writeLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
+        writeCallbackExecutor.shutdown();
         scheduler.shutdown();
         doClose();
     }
@@ -399,7 +421,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     abstract CompletableFuture<Void> doDeleteObjects(List<String> objectKeys);
 
-    abstract boolean isUnrecoverable(Throwable ex);
+    abstract RetryStrategy toRetryStrategy(Throwable ex, S3Operation operation);
 
     abstract void doClose();
 
@@ -492,7 +514,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             S3OperationStats.getInstance().getObjectStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(buf);
         }).exceptionally(ex -> {
-            if (isUnrecoverable(ex) || checkS3ApiMode) {
+            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.GET_OBJECT);
+            if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
                 cf.completeExceptionally(ex);
             } else {
