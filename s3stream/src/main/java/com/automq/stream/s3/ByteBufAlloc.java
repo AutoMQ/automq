@@ -12,6 +12,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.WrappedByteBuf;
+import com.automq.stream.utils.Systems;
 import io.netty.buffer.AbstractByteBufAllocator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocatorMetric;
@@ -29,7 +30,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ByteBufAlloc {
+
     public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv("AUTOMQ_MEMORY_USAGE_DETECT"));
+    public static final int MEMORY_USAGE_DETECT_INTERVAL = Systems.getEnvInt("AUTOMQ_MEMORY_USAGE_DETECT_TIME_INTERVAL", 60000);
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ByteBufAlloc.class);
     private static final Map<Integer, LongAdder> USAGE_STATS = new ConcurrentHashMap<>();
@@ -122,7 +125,7 @@ public class ByteBufAlloc {
                     return v;
                 });
                 long now = System.currentTimeMillis();
-                if (now - lastMetricLogTime > 60000) {
+                if (now - lastMetricLogTime > MEMORY_USAGE_DETECT_INTERVAL) {
                     // it's ok to be not thread safe
                     lastMetricLogTime = now;
                     ByteBufAlloc.byteBufAllocMetric = new ByteBufAllocMetric();
