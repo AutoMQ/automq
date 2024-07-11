@@ -64,8 +64,10 @@ public class SlidingWindowService {
      * The lock of {@link #pendingBlocks}, {@link #writingBlocks}, {@link #currentBlock}.
      */
     private final Lock blockLock = new ReentrantLock();
-
-    private final Lock pollBlocKLock = new ReentrantLock();
+    /**
+     * The lock of {@link #pendingBlocks}.
+     */
+    private final Lock pollBlockLock = new ReentrantLock();
     /**
      * Blocks that are being written.
      */
@@ -280,11 +282,11 @@ public class SlidingWindowService {
      * Get all blocks to be written. If there is no non-empty block, return null.
      */
     private BlockBatch pollBlocks() {
-        if (this.pollBlocKLock.tryLock()) {
+        if (this.pollBlockLock.tryLock()) {
             try {
                 return pollBlocksLocked();
             } finally {
-                this.pollBlocKLock.unlock();
+                this.pollBlockLock.unlock();
             }
         }
         return null;
@@ -292,7 +294,7 @@ public class SlidingWindowService {
 
     /**
      * Get all blocks to be written. If there is no non-empty block, return null.
-     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
+     * Note: this method is NOT thread safe, and it should be called with {@link #pollBlockLock} locked.
      */
     private BlockBatch pollBlocksLocked() {
         Block currentBlock = this.currentBlock;
