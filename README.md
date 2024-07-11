@@ -1,4 +1,4 @@
-## AutoMQ: A Cloud-Native fork of Kafka by separating storage to S3 and EBS
+## AutoMQ: A Cloud-First Alternative of Kafka by decoupling durability to S3 and EBS
 
 </div>
 
@@ -191,15 +191,15 @@ If you've found a problem with AutoMQ, please open a [GitHub Issues](https://git
 To contribute to AutoMQ please see [Code of Conduct](CODE_OF_CONDUCT.md) and [Contributing Guide](CONTRIBUTING_GUIDE.md).
 We have a list of [good first issues](https://github.com/AutoMQ/automq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process. To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. If you have any questions about the 'good first issue' please feel free to ask. We will do our best to clarify any doubts you may have.
 
-## Commercial Version of AutoMQ
-The enterprise version of AutoMQ provides a powerful and easy-to-use control plane to help you manage clusters effortlessly. Meanwhile, the control plane is more powerful in terms of availability and observability compared to the community version.
+## AutoMQ Business Edition
+The business edition of AutoMQ provides a powerful and easy-to-use control plane to help you manage clusters effortlessly. Meanwhile, the control plane is more powerful in terms of availability and observability compared to the community version.
 
-> You can check the difference between the community and enterprise versions [here](https://www.automq.com/product).
+> You can check the difference between the community and business editions [here](https://www.automq.com/product).
 
 ![](docs/images/automq_dashboard.jpeg)
 
-### Free trial of AutoMQ Enterprise
-To allow users interested in our enterprise version to experience the capabilities of the AutoMQ commercial version without any barriers, click [here](https://www.automq.com/quick-start#Enterprise?utm_source=github_enterprise) to apply for a no-obligation cluster trial, and note `AutoMQ Enterprise Free Trial` in the message input box. We will immediately initialize an AutoMQ enterprise control plane for you in the cloud and give you the address of control panel. 
+### Free trial of AutoMQ Business Edition
+To allow users to experience the capabilities of the AutoMQ business edition without any barriers, click [here](https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud) to apply for a no-obligation cluster trial, and note `AutoMQ Cloud Free Trial` in the message input box. We will immediately initialize an AutoMQ Cloud control panel for you soon in the cloud and give you the address of the control panel. Then, you can use the control panel to create a AutoMQ cluster or perform operations like scale in/out. 
 
 No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh?utm_source=github_poc). We will further support your official POC.
 
