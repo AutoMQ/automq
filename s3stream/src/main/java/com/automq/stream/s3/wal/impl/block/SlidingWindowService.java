@@ -22,11 +22,11 @@ import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import java.util.Collection;
 import java.util.LinkedList;
-import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -71,7 +71,7 @@ public class SlidingWindowService {
     /**
      * Blocks that are being written.
      */
-    private final Queue<Long> writingBlocks = new PriorityQueue<>();
+    private final Queue<Long> writingBlocks = new PriorityBlockingQueue<>();
     /**
      * Whether the service is initialized.
      * After the service is initialized, data in {@link #windowCoreData} is valid.
@@ -331,23 +331,10 @@ public class SlidingWindowService {
      * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
      */
     private long wroteBlocks(BlockBatch wroteBlocks) {
-        blockLock.lock();
-        try {
-            return wroteBlocksLocked(wroteBlocks);
-        } finally {
-            blockLock.unlock();
-        }
-    }
-
-    /**
-     * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
-     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
-     */
-    private long wroteBlocksLocked(BlockBatch wroteBlocks) {
         boolean removed = writingBlocks.remove(wroteBlocks.startOffset());
         assert removed;
         if (writingBlocks.isEmpty()) {
-            return getCurrentBlockLocked().startOffset();
+            return wroteBlocks.startOffset() + WALUtil.alignLargeByBlockSize(wroteBlocks.blockBatchSize());
         }
         return writingBlocks.peek();
     }
