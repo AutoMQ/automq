@@ -169,6 +169,10 @@ public class DefaultS3Client implements Client {
                 if (StringUtils.isNumeric(maxInflightUploadCount)) {
                     configBuilder.withMaxInflightUploadCount(Integer.parseInt(maxInflightUploadCount));
                 }
+                String readAheadObjectCount = bucketURI.extensionString("readAheadObjectCount");
+                if (StringUtils.isNumeric(readAheadObjectCount)) {
+                    configBuilder.withReadAheadObjectCount(Integer.parseInt(readAheadObjectCount));
+                }
                 return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
             default:
                 throw new IllegalArgumentException("Invalid WAL schema: " + bucketURI.protocol());
