@@ -133,6 +133,10 @@ public class BucketURI {
         return Boolean.parseBoolean(value);
     }
 
+    public void addExtension(String key, String value) {
+        extension.put(key, List.of(value));
+    }
+
     @Override
     public String toString() {
         // TODO: mask the secret info

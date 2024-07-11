@@ -20,6 +20,7 @@ dependencies {
     implementation libs.nettyBuffer
     implementation libs.opentelemetrySdk
     implementation libs.jacksonDatabind
+    implementation libs.jacksonYaml
     implementation libs.commonLang
     implementation libs.guava
     implementation 'info.picocli:picocli:4.7.6'
@@ -45,6 +46,7 @@ dependencies {
         exclude(group: 'org.lz4', module: '*')
         exclude(group: 'org.apache.kafka.shaded', module: '*')
     }
+
     annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
 
     testImplementation platform('org.junit:junit-bom:5.10.0')

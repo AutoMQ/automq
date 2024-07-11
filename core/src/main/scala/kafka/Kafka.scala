@@ -104,7 +104,7 @@ object Kafka extends Logging {
     try {
       // AutoMQ for Kafka inject start
       val serverProps = getPropsFromArgs(args)
-      StorageUtil.formatStorage(serverProps, args(0))
+      StorageUtil.formatStorage(serverProps)
       val server = buildServer(serverProps)
       AutoMQApplication.registerSingleton(classOf[Server], server)
       // AutoMQ for Kafka inject end
