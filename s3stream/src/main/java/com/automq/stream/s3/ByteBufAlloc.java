@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
 public class ByteBufAlloc {
 
     public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv("AUTOMQ_MEMORY_USAGE_DETECT"));
-    public static final int MEMORY_USAGE_DETECT_INTERVAL = Systems.getEnvInt("AUTOMQ_MEMORY_USAGE_DETECT_TIME_INTERVAL",60000);
+    public static final int MEMORY_USAGE_DETECT_INTERVAL = Systems.getEnvInt("AUTOMQ_MEMORY_USAGE_DETECT_TIME_INTERVAL", 60000);
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ByteBufAlloc.class);
     private static final Map<Integer, LongAdder> USAGE_STATS = new ConcurrentHashMap<>();
