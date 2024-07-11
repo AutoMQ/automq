@@ -16,6 +16,7 @@ public class ObjectWALConfig {
     private final long maxBytesInBatch;
     private final long maxUnflushedBytes;
     private final int maxInflightUploadCount;
+    private final int readAheadObjectCount;
     private final String clusterId;
     private final int nodeId;
     private final long epoch;
@@ -26,11 +27,12 @@ public class ObjectWALConfig {
     }
 
     public ObjectWALConfig(long batchInterval, long maxBytesInBatch, long maxUnflushedBytes, int maxInflightUploadCount,
-        String clusterId, int nodeId, long epoch, boolean failover) {
+        int readAheadObjectCount, String clusterId, int nodeId, long epoch, boolean failover) {
         this.batchInterval = batchInterval;
         this.maxBytesInBatch = maxBytesInBatch;
         this.maxUnflushedBytes = maxUnflushedBytes;
         this.maxInflightUploadCount = maxInflightUploadCount;
+        this.readAheadObjectCount = readAheadObjectCount;
         this.clusterId = clusterId;
         this.nodeId = nodeId;
         this.epoch = epoch;
@@ -51,6 +53,10 @@ public class ObjectWALConfig {
 
     public int maxInflightUploadCount() {
         return maxInflightUploadCount;
+    }
+
+    public int readAheadObjectCount() {
+        return readAheadObjectCount;
     }
 
     public String clusterId() {
@@ -74,6 +80,7 @@ public class ObjectWALConfig {
         private long maxBytesInBatch = 4 * 1024 * 1024L; // 4MB
         private long maxUnflushedBytes = 1024 * 1024 * 1024L; // 1GB
         private int maxInflightUploadCount = 50;
+        private int readAheadObjectCount = 4;
         private String clusterId;
         private int nodeId;
         private long epoch;
@@ -98,7 +105,20 @@ public class ObjectWALConfig {
         }
 
         public Builder withMaxInflightUploadCount(int maxInflightUploadCount) {
+            if (maxInflightUploadCount < 1) {
+                maxInflightUploadCount = 1;
+            }
+
             this.maxInflightUploadCount = maxInflightUploadCount;
+            return this;
+        }
+
+        public Builder withReadAheadObjectCount(int readAheadObjectCount) {
+            if (readAheadObjectCount < 1) {
+                readAheadObjectCount = 1;
+            }
+
+            this.readAheadObjectCount = readAheadObjectCount;
             return this;
         }
 
@@ -123,7 +143,7 @@ public class ObjectWALConfig {
         }
 
         public ObjectWALConfig build() {
-            return new ObjectWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, clusterId, nodeId, epoch, failover);
+            return new ObjectWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, failover);
         }
     }
 }

@@ -24,10 +24,12 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +49,11 @@ public class ObjectWALService implements WriteAheadLog {
         this.config = config;
 
         this.accumulator = new RecordAccumulator(time, objectStorage, config);
+    }
+
+    // Visible for testing.
+    protected RecordAccumulator accumulator() {
+        return accumulator;
     }
 
     @Override
@@ -78,47 +85,7 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public Iterator<RecoverResult> recover() {
-        return new Iterator<>() {
-            // TODO: Recover only the objects with the latest epoch.
-            private List<RecordAccumulator.WALObject> objectList = accumulator.objectList();
-            private int nextIndex = 0;
-            private ByteBuf record = PooledByteBufAllocator.DEFAULT.buffer();
-
-            @Override
-            public boolean hasNext() {
-                return record.isReadable() || nextIndex < objectList.size();
-            }
-
-            @Override
-            public RecoverResult next() {
-                if (!hasNext()) {
-                    return null;
-                }
-
-                // TODO: Read ahead
-                if (!record.isReadable()) {
-                    RecordAccumulator.WALObject object = objectList.get(nextIndex++);
-                    record = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
-
-                    // Check header
-                    WALObjectHeader.unmarshal(record);
-                    record.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
-                }
-
-                ByteBuf recordHeaderBuf = record.readBytes(RECORD_HEADER_SIZE);
-                RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
-                recordHeaderBuf.release();
-
-                int length = header.getRecordBodyLength();
-                ByteBuf recordBuf = record.readBytes(length);
-
-                if (!record.isReadable()) {
-                    record.release();
-                }
-
-                return new RecoverResultImpl(recordBuf, header.getRecordBodyCRC());
-            }
-        };
+        return new RecoverIterator(accumulator.objectList(), objectStorage, config.readAheadObjectCount());
     }
 
     @Override
@@ -129,5 +96,82 @@ public class ObjectWALService implements WriteAheadLog {
     @Override
     public CompletableFuture<Void> trim(long offset) {
         return accumulator.trim(offset);
+    }
+
+    public static class RecoverIterator implements Iterator<RecoverResult> {
+        private final ObjectStorage objectStorage;
+        private final int readAheadObjectSize;
+
+        private final List<RecordAccumulator.WALObject> objectList;
+        private final Queue<CompletableFuture<byte[]>> readAheadQueue;
+
+        private int nextIndex = 0;
+        private ByteBuf record = Unpooled.EMPTY_BUFFER;
+
+        public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
+            int readAheadObjectSize) {
+            this.objectList = objectList;
+            this.objectStorage = objectStorage;
+            this.readAheadObjectSize = readAheadObjectSize;
+            this.readAheadQueue = new ArrayDeque<>(readAheadObjectSize);
+
+            // Fill the read ahead queue.
+            for (int i = 0; i < readAheadObjectSize; i++) {
+                tryReadAhead();
+            }
+        }
+
+        @Override
+        public boolean hasNext() {
+            return record.isReadable() || !readAheadQueue.isEmpty() || nextIndex < objectList.size();
+        }
+
+        @Override
+        public RecoverResult next() {
+            // If there is no more data to read, return null.
+            if (!hasNext()) {
+                return null;
+            }
+
+            if (!record.isReadable()) {
+                byte[] buffer = readAheadQueue.poll().join();
+                record = Unpooled.wrappedBuffer(buffer);
+
+                // Check header
+                WALObjectHeader.unmarshal(record);
+                record.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
+            }
+
+            // Try to read next object.
+            tryReadAhead();
+
+            ByteBuf recordHeaderBuf = record.readBytes(RECORD_HEADER_SIZE);
+            RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
+            recordHeaderBuf.release();
+
+            int length = header.getRecordBodyLength();
+            ByteBuf recordBuf = record.readBytes(length);
+
+            if (!record.isReadable()) {
+                record.release();
+            }
+
+            return new RecoverResultImpl(recordBuf, header.getRecordBodyCRC());
+        }
+
+        private void tryReadAhead() {
+            if (readAheadQueue.size() < readAheadObjectSize && nextIndex < objectList.size()) {
+                RecordAccumulator.WALObject object = objectList.get(nextIndex++);
+                CompletableFuture<byte[]> readFuture = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length())
+                    .thenApply(buffer -> {
+                        // Copy the result buffer and release it.
+                        byte[] bytes = new byte[buffer.readableBytes()];
+                        buffer.readBytes(bytes);
+                        buffer.release();
+                        return bytes;
+                    });
+                readAheadQueue.add(readFuture);
+            }
+        }
     }
 }
