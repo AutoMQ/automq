@@ -24,7 +24,6 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -107,7 +106,7 @@ public class ObjectWALService implements WriteAheadLog {
         private final Queue<CompletableFuture<byte[]>> readAheadQueue;
 
         private int nextIndex = 0;
-        private ByteBuf record = PooledByteBufAllocator.DEFAULT.heapBuffer(0);
+        private ByteBuf record = Unpooled.EMPTY_BUFFER;
 
         public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
             int readAheadObjectSize) {
