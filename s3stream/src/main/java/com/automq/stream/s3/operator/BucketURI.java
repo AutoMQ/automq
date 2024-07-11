@@ -117,6 +117,10 @@ public class BucketURI {
         return region;
     }
 
+    public String extensionString(String key) {
+        return getString(extension, key, null);
+    }
+
     public String extensionString(String key, String defaultVal) {
         return getString(extension, key, defaultVal);
     }
