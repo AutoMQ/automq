@@ -28,6 +28,7 @@ public interface Block {
      */
     long startOffset();
 
+    long startTime();
     /**
      * Append a record to this block.
      * Cannot be called after {@link #data()} is called.
