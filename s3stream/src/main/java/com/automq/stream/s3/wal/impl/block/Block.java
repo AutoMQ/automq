@@ -28,6 +28,10 @@ public interface Block {
      */
     long startOffset();
 
+    /**
+     * The start time of this block*
+     * @return
+     */
     long startTime();
     /**
      * Append a record to this block.
