@@ -70,6 +70,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
     private final DataBlockCache dataBlockCache;
     long nextReadOffset;
     private CompletableFuture<Void> inflightLoadIndexCf;
+    private volatile CompletableFuture<Void> afterReadTryReadaheadCf;
     private long lastAccessTimestamp = System.currentTimeMillis();
     private boolean reading = false;
 
@@ -219,6 +220,14 @@ import static com.automq.stream.utils.FutureUtil.exec;
         });
     }
 
+    /**
+     * afterReadTryReadaheadCf will be overwritten, and it is necessary to call getAfterReadTryReadahead Cf in a timely manner
+     * @return  tryReadahead CompletableFuture
+     */
+    public CompletableFuture<Void> getAfterReadTryReadaheadCf() {
+        return afterReadTryReadaheadCf;
+    }
+
     void afterRead(ReadDataBlock readDataBlock, ReadContext ctx) {
         List<StreamRecordBatch> records = readDataBlock.getRecords();
         if (!records.isEmpty()) {
@@ -242,7 +251,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             }
         }
         // try readahead to speed up the next read
-        eventLoop.execute(() -> readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS));
+        afterReadTryReadaheadCf = eventLoop.submit(() -> readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS));
     }
 
     private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes,
