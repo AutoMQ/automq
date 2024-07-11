@@ -6,7 +6,7 @@
   🔥&nbsp <a
     href="https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud"
     target="_blank"
-  ><b>Free trail of AutoMQ Cloud</b></a>&nbsp&nbsp&nbsp
+  ><b>Free trail of AutoMQ Business Edition</b></a>&nbsp&nbsp&nbsp
   📑&nbsp <a
     href="https://docs.automq.com/docs/automq-opensource/HSiEwHVfdiO7rWk34vKcVvcvn2Z?utm_source=github"
     target="_blank"
