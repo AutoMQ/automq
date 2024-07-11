@@ -114,7 +114,7 @@ public class DefaultS3Client implements Client {
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
-        this.writeAheadLog = buildWAL(credentialsProviders);
+        this.writeAheadLog = buildWAL();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
@@ -125,7 +125,7 @@ public class DefaultS3Client implements Client {
         S3StreamThreadPoolMonitor.init();
     }
 
-    private WriteAheadLog buildWAL(List<AwsCredentialsProvider> credentialsProviders) {
+    private WriteAheadLog buildWAL() {
         BucketURI bucketURI;
         try {
             bucketURI = BucketURI.parse(config.walPath());
@@ -136,9 +136,7 @@ public class DefaultS3Client implements Client {
             case "file":
                 return BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
             case "s3":
-                ObjectStorage walObjectStorage = AwsObjectStorage.builder()
-                    .bucket(bucketURI)
-                    .credentialsProviders(credentialsProviders)
+                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(bucketURI)
                     .tagging(config.objectTagging())
                     .build();
 
