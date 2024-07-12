@@ -61,11 +61,11 @@ public class SlidingWindowService {
     private final WALHeaderFlusher walHeaderFlusher;
 
     /**
-     * The lock of {@link #pendingBlocks}, {@link #writingBlocks}, {@link #currentBlock}.
+     * The lock of {@link #pendingBlocks}, {@link #currentBlock}.
      */
     private final Lock blockLock = new ReentrantLock();
     /**
-     * The lock of {@link #pendingBlocks}.
+     * The lock of {@link #pendingBlocks}, {@link #writingBlocks}.
      */
     private final Lock pollBlockLock = new ReentrantLock();
     /**
