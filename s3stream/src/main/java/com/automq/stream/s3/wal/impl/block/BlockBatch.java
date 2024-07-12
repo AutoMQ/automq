@@ -21,7 +21,6 @@ public class BlockBatch {
     private final Collection<Block> blocks;
     private final long startOffset;
     private final long endOffset;
-    private final long blockBatchSize;
 
     public BlockBatch(Collection<Block> blocks) {
         assert !blocks.isEmpty();
@@ -34,9 +33,6 @@ public class BlockBatch {
             .map(b -> b.startOffset() + b.size())
             .max(Long::compareTo)
             .orElseThrow();
-        this.blockBatchSize = blocks.stream()
-            .mapToLong(Block::size)
-            .sum();
     }
 
     public long startOffset() {
@@ -49,10 +45,6 @@ public class BlockBatch {
 
     public Collection<Block> blocks() {
         return Collections.unmodifiableCollection(blocks);
-    }
-
-    public long blockBatchSize(){
-        return blockBatchSize;
     }
 
     public Iterator<CompletableFuture<AppendResult.CallbackResult>> futures() {

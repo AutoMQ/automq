@@ -23,10 +23,10 @@ import com.automq.stream.utils.Threads;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.PriorityQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -71,7 +71,7 @@ public class SlidingWindowService {
     /**
      * Blocks that are being written.
      */
-    private final Queue<Long> writingBlocks = new PriorityBlockingQueue<>();
+    private final Queue<Long> writingBlocks = new PriorityQueue<>();
     /**
      * Whether the service is initialized.
      * After the service is initialized, data in {@link #windowCoreData} is valid.
@@ -105,6 +105,11 @@ public class SlidingWindowService {
      * The last time when a batch of blocks is written to the disk.
      */
     private volatile long lastWriteTimeNanos = 0;
+
+    /**
+     * The maximum offset currently written into writeBlocks.*
+     */
+    private long maxWriteBlockOffset = 0;
 
     public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit,
         long blockSoftLimit, int writeRateLimit, WALHeaderFlusher flusher) {
@@ -323,6 +328,7 @@ public class SlidingWindowService {
 
         BlockBatch blockBatch = new BlockBatch(blocks);
         writingBlocks.add(blockBatch.startOffset());
+        maxWriteBlockOffset = blockBatch.endOffset();
 
         return blockBatch;
     }
@@ -331,10 +337,22 @@ public class SlidingWindowService {
      * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
      */
     private long wroteBlocks(BlockBatch wroteBlocks) {
+        this.pollBlockLock.lock();
+        try {
+            return wroteBlocksLocked(wroteBlocks);
+        } finally {
+            this.pollBlockLock.unlock();
+        }
+    }
+    /**
+     * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
+     * Note: this method is NOT thread safe, and it should be called with {@link #pollBlockLock} locked.
+     */
+    private long wroteBlocksLocked(BlockBatch wroteBlocks) {
         boolean removed = writingBlocks.remove(wroteBlocks.startOffset());
         assert removed;
         if (writingBlocks.isEmpty()) {
-            return wroteBlocks.startOffset() + WALUtil.alignLargeByBlockSize(wroteBlocks.blockBatchSize());
+            return this.maxWriteBlockOffset;
         }
         return writingBlocks.peek();
     }
