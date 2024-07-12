@@ -168,7 +168,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     ADMIN_CLIENT_AS_BROKER_JAAS_CONF_PROPERTY = "java.security.auth.login.config=/mnt/security/admin_client_as_broker_jaas.conf"
     KRB5_CONF = "java.security.krb5.conf=/mnt/security/krb5.conf"
     SECURITY_PROTOCOLS = [SecurityConfig.PLAINTEXT, SecurityConfig.SSL, SecurityConfig.SASL_PLAINTEXT, SecurityConfig.SASL_SSL]
-    KAFKA_HEAP_OPTS = "-Xmx1024m -Xms1024m" # AutoMQ inject
 
     logs = {
         "kafka_server_start_stdout_stderr": {
@@ -205,7 +204,8 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                  isolated_kafka=None,
                  controller_num_nodes_override=0,
                  allow_zk_with_kraft=True, # AutoMQ inject
-                 extra_env=None,  # AutoMQ inject
+                 extra_env=None, # AutoMQ inject
+                 kafka_heap_opts="-Xmx1024m -Xms1024m", # AutoMQ inject
                  quorum_info_provider=None,
                  use_new_coordinator=None
                  ):
@@ -283,17 +283,17 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.controller_quorum = None # will define below if necessary
         self.isolated_controller_quorum = None # will define below if necessary
         self.configured_for_zk_migration = False
-        
+
         # Set use_new_coordinator based on context and arguments.
         default_use_new_coordinator = False
-       
+
         if use_new_coordinator is None:
             arg_name = 'use_new_coordinator'
             if context.injected_args is not None:
                 use_new_coordinator = context.injected_args.get(arg_name)
             if use_new_coordinator is None:
                 use_new_coordinator = context.globals.get(arg_name, default_use_new_coordinator)
-        
+
         # Assign the determined value.
         self.use_new_coordinator = use_new_coordinator
 
@@ -372,7 +372,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.listener_security_config = listener_security_config
         self.extra_kafka_opts = extra_kafka_opts
         self.extra_env = extra_env  # AutoMQ inject
-
+        self.kafka_heap_opts = kafka_heap_opts  # AutoMQ inject
         #
         # In a heavily loaded and not very fast machine, it is
         # sometimes necessary to give more time for the zk client
@@ -804,7 +804,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
         if self.use_new_coordinator:
             override_configs[config_property.NEW_GROUP_COORDINATOR_ENABLE] = 'true'
-    
+
         for prop in self.server_prop_overrides:
             override_configs[prop[0]] = prop[1]
 
@@ -843,7 +843,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         cmd += fix_opts_for_new_jvm(node)
         cmd += "export KAFKA_OPTS=\"%s %s %s\"; " % (heap_kafka_opts, security_kafka_opts, self.extra_kafka_opts)
         # AutoMQ inject start
-        cmd += "export KAFKA_HEAP_OPTS=\"%s\"; " % self.KAFKA_HEAP_OPTS
+        cmd += "export KAFKA_HEAP_OPTS=\"%s\"; " % self.kafka_heap_opts
         if self.extra_env is not None:
             for env_var in self.extra_env:
                 cmd += "export %s; " % env_var
