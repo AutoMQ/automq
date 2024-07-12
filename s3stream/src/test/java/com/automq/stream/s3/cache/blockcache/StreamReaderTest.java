@@ -113,6 +113,7 @@ public class StreamReaderTest {
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(0, 29, 21))).get();
         ReadDataBlock rst = readCf.get().get();
+        streamReader.getAfterReadTryReadaheadCf().get();
         assertEquals(3, rst.getRecords().size());
         assertEquals(0, rst.getRecords().get(0).getBaseOffset());
         assertEquals(1, rst.getRecords().get(1).getBaseOffset());
@@ -141,6 +142,7 @@ public class StreamReaderTest {
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(3L, 29L, 1))).get();
         rst = readCf.get().get();
+        streamReader.getAfterReadTryReadaheadCf().get();
         assertEquals(1, rst.getRecords().size());
         assertEquals(3, rst.getRecords().get(0).getBaseOffset());
         rst.getRecords().forEach(StreamRecordBatch::release);
@@ -157,6 +159,7 @@ public class StreamReaderTest {
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(4L, 29L, 1))).get();
         rst = readCf.get().get();
+        streamReader.getAfterReadTryReadaheadCf().get();
         assertEquals(1, rst.getRecords().size());
         assertEquals(4, rst.getRecords().get(0).getBaseOffset());
         rst.getRecords().forEach(StreamRecordBatch::release);
@@ -172,6 +175,7 @@ public class StreamReaderTest {
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(5L, 14L, Integer.MAX_VALUE))).get();
         rst = readCf.get().get();
+        streamReader.getAfterReadTryReadaheadCf().get();
         assertEquals(9, rst.getRecords().size());
         rst.getRecords().forEach(StreamRecordBatch::release);
         // - load more index
