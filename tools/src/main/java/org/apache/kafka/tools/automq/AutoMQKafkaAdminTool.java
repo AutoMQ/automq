@@ -17,7 +17,7 @@
 package org.apache.kafka.tools.automq;
 
 import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.helper.HelpScreenException;
+import net.sourceforge.argparse4j.internal.HelpScreenException;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
@@ -34,9 +34,7 @@ public class AutoMQKafkaAdminTool {
         // suppress slf4j inner warning log
         System.err.close();
         ArgumentParser parser = ArgumentParsers
-            .newFor("automq-admin-tool")
-            .build()
-            .defaultHelp(true)
+            .newArgumentParser("automq-admin-tool")
             .description("The AutoMQ admin tool provides several tools to assist users in initializing and managing an AutoMQ cluster efficiently.");
         if (args.length == 0) {
             System.out.println("Please ensure that you provide valid arguments and refer to the usage guidelines before proceeding.");

@@ -55,9 +55,7 @@ public class VerifiableLog4jAppender {
     /** Get the command-line argument parser. */
     private static ArgumentParser argParser() {
         ArgumentParser parser = ArgumentParsers
-            .newFor("verifiable-log4j-appender")
-            .build()
-            .defaultHelp(true)
+            .newArgumentParser("verifiable-log4j-appender")
             .description("This tool produces increasing integers to the specified topic using KafkaLog4jAppender.");
 
         parser.addArgument("--topic")

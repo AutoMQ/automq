@@ -202,9 +202,7 @@ public final class Agent {
 
     public static void main(String[] args) throws Exception {
         ArgumentParser parser = ArgumentParsers
-            .newFor("trogdor-agent")
-            .build()
-            .defaultHelp(true)
+            .newArgumentParser("trogdor-agent")
             .description("The Trogdor fault injection agent");
         parser.addArgument("--agent.config", "-c")
             .action(store())
