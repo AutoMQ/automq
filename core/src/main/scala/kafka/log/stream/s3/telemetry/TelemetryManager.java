@@ -174,7 +174,8 @@ public class TelemetryManager {
         S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
         S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
 
-        if (kafkaConfig.s3WALPath().startsWith("0@s3://")) {
+        // kraft controller may not have s3WALPath config.
+        if (StringUtils.isNotEmpty(kafkaConfig.s3WALPath()) && kafkaConfig.s3WALPath().startsWith("0@s3://")) {
             ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
         }
     }
