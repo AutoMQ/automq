@@ -57,7 +57,7 @@ public class ElasticTimeIndexTest {
         ElasticTimeIndex idx1 = new ElasticTimeIndex(TestUtils.tempFile(), baseOffset, maxEntries * 12,
             new IStreamSliceSupplier(slice1), TimestampOffset.UNKNOWN, cache);
         long now = System.currentTimeMillis();
-        idx1.maybeAppend(System.currentTimeMillis(), 100L, false);
+        idx1.maybeAppend(now, 100L, false);
         TimestampOffset to = idx1.tryGetEntryFromCache(0);
         Assertions.assertEquals(now, to.timestamp);
         Assertions.assertEquals(100L, to.offset);
