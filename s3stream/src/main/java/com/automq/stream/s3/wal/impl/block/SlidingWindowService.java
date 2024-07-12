@@ -107,9 +107,9 @@ public class SlidingWindowService {
     private volatile long lastWriteTimeNanos = 0;
 
     /**
-     * The maximum offset currently written into writeBlocks.*
+     * The maximum alignment offset in {@link #writingBlocks}.*
      */
-    private long maxWriteBlockOffset = 0;
+    private long maxAlignWriteBlockOffset = 0;
 
     public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit,
         long blockSoftLimit, int writeRateLimit, WALHeaderFlusher flusher) {
@@ -321,14 +321,18 @@ public class SlidingWindowService {
             }
         }
 
-        Collection<Block> blocks = new LinkedList<>();
-        while (!pendingBlocks.isEmpty()) {
-            blocks.add(pendingBlocks.poll());
+        if (pendingBlocks.isEmpty()) {
+            return null;
         }
-
+        Collection<Block> blocks = new LinkedList<>();
+        Block leastBlock = null;
+        while (!pendingBlocks.isEmpty()) {
+            leastBlock = pendingBlocks.poll();
+            blocks.add(leastBlock);
+        }
         BlockBatch blockBatch = new BlockBatch(blocks);
         writingBlocks.add(blockBatch.startOffset());
-        maxWriteBlockOffset = blockBatch.endOffset();
+        maxAlignWriteBlockOffset = nextBlockStartOffset(leastBlock);
 
         return blockBatch;
     }
@@ -352,7 +356,7 @@ public class SlidingWindowService {
         boolean removed = writingBlocks.remove(wroteBlocks.startOffset());
         assert removed;
         if (writingBlocks.isEmpty()) {
-            return this.maxWriteBlockOffset;
+            return this.maxAlignWriteBlockOffset;
         }
         return writingBlocks.peek();
     }
