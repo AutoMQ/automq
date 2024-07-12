@@ -36,11 +36,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -134,6 +130,8 @@ public class S3StreamClient implements StreamClient {
      * Start stream objects compactions.
      */
     private void startStreamObjectsCompactions() {
+        long compactionJitterDelay = ThreadLocalRandom.current().nextInt(20);
+
         scheduledCompactionTaskFuture = streamObjectCompactionScheduler.scheduleWithFixedDelay(() -> {
             try {
                 CompactionHint hint = new CompactionHint(objectManager.getObjectsCount().get());
@@ -142,7 +140,7 @@ public class S3StreamClient implements StreamClient {
             } catch (Throwable e) {
                 LOGGER.info("run stream object compaction task failed", e);
             }
-        }, 1, 1, TimeUnit.MINUTES);
+        }, compactionJitterDelay, 1, TimeUnit.MINUTES);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch, Map<String, String> tags) {
