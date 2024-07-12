@@ -351,7 +351,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return CompletableFuture.completedFuture(null);
         }
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        for (ObjectPath objectPath: objectPaths) {
+        for (ObjectPath objectPath : objectPaths) {
             if (!bucketCheck(objectPath.bucketId(), cf)) {
                 return cf;
             }
