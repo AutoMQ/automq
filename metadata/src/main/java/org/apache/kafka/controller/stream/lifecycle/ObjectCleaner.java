@@ -160,7 +160,7 @@ public class ObjectCleaner {
 
         // note that objectStorage may split internally which won't be atomic delete the whole batch.
         return objectStorage.delete(compositePathBatch)
-            .thenApply(Void -> {
+            .thenApply(__ -> {
                 List<Long> deletedObjectIds = new ArrayList<>(compositeObjectMetadataBatch.size());
 
                 // print log for all deleted composite object
