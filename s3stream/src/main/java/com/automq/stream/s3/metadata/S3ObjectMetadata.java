@@ -181,19 +181,14 @@ public class S3ObjectMetadata {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
         S3ObjectMetadata that = (S3ObjectMetadata) o;
-        return objectId == that.objectId && orderId == that.orderId && objectSize == that.objectSize && committedTimestamp == that.committedTimestamp
-            && dataTimeInMs == that.dataTimeInMs && type == that.type && offsetRanges.equals(that.offsetRanges);
+        return objectId == that.objectId && orderId == that.orderId && dataTimeInMs == that.dataTimeInMs && objectSize == that.objectSize && committedTimestamp == that.committedTimestamp && attributes == that.attributes && type == that.type && Objects.equals(offsetRanges, that.offsetRanges);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(objectId, orderId, objectSize, type, offsetRanges, committedTimestamp, dataTimeInMs);
+        return Objects.hash(objectId, orderId, type, offsetRanges, dataTimeInMs, objectSize, committedTimestamp, attributes);
     }
 }

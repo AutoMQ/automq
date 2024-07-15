@@ -12,9 +12,13 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
+import org.apache.commons.lang3.StringUtils;
+
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 public interface ObjectStorage {
@@ -47,11 +51,28 @@ public interface ObjectStorage {
 
     class ObjectPath {
         private final short bucketId;
+        private final long objectId;
         private final String key;
 
         public ObjectPath(short bucketId, String key) {
             this.bucketId = bucketId;
             this.key = key;
+
+            if (!StringUtils.isEmpty(key) && !key.startsWith("check_simple_obj_available")) {
+                this.objectId = ObjectUtils.parseObjectId(0, key);
+            } else {
+                this.objectId = -1;
+            }
+        }
+
+        public ObjectPath(short bucketId, long objectId) {
+            this.bucketId = bucketId;
+            this.objectId = objectId;
+            this.key = ObjectUtils.genKey(0, objectId);
+        }
+
+        public long getObjectId() {
+            return objectId;
         }
 
         public short bucketId() {
@@ -60,6 +81,19 @@ public interface ObjectStorage {
 
         public String key() {
             return key;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ObjectPath that = (ObjectPath) o;
+            return bucketId == that.bucketId && objectId == that.objectId && Objects.equals(key, that.key);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(bucketId, objectId, key);
         }
     }
 
@@ -79,6 +113,20 @@ public interface ObjectStorage {
 
         public long size() {
             return size;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            if (!super.equals(o)) return false;
+            ObjectInfo that = (ObjectInfo) o;
+            return timestamp == that.timestamp && size == that.size;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(super.hashCode(), timestamp, size);
         }
     }
 

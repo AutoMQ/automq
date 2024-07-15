@@ -17,7 +17,9 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.s3.operator.Writer;
+import java.util.AbstractMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -76,31 +78,46 @@ public class CompositeObject {
         return new CompositeObjectWriter(writer);
     }
 
-    public static CompletableFuture<Void> delete(S3ObjectMetadata objectMetadata, ObjectStorage objectStorage) {
+    public static CompletableFuture<Map.Entry<S3ObjectMetadata, List<ObjectPath>>> getLinkedObjectPath(
+        S3ObjectMetadata objectMetadata,
+        ObjectStorage objectStorage
+    ) {
         @SuppressWarnings("resource")
         CompositeObjectReader reader = reader(objectMetadata, objectStorage);
-        // 1. use reader to get all linked object
-        return reader.basicObjectInfo().thenCompose(info -> {
-            // 2. delete linked object
-            List<CompositeObjectReader.ObjectIndex> objectIndexes = ((CompositeObjectReader.BasicObjectInfoExt) info).objectsBlock().indexes();
-            List<ObjectPath> objectPaths = objectIndexes
-                .stream()
-                .map(o -> new ObjectPath(o.bucketId(), ObjectUtils.genKey(0, o.objectId())))
-                .collect(Collectors.toList());
-            return objectStorage.delete(objectPaths)
-                .thenApply(rst -> objectIndexes.stream().map(o -> o.bucketId() + "/" + o.objectId()).collect(Collectors.toList()));
-        }).thenCompose(linkedObjects -> {
-            // 3. delete composite object
-            return objectStorage.delete(List.of(new ObjectPath(objectMetadata.bucket(), objectMetadata.key()))).thenAccept(rst ->
-                LOGGER.info("Delete composite object {}/{} success, linked objects: {}",
-                    ObjectAttributes.from(objectMetadata.attributes()).bucket(), objectMetadata.objectId(), linkedObjects)
-            );
-        }).thenAccept(rst -> {
-        }).whenComplete((rst, ex) -> {
+        // use reader to get all linked object
+        CompletableFuture<Map.Entry<S3ObjectMetadata, List<ObjectPath>>> objectInfoCf =
+            reader.basicObjectInfo().thenApply(info -> {
+                List<CompositeObjectReader.ObjectIndex> objectIndexes =
+                    ((CompositeObjectReader.BasicObjectInfoExt) info).objectsBlock().indexes();
+                return new AbstractMap.SimpleEntry<>(objectMetadata, objectIndexes
+                    .stream()
+                    .map(o -> new ObjectPath(o.bucketId(), ObjectUtils.genKey(0, o.objectId())))
+                    .collect(Collectors.toList()));
+            });
+
+        objectInfoCf.whenComplete((rst, ex) -> {
             reader.release();
             if (ex != null) {
                 LOGGER.error("Delete composite object {} fail", objectMetadata, ex);
             }
         });
+
+        return objectInfoCf;
+    }
+
+    public static CompletableFuture<Void> delete(S3ObjectMetadata objectMetadata, ObjectStorage objectStorage) {
+        return getLinkedObjectPath(objectMetadata, objectStorage)
+            .thenCompose(objectMetaAndPaths -> objectStorage.delete(objectMetaAndPaths.getValue()) // delete linked object
+                .thenApply(rst -> {
+                    return objectMetaAndPaths.getValue().stream().map(o -> o.bucketId() + "/" + o.getObjectId()).collect(Collectors.toList());
+                }))
+            .thenCompose(linkedObjects -> {
+                // delete composite object
+                return objectStorage.delete(List.of(new ObjectPath(objectMetadata.bucket(), objectMetadata.key()))).thenAccept(rst ->
+                    LOGGER.info("Delete composite object {}/{} success, linked objects: {}",
+                        ObjectAttributes.from(objectMetadata.attributes()).bucket(), objectMetadata.objectId(), linkedObjects)
+                );
+            }).thenAccept(rst -> {
+            });
     }
 }
