@@ -62,8 +62,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final Semaphore inflightWriteLimiter;
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
     private final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
-    private final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
-    private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+    protected final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
+    protected final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-limiter-cb-executor", true, LOGGER);
     private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-read-cb-executor", true, LOGGER);
