@@ -11,8 +11,6 @@
 
 package kafka.log.stream.s3;
 
-import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.shell.auth.EnvVariableCredentialsProvider;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.StreamClient;
@@ -30,9 +28,9 @@ import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
@@ -42,7 +40,6 @@ import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.PingS3Helper;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
@@ -53,7 +50,6 @@ import kafka.server.BrokerServer;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 
 public class DefaultS3Client implements Client {
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
@@ -98,18 +94,16 @@ public class DefaultS3Client implements Client {
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
-        List<AwsCredentialsProvider> credentialsProviders = List.of(CredentialsProviderHolder.getAwsCredentialsProvider(), EnvVariableCredentialsProvider.get());
         // check s3 availability
         PingS3Helper pingS3Helper = PingS3Helper.builder()
             .bucket(dataBucket)
-            .credentialsProviders(credentialsProviders)
             .tagging(config.objectTagging())
             .needPrintToConsole(false)
             .build();
         pingS3Helper.pingS3();
-        ObjectStorage objectStorage = AwsObjectStorage.builder().bucket(dataBucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
+        ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).build();
-        ObjectStorage compactionobjectStorage = AwsObjectStorage.builder().bucket(dataBucket).credentialsProviders(credentialsProviders).tagging(config.objectTagging())
+        ObjectStorage compactionobjectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
             config.controllerRequestRetryBaseDelayMs());
@@ -120,7 +114,7 @@ public class DefaultS3Client implements Client {
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
-        this.writeAheadLog = buildWAL(credentialsProviders);
+        this.writeAheadLog = buildWAL();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
@@ -131,7 +125,7 @@ public class DefaultS3Client implements Client {
         S3StreamThreadPoolMonitor.init();
     }
 
-    private WriteAheadLog buildWAL(List<AwsCredentialsProvider> credentialsProviders) {
+    private WriteAheadLog buildWAL() {
         BucketURI bucketURI;
         try {
             bucketURI = BucketURI.parse(config.walPath());
@@ -142,9 +136,7 @@ public class DefaultS3Client implements Client {
             case "file":
                 return BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
             case "s3":
-                ObjectStorage walObjectStorage = AwsObjectStorage.builder()
-                    .bucket(bucketURI)
-                    .credentialsProviders(credentialsProviders)
+                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(bucketURI)
                     .tagging(config.objectTagging())
                     .build();
 

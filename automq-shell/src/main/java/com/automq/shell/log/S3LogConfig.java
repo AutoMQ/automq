@@ -11,7 +11,7 @@
 
 package com.automq.shell.log;
 
-import com.automq.stream.s3.operator.BucketURI;
+import com.automq.stream.s3.operator.ObjectStorage;
 
 public interface S3LogConfig {
 
@@ -23,5 +23,5 @@ public interface S3LogConfig {
 
     int nodeId();
 
-    BucketURI bucket();
+    ObjectStorage objectStorage();
 }
