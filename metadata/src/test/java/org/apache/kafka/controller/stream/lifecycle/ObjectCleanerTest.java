@@ -47,7 +47,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 @Timeout(40)
 @Tag("S3Unit")
 public class ObjectCleanerTest {
-    private final Logger LOGGER = LoggerFactory.getLogger(ObjectCleanerTest.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ObjectCleanerTest.class);
 
     private ObjectStorage objectStorage;
     private QuorumController quorumController;
@@ -91,7 +91,6 @@ public class ObjectCleanerTest {
         AtomicLong totalDeleteObjectNumber = new AtomicLong();
         AtomicLong deleteObjectMethodCallNumber = new AtomicLong();
         Set<Long> deleteObjectId = new ConcurrentSkipListSet<>();
-
 
 
         Mockito.when(objectStorage.delete(anyList())).then(inv -> {
@@ -267,8 +266,8 @@ public class ObjectCleanerTest {
             deleteObjectMethodCallNumber.get());
 
         // objectId=1 should not be deleted.
-        assertFalse(deleteObjectId.contains((long)1));
-        assertFalse(notifiedDeleteObjectId.contains((long)1));
+        assertFalse(deleteObjectId.contains((long) 1));
+        assertFalse(notifiedDeleteObjectId.contains((long) 1));
 
         // all composited object should receive deletedObject notification
         assertEquals(compositeObjectNumber - 1, totalObjectNotified.get());

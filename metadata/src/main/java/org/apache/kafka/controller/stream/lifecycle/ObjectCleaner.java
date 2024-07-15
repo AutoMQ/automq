@@ -43,7 +43,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class ObjectCleaner {
-    private final Logger LOGGER = LoggerFactory.getLogger(ObjectCleaner.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ObjectCleaner.class);
 
     private final ObjectStorage objectStorage;
 
@@ -160,7 +160,7 @@ public class ObjectCleaner {
 
         // note that objectStorage may split internally which won't be atomic delete the whole batch.
         return objectStorage.delete(compositePathBatch)
-            .thenApply((Void) -> {
+            .thenApply(Void -> {
                 List<Long> deletedObjectIds = new ArrayList<>(compositeObjectMetadataBatch.size());
 
                 // print log for all deleted composite object
