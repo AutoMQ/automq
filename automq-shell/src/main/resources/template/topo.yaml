@@ -1,0 +1,24 @@
+global:
+  clusterId: ''
+  configs: |
+    s3.data.buckets=0@s3://$bucket?region=$region&endpoint=$endpoint
+    s3.ops.buckets=1@s3://$bucket?region=$region&endpoint=$endpoint
+  envs:
+    - name: KAFKA_S3_ACCESS_KEY
+      value: 'xxxxx'
+    - name: KAFKA_S3_SECRET_KEY
+      value: 'xxxxx'
+controllers:
+  # The controllers default are combined nodes which roles are controller and broker.
+  # The default controller port is 9093 and the default broker port is 9092
+  - host: 192.168.0.1
+    nodeId: 0
+  - host: 192.168.0.2
+    nodeId: 1
+  - host: 192.168.0.3
+    nodeId: 2
+brokers:
+  - host: 192.168.0.5
+    nodeId: 1000
+  - host: 192.168.0.6
+    nodeId: 1001

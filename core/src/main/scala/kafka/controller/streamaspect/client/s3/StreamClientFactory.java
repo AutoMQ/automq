@@ -12,9 +12,10 @@
 package kafka.controller.streamaspect.client.s3;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
+import kafka.controller.streamaspect.client.Context;
 import kafka.controller.streamaspect.client.StreamClientFactoryProxy;
 import kafka.log.stream.s3.ConfigUtils;
-import kafka.controller.streamaspect.client.Context;
 import org.apache.kafka.controller.stream.StreamClient;
 
 public class StreamClientFactory {
@@ -24,6 +25,14 @@ public class StreamClientFactory {
      */
     public static StreamClient get(Context context) {
         Config streamConfig = ConfigUtils.to(context.kafkaConfig);
-        return new StreamClient(streamConfig);
+        return StreamClient.builder()
+            .streamConfig(streamConfig)
+            .objectStorage(
+                ObjectStorageFactory.instance()
+                    .builder(streamConfig.dataBuckets().get(0))
+                    .tagging(streamConfig.objectTagging())
+                    .build()
+            )
+            .build();
     }
 }
