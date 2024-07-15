@@ -30,7 +30,7 @@ public class ObjectWALServiceTest {
     @BeforeEach
     public void setUp() throws IOException {
         objectStorage = new MemoryObjectStorage();
-        wal = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build());
+        wal = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withMaxBytesInBatch(200).build());
         wal.start();
         random = new Random();
     }
@@ -47,7 +47,7 @@ public class ObjectWALServiceTest {
     public void test() throws OverCapacityException, IOException {
         List<ByteBuf> bufferList = new ArrayList<>();
         for (int i = 0; i < 100; i++) {
-            ByteBuf byteBuf = generateByteBuf(10);
+            ByteBuf byteBuf = generateByteBuf(20);
             bufferList.add(byteBuf);
         }
 

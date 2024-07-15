@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -30,6 +31,7 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
@@ -108,7 +110,7 @@ public class ObjectWALService implements WriteAheadLog {
         private final Queue<CompletableFuture<byte[]>> readAheadQueue;
 
         private int nextIndex = 0;
-        private ByteBuf record = Unpooled.EMPTY_BUFFER;
+        private ByteBuf dataBuffer = Unpooled.EMPTY_BUFFER;
 
         public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
             int readAheadObjectSize, short bucketId) {
@@ -126,40 +128,17 @@ public class ObjectWALService implements WriteAheadLog {
 
         @Override
         public boolean hasNext() {
-            return record.isReadable() || !readAheadQueue.isEmpty() || nextIndex < objectList.size();
+            return dataBuffer.isReadable() || !readAheadQueue.isEmpty() || nextIndex < objectList.size();
         }
 
-        @Override
-        public RecoverResult next() {
-            // If there is no more data to read, return null.
-            if (!hasNext()) {
-                return null;
-            }
+        private void loadNextBuffer() {
+            // Please call hasNext() before calling loadNextBuffer().
+            byte[] buffer = Objects.requireNonNull(readAheadQueue.poll()).join();
+            dataBuffer = Unpooled.wrappedBuffer(buffer);
 
-            if (!record.isReadable()) {
-                byte[] buffer = readAheadQueue.poll().join();
-                record = Unpooled.wrappedBuffer(buffer);
-
-                // Check header
-                WALObjectHeader.unmarshal(record);
-                record.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
-            }
-
-            // Try to read next object.
-            tryReadAhead();
-
-            ByteBuf recordHeaderBuf = record.readBytes(RECORD_HEADER_SIZE);
-            RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
-            recordHeaderBuf.release();
-
-            int length = header.getRecordBodyLength();
-            ByteBuf recordBuf = record.readBytes(length);
-
-            if (!record.isReadable()) {
-                record.release();
-            }
-
-            return new RecoverResultImpl(recordBuf, header.getRecordBodyCRC());
+            // Check header
+            WALObjectHeader.unmarshal(dataBuffer);
+            dataBuffer.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
         }
 
         private void tryReadAhead() {
@@ -176,6 +155,49 @@ public class ObjectWALService implements WriteAheadLog {
                     });
                 readAheadQueue.add(readFuture);
             }
+        }
+
+        @Override
+        public RecoverResult next() {
+            // If there is no more data to read, return null.
+            if (!hasNext()) {
+                return null;
+            }
+
+            if (!dataBuffer.isReadable()) {
+                loadNextBuffer();
+            }
+
+            // Try to read next object.
+            tryReadAhead();
+
+            ByteBuf recordHeaderBuf = dataBuffer.readBytes(RECORD_HEADER_SIZE);
+            RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
+            recordHeaderBuf.release();
+
+            int length = header.getRecordBodyLength();
+
+            ByteBuf recordBuf = ByteBufAlloc.byteBuffer(length);
+            if (dataBuffer.readableBytes() < length) {
+                // Read the remain data and release the buffer.
+                dataBuffer.readBytes(recordBuf, dataBuffer.readableBytes());
+                dataBuffer.release();
+
+                // Read from next buffer.
+                if (!hasNext()) {
+                    throw new IllegalStateException("[Bug] There is a record part but no more data to read.");
+                }
+                loadNextBuffer();
+                dataBuffer.readBytes(recordBuf, length - recordBuf.readableBytes());
+            } else {
+                dataBuffer.readBytes(recordBuf, length);
+            }
+
+            if (!dataBuffer.isReadable()) {
+                dataBuffer.release();
+            }
+
+            return new RecoverResultImpl(recordBuf, header.getRecordBodyCRC());
         }
     }
 }
