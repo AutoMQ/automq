@@ -616,7 +616,7 @@ public class CompactionManagerTest extends CompactionTestBase {
 
         AtomicBoolean done = new AtomicBoolean(false);
         CompletableFuture.runAsync(() -> {
-            while(!done.get()) {
+            while (!done.get()) {
                 Pair<InvocationOnMock, CompletableFuture<ByteBuf>> pair = null;
                 try {
                     pair = invocations.poll(1, TimeUnit.MILLISECONDS);
