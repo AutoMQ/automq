@@ -35,25 +35,25 @@
     {
       "name": "PreparedTimeInMs",
       "type": "int64",
-      "versions": "0+",
+      "versions": "0",
       "about": "The object be prepared timestamp"
     },
     {
       "name": "ExpiredTimeInMs",
       "type": "int64",
-      "versions": "0+",
+      "versions": "0",
       "about": "The object be expired timestamp"
     },
     {
       "name": "CommittedTimeInMs",
       "type": "int64",
-      "versions": "0+",
+      "versions": "0",
       "about": "The object be committed timestamp"
     },
     {
       "name": "MarkDestroyedTimeInMs",
       "type": "int64",
-      "versions": "0+",
+      "versions": "0",
       "about": "The object be mark destroyed timestamp"
     },
     {
@@ -67,6 +67,12 @@
       "type": "int32",
       "versions": "1+",
       "about": "The object attributes"
+    },
+    {
+      "name": "Timestamp",
+      "type": "int64",
+      "versions": "1+",
+      "about": "The object timestamp. If objectState=PREPARED, it's the deadline timestamp. If objectState=MARK_DESTROYED, it's the mark destroyed timestamp."
     }
   ]
 }

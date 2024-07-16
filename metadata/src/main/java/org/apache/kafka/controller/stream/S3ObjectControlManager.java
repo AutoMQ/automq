@@ -21,13 +21,13 @@ import com.automq.stream.s3.CompositeObject;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.CompactOperations;
-import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectAttributes.Type;
 import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
+import com.automq.stream.utils.CollectionHelper;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -44,8 +44,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-
-import com.automq.stream.utils.CollectionHelper;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -54,6 +52,7 @@ import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.ThreadUtils;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.QuorumController;
@@ -102,8 +101,6 @@ public class S3ObjectControlManager {
 
     private final ObjectStorage objectStorage;
 
-    private final List<S3ObjectLifeCycleListener> lifecycleListeners;
-
     private final ScheduledExecutorService lifecycleCheckTimer;
 
     private final ObjectCleaner objectCleaner;
@@ -112,6 +109,7 @@ public class S3ObjectControlManager {
     private long lastCleanStartTimestamp = 0;
     private CompletableFuture<Void> lastCleanCf = CompletableFuture.completedFuture(null);
     private final Supplier<AutoMQVersion> version;
+    private final Time time;
 
     public S3ObjectControlManager(
         QuorumController quorumController,
@@ -120,7 +118,8 @@ public class S3ObjectControlManager {
         String clusterId,
         Config config,
         ObjectStorage objectStorage,
-        Supplier<AutoMQVersion> version) {
+        Supplier<AutoMQVersion> version,
+        Time time) {
         this.quorumController = quorumController;
         this.log = logContext.logger(S3ObjectControlManager.class);
         this.clusterId = clusterId;
@@ -132,7 +131,7 @@ public class S3ObjectControlManager {
         this.markDestroyedObjects = new LinkedBlockingDeque<>();
         this.objectStorage = objectStorage;
         this.version = version;
-        this.lifecycleListeners = new ArrayList<>();
+        this.time = time;
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-object-lifecycle-check-timer", true));
         this.lifecycleCheckTimer.scheduleWithFixedDelay(this::triggerCheckEvent,
@@ -159,10 +158,6 @@ public class S3ObjectControlManager {
         });
     }
 
-    public void registerListener(S3ObjectLifeCycleListener listener) {
-        this.lifecycleListeners.add(listener);
-    }
-
     public Long nextAssignedObjectId() {
         return nextAssignedObjectId.get();
     }
@@ -181,15 +176,19 @@ public class S3ObjectControlManager {
             .setAssignedS3ObjectId(newAssignedObjectId), (short) 0));
 
         long firstAssignedObjectId = nextAssignedObjectId.get();
+        long now = time.milliseconds();
         for (int i = 0; i < count; i++) {
-            Long objectId = nextAssignedObjectId.get() + i;
-            long preparedTs = System.currentTimeMillis();
-            long expiredTs = preparedTs + request.timeToLiveInMs();
+            long objectId = nextAssignedObjectId.get() + i;
+            long expiredTs = now + request.timeToLiveInMs();
             S3ObjectRecord record = new S3ObjectRecord()
                 .setObjectId(objectId)
-                .setObjectState(S3ObjectState.PREPARED.toByte())
-                .setPreparedTimeInMs(preparedTs)
-                .setExpiredTimeInMs(expiredTs);
+                .setObjectState(S3ObjectState.PREPARED.toByte());
+            if (version.isHugeClusterSupported()) {
+                record.setTimestamp(expiredTs);
+            } else {
+                record.setPreparedTimeInMs(now)
+                    .setExpiredTimeInMs(expiredTs);
+            }
             records.add(new ApiMessageAndVersion(record, objectRecordVersion));
         }
         response.setFirstS3ObjectId(firstAssignedObjectId);
@@ -218,10 +217,12 @@ public class S3ObjectControlManager {
         S3ObjectRecord record = new S3ObjectRecord()
             .setObjectId(objectId)
             .setObjectSize(objectSize)
-            .setObjectState(S3ObjectState.COMMITTED.toByte())
-            .setPreparedTimeInMs(object.getPreparedTimeInMs())
-            .setExpiredTimeInMs(object.getExpiredTimeInMs())
-            .setCommittedTimeInMs(committedTs);
+            .setObjectState(S3ObjectState.COMMITTED.toByte());
+        if (version.isHugeClusterSupported()) {
+            record.setTimestamp(committedTs);
+        } else {
+            record.setCommittedTimeInMs(object.getTimestamp());
+        }
         if (version.isObjectAttributesSupported()) {
             record.setAttributes(attributes);
         }
@@ -237,6 +238,7 @@ public class S3ObjectControlManager {
         AutoMQVersion version = this.version.get();
         short objectRecordVersion = version.objectRecordVersion();
         List<ApiMessageAndVersion> records = new ArrayList<>();
+        long now = time.milliseconds();
         for (int i = 0; i < objects.size(); i++) {
             Long objectId = objects.get(i);
             CompactOperations operation = operations.get(i);
@@ -250,11 +252,12 @@ public class S3ObjectControlManager {
                     S3ObjectRecord record = new S3ObjectRecord()
                         .setObjectId(objectId)
                         .setObjectSize(object.getObjectSize())
-                        .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
-                        .setPreparedTimeInMs(object.getPreparedTimeInMs())
-                        .setExpiredTimeInMs(object.getExpiredTimeInMs())
-                        .setCommittedTimeInMs(object.getCommittedTimeInMs())
-                        .setMarkDestroyedTimeInMs(System.currentTimeMillis());
+                        .setObjectState(S3ObjectState.MARK_DESTROYED.toByte());
+                    if (version.isHugeClusterSupported()) {
+                        record.setTimestamp(now);
+                    } else {
+                        record.setMarkDestroyedTimeInMs(now);
+                    }
                     if (version.isCompositeObjectSupported()) {
                         record.setAttributes(object.getAttributes());
                     }
@@ -269,11 +272,12 @@ public class S3ObjectControlManager {
                     S3ObjectRecord record = new S3ObjectRecord()
                         .setObjectId(objectId)
                         .setObjectSize(object.getObjectSize())
-                        .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
-                        .setPreparedTimeInMs(object.getPreparedTimeInMs())
-                        .setExpiredTimeInMs(object.getExpiredTimeInMs())
-                        .setCommittedTimeInMs(object.getCommittedTimeInMs())
-                        .setMarkDestroyedTimeInMs(System.currentTimeMillis());
+                        .setObjectState(S3ObjectState.MARK_DESTROYED.toByte());
+                    if (version.isHugeClusterSupported()) {
+                        record.setTimestamp(now);
+                    } else {
+                        record.setMarkDestroyedTimeInMs(now);
+                    }
                     if (version.isCompositeObjectSupported()) {
                         int attributes = ObjectAttributes.builder(object.getAttributes()).deepDelete().build().attributes();
                         record.setAttributes(attributes);
@@ -293,10 +297,7 @@ public class S3ObjectControlManager {
     }
 
     public void replay(S3ObjectRecord record) {
-        String objectKey = ObjectUtils.genKey(0, record.objectId());
-        S3Object object = new S3Object(record.objectId(), record.objectSize(), objectKey,
-            record.preparedTimeInMs(), record.expiredTimeInMs(), record.committedTimeInMs(), record.markDestroyedTimeInMs(),
-            S3ObjectState.fromByte(record.objectState()), record.attributes());
+        S3Object object = S3Object.of(record);
         objectsMetadata.put(record.objectId(), object);
         if (object.getS3ObjectState() == S3ObjectState.PREPARED) {
             preparedObjects.add(object.getObjectId());
@@ -339,29 +340,28 @@ public class S3ObjectControlManager {
             log.info("the last deletion[timestamp={}] is not finished, skip this check", lastCleanStartTimestamp);
             return ControllerResult.of(Collections.emptyList(), null);
         }
+        AutoMQVersion version = this.version.get();
+        short objectRecordVersion = version.objectRecordVersion();
         List<ApiMessageAndVersion> records = new ArrayList<>();
         List<Long> ttlReachedObjects = new LinkedList<>();
+        long now = time.milliseconds();
         // check the expired objects
         this.preparedObjects.stream().
             map(objectsMetadata::get).
-            filter(S3Object::isExpired).
+            filter(o -> o.isExpired(now)).
             forEach(obj -> {
                 S3ObjectRecord record = new S3ObjectRecord()
                     .setObjectId(obj.getObjectId())
                     .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal())
-                    .setObjectSize(obj.getObjectSize())
-                    .setPreparedTimeInMs(obj.getPreparedTimeInMs())
-                    .setExpiredTimeInMs(obj.getExpiredTimeInMs())
-                    .setCommittedTimeInMs(obj.getCommittedTimeInMs())
-                    .setMarkDestroyedTimeInMs(obj.getMarkDestroyedTimeInMs());
+                    .setObjectSize(obj.getObjectSize());
+                if (version.isHugeClusterSupported()) {
+                    record.setTimestamp(0);
+                } else {
+                    record.setMarkDestroyedTimeInMs(obj.getTimestamp());
+                }
                 ttlReachedObjects.add(obj.getObjectId());
                 // generate the records which mark the expired objects as destroyed
-                records.add(new ApiMessageAndVersion(record, (short) 0));
-                // generate the records which listener reply for the object-destroy events
-                lifecycleListeners.forEach(listener -> {
-                    ControllerResult<Void> result = listener.onDestroy(obj.getObjectId());
-                    records.addAll(result.records());
-                });
+                records.add(new ApiMessageAndVersion(record, objectRecordVersion));
             });
         if (!ttlReachedObjects.isEmpty()) {
             log.info("objects TTL is reached, objects={}", ttlReachedObjects);
@@ -379,7 +379,7 @@ public class S3ObjectControlManager {
                 this.markDestroyedObjects.poll();
                 continue;
             }
-            if (object.getMarkDestroyedTimeInMs() + (this.config.objectRetentionTimeInSecond() * 1000L) < System.currentTimeMillis()) {
+            if (object.getTimestamp() + (this.config.objectRetentionTimeInSecond() * 1000L) < now) {
                 this.markDestroyedObjects.poll();
                 // exceed delete retention time, trigger the truly deletion
                 requiredDeleteKeys.add(object);
@@ -390,7 +390,7 @@ public class S3ObjectControlManager {
         }
 
         if (!requiredDeleteKeys.isEmpty()) {
-            this.lastCleanStartTimestamp = System.currentTimeMillis();
+            this.lastCleanStartTimestamp = now;
             this.lastCleanCf = this.objectCleaner.clean(requiredDeleteKeys);
         }
         return ControllerResult.of(records, null);
@@ -463,14 +463,14 @@ public class S3ObjectControlManager {
         }
 
         private void batchDelete(List<S3Object> objects,
-                                 Function<List<S3Object>, CompletableFuture<Void>> deleteFunc,
-                                 List<CompletableFuture<Void>> cfList) {
+            Function<List<S3Object>, CompletableFuture<Void>> deleteFunc,
+            List<CompletableFuture<Void>> cfList) {
             if (objects.isEmpty()) {
                 return;
             }
             CollectionHelper.groupListByBatchSizeAsStream(objects, AwsObjectStorage.AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER)
-                    .map(deleteFunc)
-                    .forEach(cfList::add);
+                .map(deleteFunc)
+                .forEach(cfList::add);
         }
 
         private CompletableFuture<Void> shallowlyDelete(List<S3Object> s3objects) {
