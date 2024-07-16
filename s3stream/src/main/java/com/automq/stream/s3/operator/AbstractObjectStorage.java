@@ -361,7 +361,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public CompletableFuture<Void> delete(DeleteOptions options, List<ObjectPath> objectPaths) {
+    public CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
         if (objectPaths.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -372,7 +372,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             }
         }
 
-        deleteObjectsAccumulator.batchOrSubmitDeleteRequests(options, objectPaths, cf);
+        deleteObjectsAccumulator.batchOrSubmitDeleteRequests(objectPaths, cf);
 
         return cf;
     }
