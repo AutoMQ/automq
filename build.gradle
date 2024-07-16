@@ -2072,6 +2072,7 @@ project(':s3stream') {
     implementation 'com.github.jnr:jnr-posix:3.1.19'
     implementation 'com.yammer.metrics:metrics-core:2.2.0'
     implementation 'commons-codec:commons-codec:1.17.0'
+    implementation 'org.hdrhistogram:HdrHistogram:2.2.2'
 
     testImplementation 'org.slf4j:slf4j-simple:2.0.9'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'

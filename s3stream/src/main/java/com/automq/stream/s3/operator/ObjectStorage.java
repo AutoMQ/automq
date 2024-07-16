@@ -98,6 +98,8 @@ public interface ObjectStorage {
         private int allocType = ByteBufAlloc.DEFAULT;
         private long apiCallAttemptTimeout = -1L;
         private short bucketId;
+        private boolean enableFastRetry;
+        private boolean retry;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -111,6 +113,16 @@ public interface ObjectStorage {
 
         public WriteOptions apiCallAttemptTimeout(long apiCallAttemptTimeout) {
             this.apiCallAttemptTimeout = apiCallAttemptTimeout;
+            return this;
+        }
+
+        public WriteOptions enableFastRetry(boolean enableFastRetry) {
+            this.enableFastRetry = enableFastRetry;
+            return this;
+        }
+
+        public WriteOptions retry(boolean retry) {
+            this.retry = retry;
             return this;
         }
 
@@ -136,12 +148,22 @@ public interface ObjectStorage {
             return bucketId;
         }
 
+        public boolean enableFastRetry() {
+            return enableFastRetry;
+        }
+
+        public boolean retry() {
+            return retry;
+        }
+
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
             copy.allocType = allocType;
             copy.apiCallAttemptTimeout = apiCallAttemptTimeout;
             copy.bucketId = bucketId;
+            copy.enableFastRetry = enableFastRetry;
+            copy.retry = retry;
             return copy;
         }
     }
