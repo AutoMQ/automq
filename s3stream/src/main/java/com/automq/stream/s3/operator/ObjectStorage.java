@@ -43,7 +43,11 @@ public interface ObjectStorage {
      * When batch split logic is triggered the CompletableFuture means all the deleteBatch if success.
      * The caller may do the batch split logic if the delete operation need fine-grained control
      */
-    CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
+    default CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
+        return this.delete(DeleteOptions.DEFAULT, objectPaths);
+    }
+
+    CompletableFuture<Void> delete(DeleteOptions options, List<ObjectPath> objectPaths);
 
     class ObjectPath {
         private final short bucketId;
@@ -159,6 +163,22 @@ public interface ObjectStorage {
 
         public short bucket() {
             return bucket;
+        }
+    }
+
+    class DeleteOptions {
+        public static final DeleteOptions DEFAULT = new DeleteOptions();
+        public static final DeleteOptions NO_BATCH = new DeleteOptions().waitForBatch(false);
+
+        private boolean waitForBatch = true;
+
+        public DeleteOptions waitForBatch(boolean waitForBatch) {
+            this.waitForBatch = waitForBatch;
+            return this;
+        }
+
+        public boolean canWaitForBatch() {
+            return this.waitForBatch;
         }
     }
 

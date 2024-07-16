@@ -321,7 +321,7 @@ public class RecordAccumulator implements Closeable {
             return CompletableFuture.completedFuture(null);
         }
 
-        return objectStorage.delete(deleteObjectList)
+        return objectStorage.delete(ObjectStorage.DeleteOptions.NO_BATCH, deleteObjectList)
             .whenComplete((v, throwable) -> {
                 ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
                 objectDataBytes.addAndGet(-1 * deletedObjectSize.get());

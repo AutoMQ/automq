@@ -43,7 +43,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,6 +71,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
     final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("objectStorage", true), LOGGER);
+
+    private final DeleteObjectsAccumulator deleteObjectsAccumulator;
     final boolean checkS3ApiMode;
     protected final BucketURI bucketURI;
 
@@ -98,6 +99,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         checkConfig();
         S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
+
+        this.deleteObjectsAccumulator = new DeleteObjectsAccumulator(this::doDeleteObjects);
+        this.deleteObjectsAccumulator.start();
     }
 
     public AbstractObjectStorage(BucketURI bucketURI,
@@ -346,7 +350,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
+    public CompletableFuture<Void> delete(DeleteOptions options, List<ObjectPath> objectPaths) {
         if (objectPaths.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -356,27 +360,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return cf;
             }
         }
-        TimerUtil timerUtil = new TimerUtil();
-        List<String> objectKeys = objectPaths.stream().map(ObjectPath::key).collect(Collectors.toList());
-        this.doDeleteObjects(objectKeys).thenAccept(nil -> {
-            LOGGER.info("Delete objects finished, count: {}, cost: {}ms", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-            S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            cf.complete(null);
-        }).exceptionally(ex -> {
-            if (ex instanceof DeleteObjectsException) {
-                DeleteObjectsException deleteObjectsException = (DeleteObjectsException) ex;
-                LOGGER.warn("Delete objects failed, count: {}, cost: {}, failedKeys: {}",
-                    deleteObjectsException.getFailedKeys().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS),
-                    deleteObjectsException.getFailedKeys());
-            } else {
-                S3OperationStats.getInstance().deleteObjectsStats(false)
-                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                LOGGER.info("Delete objects failed, count: {}, cost: {}, ex: {}",
-                    objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
-            }
-            cf.completeExceptionally(ex);
-            return null;
-        });
+
+        deleteObjectsAccumulator.batchOrSubmitDeleteRequests(options, objectPaths, cf);
+
         return cf;
     }
 
@@ -401,6 +387,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         readCallbackExecutor.shutdown();
         writeCallbackExecutor.shutdown();
         scheduler.shutdown();
+        deleteObjectsAccumulator.stop();
         doClose();
     }
 
