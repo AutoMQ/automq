@@ -25,21 +25,20 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 public class S3StreamObject {
 
     private final long objectId;
-    private final long dataTimeInMs;
     private final long streamId;
     private final long startOffset;
     private final long endOffset;
 
-    public S3StreamObject(long objectId, long streamId, long startOffset, long endOffset, long dataTimeInMs) {
+    public S3StreamObject(long objectId, long streamId, long startOffset, long endOffset) {
         this.objectId = objectId;
         this.streamId = streamId;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
-        this.dataTimeInMs = dataTimeInMs;
     }
 
     public StreamOffsetRange streamOffsetRange() {
@@ -66,28 +65,20 @@ public class S3StreamObject {
         return S3ObjectType.STREAM;
     }
 
-    public long dataTimeInMs() {
-        return dataTimeInMs;
-    }
-
-    public ApiMessageAndVersion toRecord() {
+    public ApiMessageAndVersion toRecord(AutoMQVersion version) {
         return new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(objectId)
             .setStreamId(streamId)
             .setStartOffset(startOffset)
-            .setEndOffset(endOffset)
-            .setDataTimeInMs(dataTimeInMs), (short) 0);
+            .setEndOffset(endOffset), version.streamObjectRecordVersion());
     }
 
     public S3ObjectMetadata toMetadata() {
-        return new S3ObjectMetadata(objectId, S3ObjectType.STREAM, List.of(streamOffsetRange()), dataTimeInMs);
+        return new S3ObjectMetadata(objectId, S3ObjectType.STREAM, List.of(streamOffsetRange()), 0L);
     }
 
     public static S3StreamObject of(S3StreamObjectRecord record) {
-        S3StreamObject s3StreamObject = new S3StreamObject(
-            record.objectId(), record.streamId(),
-            record.startOffset(), record.endOffset(), record.dataTimeInMs());
-        return s3StreamObject;
+        return new S3StreamObject(record.objectId(), record.streamId(), record.startOffset(), record.endOffset());
     }
 
     @Override
@@ -111,7 +102,6 @@ public class S3StreamObject {
     public String toString() {
         return "S3StreamObject{" +
             "objectId=" + objectId +
-            ", dataTimeInMs=" + dataTimeInMs +
             ", streamId=" + streamId +
             ", startOffset=" + startOffset +
             ", endOffset=" + endOffset +
