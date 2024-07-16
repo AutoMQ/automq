@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.helper.HelpScreenException;
+import net.sourceforge.argparse4j.internal.HelpScreenException;
 import net.sourceforge.argparse4j.impl.type.ReflectArgumentType;
 import net.sourceforge.argparse4j.inf.Argument;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
@@ -97,9 +97,7 @@ public class PerfConfig {
 
     public static ArgumentParser parser() {
         ArgumentParser parser = ArgumentParsers
-            .newFor("performance-test")
-            .build()
-            .defaultHelp(true)
+            .newArgumentParser("performance-test")
             .description("This tool is used to run performance tests.");
         parser.addArgument("-B", "--bootstrap-server")
             .setDefault("localhost:9092")
