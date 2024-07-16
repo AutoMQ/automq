@@ -52,7 +52,7 @@ public class ProducerPerformance {
         ProducerPerformance perf = new ProducerPerformance();
         perf.start(args);
     }
-    
+
     void start(String[] args) throws IOException {
         ArgumentParser parser = argParser();
 
@@ -182,7 +182,7 @@ public class ProducerPerformance {
         }
         return payload;
     }
-    
+
     static Properties readProps(List<String> producerProps, String producerConfig, String transactionalId,
             boolean transactionsEnabled) throws IOException {
         Properties props = new Properties();
@@ -229,9 +229,7 @@ public class ProducerPerformance {
     /** Get the command-line argument parser. */
     static ArgumentParser argParser() {
         ArgumentParser parser = ArgumentParsers
-                .newFor("producer-performance")
-                .build()
-                .defaultHelp(true)
+                .newArgumentParser("producer-performance")
                 .description("This tool is used to verify the producer performance.");
 
         MutuallyExclusiveGroup payloadOptions = parser

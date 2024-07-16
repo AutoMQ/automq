@@ -171,11 +171,7 @@ object StorageTool extends Logging {
 
   def parseArguments(args: Array[String]): Namespace = {
     val parser = ArgumentParsers
-      .newFor("kafka-storage")
-      .prefixChars("-")
-      .fromFilePrefix("@")
-      .build()
-      .defaultHelp(true)
+      .newArgumentParser("kafka-storage", true, "-", "@")
       .description("The Kafka storage tool.")
 
     val subparsers = parser.addSubparsers().dest("command")

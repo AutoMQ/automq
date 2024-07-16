@@ -23,6 +23,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -30,10 +31,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
@@ -52,6 +56,8 @@ import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Error;
@@ -61,12 +67,18 @@ import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
+import static com.automq.stream.s3.metrics.operations.S3Operation.COMPLETE_MULTI_PART_UPLOAD;
+import static com.automq.stream.s3.metrics.operations.S3Operation.GET_OBJECT;
 import static com.automq.stream.utils.FutureUtil.cause;
 
 @SuppressWarnings("this-escape")
 public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
-    public static final String PATH_STYLE = "pathStyle";
+    public static final String PATH_STYLE_KEY = "pathStyle";
+    public static final String AUTH_TYPE_KEY = "authType";
+    public static final String STATIC_AUTH_TYPE = "static";
+    public static final String INSTANCE_AUTH_TYPE = "instance";
+
     public static final int AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 1000;
 
     private final String bucket;
@@ -74,14 +86,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
 
+    private volatile static InstanceProfileCredentialsProvider instanceProfileCredentialsProvider;
+
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
-        List<AwsCredentialsProvider> credentialsProviders,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate, boolean checkMode) {
         super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
         this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
-        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE, false), credentialsProviders, getMaxObjectStorageConcurrency());
+        List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
+        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, false), credentialsProviders, getMaxObjectStorageConcurrency());
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
         readinessCheck();
@@ -241,24 +255,31 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    RetryStrategy toRetryStrategy(Throwable ex, S3Operation operation) {
-        ex = cause(ex);
-        if (ex instanceof S3Exception) {
-            S3Exception s3Ex = (S3Exception) ex;
-            switch (operation) {
-                case COMPLETE_MULTI_PART_UPLOAD:
-                    if (s3Ex.statusCode() == HttpStatusCode.FORBIDDEN) {
-                        return RetryStrategy.ABORT;
-                    } else if (s3Ex.statusCode() == HttpStatusCode.NOT_FOUND) {
-                        return RetryStrategy.VISIBILITY_CHECK;
-                    }
-                    return RetryStrategy.RETRY;
+    Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
+        Throwable cause = cause(ex);
+        RetryStrategy strategy = RetryStrategy.RETRY;
+        if (cause instanceof S3Exception) {
+            S3Exception s3Ex = (S3Exception) cause;
+            switch (s3Ex.statusCode()) {
+                case HttpStatusCode.FORBIDDEN:
+                case HttpStatusCode.NOT_FOUND:
+                    strategy = RetryStrategy.ABORT;
+                    break;
                 default:
-                    return s3Ex.statusCode() == HttpStatusCode.FORBIDDEN || s3Ex.statusCode() == HttpStatusCode.NOT_FOUND ?
-                        RetryStrategy.ABORT : RetryStrategy.RETRY;
+                    strategy = RetryStrategy.RETRY;
+            }
+            if (COMPLETE_MULTI_PART_UPLOAD == operation) {
+                if (cause instanceof NoSuchUploadException) {
+                    strategy = RetryStrategy.VISIBILITY_CHECK;
+                }
+            }
+            if (GET_OBJECT == operation) {
+                if (cause instanceof NoSuchKeyException) {
+                    cause = new ObjectNotFoundException(cause);
+                }
             }
         }
-        return RetryStrategy.RETRY;
+        return Pair.of(strategy, cause);
     }
 
     @Override
@@ -277,6 +298,36 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     .stream()
                     .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
                     .collect(Collectors.toList()));
+    }
+
+    protected List<AwsCredentialsProvider> credentialsProviders() {
+        String authType = bucketURI.extensionString(AUTH_TYPE_KEY, STATIC_AUTH_TYPE);
+        switch (authType) {
+            case STATIC_AUTH_TYPE: {
+                String accessKey = bucketURI.extensionString(BucketURI.ACCESS_KEY_KEY, System.getenv("KAFKA_S3_ACCESS_KEY"));
+                String secretKey = bucketURI.extensionString(BucketURI.SECRET_KEY_KEY, System.getenv("KAFKA_S3_SECRET_KEY"));
+                if (StringUtils.isBlank(accessKey) || StringUtils.isBlank(secretKey)) {
+                    return Collections.emptyList();
+                }
+                return List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
+            }
+            case INSTANCE_AUTH_TYPE: {
+                return List.of(instanceProfileCredentialsProvider());
+            }
+            default:
+                throw new UnsupportedOperationException("Unsupported auth type: " + authType);
+        }
+    }
+
+    protected AwsCredentialsProvider instanceProfileCredentialsProvider() {
+        if (instanceProfileCredentialsProvider == null) {
+            synchronized (AwsObjectStorage.class) {
+                if (instanceProfileCredentialsProvider == null) {
+                    instanceProfileCredentialsProvider = InstanceProfileCredentialsProvider.builder().build();
+                }
+            }
+        }
+        return instanceProfileCredentialsProvider;
     }
 
     private String range(long start, long end) {
@@ -331,22 +382,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     public static class Builder {
         private BucketURI bucketURI;
-        private List<AwsCredentialsProvider> credentialsProviders;
         private Map<String, String> tagging;
         private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
         private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
         private boolean readWriteIsolate;
-        private int maxReadConcurrency = 50;
-        private int maxWriteConcurrency = 50;
         private boolean checkS3ApiModel = false;
 
         public Builder bucket(BucketURI bucketURI) {
             this.bucketURI = bucketURI;
-            return this;
-        }
-
-        public Builder credentialsProviders(List<AwsCredentialsProvider> credentialsProviders) {
-            this.credentialsProviders = credentialsProviders;
             return this;
         }
 
@@ -376,8 +419,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         public AwsObjectStorage build() {
-            return new AwsObjectStorage(bucketURI, tagging, credentialsProviders,
-                inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel);
+            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel);
         }
     }
 }

@@ -92,7 +92,7 @@ versions += [
   activation: "1.1.1",
   apacheda: "1.0.2",
   apacheds: "2.0.0-M24",
-  argparse4j: "0.9.0",
+  argparse4j: "0.7.0",
   bcpkix: "1.75",
   caffeine: "2.9.3", // 3.x supports JDK 11 and above
   // when updating checkstyle, check whether the exclusion of
@@ -210,6 +210,7 @@ libs += [
   jacksonJDK8Datatypes: "com.fasterxml.jackson.datatype:jackson-datatype-jdk8:$versions.jackson",
   jacksonAfterburner: "com.fasterxml.jackson.module:jackson-module-afterburner:$versions.jackson",
   jacksonJaxrsJsonProvider: "com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider:$versions.jackson",
+  jacksonYaml: "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:$versions.jackson",
   jaxAnnotationApi: "javax.annotation:javax.annotation-api:$versions.jaxAnnotation",
   jaxbApi: "javax.xml.bind:jaxb-api:$versions.jaxb",
   jaxrsApi: "javax.ws.rs:javax.ws.rs-api:$versions.jaxrs",

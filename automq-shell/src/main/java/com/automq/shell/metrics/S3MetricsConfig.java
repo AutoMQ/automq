@@ -11,7 +11,7 @@
 
 package com.automq.shell.metrics;
 
-import com.automq.stream.s3.operator.BucketURI;
+import com.automq.stream.s3.operator.ObjectStorage;
 
 public interface S3MetricsConfig {
 
@@ -21,5 +21,5 @@ public interface S3MetricsConfig {
 
     int nodeId();
 
-    BucketURI bucket();
+    ObjectStorage objectStorage();
 }

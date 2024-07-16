@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.Pair;
 
 public class MemoryObjectStorage extends AbstractObjectStorage {
     private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
@@ -171,10 +172,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    RetryStrategy toRetryStrategy(Throwable ex, S3Operation operation) {
+    Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
         Throwable cause = FutureUtil.cause(ex);
-        return cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException
+        RetryStrategy strategy = cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException
             ? RetryStrategy.ABORT : RetryStrategy.RETRY;
+        return Pair.of(strategy, cause);
     }
 
     @Override
