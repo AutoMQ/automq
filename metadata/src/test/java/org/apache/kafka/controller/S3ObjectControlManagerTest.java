@@ -35,6 +35,8 @@ import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.MockTime;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
@@ -67,6 +69,7 @@ public class S3ObjectControlManagerTest {
     private QuorumController controller;
     private ObjectStorage objectStorage;
     private long nextObjectId;
+    private Time time;
 
     @BeforeEach
     public void setUp() {
@@ -78,7 +81,8 @@ public class S3ObjectControlManagerTest {
         Mockito.when(controller.isActive()).thenReturn(true);
         LogContext logContext = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
-        manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, objectStorage, () -> AutoMQVersion.LATEST);
+        time = new MockTime();
+        manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, objectStorage, () -> AutoMQVersion.LATEST, time);
     }
 
     @Test
@@ -96,7 +100,7 @@ public class S3ObjectControlManagerTest {
         AssignedS3ObjectIdRecord assignedRecord = (AssignedS3ObjectIdRecord) message;
         assertEquals(2, assignedRecord.assignedS3ObjectId());
         for (int i = 0; i < 3; i++) {
-            verifyPrepareObjectRecord(result0.records().get(i + 1), i, 60 * 1000);
+            verifyPrepareObjectRecord(result0.records().get(i + 1), i, time.milliseconds() + 60 * 1000);
         }
         replay(manager, result0.records());
 
@@ -105,7 +109,7 @@ public class S3ObjectControlManagerTest {
         manager.objectsMetadata().forEach((id, s3Object) -> {
             assertEquals(S3ObjectState.PREPARED, s3Object.getS3ObjectState());
             assertEquals(id, s3Object.getObjectId());
-            assertEquals(60 * 1000, s3Object.getExpiredTimeInMs() - s3Object.getPreparedTimeInMs());
+            assertEquals(time.milliseconds() + 60 * 1000, s3Object.getTimestamp());
         });
         assertEquals(3, manager.nextAssignedObjectId());
 
@@ -124,7 +128,7 @@ public class S3ObjectControlManagerTest {
         manager.objectsMetadata().forEach((id, s3Object) -> {
             assertEquals(S3ObjectState.PREPARED, s3Object.getS3ObjectState());
             assertEquals(id, s3Object.getObjectId());
-            assertEquals(60 * 1000, s3Object.getExpiredTimeInMs() - s3Object.getPreparedTimeInMs());
+            assertEquals(time.milliseconds() + 60 * 1000, s3Object.getTimestamp());
         });
         assertEquals(8, manager.nextAssignedObjectId());
     }
@@ -151,12 +155,12 @@ public class S3ObjectControlManagerTest {
     }
 
     private void verifyPrepareObjectRecord(ApiMessageAndVersion result, long expectedObjectId,
-        long expectedTimeToLiveInMs) {
+        long expectTimestamp) {
         ApiMessage message = result.message();
         assertInstanceOf(S3ObjectRecord.class, message);
         S3ObjectRecord record = (S3ObjectRecord) message;
         assertEquals(expectedObjectId, record.objectId());
-        assertEquals(expectedTimeToLiveInMs, record.expiredTimeInMs() - record.preparedTimeInMs());
+        assertEquals(expectTimestamp, record.timestamp());
         assertEquals((byte) S3ObjectState.PREPARED.ordinal(), record.objectState());
     }
 
@@ -189,7 +193,7 @@ public class S3ObjectControlManagerTest {
         assertEquals(S3ObjectState.COMMITTED, object.getS3ObjectState());
         assertEquals(0L, object.getObjectId());
         assertEquals(1024, object.getObjectSize());
-        assertEquals(expectedCommittedTs, object.getCommittedTimeInMs());
+        assertEquals(expectedCommittedTs, object.getTimestamp());
     }
 
     @Test
@@ -209,13 +213,15 @@ public class S3ObjectControlManagerTest {
         // 1. prepare 1 object
         prepareOneObject(3 * 1000);
         assertEquals(1, manager.objectsMetadata().size());
-        // 2. 5s later, it should be marked as destroyed
-        Thread.sleep(5 * 1000);
+        // 2. wait the prepared object expired, it should be marked as destroyed
+        time.sleep(4000L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(1, manager.objectsMetadata().size());
         S3Object object = manager.objectsMetadata().get(0L);
         assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
-        // 3. 5s later, it should be removed
-        Thread.sleep(5 * 1000);
+        // 3. 2s later, it should be removed
+        time.sleep(2000L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(0, manager.objectsMetadata().size());
         Mockito.verify(objectStorage, times(1)).delete(anyList());
     }
@@ -242,17 +248,14 @@ public class S3ObjectControlManagerTest {
         });
 
         genMarkDestroyObject();
-        // TODO: use MockTime instead of sleep
-        Thread.sleep(1001L);
-
+        time.sleep(1001L);
         manager.checkS3ObjectsLifecycle();
         @SuppressWarnings("unchecked") ArgumentCaptor<List<ObjectPath>> ac = ArgumentCaptor.forClass(List.class);
         Mockito.verify(objectStorage, times(1)).delete(ac.capture());
         assertEquals(List.of(ObjectUtils.genKey(0, 0L)), ac.getValue().stream().map(ObjectPath::key).collect(Collectors.toList()));
 
         genMarkDestroyObject();
-        Thread.sleep(1001L);
-
+        time.sleep(1001L);
         // the last delete is inflight, so the next check should not trigger another delete
         manager.checkS3ObjectsLifecycle();
         Mockito.verify(objectStorage, times(1)).delete(ac.capture());
@@ -312,15 +315,17 @@ public class S3ObjectControlManagerTest {
         replay(manager, result0.records());
 
         assertEquals(1700, manager.objectsMetadata().size());
-        // 2. 6s(3s * 2) later, they should be marked as destroyed
-        Thread.sleep(6 * 1000);
+        // 2. 3s later, they should be marked as destroyed
+        time.sleep(4000L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(1700, manager.objectsMetadata().size());
         for (int i = 0; i < 1700; i++) {
             S3Object object = manager.objectsMetadata().get((long) i);
             assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
         }
-        // 3. 6s(3s * 2) later, they should be removed
-        Thread.sleep(6 * 1000);
+        // 3. 1s later, they should be removed
+        time.sleep(2000L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
 
         // 1700 / 1000 + 1
@@ -339,7 +344,7 @@ public class S3ObjectControlManagerTest {
         AssignedS3ObjectIdRecord assignedRecord = (AssignedS3ObjectIdRecord) message;
         long objectId = nextObjectId++;
         assertEquals(objectId, assignedRecord.assignedS3ObjectId());
-        verifyPrepareObjectRecord(result0.records().get(1), objectId, ttl);
+        verifyPrepareObjectRecord(result0.records().get(1), objectId, time.milliseconds() + ttl);
         replay(manager, result0.records());
         return objectId;
     }

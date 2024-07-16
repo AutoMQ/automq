@@ -87,7 +87,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     S3Object s3Object = objectsImage.getObjectMetadata(object.objectId());
                     return new S3ObjectMetadata(object.objectId(), object.objectType(),
                         object.offsetRangeList(), object.dataTimeInMs(),
-                        s3Object.getCommittedTimeInMs(), s3Object.getObjectSize(),
+                        s3Object.getTimestamp(), s3Object.getObjectSize(),
                         object.orderId(), s3Object.getAttributes());
                 })
                 .collect(Collectors.toList());
@@ -122,7 +122,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                             throw new IllegalStateException("can't find object metadata for object: " + object.objectId());
                         }
                         object.setObjectSize(objectMetadata.getObjectSize());
-                        object.setCommittedTimestamp(objectMetadata.getCommittedTimeInMs());
+                        object.setCommittedTimestamp(objectMetadata.getTimestamp());
                         object.setAttributes(objectMetadata.getAttributes());
                     });
 
@@ -160,7 +160,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
             List<S3ObjectMetadata> s3StreamObjectMetadataList = streamObjects.stream().map(object -> {
                 S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
-                long committedTimeInMs = objectMetadata.getCommittedTimeInMs();
+                long committedTimeInMs = objectMetadata.getTimestamp();
                 long objectSize = objectMetadata.getObjectSize();
                 int attributes = objectMetadata.getAttributes();
                 return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), object.dataTimeInMs(),
