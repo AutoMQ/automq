@@ -75,6 +75,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
     final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("objectStorage", true), LOGGER);
+    private final HashedWheelTimer fastRetryTimer = new HashedWheelTimer(
+        ThreadUtils.createThreadFactory("s3-fast-retry-timer", true), 10, TimeUnit.MILLISECONDS, 1000);
     final boolean checkS3ApiMode;
     protected final BucketURI bucketURI;
     private final S3LatencyCalculator s3LatencyCalculator;
@@ -203,7 +205,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         Optional<Timeout> fastRetryTask;
         if (options.enableFastRetry() && delayMillis > 0 && !options.retry()) {
             data.retain();
-            fastRetryTask = Optional.of(timeoutDetect.newTimeout(timeout -> {
+            fastRetryTask = Optional.of(fastRetryTimer.newTimeout(timeout -> {
                 if (writeCf != null && !writeCf.isDone()) {
                     TimerUtil retryTimerUtil = new TimerUtil();
                     doWrite(retryOptions, path, data).thenAccept(nil -> {
@@ -469,6 +471,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         readCallbackExecutor.shutdown();
         writeCallbackExecutor.shutdown();
         scheduler.shutdown();
+        timeoutDetect.stop();
+        fastRetryTimer.stop();
         doClose();
     }
 
