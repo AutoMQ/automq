@@ -372,7 +372,7 @@ public class RecordAccumulator implements Closeable {
         bufferList = new LinkedList<>();
 
         String path = objectPrefix + firstOffset;
-        CompletableFuture<ObjectStorage.WriteResult> uploadFuture = objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, path, buffer);
+        CompletableFuture<ObjectStorage.WriteResult> uploadFuture = objectStorage.write(new ObjectStorage.WriteOptions().enableFastRetry(true), path, buffer);
 
         CompletableFuture<Void> finalFuture = recordUploadMetrics(uploadFuture, startTime, objectLength)
             .thenAccept(v -> {
