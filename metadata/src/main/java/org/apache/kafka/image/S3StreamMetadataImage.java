@@ -106,7 +106,7 @@ public class S3StreamMetadataImage {
         }
         writer.write(version.streamRecordVersion(), record);
         ranges.forEach(rangeMetadata -> writer.write(rangeMetadata.toRecord()));
-        streamObjectsMap.forEach((id, obj) -> writer.write(obj.toRecord()));
+        streamObjectsMap.forEach((id, obj) -> writer.write(obj.toRecord(version)));
     }
 
 

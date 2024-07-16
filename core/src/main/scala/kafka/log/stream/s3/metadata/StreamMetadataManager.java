@@ -163,7 +163,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                 long committedTimeInMs = objectMetadata.getTimestamp();
                 long objectSize = objectMetadata.getObjectSize();
                 int attributes = objectMetadata.getAttributes();
-                return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), object.dataTimeInMs(),
+                return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), objectMetadata.getTimestamp(),
                     committedTimeInMs, objectSize, S3StreamConstant.INVALID_ORDER_ID, attributes);
             }).collect(Collectors.toList());
 
