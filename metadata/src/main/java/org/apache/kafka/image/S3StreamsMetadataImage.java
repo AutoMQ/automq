@@ -61,9 +61,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         );
 
     private final long nextAssignedStreamId;
-
     private final DeltaMap<Long/*streamId*/, S3StreamMetadataImage> streamsMetadata;
-
     private final DeltaMap<Integer/*nodeId*/, NodeS3StreamSetObjectMetadataImage> nodeStreamSetObjectMetadata;
 
     // Partition <-> Streams mapping in memory
