@@ -152,18 +152,18 @@ public class S3StreamMetadataImageTest {
             .setObjectId(0L)
             .setStreamId(STREAM0)
             .setStartOffset(0L)
-            .setEndOffset(100L), (short) 0));
+            .setEndOffset(100L), AutoMQVersion.LATEST.streamObjectRecordVersion()));
         delta0Records.add(new ApiMessageAndVersion(new S3StreamObjectRecord()
             .setObjectId(1L)
             .setStreamId(STREAM0)
             .setStartOffset(100L)
-            .setEndOffset(200L), (short) 0));
+            .setEndOffset(200L), AutoMQVersion.LATEST.streamObjectRecordVersion()));
         RecordTestUtils.replayAll(delta0, delta0Records);
         // verify delta and check image's write
         S3StreamMetadataImage image1 = new S3StreamMetadataImage(
             STREAM0, 0L, StreamState.OPENED, 0L, Collections.emptyList(), List.of(
-            new S3StreamObject(0L, 999, STREAM0, 0L, 100L),
-            new S3StreamObject(1L, 999, STREAM0, 100L, 200L)));
+            new S3StreamObject(0L, 999, STREAM0, 0L),
+            new S3StreamObject(1L, 999, STREAM0, 100L)));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -176,7 +176,7 @@ public class S3StreamMetadataImageTest {
         // verify delta and check image's write
         S3StreamMetadataImage image2 = new S3StreamMetadataImage(
             STREAM0, 0L, StreamState.OPENED, 0L, Collections.emptyList(), List.of(
-            new S3StreamObject(1L, 999, STREAM0, 100L, 200L)));
+            new S3StreamObject(1L, 999, STREAM0, 100L)));
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
     }

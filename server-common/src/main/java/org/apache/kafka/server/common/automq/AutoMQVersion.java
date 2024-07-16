@@ -104,6 +104,14 @@ public enum AutoMQVersion {
         }
     }
 
+    public short streamObjectRecordVersion() {
+        if (isAtLeast(V2)) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
     public Version s3streamVersion() {
         return s3streamVersion;
     }

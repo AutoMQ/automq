@@ -717,7 +717,7 @@ public class StreamControlManager {
                     return ControllerResult.of(Collections.emptyList(), resp);
                 }
                 records.addAll(streamObjectCommitResult.records());
-                records.add(new S3StreamObject(streamObject.objectId(), streamObject.streamId(), streamObject.startOffset(), streamObject.endOffset(), committedTs).toRecord());
+                records.add(new S3StreamObject(streamObject.objectId(), streamObject.streamId(), streamObject.startOffset(), streamObject.endOffset()).toRecord(featureControlManager.autoMQVersion()));
             } else {
                 log.info("stream already deleted, then fast delete the stream object from compaction. streamId={}, streamObject={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
                     streamObject.streamId(), streamObject, req.objectId(), req.nodeId(), req.nodeEpoch());
@@ -769,6 +769,8 @@ public class StreamControlManager {
      * </ul>
      */
     public ControllerResult<CommitStreamObjectResponseData> commitStreamObject(CommitStreamObjectRequestData data) {
+        AutoMQVersion version = featureControlManager.autoMQVersion();
+
         int nodeId = data.nodeId();
         long nodeEpoch = data.nodeEpoch();
         long streamObjectId = data.objectId();
@@ -815,7 +817,6 @@ public class StreamControlManager {
         }
         List<ApiMessageAndVersion> records = new ArrayList<>(commitResult.records());
 
-        long dataTs = committedTs;
         // mark destroy compacted object
         if (sourceObjectIds != null && !sourceObjectIds.isEmpty()) {
             List<CompactOperations> operations;
@@ -832,12 +833,6 @@ public class StreamControlManager {
                 return ControllerResult.of(Collections.emptyList(), resp);
             }
             records.addAll(destroyResult.records());
-            // update dataTs to the min compacted object's dataTs
-            //noinspection OptionalGetWithoutIsPresent
-            dataTs = sourceObjectIds.stream()
-                .map(id -> this.streamsMetadata.get(streamId).streamObjects().get(id))
-                .map(S3StreamObject::dataTimeInMs)
-                .min(Long::compareTo).get();
         }
 
         if (streamObjectId != NOOP_OBJECT_ID) {
@@ -846,8 +841,7 @@ public class StreamControlManager {
                 .setObjectId(streamObjectId)
                 .setStreamId(streamId)
                 .setStartOffset(startOffset)
-                .setEndOffset(endOffset)
-                .setDataTimeInMs(dataTs), (short) 0));
+                .setEndOffset(endOffset), version.streamObjectRecordVersion()));
         }
 
         // generate compacted objects' remove record
@@ -1303,7 +1297,6 @@ public class StreamControlManager {
         long streamId = record.streamId();
         long startOffset = record.startOffset();
         long endOffset = record.endOffset();
-        long dataTs = record.dataTimeInMs();
 
         S3StreamMetadata streamMetadata = this.streamsMetadata.get(streamId);
         if (streamMetadata == null) {
@@ -1311,7 +1304,7 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay stream object record {}", streamId, record);
             return;
         }
-        streamMetadata.streamObjects().put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset, dataTs));
+        streamMetadata.streamObjects().put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset));
         // the offset continuous is ensured by the process layer
         // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
         streamMetadata.endOffset(endOffset);

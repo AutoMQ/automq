@@ -179,9 +179,9 @@ public class S3StreamsMetadataImageTest {
             new RangeMetadata(STREAM0, 3L, 3, 420L, 520L, BROKER1),
             new RangeMetadata(STREAM0, 4L, 4, 520L, 600L, BROKER0));
         List<S3StreamObject> streamObjects = List.of(
-            new S3StreamObject(8, STREAM0, 10L, 100L, S3StreamConstant.INVALID_TS),
-            new S3StreamObject(9, STREAM0, 200L, 300L, S3StreamConstant.INVALID_TS),
-            new S3StreamObject(10, STREAM0, 300L, 400L, S3StreamConstant.INVALID_TS));
+            new S3StreamObject(8, STREAM0, 10L, 100L),
+            new S3StreamObject(9, STREAM0, 200L, 300L),
+            new S3StreamObject(10, STREAM0, 300L, 400L));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
             DeltaMap.of(BROKER0, broker0WALMetadataImage, BROKER1, broker1WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
@@ -273,8 +273,8 @@ public class S3StreamsMetadataImageTest {
             new RangeMetadata(STREAM0, 0L, 0, 10L, 40L, BROKER0),
             new RangeMetadata(STREAM0, 2L, 2, 40L, 60L, BROKER0));
         List<S3StreamObject> streamObjects = List.of(
-            new S3StreamObject(8, STREAM0, 10L, 20L, S3StreamConstant.INVALID_TS),
-            new S3StreamObject(8, STREAM0, 40L, 60L, S3StreamConstant.INVALID_TS));
+            new S3StreamObject(8, STREAM0, 10L, 20L),
+            new S3StreamObject(8, STREAM0, 40L, 60L));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
             DeltaMap.of(BROKER0, broker0WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
@@ -300,7 +300,7 @@ public class S3StreamsMetadataImageTest {
             new RangeMetadata(STREAM0, 0L, 0, 10L, 40L, BROKER0),
             new RangeMetadata(STREAM0, 2L, 2, 40L, 60L, BROKER0));
         List<S3StreamObject> streamObjects = List.of(
-            new S3StreamObject(8, STREAM0, 20L, 40L, S3StreamConstant.INVALID_TS));
+            new S3StreamObject(8, STREAM0, 20L, 40L));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
             DeltaMap.of(BROKER0, broker0WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
@@ -320,7 +320,7 @@ public class S3StreamsMetadataImageTest {
             ranges.add(new RangeMetadata(streamId, 0L, rangeIndex,
                 i, i + step, BROKER0));
 
-            streamObjects.add(new S3StreamObject(objectId, streamId, i, i + step, S3StreamConstant.INVALID_TS));
+            streamObjects.add(new S3StreamObject(objectId, streamId, i, i + step));
             rangeIndex++;
             objectId++;
         }
