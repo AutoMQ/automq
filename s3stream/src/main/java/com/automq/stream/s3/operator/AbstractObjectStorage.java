@@ -199,9 +199,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         // Fast retry should only be triggered by the original request.
         long delayMillis = s3LatencyCalculator.valueAtPercentile(objectSize, 99);
+
+        Optional<Timeout> fastRetryTask;
         if (options.enableFastRetry() && delayMillis > 0 && !options.retry()) {
-            scheduler.schedule(() -> {
-                data.retain();
+            data.retain();
+            fastRetryTask = Optional.of(timeoutDetect.newTimeout(timeout -> {
                 if (writeCf != null && !writeCf.isDone()) {
                     TimerUtil retryTimerUtil = new TimerUtil();
                     doWrite(retryOptions, path, data).thenAccept(nil -> {
@@ -222,7 +224,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 } else {
                     data.release();
                 }
-            }, delayMillis, TimeUnit.MILLISECONDS);
+            }, delayMillis, TimeUnit.MILLISECONDS));
+        } else {
+            fastRetryTask = Optional.empty();
         }
 
         writeCf.thenAccept(nil -> {
@@ -230,6 +234,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             data.release();
             if (completedFlag.compareAndSet(false, true)) {
                 cf.complete(null);
+                fastRetryTask.ifPresent(Timeout::cancel);
             }
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
