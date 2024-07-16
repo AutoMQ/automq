@@ -21,7 +21,7 @@ import com.yammer.metrics.core.Timer
 
 import java.util
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.{CountDownLatch, LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.{CountDownLatch, PriorityBlockingQueue, TimeUnit}
 import java.util.concurrent.locks.ReentrantLock
 import kafka.utils.CoreUtils.inLock
 import kafka.utils.Logging
@@ -43,7 +43,7 @@ trait ControllerEventProcessor {
 }
 
 class QueuedEvent(val event: ControllerEvent,
-                  val enqueueTimeMs: Long) {
+                  val enqueueTimeMs: Long) extends Comparable[QueuedEvent] {
   private val processingStarted = new CountDownLatch(1)
   private val spent = new AtomicBoolean(false)
 
@@ -67,6 +67,8 @@ class QueuedEvent(val event: ControllerEvent,
   override def toString: String = {
     s"QueuedEvent(event=$event, enqueueTimeMs=$enqueueTimeMs)"
   }
+
+  override def compareTo(secondEvent: QueuedEvent): Int = event.compareTo(secondEvent.event)
 }
 
 class ControllerEventManager(controllerId: Int,
@@ -80,7 +82,7 @@ class ControllerEventManager(controllerId: Int,
 
   @volatile private var _state: ControllerState = ControllerState.Idle
   private val putLock = new ReentrantLock()
-  private val queue = new LinkedBlockingQueue[QueuedEvent]
+  private val queue = new PriorityBlockingQueue[QueuedEvent]
   // Visible for test
   private[controller] var thread = new ControllerEventThread(ControllerEventThreadName)
 
