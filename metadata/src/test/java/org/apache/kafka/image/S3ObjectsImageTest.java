@@ -62,10 +62,7 @@ public class S3ObjectsImageTest {
         SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
         TimelineHashMap<Long, S3Object> map = new TimelineHashMap<>(registry, 10);
         for (int i = 0; i < 4; i++) {
-            S3Object object = new S3Object(
-                i, -1, null,
-                -1, -1, -1, -1,
-                S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes());
+            S3Object object = new S3Object(i, -1, -1, S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes());
             map.put(object.getObjectId(), object);
         }
         registry.getOrCreateSnapshot(0);
@@ -84,7 +81,7 @@ public class S3ObjectsImageTest {
         DELTA1_RECORDS.add(new ApiMessageAndVersion(new S3ObjectRecord().
             setObjectId(0L).
             setObjectState((byte) S3ObjectState.COMMITTED.ordinal()).setAttributes(attribute).setObjectSize(233)
-            .setPreparedTimeInMs(2).setExpiredTimeInMs(3).setCommittedTimeInMs(4).setMarkDestroyedTimeInMs(5), objectRecordVersion));
+            .setTimestamp(2), objectRecordVersion));
         DELTA1_RECORDS.add(new ApiMessageAndVersion(new S3ObjectRecord().
             setObjectId(1L).
             setObjectState((byte) S3ObjectState.COMMITTED.ordinal()).setAttributes(attribute), objectRecordVersion));
@@ -105,22 +102,10 @@ public class S3ObjectsImageTest {
         TimelineHashMap<Long/*objectId*/, S3Object> map2 = new TimelineHashMap<>(registry, 10);
 
         RegistryRef ref2 = new RegistryRef(registry, 1, new ArrayList<>());
-        map2.put(0L, new S3Object(
-            0L, 233, null,
-            2, 3, 4, 5,
-            S3ObjectState.COMMITTED, attribute));
-        map2.put(1L, new S3Object(
-            1L, 0, null,
-            0, 0, 0, 0,
-            S3ObjectState.COMMITTED, attribute));
-        map2.put(2L, new S3Object(
-            2L, 0, null,
-            0, 0, 0, 0,
-            S3ObjectState.MARK_DESTROYED, attribute));
-        map2.put(4L, new S3Object(
-            4L, 0, null,
-            0, 0, 0, 0,
-            S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes()));
+        map2.put(0L, new S3Object(0L, 233, 2, S3ObjectState.COMMITTED, attribute));
+        map2.put(1L, new S3Object(1L, 0,  0, S3ObjectState.COMMITTED, attribute));
+        map2.put(2L, new S3Object(2L, 0, 0, S3ObjectState.MARK_DESTROYED, attribute));
+        map2.put(4L, new S3Object(4L, 0, 0, S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes()));
         registry.getOrCreateSnapshot(1);
         IMAGE2 = new S3ObjectsImage(4L, map2, ref2);
     }
