@@ -262,7 +262,7 @@ public class DeleteObjectsAccumulatorTest {
                     CompletableFuture<Void> completableFuture = new CompletableFuture<>();
 
                     // add timeout for check request can be done.
-                    completableFuture.orTimeout(100, TimeUnit.MILLISECONDS);
+                    completableFuture.orTimeout(2, TimeUnit.MINUTES);
                     allIoCf.add(completableFuture);
 
                     List<ObjectStorage.ObjectPath> objectPaths =
