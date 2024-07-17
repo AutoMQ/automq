@@ -45,7 +45,6 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,6 +76,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         ThreadUtils.createThreadFactory("objectStorage", true), LOGGER);
     private final HashedWheelTimer fastRetryTimer = new HashedWheelTimer(
         ThreadUtils.createThreadFactory("s3-fast-retry-timer", true), 10, TimeUnit.MILLISECONDS, 1000);
+
+    private final DeleteObjectsAccumulator deleteObjectsAccumulator;
     final boolean checkS3ApiMode;
     protected final BucketURI bucketURI;
     private final S3LatencyCalculator s3LatencyCalculator;
@@ -104,6 +105,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         checkConfig();
         S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
+
+        this.deleteObjectsAccumulator = new DeleteObjectsAccumulator(this::doDeleteObjects);
+        this.deleteObjectsAccumulator.start();
 
         s3LatencyCalculator = new S3LatencyCalculator(
             new long[] {
@@ -426,27 +430,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return cf;
             }
         }
-        TimerUtil timerUtil = new TimerUtil();
-        List<String> objectKeys = objectPaths.stream().map(ObjectPath::key).collect(Collectors.toList());
-        this.doDeleteObjects(objectKeys).thenAccept(nil -> {
-            LOGGER.info("Delete objects finished, count: {}, cost: {}ms", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-            S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            cf.complete(null);
-        }).exceptionally(ex -> {
-            if (ex instanceof DeleteObjectsException) {
-                DeleteObjectsException deleteObjectsException = (DeleteObjectsException) ex;
-                LOGGER.warn("Delete objects failed, count: {}, cost: {}, failedKeys: {}",
-                    deleteObjectsException.getFailedKeys().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS),
-                    deleteObjectsException.getFailedKeys());
-            } else {
-                S3OperationStats.getInstance().deleteObjectsStats(false)
-                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                LOGGER.info("Delete objects failed, count: {}, cost: {}, ex: {}",
-                    objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
-            }
-            cf.completeExceptionally(ex);
-            return null;
-        });
+
+        deleteObjectsAccumulator.batchOrSubmitDeleteRequests(objectPaths, cf);
+
         return cf;
     }
 
@@ -473,6 +459,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         scheduler.shutdown();
         timeoutDetect.stop();
         fastRetryTimer.stop();
+        deleteObjectsAccumulator.stop();
         doClose();
     }
 

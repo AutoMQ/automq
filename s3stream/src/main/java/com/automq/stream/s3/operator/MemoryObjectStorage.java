@@ -22,14 +22,17 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 
 public class MemoryObjectStorage extends AbstractObjectStorage {
     private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
+    private final Set<String> deleteObjectKeys = new ConcurrentSkipListSet<>();
     private long delay = 0;
     private final short bucketId;
 
@@ -154,8 +157,18 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
-        objectKeys.forEach(storage::remove);
+        for (String objectKey : objectKeys) {
+            if (storage.containsKey(objectKey)) {
+                storage.remove(objectKey);
+                deleteObjectKeys.add(objectKey);
+            }
+        }
+
         return CompletableFuture.completedFuture(null);
+    }
+
+    public Set<String> getDeleteObjectKeys() {
+        return this.deleteObjectKeys;
     }
 
     @Override
