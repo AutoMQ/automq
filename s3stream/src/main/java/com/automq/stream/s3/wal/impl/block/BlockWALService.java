@@ -441,7 +441,7 @@ public class BlockWALService implements WriteAheadLog {
         } finally {
             lock.unlock();
         }
-        slidingWindowService.tryWriteBlock();
+        slidingWindowService.tryWakeupPoll();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
         appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));

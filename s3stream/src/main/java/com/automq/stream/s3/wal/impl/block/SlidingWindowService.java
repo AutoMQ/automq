@@ -20,13 +20,13 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import java.util.Collection;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
-import java.util.PriorityQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -65,13 +65,9 @@ public class SlidingWindowService {
      */
     private final Lock blockLock = new ReentrantLock();
     /**
-     * The lock of {@link #pendingBlocks}, {@link #writingBlocks}.
-     */
-    private final Lock pollBlockLock = new ReentrantLock();
-    /**
      * Blocks that are being written.
      */
-    private final Queue<Long> writingBlocks = new PriorityQueue<>();
+    private final Queue<Long> writingBlocks = new PriorityBlockingQueue<>();
     /**
      * Whether the service is initialized.
      * After the service is initialized, data in {@link #windowCoreData} is valid.
@@ -109,7 +105,7 @@ public class SlidingWindowService {
     /**
      * The maximum alignment offset in {@link #writingBlocks}.*
      */
-    private long maxAlignWriteBlockOffset = 0;
+    private volatile long maxAlignWriteBlockOffset = 0;
 
     public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit,
         long blockSoftLimit, int writeRateLimit, WALHeaderFlusher flusher) {
@@ -162,6 +158,18 @@ public class SlidingWindowService {
     }
 
     /**
+     * Try to wake up the @{@link #pollBlockScheduler}.*
+     */
+    public void tryWakeupPoll() {
+        // Avoid frequently wake-ups
+        long now = System.nanoTime();
+        if (now - lastWriteTimeNanos >= minWriteIntervalNanos) {
+            this.pollBlockScheduler.schedule(this::tryWriteBlock, 0, TimeUnit.NANOSECONDS);
+        }
+
+    }
+
+    /**
      * Try to write a block. If it exceeds the rate limit, it will return immediately.
      */
     public void tryWriteBlock() {
@@ -179,7 +187,7 @@ public class SlidingWindowService {
     /**
      * Try to acquire the write rate limit.
      */
-    synchronized private boolean tryAcquireWriteRateLimit() {
+    private boolean tryAcquireWriteRateLimit() {
         long now = System.nanoTime();
         if (now - lastWriteTimeNanos < minWriteIntervalNanos) {
             return false;
@@ -287,21 +295,27 @@ public class SlidingWindowService {
      * Get all blocks to be written. If there is no non-empty block, return null.
      */
     private BlockBatch pollBlocks() {
-        if (this.pollBlockLock.tryLock()) {
-            try {
-                return pollBlocksLocked();
-            } finally {
-                this.pollBlockLock.unlock();
-            }
+        fetchFromCurrentBlock();
+        if (pendingBlocks.isEmpty()) {
+            return null;
         }
-        return null;
+        List<Block> blocks = new LinkedList<>();
+
+        while (!pendingBlocks.isEmpty()) {
+            blocks.add(pendingBlocks.poll());
+        }
+        BlockBatch blockBatch = new BlockBatch(blocks);
+        writingBlocks.add(blockBatch.startOffset());
+
+        maxAlignWriteBlockOffset = nextBlockStartOffset(blocks.get(blocks.size() - 1));
+
+        return blockBatch;
     }
 
     /**
-     * Get all blocks to be written. If there is no non-empty block, return null.
-     * Note: this method is NOT thread safe, and it should be called with {@link #pollBlockLock} locked.
+     * Fetch a block that is not empty and has been created for a duration longer than `minWriteIntervalNanos`.
      */
-    private BlockBatch pollBlocksLocked() {
+    private void fetchFromCurrentBlock() {
         Block currentBlock = this.currentBlock;
         boolean isCurrentBlockNotEmpty = currentBlock != null && !currentBlock.isEmpty();
         if (isCurrentBlockNotEmpty) {
@@ -320,39 +334,12 @@ public class SlidingWindowService {
                 }
             }
         }
-
-        if (pendingBlocks.isEmpty()) {
-            return null;
-        }
-        Collection<Block> blocks = new LinkedList<>();
-        Block leastBlock = null;
-        while (!pendingBlocks.isEmpty()) {
-            leastBlock = pendingBlocks.poll();
-            blocks.add(leastBlock);
-        }
-        BlockBatch blockBatch = new BlockBatch(blocks);
-        writingBlocks.add(blockBatch.startOffset());
-        maxAlignWriteBlockOffset = nextBlockStartOffset(leastBlock);
-
-        return blockBatch;
     }
 
     /**
      * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
      */
     private long wroteBlocks(BlockBatch wroteBlocks) {
-        this.pollBlockLock.lock();
-        try {
-            return wroteBlocksLocked(wroteBlocks);
-        } finally {
-            this.pollBlockLock.unlock();
-        }
-    }
-    /**
-     * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
-     * Note: this method is NOT thread safe, and it should be called with {@link #pollBlockLock} locked.
-     */
-    private long wroteBlocksLocked(BlockBatch wroteBlocks) {
         boolean removed = writingBlocks.remove(wroteBlocks.startOffset());
         assert removed;
         if (writingBlocks.isEmpty()) {
