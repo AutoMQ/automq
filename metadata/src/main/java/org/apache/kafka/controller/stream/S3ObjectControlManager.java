@@ -77,7 +77,7 @@ public class S3ObjectControlManager {
 
     // TODO: config it in properties
     private static final long DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS = 3000L;
-
+    public static final long DEFAULT_LIFECYCLE_CHECK_MAX_RUN_MS = 1000L;
     private static final long DEFAULT_INITIAL_DELAY_MS = 5000L;
 
     private final QuorumController quorumController;
@@ -101,6 +101,7 @@ public class S3ObjectControlManager {
 
     private final ObjectStorage objectStorage;
 
+    private final LifecycleDeadlineChecker lifecycleDeadlineChecker;
     private final ScheduledExecutorService lifecycleCheckTimer;
 
     private final ObjectCleaner objectCleaner;
@@ -132,6 +133,7 @@ public class S3ObjectControlManager {
         this.objectStorage = objectStorage;
         this.version = version;
         this.time = time;
+        this.lifecycleDeadlineChecker = new LifecycleDeadlineChecker(time, DEFAULT_LIFECYCLE_CHECK_MAX_RUN_MS);
         this.lifecycleCheckTimer = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-object-lifecycle-check-timer", true));
         this.lifecycleCheckTimer.scheduleWithFixedDelay(this::triggerCheckEvent,
@@ -330,6 +332,35 @@ public class S3ObjectControlManager {
         preparedObjects.remove(record.objectId());
     }
 
+    static class LifecycleDeadlineChecker {
+        private final Time time;
+
+        private long maxRunTimeMs;
+        private long runDeadLineMs;
+
+        public LifecycleDeadlineChecker(Time time, long maxRunTimeMs) {
+            this.time = time;
+            this.maxRunTimeMs = maxRunTimeMs;
+            reset();
+        }
+
+        public synchronized void reset() {
+            runDeadLineMs = time.milliseconds() + maxRunTimeMs;
+        }
+
+        public long getCurrentRunDeadLineMs() {
+            return this.runDeadLineMs;
+        }
+
+        public long getMaxRunTimeMs() {
+            return maxRunTimeMs;
+        }
+
+        public boolean maxRuntimeExceeded() {
+            return time.milliseconds() > runDeadLineMs;
+        }
+    }
+
     /**
      * Check the S3Object's lifecycle, mark destroy the expired objects and trigger truly deletion for the mark destroyed objects.
      *
@@ -340,6 +371,9 @@ public class S3ObjectControlManager {
             log.info("the last deletion[timestamp={}] is not finished, skip this check", lastCleanStartTimestamp);
             return ControllerResult.of(Collections.emptyList(), null);
         }
+
+        this.lifecycleDeadlineChecker.reset();
+
         AutoMQVersion version = this.version.get();
         short objectRecordVersion = version.objectRecordVersion();
         List<ApiMessageAndVersion> records = new ArrayList<>();
@@ -349,6 +383,7 @@ public class S3ObjectControlManager {
         this.preparedObjects.stream().
             map(objectsMetadata::get).
             filter(o -> o.isExpired(now)).
+            takeWhile(__ -> !lifecycleDeadlineChecker.maxRuntimeExceeded()).
             forEach(obj -> {
                 S3ObjectRecord record = new S3ObjectRecord()
                     .setObjectId(obj.getObjectId())
@@ -363,12 +398,26 @@ public class S3ObjectControlManager {
                 // generate the records which mark the expired objects as destroyed
                 records.add(new ApiMessageAndVersion(record, objectRecordVersion));
             });
+
+        long preparedObjectCheckTimeMs = time.milliseconds() - now;
         if (!ttlReachedObjects.isEmpty()) {
-            log.info("objects TTL is reached, objects={}", ttlReachedObjects);
+            log.info("objects TTL is reached, preparedObjects={}, ttlReachedObjectsNumber={} cost={}ms",
+                preparedObjects.size(), ttlReachedObjects, preparedObjectCheckTimeMs);
         }
+
+        long startMarkDestroyTimeMs = time.milliseconds();
+
         // check the mark destroyed objects
         List<S3Object> requiredDeleteKeys = new LinkedList<>();
         while (true) {
+            if (lifecycleDeadlineChecker.maxRuntimeExceeded()) {
+                log.warn("lifecycle maxRuntimeExceeded maxRunTimeMs={}" +
+                        "requiredDeleteKeys={} preparedObjectCheckTimeMs={} markDestroyTimeMs={}",
+                    lifecycleDeadlineChecker.getMaxRunTimeMs(), requiredDeleteKeys.size(),
+                    preparedObjectCheckTimeMs, time.milliseconds() - startMarkDestroyTimeMs);
+                break;
+            }
+
             Long objectId = this.markDestroyedObjects.peek();
             if (objectId == null) {
                 break;
