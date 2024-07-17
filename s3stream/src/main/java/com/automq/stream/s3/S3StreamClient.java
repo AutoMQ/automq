@@ -53,12 +53,15 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.MINOR_V1_COMPACTION_SIZE_THRESHOLD;
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
     private static final long COMPACTION_COOLDOWN_AFTER_OPEN_STREAM = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_COOLDOWN_AFTER_OPEN_STREAM", TimeUnit.MINUTES.toMillis(1));
     private static final long MINOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(10));
     private static final long MAJOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(60));
+    private static final boolean MAJOR_V1_COMPACTION_SKIP_SMALL_OBJECT = Systems.getEnvInt("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_COMPACTION_SKIP_SMALL_OBJECT", 0) == 1;
+    private static final long MINOR_V1_COMPACTION_SIZE = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD", MINOR_V1_COMPACTION_SIZE_THRESHOLD);
     /**
      * When the cluster objects count exceed MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD, the MAJOR_V1 compaction will be triggered.
      * Default value is 400000: 10w partitions ~= 30w streams ~= 40w object
@@ -366,8 +369,15 @@ public class S3StreamClient implements StreamClient {
         }
 
         public void compact(StreamObjectCompactor.CompactionType compactionType) {
-            StreamObjectCompactor task = StreamObjectCompactor.builder().objectManager(objectManager).stream(this)
-                .objectStorage(objectStorage).maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes()).build();
+            StreamObjectCompactor task = StreamObjectCompactor.builder()
+                .objectManager(objectManager)
+                .stream(this)
+                .objectStorage(objectStorage)
+                .maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes())
+                .minorV1CompactionThreshold(MINOR_V1_COMPACTION_SIZE)
+                .majorV1CompactionSkipSmallObject(MAJOR_V1_COMPACTION_SKIP_SMALL_OBJECT)
+                .build();
+
             task.compact(compactionType);
         }
     }

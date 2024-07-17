@@ -27,12 +27,14 @@ import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import org.junit.jupiter.api.Assertions;
@@ -53,10 +55,13 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 import static com.automq.stream.s3.compact.StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.builder;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.getObjectFilter;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.group0;
 import static com.automq.stream.s3.objects.ObjectAttributes.Type.Composite;
+import static com.automq.stream.s3.objects.ObjectAttributes.Type.Normal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -345,11 +350,84 @@ class StreamObjectCompactorTest {
             new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamId, 31, 32)),
                 System.currentTimeMillis(), System.currentTimeMillis(), 1, 6)
         );
-        List<List<S3ObjectMetadata>> groups = group0(objects, 512, false);
+
+        Predicate<S3ObjectMetadata> objectFilter = __ -> true;
+        List<List<S3ObjectMetadata>> groups = group0(objects, 512, objectFilter);
         assertEquals(3, groups.size());
         assertEquals(List.of(2L), groups.get(0).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(3L, 4L), groups.get(1).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(5L, 6L), groups.get(2).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+    }
+
+    private List<S3ObjectMetadata> prepareS3ObjectMetadata(int normalObjectNumber, int compositeObjectNumber, int smallObjectNumber,
+                                                           int compositeObjectSize, int normalObjectSize, int smallObjectSize) {
+        AtomicLong objectNumber = new AtomicLong();
+        AtomicLong startOffset = new AtomicLong();
+        AtomicLong orderId = new AtomicLong();
+
+        int compositeObjectAttribute = ObjectAttributes.builder().bucket((short) 0).type(Composite).build().attributes();
+        int normalObjectAttribute = ObjectAttributes.builder().bucket((short) 0).type(Normal).build().attributes();
+
+        List<S3ObjectMetadata> metadata = new ArrayList<>();
+
+        for (int i = 0; i < compositeObjectNumber; i++) {
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(objectNumber.incrementAndGet(),
+                S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(streamId, startOffset.get(), startOffset.addAndGet(1024))),
+                System.currentTimeMillis(),
+                System.currentTimeMillis(),
+                compositeObjectSize, orderId.getAndIncrement());
+            s3ObjectMetadata
+                .setAttributes(compositeObjectAttribute);
+
+            metadata.add(s3ObjectMetadata);
+        }
+
+        for (int i = 0; i < normalObjectNumber; i++) {
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(objectNumber.incrementAndGet(),
+                S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(streamId, startOffset.get(), startOffset.addAndGet(1024))),
+                System.currentTimeMillis(),
+                System.currentTimeMillis(),
+                normalObjectSize, orderId.getAndIncrement());
+            s3ObjectMetadata
+                .setAttributes(normalObjectAttribute);
+
+            metadata.add(s3ObjectMetadata);
+        }
+
+        for (int i = 0; i < smallObjectNumber; i++) {
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(objectNumber.incrementAndGet(),
+                S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(streamId, startOffset.get(), startOffset.addAndGet(1024))),
+                System.currentTimeMillis(),
+                System.currentTimeMillis(),
+                smallObjectSize, orderId.getAndIncrement());
+            s3ObjectMetadata
+                .setAttributes(normalObjectAttribute);
+
+            metadata.add(s3ObjectMetadata);
+        }
+
+        return metadata;
+    }
+
+    @Test
+    public void testGroupAndFilterLogic() {
+        int majorCompactionObjectThresHold = 4 * 1024 * 1024;
+        List<S3ObjectMetadata> metadataList = prepareS3ObjectMetadata(20, 20, 20,
+            majorCompactionObjectThresHold, majorCompactionObjectThresHold, 64);
+        Predicate<S3ObjectMetadata> objectFilter = getObjectFilter(MAJOR_V1, majorCompactionObjectThresHold);
+        List<List<S3ObjectMetadata>> groups = group0(metadataList, 10 * majorCompactionObjectThresHold, objectFilter);
+
+        // small composite object can still be compacted
+        assertTrue(groups.stream().flatMap(List::stream)
+            .anyMatch(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite)));
+
+        // no more small normal object
+        assertTrue(groups.stream().flatMap(List::stream)
+            .filter(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Normal) && meta.objectSize() < majorCompactionObjectThresHold)
+            .findAny().isEmpty());
     }
 
     @Test
