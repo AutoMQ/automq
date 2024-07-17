@@ -48,14 +48,7 @@ public class StorageUtil {
                 Files.createDirectories(dir);
             }
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(configFilePath, StandardCharsets.UTF_8))) {
-                serverProps.forEach((key, value) -> {
-                    try {
-                        writer.write(key + "=" + value + "\n");
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-
-                });
+                serverProps.store(writer, null);
                 return configFilePath;
             }
         } catch (Throwable e) {
