@@ -18,6 +18,15 @@
 package org.apache.kafka.image;
 
 import com.automq.stream.s3.metadata.StreamState;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
@@ -26,15 +35,6 @@ import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord.TagCollection;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Set;
-import java.util.TreeMap;
 
 public class S3StreamMetadataDelta {
 
@@ -108,13 +108,13 @@ public class S3StreamMetadataDelta {
             newRanges = new ArrayList<>(ranges.values());
         }
 
-        DeltaMap<Long, S3StreamObject> newS3StreamObjects;
+        DeltaList<S3StreamObject> newS3StreamObjects;
         if (changedS3StreamObjects.isEmpty() && removedS3StreamObjectIds.isEmpty()) {
-            newS3StreamObjects = image.streamObjectsMap;
+            newS3StreamObjects = image.streamObjects;
         } else {
-            newS3StreamObjects = image.streamObjectsMap.copy();
-            newS3StreamObjects.putAll(changedS3StreamObjects);
-            newS3StreamObjects.removeAll(removedS3StreamObjectIds);
+            newS3StreamObjects = image.streamObjects.copy();
+            changedS3StreamObjects.forEach((id, obj) -> newS3StreamObjects.add(obj));
+            removedS3StreamObjectIds.forEach(id -> newS3StreamObjects.remove(obj -> Objects.equals(obj.objectId(), id)));
         }
         return new S3StreamMetadataImage(streamId, newEpoch, currentState, tags, newStartOffset, newRanges, newS3StreamObjects);
     }

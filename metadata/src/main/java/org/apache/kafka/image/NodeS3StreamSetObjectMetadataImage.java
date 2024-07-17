@@ -19,31 +19,31 @@
 package org.apache.kafka.image;
 
 import com.automq.stream.s3.metadata.S3StreamConstant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
-
 public class NodeS3StreamSetObjectMetadataImage {
     public static final NodeS3StreamSetObjectMetadataImage EMPTY = new NodeS3StreamSetObjectMetadataImage(S3StreamConstant.INVALID_BROKER_ID,
-            S3StreamConstant.INVALID_BROKER_EPOCH, new DeltaMap<>(new int[]{100}));
+        S3StreamConstant.INVALID_BROKER_EPOCH, DeltaList.empty());
     private final int nodeId;
     private final long nodeEpoch;
-    private final DeltaMap<Long/*objectId*/, S3StreamSetObject> s3Objects;
+    private final DeltaList<S3StreamSetObject> s3Objects;
     private final StreamOffsetIndexMap offsetIndexMap = new StreamOffsetIndexMap(2500000);
 
     // this should be created only once in each image and not be modified
     private volatile List<S3StreamSetObject> orderIndex;
     private final Object orderIndexLock = new Object();
 
-    public NodeS3StreamSetObjectMetadataImage(int nodeId, long nodeEpoch, DeltaMap<Long, S3StreamSetObject> streamSetObjects) {
+    public NodeS3StreamSetObjectMetadataImage(int nodeId, long nodeEpoch,
+        DeltaList<S3StreamSetObject> streamSetObjects) {
         this.nodeId = nodeId;
         this.nodeEpoch = nodeEpoch;
         this.s3Objects = streamSetObjects;
@@ -68,12 +68,12 @@ public class NodeS3StreamSetObjectMetadataImage {
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
         writer.write(new ApiMessageAndVersion(new NodeWALMetadataRecord()
-                .setNodeId(nodeId)
-                .setNodeEpoch(nodeEpoch), (short) 0));
-        s3Objects.forEach((k, v) -> writer.write(v.toRecord(options.metadataVersion().autoMQVersion())));
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch), (short) 0));
+        s3Objects.toList().forEach(v -> writer.write(v.toRecord(options.metadataVersion().autoMQVersion())));
     }
 
-    public DeltaMap<Long, S3StreamSetObject> getObjects() {
+    public DeltaList<S3StreamSetObject> getObjects() {
         return s3Objects;
     }
 
@@ -85,7 +85,7 @@ public class NodeS3StreamSetObjectMetadataImage {
                 }
 
                 List<S3StreamSetObject> objects = new ArrayList<>();
-                s3Objects.forEach((k, v) -> objects.add(v));
+                s3Objects.forEach(objects::add);
                 objects.sort(Comparator.comparingLong(S3StreamSetObject::orderId));
                 orderIndex = Collections.unmodifiableList(objects);
             }
@@ -112,9 +112,9 @@ public class NodeS3StreamSetObjectMetadataImage {
     @Override
     public String toString() {
         return "NodeS3WALMetadataImage{" +
-                "nodeId=" + nodeId +
-                ", nodeEpoch=" + nodeEpoch +
-                ", objects=" + s3Objects +
-                '}';
+            "nodeId=" + nodeId +
+            ", nodeEpoch=" + nodeEpoch +
+            ", objects=" + s3Objects +
+            '}';
     }
 }

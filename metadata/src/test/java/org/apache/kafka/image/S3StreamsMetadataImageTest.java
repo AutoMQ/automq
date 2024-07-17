@@ -158,16 +158,16 @@ public class S3StreamsMetadataImageTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     public void testGetObjects(boolean isHugeCluster) throws ExecutionException, InterruptedException {
-        DeltaMap<Long, S3StreamSetObject> broker0Objects = DeltaMap.of(
-            0L, new S3StreamSetObject(0, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 100L, 120L)), 0L),
-            1L, new S3StreamSetObject(1, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 120L, 140L)), 1L),
-            2L, new S3StreamSetObject(2, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 180L, 200L)), 2L),
-            3L, new S3StreamSetObject(3, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 400L, 420L)), 3L),
-            4L, new S3StreamSetObject(4, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 520L, 600L)), 4L));
-        DeltaMap<Long, S3StreamSetObject> broker1Objects = DeltaMap.of(
-            5L, new S3StreamSetObject(5, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
-            6L, new S3StreamSetObject(6, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
-            7L, new S3StreamSetObject(7, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
+        DeltaList<S3StreamSetObject> broker0Objects = DeltaList.of(
+            new S3StreamSetObject(0, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 100L, 120L)), 0L),
+            new S3StreamSetObject(1, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 120L, 140L)), 1L),
+            new S3StreamSetObject(2, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 180L, 200L)), 2L),
+            new S3StreamSetObject(3, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 400L, 420L)), 3L),
+            new S3StreamSetObject(4, BROKER0, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 520L, 600L)), 4L));
+        DeltaList<S3StreamSetObject> broker1Objects = DeltaList.of(
+            new S3StreamSetObject(5, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
+            new S3StreamSetObject(6, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
+            new S3StreamSetObject(7, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
         NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
             broker0Objects);
         NodeS3StreamSetObjectMetadataImage broker1WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,
@@ -178,11 +178,11 @@ public class S3StreamsMetadataImageTest {
             new RangeMetadata(STREAM0, 2L, 2, 180L, 420L, BROKER0),
             new RangeMetadata(STREAM0, 3L, 3, 420L, 520L, BROKER1),
             new RangeMetadata(STREAM0, 4L, 4, 520L, 600L, BROKER0));
-        List<S3StreamObject> streamObjects = List.of(
+        DeltaList<S3StreamObject> streamObjects = DeltaList.of(
             new S3StreamObject(8, STREAM0, 10L, 100L),
             new S3StreamObject(9, STREAM0, 200L, 300L),
             new S3StreamObject(10, STREAM0, 300L, 400L));
-        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, new S3StreamRecord.TagCollection(), 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
             DeltaMap.of(BROKER0, broker0WALMetadataImage, BROKER1, broker1WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
 
@@ -265,17 +265,17 @@ public class S3StreamsMetadataImageTest {
      */
     @Test
     public void testGetObjectsWithFirstStreamObject() throws ExecutionException, InterruptedException {
-        DeltaMap<Long, S3StreamSetObject> broker0Objects = DeltaMap.of(
-            0L, new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 20L, 40L)), 0L));
+        DeltaList<S3StreamSetObject> broker0Objects = DeltaList.of(
+            new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 20L, 40L)), 0L));
         NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
             broker0Objects);
         List<RangeMetadata> ranges = List.of(
             new RangeMetadata(STREAM0, 0L, 0, 10L, 40L, BROKER0),
             new RangeMetadata(STREAM0, 2L, 2, 40L, 60L, BROKER0));
-        List<S3StreamObject> streamObjects = List.of(
+        DeltaList<S3StreamObject> streamObjects = DeltaList.of(
             new S3StreamObject(8, STREAM0, 10L, 20L),
             new S3StreamObject(8, STREAM0, 40L, 60L));
-        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, new S3StreamRecord.TagCollection(), 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
             DeltaMap.of(BROKER0, broker0WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
 
@@ -291,17 +291,17 @@ public class S3StreamsMetadataImageTest {
     }
 
     private S3StreamsMetadataImage createStreamImage() {
-        DeltaMap<Long, S3StreamSetObject> broker0Objects = DeltaMap.of(
-            0L, new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 10L, 20L)), 0L),
-            1L, new S3StreamSetObject(1, BROKER0, List.of(new StreamOffsetRange(STREAM0, 40L, 60L)), 1L));
+        DeltaList<S3StreamSetObject> broker0Objects = DeltaList.of(
+            new S3StreamSetObject(0, BROKER0, List.of(new StreamOffsetRange(STREAM0, 10L, 20L)), 0L),
+            new S3StreamSetObject(1, BROKER0, List.of(new StreamOffsetRange(STREAM0, 40L, 60L)), 1L));
         NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
             broker0Objects);
         List<RangeMetadata> ranges = List.of(
             new RangeMetadata(STREAM0, 0L, 0, 10L, 40L, BROKER0),
             new RangeMetadata(STREAM0, 2L, 2, 40L, 60L, BROKER0));
-        List<S3StreamObject> streamObjects = List.of(
+        DeltaList<S3StreamObject> streamObjects = DeltaList.of(
             new S3StreamObject(8, STREAM0, 20L, 40L));
-        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, 10, ranges, streamObjects);
+        S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, new S3StreamRecord.TagCollection(), 10, ranges, streamObjects);
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
             DeltaMap.of(BROKER0, broker0WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         return streamsImage;
@@ -326,14 +326,13 @@ public class S3StreamsMetadataImageTest {
         }
 
         // streamSetObject second
-        DeltaMap<Long, S3StreamSetObject> broker0Objects = new DeltaMap<>();
+        DeltaList<S3StreamSetObject> broker0Objects = new DeltaList<>();
         for (long i = streamSetObjectRange.lowerEndpoint(); i < streamSetObjectRange.upperEndpoint(); i += step) {
             ranges.add(new RangeMetadata(streamId, 0L, rangeIndex,
                 i, i + step, BROKER0));
             rangeIndex++;
-            broker0Objects.put(objectId,
-                new S3StreamSetObject(objectId, BROKER0,
-                    List.of(new StreamOffsetRange(streamId, i, i + step)), i));
+            broker0Objects.add(new S3StreamSetObject(objectId, BROKER0,
+                List.of(new StreamOffsetRange(streamId, i, i + step)), i));
             objectId++;
         }
 
@@ -342,9 +341,9 @@ public class S3StreamsMetadataImageTest {
                 broker0Objects);
 
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(
-            streamId, 4L, StreamState.OPENED,
+            streamId, 4L, StreamState.OPENED, new S3StreamRecord.TagCollection(),
             streamObjectRange.lowerEndpoint(),
-            ranges, streamObjects);
+            ranges, new DeltaList<>(streamObjects));
 
         return new S3StreamsMetadataImage(streamId, RegistryRef.NOOP, DeltaMap.of(streamId, streamImage),
             DeltaMap.of(BROKER0, broker0WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
