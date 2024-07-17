@@ -106,8 +106,9 @@ public class S3StreamsMetadataImageTest {
             .setAssignedStreamId(0), (short) 0);
         S3StreamsMetadataDelta delta0 = new S3StreamsMetadataDelta(image0);
         RecordTestUtils.replayAll(delta0, List.of(record0));
-        S3StreamsMetadataImage image1 = new S3StreamsMetadataImage(0, RegistryRef.NOOP, new DeltaMap<>(),
-            new DeltaMap<>(), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+        S3StreamsMetadataImage image1 = new S3StreamsMetadataImage(0, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -115,8 +116,8 @@ public class S3StreamsMetadataImageTest {
             .setAssignedStreamId(10), (short) 0);
         S3StreamsMetadataDelta delta1 = new S3StreamsMetadataDelta(image1);
         RecordTestUtils.replayAll(delta1, List.of(record1));
-        S3StreamsMetadataImage image2 = new S3StreamsMetadataImage(10, RegistryRef.NOOP, new DeltaMap<>(),
-            new DeltaMap<>(), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+        S3StreamsMetadataImage image2 = new S3StreamsMetadataImage(10, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         assertEquals(image2, delta1.apply());
     }
 
@@ -183,8 +184,20 @@ public class S3StreamsMetadataImageTest {
             new S3StreamObject(9, STREAM0, 200L, 300L),
             new S3StreamObject(10, STREAM0, 300L, 400L));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, new S3StreamRecord.TagCollection(), 10, ranges, streamObjects);
-        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
-            DeltaMap.of(BROKER0, broker0WALMetadataImage, BROKER1, broker1WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+        RegistryRef ref = new RegistryRef();
+        TimelineHashMap<Long, S3StreamMetadataImage> streamMetadataMap = new TimelineHashMap<>(ref.registry(), 0);
+        streamMetadataMap.put(STREAM0, streamImage);
+        TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeMetadataMap = new TimelineHashMap<>(ref.registry(), 0);
+        nodeMetadataMap.put(BROKER0, broker0WALMetadataImage);
+        nodeMetadataMap.put(BROKER1, broker1WALMetadataImage);
+        ref = ref.next();
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(
+            STREAM0,
+            ref,
+            streamMetadataMap,
+            nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0));
 
         RangeGetter rangeGetter = isHugeCluster ? buildMemoryRangeGetter() : defaultRangeGetter;
         // 1. search stream_1
@@ -276,8 +289,16 @@ public class S3StreamsMetadataImageTest {
             new S3StreamObject(8, STREAM0, 10L, 20L),
             new S3StreamObject(8, STREAM0, 40L, 60L));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, new S3StreamRecord.TagCollection(), 10, ranges, streamObjects);
-        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
-            DeltaMap.of(BROKER0, broker0WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+
+        RegistryRef ref = new RegistryRef();
+        TimelineHashMap<Long, S3StreamMetadataImage> streamMetadataMap = new TimelineHashMap<>(ref.registry(), 0);
+        streamMetadataMap.put(STREAM0, streamImage);
+        TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeMetadataMap = new TimelineHashMap<>(ref.registry(), 0);
+        nodeMetadataMap.put(BROKER0, broker0WALMetadataImage);
+        ref = ref.next();
+        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, ref, streamMetadataMap,
+            nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
 
         InRangeObjects objects = streamsImage.getObjects(STREAM0, 22L, 55, 4, defaultRangeGetter).get();
         assertEquals(2, objects.objects().size());
@@ -302,9 +323,14 @@ public class S3StreamsMetadataImageTest {
         DeltaList<S3StreamObject> streamObjects = DeltaList.of(
             new S3StreamObject(8, STREAM0, 20L, 40L));
         S3StreamMetadataImage streamImage = new S3StreamMetadataImage(STREAM0, 4L, StreamState.OPENED, new S3StreamRecord.TagCollection(), 10, ranges, streamObjects);
-        S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, RegistryRef.NOOP, DeltaMap.of(STREAM0, streamImage),
-            DeltaMap.of(BROKER0, broker0WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
-        return streamsImage;
+        RegistryRef ref = new RegistryRef();
+        TimelineHashMap<Long, S3StreamMetadataImage> streamMetadataMap = new TimelineHashMap<>(ref.registry(), 0);
+        streamMetadataMap.put(STREAM0, streamImage);
+        TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeMetadataMap = new TimelineHashMap<>(ref.registry(), 0);
+        nodeMetadataMap.put(BROKER0, broker0WALMetadataImage);
+        ref = ref.next();
+        return new S3StreamsMetadataImage(STREAM0, ref, streamMetadataMap,
+            nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
     }
 
     private S3StreamsMetadataImage generateStreamImage(long streamId, Range<Long> streamObjectRange,
@@ -345,8 +371,15 @@ public class S3StreamsMetadataImageTest {
             streamObjectRange.lowerEndpoint(),
             ranges, new DeltaList<>(streamObjects));
 
-        return new S3StreamsMetadataImage(streamId, RegistryRef.NOOP, DeltaMap.of(streamId, streamImage),
-            DeltaMap.of(BROKER0, broker0WALMetadataImage), new DeltaMap<>(), new DeltaMap<>(), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+        RegistryRef ref = new RegistryRef();
+        TimelineHashMap<Long, S3StreamMetadataImage> streamMetadataMap = new TimelineHashMap<>(ref.registry(), 0);
+        streamMetadataMap.put(streamId, streamImage);
+        TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeMetadataMap = new TimelineHashMap<>(ref.registry(), 0);
+        nodeMetadataMap.put(BROKER0, broker0WALMetadataImage);
+        ref = ref.next();
+        return new S3StreamsMetadataImage(streamId, ref, streamMetadataMap,
+            nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
     }
 
     /**

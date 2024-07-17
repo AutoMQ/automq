@@ -182,7 +182,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
             List<StreamMetadata> streamMetadataList = new ArrayList<>();
             for (Long streamId : streamIds) {
-                S3StreamMetadataImage streamImage = streamsImage.streamsMetadata().get(streamId);
+                S3StreamMetadataImage streamImage = streamsImage.timelineStreamMetadata().get(streamId);
                 if (streamImage == null) {
                     LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
                     continue;
