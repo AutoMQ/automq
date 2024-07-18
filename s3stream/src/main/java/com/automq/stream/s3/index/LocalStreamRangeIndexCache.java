@@ -41,6 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class LocalStreamRangeIndexCache {
+    private static final short VERSION = 0;
     private static final Logger LOGGER = LoggerFactory.getLogger(LocalStreamRangeIndexCache.class);
     private static final int COMPACT_NUM = Systems.getEnvInt("AUTOMQ_STREAM_RANGE_INDEX_COMPACT_NUM", 5);
     private static final int SPARSE_PADDING = Systems.getEnvInt("AUTOMQ_STREAM_RANGE_INDEX_SPARSE_PADDING", 1);
@@ -263,11 +264,13 @@ public class LocalStreamRangeIndexCache {
     }
 
     public static ByteBuf toBuffer(Map<Long, SparseRangeIndex> streamRangeIndexMap) {
-        int capacity = Integer.BYTES // stream num
+        int capacity = Short.BYTES // version
+            + Integer.BYTES // stream num
             + streamRangeIndexMap.values().stream().mapToInt(index -> Long.BYTES // stream id
             + Integer.BYTES // range index num
             + index.getRangeIndexList().size() * RangeIndex.SIZE).sum();
         ByteBuf buffer = ByteBufAlloc.byteBuffer(capacity);
+        buffer.writeShort(VERSION);
         buffer.writeInt(streamRangeIndexMap.size());
         streamRangeIndexMap.forEach((streamId, sparseRangeIndex) -> {
             buffer.writeLong(streamId);
@@ -283,6 +286,10 @@ public class LocalStreamRangeIndexCache {
 
     public static Map<Long, List<RangeIndex>> fromBuffer(ByteBuf data) {
         Map<Long, List<RangeIndex>> rangeIndexMap = new HashMap<>();
+        short version = data.readShort();
+        if (version != VERSION) {
+            throw new IllegalArgumentException("Unrecognized version: " + version);
+        }
         int streamNum = data.readInt();
         for (int i = 0; i < streamNum; i++) {
             long streamId = data.readLong();
