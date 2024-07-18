@@ -146,7 +146,7 @@ public class SlidingWindowService {
         boolean gracefulShutdown;
         this.ioExecutor.shutdown();
         this.pollBlockScheduler.shutdownNow();
-        List<Runnable> tasks = Collections.EMPTY_LIST;
+        List<Runnable> tasks = new LinkedList<>();
         try {
             gracefulShutdown = this.ioExecutor.awaitTermination(timeout, unit);
         } catch (InterruptedException e) {
