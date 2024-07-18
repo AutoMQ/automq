@@ -273,31 +273,42 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public WriteAheadLog start() throws IOException {
-        if (started.get()) {
+        boolean state = started.get();
+        if (state) {
             LOGGER.warn("block WAL service already started");
             return this;
         }
-        StopWatch stopWatch = StopWatch.createStarted();
+        if (started.compareAndSet(state, true)) {
+            boolean success = false;
+            try {
+                StopWatch stopWatch = StopWatch.createStarted();
 
-        walChannel.open(channel -> Optional.ofNullable(tryReadWALHeader(walChannel))
-            .map(BlockWALHeader::getCapacity)
-            .orElse(null));
+                walChannel.open(channel -> Optional.ofNullable(tryReadWALHeader(walChannel))
+                    .map(BlockWALHeader::getCapacity)
+                    .orElse(null));
 
-        BlockWALHeader header = tryReadWALHeader(walChannel);
-        if (null == header) {
-            assert !recoveryMode;
-            header = newWALHeader();
-            firstStart = true;
-            LOGGER.info("no available WALHeader, create a new one: {}", header);
-        } else {
-            LOGGER.info("read WALHeader from WAL: {}", header);
+                BlockWALHeader header = tryReadWALHeader(walChannel);
+                if (null == header) {
+                    assert !recoveryMode;
+                    header = newWALHeader();
+                    firstStart = true;
+                    LOGGER.info("no available WALHeader, create a new one: {}", header);
+                } else {
+                    LOGGER.info("read WALHeader from WAL: {}", header);
+                }
+
+                header.setShutdownType(ShutdownType.UNGRACEFULLY);
+                walHeaderReady(header);
+                success = true;
+
+                LOGGER.info("block WAL service started, cost: {} ms", stopWatch.getTime(TimeUnit.MILLISECONDS));
+            } finally {
+                if (!success) {
+                    started.set(false);
+                }
+            }
         }
 
-        header.setShutdownType(ShutdownType.UNGRACEFULLY);
-        walHeaderReady(header);
-
-        started.set(true);
-        LOGGER.info("block WAL service started, cost: {} ms", stopWatch.getTime(TimeUnit.MILLISECONDS));
         return this;
     }
 
