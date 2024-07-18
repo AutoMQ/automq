@@ -141,7 +141,8 @@ public class LocalStreamRangeIndexCache {
         try {
             this.nodeId = nodeId;
             this.objectStorage = objectStorage;
-            this.objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, ObjectUtils.genIndexKey(0, nodeId))
+            this.objectStorage.read(ObjectStorage.ReadOptions.DEFAULT.bucket(this.objectStorage.bucketId()),
+                    ObjectUtils.genIndexKey(0, nodeId))
                 .whenComplete((data, ex) -> {
                     if (ex != null) {
                         // cache not found
