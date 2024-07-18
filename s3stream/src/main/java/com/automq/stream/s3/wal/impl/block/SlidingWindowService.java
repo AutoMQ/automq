@@ -20,11 +20,13 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import java.util.Collection;
 import java.util.LinkedList;
-import java.util.PriorityQueue;
+import java.util.List;
 import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -59,13 +61,13 @@ public class SlidingWindowService {
     private final WALHeaderFlusher walHeaderFlusher;
 
     /**
-     * The lock of {@link #pendingBlocks}, {@link #writingBlocks}, {@link #currentBlock}.
+     * The lock of {@link #pendingBlocks}, {@link #currentBlock}.
      */
     private final Lock blockLock = new ReentrantLock();
     /**
      * Blocks that are being written.
      */
-    private final Queue<Long> writingBlocks = new PriorityQueue<>();
+    private final Queue<Long> writingBlocks = new PriorityBlockingQueue<>();
     /**
      * Whether the service is initialized.
      * After the service is initialized, data in {@link #windowCoreData} is valid.
@@ -80,11 +82,11 @@ public class SlidingWindowService {
      * Blocks that are waiting to be written.
      * All blocks in this queue are ordered by the start offset.
      */
-    private Queue<Block> pendingBlocks = new LinkedList<>();
+    private BlockingQueue<Block> pendingBlocks = new LinkedBlockingQueue<>();
     /**
      * The current block, records are added to this block.
      */
-    private Block currentBlock;
+    private volatile Block currentBlock;
 
     /**
      * The thread pool for write operations.
@@ -98,7 +100,12 @@ public class SlidingWindowService {
     /**
      * The last time when a batch of blocks is written to the disk.
      */
-    private long lastWriteTimeNanos = 0;
+    private volatile long lastWriteTimeNanos = 0;
+
+    /**
+     * The maximum alignment offset in {@link #writingBlocks}.*
+     */
+    private volatile long maxAlignWriteBlockOffset = 0;
 
     public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit,
         long blockSoftLimit, int writeRateLimit, WALHeaderFlusher flusher) {
@@ -151,6 +158,18 @@ public class SlidingWindowService {
     }
 
     /**
+     * Try to wake up the @{@link #pollBlockScheduler}.*
+     */
+    public void tryWakeupPoll() {
+        // Avoid frequently wake-ups
+        long now = System.nanoTime();
+        if (now - lastWriteTimeNanos >= minWriteIntervalNanos) {
+            this.pollBlockScheduler.schedule(this::tryWriteBlock, 0, TimeUnit.NANOSECONDS);
+        }
+
+    }
+
+    /**
      * Try to write a block. If it exceeds the rate limit, it will return immediately.
      */
     public void tryWriteBlock() {
@@ -168,7 +187,7 @@ public class SlidingWindowService {
     /**
      * Try to acquire the write rate limit.
      */
-    synchronized private boolean tryAcquireWriteRateLimit() {
+    private boolean tryAcquireWriteRateLimit() {
         long now = System.nanoTime();
         if (now - lastWriteTimeNanos < minWriteIntervalNanos) {
             return false;
@@ -276,67 +295,55 @@ public class SlidingWindowService {
      * Get all blocks to be written. If there is no non-empty block, return null.
      */
     private BlockBatch pollBlocks() {
-        blockLock.lock();
-        try {
-            return pollBlocksLocked();
-        } finally {
-            blockLock.unlock();
-        }
-    }
-
-    /**
-     * Get all blocks to be written. If there is no non-empty block, return null.
-     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
-     */
-    private BlockBatch pollBlocksLocked() {
-        Block currentBlock = getCurrentBlockLocked();
-
-        boolean isPendingBlockEmpty = pendingBlocks.isEmpty();
-        boolean isCurrentBlockEmpty = currentBlock == null || currentBlock.isEmpty();
-        if (isPendingBlockEmpty && isCurrentBlockEmpty) {
-            // No record to be written
+        fetchFromCurrentBlock();
+        if (pendingBlocks.isEmpty()) {
             return null;
         }
+        List<Block> blocks = new LinkedList<>();
 
-        Collection<Block> blocks;
-        if (!isPendingBlockEmpty) {
-            blocks = pendingBlocks;
-            pendingBlocks = new LinkedList<>();
-        } else {
-            blocks = new LinkedList<>();
+        while (!pendingBlocks.isEmpty()) {
+            blocks.add(pendingBlocks.poll());
         }
-        if (!isCurrentBlockEmpty) {
-            blocks.add(currentBlock);
-            setCurrentBlockLocked(nextBlock(currentBlock));
-        }
-
         BlockBatch blockBatch = new BlockBatch(blocks);
         writingBlocks.add(blockBatch.startOffset());
 
+        maxAlignWriteBlockOffset = nextBlockStartOffset(blocks.get(blocks.size() - 1));
+
         return blockBatch;
+    }
+
+    /**
+     * Fetch a block that is not empty and has been created for a duration longer than `minWriteIntervalNanos`.
+     */
+    private void fetchFromCurrentBlock() {
+        Block currentBlock = this.currentBlock;
+        boolean isCurrentBlockNotEmpty = currentBlock != null && !currentBlock.isEmpty();
+        if (isCurrentBlockNotEmpty) {
+            long time = System.nanoTime();
+            if (time - currentBlock.startTime() > minWriteIntervalNanos) {
+                if (this.blockLock.tryLock()) {
+                    try {
+                        currentBlock = this.getCurrentBlockLocked();
+                        if (!currentBlock.isEmpty() && time - currentBlock.startTime() > minWriteIntervalNanos) {
+                            pendingBlocks.add(currentBlock);
+                            setCurrentBlockLocked(nextBlock(currentBlock));
+                        }
+                    } finally {
+                        this.blockLock.unlock();
+                    }
+                }
+            }
+        }
     }
 
     /**
      * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
      */
     private long wroteBlocks(BlockBatch wroteBlocks) {
-        blockLock.lock();
-        try {
-            return wroteBlocksLocked(wroteBlocks);
-        } finally {
-            blockLock.unlock();
-        }
-    }
-
-    /**
-     * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
-     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
-     */
-    private long wroteBlocksLocked(BlockBatch wroteBlocks) {
         boolean removed = writingBlocks.remove(wroteBlocks.startOffset());
         assert removed;
         if (writingBlocks.isEmpty()) {
-            return getCurrentBlockLocked().startOffset();
+            return this.maxAlignWriteBlockOffset;
         }
         return writingBlocks.peek();
     }

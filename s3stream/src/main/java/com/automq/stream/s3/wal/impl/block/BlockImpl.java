@@ -65,6 +65,11 @@ public class BlockImpl implements Block {
         return startOffset;
     }
 
+    @Override
+    public long startTime() {
+        return this.startTime;
+    }
+
     /**
      * Note: this method is NOT thread safe.
      */
@@ -119,5 +124,10 @@ public class BlockImpl implements Block {
     @Override
     public void polled() {
         StorageOperationStats.getInstance().appendWALBlockPolledStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return records.isEmpty();
     }
 }
