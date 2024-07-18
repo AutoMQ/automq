@@ -21,13 +21,14 @@ public class ObjectWALConfig {
     private final int nodeId;
     private final long epoch;
     private final boolean failover;
+    private final short bucketId;
 
     public static Builder builder() {
         return new Builder();
     }
 
     public ObjectWALConfig(long batchInterval, long maxBytesInBatch, long maxUnflushedBytes, int maxInflightUploadCount,
-        int readAheadObjectCount, String clusterId, int nodeId, long epoch, boolean failover) {
+        int readAheadObjectCount, String clusterId, int nodeId, long epoch, boolean failover, short bucketId) {
         this.batchInterval = batchInterval;
         this.maxBytesInBatch = maxBytesInBatch;
         this.maxUnflushedBytes = maxUnflushedBytes;
@@ -37,6 +38,7 @@ public class ObjectWALConfig {
         this.nodeId = nodeId;
         this.epoch = epoch;
         this.failover = failover;
+        this.bucketId = bucketId;
     }
 
     public long batchInterval() {
@@ -75,6 +77,10 @@ public class ObjectWALConfig {
         return failover;
     }
 
+    public short bucketId() {
+        return bucketId;
+    }
+
     public static final class Builder {
         private long batchInterval = 100; // 100ms
         private long maxBytesInBatch = 4 * 1024 * 1024L; // 4MB
@@ -85,6 +91,7 @@ public class ObjectWALConfig {
         private int nodeId;
         private long epoch;
         private boolean failover;
+        private short bucketId;
 
         private Builder() {
         }
@@ -142,8 +149,13 @@ public class ObjectWALConfig {
             return this;
         }
 
+        public Builder withBucketId(short bucketId) {
+            this.bucketId = bucketId;
+            return this;
+        }
+
         public ObjectWALConfig build() {
-            return new ObjectWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, failover);
+            return new ObjectWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, failover, bucketId);
         }
     }
 }
