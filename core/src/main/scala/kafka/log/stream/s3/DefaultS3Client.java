@@ -145,7 +145,8 @@ public class DefaultS3Client implements Client {
                 ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder()
                     .withClusterId(brokerServer.clusterId())
                     .withNodeId(config.nodeId())
-                    .withEpoch(config.nodeEpoch());
+                    .withEpoch(config.nodeEpoch())
+                    .withBucketId(bucketURI.bucketId());
 
                 String batchInterval = bucketURI.extensionString("batchInterval");
                 if (StringUtils.isNumeric(batchInterval)) {
