@@ -21,7 +21,6 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import java.util.Collections;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.Iterator;

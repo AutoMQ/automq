@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.wal.exception;
 
-public class WALShutdownException extends RuntimeException{
+public class WALShutdownException extends RuntimeException {
     public WALShutdownException(String message) {
         super(message);
     }
