@@ -13,7 +13,9 @@ package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.operator.ObjectStorage;
 
 public interface ObjectReaderFactory {
     ObjectReader get(S3ObjectMetadata metadata);
+    ObjectStorage getObjectStorage();
 }
