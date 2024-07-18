@@ -77,6 +77,10 @@ public class SparseRangeIndex {
         }
     }
 
+    public int size() {
+        return this.sortedRangeIndexList.size();
+    }
+
     List<RangeIndex> getRangeIndexList() {
         return this.sortedRangeIndexList;
     }

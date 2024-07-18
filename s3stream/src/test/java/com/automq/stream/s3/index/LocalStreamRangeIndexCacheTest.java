@@ -15,6 +15,7 @@ import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
+import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -121,5 +122,12 @@ public class LocalStreamRangeIndexCacheTest {
         Assertions.assertEquals(94, LocalStreamRangeIndexCache.getInstance().searchObjectId(STREAM_0, 650).join());
         Assertions.assertEquals(97, LocalStreamRangeIndexCache.getInstance().searchObjectId(STREAM_0, 950).join());
         Assertions.assertEquals(97, LocalStreamRangeIndexCache.getInstance().searchObjectId(STREAM_0, 1500).join());
+
+        request.setObjectId(-1);
+        request.setStreamRanges(Collections.emptyList());
+        request.setCompactedObjectIds(List.of(256L, 94L, 95L, 96L, 97L));
+        LocalStreamRangeIndexCache.getInstance().updateIndexFromRequest(request).join();
+        Assertions.assertTrue(LocalStreamRangeIndexCache.getInstance().getStreamRangeIndexMap().isEmpty());
+        Assertions.assertEquals(-1, LocalStreamRangeIndexCache.getInstance().searchObjectId(STREAM_0, 300).join());
     }
 }
