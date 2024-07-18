@@ -45,6 +45,9 @@ public interface ObjectStorage {
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
 
+    // NOTE: this is a temporary method to get bucketId for direct read with object storage interface
+    short bucketId();
+
     /**
      * The deleteObjects API have max batch limit.
      * see <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html"/>
