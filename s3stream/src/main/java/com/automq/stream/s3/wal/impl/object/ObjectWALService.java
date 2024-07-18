@@ -94,11 +94,12 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public CompletableFuture<Void> reset() {
-        return trim(accumulator.nextOffset() - 1);
+        return trim(Long.MAX_VALUE);
     }
 
     @Override
     public CompletableFuture<Void> trim(long offset) {
+        log.info("Trim S3 WAL to offset: {}", offset);
         return accumulator.trim(offset);
     }
 
