@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,7 @@ public class LocalStreamRangeIndexCache {
 
     private LocalStreamRangeIndexCache() {
         executorService.scheduleAtFixedRate(this::batchUpload, 0, 10, TimeUnit.MILLISECONDS);
+        executorService.scheduleAtFixedRate(this::flush, 0, 1, TimeUnit.MINUTES);
     }
 
     public static LocalStreamRangeIndexCache getInstance() {
@@ -212,11 +214,31 @@ public class LocalStreamRangeIndexCache {
         return exec(() -> {
             writeLock.lock();
             try {
+                if (rangeIndexMap == null || rangeIndexMap.isEmpty()) {
+                    Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
+                    while (iterator.hasNext()) {
+                        Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
+                        entry.getValue().compact(null, compactedObjectIds);
+                        if (entry.getValue().size() == 0) {
+                            iterator.remove();
+                        }
+                    }
+                    return null;
+                }
                 for (Map.Entry<Long, RangeIndex> entry : rangeIndexMap.entrySet()) {
                     long streamId = entry.getKey();
                     RangeIndex rangeIndex = entry.getValue();
-                    streamRangeIndexMap.computeIfAbsent(streamId, k -> new SparseRangeIndex(COMPACT_NUM, SPARSE_PADDING))
-                        .compact(rangeIndex, compactedObjectIds);
+                    streamRangeIndexMap.compute(streamId, (k, v) -> {
+                        if (v == null) {
+                            v = new SparseRangeIndex(COMPACT_NUM, SPARSE_PADDING);
+                        }
+                        v.compact(rangeIndex, compactedObjectIds);
+                        if (v.size() == 0) {
+                            // remove stream with empty index
+                            return null;
+                        }
+                        return v;
+                    });
                 }
             } finally {
                 writeLock.unlock();
