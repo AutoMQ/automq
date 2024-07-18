@@ -260,7 +260,7 @@ public class PerfConfig {
         }
         Map<String, String> map = new HashMap<>();
         for (String config : configs) {
-            String[] parts = config.split("=");
+            String[] parts = config.split("=", 2);
             if (parts.length != 2) {
                 throw new IllegalArgumentException("Invalid config: " + config);
             }
