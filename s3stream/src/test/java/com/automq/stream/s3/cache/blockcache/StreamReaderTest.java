@@ -11,11 +11,15 @@
 
 package com.automq.stream.s3.cache.blockcache;
 
+import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.threads.EventLoop;
 import java.util.HashMap;
@@ -97,7 +101,17 @@ public class StreamReaderTest {
 
         objectManager = mock(ObjectManager.class);
         when(objectManager.isObjectExist(anyLong())).thenReturn(true);
-        objectReaderFactory = m -> objects.get(m.objectId()).objectReader();
+        objectReaderFactory = new ObjectReaderFactory() {
+            @Override
+            public ObjectReader get(S3ObjectMetadata metadata) {
+                return objects.get(metadata.objectId()).objectReader();
+            }
+
+            @Override
+            public ObjectStorage getObjectStorage() {
+                return mock(MemoryObjectStorage.class);
+            }
+        };
         dataBlockCache = spy(new DataBlockCache(Long.MAX_VALUE, eventLoops));
         streamReader = new StreamReader(STREAM_ID, 0, eventLoops[0], objectManager, objectReaderFactory, dataBlockCache);
     }

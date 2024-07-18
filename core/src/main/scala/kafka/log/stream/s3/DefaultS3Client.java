@@ -26,6 +26,7 @@ import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.failover.FailoverFactory;
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.BucketURI;
@@ -120,6 +121,7 @@ public class DefaultS3Client implements Client {
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
         this.kvClient = new ControllerKVClient(this.requestSender);
         this.failover = failover();
+        LocalStreamRangeIndexCache.getInstance().init(config.nodeId(), objectStorage);
 
         S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
         S3StreamThreadPoolMonitor.init();

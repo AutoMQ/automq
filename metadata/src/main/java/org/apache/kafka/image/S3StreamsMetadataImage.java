@@ -17,10 +17,13 @@
 
 package org.apache.kafka.image;
 
+import com.automq.stream.s3.index.NodeRangeIndexCache;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import io.netty.buffer.ByteBuf;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
 import java.util.ArrayList;
@@ -224,23 +227,31 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 lastRangeIndex = rangeIndex;
                 RangeMetadata range = stream.getRanges().get(rangeIndex);
                 node = getNodeMetadata(range.nodeId());
+                CompletableFuture<Long> startStreamSetObjectIdCf;
                 if (node != null) {
                     streamSetObjects = node.orderList();
-                    streamSetObjectIndex = node.floorStreamSetObjectIndex(ctx.streamId, nextStartOffset);
+                    startStreamSetObjectIdCf = getStartStreamSetObjectId(node.getNodeId(), nextStartOffset, ctx);
                 } else {
                     streamSetObjects = Collections.emptyList();
+                    startStreamSetObjectIdCf = CompletableFuture.completedFuture(-1L);
                 }
-                // load stream set object index
                 final int finalLastRangeIndex = lastRangeIndex;
                 final long finalNextStartOffset = nextStartOffset;
                 final int finalStreamObjectIndex = streamObjectIndex;
-                final int finalStreamSetObjectIndex = streamSetObjectIndex;
                 final List<S3StreamSetObject> finalStreamSetObjects = streamSetObjects;
                 final NodeS3StreamSetObjectMetadataImage finalNode = node;
-                loadStreamSetObjectInfo(ctx, streamSetObjects, streamSetObjectIndex).thenAccept(v -> {
-                    ctx.startOffset = finalNextStartOffset;
-                    fillObjects(ctx, stream, objects, finalLastRangeIndex, finalStreamObjectIndex, streamObjects,
-                        finalStreamSetObjectIndex, finalStreamSetObjects, finalNode);
+                startStreamSetObjectIdCf.whenComplete((objectId, ex) -> {
+                    if (ex != null) {
+                        objectId = -1L;
+                    }
+                    int startSearchIndex = findStartSearchIndex(objectId, finalStreamSetObjects,
+                        finalNode == null ? -1 : finalNode.getNodeId());
+                    // load stream set object index
+                    loadStreamSetObjectInfo(ctx, finalStreamSetObjects, startSearchIndex).thenAccept(v -> {
+                        ctx.startOffset = finalNextStartOffset;
+                        fillObjects(ctx, stream, objects, finalLastRangeIndex, finalStreamObjectIndex, streamObjects,
+                            startSearchIndex, finalStreamSetObjects, finalNode);
+                    });
                 });
                 return;
             }
@@ -255,9 +266,6 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 }
                 if ((streamOffsetRange.startOffset() == nextStartOffset)
                     || (objects.isEmpty() && streamOffsetRange.startOffset() < nextStartOffset)) {
-                    if (node != null) {
-                        node.recordStreamSetObjectIndex(ctx.streamId, nextStartOffset, streamSetObjectIndex);
-                    }
                     objects.add(new S3ObjectMetadata(streamSetObject.objectId(), S3ObjectType.STREAM_SET, List.of(streamOffsetRange),
                         streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
@@ -279,6 +287,46 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 streamSetObjects = null;
             }
         }
+    }
+
+    private int findStartSearchIndex(long startObjectId, List<S3StreamSetObject> streamSetObjects, int nodeId) {
+        int startSearchIndex = 0;
+        if (startObjectId >= 0) {
+            boolean found = false;
+            for (int i = 0; i < streamSetObjects.size(); i++) {
+                S3StreamSetObject sso = streamSetObjects.get(i);
+                if (Objects.equals(sso.objectId(), startObjectId)) {
+                    found = true;
+                    startSearchIndex = i;
+                    break;
+                }
+            }
+            if (!found) {
+                NodeRangeIndexCache.getInstance().invalidate(nodeId);
+            }
+        }
+        return startSearchIndex;
+    }
+
+    /**
+     * Get the object id of the first stream set object to start search from.
+     * Possible results:
+     * <p>
+     * a. -1, not stream set object can be found, this can happen when index cache is not exist or is invalidated,
+     *    searching should be done from the beginning of the objects in this case.
+     * <p>
+     * b. non-negative value:
+     *    1. the object exists in stream set objects in node image, search should start from that object
+     *    2. the object does not exist in stream set objects in node image, that means the index cache is out of date and
+     *       should be invalidated, so we can refresh the index from object storage next time
+     */
+    private CompletableFuture<Long> getStartStreamSetObjectId(int nodeId, long startOffset, GetObjectsContext ctx) {
+        if (LocalStreamRangeIndexCache.getInstance().nodeId() == nodeId) {
+            return LocalStreamRangeIndexCache.getInstance().searchObjectId(ctx.streamId, startOffset);
+        }
+        // search from cache and refresh the cache from remote if necessary
+        return NodeRangeIndexCache.getInstance().searchObjectId(nodeId, ctx.streamId, startOffset,
+            () -> ctx.rangeGetter.readNodeRangeIndex(nodeId).thenApply(LocalStreamRangeIndexCache::fromBuffer));
     }
 
     /**
@@ -510,6 +558,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     public interface RangeGetter {
         CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId);
+        CompletableFuture<ByteBuf> readNodeRangeIndex(long nodeId);
     }
 
 }

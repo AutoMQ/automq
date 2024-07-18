@@ -36,4 +36,9 @@ public class DefaultObjectReaderFactory implements ObjectReaderFactory {
         }
         return objectReader.retain();
     }
+
+    @Override
+    public ObjectStorage getObjectStorage() {
+        return objectStorage;
+    }
 }
