@@ -227,30 +227,27 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 lastRangeIndex = rangeIndex;
                 RangeMetadata range = stream.getRanges().get(rangeIndex);
                 node = getNodeMetadata(range.nodeId());
-                CompletableFuture<Long> startStreamSetObjectIdCf;
                 if (node != null) {
                     streamSetObjects = node.orderList();
-                    startStreamSetObjectIdCf = getStartStreamSetObjectId(node.getNodeId(), nextStartOffset, ctx);
                 } else {
                     streamSetObjects = Collections.emptyList();
-                    startStreamSetObjectIdCf = CompletableFuture.completedFuture(-1L);
                 }
+                CompletableFuture<Integer> startSearchIndexCf = getStartSearchIndex(node, nextStartOffset, ctx);
                 final int finalLastRangeIndex = lastRangeIndex;
                 final long finalNextStartOffset = nextStartOffset;
                 final int finalStreamObjectIndex = streamObjectIndex;
                 final List<S3StreamSetObject> finalStreamSetObjects = streamSetObjects;
                 final NodeS3StreamSetObjectMetadataImage finalNode = node;
-                startStreamSetObjectIdCf.whenComplete((objectId, ex) -> {
+                startSearchIndexCf.whenComplete((index, ex) -> {
                     if (ex != null) {
-                        objectId = -1L;
+                        index = 0;
                     }
-                    int startSearchIndex = findStartSearchIndex(objectId, finalStreamSetObjects,
-                        finalNode == null ? -1 : finalNode.getNodeId());
                     // load stream set object index
-                    loadStreamSetObjectInfo(ctx, finalStreamSetObjects, startSearchIndex).thenAccept(v -> {
+                    int finalIndex = index;
+                    loadStreamSetObjectInfo(ctx, finalStreamSetObjects, index).thenAccept(v -> {
                         ctx.startOffset = finalNextStartOffset;
                         fillObjects(ctx, stream, objects, finalLastRangeIndex, finalStreamObjectIndex, streamObjects,
-                            startSearchIndex, finalStreamSetObjects, finalNode);
+                            finalIndex, finalStreamSetObjects, finalNode);
                     });
                 });
                 return;
@@ -266,6 +263,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 }
                 if ((streamOffsetRange.startOffset() == nextStartOffset)
                     || (objects.isEmpty() && streamOffsetRange.startOffset() < nextStartOffset)) {
+                    if (node != null) {
+                        node.recordStreamSetObjectIndex(ctx.streamId, nextStartOffset, streamSetObjectIndex);
+                    }
                     objects.add(new S3ObjectMetadata(streamSetObject.objectId(), S3ObjectType.STREAM_SET, List.of(streamOffsetRange),
                         streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
@@ -306,6 +306,24 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             }
         }
         return startSearchIndex;
+    }
+
+    /**
+     * Get the index where to start search stream set object from.
+     */
+    private CompletableFuture<Integer> getStartSearchIndex(NodeS3StreamSetObjectMetadataImage node, long startOffset,
+        GetObjectsContext ctx) {
+        if (node == null) {
+            return CompletableFuture.completedFuture(0);
+        }
+        // search in compact cache first
+        int index = node.floorStreamSetObjectIndex(ctx.streamId, startOffset);
+        if (index > 0) {
+            return CompletableFuture.completedFuture(index);
+        }
+        // search in sparse index
+        return getStartStreamSetObjectId(node.getNodeId(), startOffset, ctx)
+            .thenApply(objectId -> findStartSearchIndex(objectId, node.orderList(), node.getNodeId()));
     }
 
     /**
