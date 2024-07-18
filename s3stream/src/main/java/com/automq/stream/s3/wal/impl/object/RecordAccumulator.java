@@ -101,7 +101,7 @@ public class RecordAccumulator implements Closeable {
                     long firstOffset = Long.parseLong(parts[parts.length - 1]);
                     long length = object.size();
                     long endOffset = firstOffset + length;
-                    objectMap.put(endOffset, new WALObject(path, firstOffset, length));
+                    objectMap.put(endOffset, new WALObject(object.bucketId(), path, firstOffset, length));
                 } catch (NumberFormatException e) {
                     // Ignore invalid path
                     log.warn("Found invalid wal object: {}", path);
@@ -314,7 +314,7 @@ public class RecordAccumulator implements Closeable {
 
         objectMap.headMap(offset, true)
             .forEach((k, v) -> {
-                deleteObjectList.add(new ObjectStorage.ObjectPath((short) 0, v.path()));
+                deleteObjectList.add(new ObjectStorage.ObjectPath(v.bucketId(), v.path()));
                 deletedObjectSize.addAndGet(v.length());
                 objectMap.remove(k);
             });
@@ -411,7 +411,7 @@ public class RecordAccumulator implements Closeable {
         CompletableFuture<ObjectStorage.WriteResult> uploadFuture = objectStorage.write(new ObjectStorage.WriteOptions().enableFastRetry(true), path, objectBuffer);
 
         CompletableFuture<Void> finalFuture = recordUploadMetrics(uploadFuture, startTime, objectLength)
-            .thenAccept(v -> {
+            .thenAccept(result -> {
                 long lockStartTime = time.nanoseconds();
                 lock.lock();
                 try {
@@ -419,7 +419,7 @@ public class RecordAccumulator implements Closeable {
                         log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - lockStartTime));
                     }
 
-                    objectMap.put(endOffset, new WALObject(path, firstOffset, objectLength));
+                    objectMap.put(endOffset, new WALObject(result.bucket(), path, firstOffset, objectLength));
                     objectDataBytes.addAndGet(objectLength);
 
                     List<Record> uploadedRecords = uploadMap.remove(firstOffset);
@@ -478,11 +478,13 @@ public class RecordAccumulator implements Closeable {
     }
 
     public static class WALObject implements Comparable<WALObject> {
+        private final short bucketId;
         private final String path;
         private final long startOffset;
         private final long length;
 
-        public WALObject(String path, long startOffset, long length) {
+        public WALObject(short bucketId, String path, long startOffset, long length) {
+            this.bucketId = bucketId;
             this.path = path;
             this.startOffset = startOffset;
             this.length = length;
@@ -491,6 +493,10 @@ public class RecordAccumulator implements Closeable {
         @Override
         public int compareTo(WALObject o) {
             return Long.compare(startOffset, o.startOffset);
+        }
+
+        public short bucketId() {
+            return bucketId;
         }
 
         public String path() {

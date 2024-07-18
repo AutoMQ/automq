@@ -88,7 +88,7 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public Iterator<RecoverResult> recover() {
-        return new RecoverIterator(accumulator.objectList(), objectStorage, config.readAheadObjectCount(), config.bucketId());
+        return new RecoverIterator(accumulator.objectList(), objectStorage, config.readAheadObjectCount());
     }
 
     @Override
@@ -104,7 +104,6 @@ public class ObjectWALService implements WriteAheadLog {
     public static class RecoverIterator implements Iterator<RecoverResult> {
         private final ObjectStorage objectStorage;
         private final int readAheadObjectSize;
-        private final short bucketId;
 
         private final List<RecordAccumulator.WALObject> objectList;
         private final Queue<CompletableFuture<byte[]>> readAheadQueue;
@@ -113,12 +112,11 @@ public class ObjectWALService implements WriteAheadLog {
         private ByteBuf dataBuffer = Unpooled.EMPTY_BUFFER;
 
         public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
-            int readAheadObjectSize, short bucketId) {
+            int readAheadObjectSize) {
             this.objectList = objectList;
             this.objectStorage = objectStorage;
             this.readAheadObjectSize = readAheadObjectSize;
             this.readAheadQueue = new ArrayDeque<>(readAheadObjectSize);
-            this.bucketId = bucketId;
 
             // Fill the read ahead queue.
             for (int i = 0; i < readAheadObjectSize; i++) {
@@ -144,7 +142,7 @@ public class ObjectWALService implements WriteAheadLog {
         private void tryReadAhead() {
             if (readAheadQueue.size() < readAheadObjectSize && nextIndex < objectList.size()) {
                 RecordAccumulator.WALObject object = objectList.get(nextIndex++);
-                ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(bucketId);
+                ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(object.bucketId());
                 CompletableFuture<byte[]> readFuture = objectStorage.rangeRead(options, object.path(), 0, object.length())
                     .thenApply(buffer -> {
                         // Copy the result buffer and release it.
