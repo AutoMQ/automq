@@ -2,9 +2,9 @@ Business Source License 1.1
 
 Parameters
 
-<u>Licensor</u>: AutoMQ CO.,LTD.
+<u>Licensor</u>: AutoMQ HK Limited.
 
-<u>Licensed Work</u>: AutoMQ The Licensed Work is (c) 2024 AutoMQ CO.,LTD.
+<u>Licensed Work</u>: AutoMQ The Licensed Work is (c) 2024 AutoMQ HK Limited.
 
 <u>Additional Use Grant</u>: You may make use of the Licensed Work,
 provided that you may not use the Licensed Work for a Streaming or
