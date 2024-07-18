@@ -20,24 +20,24 @@ public class WALObjectHeader {
     public static final int WAL_HEADER_SIZE = 4 // magic code
                                               + 8 // start offset
                                               + 8 // body length
-                                              + 8 // last write timestamp
+                                              + 8 // sticky record length
                                               + 4 // node id
                                               + 8; // node epoch
 
     private int magicCode0 = WAL_HEADER_MAGIC_CODE;
     private long startOffset1;
     private long length2;
-    private long lastWriteTimestamp3;
+    private long stickyRecordLength3;
     private int nodeId4;
     private long epoch5;
 
     public WALObjectHeader() {
     }
 
-    public WALObjectHeader(long startOffset, long length, long lastWriteTimestamp, int nodeId, long epoch) {
+    public WALObjectHeader(long startOffset, long length, long stickyRecordLength, int nodeId, long epoch) {
         this.startOffset1 = startOffset;
         this.length2 = length;
-        this.lastWriteTimestamp3 = lastWriteTimestamp;
+        this.stickyRecordLength3 = stickyRecordLength;
         this.nodeId4 = nodeId;
         this.epoch5 = epoch;
     }
@@ -56,7 +56,7 @@ public class WALObjectHeader {
 
         walObjectHeader.startOffset1 = buf.readLong();
         walObjectHeader.length2 = buf.readLong();
-        walObjectHeader.lastWriteTimestamp3 = buf.readLong();
+        walObjectHeader.stickyRecordLength3 = buf.readLong();
         walObjectHeader.nodeId4 = buf.readInt();
         walObjectHeader.epoch5 = buf.readLong();
         buf.resetReaderIndex();
@@ -69,7 +69,7 @@ public class WALObjectHeader {
         buf.writeInt(magicCode0);
         buf.writeLong(startOffset1);
         buf.writeLong(length2);
-        buf.writeLong(lastWriteTimestamp3);
+        buf.writeLong(stickyRecordLength3);
         buf.writeInt(nodeId4);
         buf.writeLong(epoch5);
         return buf;
@@ -87,8 +87,8 @@ public class WALObjectHeader {
         return length2;
     }
 
-    public long lastWriteTimestamp() {
-        return lastWriteTimestamp3;
+    public long stickyRecordLength() {
+        return stickyRecordLength3;
     }
 
     public int nodeId() {

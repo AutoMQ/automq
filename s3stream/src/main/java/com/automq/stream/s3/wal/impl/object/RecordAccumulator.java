@@ -48,33 +48,26 @@ public class RecordAccumulator implements Closeable {
 
     private static final long DEFAULT_LOCK_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(10);
     private static final long DEFAULT_UPLOAD_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
-
-    private final ReentrantLock lock = new ReentrantLock();
-    private ConcurrentLinkedDeque<Record> bufferQueue = new ConcurrentLinkedDeque<>();
-    private final ConcurrentNavigableMap<Long /* inclusive first offset */, List<Record>> uploadMap = new ConcurrentSkipListMap<>();
-    private final ConcurrentNavigableMap<Long /* exclusive end offset */, WALObject> objectMap = new ConcurrentSkipListMap<>();
-
     protected final ObjectWALConfig config;
-    private final String nodePrefix;
-    private final String objectPrefix;
-
     protected final Time time;
     protected final ObjectStorage objectStorage;
-
+    private final ReentrantLock lock = new ReentrantLock();
+    private final ConcurrentNavigableMap<Long /* inclusive first offset */, List<Record>> uploadMap = new ConcurrentSkipListMap<>();
+    private final ConcurrentNavigableMap<Long /* exclusive end offset */, WALObject> objectMap = new ConcurrentSkipListMap<>();
+    private final String nodePrefix;
+    private final String objectPrefix;
     private final ScheduledExecutorService executorService;
     private final ScheduledExecutorService monitorService;
     private final ExecutorService callbackService;
-
-    private volatile long lastUploadTimestamp = System.currentTimeMillis();
     private final ConcurrentMap<CompletableFuture<Void>, Long> pendingFutureMap = new ConcurrentHashMap<>();
     private final AtomicLong objectDataBytes = new AtomicLong();
     private final AtomicLong bufferedDataBytes = new AtomicLong();
-
-    private long nextOffset = 0;
-    private long flushedOffset = 0;
-
     protected volatile boolean closed = true;
     protected volatile boolean fenced;
+    private ConcurrentLinkedDeque<Record> bufferQueue = new ConcurrentLinkedDeque<>();
+    private volatile long lastUploadTimestamp = System.currentTimeMillis();
+    private long nextOffset = 0;
+    private long flushedOffset = 0;
 
     public RecordAccumulator(Time time, ObjectStorage objectStorage,
         ObjectWALConfig config) {
@@ -100,7 +93,7 @@ public class RecordAccumulator implements Closeable {
                 try {
                     long firstOffset = Long.parseLong(parts[parts.length - 1]);
                     long length = object.size();
-                    long endOffset = firstOffset + length;
+                    long endOffset = firstOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
                     objectMap.put(endOffset, new WALObject(object.bucketId(), path, firstOffset, length));
                 } catch (NumberFormatException e) {
                     // Ignore invalid path
@@ -271,6 +264,10 @@ public class RecordAccumulator implements Closeable {
                 throw new OverCapacityException("Too many unflushed bytes.");
             }
 
+            if (objectList().size() + config.maxInflightUploadCount() >= 1000) {
+                throw new OverCapacityException("Too many objects.");
+            }
+
             if (!bufferQueue.isEmpty()
                 && uploadMap.size() < config.maxInflightUploadCount()
                 && (System.currentTimeMillis() - lastUploadTimestamp >= config.batchInterval()
@@ -359,6 +356,15 @@ public class RecordAccumulator implements Closeable {
         // Build data buffer.
         CompositeByteBuf dataBuffer = ByteBufAlloc.compositeByteBuffer();
         List<Record> recordList = new LinkedList<>();
+
+        long stickyRecordLength = 0;
+        if (!bufferQueue.isEmpty()) {
+            Record firstRecord = bufferQueue.getFirst();
+            if (firstRecord.record.readerIndex() != 0) {
+                stickyRecordLength = firstRecord.record.readableBytes();
+            }
+        }
+
         while (!bufferQueue.isEmpty()) {
             // The retained bytes in the batch must larger than record header size.
             long retainedBytesInBatch = config.maxBytesInBatch() - dataBuffer.readableBytes() - WALObjectHeader.WAL_HEADER_SIZE;
@@ -374,7 +380,6 @@ public class RecordAccumulator implements Closeable {
                 recordList.add(record);
                 break;
             }
-
 
             if (record.record.readableBytes() > retainedBytesInBatch) {
                 // The records will be split into multiple objects.
@@ -399,7 +404,7 @@ public class RecordAccumulator implements Closeable {
         long endOffset = firstOffset + dataLength;
 
         CompositeByteBuf objectBuffer = ByteBufAlloc.compositeByteBuffer();
-        WALObjectHeader header = new WALObjectHeader(firstOffset, dataLength, 0L, config.nodeId(), config.epoch());
+        WALObjectHeader header = new WALObjectHeader(firstOffset, dataLength, stickyRecordLength, config.nodeId(), config.epoch());
         objectBuffer.addComponent(true, header.marshal());
         objectBuffer.addComponent(true, dataBuffer);
 
@@ -465,9 +470,9 @@ public class RecordAccumulator implements Closeable {
     }
 
     protected static class Record {
-        public long offset;
         public final ByteBuf record;
         public final CompletableFuture<AppendResult.CallbackResult> future;
+        public long offset;
 
         public Record(long offset, ByteBuf record,
             CompletableFuture<AppendResult.CallbackResult> future) {

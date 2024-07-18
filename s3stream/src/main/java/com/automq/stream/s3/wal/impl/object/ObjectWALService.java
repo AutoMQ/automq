@@ -38,6 +38,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
 public class ObjectWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
@@ -129,14 +130,18 @@ public class ObjectWALService implements WriteAheadLog {
             return dataBuffer.isReadable() || !readAheadQueue.isEmpty() || nextIndex < objectList.size();
         }
 
-        private void loadNextBuffer() {
+        private void loadNextBuffer(boolean skipStickyRecord) {
             // Please call hasNext() before calling loadNextBuffer().
             byte[] buffer = Objects.requireNonNull(readAheadQueue.poll()).join();
             dataBuffer = Unpooled.wrappedBuffer(buffer);
 
             // Check header
-            WALObjectHeader.unmarshal(dataBuffer);
+            WALObjectHeader header = WALObjectHeader.unmarshal(dataBuffer);
             dataBuffer.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
+
+            if (skipStickyRecord && header.stickyRecordLength() != 0) {
+                dataBuffer.skipBytes((int) header.stickyRecordLength());
+            }
         }
 
         private void tryReadAhead() {
@@ -163,7 +168,7 @@ public class ObjectWALService implements WriteAheadLog {
             }
 
             if (!dataBuffer.isReadable()) {
-                loadNextBuffer();
+                loadNextBuffer(true);
             }
 
             // Try to read next object.
@@ -171,7 +176,16 @@ public class ObjectWALService implements WriteAheadLog {
 
             ByteBuf recordHeaderBuf = dataBuffer.readBytes(RECORD_HEADER_SIZE);
             RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
+
+            if (header.getRecordHeaderCRC() != WALUtil.crc32(recordHeaderBuf, RECORD_HEADER_WITHOUT_CRC_SIZE)) {
+                recordHeaderBuf.release();
+                throw new IllegalStateException("Record header crc check failed.");
+            }
             recordHeaderBuf.release();
+
+            if (header.getMagicCode() != RecordHeader.RECORD_HEADER_MAGIC_CODE) {
+                throw new IllegalStateException("Invalid magic code in record header.");
+            }
 
             int length = header.getRecordBodyLength();
 
@@ -185,7 +199,7 @@ public class ObjectWALService implements WriteAheadLog {
                 if (!hasNext()) {
                     throw new IllegalStateException("[Bug] There is a record part but no more data to read.");
                 }
-                loadNextBuffer();
+                loadNextBuffer(false);
                 dataBuffer.readBytes(recordBuf, length - recordBuf.readableBytes());
             } else {
                 dataBuffer.readBytes(recordBuf, length);
@@ -193,6 +207,11 @@ public class ObjectWALService implements WriteAheadLog {
 
             if (!dataBuffer.isReadable()) {
                 dataBuffer.release();
+            }
+
+            if (header.getRecordBodyCRC() != WALUtil.crc32(recordBuf)) {
+                recordBuf.release();
+                throw new IllegalStateException("Record body crc check failed.");
             }
 
             return new RecoverResultImpl(recordBuf, header.getRecordBodyCRC());

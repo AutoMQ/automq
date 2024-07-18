@@ -90,7 +90,7 @@ public class RecordAccumulatorTest {
         assertEquals(0, objectHeader.startOffset());
         assertEquals(50, objectHeader.length());
         // The last write timestamp is not set currently.
-        assertEquals(0L, objectHeader.lastWriteTimestamp());
+        assertEquals(0L, objectHeader.stickyRecordLength());
         assertEquals(100, objectHeader.nodeId());
         assertEquals(1000, objectHeader.epoch());
 

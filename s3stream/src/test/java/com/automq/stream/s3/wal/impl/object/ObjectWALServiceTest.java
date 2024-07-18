@@ -5,6 +5,7 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
@@ -30,7 +31,7 @@ public class ObjectWALServiceTest {
     @BeforeEach
     public void setUp() throws IOException {
         objectStorage = new MemoryObjectStorage();
-        wal = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withMaxBytesInBatch(200).build());
+        wal = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withMaxBytesInBatch(110).withBatchInterval(Long.MAX_VALUE).build());
         wal.start();
         random = new Random();
     }
@@ -56,12 +57,21 @@ public class ObjectWALServiceTest {
             AppendResult result = wal.append(TraceContext.DEFAULT, byteBuf.retainedSlice().asReadOnly(), 0);
             futureList.add(result.future());
 
-            if (futureList.size() % 3 == 0) {
+            if (futureList.size() == 3) {
                 wal.accumulator().unsafeUpload(false);
-                CompletableFuture.allOf(futureList.toArray(new CompletableFuture<?>[]{})).join();
+                CompletableFuture.allOf(futureList.toArray(new CompletableFuture<?>[] {})).join();
                 futureList.clear();
             }
         }
+
+        if (!futureList.isEmpty()) {
+            wal.accumulator().unsafeUpload(false);
+            CompletableFuture.allOf(futureList.toArray(new CompletableFuture<?>[] {})).join();
+        }
+
+        List<RecordAccumulator.WALObject> objectList = wal.accumulator().objectList();
+        assertFalse(objectList.isEmpty());
+        assertTrue(objectList.size() < 100);
 
         // Close S3 WAL to flush all buffering data to object storage.
         wal.shutdownGracefully();
@@ -78,5 +88,30 @@ public class ObjectWALServiceTest {
             assertEquals(byteBuf, recoveredByteBuf);
         }
         assertFalse(iterator.hasNext());
+
+        // Test recover after trim.
+        // Trim the first 2 records.
+        wal.trim((RecordHeader.RECORD_HEADER_SIZE + 20) * 2).join();
+        assertEquals(66, wal.accumulator().objectList().size());
+
+        iterator = wal.recover();
+        long count = 0;
+        while (iterator.hasNext()) {
+            iterator.next();
+            count++;
+        }
+        assertEquals(98, count);
+
+        // Trim the first 3 records.
+        wal.trim((RecordHeader.RECORD_HEADER_SIZE + 20) * 3).join();
+        assertEquals(65, wal.accumulator().objectList().size());
+
+        iterator = wal.recover();
+        count = 0;
+        while (iterator.hasNext()) {
+            iterator.next();
+            count++;
+        }
+        assertEquals(97, count);
     }
 }
