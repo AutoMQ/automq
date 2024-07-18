@@ -19,6 +19,7 @@ import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.Failover;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -349,6 +350,8 @@ public class S3Storage implements Storage {
                 .objectManager(objectManager).objectStorage(objectStorage).executor(uploadWALExecutor).build();
             task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
+            // no need to wait for response
+            LocalStreamRangeIndexCache.getInstance().upload();
         }
         deltaWAL.reset().get();
         for (StreamMetadata stream : streams) {
@@ -598,7 +601,13 @@ public class S3Storage implements Storage {
                 callbackSequencer.tryFree(streamId);
             }
         });
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> {
+            StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+            if (streamId != LogCache.MATCH_ALL_STREAMS) {
+                // do not wait for response to prevent blocking close stream.
+                LocalStreamRangeIndexCache.getInstance().upload();
+            }
+        });
         return cf;
     }
 

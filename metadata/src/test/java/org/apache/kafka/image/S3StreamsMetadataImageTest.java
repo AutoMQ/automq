@@ -17,6 +17,9 @@
 
 package org.apache.kafka.image;
 
+import com.automq.stream.s3.index.RangeIndex;
+import com.automq.stream.s3.index.SparseRangeIndex;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
@@ -24,8 +27,10 @@ import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.utils.FutureUtil;
 import com.google.common.collect.Range;
+import io.netty.buffer.ByteBuf;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -66,6 +71,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(value = 40)
 @Tag("S3Unit")
+@SuppressWarnings("checkstyle:ClassDataAbstractionCoupling")
 public class S3StreamsMetadataImageTest {
 
     private static final int BROKER0 = 0;
@@ -78,7 +84,17 @@ public class S3StreamsMetadataImageTest {
     private static final long MB = 1024 * KB;
 
     private static final long GB = 1024 * MB;
-    private final RangeGetter defaultRangeGetter = (objectId, streamId) -> FutureUtil.failedFuture(new UnsupportedOperationException());
+    private final RangeGetter defaultRangeGetter = new RangeGetter() {
+        @Override
+        public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId) {
+            return FutureUtil.failedFuture(new UnsupportedOperationException());
+        }
+
+        @Override
+        public CompletableFuture<ByteBuf> readNodeRangeIndex(long nodeId) {
+            return FutureUtil.failedFuture(new UnsupportedOperationException());
+        }
+    };
 
     static final S3StreamsMetadataImage IMAGE1;
 
@@ -132,25 +148,50 @@ public class S3StreamsMetadataImageTest {
     }
 
     private RangeGetter buildMemoryRangeGetter() {
-        return (objectId, streamId) -> {
-            if (objectId == 0) {
-                return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 100L, 120L)));
-            } else if (objectId == 1) {
-                return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 120L, 140L)));
-            } else if (objectId == 2) {
-                return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 180L, 200L)));
-            } else if (objectId == 3) {
-                return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 400L, 420L)));
-            } else if (objectId == 4) {
-                return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 520L, 600L)));
-            } else if (objectId == 5) {
-                return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 140L, 160L)));
-            } else if (objectId == 6) {
-                return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 160L, 180L)));
-            } else if (objectId == 7) {
-                return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 420L, 520L)));
-            } else {
-                return CompletableFuture.completedFuture(Optional.empty());
+        return new RangeGetter() {
+            @Override
+            public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId) {
+                if (objectId == 0) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 100L, 120L)));
+                } else if (objectId == 1) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 120L, 140L)));
+                } else if (objectId == 2) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 180L, 200L)));
+                } else if (objectId == 3) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 400L, 420L)));
+                } else if (objectId == 4) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 520L, 600L)));
+                } else if (objectId == 5) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 140L, 160L)));
+                } else if (objectId == 6) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 160L, 180L)));
+                } else if (objectId == 7) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 420L, 520L)));
+                } else if (objectId == 9) {
+                    return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 600L, 888L)));
+                } else {
+                    return CompletableFuture.completedFuture(Optional.empty());
+                }
+            }
+
+            @Override
+            public CompletableFuture<ByteBuf> readNodeRangeIndex(long nodeId) {
+                Map<Long, SparseRangeIndex> streamRangeIndexMap;
+                if (nodeId == BROKER0) {
+                    streamRangeIndexMap = Map.of(
+                        STREAM0, new SparseRangeIndex(2, 1, List.of(
+                            new RangeIndex(100, 120, 0),
+                            new RangeIndex(180, 200, 2),
+                            new RangeIndex(520, 600, 4))));
+                } else {
+                    streamRangeIndexMap = Map.of(
+                        STREAM0, new SparseRangeIndex(2, 1, List.of(
+                            new RangeIndex(140, 160, 5),
+                            new RangeIndex(420, 520, 7),
+                            // objectId 8 is not exist (compacted)
+                            new RangeIndex(600, 700, 8))));
+                }
+                return CompletableFuture.completedFuture(LocalStreamRangeIndexCache.toBuffer(streamRangeIndexMap));
             }
         };
     }
@@ -168,7 +209,8 @@ public class S3StreamsMetadataImageTest {
         DeltaList<S3StreamSetObject> broker1Objects = DeltaList.of(
             new S3StreamSetObject(5, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 140L, 160L)), 0L),
             new S3StreamSetObject(6, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 160L, 180L)), 1L),
-            new S3StreamSetObject(7, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 420L, 520L)), 2L));
+            new S3StreamSetObject(7, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 420L, 520L)), 2L),
+            new S3StreamSetObject(9, BROKER1, isHugeCluster ? null : List.of(new StreamOffsetRange(STREAM0, 600L, 888L)), 3L));
         NodeS3StreamSetObjectMetadataImage broker0WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER0, S3StreamConstant.INVALID_BROKER_EPOCH,
             broker0Objects);
         NodeS3StreamSetObjectMetadataImage broker1WALMetadataImage = new NodeS3StreamSetObjectMetadataImage(BROKER1, S3StreamConstant.INVALID_BROKER_EPOCH,
@@ -178,7 +220,8 @@ public class S3StreamsMetadataImageTest {
             new RangeMetadata(STREAM0, 1L, 1, 140L, 180L, BROKER1),
             new RangeMetadata(STREAM0, 2L, 2, 180L, 420L, BROKER0),
             new RangeMetadata(STREAM0, 3L, 3, 420L, 520L, BROKER1),
-            new RangeMetadata(STREAM0, 4L, 4, 520L, 600L, BROKER0));
+            new RangeMetadata(STREAM0, 4L, 4, 520L, 600L, BROKER0),
+            new RangeMetadata(STREAM0, 5L, 5, 600L, 888L, BROKER1));
         DeltaList<S3StreamObject> streamObjects = DeltaList.of(
             new S3StreamObject(8, STREAM0, 10L, 100L),
             new S3StreamObject(9, STREAM0, 200L, 300L),
@@ -256,9 +299,9 @@ public class S3StreamsMetadataImageTest {
         // 9. search stream0 in [399, 1000)
         objects = streamsImage.getObjects(STREAM0, 399, 1000, Integer.MAX_VALUE, rangeGetter).get();
         assertEquals(300, objects.startOffset());
-        assertEquals(600, objects.endOffset());
-        assertEquals(4, objects.objects().size());
-        assertEquals(expectedObjectIds.subList(7, 11), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+        assertEquals(888, objects.endOffset());
+        assertEquals(5, objects.objects().size());
+        assertEquals(List.of(10L, 3L, 7L, 4L, 9L), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         objects = streamsImage.getObjects(STREAM0, 101, 400L, Integer.MAX_VALUE, rangeGetter).get();
         assertEquals(100L, objects.startOffset());
@@ -271,6 +314,12 @@ public class S3StreamsMetadataImageTest {
         assertEquals(420, objects.endOffset());
         assertEquals(9, objects.objects().size());
         assertEquals(List.of(8L, 0L, 1L, 5L, 6L, 2L, 9L, 10L, 3L), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+
+        objects = streamsImage.getObjects(STREAM0, 550, ObjectUtils.NOOP_OFFSET, 9, rangeGetter).get();
+        assertEquals(520, objects.startOffset());
+        assertEquals(888, objects.endOffset());
+        assertEquals(2, objects.objects().size());
+        assertEquals(List.of(4L, 9L), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
     }
 
     /**

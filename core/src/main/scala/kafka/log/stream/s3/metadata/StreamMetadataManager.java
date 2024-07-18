@@ -13,11 +13,14 @@ package kafka.log.stream.s3.metadata;
 
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.FutureUtil;
+import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -298,6 +301,12 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             CompletableFuture<Optional<StreamOffsetRange>> cf = reader.basicObjectInfo().thenApply(info -> info.indexBlock().findStreamOffsetRange(streamId));
             cf.whenComplete((rst, ex) -> reader.release());
             return cf;
+        }
+
+        @Override
+        public CompletableFuture<ByteBuf> readNodeRangeIndex(long nodeId) {
+            ObjectStorage storage = objectReaderFactory.getObjectStorage();
+            return storage.read(ObjectStorage.ReadOptions.DEFAULT, ObjectUtils.genIndexKey(0, nodeId));
         }
     }
 }
