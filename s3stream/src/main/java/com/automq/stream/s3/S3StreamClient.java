@@ -60,7 +60,6 @@ public class S3StreamClient implements StreamClient {
     private static final long COMPACTION_COOLDOWN_AFTER_OPEN_STREAM = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_COOLDOWN_AFTER_OPEN_STREAM", TimeUnit.MINUTES.toMillis(1));
     private static final long MINOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(10));
     private static final long MAJOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(60));
-    private static final boolean MAJOR_V1_COMPACTION_SKIP_SMALL_OBJECT = Systems.getEnvInt("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_COMPACTION_SKIP_SMALL_OBJECT", 0) == 1;
     private static final long MINOR_V1_COMPACTION_SIZE = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD", MINOR_V1_COMPACTION_SIZE_THRESHOLD);
     /**
      * When the cluster objects count exceed MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD, the MAJOR_V1 compaction will be triggered.
@@ -346,39 +345,41 @@ public class S3StreamClient implements StreamClient {
 
         private void compactV0(long now) {
             if (now - lastMajorCompactionTimestamp > TimeUnit.MINUTES.toMillis(config.streamObjectCompactionIntervalMinutes())) {
-                compact(MAJOR);
+                compact(MAJOR, null);
                 lastMajorCompactionTimestamp = System.currentTimeMillis();
             } else if (now - lastMinorCompactionTimestamp > TimeUnit.MINUTES.toMillis(5)) {
-                compact(MINOR);
+                compact(MINOR, null);
                 lastMinorCompactionTimestamp = System.currentTimeMillis();
             } else {
-                compact(CLEANUP);
+                compact(CLEANUP, null);
             }
         }
 
         private void compactV1(CompactionHint hint, long now) {
             if (now - lastMajorV1CompactionTimestamp > MAJOR_V1_COMPACTION_INTERVAL || hint.objectsCount >= MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD) {
-                compact(MAJOR_V1);
+                compact(MAJOR_V1, hint);
                 lastMajorV1CompactionTimestamp = System.currentTimeMillis();
             } else if (now - lastMinorV1CompactionTimestamp > MINOR_V1_COMPACTION_INTERVAL) {
-                compact(MINOR_V1);
+                compact(MINOR_V1, hint);
                 lastMinorV1CompactionTimestamp = System.currentTimeMillis();
             } else {
-                compact(CLEANUP_V1);
+                compact(CLEANUP_V1, hint);
             }
         }
 
-        public void compact(StreamObjectCompactor.CompactionType compactionType) {
-            StreamObjectCompactor task = StreamObjectCompactor.builder()
+        public void compact(StreamObjectCompactor.CompactionType compactionType, CompactionHint hint) {
+            StreamObjectCompactor.Builder taskBuilder = StreamObjectCompactor.builder()
                 .objectManager(objectManager)
                 .stream(this)
                 .objectStorage(objectStorage)
                 .maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes())
-                .minorV1CompactionThreshold(MINOR_V1_COMPACTION_SIZE)
-                .majorV1CompactionSkipSmallObject(MAJOR_V1_COMPACTION_SKIP_SMALL_OBJECT)
-                .build();
+                .minorV1CompactionThreshold(MINOR_V1_COMPACTION_SIZE);
 
-            task.compact(compactionType);
+            if (hint != null) {
+                taskBuilder.majorV1CompactionSkipSmallObject(hint.objectsCount < MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD);
+            }
+
+            taskBuilder.build().compact(compactionType);
         }
     }
 

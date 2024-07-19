@@ -52,6 +52,7 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByPhysic
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.builder;
@@ -414,19 +415,41 @@ class StreamObjectCompactorTest {
 
     @Test
     public void testGroupAndFilterLogic() {
-        int majorCompactionObjectThresHold = 4 * 1024 * 1024;
+        int majorCompactionObjectThreshold = 4 * 1024 * 1024;
         List<S3ObjectMetadata> metadataList = prepareS3ObjectMetadata(20, 20, 20,
-            majorCompactionObjectThresHold, majorCompactionObjectThresHold, 64);
-        Predicate<S3ObjectMetadata> objectFilter = getObjectFilter(MAJOR_V1, majorCompactionObjectThresHold);
-        List<List<S3ObjectMetadata>> groups = group0(metadataList, 10 * majorCompactionObjectThresHold, objectFilter);
+            majorCompactionObjectThreshold, majorCompactionObjectThreshold, 64);
+        Predicate<S3ObjectMetadata> objectFilter = getObjectFilter(MAJOR_V1, majorCompactionObjectThreshold);
+        List<List<S3ObjectMetadata>> groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
 
-        // small composite object can still be compacted
+        // major_v1 compaction small composite object can still be compacted
         assertTrue(groups.stream().flatMap(List::stream)
             .anyMatch(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite)));
 
-        // no more small normal object
+        // major_v1 compaction no more small normal object
         assertTrue(groups.stream().flatMap(List::stream)
-            .filter(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Normal) && meta.objectSize() < majorCompactionObjectThresHold)
+            .filter(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Normal) && meta.objectSize() < majorCompactionObjectThreshold)
+            .findAny().isEmpty());
+
+
+        // major_v1 check disable skip small object logic
+        long disableMajorV1CompactionSkipSmallObject = 0;
+
+        objectFilter = getObjectFilter(MAJOR_V1, disableMajorV1CompactionSkipSmallObject);
+        groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
+
+        assertTrue(groups.stream().flatMap(List::stream)
+            .anyMatch(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite)));
+
+        // now the small object should be contained in the major_v1 compaction
+        assertTrue(groups.stream().flatMap(List::stream)
+            .anyMatch(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Normal) && meta.objectSize() < majorCompactionObjectThreshold));
+
+
+        // MINOR_V1 should skip composite object
+        objectFilter = getObjectFilter(MINOR_V1, majorCompactionObjectThreshold);
+        groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
+
+        assertTrue(groups.stream().flatMap(List::stream).filter(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite))
             .findAny().isEmpty());
     }
 

@@ -133,7 +133,7 @@ public class StreamObjectCompactor {
         return object -> {
             ObjectAttributes.Type objectType = ObjectAttributes.from(object.attributes()).type();
             if (!includeCompositeObject && objectType == Composite) {
-                return true;
+                return false;
             }
 
             // MAJOR_V1 compaction won't compact small object into composite object.
