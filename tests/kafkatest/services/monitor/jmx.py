@@ -43,6 +43,11 @@ class JmxMixin(object):
         self.jmx_tool_log = os.path.join(root, "jmx_tool.log")
         self.jmx_tool_err_log = os.path.join(root, "jmx_tool.err.log")
 
+        # AutoMQ inject start
+        self.jmx_start_time_sec = None
+        self.jmx_end_time_sec = None
+        # AutoMQ inject end
+
     def clean_node(self, node, idx=None):
         node.account.kill_java_processes(self.jmx_class_name(self.jmxtool_version(node)), clean_shutdown=False,
                                          allow_fail=True)
@@ -93,7 +98,7 @@ class JmxMixin(object):
         except RemoteCommandError:
             return False
 
-    def read_jmx_output(self, idx, node):
+    def read_jmx_output(self, idx, node, start_time_sec=None, end_time_sec=None):
         if not self.started[idx-1]:
             return
 
@@ -118,8 +123,12 @@ class JmxMixin(object):
         if any(not time_to_stats for time_to_stats in self.jmx_stats):
             return
 
-        start_time_sec = min([min(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
-        end_time_sec = max([max(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
+       if start_time_sec is None:
+            start_time_sec = min([min(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
+            self.jmx_start_time_sec = start_time_sec
+        if end_time_sec is None:
+            end_time_sec = max([max(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
+            self.jmx_end_time_sec = end_time_sec
 
         for name in object_attribute_names:
             aggregates_per_time = []
@@ -131,9 +140,9 @@ class JmxMixin(object):
             self.average_jmx_value[name] = sum(aggregates_per_time) / len(aggregates_per_time)
             self.maximum_jmx_value[name] = max(aggregates_per_time)
 
-    def read_jmx_output_all_nodes(self):
+    def read_jmx_output_all_nodes(self, start_time_sec=None, end_time_sec=None):
         for node in self.nodes:
-            self.read_jmx_output(self.idx(node), node)
+            self.read_jmx_output(self.idx(node), node, start_time_sec=start_time_sec, end_time_sec=end_time_sec)
 
     def jmxtool_version(self, node):
         # To correctly wait for requested JMX metrics to be added we need the --wait option for JmxTool. This option was
