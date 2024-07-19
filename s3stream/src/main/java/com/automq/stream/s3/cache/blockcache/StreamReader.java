@@ -38,6 +38,8 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+
+import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -221,20 +223,24 @@ import static com.automq.stream.utils.FutureUtil.exec;
     }
 
     /**
+     * This method is only for unit testing.
      * AfterReadTryReadaheadCf is empty, the task has been completed
      * AfterReadTryReadaheadCf is not empty, the task may be completed
      * @return  afterReadTryReadaheadCf
      */
-    public CompletableFuture<Void> getAfterReadTryReadaheadCf() {
+    @VisibleForTesting
+    CompletableFuture<Void> getAfterReadTryReadaheadCf() {
         return afterReadTryReadaheadCf;
     }
 
     /**
+     * This method is only for unit testing.
      * inflightReadaheadCf is empty, the task has been completed
      * inflightReadaheadCf is not empty, the task may be completed
      * @return  readahead.inflightReadaheadCf
      */
-    public CompletableFuture<Void> getReadaheadInflightReadaheadCf() {
+    @VisibleForTesting
+    CompletableFuture<Void> getReadaheadInflightReadaheadCf() {
         return readahead.inflightReadaheadCf;
     }
 
