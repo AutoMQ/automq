@@ -32,6 +32,7 @@ import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.
 
 public class PerfConfig {
     public final String bootstrapServer;
+    public final Map<String, String> commonConfigs;
     public final Map<String, String> topicConfigs;
     public final Map<String, String> producerConfigs;
     public final Map<String, String> consumerConfigs;
@@ -68,6 +69,7 @@ public class PerfConfig {
         assert ns != null;
 
         bootstrapServer = ns.getString("bootstrapServer");
+        commonConfigs = parseConfigs(ns.getList("commonConfigs"));
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
@@ -105,6 +107,12 @@ public class PerfConfig {
             .dest("bootstrapServer")
             .metavar("BOOTSTRAP_SERVER")
             .help("The AutoMQ bootstrap server.");
+        parser.addArgument("-A", "--common-configs")
+            .nargs("*")
+            .type(String.class)
+            .dest("commonConfigs")
+            .metavar("COMMON_CONFIG")
+            .help("The common configurations.");
         parser.addArgument("-T", "--topic-configs")
             .nargs("*")
             .type(String.class)
@@ -228,7 +236,13 @@ public class PerfConfig {
         return bootstrapServer;
     }
 
+    public Map<String, String> adminConfig() {
+        return commonConfigs;
+    }
+
     public TopicsConfig topicsConfig() {
+        Map<String, String> topicConfigs = new HashMap<>(commonConfigs);
+        topicConfigs.putAll(this.topicConfigs);
         return new TopicsConfig(
             topicPrefix,
             topics,
@@ -238,6 +252,8 @@ public class PerfConfig {
     }
 
     public ProducersConfig producersConfig() {
+        Map<String, String> producerConfigs = new HashMap<>(commonConfigs);
+        producerConfigs.putAll(this.producerConfigs);
         return new ProducersConfig(
             bootstrapServer,
             producersPerTopic,
@@ -246,6 +262,8 @@ public class PerfConfig {
     }
 
     public ConsumersConfig consumersConfig() {
+        Map<String, String> consumerConfigs = new HashMap<>(commonConfigs);
+        consumerConfigs.putAll(this.consumerConfigs);
         return new ConsumersConfig(
             bootstrapServer,
             groupsPerTopic,
