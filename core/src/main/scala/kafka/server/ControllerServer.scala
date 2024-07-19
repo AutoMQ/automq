@@ -26,9 +26,7 @@ import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.QuotaFactory.QuotaManagers
-
-import scala.collection.immutable
-import kafka.server.metadata.{AclPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, KRaftMetadataCachePublisher, ScramPublisher}
+import kafka.server.metadata._
 import kafka.server.streamaspect.ElasticControllerApis
 import kafka.utils.{CoreUtils, Logging}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
@@ -39,30 +37,31 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.LogContext
 import org.apache.kafka.common.{ClusterResource, Endpoint, Uuid}
 import org.apache.kafka.controller.metrics.{ControllerMetadataMetricsPublisher, QuorumControllerMetrics}
-import org.apache.kafka.controller.{QuorumController, QuorumControllerExtension, QuorumFeatures}
+import org.apache.kafka.controller.{Controller, ControllerTimeoutDecorator, QuorumController, QuorumFeatures}
 import org.apache.kafka.image.publisher.{ControllerRegistrationsPublisher, MetadataPublisher}
-import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
 import org.apache.kafka.metadata.migration.{KRaftMigrationDriver, LegacyPropagator}
 import org.apache.kafka.metadata.placement.{ReplicaPlacer, StripedReplicaPlacer}
 import org.apache.kafka.metadata.publisher.FeaturesPublisher
+import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.security.{CredentialProvider, PasswordEncoder}
 import org.apache.kafka.server.NodeToControllerChannelManager
 import org.apache.kafka.server.authorizer.Authorizer
-import org.apache.kafka.server.config.ServerLogConfigs.{ALTER_CONFIG_POLICY_CLASS_NAME_CONFIG, CREATE_TOPIC_POLICY_CLASS_NAME_CONFIG}
 import org.apache.kafka.server.common.ApiMessageAndVersion
 import org.apache.kafka.server.config.ConfigType
+import org.apache.kafka.server.config.ServerLogConfigs.{ALTER_CONFIG_POLICY_CLASS_NAME_CONFIG, CREATE_TOPIC_POLICY_CLASS_NAME_CONFIG}
 import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics}
 import org.apache.kafka.server.network.{EndpointReadyFutures, KafkaAuthorizerServerInfo}
 import org.apache.kafka.server.policy.{AlterConfigPolicy, CreateTopicPolicy}
 import org.apache.kafka.server.util.{Deadline, FutureUtils}
 
 import java.util
-import java.util.{Optional, OptionalLong, Random}
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.{CompletableFuture, TimeUnit}
+import java.util.{Optional, OptionalLong, Random}
+import scala.collection.immutable
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
 
@@ -117,7 +116,7 @@ class ControllerServer(
   var createTopicPolicy: Option[CreateTopicPolicy] = None
   var alterConfigPolicy: Option[AlterConfigPolicy] = None
   @volatile var quorumControllerMetrics: QuorumControllerMetrics = _
-  var controller: QuorumController = _
+  var controller: Controller = _
   var quotaManagers: QuotaManagers = _
   var clientQuotaMetadataManager: ClientQuotaMetadataManager = _
   var controllerApis: ControllerApis = _
@@ -132,11 +131,12 @@ class ControllerServer(
   @volatile var incarnationId: Uuid = _
   @volatile var registrationManager: ControllerRegistrationManager = _
   @volatile var registrationChannelManager: NodeToControllerChannelManager = _
+  var nodeId: Int = _
 
   var autoBalancerManager: AutoBalancerService = _
 
   protected def buildAutoBalancerManager: AutoBalancerService = {
-    new AutoBalancerManager(time, config.props, controller, raftManager.client)
+    new AutoBalancerManager(time, config.props, controller, raftManager.client, nodeId)
   }
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -298,8 +298,9 @@ class ControllerServer(
           setQuorumVoters(config.quorumVoters).
           setReplicaPlacer(replicaPlacer())
       }
-      controller = controllerBuilder.build()
-      controller.setExtension(quorumControllerExtension(controller))
+      val quorumController = controllerBuilder.build()
+      controller = new ControllerTimeoutDecorator(quorumController)
+      nodeId = quorumController.nodeId()
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.
@@ -322,7 +323,7 @@ class ControllerServer(
         val propagator: LegacyPropagator = new MigrationPropagator(config.nodeId, config)
         val migrationDriver = KRaftMigrationDriver.newBuilder()
           .setNodeId(config.nodeId)
-          .setZkRecordConsumer(controller.zkRecordConsumer())
+          .setZkRecordConsumer(quorumController.zkRecordConsumer())
           .setZkMigrationClient(migrationClient)
           .setPropagator(propagator)
           .setInitialZkLoadHandler(publisher => sharedServer.loader.installPublishers(java.util.Collections.singletonList(publisher)))
@@ -581,9 +582,6 @@ class ControllerServer(
   }
 
   // AutoMQ for Kafka inject start
-  protected def quorumControllerExtension(quorumController: QuorumController): QuorumControllerExtension = {
-    QuorumControllerExtension.NOOP
-  }
 
   protected def replicaPlacer(): ReplicaPlacer = {
     new StripedReplicaPlacer(new Random())

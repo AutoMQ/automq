@@ -139,7 +139,7 @@ public class AutoBalancerManagerTest extends AutoBalancerClientsIntegrationTestH
     public void testReconfigure() {
         AutoBalancerManager autoBalancerManager = new AutoBalancerManager(new SystemTime(), Map.of(
                 AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE, false
-        ), Mockito.mock(QuorumController.class), Mockito.mock(KafkaRaftClient.class));
+        ), Mockito.mock(QuorumController.class), Mockito.mock(KafkaRaftClient.class), 1);
         autoBalancerManager.init();
         Assertions.assertFalse(autoBalancerManager.isRunning());
         Assertions.assertEquals(0, autoBalancerManager.currentEpoch());

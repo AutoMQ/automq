@@ -26,7 +26,7 @@ import kafka.autobalancer.services.AutoBalancerService;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.controller.QuorumController;
+import org.apache.kafka.controller.Controller;
 import org.apache.kafka.raft.KafkaRaftClient;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
@@ -38,19 +38,21 @@ import java.util.stream.Collectors;
 public class AutoBalancerManager extends AutoBalancerService {
     protected final Time time;
     protected final Map<?, ?> configs;
-    protected final QuorumController quorumController;
+    protected final Controller quorumController;
     protected final KafkaRaftClient<ApiMessageAndVersion> raftClient;
+    protected final int nodeId;
     protected LoadRetriever loadRetriever;
     protected AnomalyDetector anomalyDetector;
     protected ActionExecutorService actionExecutorService;
     protected volatile boolean enabled;
 
-    public AutoBalancerManager(Time time, Map<?, ?> configs, QuorumController quorumController, KafkaRaftClient<ApiMessageAndVersion> raftClient) {
-        super(new LogContext(String.format("[AutoBalancerManager id=%d] ", quorumController.nodeId())));
+    public AutoBalancerManager(Time time, Map<?, ?> configs, Controller quorumController, KafkaRaftClient<ApiMessageAndVersion> raftClient, int nodeId) {
+        super(new LogContext(String.format("[AutoBalancerManager id=%d] ", nodeId)));
         this.time = time;
         this.configs = configs;
         this.quorumController = quorumController;
         this.raftClient = raftClient;
+        this.nodeId = nodeId;
         init();
         if (enabled) {
             run();
@@ -60,15 +62,15 @@ public class AutoBalancerManager extends AutoBalancerService {
     protected void init() {
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(configs, false);
         this.enabled = config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE);
-        RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
+        RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", nodeId)));
         this.loadRetriever = new LoadRetriever(config, quorumController, clusterModel,
-                new LogContext(String.format("[LoadRetriever id=%d] ", quorumController.nodeId())));
+                new LogContext(String.format("[LoadRetriever id=%d] ", nodeId)));
         this.actionExecutorService = new ControllerActionExecutorService(quorumController,
-                new LogContext(String.format("[ExecutionManager id=%d] ", quorumController.nodeId())));
+                new LogContext(String.format("[ExecutionManager id=%d] ", nodeId)));
         this.actionExecutorService.start();
 
         this.anomalyDetector = new AnomalyDetectorBuilder()
-                .logContext(new LogContext(String.format("[AnomalyDetector id=%d] ", quorumController.nodeId())))
+                .logContext(new LogContext(String.format("[AnomalyDetector id=%d] ", nodeId)))
                 .detectIntervalMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS))
                 .maxTolerateMetricsDelayMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS))
                 .executionConcurrency(config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY))
@@ -86,7 +88,7 @@ public class AutoBalancerManager extends AutoBalancerService {
         registry.register((TopicPartitionStatusListener) clusterModel);
         registry.register((BrokerStatusListener) this.actionExecutorService);
         registry.register(this.loadRetriever);
-        raftClient.register(new AutoBalancerListener(quorumController.nodeId(), time, registry, this.loadRetriever, this.anomalyDetector));
+        raftClient.register(new AutoBalancerListener(nodeId, time, registry, this.loadRetriever, this.anomalyDetector));
     }
 
     @Override
