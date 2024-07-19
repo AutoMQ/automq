@@ -21,23 +21,26 @@ public class ObjectStorageFactory {
     private final Map<String /* protocol */, Function<Builder, ObjectStorage>> protocolHandlers = new HashMap<>();
 
     static {
-        ObjectStorageFactory.instance().registerProtocolHandler("s3", builder ->
-            AwsObjectStorage.builder()
-                .bucket(builder.bucketURI)
-                .tagging(builder.tagging)
-                .inboundLimiter(builder.inboundLimiter)
-                .outboundLimiter(builder.outboundLimiter)
-                .readWriteIsolate(builder.readWriteIsolate)
-                .checkS3ApiModel(builder.checkS3ApiModel)
-                .build());
+        ObjectStorageFactory.instance()
+            .registerProtocolHandler("s3", builder ->
+                AwsObjectStorage.builder()
+                    .bucket(builder.bucketURI)
+                    .tagging(builder.tagging)
+                    .inboundLimiter(builder.inboundLimiter)
+                    .outboundLimiter(builder.outboundLimiter)
+                    .readWriteIsolate(builder.readWriteIsolate)
+                    .checkS3ApiModel(builder.checkS3ApiModel)
+                    .build())
+            .registerProtocolHandler("mem", builder -> new MemoryObjectStorage(builder.bucketURI.bucketId()));
     }
 
     private ObjectStorageFactory() {
     }
 
-    public void registerProtocolHandler(String protocol,
+    public ObjectStorageFactory registerProtocolHandler(String protocol,
         Function<Builder, ObjectStorage> handler) {
         protocolHandlers.put(protocol, handler);
+        return this;
     }
 
     public Builder builder(BucketURI bucket) {
