@@ -2793,17 +2793,7 @@ private[controller] class ControllerStats {
   }
 }
 
-object EventPriority {
-  val LOW: Int = 1
-  val HIGH: Int = 0
-}
-
-sealed trait ControllerEvent extends Comparable[ControllerEvent] {
-
-  val priority: Int
-
-  override def compareTo(secondEvent: ControllerEvent): Int = priority.compareTo(secondEvent.priority)
-
+sealed trait ControllerEvent {
   def state: ControllerState
   // preempt() is not executed by `ControllerEventThread` but by the main thread.
   def preempt(): Unit
@@ -2812,78 +2802,56 @@ sealed trait ControllerEvent extends Comparable[ControllerEvent] {
 case object ControllerChange extends ControllerEvent {
   override def state: ControllerState = ControllerState.ControllerChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object Reelect extends ControllerEvent {
   override def state: ControllerState = ControllerState.ControllerChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object RegisterBrokerAndReelect extends ControllerEvent {
   override def state: ControllerState = ControllerState.ControllerChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object Expire extends ControllerEvent {
   override def state: ControllerState = ControllerState.ControllerChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object ShutdownEventThread extends ControllerEvent {
   override def state: ControllerState = ControllerState.ControllerShutdown
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object AutoPreferredReplicaLeaderElection extends ControllerEvent {
   override def state: ControllerState = ControllerState.AutoLeaderBalance
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object UncleanLeaderElectionEnable extends ControllerEvent {
   override def state: ControllerState = ControllerState.UncleanLeaderElectionEnable
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class TopicUncleanLeaderElectionEnable(topic: String) extends ControllerEvent {
   override def state: ControllerState = ControllerState.TopicUncleanLeaderElectionEnable
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class ControlledShutdown(id: Int, brokerEpoch: Long, controlledShutdownCallback: Try[Set[TopicPartition]] => Unit) extends ControllerEvent {
   override def state: ControllerState = ControllerState.ControlledShutdown
   override def preempt(): Unit = controlledShutdownCallback(Failure(new ControllerMovedException("Controller moved to another broker")))
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class LeaderAndIsrResponseReceived(leaderAndIsrResponse: LeaderAndIsrResponse, brokerId: Int) extends ControllerEvent {
   override def state: ControllerState = ControllerState.LeaderAndIsrResponseReceived
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class UpdateMetadataResponseReceived(updateMetadataResponse: UpdateMetadataResponse, brokerId: Int) extends ControllerEvent {
   override def state: ControllerState = ControllerState.UpdateMetadataResponseReceived
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class TopicDeletionStopReplicaResponseReceived(replicaId: Int,
@@ -2891,86 +2859,62 @@ case class TopicDeletionStopReplicaResponseReceived(replicaId: Int,
                                                     partitionErrors: Map[TopicPartition, Errors]) extends ControllerEvent {
   override def state: ControllerState = ControllerState.TopicDeletion
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object Startup extends ControllerEvent {
   override def state: ControllerState = ControllerState.ControllerChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object BrokerChange extends ControllerEvent {
   override def state: ControllerState = ControllerState.BrokerChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.HIGH
 }
 
 case class BrokerModifications(brokerId: Int) extends ControllerEvent {
   override def state: ControllerState = ControllerState.BrokerChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.HIGH
 }
 
 case object TopicChange extends ControllerEvent {
   override def state: ControllerState = ControllerState.TopicChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object LogDirEventNotification extends ControllerEvent {
   override def state: ControllerState = ControllerState.LogDirChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class PartitionModifications(topic: String) extends ControllerEvent {
   override def state: ControllerState = ControllerState.TopicChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object TopicDeletion extends ControllerEvent {
   override def state: ControllerState = ControllerState.TopicDeletion
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object ZkPartitionReassignment extends ControllerEvent {
   override def state: ControllerState = ControllerState.AlterPartitionReassignment
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class ApiPartitionReassignment(reassignments: Map[TopicPartition, Option[Seq[Int]]],
                                     callback: AlterReassignmentsCallback) extends ControllerEvent {
   override def state: ControllerState = ControllerState.AlterPartitionReassignment
   override def preempt(): Unit = callback(Right(new ApiError(Errors.NOT_CONTROLLER)))
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class PartitionReassignmentIsrChange(partition: TopicPartition) extends ControllerEvent {
   override def state: ControllerState = ControllerState.AlterPartitionReassignment
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case object IsrChangeNotification extends ControllerEvent {
   override def state: ControllerState = ControllerState.IsrChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class AlterPartitionReceived(
@@ -2980,8 +2924,6 @@ case class AlterPartitionReceived(
 ) extends ControllerEvent {
   override def state: ControllerState = ControllerState.IsrChange
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class ReplicaLeaderElection(
@@ -2997,8 +2939,6 @@ case class ReplicaLeaderElection(
       partitions.iterator.map(partition => partition -> Left(new ApiError(Errors.NOT_CONTROLLER, null))).toMap
     }
   )
-
-  override val priority: Int = EventPriority.LOW
 }
 
 /**
@@ -3008,24 +2948,18 @@ case class ListPartitionReassignments(partitionsOpt: Option[Set[TopicPartition]]
                                       callback: ListReassignmentsCallback) extends ControllerEvent {
   override def state: ControllerState = ControllerState.ListPartitionReassignment
   override def preempt(): Unit = callback(Right(new ApiError(Errors.NOT_CONTROLLER, null)))
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class UpdateFeatures(request: UpdateFeaturesRequest,
                           callback: UpdateFeaturesCallback) extends ControllerEvent {
   override def state: ControllerState = ControllerState.UpdateFeatures
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 case class AllocateProducerIds(brokerId: Int, brokerEpoch: Long, callback: Either[Errors, ProducerIdsBlock] => Unit)
     extends ControllerEvent {
   override def state: ControllerState = ControllerState.Idle
   override def preempt(): Unit = {}
-
-  override val priority: Int = EventPriority.LOW
 }
 
 
@@ -3033,6 +2967,4 @@ case class AllocateProducerIds(brokerId: Int, brokerEpoch: Long, callback: Eithe
 abstract class MockEvent(val state: ControllerState) extends ControllerEvent {
   def process(): Unit
   def preempt(): Unit
-
-  override val priority: Int = EventPriority.LOW
 }
