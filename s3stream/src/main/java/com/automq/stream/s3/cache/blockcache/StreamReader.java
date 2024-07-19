@@ -221,11 +221,21 @@ import static com.automq.stream.utils.FutureUtil.exec;
     }
 
     /**
-     * afterReadTryReadaheadCf will be overwritten, and it is necessary to call getAfterReadTryReadahead Cf in a timely manner
-     * @return  tryReadahead CompletableFuture
+     * AfterReadTryReadaheadCf is empty, the task has been completed
+     * AfterReadTryReadaheadCf is not empty, the task may be completed
+     * @return  afterReadTryReadaheadCf
      */
     public CompletableFuture<Void> getAfterReadTryReadaheadCf() {
         return afterReadTryReadaheadCf;
+    }
+
+    /**
+     * inflightReadaheadCf is empty, the task has been completed
+     * inflightReadaheadCf is not empty, the task may be completed
+     * @return  readahead.inflightReadaheadCf
+     */
+    public CompletableFuture<Void> getReadaheadInflightReadaheadCf() {
+        return readahead.inflightReadaheadCf;
     }
 
     void afterRead(ReadDataBlock readDataBlock, ReadContext ctx) {
@@ -252,6 +262,14 @@ import static com.automq.stream.utils.FutureUtil.exec;
         }
         // try readahead to speed up the next read
         afterReadTryReadaheadCf = eventLoop.submit(() -> readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS));
+        afterReadTryReadaheadCf.whenComplete((nil, ex) -> {
+            Throwable cause = FutureUtil.cause(ex);
+            if (cause != null && !isRecoverable(cause)) {
+                LOGGER.error("AfterRead failed", ex);
+            }
+            // help gc
+            afterReadTryReadaheadCf = null;
+        });
     }
 
     private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes,
@@ -563,7 +581,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         long readaheadMarkOffset;
         long resetTimestamp;
         boolean requireReset;
-        CompletableFuture<Void> inflightReadaheadCf;
+        volatile CompletableFuture<Void> inflightReadaheadCf;
         private int cacheMissCount;
 
         public void tryReadahead(boolean cacheMiss) {
