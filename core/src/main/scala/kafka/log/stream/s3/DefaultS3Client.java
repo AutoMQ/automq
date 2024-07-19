@@ -54,7 +54,7 @@ import org.slf4j.LoggerFactory;
 
 public class DefaultS3Client implements Client {
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
-    private final Config config;
+    protected final Config config;
     private final StreamMetadataManager metadataManager;
 
     private final ControllerRequestSender requestSender;
@@ -127,7 +127,7 @@ public class DefaultS3Client implements Client {
         S3StreamThreadPoolMonitor.init();
     }
 
-    private WriteAheadLog buildWAL() {
+    protected WriteAheadLog buildWAL() {
         BucketURI bucketURI;
         try {
             bucketURI = BucketURI.parse(config.walPath());
