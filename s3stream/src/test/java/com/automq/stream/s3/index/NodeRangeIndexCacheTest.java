@@ -11,10 +11,14 @@
 
 package com.automq.stream.s3.index;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -73,5 +77,30 @@ public class NodeRangeIndexCacheTest {
             () -> CompletableFuture.completedFuture(streamRangeMap1)).join());
         Assertions.assertEquals(object4, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 1000,
             () -> CompletableFuture.completedFuture(streamRangeMap1)).join());
+    }
+
+    @Test
+    public void testLRUCache() throws InterruptedException {
+        Random r = new Random();
+        List<CompletableFuture<Long>> cfs = new CopyOnWriteArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            int finalI = i;
+            CompletableFuture.runAsync(() -> cfs.add(NodeRangeIndexCache.getInstance().searchObjectId(finalI, 0, 0,
+                () -> CompletableFuture.supplyAsync(() -> Map.of(0L, createRangeIndex(1024 * 1024)),
+                    CompletableFuture.delayedExecutor(r.nextInt(1000), TimeUnit.MILLISECONDS)))));
+        }
+        CompletableFuture.allOf(cfs.toArray(new CompletableFuture[0])).join();
+        Thread.sleep(1000);
+        Assertions.assertTrue(NodeRangeIndexCache.getInstance().cache().totalSize() - 100 * 1024 * 1024 <= 1000 * Long.BYTES);
+    }
+
+    private List<RangeIndex> createRangeIndex(int size) {
+        List<RangeIndex> index = new ArrayList<>();
+        int curr = 0;
+        while (curr < size) {
+            index.add(new RangeIndex(0, 0, 0));
+            curr += RangeIndex.SIZE;
+        }
+        return index;
     }
 }
