@@ -50,6 +50,7 @@ public class RecordAccumulatorTest {
             .withMaxBytesInBatch(115)
             .withNodeId(100)
             .withEpoch(1000)
+            .withBatchInterval(Long.MAX_VALUE)
             .build();
         recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
         recordAccumulatorExt.start();
@@ -232,6 +233,9 @@ public class RecordAccumulatorTest {
 
     @Test
     public void testUploadPeriodically() throws OverCapacityException {
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build());
+        recordAccumulatorExt.start();
+
         assertTrue(recordAccumulatorExt.objectList().isEmpty());
 
         ByteBuf byteBuf = generateByteBuf(25);
