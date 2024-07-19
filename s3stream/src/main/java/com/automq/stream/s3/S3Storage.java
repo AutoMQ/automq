@@ -743,7 +743,10 @@ public class S3Storage implements Storage {
             if (next != null) {
                 prepareDeltaWALUpload(next);
             }
-        }, backgroundExecutor);
+        }, backgroundExecutor).exceptionally(ex -> {
+            LOGGER.error("Unexpected exception when prepare commit stream set object", ex);
+            return null;
+        });
     }
 
     private void commitDeltaWALUpload(DeltaWALUploadTaskContext context) {
