@@ -216,9 +216,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         data.release();
                         if (completedFlag.compareAndSet(false, true)) {
                             cf.complete(null);
-                            LOGGER.debug("Fast retry: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
+                            LOGGER.info("Fast retry: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
                         } else {
-                            LOGGER.debug("Fast retry but duplicated: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
+                            LOGGER.info("Fast retry but duplicated: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
                         }
                     }).exceptionally(ignore -> {
                         data.release();
