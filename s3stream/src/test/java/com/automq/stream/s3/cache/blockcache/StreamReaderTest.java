@@ -223,11 +223,12 @@ public class StreamReaderTest {
     }
 
     public void waitForStreamReaderUpdate() throws ExecutionException, InterruptedException {
-        // The order cannot be changed
+        // The order of waiting cannot be changed
         CompletableFuture<Void> afterReadTryReadaheadCf = streamReader.getAfterReadTryReadaheadCf();
         if (afterReadTryReadaheadCf != null) {
             afterReadTryReadaheadCf.get();
         }
+
         CompletableFuture<Void> inflightReadaheadCf = streamReader.getReadaheadInflightReadaheadCf();
         if (inflightReadaheadCf != null) {
             inflightReadaheadCf.get();
