@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -29,6 +29,10 @@ public class Resource {
         if (!HUMAN_READABLE_RESOURCE_NAMES.containsKey(type)) {
             return "";
         }
+        return HUMAN_READABLE_RESOURCE_NAMES.get(type) + "=" + valueString(type, value);
+    }
+
+    public static String valueString(byte type, double value) {
         String valueStr = String.valueOf(value);
         if (value == IGNORED_VALUE) {
             valueStr = "ignored";
@@ -42,6 +46,6 @@ public class Resource {
                     break;
             }
         }
-        return HUMAN_READABLE_RESOURCE_NAMES.get(type) + "=" + valueStr;
+        return valueStr;
     }
 }

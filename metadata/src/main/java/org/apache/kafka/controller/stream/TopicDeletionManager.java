@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -70,7 +70,7 @@ public class TopicDeletionManager {
                 try {
                     return this.cleanupDeletedTopics0();
                 } catch (Throwable ex) {
-                    LOGGER.error("[CLEANUP_DELETED_TOPIC],[UNEXPECT]", ex);
+                    LOGGER.error("[CLEANUP_DELETED_TOPIC],[UNEXPECTED]", ex);
                     return ControllerResult.of(Collections.emptyList(), null);
                 }
             });

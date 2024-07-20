@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -13,63 +13,74 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.Pair;
 
 public class MemoryObjectStorage extends AbstractObjectStorage {
     private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
+    private final Set<String> deleteObjectKeys = new ConcurrentSkipListSet<>();
     private long delay = 0;
+    private final short bucketId;
 
-    public MemoryObjectStorage(boolean manualMergeRead) {
-        super(manualMergeRead);
+    public MemoryObjectStorage(boolean manualMergeRead, short bucketId) {
+        super(BucketURI.parse(bucketId + "@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, manualMergeRead);
+        this.bucketId = bucketId;
+    }
+
+    public MemoryObjectStorage(short bucketId) {
+        this(false, bucketId);
     }
 
     public MemoryObjectStorage() {
-        this(false);
+        this(false, (short) 0);
+    }
+
+    public MemoryObjectStorage(boolean manualMergeRead) {
+        this(manualMergeRead, (short) 0);
     }
 
     @Override
-    void doRangeRead(String path, long start, long end, Consumer<Throwable> failHandler,
-        Consumer<CompositeByteBuf> successHandler) {
+    CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
         ByteBuf value = storage.get(path);
         if (value == null) {
-            failHandler.accept(new IllegalArgumentException("object not exist"));
-            return;
+            return FutureUtil.failedFuture(new IllegalArgumentException("object not exist"));
         }
         int length = end != -1L ? (int) (end - start) : (int) (value.readableBytes() - start);
         ByteBuf rst = value.retainedSlice(value.readerIndex() + (int) start, length);
         CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
         buf.addComponent(true, rst);
         if (delay == 0) {
-            successHandler.accept(buf);
+            return CompletableFuture.completedFuture(buf);
         } else {
-            Threads.COMMON_SCHEDULER.schedule(() -> successHandler.accept(buf), delay, TimeUnit.MILLISECONDS);
+            CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+            Threads.COMMON_SCHEDULER.schedule(() -> cf.complete(buf), delay, TimeUnit.MILLISECONDS);
+            return cf;
         }
     }
 
     @Override
-    void doWrite(String path, ByteBuf data, Consumer<Throwable> failHandler, Runnable successHandler) {
-        try {
-            if (data == null) {
-                failHandler.accept(new IllegalArgumentException("data to write cannot be null"));
-                return;
-            }
-            ByteBuf buf = Unpooled.buffer(data.readableBytes());
-            buf.writeBytes(data.duplicate());
-            storage.put(path, buf);
-            successHandler.run();
-        } catch (Exception ex) {
-            failHandler.accept(ex);
+    CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data) {
+        if (data == null) {
+            return FutureUtil.failedFuture(new IllegalArgumentException("data to write cannot be null"));
         }
+        ByteBuf buf = Unpooled.buffer(data.readableBytes());
+        buf.writeBytes(data.duplicate());
+        storage.put(path, buf);
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -113,49 +124,59 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             public CompletableFuture<Void> release() {
                 return CompletableFuture.completedFuture(null);
             }
+
+            @Override
+            public short bucketId() {
+                return bucketId;
+            }
         };
     }
 
     @Override
-    void doCreateMultipartUpload(String path,
-        Consumer<Throwable> failHandler, Consumer<String> successHandler) {
-        failHandler.accept(new UnsupportedOperationException());
+    CompletableFuture<String> doCreateMultipartUpload(WriteOptions options, String path) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
     @Override
-    void doUploadPart(String path, String uploadId, int partNumber, ByteBuf part,
-        Consumer<Throwable> failHandler, Consumer<ObjectStorageCompletedPart> successHandler) {
-        failHandler.accept(new UnsupportedOperationException());
+    CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
+        int partNumber, ByteBuf part) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
     @Override
-    void doUploadPartCopy(String sourcePath, String path, long start, long end, String uploadId, int partNumber,
-        long apiCallAttemptTimeout, Consumer<Throwable> failHandler,
-        Consumer<ObjectStorageCompletedPart> successHandler) {
-        failHandler.accept(new UnsupportedOperationException());
+    CompletableFuture<ObjectStorageCompletedPart> doUploadPartCopy(WriteOptions options, String sourcePath, String path,
+        long start, long end, String uploadId, int partNumber) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
     @Override
-    void doCompleteMultipartUpload(String path, String uploadId, List<ObjectStorageCompletedPart> parts,
-        Consumer<Throwable> failHandler, Runnable successHandler) {
-        failHandler.accept(new UnsupportedOperationException());
+    CompletableFuture<Void> doCompleteMultipartUpload(WriteOptions options, String path, String uploadId,
+        List<ObjectStorageCompletedPart> parts) {
+        return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
     @Override
-    void doDeleteObjects(List<String> objectKeys, Consumer<Throwable> failHandler, Runnable successHandler) {
-        objectKeys.forEach(storage::remove);
-        successHandler.run();
-    }
-
-    @Override
-    boolean isUnrecoverable(Throwable ex) {
-        if (ex instanceof UnsupportedOperationException) {
-            return true;
+    CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
+        for (String objectKey : objectKeys) {
+            if (storage.containsKey(objectKey)) {
+                storage.remove(objectKey);
+                deleteObjectKeys.add(objectKey);
+            }
         }
-        if (ex instanceof IllegalArgumentException) {
-            return true;
-        }
-        return false;
+
+        return CompletableFuture.completedFuture(null);
+    }
+
+    public Set<String> getDeleteObjectKeys() {
+        return this.deleteObjectKeys;
+    }
+
+    @Override
+    Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
+        Throwable cause = FutureUtil.cause(ex);
+        RetryStrategy strategy = cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException
+            ? RetryStrategy.ABORT : RetryStrategy.RETRY;
+        return Pair.of(strategy, cause);
     }
 
     @Override
@@ -170,6 +191,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             .filter(entry -> entry.getKey().startsWith(prefix))
             .map(entry -> new ObjectInfo((short) 0, entry.getKey(), 0L, entry.getValue().readableBytes()))
             .collect(Collectors.toList()));
+    }
+
+    @Override
+    protected <T> boolean bucketCheck(int bucketId, CompletableFuture<T> cf) {
+        return true;
     }
 
     public ByteBuf get() {

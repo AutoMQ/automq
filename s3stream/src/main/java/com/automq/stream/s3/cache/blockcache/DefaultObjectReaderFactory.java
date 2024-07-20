@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -35,5 +35,10 @@ public class DefaultObjectReaderFactory implements ObjectReaderFactory {
             objectReaders.put(metadata.objectId(), objectReader);
         }
         return objectReader.retain();
+    }
+
+    @Override
+    public ObjectStorage getObjectStorage() {
+        return objectStorage;
     }
 }

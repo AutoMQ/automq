@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -28,6 +28,7 @@ import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import kafka.log.streamaspect.ElasticTimeIndex;
 import kafka.log.streamaspect.ElasticTransactionIndex;
@@ -61,13 +62,13 @@ public class FileCache {
      */
     private final LRUCache<Key, Blocks> lru = new LRUCache<>();
     /**
-     * The cache of streamId to cache blocks.
+     * The map of cacheId to cache blocks.
      * Its value is a {@link NavigableMap} which is used to store the cache blocks in the order of the position.
      *
-     * @see Key#streamId
+     * @see Key#cacheId
      * @see Key#position
      */
-    final Map<Long /* streamId */, NavigableMap<Long /* position /*/, Blocks>> stream2cache = new HashMap<>();
+    final Map<Long /* segment-unique id */, NavigableMap<Long /* position /*/, Blocks>> cacheMap = new HashMap<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
@@ -82,6 +83,7 @@ public class FileCache {
      */
     private int freeCheckPoint = 0;
     private final MappedByteBuffer cacheByteBuffer;
+    private final AtomicLong cacheIdAlloc = new AtomicLong(0);
 
     public FileCache(String path, int size, int blockSize) throws IOException {
         this.blockSize = blockSize;
@@ -110,11 +112,15 @@ public class FileCache {
         this(path, size, BLOCK_SIZE);
     }
 
-    public void put(long streamId, long position, ByteBuf data) {
+    public long newCacheId() {
+        return cacheIdAlloc.incrementAndGet();
+    }
+
+    public void put(long cacheId, long position, ByteBuf data) {
         writeLock.lock();
         try {
             int dataLength = data.readableBytes();
-            NavigableMap<Long, Blocks> cache = stream2cache.computeIfAbsent(streamId, k -> new TreeMap<>());
+            NavigableMap<Long, Blocks> cache = cacheMap.computeIfAbsent(cacheId, k -> new TreeMap<>());
             Map.Entry<Long, Blocks> pos2block = cache.floorEntry(position);
             long cacheStartPosition;
             long cacheEndPosition;
@@ -149,7 +155,7 @@ public class FileCache {
                 blocks = new Blocks(blocks.indexes, newDataLength);
             }
             cache.put(cacheStartPosition, blocks);
-            lru.put(new Key(streamId, cacheStartPosition), blocks);
+            lru.put(new Key(cacheId, cacheStartPosition), blocks);
 
             // write data to cache
             ByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
@@ -174,11 +180,11 @@ public class FileCache {
         }
     }
 
-    public Optional<ByteBuf> get(long streamId, long position, int length) {
+    public Optional<ByteBuf> get(long cacheId, long position, int length) {
         ByteBuf buf = Unpooled.buffer(length);
         readLock.lock();
         try {
-            NavigableMap<Long, Blocks> cache = stream2cache.get(streamId);
+            NavigableMap<Long, Blocks> cache = cacheMap.get(cacheId);
             if (cache == null) {
                 return Optional.empty();
             }
@@ -191,7 +197,7 @@ public class FileCache {
             if (entry.getKey() + entry.getValue().dataLength < position + length) {
                 return Optional.empty();
             }
-            lru.touchIfExist(new Key(streamId, cacheStartPosition));
+            lru.touchIfExist(new Key(cacheId, cacheStartPosition));
             MappedByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
             long nextPosition = position;
             int remaining = length;
@@ -237,7 +243,7 @@ public class FileCache {
             }
             Key key = entry.getKey();
             Blocks blocks = entry.getValue();
-            stream2cache.get(key.streamId).remove(key.position);
+            cacheMap.get(key.cacheId).remove(key.position);
             if (key.position == cacheStartPosition) {
                 // eviction is conflict to current cache
                 for (int i = 0; i < acquiringBlockIndex; i++) {
@@ -279,11 +285,11 @@ public class FileCache {
     }
 
     static class Key implements Comparable<Key> {
-        Long streamId;
+        long cacheId;
         long position;
 
-        public Key(Long streamId, long position) {
-            this.streamId = streamId;
+        public Key(Long cacheId, long position) {
+            this.cacheId = cacheId;
             this.position = position;
         }
 
@@ -294,20 +300,18 @@ public class FileCache {
             if (o == null || getClass() != o.getClass())
                 return false;
             Key key = (Key) o;
-            return position == key.position && Objects.equals(streamId, key.streamId);
+            return position == key.position && Objects.equals(cacheId, key.cacheId);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(streamId, position);
+            return Objects.hash(cacheId, position);
         }
 
         @Override
         public int compareTo(Key o) {
-            if (this.streamId.compareTo(o.streamId) != 0) {
-                return this.streamId.compareTo(o.streamId);
-            }
-            return Long.compare(this.position, o.position);
+            int compareCacheId = Long.compare(cacheId, o.cacheId);
+            return compareCacheId == 0 ? Long.compare(position, o.position) : compareCacheId;
         }
     }
 

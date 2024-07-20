@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -331,6 +331,16 @@ public class CompositeObjectReader implements ObjectReader {
 
         public short bucketId() {
             return bucketId;
+        }
+
+        @Override
+        public String toString() {
+            return "ObjectIndex{" +
+                "objectId=" + objectId +
+                ", blockStartIndex=" + blockStartIndex +
+                ", blockEndIndex=" + blockEndIndex +
+                ", bucketId=" + bucketId +
+                '}';
         }
     }
 

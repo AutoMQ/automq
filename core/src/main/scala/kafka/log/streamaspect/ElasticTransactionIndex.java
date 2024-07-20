@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -37,6 +37,7 @@ public class ElasticTransactionIndex extends TransactionIndex {
     ElasticStreamSlice stream;
     private final FileCache cache;
     private final String path;
+    private final long cacheId;
     private volatile LastAppend lastAppend;
 
     private boolean closed = false;
@@ -47,6 +48,7 @@ public class ElasticTransactionIndex extends TransactionIndex {
         this.streamSupplier = streamSupplier;
         this.stream = streamSupplier.get();
         this.cache = cache;
+        this.cacheId = cache.newCacheId();
         this.path = file.getPath();
         lastAppend = new LastAppend(stream.nextOffset(), CompletableFuture.completedFuture(null));
     }
@@ -70,7 +72,7 @@ public class ElasticTransactionIndex extends TransactionIndex {
         long position = stream.nextOffset();
         CompletableFuture<?> cf = stream.append(RawPayloadRecordBatch.of(abortedTxn.buffer().duplicate()));
         lastAppend = new LastAppend(stream.nextOffset(), cf);
-        cache.put(stream.stream().streamId(), position, Unpooled.wrappedBuffer(abortedTxn.buffer()));
+        cache.put(cacheId, position, Unpooled.wrappedBuffer(abortedTxn.buffer()));
     }
 
     @Override
@@ -180,7 +182,7 @@ public class ElasticTransactionIndex extends TransactionIndex {
                     return item;
                 }
                 int endOffset = Math.min(position.value + AbortedTxn.TOTAL_SIZE * 128, endPosition);
-                Optional<ByteBuf> cacheDataOpt = cache.get(stream.stream().streamId(), position.value, endOffset - position.value);
+                Optional<ByteBuf> cacheDataOpt = cache.get(cacheId, position.value, endOffset - position.value);
                 ByteBuf buf;
                 if (cacheDataOpt.isPresent()) {
                     buf = cacheDataOpt.get();
@@ -188,7 +190,7 @@ public class ElasticTransactionIndex extends TransactionIndex {
                     FetchResult records = fetchStream(position.value, endOffset, endOffset - position.value);
                     ByteBuf txnListBuf = Unpooled.buffer(records.recordBatchList().size() * AbortedTxn.TOTAL_SIZE);
                     records.recordBatchList().forEach(r -> txnListBuf.writeBytes(r.rawPayload()));
-                    cache.put(stream.stream().streamId(), position.value, txnListBuf);
+                    cache.put(cacheId, position.value, txnListBuf);
                     records.free();
                     buf = txnListBuf;
                 }

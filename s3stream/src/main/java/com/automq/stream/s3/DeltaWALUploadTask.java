@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -13,6 +13,7 @@ package com.automq.stream.s3;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
@@ -132,7 +133,10 @@ public class DeltaWALUploadTask {
         request.setObjectId(objectId);
         request.setOrderId(objectId);
         CompletableFuture<Void> streamSetObjectCf = CompletableFuture.allOf(streamSetWriteCfList.toArray(new CompletableFuture[0]))
-            .thenCompose(nil -> streamSetObject.close().thenAccept(nil2 -> request.setObjectSize(streamSetObject.size())));
+            .thenCompose(nil -> streamSetObject.close().thenAccept(nil2 -> {
+                request.setObjectSize(streamSetObject.size());
+                request.setAttributes(ObjectAttributes.builder().bucket(streamSetObject.bucketId()).build().attributes());
+            }));
         List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
         allCf.add(streamSetObjectCf);
         CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
@@ -176,6 +180,7 @@ public class DeltaWALUploadTask {
             streamObject.setEndOffset(endOffset);
             return streamObjectWriter.close().thenApply(nil -> {
                 streamObject.setObjectSize(streamObjectWriter.size());
+                streamObject.setAttributes(ObjectAttributes.builder().bucket(streamObjectWriter.bucketId()).build().attributes());
                 return streamObject;
             });
         }, executor);

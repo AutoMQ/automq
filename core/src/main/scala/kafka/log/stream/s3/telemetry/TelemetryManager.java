@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -17,6 +17,10 @@ import com.automq.shell.metrics.S3MetricsExporter;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.operator.BucketURI;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
+import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.Attributes;
@@ -171,6 +175,11 @@ public class TelemetryManager {
 
         S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
         S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
+
+        // kraft controller may not have s3WALPath config.
+        if (StringUtils.isNotEmpty(kafkaConfig.s3WALPath()) && kafkaConfig.s3WALPath().startsWith("0@s3://")) {
+            ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
+        }
     }
 
     public static OpenTelemetrySdk getOpenTelemetrySdk() {
@@ -285,11 +294,13 @@ public class TelemetryManager {
     }
 
     private void initS3Exporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {
-        if (StringUtils.isBlank(kafkaConfig.s3OpsBucket())) {
+        if (kafkaConfig.automq().opsBuckets().isEmpty()) {
             LOGGER.error("property s3.ops.bucket is not set, skip initializing s3 metrics exporter.");
             return;
         }
+        BucketURI bucket = kafkaConfig.automq().opsBuckets().get(0);
 
+        ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(kafkaConfig.automq().opsBuckets().get(0)).build();
         S3MetricsExporter s3MetricsExporter = new S3MetricsExporter(new S3MetricsConfig() {
             @Override
             public String clusterId() {
@@ -308,22 +319,8 @@ public class TelemetryManager {
             }
 
             @Override
-            public String s3Endpoint() {
-                return kafkaConfig.s3Endpoint();
-            }
-
-            @Override
-            public String s3Region() {
-                return kafkaConfig.s3Region();
-            }
-
-            public String s3OpsBucket() {
-                return kafkaConfig.s3OpsBucket();
-            }
-
-            @Override
-            public boolean s3PathStyle() {
-                return kafkaConfig.s3PathStyle();
+            public ObjectStorage objectStorage() {
+                return objectStorage;
             }
         });
         s3MetricsExporter.start();
@@ -333,7 +330,7 @@ public class TelemetryManager {
 
         SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(sdkMeterProviderBuilder, periodicReader,
             instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
-        LOGGER.info("S3 exporter registered, bucket: {}", kafkaConfig.s3Bucket());
+        LOGGER.info("S3 exporter registered, bucket: {}", bucket);
     }
 
     private void initOTLPExporter(SdkMeterProviderBuilder sdkMeterProviderBuilder, KafkaConfig kafkaConfig) {

@@ -17,7 +17,6 @@
 
 package org.apache.kafka.image;
 
-import com.automq.stream.s3.Constants;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
 import java.util.ArrayList;
@@ -31,7 +30,6 @@ import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 
 /**
@@ -41,38 +39,27 @@ import org.apache.kafka.timeline.TimelineHashMap;
  */
 public final class S3ObjectsImage extends AbstractReferenceCounted {
 
-    public static final S3ObjectsImage EMPTY = new S3ObjectsImage(-1, null, null, Constants.NOOP_EPOCH, null);
+    public static final S3ObjectsImage EMPTY = new S3ObjectsImage(-1, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), RegistryRef.NOOP);
 
-    private long nextAssignedObjectId;
+    private final long nextAssignedObjectId;
 
     private final TimelineHashMap<Long/*objectId*/, S3Object> objects;
-    private final SnapshotRegistry registry;
-    private final long epoch;
-    private final List<Long> liveEpochs;
+    private final RegistryRef registryRef;
 
-    public S3ObjectsImage(long assignedObjectId, final TimelineHashMap<Long, S3Object> objects,
-        final SnapshotRegistry registry, final long epoch, final List<Long> liveEpochs) {
+    public S3ObjectsImage(long assignedObjectId,
+                          final TimelineHashMap<Long, S3Object> objects,
+                          final RegistryRef registry) {
         this.nextAssignedObjectId = assignedObjectId + 1;
         this.objects = objects;
-        this.registry = registry;
-        this.epoch = epoch;
-        this.liveEpochs = liveEpochs;
-        if (epoch != Constants.NOOP_EPOCH) {
-            if (liveEpochs == null) {
-                throw new IllegalArgumentException("Require null liveEpochs for non-empty epoch");
-            } else {
-                this.liveEpochs.add(epoch);
-            }
-        }
+        this.registryRef = registry;
     }
 
     public S3Object getObjectMetadata(long objectId) {
-        if (objects == null) {
+        if (objects == null || registryRef == RegistryRef.NOOP) {
             return null;
         }
-        synchronized (registry) {
-            return this.objects.get(objectId, epoch);
-        }
+
+        return registryRef.inLock(() -> this.objects.get(objectId, registryRef.epoch()));
     }
 
     public long nextAssignedObjectId() {
@@ -80,18 +67,17 @@ public final class S3ObjectsImage extends AbstractReferenceCounted {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        if (objects == null) {
+        if (objects == null || registryRef == RegistryRef.NOOP) {
             return;
         }
+
         writer.write(
             new ApiMessageAndVersion(
                 new AssignedS3ObjectIdRecord().setAssignedS3ObjectId(nextAssignedObjectId - 1), (short) 0));
         // the writer#write maybe slow, so we use a copy to avoid holding the lock for a long time
-        List<S3Object> copy;
-        synchronized (registry) {
-            copy = new ArrayList<>(objects.values(epoch));
-        }
-        copy.forEach(v -> writer.write(v.toRecord()));
+        List<S3Object> copy = registryRef.inLock(() -> new ArrayList<>(objects.values(registryRef.epoch())));
+
+        copy.forEach(v -> writer.write(v.toRecord(options.metadataVersion().autoMQVersion())));
     }
 
     @Override
@@ -107,12 +93,11 @@ public final class S3ObjectsImage extends AbstractReferenceCounted {
     }
 
     public boolean isEmpty() {
-        if (objects == null) {
+        if (objects == null || registryRef == RegistryRef.NOOP) {
             return true;
         }
-        synchronized (registry) {
-            return objects.isEmpty(epoch);
-        }
+
+        return registryRef.inLock(() -> objects.isEmpty(registryRef.epoch()));
     }
 
     @Override
@@ -121,66 +106,43 @@ public final class S3ObjectsImage extends AbstractReferenceCounted {
     }
 
     public Collection<Long> objectIds() {
-        if (objects == null) {
+        if (objects == null || registryRef == RegistryRef.NOOP) {
             return Collections.emptyList();
         }
-        synchronized (registry) {
-            return objects.keySet(epoch);
-        }
+
+        return registryRef.inLock(() -> objects.keySet(registryRef.epoch()));
     }
 
     public int objectsCount() {
-        if (objects == null) {
+        if (objects == null || registryRef == RegistryRef.NOOP) {
             return 0;
         }
-        synchronized (registry) {
-            return objects.size(epoch);
-        }
+
+        return registryRef.inLock(() -> objects.size(registryRef.epoch()));
     }
 
     Collection<S3Object> objects() {
-        if (objects == null) {
+        if (objects == null || registryRef == RegistryRef.NOOP) {
             return Collections.emptyList();
         }
-        synchronized (registry) {
-            return new LinkedList<>(objects.values(epoch));
-        }
+
+        return registryRef.inLock(() -> new LinkedList<>(objects.values(registryRef.epoch())));
     }
 
     TimelineHashMap<Long, S3Object> timelineObjects() {
         return objects;
     }
 
-    SnapshotRegistry registry() {
-        return registry;
-    }
-
-    long epoch() {
-        return epoch;
-    }
-
-    List<Long> liveEpochs() {
-        return liveEpochs;
+    RegistryRef registryRef() {
+        return registryRef;
     }
 
     @Override
     protected void deallocate() {
-        if (registry != null) {
-            synchronized (registry) {
-                if (liveEpochs.isEmpty()) {
-                    throw new IllegalStateException("liveEpochs is empty");
-                }
-                long oldFirst = liveEpochs.get(0);
-                liveEpochs.remove(epoch);
-                if (liveEpochs.isEmpty()) {
-                    throw new IllegalStateException("liveEpochs is empty");
-                }
-                long newFirst = liveEpochs.get(0);
-                if (newFirst != oldFirst) {
-                    registry.deleteSnapshotsUpTo(newFirst);
-                }
-            }
+        if (registryRef == RegistryRef.NOOP) {
+            return;
         }
+        registryRef.release();
     }
 
     @Override

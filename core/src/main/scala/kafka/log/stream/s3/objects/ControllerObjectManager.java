@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -14,10 +14,13 @@ package kafka.log.stream.s3.objects;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.objects.CommitStreamSetObjectHook;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.utils.FutureUtil;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -45,6 +48,8 @@ import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
+
 public class ControllerObjectManager implements ObjectManager {
 
     private final static Logger LOGGER = LoggerFactory.getLogger(ControllerObjectManager.class);
@@ -55,6 +60,7 @@ public class ControllerObjectManager implements ObjectManager {
     private final long nodeEpoch;
     private final Supplier<AutoMQVersion> version;
     private final boolean failoverMode;
+    private CommitStreamSetObjectHook commitStreamSetObjectHook;
 
     public ControllerObjectManager(ControllerRequestSender requestSender, StreamMetadataManager metadataManager,
         int nodeId, long nodeEpoch, Supplier<AutoMQVersion> version, boolean failoverMode) {
@@ -64,6 +70,7 @@ public class ControllerObjectManager implements ObjectManager {
         this.nodeEpoch = nodeEpoch;
         this.version = version;
         this.failoverMode = failoverMode;
+        this.commitStreamSetObjectHook = request -> CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -99,7 +106,22 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
+    public void setCommitStreamSetObjectHook(CommitStreamSetObjectHook hook) {
+        this.commitStreamSetObjectHook = hook;
+    }
+
+    @Override
     public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(
+        CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
+        try {
+            return commitStreamSetObject0(commitStreamSetObjectRequest).thenCompose(resp ->
+                commitStreamSetObjectHook.onCommitSuccess(commitStreamSetObjectRequest).thenApply(v -> resp));
+        } catch (Throwable e) {
+            return FutureUtil.failedFuture(e);
+        }
+    }
+
+    public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject0(
         CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
         CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
             .setNodeId(nodeId)
@@ -115,6 +137,9 @@ public class ControllerObjectManager implements ObjectManager {
                 .map(s -> Convertor.toStreamObjectInRequest(s, version.get())).collect(Collectors.toList()))
             .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
             .setFailoverMode(failoverMode);
+        if (commitStreamSetObjectRequest.getObjectId() != NOOP_OBJECT_ID && commitStreamSetObjectRequest.getAttributes() == ObjectAttributes.UNSET.attributes()) {
+            throw new IllegalArgumentException("[BUG]attributes must be set");
+        }
         if (version.get().isObjectAttributesSupported()) {
             request.setAttributes(commitStreamSetObjectRequest.getAttributes());
         }
@@ -212,8 +237,8 @@ public class ControllerObjectManager implements ObjectManager {
         int limit) {
         return this.metadataManager.fetch(streamId, startOffset, endOffset, limit).thenApply(inRangeObjects -> {
             if (inRangeObjects == null || inRangeObjects == InRangeObjects.INVALID) {
-                LOGGER.error("Unexpect getObjects result={} from streamId={} [{}, {}) limit={}", inRangeObjects, streamId, startOffset, endOffset, limit);
-                throw new AutoMQException("Unexpect getObjects result");
+                LOGGER.error("Unexpected getObjects result={} from streamId={} [{}, {}) limit={}", inRangeObjects, streamId, startOffset, endOffset, limit);
+                throw new AutoMQException("Unexpected getObjects result");
             }
             return inRangeObjects.objects();
         });

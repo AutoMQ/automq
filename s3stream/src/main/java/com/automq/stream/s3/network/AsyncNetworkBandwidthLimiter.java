@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -31,7 +31,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class AsyncNetworkBandwidthLimiter {
+public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private static final Logger LOGGER = new LogContext().logger(AsyncNetworkBandwidthLimiter.class);
     private static final float DEFAULT_EXTRA_TOKEN_RATIO = 0.1f;
     private static final long MAX_TOKEN_PART_SIZE = 1024 * 1024;

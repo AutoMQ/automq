@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -150,6 +150,7 @@ public interface ObjectReader extends AutoCloseable {
                     asyncGetBasicObjectInfo0(ex.indexBlockPosition, false);
                 }
             }).exceptionally(ex -> {
+                LOGGER.error("get {} object info failed", metadata, ex);
                 basicObjectInfo().completeExceptionally(ex);
                 return null;
             });
@@ -214,6 +215,11 @@ public interface ObjectReader extends AutoCloseable {
         public static BasicObjectInfo parse(ByteBuf objectTailBuf,
             S3ObjectMetadata s3ObjectMetadata) throws ObjectParseException {
             objectTailBuf = objectTailBuf.slice();
+            long footerMagic = objectTailBuf.getLong(objectTailBuf.readableBytes() - 8);
+            if (footerMagic != ObjectWriter.Footer.MAGIC) {
+                throw new ObjectParseException("Invalid footer magic: " + footerMagic);
+            }
+
             long indexBlockPosition = objectTailBuf.getLong(objectTailBuf.readableBytes() - FOOTER_SIZE);
             int indexBlockSize = objectTailBuf.getInt(objectTailBuf.readableBytes() - 40);
             if (indexBlockPosition + objectTailBuf.readableBytes() < s3ObjectMetadata.objectSize()) {

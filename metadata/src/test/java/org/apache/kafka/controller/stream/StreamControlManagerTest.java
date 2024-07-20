@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -956,7 +956,6 @@ public class StreamControlManagerTest {
         ControllerResult<CommitStreamSetObjectResponseData> result0 = manager.commitStreamSetObject(commitRequest0);
         assertEquals(Errors.NONE.code(), result0.response().errorCode());
         replay(manager, result0.records());
-        long object0DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(1L).dataTimeInMs();
 
         // 3. commit a wal with stream_0 and a stream object with stream_1 that is split out from wal
         List<ObjectStreamRange> streamRanges1 = List.of(
@@ -982,7 +981,6 @@ public class StreamControlManagerTest {
         ControllerResult<CommitStreamSetObjectResponseData> result1 = manager.commitStreamSetObject(commitRequest1);
         assertEquals(Errors.NONE.code(), result1.response().errorCode());
         replay(manager, result1.records());
-        long object1DataTs = manager.streamsMetadata().get(STREAM1).streamObjects().get(3L).dataTimeInMs();
 
         // 4. compact these two stream objects
         CommitStreamObjectRequestData streamObjectRequest = new CommitStreamObjectRequestData()
@@ -1023,7 +1021,6 @@ public class StreamControlManagerTest {
 
         // 7. verify stream objects
         assertEquals(1, manager.streamsMetadata().get(STREAM1).streamObjects().size());
-        assertEquals(object0DataTs, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).dataTimeInMs());
         assertEquals(4L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).objectId());
         assertEquals(0L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().startOffset());
         assertEquals(400L, manager.streamsMetadata().get(STREAM1).streamObjects().get(4L).streamOffsetRange().endOffset());

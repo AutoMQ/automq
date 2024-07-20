@@ -234,6 +234,13 @@ class LocalLog(@volatile protected var _dir: File,
   }
 
   /**
+   * Asynchronously closes the segments of the log.
+   */
+  private[log] def asyncClose(): CompletableFuture[Void] = {
+    CompletableFuture.runAsync(() => close())
+  }
+
+  /**
    * Completely delete this log directory with no delay.
    */
   private[log] def deleteEmptyDir(): Unit = {

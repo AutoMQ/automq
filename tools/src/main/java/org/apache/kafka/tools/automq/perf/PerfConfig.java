@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.helper.HelpScreenException;
+import net.sourceforge.argparse4j.internal.HelpScreenException;
 import net.sourceforge.argparse4j.impl.type.ReflectArgumentType;
 import net.sourceforge.argparse4j.inf.Argument;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
@@ -32,6 +32,7 @@ import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.
 
 public class PerfConfig {
     public final String bootstrapServer;
+    public final Map<String, String> commonConfigs;
     public final Map<String, String> topicConfigs;
     public final Map<String, String> producerConfigs;
     public final Map<String, String> consumerConfigs;
@@ -68,6 +69,7 @@ public class PerfConfig {
         assert ns != null;
 
         bootstrapServer = ns.getString("bootstrapServer");
+        commonConfigs = parseConfigs(ns.getList("commonConfigs"));
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
@@ -97,9 +99,7 @@ public class PerfConfig {
 
     public static ArgumentParser parser() {
         ArgumentParser parser = ArgumentParsers
-            .newFor("performance-test")
-            .build()
-            .defaultHelp(true)
+            .newArgumentParser("performance-test")
             .description("This tool is used to run performance tests.");
         parser.addArgument("-B", "--bootstrap-server")
             .setDefault("localhost:9092")
@@ -107,6 +107,12 @@ public class PerfConfig {
             .dest("bootstrapServer")
             .metavar("BOOTSTRAP_SERVER")
             .help("The AutoMQ bootstrap server.");
+        parser.addArgument("-A", "--common-configs")
+            .nargs("*")
+            .type(String.class)
+            .dest("commonConfigs")
+            .metavar("COMMON_CONFIG")
+            .help("The common configurations.");
         parser.addArgument("-T", "--topic-configs")
             .nargs("*")
             .type(String.class)
@@ -230,7 +236,13 @@ public class PerfConfig {
         return bootstrapServer;
     }
 
+    public Map<String, String> adminConfig() {
+        return commonConfigs;
+    }
+
     public TopicsConfig topicsConfig() {
+        Map<String, String> topicConfigs = new HashMap<>(commonConfigs);
+        topicConfigs.putAll(this.topicConfigs);
         return new TopicsConfig(
             topicPrefix,
             topics,
@@ -240,6 +252,8 @@ public class PerfConfig {
     }
 
     public ProducersConfig producersConfig() {
+        Map<String, String> producerConfigs = new HashMap<>(commonConfigs);
+        producerConfigs.putAll(this.producerConfigs);
         return new ProducersConfig(
             bootstrapServer,
             producersPerTopic,
@@ -248,6 +262,8 @@ public class PerfConfig {
     }
 
     public ConsumersConfig consumersConfig() {
+        Map<String, String> consumerConfigs = new HashMap<>(commonConfigs);
+        consumerConfigs.putAll(this.consumerConfigs);
         return new ConsumersConfig(
             bootstrapServer,
             groupsPerTopic,
@@ -262,7 +278,7 @@ public class PerfConfig {
         }
         Map<String, String> map = new HashMap<>();
         for (String config : configs) {
-            String[] parts = config.split("=");
+            String[] parts = config.split("=", 2);
             if (parts.length != 2) {
                 throw new IllegalArgumentException("Invalid config: " + config);
             }

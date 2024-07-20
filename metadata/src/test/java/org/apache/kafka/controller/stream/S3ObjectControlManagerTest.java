@@ -1,25 +1,20 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Copyright 2024, AutoMQ HK Limited.
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.controller;
+package org.apache.kafka.controller.stream;
 
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import java.util.List;
@@ -34,7 +29,11 @@ import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.controller.stream.S3ObjectControlManager;
+import org.apache.kafka.common.utils.MockTime;
+import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.controller.ControllerRequestContext;
+import org.apache.kafka.controller.ControllerResult;
+import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -48,6 +47,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -61,15 +61,12 @@ public class S3ObjectControlManagerTest {
     private static final int BROKER0 = 0;
     private static final int BROKER1 = 1;
     private static final String CLUSTER = "kafka-on-S3_cluster";
-    private static final String S3_ENDPOINT = "http://localhost:4066";
-    private static final String S3_REGION = "us-east-1";
-    private static final String S3_BUCKET = "kafka-on-S3-bucket";
-
-    private static final Config S3_CONFIG = new Config().endpoint(S3_ENDPOINT).region(S3_REGION).bucket(S3_BUCKET).objectRetentionTimeInSecond(1);
+    private static final Config S3_CONFIG = new Config().dataBuckets(BucketURI.parseBuckets("0@s3://bucket?region=us-east-1")).objectRetentionTimeInSecond(1);
     private S3ObjectControlManager manager;
     private QuorumController controller;
     private ObjectStorage objectStorage;
     private long nextObjectId;
+    private Time time;
 
     @BeforeEach
     public void setUp() {
@@ -81,7 +78,8 @@ public class S3ObjectControlManagerTest {
         Mockito.when(controller.isActive()).thenReturn(true);
         LogContext logContext = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
-        manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, objectStorage, () -> AutoMQVersion.LATEST);
+        time = new MockTime();
+        manager = new S3ObjectControlManager(controller, registry, logContext, CLUSTER, S3_CONFIG, objectStorage, () -> AutoMQVersion.LATEST, time);
     }
 
     @Test
@@ -99,7 +97,7 @@ public class S3ObjectControlManagerTest {
         AssignedS3ObjectIdRecord assignedRecord = (AssignedS3ObjectIdRecord) message;
         assertEquals(2, assignedRecord.assignedS3ObjectId());
         for (int i = 0; i < 3; i++) {
-            verifyPrepareObjectRecord(result0.records().get(i + 1), i, 60 * 1000);
+            verifyPrepareObjectRecord(result0.records().get(i + 1), i, time.milliseconds() + 60 * 1000);
         }
         replay(manager, result0.records());
 
@@ -108,7 +106,7 @@ public class S3ObjectControlManagerTest {
         manager.objectsMetadata().forEach((id, s3Object) -> {
             assertEquals(S3ObjectState.PREPARED, s3Object.getS3ObjectState());
             assertEquals(id, s3Object.getObjectId());
-            assertEquals(60 * 1000, s3Object.getExpiredTimeInMs() - s3Object.getPreparedTimeInMs());
+            assertEquals(time.milliseconds() + 60 * 1000, s3Object.getTimestamp());
         });
         assertEquals(3, manager.nextAssignedObjectId());
 
@@ -127,7 +125,7 @@ public class S3ObjectControlManagerTest {
         manager.objectsMetadata().forEach((id, s3Object) -> {
             assertEquals(S3ObjectState.PREPARED, s3Object.getS3ObjectState());
             assertEquals(id, s3Object.getObjectId());
-            assertEquals(60 * 1000, s3Object.getExpiredTimeInMs() - s3Object.getPreparedTimeInMs());
+            assertEquals(time.milliseconds() + 60 * 1000, s3Object.getTimestamp());
         });
         assertEquals(8, manager.nextAssignedObjectId());
     }
@@ -154,12 +152,12 @@ public class S3ObjectControlManagerTest {
     }
 
     private void verifyPrepareObjectRecord(ApiMessageAndVersion result, long expectedObjectId,
-        long expectedTimeToLiveInMs) {
+        long expectTimestamp) {
         ApiMessage message = result.message();
         assertInstanceOf(S3ObjectRecord.class, message);
         S3ObjectRecord record = (S3ObjectRecord) message;
         assertEquals(expectedObjectId, record.objectId());
-        assertEquals(expectedTimeToLiveInMs, record.expiredTimeInMs() - record.preparedTimeInMs());
+        assertEquals(expectTimestamp, record.timestamp());
         assertEquals((byte) S3ObjectState.PREPARED.ordinal(), record.objectState());
     }
 
@@ -167,6 +165,8 @@ public class S3ObjectControlManagerTest {
     public void testCommitObject() {
         // 1. prepare 1 object
         prepareOneObject(60 * 1000);
+        io.netty.util.Timeout timeout = manager.preparedObjectsTimeouts.get(0L);
+        assertFalse(timeout.isCancelled());
 
         // 2. commit an object which not exist in controller
         long expectedCommittedTs = 1313L;
@@ -180,6 +180,8 @@ public class S3ObjectControlManagerTest {
         assertEquals(1, result2.records().size());
         S3ObjectRecord record = (S3ObjectRecord) result2.records().get(0).message();
         manager.replay(record);
+        assertFalse(manager.preparedObjectsTimeouts.containsKey(0L));
+        assertTrue(timeout.isCancelled());
 
         // 4. commit again
         ControllerResult<Errors> result3 = manager.commitObject(0, 1024, expectedCommittedTs, ObjectAttributes.DEFAULT.attributes());
@@ -192,7 +194,7 @@ public class S3ObjectControlManagerTest {
         assertEquals(S3ObjectState.COMMITTED, object.getS3ObjectState());
         assertEquals(0L, object.getObjectId());
         assertEquals(1024, object.getObjectSize());
-        assertEquals(expectedCommittedTs, object.getCommittedTimeInMs());
+        assertEquals(expectedCommittedTs, object.getTimestamp());
     }
 
     @Test
@@ -212,13 +214,20 @@ public class S3ObjectControlManagerTest {
         // 1. prepare 1 object
         prepareOneObject(3 * 1000);
         assertEquals(1, manager.objectsMetadata().size());
-        // 2. 5s later, it should be marked as destroyed
-        Thread.sleep(5 * 1000);
+        // 2. wait the prepared object expired, it should be marked as destroyed
+        time.sleep(4000L);
+        manager.handlePreparedObjectTimeout(0L);
+        assertTrue(manager.preparedObjectsTimeouts.containsKey(0L));
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(1, manager.objectsMetadata().size());
         S3Object object = manager.objectsMetadata().get(0L);
         assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
-        // 3. 5s later, it should be removed
-        Thread.sleep(5 * 1000);
+        assertFalse(manager.preparedObjectsTimeouts.containsKey(0L));
+        // 3. 2s later, it should be removed
+        time.sleep(1100L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
+        time.sleep(1100L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(0, manager.objectsMetadata().size());
         Mockito.verify(objectStorage, times(1)).delete(anyList());
     }
@@ -245,24 +254,26 @@ public class S3ObjectControlManagerTest {
         });
 
         genMarkDestroyObject();
-        // TODO: use MockTime instead of sleep
-        Thread.sleep(1001L);
-
+        time.sleep(1001L);
+        manager.checkS3ObjectsLifecycle();
+        time.sleep(1001L);
         manager.checkS3ObjectsLifecycle();
         @SuppressWarnings("unchecked") ArgumentCaptor<List<ObjectPath>> ac = ArgumentCaptor.forClass(List.class);
         Mockito.verify(objectStorage, times(1)).delete(ac.capture());
         assertEquals(List.of(ObjectUtils.genKey(0, 0L)), ac.getValue().stream().map(ObjectPath::key).collect(Collectors.toList()));
 
         genMarkDestroyObject();
-        Thread.sleep(1001L);
-
+        time.sleep(1001L);
         // the last delete is inflight, so the next check should not trigger another delete
         manager.checkS3ObjectsLifecycle();
         Mockito.verify(objectStorage, times(1)).delete(ac.capture());
+        replay(manager, manager.notifyS3ObjectDeleted(List.of(0L)).records());
 
         // complete the last delete
         delayTrigger.complete(null);
 
+        manager.checkS3ObjectsLifecycle();
+        time.sleep(1001L);
         manager.checkS3ObjectsLifecycle();
         Mockito.verify(objectStorage, times(2)).delete(ac.capture());
         assertEquals(List.of(ObjectUtils.genKey(0, 1L)), ac.getValue().stream().map(ObjectPath::key).collect(Collectors.toList()));
@@ -315,17 +326,26 @@ public class S3ObjectControlManagerTest {
         replay(manager, result0.records());
 
         assertEquals(1700, manager.objectsMetadata().size());
-        // 2. 6s(3s * 2) later, they should be marked as destroyed
-        Thread.sleep(6 * 1000);
+        // 2. 3s later, they should be marked as destroyed
+        time.sleep(4000L);
+        for (int i = 0; i < 1700; i++) {
+            manager.handlePreparedObjectTimeout(i);
+        }
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(1700, manager.objectsMetadata().size());
         for (int i = 0; i < 1700; i++) {
             S3Object object = manager.objectsMetadata().get((long) i);
             assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
         }
-        // 3. 6s(3s * 2) later, they should be removed
-        Thread.sleep(6 * 1000);
+        // 3. 1s later, they should be removed
+        time.sleep(1100L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
+        time.sleep(1100L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
-        Mockito.verify(objectStorage, times(3)).delete(anyList());
+
+        // 1700 / 1000 + 1
+        Mockito.verify(objectStorage, times(2)).delete(anyList());
     }
 
     private long prepareOneObject(long ttl) {
@@ -340,7 +360,7 @@ public class S3ObjectControlManagerTest {
         AssignedS3ObjectIdRecord assignedRecord = (AssignedS3ObjectIdRecord) message;
         long objectId = nextObjectId++;
         assertEquals(objectId, assignedRecord.assignedS3ObjectId());
-        verifyPrepareObjectRecord(result0.records().get(1), objectId, ttl);
+        verifyPrepareObjectRecord(result0.records().get(1), objectId, time.milliseconds() + ttl);
         replay(manager, result0.records());
         return objectId;
     }

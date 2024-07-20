@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -12,16 +12,15 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.Version;
+import com.automq.stream.s3.operator.BucketURI;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
 // TODO: rename & init
 public class Config {
     private int nodeId;
-    private String endpoint;
-    private String region;
-    private String bucket;
-    private boolean forcePathStyle = false;
+    private List<BucketURI> dataBuckets;
     private String walPath = "/tmp/s3stream_wal";
     private long walCacheSize = 200 * 1024 * 1024;
     private long walCapacity = 1024L * 1024 * 1024;
@@ -67,20 +66,8 @@ public class Config {
         return nodeId;
     }
 
-    public String endpoint() {
-        return endpoint;
-    }
-
-    public String region() {
-        return region;
-    }
-
-    public String bucket() {
-        return bucket;
-    }
-
-    public boolean forcePathStyle() {
-        return forcePathStyle;
+    public List<BucketURI> dataBuckets() {
+        return dataBuckets;
     }
 
     public String walPath() {
@@ -224,23 +211,8 @@ public class Config {
         return this;
     }
 
-    public Config endpoint(String s3Endpoint) {
-        this.endpoint = s3Endpoint;
-        return this;
-    }
-
-    public Config region(String s3Region) {
-        this.region = s3Region;
-        return this;
-    }
-
-    public Config bucket(String s3Bucket) {
-        this.bucket = s3Bucket;
-        return this;
-    }
-
-    public Config forcePathStyle(boolean s3ForcePathStyle) {
-        this.forcePathStyle = s3ForcePathStyle;
+    public Config dataBuckets(List<BucketURI> buckets) {
+        this.dataBuckets = buckets;
         return this;
     }
 

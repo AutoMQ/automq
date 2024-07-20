@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -42,9 +42,9 @@ public class AutoMQImageNode implements MetadataNode {
             case KVImageNode.NAME:
                 return new KVImageNode(kvImage);
             case StreamsImageNode.NAME:
-                return new StreamsImageNode(streamsMetadataImage.streamsMetadata());
+                return new StreamsImageNode(streamsMetadataImage.timelineStreamMetadata());
             case NodesImageNode.NAME:
-                return new NodesImageNode(streamsMetadataImage.nodeWALMetadata());
+                return new NodesImageNode(streamsMetadataImage.timelineNodeMetadata());
             case ObjectsImageNode.NAME:
                 return new ObjectsImageNode(objectsImage);
             default:

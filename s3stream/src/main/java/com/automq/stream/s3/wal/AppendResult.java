@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -20,7 +20,8 @@ public interface AppendResult {
     CompletableFuture<CallbackResult> future();
 
     interface CallbackResult {
-        // The record before this offset has been flushed to disk
+
+        // The record before this offset (exclusive) has been flushed to disk
         long flushedOffset();
     }
 }

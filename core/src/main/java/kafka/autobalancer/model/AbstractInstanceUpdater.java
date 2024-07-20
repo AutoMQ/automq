@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -192,7 +192,7 @@ public abstract class AbstractInstanceUpdater {
             StringBuilder builder = new StringBuilder();
             int index = 0;
             for (Map.Entry<Byte, Load> entry : loads.entrySet()) {
-                String resourceStr = Resource.resourceString(entry.getKey(), entry.getValue().getValue());
+                String resourceStr = formatResourceStr(entry.getKey(), entry.getValue().getValue());
                 builder.append(resourceStr);
                 builder.append(" (");
                 builder.append(entry.getValue().isTrusted() ? "trusted" : "untrusted");
@@ -202,6 +202,38 @@ public abstract class AbstractInstanceUpdater {
                 }
             }
             return builder.toString();
+        }
+
+        public String deltaLoadString(AbstractInstance other) {
+            StringBuilder builder = new StringBuilder();
+            int index = 0;
+            for (Map.Entry<Byte, Load> entry : loads.entrySet()) {
+                byte resource = entry.getKey();
+                double loadValue = entry.getValue().getValue();
+                double delta = loadValue;
+                Load otherLoad = other.loads.get(resource);
+                if (otherLoad != null) {
+                    delta -= otherLoad.getValue();
+                }
+                String resourceStr = formatResourceStr(resource, loadValue);
+                builder.append(resourceStr);
+                builder.append(" (");
+                builder.append(delta > 0 ? "+" : "-");
+                builder.append(formatValueStr(resource, Math.abs(delta)));
+                builder.append(")");
+                if (index++ != loads.size() - 1) {
+                    builder.append(", ");
+                }
+            }
+            return builder.toString();
+        }
+
+        protected String formatResourceStr(byte resource, double value) {
+            return Resource.resourceString(resource, value);
+        }
+
+        protected String formatValueStr(byte resource, double value) {
+            return Resource.valueString(resource, value);
         }
 
         @Override

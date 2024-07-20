@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -97,6 +97,14 @@ public enum AutoMQVersion {
     }
 
     public short streamSetObjectRecordVersion() {
+        if (isAtLeast(V2)) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
+    public short streamObjectRecordVersion() {
         if (isAtLeast(V2)) {
             return 1;
         } else {

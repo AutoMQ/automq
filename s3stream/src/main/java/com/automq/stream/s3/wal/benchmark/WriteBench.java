@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -220,9 +220,7 @@ public class WriteBench implements AutoCloseable {
 
         static ArgumentParser parser() {
             ArgumentParser parser = ArgumentParsers
-                .newFor("WriteBench")
-                .build()
-                .defaultHelp(true)
+                .newArgumentParser("WriteBench")
                 .description("Benchmark write performance of BlockWALService");
             parser.addArgument("-p", "--path")
                 .required(true)

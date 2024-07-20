@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -18,7 +18,7 @@ public class StreamObject {
     private long streamId;
     private long startOffset;
     private long endOffset;
-    private int attributes = ObjectAttributes.DEFAULT.attributes();
+    private int attributes = ObjectAttributes.UNSET.attributes();
 
     public long getObjectId() {
         return objectId;

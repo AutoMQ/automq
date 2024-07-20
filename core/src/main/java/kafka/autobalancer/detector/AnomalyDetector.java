@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -271,7 +271,9 @@ public class AnomalyDetector extends AbstractResumableService {
         snapshot.markSlowBrokers();
 
         Map<Integer, Boolean> slowBrokers = new HashMap<>();
+        Map<Integer, BrokerUpdater.Broker> brokersBefore = new HashMap<>();
         for (BrokerUpdater.Broker broker : snapshot.brokers()) {
+            brokersBefore.put(broker.getBrokerId(), broker.copy());
             String brokerStr = logger.isDebugEnabled() ? broker.toString() : broker.shortString();
             slowBrokers.put(broker.getBrokerId(), broker.isSlowBroker());
             logger.info("Broker status: {}", brokerStr);
@@ -297,6 +299,14 @@ public class AnomalyDetector extends AbstractResumableService {
         if (!isRunnable()) {
             return detectInterval;
         }
+
+        for (BrokerUpdater.Broker broker : snapshot.brokers()) {
+            if (brokersBefore.containsKey(broker.getBrokerId())) {
+                BrokerUpdater.Broker beforeBroker = brokersBefore.get(broker.getBrokerId());
+                logger.info("Expected load change: brokerId={}, {}", broker.getBrokerId(), broker.deltaLoadString(beforeBroker));
+            }
+        }
+
         int totalActionSize = totalActions.size();
         List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency, getTopicPartitionCount(snapshot));
         logger.info("Total actions num: {}, split to {} batches", totalActionSize, actionsToExecute.size());

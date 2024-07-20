@@ -1,6 +1,7 @@
 package unit.kafka.server.streamaspect
 
 import com.google.common.util.concurrent.MoreExecutors
+import kafka.automq.AutoMQConfig
 import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.ElasticLogManager
@@ -51,8 +52,8 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
   @BeforeEach
   override def setUp(): Unit = {
     val props = TestUtils.createBrokerConfig(1, TestUtils.MockZkConnect)
-    props.put(KafkaConfig.ElasticStreamEnableProp, true)
-    props.put(KafkaConfig.ElasticStreamEndpointProp, "memory://")
+    props.put(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, true)
+    props.put(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG, "memory://")
     config = KafkaConfig.fromProps(props)
     alterPartitionManager = mock(classOf[AlterPartitionManager])
     quotaManager = QuotaFactory.instantiate(config, metrics, time, "")

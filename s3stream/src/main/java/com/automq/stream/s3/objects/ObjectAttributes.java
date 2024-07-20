@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -22,6 +22,7 @@ package com.automq.stream.s3.objects;
  */
 public class ObjectAttributes {
     public static final ObjectAttributes DEFAULT = new ObjectAttributes(0);
+    public static final ObjectAttributes UNSET = new ObjectAttributes(-1);
     private static final int DEEP_DELETE_MASK = 1 << 18;
     private final int attributes;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -122,7 +122,7 @@ public class ObjectReaderTest {
         int indexSize = buf.readableBytes() - indexPosition;
         buf.writeBytes(new ObjectWriter.Footer(indexPosition, indexSize).buffer());
         int objectSize = buf.readableBytes();
-        objectStorage.write(WriteOptions.DEFAULT, ObjectUtils.genKey(0, 1L), buf);
+        objectStorage.write(WriteOptions.DEFAULT, ObjectUtils.genKey(0, 1L), buf).get();
         try (ObjectReader reader = ObjectReader.reader(new S3ObjectMetadata(1L, objectSize, S3ObjectType.STREAM), objectStorage)) {
             ObjectReader.FindIndexResult rst = reader.find(233L, 10L, 14L, 1024).get();
             assertEquals(1, rst.streamDataBlocks().size());

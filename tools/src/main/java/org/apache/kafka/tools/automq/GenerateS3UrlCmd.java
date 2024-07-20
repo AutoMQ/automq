@@ -17,14 +17,12 @@
 package org.apache.kafka.tools.automq;
 
 import com.automq.shell.model.EndpointProtocol;
+import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.utils.PingS3Helper;
-
-import java.util.List;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
 import org.apache.kafka.common.Uuid;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
 import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_START_COMMAND_CMD;
@@ -81,9 +79,6 @@ public class GenerateS3UrlCmd {
     }
 
     public static ArgumentParser addArguments(Subparser parser) {
-        parser.addArgument("generate-s3-url")
-            .action(store())
-            .required(true);
         parser.addArgument("--s3-access-key")
             .action(store())
             .required(true)
@@ -151,14 +146,14 @@ public class GenerateS3UrlCmd {
         System.out.println();
 
         // precheck
+        String bucketURLStr = "0@s3://" + parameter.s3DataBucket
+            + "?region=" + parameter.s3Region
+            + "&endpoint=" + parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint
+            + "&pathStyle=" + parameter.s3PathStyle;
         PingS3Helper pingS3Helper = PingS3Helper.builder()
-                .endpoint(parameter.endpointProtocol.getName() + "://" + parameter.s3Endpoint)
-                .bucket(parameter.s3DataBucket)
-                .region(parameter.s3Region)
-                .credentialsProviders(List.of(() -> AwsBasicCredentials.create(parameter.s3AccessKey, parameter.s3SecretKey)))
-                .isForcePathStyle(parameter.s3PathStyle)
-                .needPrintToConsole(true)
-                .build();
+            .bucket(BucketURI.parse(bucketURLStr))
+            .needPrintToConsole(true)
+            .build();
         pingS3Helper.pingS3();
 
         String s3Url = buildS3Url();

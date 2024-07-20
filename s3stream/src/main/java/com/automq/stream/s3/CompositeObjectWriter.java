@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -62,7 +62,6 @@ public class CompositeObjectWriter implements ObjectWriter {
         objBuf.addComponent(true, objectsBlock.buffer());
         objBuf.addComponent(true, indexesBlock.buffer());
         objBuf.addComponent(true, footer.buffer());
-        size = objBuf.readableBytes();
         writer.write(objBuf);
         return writer.close();
     }
@@ -82,6 +81,11 @@ public class CompositeObjectWriter implements ObjectWriter {
     @Override
     public long size() {
         return size;
+    }
+
+    @Override
+    public short bucketId() {
+        return writer.bucketId();
     }
 
     void continuousCheck(List<DataBlockIndex> newIndexes) {

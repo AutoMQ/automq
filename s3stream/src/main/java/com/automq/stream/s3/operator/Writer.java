@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -44,9 +44,9 @@ public interface Writer {
     /**
      * Write a part of the object. The parts will parallel upload to S3.
      *
-     * @param part object part.
+     * @param data object data.
      */
-    CompletableFuture<Void> write(ByteBuf part);
+    CompletableFuture<Void> write(ByteBuf data);
 
     /**
      * Make a copy of all cached buffer and release old one to prevent outside modification to underlying data and
@@ -76,11 +76,9 @@ public interface Writer {
     CompletableFuture<Void> release();
 
     /**
-     * Get the bucket id which stores the object.
+     * The bucket which the data was written.
      */
-    default short bucketId() {
-        return 0;
-    }
+    short bucketId();
 
     class Context {
         public static final Context DEFAULT = new Context(ByteBufAlloc.DEFAULT);

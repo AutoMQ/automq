@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -39,9 +39,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.AfterEach;
@@ -563,13 +566,12 @@ public class CompactionManagerTest extends CompactionTestBase {
 
         objectManager = Mockito.spy(MemoryMetadataManager.class);
         objectStorage = Mockito.spy(MemoryObjectStorage.class);
-        List<Pair<InvocationOnMock, CompletableFuture<ByteBuf>>> invocations = new ArrayList<>();
-        when(objectStorage.rangeRead(any(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong()))
-            .thenAnswer(invocation -> {
-                CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-                invocations.add(Pair.of(invocation, cf));
-                return cf;
-            });
+        final BlockingQueue<Pair<InvocationOnMock, CompletableFuture<ByteBuf>>> invocations = new LinkedBlockingQueue<>();
+        doAnswer(invocation -> {
+            CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+            invocations.add(Pair.of(invocation, cf));
+            return cf;
+        }).when(objectStorage).rangeRead(any(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong());
 
         List<S3ObjectMetadata> s3ObjectMetadataList = new ArrayList<>();
         // stream data for object 0
@@ -611,14 +613,35 @@ public class CompactionManagerTest extends CompactionTestBase {
         CompletableFuture<Void> cf = compactionManager.compact();
         Thread.sleep(3000);
         compactionManager.shutdown();
-        for (Pair<InvocationOnMock, CompletableFuture<ByteBuf>> pair : invocations) {
-            CompletableFuture<ByteBuf> realCf = (CompletableFuture<ByteBuf>) pair.getLeft().callRealMethod();
-            pair.getRight().complete(realCf.get());
-        }
+
+        AtomicBoolean done = new AtomicBoolean(false);
+        CompletableFuture.runAsync(() -> {
+            while (!done.get()) {
+                Pair<InvocationOnMock, CompletableFuture<ByteBuf>> pair = null;
+                try {
+                    pair = invocations.poll(1, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                if (pair == null) {
+                    continue;
+                }
+                CompletableFuture<ByteBuf> realCf = null;
+                try {
+                    realCf = (CompletableFuture<ByteBuf>) pair.getLeft().callRealMethod();
+                    pair.getRight().complete(realCf.get());
+                } catch (Throwable e) {
+                    fail("Should not throw exception");
+                }
+            }
+        });
+
         try {
             cf.join();
         } catch (Exception e) {
             fail("Should not throw exception");
+        } finally {
+            done.get();
         }
     }
 

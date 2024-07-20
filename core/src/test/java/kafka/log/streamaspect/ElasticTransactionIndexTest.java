@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -10,6 +10,7 @@
  */
 package kafka.log.streamaspect;
 
+import com.automq.stream.api.Stream;
 import java.io.File;
 import java.io.IOException;
 import java.util.LinkedList;
@@ -17,6 +18,7 @@ import java.util.List;
 import kafka.log.streamaspect.cache.FileCache;
 import kafka.utils.TestUtils;
 import org.apache.kafka.storage.internals.log.AbortedTxn;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -78,14 +80,16 @@ public class ElasticTransactionIndexTest {
     }
 
     @Test
-    public void test_withReusedFileCache() throws IOException {
+    public void testUniqueFileCache() throws IOException {
         String indexFile = TestUtils.tempFile().getPath();
         String cacheFile = TestUtils.tempFile().getPath();
 
         FileCache fileCache = new FileCache(cacheFile, 10 * 1024);
-        ElasticStreamSlice slice = new DefaultElasticStreamSlice(new MemoryClient.StreamImpl(1), SliceRange.of(0, Offsets.NOOP_OFFSET));
+        Stream stream = new MemoryClient.StreamImpl(1);
+        ElasticStreamSlice slice = new DefaultElasticStreamSlice(stream, SliceRange.of(0, Offsets.NOOP_OFFSET));
         ElasticTransactionIndex index = new ElasticTransactionIndex(0, new File(indexFile), new IStreamSliceSupplier(slice),
             fileCache);
+        Assertions.assertEquals(0, slice.nextOffset());
 
         List<AbortedTxn> abortedTxns = new LinkedList<>();
         abortedTxns.add(new AbortedTxn(0L, 0, 10, 11));
@@ -95,13 +99,16 @@ public class ElasticTransactionIndexTest {
         for (AbortedTxn abortedTxn : abortedTxns) {
             index.append(abortedTxn);
         }
+        Assertions.assertEquals((long) abortedTxns.size() * AbortedTxn.TOTAL_SIZE, slice.nextOffset());
+        Assertions.assertEquals(stream.nextOffset(), slice.nextOffset());
 
         // get from write cache
         assertEquals(abortedTxns, index.allAbortedTxns());
 
-        slice = new DefaultElasticStreamSlice(new MemoryClient.StreamImpl(2), SliceRange.of(0, Offsets.NOOP_OFFSET));
+        slice = new DefaultElasticStreamSlice(stream, SliceRange.of(stream.nextOffset(), Offsets.NOOP_OFFSET));
         index = new ElasticTransactionIndex(0, new File(indexFile), new IStreamSliceSupplier(slice),
             fileCache);
+        Assertions.assertEquals(0, slice.nextOffset());
 
         abortedTxns = new LinkedList<>();
         abortedTxns.add(new AbortedTxn(5L, 0, 10, 11));

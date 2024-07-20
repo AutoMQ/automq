@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -12,6 +12,7 @@
 package kafka
 
 import com.automq.shell.log.S3LogConfig
+import com.automq.stream.s3.operator.{ObjectStorage, ObjectStorageFactory}
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer}
 
 class KafkaS3LogConfig(
@@ -19,6 +20,12 @@ class KafkaS3LogConfig(
   kafkaServer: KafkaServer,
   kafkaRaftServer: KafkaRaftServer
 ) extends S3LogConfig {
+
+  private val _objectStorage = if (config.automq.opsBuckets().isEmpty) {
+    null
+  } else {
+    ObjectStorageFactory.instance().builder(config.automq.opsBuckets().get(0)).build()
+  }
 
   override def isEnabled: Boolean = config.s3OpsTelemetryEnabled
 
@@ -41,11 +48,8 @@ class KafkaS3LogConfig(
 
   override def nodeId(): Int = config.nodeId
 
-  override def s3Endpoint(): String = config.s3Endpoint
+  override def objectStorage(): ObjectStorage = {
+    _objectStorage
+  }
 
-  override def s3Region(): String = config.s3Region
-
-  override def s3OpsBucket(): String = config.s3OpsBucket
-
-  override def s3PathStyle(): Boolean = config.s3PathStyle
 }

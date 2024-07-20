@@ -1,14 +1,16 @@
-name: Github Release
+name: GitHub Release
 
 on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-alpha[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-beta[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
 
 jobs:
   github-release:
-    name: Github Release with tgz
+    name: GitHub Release with tgz
     strategy:
       matrix:
         platform: [ "ubuntu-22.04" ]
