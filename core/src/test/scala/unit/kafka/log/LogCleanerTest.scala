@@ -2076,7 +2076,7 @@ class LogCleanerTest extends Logging {
     )
   }
 
-  private def makeCleaner(capacity: Int, checkDone: TopicPartition => Unit = _ => (), maxMessageSize: Int = 64*1024) =
+  protected def makeCleaner(capacity: Int, checkDone: TopicPartition => Unit = _ => (), maxMessageSize: Int = 64*1024) =
     new Cleaner(id = 0,
                 offsetMap = new FakeOffsetMap(capacity),
                 ioBufferSize = maxMessageSize,
@@ -2091,9 +2091,9 @@ class LogCleanerTest extends Logging {
       yield log.appendAsLeader(record(key, value), leaderEpoch = 0).firstOffset
   }
 
-  private def key(id: Long) = ByteBuffer.wrap(id.toString.getBytes)
+  protected def key(id: Long) = ByteBuffer.wrap(id.toString.getBytes)
 
-  private def record(key: Int, value: Int,
+  protected def record(key: Int, value: Int,
              producerId: Long = RecordBatch.NO_PRODUCER_ID,
              producerEpoch: Short = RecordBatch.NO_PRODUCER_EPOCH,
              sequence: Int = RecordBatch.NO_SEQUENCE,
