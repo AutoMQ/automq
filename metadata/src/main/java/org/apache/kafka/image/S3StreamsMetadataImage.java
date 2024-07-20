@@ -344,7 +344,13 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         }
         // search from cache and refresh the cache from remote if necessary
         return NodeRangeIndexCache.getInstance().searchObjectId(nodeId, ctx.streamId, startOffset,
-            () -> ctx.rangeGetter.readNodeRangeIndex(nodeId).thenApply(LocalStreamRangeIndexCache::fromBuffer));
+            () -> ctx.rangeGetter.readNodeRangeIndex(nodeId).thenApply(buff -> {
+                try {
+                    return LocalStreamRangeIndexCache.fromBuffer(buff);
+                } finally {
+                    buff.release();
+                }
+            }));
     }
 
     /**
