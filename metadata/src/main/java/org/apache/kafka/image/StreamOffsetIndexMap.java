@@ -78,6 +78,14 @@ public class StreamOffsetIndexMap {
         return streamOffsetIndexMap.values().stream().mapToInt(NavigableMap::size).sum();
     }
 
+    @VisibleForTesting
+    void clear() {
+        while (streamOffsetCache.size() > 0) {
+            streamOffsetCache.pop();
+        }
+        streamOffsetIndexMap.clear();
+    }
+
     private static class StreamOffset {
         long streamId;
         long startOffset;

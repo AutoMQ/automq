@@ -97,5 +97,7 @@ public interface ObjectManager {
      * Get the cluster objects count.
      */
     CompletableFuture<Integer> getObjectsCount();
+
+    void setCommitStreamSetObjectHook(CommitStreamSetObjectHook hook);
 }
 

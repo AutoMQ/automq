@@ -14,6 +14,7 @@ package com.automq.stream.s3.objects;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 
 public class CommitStreamSetObjectRequest {
 
@@ -74,10 +75,7 @@ public class CommitStreamSetObjectRequest {
     }
 
     public List<Long> getCompactedObjectIds() {
-        if (compactedObjectIds == null) {
-            return Collections.emptyList();
-        }
-        return compactedObjectIds;
+        return Objects.requireNonNullElse(compactedObjectIds, Collections.emptyList());
     }
 
     public void setCompactedObjectIds(List<Long> compactedObjectIds) {

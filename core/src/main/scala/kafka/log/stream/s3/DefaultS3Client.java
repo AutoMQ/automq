@@ -81,6 +81,7 @@ public class DefaultS3Client implements Client {
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
     private final BrokerServer brokerServer;
+    private final LocalStreamRangeIndexCache localIndexCache;
 
     public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;
@@ -108,20 +109,23 @@ public class DefaultS3Client implements Client {
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
             config.controllerRequestRetryBaseDelayMs());
+        localIndexCache = new LocalStreamRangeIndexCache();
+        localIndexCache.init(config.nodeId(), objectStorage);
         this.objectReaderFactory = new DefaultObjectReaderFactory(objectStorage);
-        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory);
+        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = newStreamManager(config.nodeId(), config.nodeEpoch(), false);
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
+        this.objectManager.setCommitStreamSetObjectHook(localIndexCache::updateIndexFromRequest);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
         this.writeAheadLog = buildWAL();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
+        this.streamClient.registerStreamLifeCycleListener(localIndexCache);
         this.kvClient = new ControllerKVClient(this.requestSender);
         this.failover = failover();
-        LocalStreamRangeIndexCache.getInstance().init(config.nodeId(), objectStorage);
 
         S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
         S3StreamThreadPoolMonitor.init();
@@ -208,11 +212,13 @@ public class DefaultS3Client implements Client {
     }
 
     StreamManager newStreamManager(int nodeId, long nodeEpoch, boolean failoverMode) {
-        return new ControllerStreamManager(this.metadataManager, this.requestSender, nodeId, nodeEpoch, () -> brokerServer.metadataCache().autoMQVersion(), failoverMode);
+        return new ControllerStreamManager(this.metadataManager, this.requestSender, nodeId, nodeEpoch,
+            () -> brokerServer.metadataCache().autoMQVersion(), failoverMode);
     }
 
     ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
-        return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch, () -> brokerServer.metadataCache().autoMQVersion(), failoverMode);
+        return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch,
+            () -> brokerServer.metadataCache().autoMQVersion(), failoverMode);
     }
 
     Failover failover() {

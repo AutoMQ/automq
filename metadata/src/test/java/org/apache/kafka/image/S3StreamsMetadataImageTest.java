@@ -63,6 +63,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.Mockito;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -316,6 +317,16 @@ public class S3StreamsMetadataImageTest {
         assertEquals(List.of(8L, 0L, 1L, 5L, 6L, 2L, 9L, 10L, 3L), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
 
         objects = streamsImage.getObjects(STREAM0, 550, ObjectUtils.NOOP_OFFSET, 9, rangeGetter).get();
+        assertEquals(520, objects.startOffset());
+        assertEquals(888, objects.endOffset());
+        assertEquals(2, objects.objects().size());
+        assertEquals(List.of(4L, 9L), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+
+        // test get from local cache
+        broker0WALMetadataImage.clearOffsetIndexMap();
+        LocalStreamRangeIndexCache cache = Mockito.mock(LocalStreamRangeIndexCache.class);
+        Mockito.doAnswer(invocation -> CompletableFuture.completedFuture(4L)).when(cache).searchObjectId(STREAM0, 550);
+        objects = streamsImage.getObjects(STREAM0, 550, ObjectUtils.NOOP_OFFSET, 9, rangeGetter, cache).get();
         assertEquals(520, objects.startOffset());
         assertEquals(888, objects.endOffset());
         assertEquals(2, objects.objects().size());
