@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
@@ -80,6 +81,8 @@ public class S3StreamClient implements StreamClient {
 
     final Map<Long, CompletableFuture<Stream>> openingStreams = new ConcurrentHashMap<>();
     final Map<Long, CompletableFuture<Stream>> closingStreams = new ConcurrentHashMap<>();
+
+    private final List<StreamLifeCycleListener> streamLifeCycleListeners = new CopyOnWriteArrayList<>();
 
     private boolean closed;
 
@@ -129,6 +132,10 @@ public class S3StreamClient implements StreamClient {
             checkState();
             return Optional.ofNullable(openedStreams.get(streamId));
         });
+    }
+
+    public void registerStreamLifeCycleListener(StreamLifeCycleListener listener) {
+        streamLifeCycleListeners.add(listener);
     }
 
     /**
@@ -301,6 +308,9 @@ public class S3StreamClient implements StreamClient {
                 return stream.close().whenComplete((v, e) -> runInLock(() -> {
                     cf.complete(StreamWrapper.this);
                     closingStreams.remove(streamId(), cf);
+                    for (StreamLifeCycleListener listener : streamLifeCycleListeners) {
+                        listener.onStreamClose(streamId());
+                    }
                 }));
             });
         }
@@ -379,5 +389,9 @@ public class S3StreamClient implements StreamClient {
             this.objectsCount = objectsCount;
         }
 
+    }
+
+    public interface StreamLifeCycleListener {
+        void onStreamClose(long streamId);
     }
 }

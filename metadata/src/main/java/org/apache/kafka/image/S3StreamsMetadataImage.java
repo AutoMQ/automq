@@ -129,6 +129,11 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         }
     }
 
+    public CompletableFuture<InRangeObjects> getObjects(long streamId, long startOffset, long endOffset, int limit,
+        RangeGetter rangeGetter) {
+        return getObjects(streamId, startOffset, endOffset, limit, rangeGetter, null);
+    }
+
     /**
      * Get objects in range [startOffset, endOffset) with limit.
      *
@@ -140,8 +145,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      * @return s3 objects within the range
      */
     public CompletableFuture<InRangeObjects> getObjects(long streamId, long startOffset, long endOffset, int limit,
-        RangeGetter rangeGetter) {
-        GetObjectsContext ctx = new GetObjectsContext(streamId, startOffset, endOffset, limit, rangeGetter);
+        RangeGetter rangeGetter, LocalStreamRangeIndexCache indexCache) {
+        GetObjectsContext ctx = new GetObjectsContext(streamId, startOffset, endOffset, limit, rangeGetter, indexCache);
         try {
             getObjects0(ctx);
         } catch (Throwable e) {
@@ -339,8 +344,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      *       should be invalidated, so we can refresh the index from object storage next time
      */
     private CompletableFuture<Long> getStartStreamSetObjectId(int nodeId, long startOffset, GetObjectsContext ctx) {
-        if (LocalStreamRangeIndexCache.getInstance().nodeId() == nodeId) {
-            return LocalStreamRangeIndexCache.getInstance().searchObjectId(ctx.streamId, startOffset);
+        if (ctx.indexCache != null && ctx.indexCache.nodeId() == nodeId) {
+            return ctx.indexCache.searchObjectId(ctx.streamId, startOffset);
         }
         // search from cache and refresh the cache from remote if necessary
         return NodeRangeIndexCache.getInstance().searchObjectId(nodeId, ctx.streamId, startOffset,
@@ -560,17 +565,19 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         long endOffset;
         int limit;
         RangeGetter rangeGetter;
+        LocalStreamRangeIndexCache indexCache;
 
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
         Map<Long, Optional<StreamOffsetRange>> object2range = new HashMap<>();
 
         GetObjectsContext(long streamId, long startOffset, long endOffset, int limit,
-            RangeGetter rangeGetter) {
+            RangeGetter rangeGetter, LocalStreamRangeIndexCache indexCache) {
             this.streamId = streamId;
             this.startOffset = startOffset;
             this.endOffset = endOffset;
             this.limit = limit;
             this.rangeGetter = rangeGetter;
+            this.indexCache = indexCache;
         }
     }
 

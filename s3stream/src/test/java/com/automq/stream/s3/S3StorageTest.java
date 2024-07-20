@@ -15,7 +15,6 @@ import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
 import com.automq.stream.s3.cache.blockcache.StreamReaders;
-import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -39,7 +38,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -82,12 +80,6 @@ public class S3StorageTest {
         objectStorage = new MemoryObjectStorage();
         storage = new S3Storage(config, wal,
             streamManager, objectManager, new StreamReaders(config.blockCacheSize(), objectManager, objectStorage, new DefaultObjectReaderFactory(objectStorage)), objectStorage);
-        LocalStreamRangeIndexCache.getInstance().init(config.nodeId(), objectStorage);
-    }
-
-    @AfterEach
-    public void tearDown() {
-        LocalStreamRangeIndexCache.getInstance().clear();
     }
 
     @Test

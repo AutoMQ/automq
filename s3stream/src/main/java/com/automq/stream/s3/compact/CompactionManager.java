@@ -20,7 +20,6 @@ import com.automq.stream.s3.compact.operator.DataBlockReader;
 import com.automq.stream.s3.compact.operator.DataBlockWriter;
 import com.automq.stream.s3.compact.utils.CompactionUtils;
 import com.automq.stream.s3.compact.utils.GroupByOffsetPredicate;
-import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
@@ -360,13 +359,11 @@ public class CompactionManager {
             request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         timerUtil.reset();
         objectManager.commitStreamSetObject(request)
-            .thenCompose(resp -> {
+            .thenAccept(resp -> {
                 logger.info("Commit compact request succeed, time cost: {} ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 if (s3ObjectLogEnable) {
                     s3ObjectLogger.trace("[Compact] {}", request);
                 }
-                return LocalStreamRangeIndexCache.getInstance().updateIndexFromRequest(request)
-                    .thenCompose(v -> LocalStreamRangeIndexCache.getInstance().upload());
             })
             .exceptionally(ex -> {
                 logger.error("Commit compact request failed, ex: ", ex);
