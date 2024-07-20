@@ -101,6 +101,10 @@ public class NodeS3StreamSetObjectMetadataImage {
         offsetIndexMap.put(streamId, startOffset, index);
     }
 
+    void clearOffsetIndexMap() {
+        offsetIndexMap.clear();
+    }
+
     public int getNodeId() {
         return nodeId;
     }
