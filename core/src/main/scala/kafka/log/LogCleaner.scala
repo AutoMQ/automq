@@ -1115,6 +1115,9 @@ private[log] class Cleaner(val id: Int,
     }
 
     val fetchDataInfo = src.read(src.baseOffset, Integer.MAX_VALUE)
+    if (fetchDataInfo == null) {
+      return
+    }
     for (batch <- fetchDataInfo.records.batches().asScala) {
       checkDone(topicPartition)
       val records = MemoryRecords.readableRecords(batch.asInstanceOf[DefaultRecordBatch].buffer())
@@ -1148,6 +1151,9 @@ private[log] class Cleaner(val id: Int,
                                        stats: CleanerStats): Boolean = {
     val maxDesiredMapSize = (map.slots * this.dupBufferLoadFactor).toInt
     val fetchDataInfo = segment.read(startOffset, Integer.MAX_VALUE, Long.MaxValue)
+    if (fetchDataInfo == null) {
+      return false
+    }
     for (batch <- fetchDataInfo.records.batches().asScala) {
       checkDone(topicPartition)
       throttler.maybeThrottle(batch.sizeInBytes())
