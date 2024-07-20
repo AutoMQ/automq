@@ -1,21 +1,15 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Copyright 2024, AutoMQ HK Limited.
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.controller;
+package org.apache.kafka.controller.stream;
 
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.metadata.ObjectUtils;
@@ -37,7 +31,9 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.controller.stream.S3ObjectControlManager;
+import org.apache.kafka.controller.ControllerRequestContext;
+import org.apache.kafka.controller.ControllerResult;
+import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -51,6 +47,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -168,6 +165,8 @@ public class S3ObjectControlManagerTest {
     public void testCommitObject() {
         // 1. prepare 1 object
         prepareOneObject(60 * 1000);
+        io.netty.util.Timeout timeout = manager.preparedObjectsTimeouts.get(0L);
+        assertFalse(timeout.isCancelled());
 
         // 2. commit an object which not exist in controller
         long expectedCommittedTs = 1313L;
@@ -181,6 +180,8 @@ public class S3ObjectControlManagerTest {
         assertEquals(1, result2.records().size());
         S3ObjectRecord record = (S3ObjectRecord) result2.records().get(0).message();
         manager.replay(record);
+        assertFalse(manager.preparedObjectsTimeouts.containsKey(0L));
+        assertTrue(timeout.isCancelled());
 
         // 4. commit again
         ControllerResult<Errors> result3 = manager.commitObject(0, 1024, expectedCommittedTs, ObjectAttributes.DEFAULT.attributes());
@@ -215,12 +216,17 @@ public class S3ObjectControlManagerTest {
         assertEquals(1, manager.objectsMetadata().size());
         // 2. wait the prepared object expired, it should be marked as destroyed
         time.sleep(4000L);
+        manager.handlePreparedObjectTimeout(0L);
+        assertTrue(manager.preparedObjectsTimeouts.containsKey(0L));
         replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(1, manager.objectsMetadata().size());
         S3Object object = manager.objectsMetadata().get(0L);
         assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
+        assertFalse(manager.preparedObjectsTimeouts.containsKey(0L));
         // 3. 2s later, it should be removed
-        time.sleep(2000L);
+        time.sleep(1100L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
+        time.sleep(1100L);
         replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(0, manager.objectsMetadata().size());
         Mockito.verify(objectStorage, times(1)).delete(anyList());
@@ -250,6 +256,8 @@ public class S3ObjectControlManagerTest {
         genMarkDestroyObject();
         time.sleep(1001L);
         manager.checkS3ObjectsLifecycle();
+        time.sleep(1001L);
+        manager.checkS3ObjectsLifecycle();
         @SuppressWarnings("unchecked") ArgumentCaptor<List<ObjectPath>> ac = ArgumentCaptor.forClass(List.class);
         Mockito.verify(objectStorage, times(1)).delete(ac.capture());
         assertEquals(List.of(ObjectUtils.genKey(0, 0L)), ac.getValue().stream().map(ObjectPath::key).collect(Collectors.toList()));
@@ -259,10 +267,13 @@ public class S3ObjectControlManagerTest {
         // the last delete is inflight, so the next check should not trigger another delete
         manager.checkS3ObjectsLifecycle();
         Mockito.verify(objectStorage, times(1)).delete(ac.capture());
+        replay(manager, manager.notifyS3ObjectDeleted(List.of(0L)).records());
 
         // complete the last delete
         delayTrigger.complete(null);
 
+        manager.checkS3ObjectsLifecycle();
+        time.sleep(1001L);
         manager.checkS3ObjectsLifecycle();
         Mockito.verify(objectStorage, times(2)).delete(ac.capture());
         assertEquals(List.of(ObjectUtils.genKey(0, 1L)), ac.getValue().stream().map(ObjectPath::key).collect(Collectors.toList()));
@@ -317,6 +328,9 @@ public class S3ObjectControlManagerTest {
         assertEquals(1700, manager.objectsMetadata().size());
         // 2. 3s later, they should be marked as destroyed
         time.sleep(4000L);
+        for (int i = 0; i < 1700; i++) {
+            manager.handlePreparedObjectTimeout(i);
+        }
         replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(1700, manager.objectsMetadata().size());
         for (int i = 0; i < 1700; i++) {
@@ -324,7 +338,9 @@ public class S3ObjectControlManagerTest {
             assertEquals(S3ObjectState.MARK_DESTROYED, object.getS3ObjectState());
         }
         // 3. 1s later, they should be removed
-        time.sleep(2000L);
+        time.sleep(1100L);
+        replay(manager, manager.checkS3ObjectsLifecycle().records());
+        time.sleep(1100L);
         replay(manager, manager.checkS3ObjectsLifecycle().records());
         assertEquals(0, manager.objectsMetadata().size(), "objectsMetadata: " + manager.objectsMetadata().keySet());
 

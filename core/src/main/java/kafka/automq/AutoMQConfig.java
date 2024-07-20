@@ -17,7 +17,6 @@ import java.util.List;
 import kafka.server.KafkaConfig;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.config.ConfigDef;
-import org.apache.kafka.server.config.Defaults;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -105,31 +104,39 @@ public class AutoMQConfig {
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_CONFIG = "s3.stream.set.object.compaction.interval.minutes";
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_DOC = "Set the interpublic static final String for Stream object compaction. The smaller this value, the smaller the scale of metadata storage, and the earlier the data can become compact. " +
         "However, the number of compactions that the final generated stream object goes through will increase.";
+    public static final int S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL = 10; // 10min
 
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_CONFIG = "s3.stream.set.object.compaction.cache.size";
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_DOC = "The size of memory is available during the Stream object compaction process. The larger this value, the lower the cost of API calls.";
+    public static final long S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE = 200 * 1024 * 1024; // 200MB
 
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE_CONFIG = "s3.stream.set.object.compaction.stream.split.size";
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE_DOC = "During the Stream object compaction process, if the amount of data in a single stream exceeds this threshold, the data of this stream will be directly split and written into a single stream object. " +
         "The smaller this value, the earlier the data can be split from the stream set object, the lower the subsequent API call cost for stream object compaction, but the higher the API call cost for splitting.";
+    public static final long S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE = 8 * 1024 * 1024; // 8MB
 
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES_CONFIG = "s3.stream.set.object.compaction.force.split.minutes";
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES_DOC = "The stream set object compaction force split period in minutes.";
+    public static final int S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES = 120; // 120min
 
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM_CONFIG = "s3.stream.set.object.compaction.max.num";
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM_DOC = "The maximum number of stream set objects to be compact at one time.";
+    public static final int S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM = 500;
 
     public static final String S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT_CONFIG = "s3.max.stream.num.per.stream.set.object";
     public static final String S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT_DOC = "The maximum number of streams allowed in single stream set object";
+    public static final int S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT = 100000;
 
     public static final String S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_CONFIG = "s3.max.stream.object.num.per.commit";
     public static final String S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_DOC = "The maximum number of stream objects in single commit request";
+    public static final int S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT = 10000;
 
     public static final String S3_MOCK_ENABLE_CONFIG = "s3.mock.enable";
     public static final String S3_MOCK_ENABLE_DOC = "The S3 mock enable flag, replace all S3 related module with memory-mocked implement.";
 
     public static final String S3_OBJECT_DELETION_MINUTES_CONFIG = "s3.object.delete.retention.minutes";
     public static final String S3_OBJECT_DELETION_MINUTES_DOC = "The marked-for-deletion S3 object retention time in minutes, default is 10 minutes (600s).";
+    public static final long S3_OBJECT_DELETE_RETENTION_MINUTES = 1; // 1min
 
     public static final String S3_OBJECT_LOG_ENABLE_CONFIG = "s3.object.log.enable";
     public static final String S3_OBJECT_LOG_ENABLE_DOC = "Whether to enable S3 object trace log.";
@@ -137,9 +144,11 @@ public class AutoMQConfig {
     public static final String S3_NETWORK_BASELINE_BANDWIDTH_CONFIG = "s3.network.baseline.bandwidth";
     public static final String S3_NETWORK_BASELINE_BANDWIDTH_DOC = "The total available bandwidth for object storage requests. This is used to prevent stream set object compaction and catch-up read from monopolizing normal read and write traffic. Produce and Consume will also separately consume traffic in and traffic out. " +
         "For example, suppose this value is set to 100MB/s, and the normal read and write traffic is 80MB/s, then the available traffic for stream set object compaction is 20MB/s.";
+    public static final long S3_NETWORK_BASELINE_BANDWIDTH = 100 * 1024 * 1024; // 100MB/s
 
     public static final String S3_NETWORK_REFILL_PERIOD_MS_CONFIG = "s3.network.refill.period.ms";
     public static final String S3_NETWORK_REFILL_PERIOD_MS_DOC = "The network bandwidth token refill period in milliseconds.";
+    public static final int S3_REFILL_PERIOD_MS = 10; // 10ms
 
     public static final String S3_METRICS_ENABLE_CONFIG = "s3.telemetry.metrics.enable";
     public static final String S3_METRICS_ENABLE_DOC = "Whether to enable OTel metrics exporter.";
@@ -152,6 +161,7 @@ public class AutoMQConfig {
 
     public static final String S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG = "s3.telemetry.exporter.otlp.protocol";
     public static final String S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_DOC = "The protocol to use when using OTLP exporter.";
+    public static final String S3_EXPORTER_OTLPPROTOCOL = "grpc";
 
     public static final String S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG = "s3.telemetry.exporter.otlp.compression.enable";
     public static final String S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_DOC = "Whether to enable compression for OTLP exporter, valid only when use http protocol.";
@@ -161,6 +171,7 @@ public class AutoMQConfig {
 
     public static final String S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG = "s3.telemetry.exporter.report.interval.ms";
     public static final String S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC = "This configuration controls how often the metrics should be exported.";
+    public static final int S3_METRICS_EXPORTER_REPORT_INTERVAL_MS = 30000; // 30s
 
     public static final String S3_TELEMETRY_METRICS_LEVEL_CONFIG = "s3.telemetry.metrics.level";
     public static final String S3_TELEMETRY_METRICS_LEVEL_DOC = "The metrics level that will be used on recording metrics. The \"INFO\" level includes most of the metrics that users should care about, for example throughput and latency of common stream operations. " +
@@ -177,12 +188,15 @@ public class AutoMQConfig {
 
     public static final String S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG = "s3.telemetry.tracer.span.scheduled.delay.ms";
     public static final String S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_DOC = "The delay in milliseconds to export queued spans";
+    public static final int S3_SPAN_SCHEDULED_DELAY_MS = 1000; // 1s
 
     public static final String S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG = "s3.telemetry.tracer.span.max.queue.size";
     public static final String S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_DOC = "The max number of spans that can be queued before dropped";
+    public static final int S3_SPAN_MAX_QUEUE_SIZE = 5120;
 
     public static final String S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG = "s3.telemetry.tracer.span.max.batch.size";
     public static final String S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_DOC = "The max number of spans that can be exported in a single batch";
+    public static final int S3_SPAN_MAX_BATCH_SIZE = 1024;
 
     public static final String S3_TELEMETRY_OPS_ENABLED_CONFIG = "s3.telemetry.ops.enabled";
     public static final String S3_TELEMETRY_OPS_ENABLED_DOC = "Enable ops telemetry.";
@@ -229,32 +243,32 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_STREAM_OBJECT_COMPACTION_MAX_SIZE_BYTES_CONFIG, LONG, 1073741824L, MEDIUM, AutoMQConfig.S3_STREAM_OBJECT_COMPACTION_MAX_SIZE_BYTES_DOC)
             .define(AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_MAX_COUNT_CONFIG, INT, Integer.MAX_VALUE, MEDIUM, AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_MAX_COUNT_DOC)
             .define(AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_BASE_DELAY_MS_CONFIG, LONG, 500, MEDIUM, AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_BASE_DELAY_MS_DOC)
-            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_CONFIG, INT, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_DOC)
-            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_CONFIG, LONG, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_DOC)
-            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE_CONFIG, LONG, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE_DOC)
-            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES_CONFIG, INT, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES_DOC)
-            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM_CONFIG, INT, Defaults.S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM_DOC)
-            .define(AutoMQConfig.S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT_CONFIG, INT, Defaults.S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT, MEDIUM, AutoMQConfig.S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT_DOC)
-            .define(AutoMQConfig.S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_CONFIG, INT, Defaults.S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT, MEDIUM, AutoMQConfig.S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_DOC)
+            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_CONFIG, INT, S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_DOC)
+            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_CONFIG, LONG, S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_DOC)
+            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE_CONFIG, LONG, S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE_DOC)
+            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES_CONFIG, INT, S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES_DOC)
+            .define(AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM_CONFIG, INT, S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM, MEDIUM, AutoMQConfig.S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM_DOC)
+            .define(AutoMQConfig.S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT_CONFIG, INT, S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT, MEDIUM, AutoMQConfig.S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT_DOC)
+            .define(AutoMQConfig.S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_CONFIG, INT, S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT, MEDIUM, AutoMQConfig.S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_DOC)
             .define(AutoMQConfig.S3_MOCK_ENABLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_MOCK_ENABLE_DOC)
-            .define(AutoMQConfig.S3_OBJECT_DELETION_MINUTES_CONFIG, LONG, Defaults.S3_OBJECT_DELETE_RETENTION_MINUTES, MEDIUM, AutoMQConfig.S3_OBJECT_DELETION_MINUTES_DOC)
+            .define(AutoMQConfig.S3_OBJECT_DELETION_MINUTES_CONFIG, LONG, S3_OBJECT_DELETE_RETENTION_MINUTES, MEDIUM, AutoMQConfig.S3_OBJECT_DELETION_MINUTES_DOC)
             .define(AutoMQConfig.S3_OBJECT_LOG_ENABLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_OBJECT_LOG_ENABLE_DOC)
-            .define(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, LONG, Defaults.S3_NETWORK_BASELINE_BANDWIDTH, MEDIUM, AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_DOC)
-            .define(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG, INT, Defaults.S3_REFILL_PERIOD_MS, MEDIUM, AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_DOC)
+            .define(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, LONG, S3_NETWORK_BASELINE_BANDWIDTH, MEDIUM, AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_DOC)
+            .define(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG, INT, S3_REFILL_PERIOD_MS, MEDIUM, AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_DOC)
             .define(AutoMQConfig.S3_METRICS_ENABLE_CONFIG, BOOLEAN, true, MEDIUM, AutoMQConfig.S3_METRICS_ENABLE_DOC)
             .define(AutoMQConfig.S3_TRACE_ENABLE_CONFIG, BOOLEAN, false, MEDIUM, AutoMQConfig.S3_TRACE_ENABLE_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG, STRING, "INFO", MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_TYPE_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_TYPE_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG, STRING, Defaults.S3_EXPORTER_OTLPPROTOCOL, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG, STRING, S3_EXPORTER_OTLPPROTOCOL, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG, BOOLEAN, false, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_TRACE_EXPORTER_OTLP_ENDPOINT_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACE_EXPORTER_OTLP_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_DOC)
             .define(AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_CONFIG, INT, 0, MEDIUM, AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG, INT, Defaults.S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG, INT, Defaults.S3_SPAN_SCHEDULED_DELAY_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG, INT, Defaults.S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG, INT, Defaults.S3_SPAN_MAX_BATCH_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG, INT, S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG, INT, S3_SPAN_SCHEDULED_DELAY_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG, INT, S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG, INT, S3_SPAN_MAX_BATCH_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
