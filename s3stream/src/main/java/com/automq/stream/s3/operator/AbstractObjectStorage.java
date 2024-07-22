@@ -45,6 +45,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,7 +63,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final Semaphore inflightReadLimiter;
     private final Semaphore inflightWriteLimiter;
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
-    private final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
+    protected final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
     protected final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
     protected final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-limiter-cb-executor", true, LOGGER);
@@ -138,7 +139,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         if (!bucketCheck(options.bucket(), cf)) {
             return cf;
         }
-        if (end != -1L && start > end) {
+        if (end != RANGE_READ_TO_END && start > end) {
             IllegalArgumentException ex = new IllegalArgumentException();
             LOGGER.error("[UNEXPECTED] rangeRead [{}, {})", start, end, ex);
             cf.completeExceptionally(ex);
@@ -148,10 +149,32 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return cf;
         }
 
-        TimerUtil timerUtil = new TimerUtil();
-        networkInboundBandwidthLimiter.consume(options.throttleStrategy(), end - start).whenComplete((v, ex) -> {
-            NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, options.throttleStrategy())
-                .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        BiFunction<ThrottleStrategy, Long, CompletableFuture<Void>> networkInboundBandwidthLimiterFunction =
+            (throttleStrategy, size) -> {
+                long startTime = System.nanoTime();
+                return networkInboundBandwidthLimiter.consume(throttleStrategy, size)
+                    .whenComplete((v, ex) ->
+                        NetworkStats.getInstance()
+                            .networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, throttleStrategy)
+                            .record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+
+            };
+
+        long acquiredSize = end - start;
+
+        if (end == RANGE_READ_TO_END) {
+            // we don't know the size so acquire size 1 first.
+            acquiredSize = 1;
+
+            // when read complete use bypass to forceConsume limiter token.
+            cf.whenComplete((data, ex) -> {
+                if (ex == null && data.readableBytes() - 1 > 0) {
+                    networkInboundBandwidthLimiterFunction.apply(ThrottleStrategy.BYPASS, (long) (data.readableBytes() - 1));
+                }
+            });
+        }
+
+        networkInboundBandwidthLimiterFunction.apply(options.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
             if (ex != null) {
                 cf.completeExceptionally(ex);
             } else {
@@ -160,6 +183,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 }
             }
         });
+
         Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end), 1, TimeUnit.MINUTES);
         return cf.whenComplete((rst, ex) -> timeout.cancel());
     }
@@ -566,12 +590,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         TimerUtil timerUtil = new TimerUtil();
         long size = end - start;
         doRangeRead(options, path, start, end).thenAccept(buf -> {
+            // the end may be RANGE_READ_TO_END (-1) for read all object
+            long dataSize = buf.readableBytes();
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
-                    path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                    path, start, end, dataSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             }
-            S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, size);
-            S3OperationStats.getInstance().getObjectStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, dataSize);
+            S3OperationStats.getInstance().getObjectStats(dataSize, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(buf);
         }).exceptionally(ex -> {
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.GET_OBJECT);
@@ -747,7 +773,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return objectPath != null &&
                    objectPath.equals(readTask.objectPath) &&
                    dataSparsityRate <= this.maxMergeReadSparsityRate &&
-                   readTask.end != -1;
+                   readTask.end != RANGE_READ_TO_END;
         }
 
         void handleReadCompleted(ByteBuf rst, Throwable ex) {
@@ -756,7 +782,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             } else {
                 for (AbstractObjectStorage.ReadTask readTask : readTasks) {
                     int sliceStart = (int) (readTask.start - start);
-                    if (readTask.end == -1L) {
+                    if (readTask.end == RANGE_READ_TO_END) {
                         readTask.cf.complete(rst.retainedSlice(sliceStart, rst.readableBytes()));
                     } else {
                         readTask.cf.complete(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));

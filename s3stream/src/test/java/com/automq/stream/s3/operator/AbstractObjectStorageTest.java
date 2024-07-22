@@ -14,12 +14,14 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,10 +29,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 class AbstractObjectStorageTest {
 
     AbstractObjectStorage objectStorage;
@@ -141,5 +147,51 @@ class AbstractObjectStorageTest {
         buf = cf2.get();
         assertEquals(2048, buf.readableBytes());
         buf.release();
+    }
+
+    @Test
+    void testReadToEndWithNetworkLimiter() throws InterruptedException {
+        int objectSize = 4096;
+        objectStorage = new MemoryObjectStorage(false);
+        MemoryObjectStorage memoryObjectStorage = (MemoryObjectStorage) objectStorage;
+        RecordTestNetworkBandwidthLimiter networkInboundBandwidthLimiter = (RecordTestNetworkBandwidthLimiter) memoryObjectStorage.getNetworkInboundBandwidthLimiter();
+
+        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.STREAM);
+        objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(objectSize));
+        objectStorage = spy(objectStorage);
+
+        // check read to end range read will increase the inboundWidthLimiter
+        CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0, -1L);
+
+        cf2.join();
+        Thread.sleep(100); // wait for async reacquire token
+        assertEquals(objectSize, networkInboundBandwidthLimiter.getConsumed());
+    }
+
+    @Test
+    void testRangeReadAllFailCanFinishTheReturnedCompletableFuture() {
+        int objectSize = 4096;
+        MemoryObjectStorage memoryObjectStorage = new MemoryObjectStorage(true);
+
+        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.STREAM);
+        memoryObjectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(objectSize));
+        memoryObjectStorage = spy(memoryObjectStorage);
+
+        // mock read fail can finish the return completeFuture
+        when(memoryObjectStorage.doRangeRead(any(), anyString(), anyLong(), anyLong()))
+            .thenReturn(CompletableFuture.failedFuture(new IllegalArgumentException("mock exception")));
+
+        CompletableFuture<ByteBuf> cf4 = memoryObjectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0, -1L);
+        memoryObjectStorage.tryMergeRead();
+
+        try {
+            cf4.get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            // expected.
+        }
+
+        assertTrue(cf4.isDone() && cf4.isCompletedExceptionally());
     }
 }
