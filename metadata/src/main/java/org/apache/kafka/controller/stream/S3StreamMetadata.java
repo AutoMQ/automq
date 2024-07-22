@@ -17,6 +17,13 @@
 package org.apache.kafka.controller.stream;
 
 import com.automq.stream.s3.metadata.StreamState;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -26,8 +33,6 @@ import org.apache.kafka.timeline.TimelineLong;
 import org.apache.kafka.timeline.TimelineObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Map;
 
 public class S3StreamMetadata {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamMetadata.class);
@@ -48,7 +53,7 @@ public class S3StreamMetadata {
     private final TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
 
     public S3StreamMetadata(long streamId, long currentEpoch, int currentRangeIndex, long startOffset,
-                            StreamState currentState, Map<String, String> tags, SnapshotRegistry registry) {
+        StreamState currentState, Map<String, String> tags, SnapshotRegistry registry) {
         this.streamId = streamId;
         this.currentEpoch = new TimelineLong(registry);
         this.currentEpoch.set(currentEpoch);
@@ -137,15 +142,47 @@ public class S3StreamMetadata {
         return streamObjects;
     }
 
+    public List<RangeMetadata> checkRemovableRanges() {
+        NavigableMap<Long, S3StreamObject> objects = new TreeMap<>();
+        streamObjects.forEach((objectId, object) -> objects.put(object.startOffset(), object));
+        // Get the first continuous data range which stream objects covered.
+        long startOffset = -1L;
+        long endOffset = -1L;
+        for (S3StreamObject object : objects.values()) {
+            if (startOffset == -1L) {
+                startOffset = object.startOffset();
+                endOffset = object.endOffset();
+                continue;
+            }
+            if (object.startOffset() != endOffset) {
+                break;
+            }
+            endOffset = object.endOffset();
+        }
+        if (startOffset == -1L) {
+            return Collections.emptyList();
+        }
+        List<RangeMetadata> removableRanges = new ArrayList<>();
+        List<RangeMetadata> ranges = this.ranges.values().stream().sorted(RangeMetadata::compareTo).collect(Collectors.toList());
+        for (int i = 0; i < ranges.size() - 1; i++) {
+            // ranges.size() - 1: skip the last active range
+            RangeMetadata range = ranges.get(i);
+            if (startOffset <= range.startOffset() && range.endOffset() <= endOffset) {
+                removableRanges.add(range);
+            }
+        }
+        return removableRanges;
+    }
+
     @Override
     public String toString() {
         return "S3StreamMetadata{" +
-                "currentEpoch=" + currentEpoch.get() +
-                ", currentState=" + currentState.get() +
-                ", currentRangeIndex=" + currentRangeIndex.get() +
-                ", startOffset=" + startOffset.get() +
-                ", ranges=" + ranges +
-                ", streamObjects=" + streamObjects +
-                '}';
+            "currentEpoch=" + currentEpoch.get() +
+            ", currentState=" + currentState.get() +
+            ", currentRangeIndex=" + currentRangeIndex.get() +
+            ", startOffset=" + startOffset.get() +
+            ", ranges=" + ranges +
+            ", streamObjects=" + streamObjects +
+            '}';
     }
 }

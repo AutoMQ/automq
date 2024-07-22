@@ -326,6 +326,13 @@ public class StreamControlManager {
             .setRangeIndex(newRangeIndex), (short) 0));
         resp.setStartOffset(streamMetadata.startOffset());
         resp.setNextOffset(nextRangeStartOffset);
+
+        for (RangeMetadata removableRange : streamMetadata.checkRemovableRanges()) {
+            records.add(new ApiMessageAndVersion(new RemoveRangeRecord()
+                .setStreamId(streamId)
+                .setRangeIndex(removableRange.rangeIndex()), (short) 0));
+        }
+
         log.info("[OpenStream] successfully open the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
             streamId, epoch, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
@@ -1373,7 +1380,6 @@ public class StreamControlManager {
             this.index = 0;
         }
     }
-
 
     private void logCommitStreamSetObject(CommitStreamSetObjectRequestData req) {
         if (!log.isInfoEnabled()) {
