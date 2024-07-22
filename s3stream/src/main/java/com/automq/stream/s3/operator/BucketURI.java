@@ -15,13 +15,8 @@ import com.automq.stream.utils.SecretUtils;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -70,10 +65,10 @@ public class BucketURI {
                 path = path.substring(0, queryIndex);
             }
             bucket = path.substring(2);
-            Map<String, List<String>> queries = splitQuery(uri);
-            String endpoint = getString(queries, ENDPOINT_KEY, EMPTY_STRING);
+            Map<String, List<String>> queries = URIUtils.splitQuery(uri);
+            String endpoint = URIUtils.getString(queries, ENDPOINT_KEY, EMPTY_STRING);
             queries.remove(ENDPOINT_KEY);
-            String region = getString(queries, REGION_KEY, EMPTY_STRING);
+            String region = URIUtils.getString(queries, REGION_KEY, EMPTY_STRING);
             queries.remove(REGION_KEY);
             return new BucketURI(bucketId, protocol, endpoint, bucket, region, queries);
         } catch (URISyntaxException e) {
@@ -118,19 +113,19 @@ public class BucketURI {
     }
 
     public String extensionString(String key) {
-        return getString(extension, key, null);
+        return URIUtils.getString(extension, key, null);
     }
 
     public String extensionString(String key, String defaultVal) {
-        return getString(extension, key, defaultVal);
+        return URIUtils.getString(extension, key, defaultVal);
     }
 
     public List<String> extensionStringList(String key) {
-        return getStringList(extension, key);
+        return URIUtils.getStringList(extension, key);
     }
 
     public boolean extensionBool(String key, boolean defaultVal) {
-        String value = getString(extension, key, null);
+        String value = URIUtils.getString(extension, key, null);
         if (StringUtils.isBlank(value)) {
             return defaultVal;
         }
@@ -163,42 +158,5 @@ public class BucketURI {
         });
         sb.append("}");
         return sb.toString();
-    }
-
-    private static String getString(Map<String, List<String>> queries, String key, String defaultValue) {
-        List<String> value = queries.get(key);
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value.size() > 1) {
-            throw new IllegalArgumentException("expect only one value for key: " + key + " but found " + value);
-        }
-        return value.get(0);
-    }
-
-    private static List<String> getStringList(Map<String, List<String>> queries, String key) {
-        List<String> value = queries.get(key);
-        if (value == null) {
-            return Collections.emptyList();
-        }
-        return value;
-    }
-
-    public static Map<String, List<String>> splitQuery(URI uri) {
-        if (StringUtils.isBlank(uri.getQuery())) {
-            return new HashMap<>();
-        }
-        final Map<String, List<String>> queryPairs = new LinkedHashMap<>();
-        final String[] pairs = uri.getQuery().split("&");
-        for (String pair : pairs) {
-            final int idx = pair.indexOf("=");
-            final String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8) : pair;
-            if (!queryPairs.containsKey(key)) {
-                queryPairs.put(key, new LinkedList<>());
-            }
-            final String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8) : null;
-            queryPairs.get(key).add(value);
-        }
-        return queryPairs;
     }
 }
