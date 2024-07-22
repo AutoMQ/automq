@@ -41,6 +41,10 @@ public class NodeRangeIndexCache {
         return instance;
     }
 
+    void clear() {
+        this.nodeRangeIndexMap.clear();
+    }
+
     // fot test only
     boolean isValid(long nodeId) {
         return this.nodeRangeIndexMap.containsKey(nodeId);

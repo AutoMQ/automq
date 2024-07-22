@@ -19,10 +19,22 @@ import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 public class NodeRangeIndexCacheTest {
+
+    @BeforeEach
+    public void setUp() {
+        NodeRangeIndexCache.getInstance().clear();
+    }
+
+    @AfterEach
+    public void tearDown() {
+        NodeRangeIndexCache.getInstance().clear();
+    }
 
     @Test
     public void testIndex() {
