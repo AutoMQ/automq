@@ -292,7 +292,6 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
                     .add(new RangeIndex(startOffset, endOffset, objectId));
             }
         }
-        data.release();
         return rangeIndexMap;
     }
 
