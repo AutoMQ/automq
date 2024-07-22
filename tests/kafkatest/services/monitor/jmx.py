@@ -123,7 +123,7 @@ class JmxMixin(object):
         if any(not time_to_stats for time_to_stats in self.jmx_stats):
             return
 
-       if start_time_sec is None:
+        if start_time_sec is None:
             start_time_sec = min([min(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
             self.jmx_start_time_sec = start_time_sec
         if end_time_sec is None:
