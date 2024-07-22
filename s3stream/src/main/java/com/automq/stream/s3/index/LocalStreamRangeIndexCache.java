@@ -57,9 +57,9 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private ObjectStorage objectStorage;
     private CompletableFuture<Void> initCf = new CompletableFuture<>();
 
-    public LocalStreamRangeIndexCache() {
+    public void start() {
         executorService.scheduleAtFixedRate(this::batchUpload, 0, 10, TimeUnit.MILLISECONDS);
-        executorService.scheduleAtFixedRate(this::flush, 0, 1, TimeUnit.MINUTES);
+        executorService.scheduleAtFixedRate(this::flush, 1, 1, TimeUnit.MINUTES);
     }
 
     // for test
