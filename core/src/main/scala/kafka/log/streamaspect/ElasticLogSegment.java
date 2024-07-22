@@ -405,6 +405,9 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         Utils.closeQuietly(txnIndex, "txnIndex", LOGGER);
     }
 
+    /**
+     * check LocalLog.deleteSegments before you change this function.
+     */
     @Override
     public void deleteIfExists() throws IOException {
         logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_DELETE);

@@ -17,6 +17,7 @@
 
 package kafka.log
 
+import kafka.log.streamaspect.ElasticLogSegment
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.{KafkaStorageException, OffsetOutOfRangeException}
 import org.apache.kafka.common.message.FetchResponseData
@@ -946,9 +947,19 @@ object LocalLog extends Logging {
       info(s"${logPrefix}Deleting segment files ${segmentsToDelete.mkString(",")}")
       val parentDir = dir.getParent
       maybeHandleIOException(logDirFailureChannel, parentDir, s"Error while deleting segments for $topicPartition in dir $parentDir") {
-        segmentsToDelete.foreach { segment =>
-          segment.deleteIfExists()
-        }
+          // AutoMQ inject start
+          val head = segmentsToDelete.head
+          if (head != null && head.isInstanceOf[ElasticLogSegment]) {
+              // ElasticLogSegment.deleteIfExists will only persistent the meta base on the max offset
+              // so only trigger the maxBaseOffsetSegment here.
+              val maxBaseOffsetSegment = segmentsToDelete.maxBy(_.baseOffset())(Ordering.Long)
+              maxBaseOffsetSegment.deleteIfExists()
+          } else {
+              segmentsToDelete.foreach { segment =>
+                  segment.deleteIfExists()
+              }
+          }
+          // AutoMQ inject end
       }
     }
 
