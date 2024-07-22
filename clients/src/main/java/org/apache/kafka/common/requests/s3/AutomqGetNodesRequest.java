@@ -14,7 +14,6 @@ package org.apache.kafka.common.requests.s3;
 import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.AutomqGetNodesRequestData;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
-import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -47,18 +46,18 @@ public class AutomqGetNodesRequest extends AbstractRequest {
         return new AutomqGetNodesRequest(new AutomqGetNodesRequestData(new ByteBufferAccessor(buffer), version), version);
     }
 
-    public static class Builder extends AbstractRequest.Builder<CommitStreamObjectRequest> {
+    public static class Builder extends AbstractRequest.Builder<AutomqGetNodesRequest> {
 
-        private final CommitStreamObjectRequestData data;
+        private final AutomqGetNodesRequestData data;
 
-        public Builder(CommitStreamObjectRequestData data) {
-            super(ApiKeys.COMMIT_STREAM_OBJECT);
+        public Builder(AutomqGetNodesRequestData data) {
+            super(ApiKeys.AUTOMQ_GET_NODES);
             this.data = data;
         }
 
         @Override
-        public CommitStreamObjectRequest build(short version) {
-            return new CommitStreamObjectRequest(data, version);
+        public AutomqGetNodesRequest build(short version) {
+            return new AutomqGetNodesRequest(data, version);
         }
 
         @Override

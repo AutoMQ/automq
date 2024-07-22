@@ -63,7 +63,7 @@
         "versions": "0+",
         "about": "Whether the node has opening streams"
       },
-      { "name": "Tags", "type": "[]Tag", "versions": "0+", "about": "The stream tags.", "fields": [
+      { "name": "Tags", "type": "[]Tag", "versions": "0+", "about": "The node tags.", "fields": [
         {
           "name": "Key",
           "type": "string",

@@ -24,7 +24,7 @@ public class AutomqRegisterNodeResponse extends AbstractResponse {
     private final AutomqRegisterNodeResponseData data;
 
     public AutomqRegisterNodeResponse(AutomqRegisterNodeResponseData data) {
-        super(ApiKeys.COMMIT_STREAM_OBJECT);
+        super(ApiKeys.AUTOMQ_REGISTER_NODE);
         this.data = data;
     }
 

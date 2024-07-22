@@ -40,7 +40,7 @@
       "about": "The WAL configuration"
     },
     { "name": "Tags", "type": "[]Tag", "versions": "0+",
-      "about": "The stream tags.", "fields": [
+      "about": "The node tags.", "fields": [
       { "name": "Key", "type": "string", "versions": "0+", "mapKey": true,
         "about": "The tag key." },
       { "name": "Value", "type": "string", "versions": "0+",
