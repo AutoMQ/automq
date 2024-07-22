@@ -150,7 +150,7 @@ class AbstractObjectStorageTest {
     }
 
     @Test
-    void testReadToEndWithNetworkLimiter() {
+    void testReadToEndWithNetworkLimiter() throws InterruptedException {
         int objectSize = 4096;
         objectStorage = new MemoryObjectStorage(false);
         MemoryObjectStorage memoryObjectStorage = (MemoryObjectStorage) objectStorage;
@@ -164,15 +164,8 @@ class AbstractObjectStorageTest {
         CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0, -1L);
 
         cf2.join();
-        assertEquals(objectSize, networkInboundBandwidthLimiter.getConsumedAndReset());
-
-        // mock networkInboundLimiter throw exception won't fail the read CompletableFuture
-        networkInboundBandwidthLimiter.setThrowExceptionWhenConsume(true);
-        CompletableFuture<ByteBuf> cf3 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0, -1L);
-
-        ByteBuf join = cf3.join();
-        assertEquals(objectSize, join.readableBytes());
-
+        Thread.sleep(100); // wait for async reacquire token
+        assertEquals(objectSize, networkInboundBandwidthLimiter.getConsumed());
     }
 
     @Test
@@ -192,8 +185,7 @@ class AbstractObjectStorageTest {
         memoryObjectStorage.tryMergeRead();
 
         try {
-            ByteBuf byteBuf = cf4.get();
-            System.out.println(byteBuf);
+            cf4.get();
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } catch (ExecutionException e) {

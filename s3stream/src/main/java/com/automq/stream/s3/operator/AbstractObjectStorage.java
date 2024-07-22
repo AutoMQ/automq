@@ -45,7 +45,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.LongFunction;
+import java.util.function.BiFunction;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -149,55 +149,43 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return cf;
         }
 
-        LongFunction<CompletableFuture<Void>> networkInboundBandwidthLimiterFunction =
-            size -> {
+        BiFunction<ThrottleStrategy, Long, CompletableFuture<Void>> networkInboundBandwidthLimiterFunction =
+            (throttleStrategy, size) -> {
                 long startTime = System.nanoTime();
-                return networkInboundBandwidthLimiter.consume(options.throttleStrategy(), size)
+                return networkInboundBandwidthLimiter.consume(throttleStrategy, size)
                     .whenComplete((v, ex) ->
                         NetworkStats.getInstance()
-                            .networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, options.throttleStrategy())
+                            .networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, throttleStrategy)
                             .record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
 
             };
 
-        if (end != RANGE_READ_TO_END) {
-            // apply limiter first then trigger read logic.
-            networkInboundBandwidthLimiterFunction.apply(end - start).whenComplete((v, ex) -> {
-                if (ex != null) {
-                    cf.completeExceptionally(ex);
-                } else {
-                    synchronized (waitingReadTasks) {
-                        waitingReadTasks.add(new AbstractObjectStorage.ReadTask(options, objectPath, start, end, cf));
-                    }
+        long acquiredSize = end - start;
+
+        if (end == RANGE_READ_TO_END) {
+            // we don't know the size so acquire size 1 first.
+            acquiredSize = 1;
+
+            // when read complete use bypass to forceConsume limiter token.
+            cf.whenComplete((data, ex) -> {
+                if (ex == null && data.readableBytes() - 1 > 0) {
+                    networkInboundBandwidthLimiterFunction.apply(ThrottleStrategy.BYPASS, (long) (data.readableBytes() - 1));
                 }
             });
-            Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end), 1, TimeUnit.MINUTES);
-            return cf.whenComplete((rst, ex) -> timeout.cancel());
         }
 
-        // range read to end
-
-        // we don't know the size so read the data then apply limiter.
-        CompletableFuture<ByteBuf> returnedCf = new CompletableFuture<>();
-
-        cf.whenComplete((data, ex) -> {
+        networkInboundBandwidthLimiterFunction.apply(options.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
             if (ex != null) {
-                returnedCf.completeExceptionally(ex);
+                cf.completeExceptionally(ex);
             } else {
-                networkInboundBandwidthLimiterFunction.apply(data.readableBytes()).whenComplete((v, e) -> {
-                    // ignore exception here because we already get the data.
-                    returnedCf.complete(data);
-                });
+                synchronized (waitingReadTasks) {
+                    waitingReadTasks.add(new AbstractObjectStorage.ReadTask(options, objectPath, start, end, cf));
+                }
             }
         });
 
-        // submit io request
-        synchronized (waitingReadTasks) {
-            waitingReadTasks.add(new AbstractObjectStorage.ReadTask(options, objectPath, start, end, cf));
-        }
-
         Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end), 1, TimeUnit.MINUTES);
-        return returnedCf.whenComplete((rst, ex) -> timeout.cancel());
+        return cf.whenComplete((rst, ex) -> timeout.cancel());
     }
 
     @Override
