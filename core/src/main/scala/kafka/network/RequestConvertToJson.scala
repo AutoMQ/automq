@@ -117,7 +117,10 @@ object RequestConvertToJson {
       case req: GetKVsRequest => GetKVsRequestDataJsonConverter.write(req.data, request.version)
       case req: PutKVsRequest => PutKVsRequestDataJsonConverter.write(req.data, request.version)
       case req: DeleteKVsRequest => DeleteKVsRequestDataJsonConverter.write(req.data, request.version)
+      case req: AutomqRegisterNodeRequest => AutomqRegisterNodeRequestDataJsonConverter.write(req.data, request.version)
+      case req: AutomqGetNodesRequest => AutomqGetNodesRequestDataJsonConverter.write(req.data, request.version)
       case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
+      case req: DescribeStreamsRequest => DescribeStreamsRequestDataJsonConverter.write(req.data, request.version)
       // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${request.apiKey} is not currently handled in `request`, the " +
         "code should be updated to do so.")
@@ -215,7 +218,10 @@ object RequestConvertToJson {
       case res: GetKVsResponse => GetKVsResponseDataJsonConverter.write(res.data, version)
       case res: PutKVsResponse => PutKVsResponseDataJsonConverter.write(res.data, version)
       case res: DeleteKVsResponse => DeleteKVsResponseDataJsonConverter.write(res.data, version)
+      case res: AutomqRegisterNodeResponse => AutomqRegisterNodeResponseDataJsonConverter.write(res.data, version)
+      case res: AutomqGetNodesResponse => AutomqGetNodesResponseDataJsonConverter.write(res.data, version)
       case res: GetNextNodeIdResponse => GetNextNodeIdResponseDataJsonConverter.write(res.data, version)
+      case res: DescribeStreamsResponse => DescribeStreamsResponseDataJsonConverter.write(res.data, version)
       // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +
         "code should be updated to do so.")
