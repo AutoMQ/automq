@@ -43,11 +43,12 @@ public class URIUtils {
     }
 
     public static Map<String, List<String>> splitQuery(URI uri) {
-        if (StringUtils.isBlank(uri.getQuery())) {
+        String rawQuery = uri.getRawQuery();
+        if (StringUtils.isBlank(rawQuery)) {
             return new HashMap<>();
         }
         final Map<String, List<String>> queryPairs = new LinkedHashMap<>();
-        final String[] pairs = uri.getQuery().split("&");
+        final String[] pairs = rawQuery.split("&");
         for (String pair : pairs) {
             final int idx = pair.indexOf("=");
             final String key = idx > 0 ? URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8) : pair;
