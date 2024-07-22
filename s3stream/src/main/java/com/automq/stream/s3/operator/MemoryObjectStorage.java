@@ -15,6 +15,7 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -37,7 +38,9 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     private final short bucketId;
 
     public MemoryObjectStorage(boolean manualMergeRead, short bucketId) {
-        super(BucketURI.parse(bucketId + "@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, manualMergeRead);
+        super(BucketURI.parse(bucketId + "@s3://b"),
+            new RecordTestNetworkBandwidthLimiter(), new RecordTestNetworkBandwidthLimiter(),
+            50, 0, true, false, manualMergeRead);
         this.bucketId = bucketId;
     }
 
@@ -211,5 +214,13 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
 
     public void setDelay(long delay) {
         this.delay = delay;
+    }
+
+    public NetworkBandwidthLimiter getNetworkInboundBandwidthLimiter() {
+        return this.networkInboundBandwidthLimiter;
+    }
+
+    public NetworkBandwidthLimiter getNetworkOutboundBandwidthLimiter() {
+        return this.networkOutboundBandwidthLimiter;
     }
 }
