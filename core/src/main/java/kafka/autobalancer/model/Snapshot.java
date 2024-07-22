@@ -16,9 +16,9 @@ import java.util.Collection;
 
 public class Snapshot {
     public static final double INVALID = -1;
-    private final Snapshot prev;
     private final double[] values;
     private final double latest;
+    private Snapshot prev;
 
     public Snapshot(Snapshot prev, Collection<Double> values) {
         this.prev = prev;
@@ -66,6 +66,10 @@ public class Snapshot {
 
     public Snapshot getPrev() {
         return this.prev;
+    }
+
+    public void setPrev(Snapshot prev) {
+        this.prev = prev;
     }
 
     public int size() {
