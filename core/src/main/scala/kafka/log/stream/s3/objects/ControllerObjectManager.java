@@ -138,10 +138,12 @@ public class ControllerObjectManager implements ObjectManager {
             .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
             .setFailoverMode(failoverMode);
         if (commitStreamSetObjectRequest.getObjectId() != NOOP_OBJECT_ID && commitStreamSetObjectRequest.getAttributes() == ObjectAttributes.UNSET.attributes()) {
-            throw new IllegalArgumentException("[BUG]attributes must be set");
+            FutureUtil.failedFuture(new IllegalArgumentException("[BUG]attributes must be set"));
         }
         if (version.get().isObjectAttributesSupported()) {
             request.setAttributes(commitStreamSetObjectRequest.getAttributes());
+        } else if (commitStreamSetObjectRequest.getAttributes() != 0) {
+            return FutureUtil.failedFuture(new UnsupportedOperationException("The attribute is set to " + commitStreamSetObjectRequest.getAttributes()));
         }
         WrapRequest req = new WrapRequest() {
             @Override
