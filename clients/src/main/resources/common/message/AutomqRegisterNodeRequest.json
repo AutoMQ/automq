@@ -34,7 +34,7 @@
       "about": "The node epoch."
     },
     {
-      "name": "WALConfig",
+      "name": "WalConfig",
       "type": "string",
       "versions": "0+",
       "about": "The WAL configuration"

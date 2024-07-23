@@ -1,72 +1,95 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Copyright 2024, AutoMQ HK Limited.
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
  */
+
 package org.apache.kafka.controller.stream;
 
-import org.apache.kafka.metadata.stream.S3StreamSetObject;
-import org.apache.kafka.timeline.SnapshotRegistry;
-import org.apache.kafka.timeline.TimelineHashMap;
-import org.apache.kafka.timeline.TimelineLong;
-import org.apache.kafka.timeline.TimelineObject;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Map;
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class NodeMetadata {
 
-    private final int nodeId;
-    private final TimelineLong nodeEpoch;
-    private final TimelineObject<Boolean> failoverMode;
-    private final TimelineHashMap<Long/*objectId*/, S3StreamSetObject> streamSetObjects;
+    @JsonProperty("i")
+    private int nodeId;
 
-    public NodeMetadata(int nodeId, long nodeEpoch, boolean failoverMode, SnapshotRegistry registry) {
+    @JsonProperty("e")
+    private long nodeEpoch;
+
+    @JsonProperty("w")
+    private String walConfig;
+
+    @JsonProperty("t")
+    private Map<String, String> tags;
+
+    public NodeMetadata() {
+    }
+
+    public NodeMetadata(int nodeId, long nodeEpoch, String walConfig, Map<String, String> tags) {
         this.nodeId = nodeId;
-        this.nodeEpoch = new TimelineLong(registry);
-        this.nodeEpoch.set(nodeEpoch);
-        this.failoverMode = new TimelineObject<>(registry, failoverMode);
-        this.streamSetObjects = new TimelineHashMap<>(registry, 0);
+        this.nodeEpoch = nodeEpoch;
+        this.walConfig = walConfig;
+        this.tags = tags;
+    }
+
+    public AutomqGetNodesResponseData.NodeMetadata to() {
+        AutomqGetNodesResponseData.TagCollection tags = new AutomqGetNodesResponseData.TagCollection();
+        this.tags.forEach((k, v) -> tags.add(new AutomqGetNodesResponseData.Tag().setKey(k).setValue(v)));
+        return new AutomqGetNodesResponseData.NodeMetadata()
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch)
+            .setWalConfig(walConfig)
+            .setTags(tags);
     }
 
     public int getNodeId() {
         return nodeId;
     }
 
+    public void setNodeId(int nodeId) {
+        this.nodeId = nodeId;
+    }
+
     public long getNodeEpoch() {
-        return nodeEpoch.get();
+        return nodeEpoch;
     }
 
     public void setNodeEpoch(long nodeEpoch) {
-        this.nodeEpoch.set(nodeEpoch);
+        this.nodeEpoch = nodeEpoch;
     }
 
-    public boolean getFailoverMode() {
-        return failoverMode.get();
+    public String getWalConfig() {
+        return walConfig;
     }
 
-    public void setFailoverMode(boolean failoverMode) {
-        this.failoverMode.set(failoverMode);
+    public void setWalConfig(String walConfig) {
+        this.walConfig = walConfig;
     }
 
-    public TimelineHashMap<Long, S3StreamSetObject> streamSetObjects() {
-        return streamSetObjects;
+    public Map<String, String> getTags() {
+        return tags;
+    }
+
+    public void setTags(Map<String, String> tags) {
+        this.tags = tags;
     }
 
     @Override
     public String toString() {
-        return "NodeS3StreamSetObjectMetadata{" +
-                "nodeId=" + nodeId +
-                ", nodeEpoch=" + nodeEpoch +
-                ", streamSetObjects=" + streamSetObjects +
-                '}';
+        return "NodeMetadata{" +
+            "nodeId=" + nodeId +
+            ", nodeEpoch=" + nodeEpoch +
+            ", walConfig='" + walConfig + '\'' +
+            ", tags=" + tags +
+            '}';
     }
 }

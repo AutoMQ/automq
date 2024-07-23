@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Timeout(value = 40)
 @Tag("S3Unit")
-public class NodeMetadataImageTest {
+public class NodeRuntimeMetadataImageTest {
 
     private static final int BROKER0 = 0;
 

@@ -40,6 +40,8 @@ import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
+import org.apache.kafka.common.message.AutomqRegisterNodeResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
 import org.apache.kafka.common.message.CloseStreamsRequestData;
@@ -135,6 +137,8 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
+import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
 import org.apache.kafka.common.security.token.delegation.internals.DelegationTokenCache;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -142,7 +146,9 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.controller.errors.ControllerExceptions;
 import org.apache.kafka.controller.errors.EventHandlerExceptionInfo;
 import org.apache.kafka.controller.metrics.QuorumControllerMetrics;
+import org.apache.kafka.controller.stream.DefaultNodeRuntimeInfoGetter;
 import org.apache.kafka.controller.stream.KVControlManager;
+import org.apache.kafka.controller.stream.NodeControlManager;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamClient;
 import org.apache.kafka.controller.stream.StreamControlManager;
@@ -1966,6 +1972,11 @@ public final class QuorumController implements Controller {
      */
     private final TopicDeletionManager topicDeletionManager;
 
+    /**
+     * Manage the node metadata
+     */
+    private final NodeControlManager nodeControlManager;
+
     private QuorumControllerExtension extension = QuorumControllerExtension.NOOP;
     // AutoMQ for Kafka inject end
 
@@ -2125,6 +2136,7 @@ public final class QuorumController implements Controller {
                 this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager);
+        this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoGetter(clusterControl, streamControlManager));
         // AutoMQ for Kafka inject end
 
         log.info("Creating new QuorumController with clusterId {}.{}{}",
@@ -2741,6 +2753,16 @@ public final class QuorumController implements Controller {
             new DeleteKVsResponseData().setDeleteKVResponses(
                 batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
         );
+    }
+
+    @Override
+    public CompletableFuture<AutomqRegisterNodeResponseData> registerNode(ControllerRequestContext context, AutomqRegisterNodeRequest req) {
+        return appendWriteEvent("registerNode", context.deadlineNs(), () -> nodeControlManager.register(req));
+    }
+
+    @Override
+    public CompletableFuture<AutomqGetNodesResponseData> getNodes(ControllerRequestContext context, AutomqGetNodesRequest req) {
+        return appendWriteEvent("getNodes", context.deadlineNs(), () -> nodeControlManager.getMetadata(req));
     }
 
     @Override
