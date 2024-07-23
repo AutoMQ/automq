@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v3
         with:
@@ -44,7 +46,7 @@ jobs:
       - name: Determine Image Tags
         id: image_tags
         run: |
-          LATEST_TAG=$(git fetch --tags -f && git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
           echo "LATEST_TAG=${LATEST_TAG}"
           if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
             echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/automq:${{ github.ref_name }}, ${{ secrets.DOCKERHUB_USERNAME }}/automq:latest" >> $GITHUB_OUTPUT
