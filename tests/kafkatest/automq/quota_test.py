@@ -40,27 +40,23 @@ class QuotaTest(Test):
 
         self.broker_id = '1'
 
-        self.create_kafka(test_context)
-
         self.maximum_client_deviation_percentage = 100.0
-        self.maximum_broker_deviation_percentage = 50
+        self.maximum_broker_deviation_percentage = 5
 
         self.success = True
         self.msg = ''
 
-
-    def create_kafka(self, test_context):
+    def create_kafka(self, test_context, broker_quota_in, broker_quota_out):
         log_size = 256 * 1024 * 1024
         block_size = 256 * 1024 * 1024
         server_prop_overrides = [
             ['broker.quota.enabled', 'true'],
+            ['broker.quota.produce.bytes', str(broker_quota_in)],
+            ['broker.quota.fetch.bytes', str(broker_quota_out)],
             ['s3.wal.cache.size', str(log_size)],
             ['s3.wal.capacity', str(log_size)],
             ['s3.wal.upload.threshold', str(log_size // 4)],
             ['s3.block.cache.size', str(block_size)],
-            ['s3.telemetry.metrics.exporter.type', 'otlp'],
-            ['s3.telemetry.exporter.otlp.endpoint', 'http://metrics.hellocorp.site'],
-            ['s3.telemetry.exporter.otlp.protocol', 'grpc'],
         ]
         self.kafka = KafkaService(test_context, num_nodes=1, zk=None,
                                   kafka_heap_opts="-Xmx2048m -Xms2048m",
@@ -106,6 +102,7 @@ class QuotaTest(Test):
     @cluster(num_nodes=5)
     @matrix(broker_in=[2500000], broker_out=[2000000])
     def test_quota(self, broker_in, broker_out):
+        self.create_kafka(self.test_context, broker_in, broker_out)
         self.kafka.start()
         records = 50000
         self.update_quota_config(broker_in, broker_out)
