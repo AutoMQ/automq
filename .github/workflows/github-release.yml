@@ -29,6 +29,7 @@ jobs:
 
       - name: Build TarGz
         run: |
+          sed -i 's/3.8.0-SNAPSHOT/3.7.0/g' gradle.properties
           ./gradlew -Pprefix=automq-${{ github.ref_name }}_ --build-cache --refresh-dependencies clean releaseTarGz
           mkdir -p core/build/distributions/latest
           for file in core/build/distributions/automq-*.tgz; do
