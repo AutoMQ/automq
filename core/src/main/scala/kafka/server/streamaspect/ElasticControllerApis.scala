@@ -11,7 +11,7 @@ import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.message.{DeleteKVsResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
 import org.apache.kafka.common.protocol.Errors.{NONE, UNKNOWN_SERVER_ERROR}
-import org.apache.kafka.common.requests.s3.{CloseStreamsRequest, CloseStreamsResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitStreamSetObjectRequest, CommitStreamSetObjectResponse, CreateStreamsRequest, CreateStreamsResponse, DeleteKVsRequest, DeleteKVsResponse, DeleteStreamsRequest, DeleteStreamsResponse, DescribeStreamsRequest, DescribeStreamsResponse, GetKVsRequest, GetKVsResponse, GetNextNodeIdRequest, GetNextNodeIdResponse, GetOpeningStreamsRequest, GetOpeningStreamsResponse, OpenStreamsRequest, OpenStreamsResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVsRequest, PutKVsResponse, TrimStreamsRequest, TrimStreamsResponse}
+import org.apache.kafka.common.requests.s3.{AutomqGetNodesRequest, AutomqGetNodesResponse, AutomqRegisterNodeRequest, AutomqRegisterNodeResponse, CloseStreamsRequest, CloseStreamsResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitStreamSetObjectRequest, CommitStreamSetObjectResponse, CreateStreamsRequest, CreateStreamsResponse, DeleteKVsRequest, DeleteKVsResponse, DeleteStreamsRequest, DeleteStreamsResponse, DescribeStreamsRequest, DescribeStreamsResponse, GetKVsRequest, GetKVsResponse, GetNextNodeIdRequest, GetNextNodeIdResponse, GetOpeningStreamsRequest, GetOpeningStreamsResponse, OpenStreamsRequest, OpenStreamsResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVsRequest, PutKVsResponse, TrimStreamsRequest, TrimStreamsResponse}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.controller.{Controller, ControllerRequestContext}
 import org.apache.kafka.image.publisher.ControllerRegistrationsPublisher
@@ -53,6 +53,8 @@ class ElasticControllerApis(
         case ApiKeys.DELETE_KVS => handleDeleteKV(request)
         case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
         case ApiKeys.DESCRIBE_STREAMS => handleDescribeStreams(request)
+        case ApiKeys.AUTOMQ_REGISTER_NODE => handleRegisterNode(request)
+        case ApiKeys.AUTOMQ_GET_NODES => handleGetNodes(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -340,6 +342,38 @@ class ElasticControllerApis(
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
             new DeleteKVsResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleRegisterNode(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val req = request.body[AutomqRegisterNodeRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.registerNode(context, req)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new AutomqRegisterNodeResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleGetNodes(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val req = request.body[AutomqGetNodesRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.getNodes(context, req)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new AutomqGetNodesResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }

@@ -25,14 +25,14 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Tag("S3Unit")
-public class S3StreamMetadataTest {
+public class StreamRuntimeMetadataTest {
     private static final long STREAM_ID = 233L;
     private static final long EPOCH = 1L;
-    S3StreamMetadata metadata;
+    StreamRuntimeMetadata metadata;
 
     @BeforeEach
     public void setup() {
-        metadata = new S3StreamMetadata(STREAM_ID, EPOCH, 3, 0,
+        metadata = new StreamRuntimeMetadata(STREAM_ID, EPOCH, 3, 0,
             StreamState.OPENED, Collections.emptyMap(), new SnapshotRegistry(new LogContext()));
     }
 
