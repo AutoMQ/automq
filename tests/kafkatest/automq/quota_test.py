@@ -105,7 +105,6 @@ class QuotaTest(Test):
         self.create_kafka(self.test_context, broker_in, broker_out)
         self.kafka.start()
         records = 50000
-        self.update_quota_config(broker_in, broker_out)
         self.logger.info(f'update to {broker_in},{broker_out}')
         self.test_quota0(records, broker_in, broker_out)
         # quota reduction
