@@ -34,8 +34,8 @@ import org.apache.kafka.timeline.TimelineObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class S3StreamMetadata {
-    private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamMetadata.class);
+public class StreamRuntimeMetadata {
+    private static final Logger LOGGER = LoggerFactory.getLogger(StreamRuntimeMetadata.class);
 
     private final long streamId;
     // current epoch, when created but not open, use -1 represent
@@ -52,7 +52,7 @@ public class S3StreamMetadata {
     private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
     private final TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
 
-    public S3StreamMetadata(long streamId, long currentEpoch, int currentRangeIndex, long startOffset,
+    public StreamRuntimeMetadata(long streamId, long currentEpoch, int currentRangeIndex, long startOffset,
         StreamState currentState, Map<String, String> tags, SnapshotRegistry registry) {
         this.streamId = streamId;
         this.currentEpoch = new TimelineLong(registry);

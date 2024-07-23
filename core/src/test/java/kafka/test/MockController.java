@@ -34,6 +34,8 @@ import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
+import org.apache.kafka.common.message.AutomqRegisterNodeResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
 import org.apache.kafka.common.message.CloseStreamsRequestData;
@@ -86,6 +88,8 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
+import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ResultOrError;
@@ -656,6 +660,18 @@ public class MockController implements Controller {
 
     @Override
     public CompletableFuture<DeleteKVsResponseData> deleteKVs(ControllerRequestContext context, DeleteKVsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<AutomqRegisterNodeResponseData> registerNode(ControllerRequestContext context,
+        AutomqRegisterNodeRequest req) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<AutomqGetNodesResponseData> getNodes(ControllerRequestContext context,
+        AutomqGetNodesRequest req) {
         throw new UnsupportedOperationException();
     }
     // AutoMQ for Kafka inject end
