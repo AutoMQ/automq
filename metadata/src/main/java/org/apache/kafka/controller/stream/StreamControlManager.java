@@ -1321,6 +1321,7 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay remove range record {}", streamId, record);
             return;
         }
+        streamMetadata.ranges().remove(record.rangeIndex());
     }
 
     public void replay(NodeWALMetadataRecord record) {
