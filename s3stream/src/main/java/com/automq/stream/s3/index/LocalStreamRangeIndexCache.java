@@ -108,20 +108,34 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
 
     private CompletableFuture<Void> flush() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        ByteBuf buf = null;
         readLock.lock();
         try {
-            objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, ObjectUtils.genIndexKey(0, nodeId), toBuffer(streamRangeIndexMap))
+            if (streamRangeIndexMap.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            buf = toBuffer(streamRangeIndexMap);
+            objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, ObjectUtils.genIndexKey(0, nodeId), buf)
                 .whenComplete((v, ex) -> {
                     if (ex != null) {
-                        LOGGER.error("Upload index failed", ex);
                         cf.completeExceptionally(ex);
                         return;
                     }
                     cf.complete(null);
                 });
+        } catch (Throwable t) {
+            if (buf != null) {
+                buf.release();
+            }
+            cf.completeExceptionally(t);
         } finally {
             readLock.unlock();
         }
+        cf.whenComplete((v, ex) -> {
+            if (ex != null) {
+                LOGGER.error("Failed to flush index to object storage", ex);
+            }
+        });
         return cf;
     }
 
@@ -260,17 +274,22 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
             + Integer.BYTES // range index num
             + index.getRangeIndexList().size() * RangeIndex.SIZE).sum();
         ByteBuf buffer = ByteBufAlloc.byteBuffer(capacity);
-        buffer.writeShort(VERSION);
-        buffer.writeInt(streamRangeIndexMap.size());
-        streamRangeIndexMap.forEach((streamId, sparseRangeIndex) -> {
-            buffer.writeLong(streamId);
-            buffer.writeInt(sparseRangeIndex.getRangeIndexList().size());
-            sparseRangeIndex.getRangeIndexList().forEach(rangeIndex -> {
-                buffer.writeLong(rangeIndex.getStartOffset());
-                buffer.writeLong(rangeIndex.getEndOffset());
-                buffer.writeLong(rangeIndex.getObjectId());
+        try {
+            buffer.writeShort(VERSION);
+            buffer.writeInt(streamRangeIndexMap.size());
+            streamRangeIndexMap.forEach((streamId, sparseRangeIndex) -> {
+                buffer.writeLong(streamId);
+                buffer.writeInt(sparseRangeIndex.getRangeIndexList().size());
+                sparseRangeIndex.getRangeIndexList().forEach(rangeIndex -> {
+                    buffer.writeLong(rangeIndex.getStartOffset());
+                    buffer.writeLong(rangeIndex.getEndOffset());
+                    buffer.writeLong(rangeIndex.getObjectId());
+                });
             });
-        });
+        } catch (Throwable t) {
+            buffer.release();
+            throw t;
+        }
         return buffer;
     }
 

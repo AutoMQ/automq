@@ -193,6 +193,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
         if (retCf.isDone()) {
+            data.release();
             return retCf;
         }
         TimerUtil timerUtil = new TimerUtil();
@@ -202,6 +203,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, options.throttleStrategy())
                     .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 if (ex != null) {
+                    data.release();
                     cf.completeExceptionally(ex);
                 } else {
                     write0(options, objectPath, data, cf);
@@ -317,12 +319,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         CompletableFuture<ObjectStorageCompletedPart> cf = new CompletableFuture<>();
         CompletableFuture<ObjectStorageCompletedPart> refCf = acquireWritePermit(cf);
         if (refCf.isDone()) {
+            data.release();
             return refCf;
         }
         networkOutboundBandwidthLimiter
             .consume(options.throttleStrategy(), data.readableBytes())
             .whenCompleteAsync((v, ex) -> {
                 if (ex != null) {
+                    data.release();
                     cf.completeExceptionally(ex);
                 } else {
                     uploadPart0(options, path, uploadId, partNumber, data, cf);
