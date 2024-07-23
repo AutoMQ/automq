@@ -40,6 +40,11 @@ class JmxMixin(object):
         self.maximum_jmx_value = {}  # map from object_attribute_name to maximum value observed over time
         self.average_jmx_value = {}  # map from object_attribute_name to average value observed over time
 
+        # AutoMQ inject start
+        self.jmx_windows_size = 11
+        self.jmx_window_max_avg_values = {}  # map from object_attribute_name to the maximum average value observed over windows of time
+        # AutoMQ inject end
+
         self.jmx_tool_log = os.path.join(root, "jmx_tool.log")
         self.jmx_tool_err_log = os.path.join(root, "jmx_tool.err.log")
 
@@ -130,6 +135,21 @@ class JmxMixin(object):
                 aggregates_per_time.append(sum(values_per_node))
             self.average_jmx_value[name] = sum(aggregates_per_time) / len(aggregates_per_time)
             self.maximum_jmx_value[name] = max(aggregates_per_time)
+            # AutoMQ inject start
+            max_avg_value = float('-inf')
+            windows_size = self.jmx_windows_size
+            window_sum = sum(aggregates_per_time[:windows_size])
+            window_count = min(windows_size, len(aggregates_per_time))
+            if window_count > 0:
+                max_avg_value = window_sum / window_count
+            for i in range(windows_size, len(aggregates_per_time)):
+                window_sum -= aggregates_per_time[i - windows_size]
+                window_sum += aggregates_per_time[i]
+                window_avg = window_sum / windows_size
+                if window_avg > max_avg_value:
+                    max_avg_value = window_avg
+            self.jmx_window_max_avg_values[name] = max_avg_value if max_avg_value != float('-inf') else 0
+            # AutoMQ inject end
 
     def read_jmx_output_all_nodes(self):
         for node in self.nodes:
