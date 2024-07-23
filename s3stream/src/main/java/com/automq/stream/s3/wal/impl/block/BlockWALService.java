@@ -305,6 +305,7 @@ public class BlockWALService implements WriteAheadLog {
             } finally {
                 if (!success) {
                     started.set(false);
+                    LOGGER.warn("block WAL service started fail");
                 }
             }
         }
