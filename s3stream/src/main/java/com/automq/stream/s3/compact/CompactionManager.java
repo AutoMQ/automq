@@ -23,6 +23,7 @@ import com.automq.stream.s3.compact.utils.GroupByOffsetPredicate;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
@@ -41,6 +42,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -74,6 +76,7 @@ public class CompactionManager {
     private final CompactionAnalyzer compactionAnalyzer;
     private final ScheduledExecutorService compactionScheduledExecutor;
     private final ScheduledExecutorService bucketCallbackScheduledExecutor;
+    private final ScheduledExecutorService utilityScheduledExecutor;
     private final ExecutorService compactThreadPool;
     private final ExecutorService forceSplitThreadPool;
     private final CompactionUploader uploader;
@@ -92,6 +95,7 @@ public class CompactionManager {
     private Bucket compactionBucket = null;
     private boolean hasRemainingObjects = false;
     private Map<Long, List<StreamDataBlock>> streamDataBlockMap = new HashMap<>();
+    private long compactionDelayTime = 0L;
 
     public CompactionManager(Config config, ObjectManager objectManager, StreamManager streamManager,
         ObjectStorage objectStorage) {
@@ -118,9 +122,12 @@ public class CompactionManager {
             ThreadUtils.createThreadFactory("schedule-compact-executor-%d", true), logger, true, false);
         this.bucketCallbackScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", true), logger, true, false);
+        this.utilityScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
+            ThreadUtils.createThreadFactory("compaction-utility-executor-%d", true), logger, true, false);
         this.compactThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("object-compaction-manager"));
         this.forceSplitThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("force-split-executor"));
         this.running.set(true);
+        S3StreamMetricsManager.registerCompactionDelayTimeSuppler(() -> compactionDelayTime);
         this.logger.info("Compaction manager initialized with config: compactionInterval: {} min, compactionCacheSize: {} bytes, " +
                 "streamSplitSize: {} bytes, forceSplitObjectPeriod: {} min, maxObjectNumToCompact: {}, maxStreamNumInStreamSet: {}, maxStreamObjectNum: {}",
             compactionInterval, compactionCacheSize, streamSplitSize, forceSplitObjectPeriod, maxObjectNumToCompact, maxStreamNumPerStreamSetObject, maxStreamObjectNumPerCommit);
@@ -128,6 +135,11 @@ public class CompactionManager {
 
     public void start() {
         scheduleNextCompaction((long) this.compactionInterval * 60 * 1000);
+        this.utilityScheduledExecutor.scheduleAtFixedRate(() ->
+            this.objectManager.getServerObjects().whenComplete((data, ex) -> {
+                data.sort(Comparator.comparingLong(S3ObjectMetadata::committedTimestamp));
+                this.compactionDelayTime = System.currentTimeMillis() - data.get(0).committedTimestamp();
+            }).join(), 1, 1, TimeUnit.MINUTES);
     }
 
     void scheduleNextCompaction(long delayMillis) {
@@ -175,23 +187,25 @@ public class CompactionManager {
                 compactionCf.cancel(true);
             }
         }
-        this.compactionScheduledExecutor.shutdown();
-        try {
-            if (!this.compactionScheduledExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                this.compactionScheduledExecutor.shutdownNow();
-            }
-        } catch (InterruptedException ignored) {
-        }
-        this.bucketCallbackScheduledExecutor.shutdown();
-        try {
-            if (!this.bucketCallbackScheduledExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                this.bucketCallbackScheduledExecutor.shutdownNow();
-            }
-        } catch (InterruptedException ignored) {
-        }
+        shutdownAndAwaitTermination(this.compactionScheduledExecutor, 10, TimeUnit.SECONDS);
+        shutdownAndAwaitTermination(this.bucketCallbackScheduledExecutor, 10, TimeUnit.SECONDS);
+        shutdownAndAwaitTermination(this.utilityScheduledExecutor, 10, TimeUnit.SECONDS);
         this.uploader.shutdown();
         cleanUp();
         logger.info("Compaction manager shutdown complete");
+    }
+
+    private void shutdownAndAwaitTermination(ExecutorService executor, int timeout, TimeUnit timeUnit) {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(timeout, timeUnit)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException ex) {
+            executor.shutdownNow();
+            // Preserve interrupt status
+            Thread.currentThread().interrupt();
+        }
     }
 
     public CompletableFuture<Void> compact() {
