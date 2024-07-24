@@ -137,6 +137,14 @@ public class CompactionManager {
         scheduleNextCompaction((long) this.compactionInterval * 60 * 1000);
         this.utilityScheduledExecutor.scheduleAtFixedRate(() ->
             this.objectManager.getServerObjects().whenComplete((data, ex) -> {
+                if (ex != null) {
+                    logger.error("Error while getting server objects ", ex);
+                    return;
+                }
+                if (data == null || data.isEmpty()) {
+                    this.compactionDelayTime = 0;
+                    return;
+                }
                 data.sort(Comparator.comparingLong(S3ObjectMetadata::committedTimestamp));
                 this.compactionDelayTime = System.currentTimeMillis() - data.get(0).committedTimestamp();
             }).join(), 1, 1, TimeUnit.MINUTES);
