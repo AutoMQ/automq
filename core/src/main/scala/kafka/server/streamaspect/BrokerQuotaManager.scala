@@ -28,200 +28,200 @@ import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
 class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
-    private val metrics: Metrics,
-    private val time: Time,
-    private val threadNamePrefix: String)
-    extends ClientRequestQuotaManager(config, metrics, time, threadNamePrefix, None) {
-    private val metricsTags = Map("domain" -> "broker", "nodeId" -> String.valueOf(config.nodeId()))
-    private val whiteListCache = mutable.HashMap[String, Boolean]()
+  private val metrics: Metrics,
+  private val time: Time,
+  private val threadNamePrefix: String)
+  extends ClientRequestQuotaManager(config, metrics, time, threadNamePrefix, None) {
+  private val metricsTags = Map("domain" -> "broker", "nodeId" -> String.valueOf(config.nodeId()))
+  private val whiteListCache = mutable.HashMap[String, Boolean]()
 
-    private val brokerDelayQueueSensor: Sensor = metrics.sensor("broker-delayQueue")
-    brokerDelayQueueSensor.add(metrics.metricName("broker-queue-size", "",
-        "Tracks the size of the delay queue"), new CumulativeSum())
+  private val brokerDelayQueueSensor: Sensor = metrics.sensor("broker-delayQueue")
+  brokerDelayQueueSensor.add(metrics.metricName("broker-queue-size", "",
+    "Tracks the size of the delay queue"), new CumulativeSum())
 
-    override def delayQueueSensor: Sensor = brokerDelayQueueSensor
+  override def delayQueueSensor: Sensor = brokerDelayQueueSensor
 
-    def getMaxValueInQuotaWindow(quotaType: QuotaType): Double = {
-        if (config.quotaEnabled) {
-            quotaLimit(quotaType)
-        } else {
-            Double.MaxValue
-        }
+  def getMaxValueInQuotaWindow(quotaType: QuotaType): Double = {
+    if (config.quotaEnabled) {
+      quotaLimit(quotaType)
+    } else {
+      Double.MaxValue
+    }
+  }
+
+  def recordNoThrottle(quotaType: QuotaType, value: Double): Unit = {
+    val clientSensors = getOrCreateQuotaSensors(quotaType)
+    clientSensors.quotaSensor.record(value, time.milliseconds(), false)
+  }
+
+  def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, request: RequestChannel.Request, value: Double,
+    timeMs: Long): Int = {
+    if (!config.quotaEnabled) {
+      return 0
     }
 
-    def recordNoThrottle(quotaType: QuotaType, value: Double): Unit = {
-        val clientSensors = getOrCreateQuotaSensors(quotaType)
-        clientSensors.quotaSensor.record(value, time.milliseconds(), false)
+    maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context, value, timeMs)
+  }
+
+  protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
+    if (quotaType == QuotaType.Request) {
+      QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
+    } else {
+      QuotaUtils.throttleTime(e, timeMs)
     }
+  }
 
-    def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, request: RequestChannel.Request, value: Double,
-        timeMs: Long): Int = {
-        if (!config.quotaEnabled) {
-            return 0
-        }
-
-        maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context, value, timeMs)
+  private def isInWhiteList(principal: KafkaPrincipal, clientId: String, listenerName: String): Boolean = {
+    val key = s"$principal:$clientId:$listenerName"
+    whiteListCache.get(key) match {
+      case Some(isWhiteListed) => isWhiteListed
+      case None =>
+        val isWhiteListed = (principal.getPrincipalType == KafkaPrincipal.USER_TYPE && config.userWhiteList().contains(principal.getName)) ||
+          config.clientIdWhiteList().contains(clientId) ||
+          config.listenerWhiteList().contains(listenerName)
+        whiteListCache.put(clientId, isWhiteListed)
+        isWhiteListed
     }
+  }
 
-    protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
-        if (quotaType == QuotaType.Request) {
-            QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
-        } else {
-            QuotaUtils.throttleTime(e, timeMs)
-        }
+  def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, session: Session, context: RequestContext, value: Double,
+    timeMs: Long): Int = {
+    if (isInWhiteList(session.principal, context.clientId(), context.listenerName())) {
+      return 0
     }
-
-    private def isInWhiteList(principal: KafkaPrincipal, clientId: String, listenerName: String): Boolean = {
-        val key = s"$principal:$clientId:$listenerName"
-        whiteListCache.get(key) match {
-            case Some(isWhiteListed) => isWhiteListed
-            case None =>
-                val isWhiteListed = (principal.getPrincipalType == KafkaPrincipal.USER_TYPE && config.userWhiteList().contains(principal.getName)) ||
-                    config.clientIdWhiteList().contains(clientId) ||
-                    config.listenerWhiteList().contains(listenerName)
-                whiteListCache.put(clientId, isWhiteListed)
-                isWhiteListed
-        }
+    val clientSensors = getOrCreateQuotaSensors(quotaType)
+    try {
+      clientSensors.quotaSensor.record(value, timeMs, true)
+      0
+    } catch {
+      case e: QuotaViolationException =>
+        val throttleTimeMs = throttleTime(quotaType, e, timeMs).toInt
+        debug(s"Quota violated for sensor (${clientSensors.quotaSensor.name}). Delay time: ($throttleTimeMs)")
+        throttleTimeMs
     }
+  }
 
-    def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, session: Session, context: RequestContext, value: Double,
-        timeMs: Long): Int = {
-        if (isInWhiteList(session.principal, context.clientId(), context.listenerName())) {
-            return 0
-        }
-        val clientSensors = getOrCreateQuotaSensors(quotaType)
-        try {
-            clientSensors.quotaSensor.record(value, timeMs, true)
-            0
-        } catch {
-            case e: QuotaViolationException =>
-                val throttleTimeMs = throttleTime(quotaType, e, timeMs).toInt
-                debug(s"Quota violated for sensor (${clientSensors.quotaSensor.name}). Delay time: ($throttleTimeMs)")
-                throttleTimeMs
-        }
+  def unrecordQuotaSensor(quotaType: QuotaType, value: Double, timeMs: Long): Unit = {
+    val clientSensors = getOrCreateQuotaSensors(quotaType)
+    clientSensors.quotaSensor.record(value * (-1), timeMs, false)
+  }
+
+  def updateQuotaConfigs(properties: Option[Properties] = None): Unit = {
+    if (properties.isDefined) {
+      config.update(properties.get)
+      whiteListCache.clear()
+
+      if (!config.quotaEnabled) {
+        metrics.removeSensor(getQuotaSensorName(QuotaType.Request, metricsTags))
+        metrics.removeSensor(getQuotaSensorName(QuotaType.Produce, metricsTags))
+        metrics.removeSensor(getQuotaSensorName(QuotaType.Fetch, metricsTags))
+        metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Request, metricsTags))
+        metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Produce, metricsTags))
+        metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Fetch, metricsTags))
+        return
+      }
+
+      val allMetrics = metrics.metrics()
+
+      val requestMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Request, metricsTags))
+      if (requestMetrics != null) {
+        requestMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Request)))
+      }
+
+      val produceMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Produce, metricsTags))
+      if (produceMetrics != null) {
+        produceMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Produce)))
+      }
+
+      val fetchMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Fetch, metricsTags))
+      if (fetchMetrics != null) {
+        fetchMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Fetch)))
+      }
     }
+  }
 
-    def unrecordQuotaSensor(quotaType: QuotaType, value: Double, timeMs: Long): Unit = {
-        val clientSensors = getOrCreateQuotaSensors(quotaType)
-        clientSensors.quotaSensor.record(value * (-1), timeMs, false)
+  def throttle(
+    quotaType: QuotaType,
+    throttleCallback: ThrottleCallback,
+    throttleTimeMs: Int
+  ): Unit = {
+    if (throttleTimeMs > 0) {
+      val clientSensors = getOrCreateQuotaSensors(quotaType)
+      clientSensors.throttleTimeSensor.record(throttleTimeMs)
+      val throttledChannel = new ThrottledChannel(time, throttleTimeMs, throttleCallback)
+      delayQueue.add(throttledChannel)
+      delayQueueSensor.record()
+      debug("Channel throttled for sensor (%s). Delay time: (%d)".format(clientSensors.quotaSensor.name(), throttleTimeMs))
     }
+  }
 
-    def updateQuotaConfigs(properties: Option[Properties] = None): Unit = {
-        if (properties.isDefined) {
-            config.update(properties.get)
-            whiteListCache.clear()
+  private def getThrottleTimeSensorName(quotaType: QuotaType, metricTags: Map[String, String]): String =
+    s"${quotaType}ThrottleTime-${metricTagsToSensorSuffix(metricTags)}"
 
-            if (!config.quotaEnabled) {
-                metrics.removeSensor(getQuotaSensorName(QuotaType.Request, metricsTags))
-                metrics.removeSensor(getQuotaSensorName(QuotaType.Produce, metricsTags))
-                metrics.removeSensor(getQuotaSensorName(QuotaType.Fetch, metricsTags))
-                metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Request, metricsTags))
-                metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Produce, metricsTags))
-                metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Fetch, metricsTags))
-                return
-            }
+  private def getQuotaSensorName(quotaType: QuotaType, metricTags: Map[String, String]): String =
+    s"$quotaType-${metricTagsToSensorSuffix(metricTags)}"
 
-            val allMetrics = metrics.metrics()
+  private def quotaLimit(quotaType: QuotaType): Double = {
+    if (quotaType == QuotaType.Request) config.requestQuota
+    else if (quotaType == QuotaType.Produce) config.produceQuota
+    else if (quotaType == QuotaType.Fetch) config.fetchQuota
+    else throw new IllegalArgumentException(s"Unknown quota type $quotaType")
+  }
 
-            val requestMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Request, metricsTags))
-            if (requestMetrics != null) {
-                requestMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Request)))
-            }
-
-            val produceMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Produce, metricsTags))
-            if (produceMetrics != null) {
-                produceMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Produce)))
-            }
-
-            val fetchMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Fetch, metricsTags))
-            if (fetchMetrics != null) {
-                fetchMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Fetch)))
-            }
-        }
+  protected def clientQuotaMetricName(quotaType: QuotaType, quotaMetricTags: Map[String, String]): MetricName = {
+    if (quotaType == QuotaType.Request) {
+      metrics.metricName("broker-request-rate", QuotaType.Request.toString,
+        "Tracking request-rate per broker", quotaMetricTags.asJava)
+    } else {
+      metrics.metricName("broker-byte-rate", quotaType.toString,
+        "Tracking byte-rate per broker", quotaMetricTags.asJava)
     }
+  }
 
-    def throttle(
-        quotaType: QuotaType,
-        throttleCallback: ThrottleCallback,
-        throttleTimeMs: Int
-    ): Unit = {
-        if (throttleTimeMs > 0) {
-            val clientSensors = getOrCreateQuotaSensors(quotaType)
-            clientSensors.throttleTimeSensor.record(throttleTimeMs)
-            val throttledChannel = new ThrottledChannel(time, throttleTimeMs, throttleCallback)
-            delayQueue.add(throttledChannel)
-            delayQueueSensor.record()
-            debug("Channel throttled for sensor (%s). Delay time: (%d)".format(clientSensors.quotaSensor.name(), throttleTimeMs))
-        }
-    }
+  protected def throttleMetricName(quotaType: QuotaType, quotaMetricTags: Map[String, String]): MetricName = {
+    metrics.metricName("broker-throttle-time",
+      quotaType.toString,
+      "Tracking average throttle-time per broker",
+      quotaMetricTags.asJava)
+  }
 
-    private def getThrottleTimeSensorName(quotaType: QuotaType, metricTags: Map[String, String]): String =
-        s"${quotaType}ThrottleTime-${metricTagsToSensorSuffix(metricTags)}"
+  private def getOrCreateQuotaSensors(quotaType: QuotaType): ClientSensors = {
+    val sensors = ClientSensors(
+      metricsTags,
+      getOrCreateSensor(getQuotaSensorName(quotaType, metricsTags), ClientQuotaManager.InactiveSensorExpirationTimeSeconds,
+        sensor => sensor.add(clientQuotaMetricName(quotaType, metricsTags), new Rate, getQuotaMetricConfig(quotaLimit(quotaType)))),
+      getOrCreateSensor(getThrottleTimeSensorName(quotaType, metricsTags), ClientQuotaManager.InactiveSensorExpirationTimeSeconds,
+        sensor => sensor.add(throttleMetricName(quotaType, metricsTags), new Avg))
+    )
+    sensors
+  }
 
-    private def getQuotaSensorName(quotaType: QuotaType, metricTags: Map[String, String]): String =
-        s"$quotaType-${metricTagsToSensorSuffix(metricTags)}"
+  override def maybeRecordAndGetThrottleTimeMs(request: RequestChannel.Request, value: Double,
+    timeMs: Long): Int = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 
-    private def quotaLimit(quotaType: QuotaType): Double = {
-        if (quotaType == QuotaType.Request) config.requestQuota
-        else if (quotaType == QuotaType.Produce) config.produceQuota
-        else if (quotaType == QuotaType.Fetch) config.fetchQuota
-        else throw new IllegalArgumentException(s"Unknown quota type $quotaType")
-    }
+  override def maybeRecordAndGetThrottleTimeMs(session: Session, clientId: String, value: Double,
+    timeMs: Long): Int = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 
-    protected def clientQuotaMetricName(quotaType: QuotaType, quotaMetricTags: Map[String, String]): MetricName = {
-        if (quotaType == QuotaType.Request) {
-            metrics.metricName("broker-request-rate", QuotaType.Request.toString,
-                "Tracking request-rate per broker", quotaMetricTags.asJava)
-        } else {
-            metrics.metricName("broker-byte-rate", quotaType.toString,
-                "Tracking byte-rate per broker", quotaMetricTags.asJava)
-        }
-    }
+  override def unrecordQuotaSensor(request: RequestChannel.Request, value: Double,
+    timeMs: Long): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 
-    protected def throttleMetricName(quotaType: QuotaType, quotaMetricTags: Map[String, String]): MetricName = {
-        metrics.metricName("broker-throttle-time",
-            quotaType.toString,
-            "Tracking average throttle-time per broker",
-            quotaMetricTags.asJava)
-    }
+  override def throttle(request: RequestChannel.Request, throttleCallback: ThrottleCallback,
+    throttleTimeMs: Int): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 
-    private def getOrCreateQuotaSensors(quotaType: QuotaType): ClientSensors = {
-        val sensors = ClientSensors(
-            metricsTags,
-            getOrCreateSensor(getQuotaSensorName(quotaType, metricsTags), ClientQuotaManager.InactiveSensorExpirationTimeSeconds,
-                sensor => sensor.add(clientQuotaMetricName(quotaType, metricsTags), new Rate, getQuotaMetricConfig(quotaLimit(quotaType)))),
-            getOrCreateSensor(getThrottleTimeSensorName(quotaType, metricsTags), ClientQuotaManager.InactiveSensorExpirationTimeSeconds,
-                sensor => sensor.add(throttleMetricName(quotaType, metricsTags), new Avg))
-        )
-        sensors
-    }
+  override def getOrCreateQuotaSensors(session: Session,
+    clientId: String): ClientSensors = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 
-    override def maybeRecordAndGetThrottleTimeMs(request: RequestChannel.Request, value: Double,
-        timeMs: Long): Int = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
+  override def recordNoThrottle(session: Session, clientId: String,
+    value: Double): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 
-    override def maybeRecordAndGetThrottleTimeMs(session: Session, clientId: String, value: Double,
-        timeMs: Long): Int = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
+  override def getMaxValueInQuotaWindow(session: Session,
+    clientId: String): Double = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 
-    override def unrecordQuotaSensor(request: RequestChannel.Request, value: Double,
-        timeMs: Long): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
+  override def updateQuotaMetricConfigs(
+    updatedQuotaEntity: Option[ClientQuotaManager.KafkaQuotaEntity]): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 
-    override def throttle(request: RequestChannel.Request, throttleCallback: ThrottleCallback,
-        throttleTimeMs: Int): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
-
-    override def getOrCreateQuotaSensors(session: Session,
-        clientId: String): ClientSensors = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
-
-    override def recordNoThrottle(session: Session, clientId: String,
-        value: Double): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
-
-    override def getMaxValueInQuotaWindow(session: Session,
-        clientId: String): Double = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
-
-    override def updateQuotaMetricConfigs(
-        updatedQuotaEntity: Option[ClientQuotaManager.KafkaQuotaEntity]): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
-
-    override def updateQuota(sanitizedUser: Option[String],
-        clientId: Option[String],
-        sanitizedClientId: Option[String],
-        quota: Option[Quota]): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
+  override def updateQuota(sanitizedUser: Option[String],
+    clientId: Option[String],
+    sanitizedClientId: Option[String],
+    quota: Option[Quota]): Unit = throw new UnsupportedOperationException("This method is not supported in BrokerQuotaManager")
 }
