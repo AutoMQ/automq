@@ -59,31 +59,31 @@ public class DefaultS3Client implements Client {
     protected final Config config;
     private final StreamMetadataManager metadataManager;
 
-    private final ControllerRequestSender requestSender;
+    protected final ControllerRequestSender requestSender;
 
-    private final WriteAheadLog writeAheadLog;
-    private final S3Storage storage;
+    protected final WriteAheadLog writeAheadLog;
+    protected final S3Storage storage;
 
-    private final ObjectReaderFactory objectReaderFactory;
-    private final S3BlockCache blockCache;
+    protected final ObjectReaderFactory objectReaderFactory;
+    protected final S3BlockCache blockCache;
 
-    private final ObjectManager objectManager;
+    protected final ObjectManager objectManager;
 
-    private final StreamManager streamManager;
+    protected final StreamManager streamManager;
 
-    private final CompactionManager compactionManager;
+    protected final CompactionManager compactionManager;
 
-    private final S3StreamClient streamClient;
+    protected final S3StreamClient streamClient;
 
-    private final KVClient kvClient;
+    protected final KVClient kvClient;
 
-    private final Failover failover;
+    protected final Failover failover;
 
-    private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
-    private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
+    protected final AsyncNetworkBandwidthLimiter networkInboundLimiter;
+    protected final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
-    private final BrokerServer brokerServer;
-    private final LocalStreamRangeIndexCache localIndexCache;
+    protected final BrokerServer brokerServer;
+    protected final LocalStreamRangeIndexCache localIndexCache;
 
     public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;
