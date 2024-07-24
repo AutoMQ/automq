@@ -287,6 +287,7 @@ public final class QuorumController implements Controller {
         // AutoMQ for Kafka inject start
         private StreamClient streamClient;
         private List<String> quorumVoters = Collections.emptyList();
+        private Function<QuorumController, QuorumControllerExtension> extension = c -> QuorumControllerExtension.NOOP;
         // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
@@ -453,6 +454,11 @@ public final class QuorumController implements Controller {
             this.quorumVoters = quorumVoters;
             return this;
         }
+
+        public Builder setExtension(Function<QuorumController, QuorumControllerExtension> extension) {
+            this.extension = extension;
+            return this;
+        }
         // AutoMQ for Kafka inject end
 
         public QuorumController build() throws Exception {
@@ -514,7 +520,8 @@ public final class QuorumController implements Controller {
                     delegationTokenExpiryCheckIntervalMs,
                     eligibleLeaderReplicasEnabled,
                     streamClient,
-                    quorumVoters
+                    quorumVoters,
+                    extension
                 );
             } catch (Exception e) {
                 Utils.closeQuietly(queue, "event queue");
@@ -1721,12 +1728,14 @@ public final class QuorumController implements Controller {
                 KVRecord record = (KVRecord) message;
                 kvControlManager.replay(record);
                 topicDeletionManager.replay(record);
+                nodeControlManager.replay(record);
                 break;
             }
             case REMOVE_KVRECORD: {
                 RemoveKVRecord record = (RemoveKVRecord) message;
                 kvControlManager.replay(record);
                 topicDeletionManager.replay(record);
+                nodeControlManager.replay(record);
                 break;
             }
             case UPDATE_NEXT_NODE_ID_RECORD:
@@ -1977,7 +1986,7 @@ public final class QuorumController implements Controller {
      */
     private final NodeControlManager nodeControlManager;
 
-    private QuorumControllerExtension extension = QuorumControllerExtension.NOOP;
+    private final QuorumControllerExtension extension;
     // AutoMQ for Kafka inject end
 
 
@@ -2013,8 +2022,13 @@ public final class QuorumController implements Controller {
         long delegationTokenExpiryTimeMs,
         long delegationTokenExpiryCheckIntervalMs,
         boolean eligibleLeaderReplicasEnabled,
+
+        // AutoMQ inject start
         StreamClient streamClient,
-        List<String> quorumVoters
+        List<String> quorumVoters,
+        Function<QuorumController, QuorumControllerExtension> extension
+        // AutoMQ inject end
+
     ) {
         this.nonFatalFaultHandler = nonFatalFaultHandler;
         this.fatalFaultHandler = fatalFaultHandler;
@@ -2137,6 +2151,7 @@ public final class QuorumController implements Controller {
         this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager);
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoGetter(clusterControl, streamControlManager));
+        this.extension = extension.apply(this);
         // AutoMQ for Kafka inject end
 
         log.info("Creating new QuorumController with clusterId {}.{}{}",
@@ -2768,10 +2783,6 @@ public final class QuorumController implements Controller {
     @Override
     public long lastStableOffset() {
         return offsetControl.lastStableOffset();
-    }
-
-    public void setExtension(QuorumControllerExtension extension) {
-        this.extension = extension;
     }
     // AutoMQ for Kafka inject end
 
