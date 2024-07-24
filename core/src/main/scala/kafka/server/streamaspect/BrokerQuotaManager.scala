@@ -176,13 +176,8 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   }
 
   protected def clientQuotaMetricName(quotaType: QuotaType, quotaMetricTags: Map[String, String]): MetricName = {
-    if (quotaType == QuotaType.Request) {
-      metrics.metricName("broker-request-rate", QuotaType.Request.toString,
-        "Tracking request-rate per broker", quotaMetricTags.asJava)
-    } else {
-      metrics.metricName("broker-byte-rate", quotaType.toString,
-        "Tracking byte-rate per broker", quotaMetricTags.asJava)
-    }
+    metrics.metricName("broker-value-rate", quotaType.toString,
+      "Tracking value-rate per broker", quotaMetricTags.asJava)
   }
 
   protected def throttleMetricName(quotaType: QuotaType, quotaMetricTags: Map[String, String]): MetricName = {
