@@ -11,11 +11,8 @@
 
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.s3.ObjectReader;
+import java.util.concurrent.CompletableFuture;
 
-public class ObjectReaderLRUCache extends AsyncObjectLRUCache<Long, ObjectReader> {
-
-    public ObjectReaderLRUCache(int maxObjectSize) {
-        super(maxObjectSize);
-    }
+public interface AsyncMeasurable extends AutoCloseable {
+    CompletableFuture<Integer> size();
 }

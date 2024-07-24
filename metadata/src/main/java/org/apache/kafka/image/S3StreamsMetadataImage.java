@@ -194,7 +194,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         List<S3StreamSetObject> streamSetObjects,
         NodeS3StreamSetObjectMetadataImage node
     ) {
-        long nextStartOffset = ctx.startOffset;
+        long nextStartOffset = ctx.nextStartOffset;
         for (; ; ) {
             int roundStartObjectSize = objects.size();
 
@@ -216,7 +216,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 objects.add(streamObject.toMetadata());
                 nextStartOffset = streamObject.endOffset();
                 if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
-                    ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+                    completeWithSanityCheck(ctx, objects);
                     return;
                 }
             }
@@ -226,7 +226,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 // 1. can not find the range containing nextStartOffset, or
                 // 2. the range is the same as the last one, which means the nextStartOffset does not move on.
                 if (rangeIndex < 0 || lastRangeIndex == rangeIndex) {
-                    ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+                    completeWithSanityCheck(ctx, objects);
                     break;
                 }
                 lastRangeIndex = rangeIndex;
@@ -250,7 +250,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                     // load stream set object index
                     int finalIndex = index;
                     loadStreamSetObjectInfo(ctx, finalStreamSetObjects, index).thenAccept(v -> {
-                        ctx.startOffset = finalNextStartOffset;
+                        ctx.nextStartOffset = finalNextStartOffset;
                         fillObjects(ctx, stream, objects, finalLastRangeIndex, finalStreamObjectIndex, streamObjects,
                             finalIndex, finalStreamSetObjects, finalNode);
                     });
@@ -275,7 +275,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                         streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
                     if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
-                        ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+                        completeWithSanityCheck(ctx, objects);
                         return;
                     }
                 } else {
@@ -292,6 +292,21 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 streamSetObjects = null;
             }
         }
+    }
+
+    private void completeWithSanityCheck(GetObjectsContext ctx, List<S3ObjectMetadata> objects) {
+        if (sanityCheck(ctx, objects)) {
+            ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+        } else {
+            ctx.cf.completeExceptionally(new IllegalStateException(
+                String.format("The result does not matched the requested range: streamId=%d, range=[%d, %d), limit=%d",
+                    ctx.streamId, ctx.startOffset, ctx.endOffset, ctx.limit)));
+        }
+    }
+
+    private boolean sanityCheck(GetObjectsContext ctx, List<S3ObjectMetadata> objects) {
+        // TODO: check for object continuity and range matching
+        return true;
     }
 
     private int findStartSearchIndex(long startObjectId, List<S3StreamSetObject> streamSetObjects, int nodeId) {
@@ -566,8 +581,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     }
 
     static class GetObjectsContext {
-        long streamId;
+        final long streamId;
         long startOffset;
+        long nextStartOffset;
         long endOffset;
         int limit;
         RangeGetter rangeGetter;
@@ -580,6 +596,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             RangeGetter rangeGetter, LocalStreamRangeIndexCache indexCache) {
             this.streamId = streamId;
             this.startOffset = startOffset;
+            this.nextStartOffset = startOffset;
             this.endOffset = endOffset;
             this.limit = limit;
             this.rangeGetter = rangeGetter;
