@@ -76,7 +76,7 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 /**
  * The S3ObjectControlManager manages all S3Object's lifecycle, such as apply, create, destroy, etc.
  */
-@SuppressWarnings("NPathComplexity")
+@SuppressWarnings({"NPathComplexity", "CyclomaticComplexity"})
 public class S3ObjectControlManager {
 
     // TODO: config it in properties
@@ -385,6 +385,9 @@ public class S3ObjectControlManager {
                 } else {
                     record.setMarkDestroyedTimeInMs(obj.getTimestamp());
                 }
+                if (version.isObjectAttributesSupported()) {
+                    record.setAttributes(ObjectAttributes.builder().bucket(ObjectAttributes.MATCH_ALL_BUCKET).build().attributes());
+                }
                 ttlReachedObjects.add(obj.getObjectId());
                 // generate the records which mark the expired objects as destroyed
                 records.add(new ApiMessageAndVersion(record, objectRecordVersion));
@@ -425,7 +428,7 @@ public class S3ObjectControlManager {
                 }
                 List<S3Object> requiredDeleteObjects = new ArrayList<>(Math.min(expiredSize, MAX_DELETE_BATCH_COUNT));
                 int deleteCount = 0;
-                for (Long objectId: expired) {
+                for (Long objectId : expired) {
                     S3Object s3Object = objectsMetadata.get(objectId);
                     if (s3Object == null) {
                         fastDeleteObjects.add(objectId);

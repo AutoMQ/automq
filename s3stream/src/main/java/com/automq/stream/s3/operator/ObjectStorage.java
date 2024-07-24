@@ -74,6 +74,14 @@ public interface ObjectStorage {
         public String key() {
             return key;
         }
+
+        @Override
+        public String toString() {
+            return "ObjectPath{" +
+                "bucketId=" + bucketId +
+                ", key='" + key + '\'' +
+                '}';
+        }
     }
 
     class ObjectInfo extends ObjectPath {
