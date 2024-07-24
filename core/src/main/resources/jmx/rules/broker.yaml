@@ -335,3 +335,39 @@ rules:
         metric: kafka.group.empty.count
         type: gauge
         desc: The number of groups that have no more members
+
+  # Broker Quota Metrics
+  - bean: kafka.server:type=*,domain=broker,nodeId=*
+    metricAttribute:
+      # Available type: Request, Produce, Fetch
+      type: param(type)
+    mapping:
+      broker-value-rate:
+        metric: kafka.broker.quota.value.record
+        type: gauge
+        desc: The number of value that quota manager records
+      broker-throttle-time:
+        metric: kafka.broker.quota.throttle.time
+        type: gauge
+        desc: The average throttle-time
+
+  - bean: kafka.server:type=socket-server-metrics
+    mapping:
+      broker-connection-accept-rate:
+        metric: kafka.broker.connection.accept.rate
+        type: gauge
+        desc: The connection creation rate pre broker
+
+  - bean: kafka.server:type=socket-server-metrics,listener=*
+    metricAttribute:
+      # listener name
+      listener: param(listener)
+    mapping:
+      connection-accept-rate:
+        metric: kafka.listener.connection.accept.rate
+        type: gauge
+        desc: The connection creation rate pre listener
+      connection-accept-throttle-time:
+        metric: kafka.listener.connection.accept.throttle.time
+        type: gauge
+        desc: The average throttle-time pre listener

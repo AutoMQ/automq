@@ -11,7 +11,9 @@
 
 package org.apache.kafka.controller.es;
 
+import java.util.Random;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.WeightedRandomList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,18 +22,20 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.function.Predicate;
 
 public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector {
     private static final Logger LOGGER = LoggerFactory.getLogger(LoadAwarePartitionLeaderSelector.class);
-    private final PriorityQueue<BrokerLoad> brokerLoads;
+    private final WeightedRandomList<Integer> brokerLoads;
     private final RandomPartitionLeaderSelector randomSelector;
-    private final Map<Integer, Double> brokerLoadMap;
 
     public LoadAwarePartitionLeaderSelector(List<Integer> aliveBrokers, Predicate<Integer> brokerPredicate) {
-        brokerLoadMap = ClusterStats.getInstance().brokerLoads();
+        this(new Random(), aliveBrokers, brokerPredicate);
+    }
+
+    public LoadAwarePartitionLeaderSelector(Random r, List<Integer> aliveBrokers, Predicate<Integer> brokerPredicate) {
+        Map<Integer, Double> brokerLoadMap = ClusterStats.getInstance().brokerLoads();
         if (brokerLoadMap == null) {
             this.brokerLoads = null;
             LOGGER.warn("No broker loads available, using random partition leader selector");
@@ -48,60 +52,39 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
                 availableBrokers.add(broker);
             }
         }
-        this.brokerLoads = new PriorityQueue<>();
+        brokerLoads = new WeightedRandomList<>(r);
         for (int brokerId : availableBrokers) {
             if (!brokerPredicate.test(brokerId) || !brokerLoadMap.containsKey(brokerId)) {
                 continue;
             }
-            brokerLoads.offer(new BrokerLoad(brokerId, brokerLoadMap.get(brokerId)));
+            double load = Math.max(1, brokerLoadMap.get(brokerId));
+            // allocation weight is inversely proportional to the load
+            brokerLoads.add(new WeightedRandomList.Entity<>(brokerId, 1 / load));
         }
+        brokerLoads.update();
         this.randomSelector = new RandomPartitionLeaderSelector(availableBrokers, brokerPredicate);
     }
 
     @Override
     public Optional<Integer> select(TopicPartition tp) {
-        if (this.brokerLoads == null || brokerLoads.isEmpty()) {
+        try {
+            if (this.brokerLoads == null || brokerLoads.size() == 0) {
+                return randomSelector.select(tp);
+            }
+            double tpLoad = ClusterStats.getInstance().partitionLoad(tp);
+            if (tpLoad == ClusterStats.INVALID) {
+                return randomSelector.select(tp);
+            }
+            WeightedRandomList.Entity<Integer> candidate = brokerLoads.next();
+            if (candidate == null) {
+                return randomSelector.select(tp);
+            }
+            double load = 1 / candidate.weight() + tpLoad;
+            candidate.setWeight(1 / load);
+            brokerLoads.update();
+            return Optional.of(candidate.entity());
+        } catch (Throwable t) {
             return randomSelector.select(tp);
-        }
-        double tpLoad = ClusterStats.getInstance().partitionLoad(tp);
-        if (tpLoad == ClusterStats.INVALID) {
-            return randomSelector.select(tp);
-        }
-        BrokerLoad candidate = brokerLoads.poll();
-        if (candidate == null) {
-            return randomSelector.select(tp);
-        }
-        double load = candidate.load() + tpLoad;
-        candidate.setLoad(load);
-        brokerLoadMap.put(candidate.brokerId(), load);
-        brokerLoads.offer(candidate);
-        return Optional.of(candidate.brokerId());
-    }
-
-    public static class BrokerLoad implements Comparable<BrokerLoad> {
-        private final int brokerId;
-        private double load;
-
-        public BrokerLoad(int brokerId, double load) {
-            this.brokerId = brokerId;
-            this.load = load;
-        }
-
-        public int brokerId() {
-            return brokerId;
-        }
-
-        public double load() {
-            return load;
-        }
-
-        public void setLoad(double load) {
-            this.load = load;
-        }
-
-        @Override
-        public int compareTo(BrokerLoad o) {
-            return Double.compare(load, o.load);
         }
     }
 }

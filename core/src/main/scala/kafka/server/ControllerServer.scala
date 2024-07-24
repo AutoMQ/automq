@@ -295,11 +295,11 @@ class ControllerServer(
           setDelegationTokenExpiryCheckIntervalMs(config.delegationTokenExpiryCheckIntervalMs).
           setEligibleLeaderReplicasEnabled(config.elrEnabled).
           setStreamClient(streamClient).
+          setExtension(c => quorumControllerExtension(c)).
           setQuorumVoters(config.quorumVoters).
           setReplicaPlacer(replicaPlacer())
       }
       controller = controllerBuilder.build()
-      controller.setExtension(quorumControllerExtension(controller))
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.

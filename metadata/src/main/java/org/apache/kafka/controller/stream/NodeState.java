@@ -9,13 +9,8 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.cache;
+package org.apache.kafka.controller.stream;
 
-import com.automq.stream.s3.ObjectReader;
-
-public class ObjectReaderLRUCache extends AsyncObjectLRUCache<Long, ObjectReader> {
-
-    public ObjectReaderLRUCache(int maxObjectSize) {
-        super(maxObjectSize);
-    }
+public enum NodeState {
+    ACTIVE, FENCED, CONTROLLED_SHUTDOWN, UNKNOWN
 }

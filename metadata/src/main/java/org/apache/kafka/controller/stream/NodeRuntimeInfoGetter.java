@@ -9,13 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.cache;
+package org.apache.kafka.controller.stream;
 
-import com.automq.stream.s3.ObjectReader;
+public interface NodeRuntimeInfoGetter {
 
-public class ObjectReaderLRUCache extends AsyncObjectLRUCache<Long, ObjectReader> {
+    String state(int nodeId);
 
-    public ObjectReaderLRUCache(int maxObjectSize) {
-        super(maxObjectSize);
-    }
+    boolean hasOpeningStreams(int nodeId);
+
 }

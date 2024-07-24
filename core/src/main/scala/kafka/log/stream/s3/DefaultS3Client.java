@@ -22,7 +22,6 @@ import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
 import com.automq.stream.s3.cache.blockcache.StreamReaders;
 import com.automq.stream.s3.compact.CompactionManager;
-import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.failover.FailoverFactory;
 import com.automq.stream.s3.failover.FailoverRequest;
@@ -44,21 +43,13 @@ import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
 import kafka.server.BrokerServer;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.kafka.clients.ClientResponse;
-import org.apache.kafka.common.message.ApiVersionsResponseData.FinalizedFeatureKey;
-import org.apache.kafka.common.message.ApiVersionsResponseData.FinalizedFeatureKeyCollection;
-import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.ApiVersionsRequest;
-import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.image.MetadataImage;
-import org.apache.kafka.server.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,33 +59,31 @@ public class DefaultS3Client implements Client {
     protected final Config config;
     private final StreamMetadataManager metadataManager;
 
-    private final ControllerRequestSender requestSender;
+    protected final ControllerRequestSender requestSender;
 
-    private final WriteAheadLog writeAheadLog;
-    private final S3Storage storage;
+    protected final WriteAheadLog writeAheadLog;
+    protected final S3Storage storage;
 
-    private final ObjectReaderFactory objectReaderFactory;
-    private final S3BlockCache blockCache;
+    protected final ObjectReaderFactory objectReaderFactory;
+    protected final S3BlockCache blockCache;
 
-    private final ObjectManager objectManager;
+    protected final ObjectManager objectManager;
 
-    private final StreamManager streamManager;
+    protected final StreamManager streamManager;
 
-    private final CompactionManager compactionManager;
+    protected final CompactionManager compactionManager;
 
-    private final S3StreamClient streamClient;
+    protected final S3StreamClient streamClient;
 
-    private final KVClient kvClient;
+    protected final KVClient kvClient;
 
-    private final Failover failover;
+    protected final Failover failover;
 
-    private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
-    private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
+    protected final AsyncNetworkBandwidthLimiter networkInboundLimiter;
+    protected final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
-    private final BrokerServer brokerServer;
-    private final LocalStreamRangeIndexCache localIndexCache;
-
-    private final AutoMQVersion remoteAutoMQVersion;
+    protected final BrokerServer brokerServer;
+    protected final LocalStreamRangeIndexCache localIndexCache;
 
     public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;
@@ -105,7 +94,6 @@ public class DefaultS3Client implements Client {
             throw new IllegalArgumentException(String.format("refillToken must be greater than 0, bandwidth: %d, refill period: %dms",
                 config.networkBaselineBandwidth(), config.refillPeriodMs()));
         }
-        remoteAutoMQVersion = getRemoteAutoMQVersion();
         networkInboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
@@ -124,6 +112,7 @@ public class DefaultS3Client implements Client {
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
             config.controllerRequestRetryBaseDelayMs());
         localIndexCache = new LocalStreamRangeIndexCache();
+        localIndexCache.start();
         localIndexCache.init(config.nodeId(), objectStorage);
         this.objectReaderFactory = new DefaultObjectReaderFactory(objectStorage);
         this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
@@ -257,41 +246,8 @@ public class DefaultS3Client implements Client {
 
     private AutoMQVersion getAutoMQVersion() {
         if (brokerServer.metadataCache().currentImage() == MetadataImage.EMPTY) {
-            // The s3stream initialized before the metadata load, so we use remoteAutoMQVersion.
-            return remoteAutoMQVersion;
-        } else {
-            return brokerServer.metadataCache().autoMQVersion();
+            throw new IllegalStateException("The image should be loaded first");
         }
-    }
-
-    private AutoMQVersion getRemoteAutoMQVersion() {
-        CompletableFuture<AutoMQVersion> cf = new CompletableFuture<>();
-        brokerServer.clientToControllerChannelManager().sendRequest(new ApiVersionsRequest.Builder(), new ControllerRequestCompletionHandler() {
-            @Override
-            public void onTimeout() {
-                cf.completeExceptionally(new TimeoutException("Get AutoMQVersion timeout"));
-            }
-
-            @Override
-            public void onComplete(ClientResponse response) {
-                if (!response.hasResponse()) {
-                    cf.completeExceptionally(new AutoMQException("Get AutoMQVersion with empty response: " + response));
-                    return;
-                }
-                ApiVersionsResponse resp = (ApiVersionsResponse) response.responseBody();
-                if (resp.data().errorCode() != Errors.NONE.code()) {
-                    cf.completeExceptionally(new AutoMQException(String.format("Get AutoMQVersion with error[%s] response: %s", resp.data().errorCode(), response)));
-                    return;
-                }
-                FinalizedFeatureKeyCollection features = resp.data().finalizedFeatures();
-                FinalizedFeatureKey featureKey = features.find(AutoMQVersion.FEATURE_NAME);
-                cf.complete(AutoMQVersion.from(featureKey.maxVersionLevel()));
-            }
-        });
-        try {
-            return cf.get();
-        } catch (Throwable e) {
-            throw new AutoMQException(e);
-        }
+        return brokerServer.metadataCache().autoMQVersion();
     }
 }

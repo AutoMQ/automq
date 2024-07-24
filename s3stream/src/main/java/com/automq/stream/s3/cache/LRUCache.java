@@ -71,4 +71,8 @@ public class LRUCache<K, V> {
     public synchronized boolean containsKey(K key) {
         return cache.containsKey(key);
     }
+
+    public synchronized void clear() {
+        cache.clear();
+    }
 }
