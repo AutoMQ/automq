@@ -21,6 +21,7 @@ import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -451,6 +452,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         for (ObjectPath objectPath : objectPaths) {
             if (!bucketCheck(objectPath.bucketId(), cf)) {
+                LOGGER.error("[BUG] {} bucket check fail, expect {}", objectPath, bucketId());
                 return cf;
             }
         }
@@ -694,6 +696,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     protected <T> boolean bucketCheck(int bucketId, CompletableFuture<T> cf) {
+        if (bucketId == ObjectAttributes.MATCH_ALL_BUCKET) {
+            return true;
+        }
         if (bucketId != bucketURI.bucketId()) {
             cf.completeExceptionally(new IllegalArgumentException(String.format("bucket not match, expect %d, actual %d",
                 bucketURI.bucketId(), bucketId)));
