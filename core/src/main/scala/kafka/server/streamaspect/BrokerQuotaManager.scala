@@ -54,20 +54,13 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     clientSensors.quotaSensor.record(value, time.milliseconds(), false)
   }
 
-
   def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, request: RequestChannel.Request, value: Double,
     timeMs: Long): Int = {
     if (!config.quotaEnabled) {
       return 0
     }
 
-    if (quotaType == QuotaType.Request) {
-        request.recordNetworkThreadTimeCallback = Some(timeNanos => recordNoThrottle(quotaType, nanosToPercentage(timeNanos)))
-        maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context,
-          nanosToPercentage(request.requestThreadTimeNanos), timeMs)
-      } else {
-        maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context, value, timeMs)
-      }
+    maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context, value, timeMs)
   }
 
   protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
@@ -102,7 +95,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       0
     } catch {
       case e: QuotaViolationException =>
-        val throttleTimeMs = throttleTime(e, timeMs).toInt
+        val throttleTimeMs = throttleTime(quotaType, e, timeMs).toInt
         debug(s"Quota violated for sensor (${clientSensors.quotaSensor.name}). Delay time: ($throttleTimeMs)")
         throttleTimeMs
     }

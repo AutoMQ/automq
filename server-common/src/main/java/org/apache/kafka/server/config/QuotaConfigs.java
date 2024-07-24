@@ -100,7 +100,7 @@ public class QuotaConfigs {
     public static final String BROKER_QUOTA_ENABLED_CONFIG = "broker.quota.enabled";
     public static final String BROKER_QUOTA_PRODUCE_BYTES_CONFIG = "broker.quota.produce.bytes";
     public static final String BROKER_QUOTA_FETCH_BYTES_CONFIG = "broker.quota.fetch.bytes";
-    public static final String BROKER_QUOTA_REQUEST_PERCENTAGE_CONFIG = "broker.quota.request.percentage";
+    public static final String BROKER_QUOTA_REQUEST_RATE_CONFIG = "broker.quota.request.rate";
     public static final String BROKER_QUOTA_WHITE_LIST_USER_CONFIG = "broker.quota.white.list.user";
     public static final String BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG = "broker.quota.white.list.client.id";
     public static final String BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG = "broker.quota.white.list.listener";
@@ -110,7 +110,7 @@ public class QuotaConfigs {
     public static final String BROKER_QUOTA_ENABLED_DOC = "Enable broker quota.";
     public static final String BROKER_QUOTA_PRODUCE_BYTES_DOC = "The maximum bytes send by producer in single window.";
     public static final String BROKER_QUOTA_FETCH_BYTES_DOC = "The maximum bytes receive by consumer in single window.";
-    public static final String BROKER_QUOTA_REQUEST_PERCENTAGE_DOC = "The maximum cpu time percentage cost by client in single window.";
+    public static final String BROKER_QUOTA_REQUEST_RATE_DOC = "The maximum request count send by client in single window.";
     public static final String BROKER_QUOTA_WHITE_LIST_USER_DOC = "Broker quota white list for user.";
     public static final String BROKER_QUOTA_WHITE_LIST_CLIENT_ID_DOC = "Broker quota white list for client id.";
     public static final String BROKER_QUOTA_WHITE_LIST_LISTENER_DOC = "Broker quota white list for listener name.";
