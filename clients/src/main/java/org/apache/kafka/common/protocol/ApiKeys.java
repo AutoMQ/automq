@@ -134,7 +134,7 @@ public enum ApiKeys {
     PUT_KVS(ApiMessageType.PUT_KVS, false, true),
     DELETE_KVS(ApiMessageType.DELETE_KVS, false, true),
     AUTOMQ_REGISTER_NODE(ApiMessageType.AUTOMQ_REGISTER_NODE, false, false),
-    AUTOMQ_GET_NODES(ApiMessageType.AUTOMQ_GET_NODES, false, false),
+    AUTOMQ_GET_NODES(ApiMessageType.AUTOMQ_GET_NODES, false, true),
 
     GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true),
     DESCRIBE_STREAMS(ApiMessageType.DESCRIBE_STREAMS, false, true);
