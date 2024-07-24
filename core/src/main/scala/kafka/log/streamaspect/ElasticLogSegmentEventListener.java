@@ -11,6 +11,22 @@
 
 package kafka.log.streamaspect;
 
+import java.util.List;
+
 public interface ElasticLogSegmentEventListener {
+    ElasticLogSegmentEventListener NOOP = new ElasticLogSegmentEventListener() {
+        @Override
+        public void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event) {
+
+        }
+
+        @Override
+        public void onSegmentsDelete(List<Long> segmentBaseOffset, ElasticLogSegmentEvent event) {
+
+        }
+    };
+
     void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event);
+
+    void onSegmentsDelete(List<Long> segmentBaseOffset, ElasticLogSegmentEvent event);
 }

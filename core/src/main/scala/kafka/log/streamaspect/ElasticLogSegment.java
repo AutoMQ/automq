@@ -410,7 +410,12 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
      */
     @Override
     public void deleteIfExists() throws IOException {
-        logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_DELETE);
+        // do nothing here
+        // the log segment delete event is handled in batch in LocalLog.deleteSegments
+    }
+
+    public ElasticLogSegmentEventListener getElasticLogSegmentEventListener() {
+        return logListener;
     }
 
     @Override

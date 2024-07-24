@@ -347,8 +347,7 @@ public class ElasticLogSegmentTest {
             }
         });
 
-        return new ElasticLogSegment(logDir, meta, manager, new LogConfig(props), time, (a, b) -> {
-        }, "");
+        return new ElasticLogSegment(logDir, meta, manager, new LogConfig(props), time, ElasticLogSegmentEventListener.NOOP, "");
     }
 
     MemoryRecords records(long offset, String... records) {

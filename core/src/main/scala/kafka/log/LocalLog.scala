@@ -17,7 +17,7 @@
 
 package kafka.log
 
-import kafka.log.streamaspect.ElasticLogSegment
+import kafka.log.streamaspect.{ElasticLogSegment, ElasticLogSegmentEvent}
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.{KafkaStorageException, OffsetOutOfRangeException}
 import org.apache.kafka.common.message.FetchResponseData
@@ -944,16 +944,25 @@ object LocalLog extends Logging {
     }
 
     def deleteSegments(): Unit = {
-      info(s"${logPrefix}Deleting segment files ${segmentsToDelete.mkString(",")}")
+      // AutoMQ inject start
+      val deleteSegmentStr = if (segmentsToDelete.size > 100) {
+          segmentsToDelete.takeRight(100).mkString(",")
+      } else {
+          segmentsToDelete.mkString(",")
+      }
+      // AutoMQ inject end
+      info(s"${logPrefix}Deleting segment files $deleteSegmentStr")
       val parentDir = dir.getParent
       maybeHandleIOException(logDirFailureChannel, parentDir, s"Error while deleting segments for $topicPartition in dir $parentDir") {
           // AutoMQ inject start
           val head = segmentsToDelete.head
           if (head != null && head.isInstanceOf[ElasticLogSegment]) {
-              // ElasticLogSegment.deleteIfExists will only persistent the meta base on the max offset
-              // so only trigger the maxBaseOffsetSegment here.
-              val maxBaseOffsetSegment = segmentsToDelete.maxBy(_.baseOffset())(Ordering.Long)
-              maxBaseOffsetSegment.deleteIfExists()
+              val elasticLogSegment = head.asInstanceOf[ElasticLogSegment]
+              val baseOffsets = segmentsToDelete.map(segment => java.lang.Long.valueOf(segment.baseOffset())).toList.asJava
+              // use batch delete segment here to avoid persist logMeta too many times.
+              // eg. delete 500+ ElasticLogSegment at one time.
+              val listener = elasticLogSegment.getElasticLogSegmentEventListener
+              listener.onSegmentsDelete(baseOffsets, ElasticLogSegmentEvent.SEGMENT_DELETE)
           } else {
               segmentsToDelete.foreach { segment =>
                   segment.deleteIfExists()

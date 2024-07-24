@@ -15,6 +15,7 @@ import com.automq.stream.utils.Threads;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -142,17 +143,8 @@ public class ElasticLogSegmentManager {
         public void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event) {
             switch (event) {
                 case SEGMENT_DELETE: {
-                    boolean deleted = remove(segmentBaseOffset) != null;
-                    if (deleted) {
-                        // This may happen since kafka.log.LocalLog.deleteSegmentFiles schedules the delayed deletion task.
-                        if (metaStream.isFenced()) {
-                            if (LOGGER.isDebugEnabled()) {
-                                LOGGER.debug("{} meta stream is closed, skip persisting log meta", logIdent);
-                            }
-                        } else {
-                            asyncPersistLogMeta();
-                        }
-                    }
+                    LOGGER.warn("consider use onSegmentsDelete method");
+                    handleSegmentsDelete(List.of(segmentBaseOffset));
                     break;
                 }
                 case SEGMENT_UPDATE: {
@@ -161,6 +153,33 @@ public class ElasticLogSegmentManager {
                 }
                 default: {
                     throw new IllegalStateException("Unsupported event " + event);
+                }
+            }
+        }
+        @Override
+        public void onSegmentsDelete(List<Long> segmentBaseOffset, ElasticLogSegmentEvent event) {
+            if (Objects.requireNonNull(event) == ElasticLogSegmentEvent.SEGMENT_DELETE) {
+                handleSegmentsDelete(segmentBaseOffset);
+            } else {
+                throw new IllegalStateException("Unsupported event " + event);
+            }
+        }
+
+        private void handleSegmentsDelete(List<Long> segmentBaseOffset) {
+            boolean deleted = false;
+
+            for (Long baseOffset : segmentBaseOffset) {
+                deleted = deleted || (remove(baseOffset) != null);
+            }
+
+            if (deleted) {
+                // This may happen since kafka.log.LocalLog.deleteSegmentFiles schedules the delayed deletion task.
+                if (metaStream.isFenced()) {
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("{} meta stream is closed, skip persisting log meta", logIdent);
+                    }
+                } else {
+                    asyncPersistLogMeta();
                 }
             }
         }
