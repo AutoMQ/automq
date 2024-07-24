@@ -295,18 +295,50 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     }
 
     private void completeWithSanityCheck(GetObjectsContext ctx, List<S3ObjectMetadata> objects) {
-        if (sanityCheck(ctx, objects)) {
-            ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
-        } else {
-            ctx.cf.completeExceptionally(new IllegalStateException(
-                String.format("The result does not matched the requested range: streamId=%d, range=[%d, %d), limit=%d",
-                    ctx.streamId, ctx.startOffset, ctx.endOffset, ctx.limit)));
+        try {
+            sanityCheck(ctx, objects);
+        } catch (Throwable t) {
+            ctx.cf.completeExceptionally(new IllegalStateException(String.format("Get objects failed for streamId=%d," +
+                    " range=[%d, %d), limit=%d", ctx.streamId, ctx.startOffset, ctx.endOffset, ctx.limit), t));
+            return;
+        }
+        ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+    }
+
+    /**
+     * Check for continuity of stream range and range matching.
+     * Note: insufficient range is possible and caller should retry after
+     */
+    void sanityCheck(GetObjectsContext ctx, List<S3ObjectMetadata> objects) {
+        if (objects.size() > ctx.limit) {
+            throw new IllegalArgumentException(String.format("number of objects %d exceeds limit %d", objects.size(), ctx.limit));
+        }
+        long nextStartOffset = -1L;
+        for (S3ObjectMetadata object : objects) {
+            StreamOffsetRange range = findStreamOffsetRange(object.getOffsetRanges(), ctx.streamId);
+            if (range == null) {
+                throw new IllegalArgumentException(String.format("range not found in object %s", object));
+            }
+            if (nextStartOffset == -1L) {
+                if (range.startOffset() > ctx.startOffset) {
+                    throw new IllegalArgumentException(String.format("first matched range %s in object %s is greater than" +
+                        " requested start offset %d", range, object, ctx.startOffset));
+                }
+            } else if (nextStartOffset != range.startOffset()) {
+                throw new IllegalArgumentException(String.format("range is not continuous, expected start offset %d," +
+                    " actual %d in object %s", nextStartOffset, range.startOffset(), object));
+            }
+            nextStartOffset = range.endOffset();
         }
     }
 
-    private boolean sanityCheck(GetObjectsContext ctx, List<S3ObjectMetadata> objects) {
-        // TODO: check for object continuity and range matching
-        return true;
+    private StreamOffsetRange findStreamOffsetRange(List<StreamOffsetRange> ranges, long streamId) {
+        for (StreamOffsetRange range : ranges) {
+            if (range.streamId() == streamId) {
+                return range;
+            }
+        }
+        return null;
     }
 
     private int findStartSearchIndex(long startObjectId, List<S3StreamSetObject> streamSetObjects, int nodeId) {

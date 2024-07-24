@@ -22,6 +22,7 @@ import com.automq.stream.s3.index.SparseRangeIndex;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
@@ -29,6 +30,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.google.common.collect.Range;
 import io.netty.buffer.ByteBuf;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,6 +60,7 @@ import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -331,6 +334,54 @@ public class S3StreamsMetadataImageTest {
         assertEquals(888, objects.endOffset());
         assertEquals(2, objects.objects().size());
         assertEquals(List.of(4L, 9L), objects.objects().stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+    }
+
+    @Test
+    public void testGetObjectsSanityCheck() {
+        S3StreamsMetadataImage streamsImage = createStreamImage();
+        S3StreamsMetadataImage.GetObjectsContext ctx = new S3StreamsMetadataImage.GetObjectsContext(STREAM0,
+            22L, 100L, 2, defaultRangeGetter, null);
+
+        // test empty result
+        Assertions.assertDoesNotThrow(() -> streamsImage.sanityCheck(ctx, Collections.emptyList()));
+
+        // test missing range
+        Assertions.assertThrows(IllegalArgumentException.class, () -> streamsImage.sanityCheck(ctx, List.of(
+            new S3ObjectMetadata(0, S3ObjectType.STREAM_SET,
+                List.of(new StreamOffsetRange(STREAM1, 22L, 100L)), System.currentTimeMillis())
+        )));
+
+        // test mismatched first range
+        Assertions.assertThrows(IllegalArgumentException.class, () -> streamsImage.sanityCheck(ctx, List.of(
+            new S3ObjectMetadata(0, S3ObjectType.STREAM_SET,
+                List.of(new StreamOffsetRange(STREAM0, 40L, 50L)), System.currentTimeMillis())
+        )));
+
+        // test not continuous range
+        Assertions.assertThrows(IllegalArgumentException.class, () -> streamsImage.sanityCheck(ctx, List.of(
+            new S3ObjectMetadata(0, S3ObjectType.STREAM_SET,
+                List.of(new StreamOffsetRange(STREAM0, 10L, 50L)), System.currentTimeMillis()),
+            new S3ObjectMetadata(1, S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(STREAM0, 600L, 100L)), System.currentTimeMillis())
+        )));
+
+        // test over-sized objects
+        Assertions.assertThrows(IllegalArgumentException.class, () -> streamsImage.sanityCheck(ctx, List.of(
+            new S3ObjectMetadata(0, S3ObjectType.STREAM_SET,
+                List.of(new StreamOffsetRange(STREAM0, 10L, 50L)), System.currentTimeMillis()),
+            new S3ObjectMetadata(1, S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(STREAM0, 50L, 80L)), System.currentTimeMillis()),
+            new S3ObjectMetadata(2, S3ObjectType.STREAM_SET,
+                List.of(new StreamOffsetRange(STREAM0, 80L, 100L)), System.currentTimeMillis())
+        )));
+
+        // test normal case
+        Assertions.assertDoesNotThrow(() -> streamsImage.sanityCheck(ctx, List.of(
+            new S3ObjectMetadata(0, S3ObjectType.STREAM_SET,
+                List.of(new StreamOffsetRange(STREAM0, 10L, 50L)), System.currentTimeMillis()),
+            new S3ObjectMetadata(1, S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(STREAM0, 50L, 120L)), System.currentTimeMillis())
+        )));
     }
 
     /**
