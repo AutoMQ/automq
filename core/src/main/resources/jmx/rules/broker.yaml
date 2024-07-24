@@ -122,11 +122,6 @@ rules:
     metricAttribute:
       type: param(request)
     mapping:
-      Mean:
-        metric: kafka.request.size.mean
-        type: gauge
-        desc: The average size of requests received by the broker
-        unit: By
       50thPercentile:
         metric: kafka.request.size.50p
         type: gauge
@@ -148,10 +143,6 @@ rules:
       type: param(request)
     unit: ms
     mapping:
-      Mean:
-        metric: kafka.request.time.mean
-        type: gauge
-        desc: The mean time the broker has taken to service requests
       50thPercentile:
         metric: kafka.request.time.50p
         type: gauge
@@ -174,10 +165,6 @@ rules:
         metric: kafka.request.queue.time.count
         type: counter
         desc: The total time the broker has taken to dequeue requests
-      Mean:
-        metric: kafka.request.queue.time.mean
-        type: gauge
-        desc: The mean time the broker has taken to dequeue requests
       50thPercentile:
         metric: kafka.request.queue.time.50p
         type: gauge
@@ -200,10 +187,6 @@ rules:
         metric: kafka.response.queue.time.count
         type: counter
         desc: The total time the broker has taken to dequeue responses
-      Mean:
-        metric: kafka.response.queue.time.mean
-        type: gauge
-        desc: The mean time the broker has taken to dequeue responses
       50thPercentile:
         metric: kafka.response.queue.time.50p
         type: gauge
@@ -274,10 +257,6 @@ rules:
         metric: kafka.logs.flush.time.99p
         type: gauge
         desc: Log flush time - 99th percentile
-      Mean:
-        metric: kafka.logs.flush.time.mean
-        type: gauge
-        desc: Log flush time - mean
       Max:
         metric: kafka.logs.flush.time.max
         type: gauge
