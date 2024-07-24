@@ -49,51 +49,6 @@ import org.mockito.Mockito;
 public class AutoBalancerMetricsReporterTest {
 
     @Test
-    @Disabled
-    public void testReportingMetrics() {
-        Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, "testReportingMetrics");
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        try (Consumer<String, AutoBalancerMetrics> consumer = new KafkaConsumer<>(props)) {
-            consumer.subscribe(Collections.singleton(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME));
-            long startMs = System.currentTimeMillis();
-            Set<Byte> expectedBrokerMetricTypes = new HashSet<>(RawMetricTypes.BROKER_METRICS);
-            Set<Byte> expectedPartitionMetricTypes = new HashSet<>(RawMetricTypes.PARTITION_METRICS);
-            Set<Byte> expectedMetricTypes = new HashSet<>();
-            expectedMetricTypes.addAll(expectedBrokerMetricTypes);
-            expectedMetricTypes.addAll(expectedPartitionMetricTypes);
-
-            Set<Byte> metricTypes = new HashSet<>();
-            ConsumerRecords<String, AutoBalancerMetrics> records;
-            while (metricTypes.size() < expectedMetricTypes.size() && System.currentTimeMillis() < startMs + 15000) {
-                records = consumer.poll(Duration.ofMillis(10L));
-                for (ConsumerRecord<String, AutoBalancerMetrics> record : records) {
-                    Set<Byte> localMetricTypes = new HashSet<>();
-                    AutoBalancerMetrics metrics = record.value();
-                    Assertions.assertNotNull(metrics);
-                    for (Byte type : metrics.getMetricValueMap().keySet()) {
-                        metricTypes.add(type);
-                        localMetricTypes.add(type);
-                    }
-                    if (metrics.metricType() == MetricTypes.BROKER_METRIC) {
-                        Assertions.assertEquals(expectedBrokerMetricTypes, localMetricTypes,
-                                "Expected " + expectedBrokerMetricTypes + ", but saw " + localMetricTypes);
-                    } else if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC) {
-                        Assertions.assertEquals(expectedPartitionMetricTypes, localMetricTypes,
-                                "Expected " + expectedPartitionMetricTypes + ", but saw " + localMetricTypes);
-                    } else {
-                        Assertions.fail("Unexpected metric type: " + metrics.metricType());
-                    }
-                }
-            }
-            Assertions.assertEquals(expectedMetricTypes, metricTypes, "Expected " + expectedMetricTypes + ", but saw " + metricTypes);
-        }
-    }
-
-    @Test
     public void testBootstrapServersConfig() {
         AutoBalancerMetricsReporter reporter = Mockito.mock(AutoBalancerMetricsReporter.class);
         Mockito.doCallRealMethod().when(reporter).getBootstrapServers(Mockito.anyMap(), Mockito.anyString());
