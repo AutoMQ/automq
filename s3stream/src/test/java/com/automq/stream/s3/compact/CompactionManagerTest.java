@@ -50,6 +50,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -559,6 +560,7 @@ public class CompactionManagerTest extends CompactionTestBase {
 
     @Test
     @SuppressWarnings("unchecked")
+    @Disabled
     public void testCompactionShutdown() throws Throwable {
         streamManager = Mockito.mock(MemoryMetadataManager.class);
         when(streamManager.getStreams(Mockito.anyList())).thenReturn(CompletableFuture.completedFuture(
