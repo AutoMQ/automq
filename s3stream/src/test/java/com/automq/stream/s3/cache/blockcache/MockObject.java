@@ -18,6 +18,7 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import io.netty.buffer.ByteBuf;
 import java.util.LinkedList;
 import java.util.List;
@@ -51,7 +52,7 @@ public class MockObject {
 
         public Builder(long objectId, int blockSizeThreshold) {
             this.objectId = objectId;
-            this.writer = new ObjectWriter.DefaultObjectWriter(objectId, operator, blockSizeThreshold, Integer.MAX_VALUE);
+            this.writer = new ObjectWriter.DefaultObjectWriter(objectId, operator, blockSizeThreshold, Integer.MAX_VALUE, ObjectStorage.WriteOptions.DEFAULT);
         }
 
         public Builder mockDelay(long delay) {

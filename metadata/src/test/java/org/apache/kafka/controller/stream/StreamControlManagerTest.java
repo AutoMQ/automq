@@ -21,6 +21,7 @@ import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import io.netty.buffer.Unpooled;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -1477,7 +1478,7 @@ public class StreamControlManagerTest {
     private ObjectReader mockObjectReader(
         List<StreamOffsetRange> ranges) throws ExecutionException, InterruptedException {
         MemoryObjectStorage objectStorage = new MemoryObjectStorage();
-        ObjectWriter objectWriter = new ObjectWriter.DefaultObjectWriter(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        ObjectWriter objectWriter = new ObjectWriter.DefaultObjectWriter(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE, ObjectStorage.WriteOptions.DEFAULT);
         ranges.forEach(range ->
             objectWriter.write(
                 range.streamId(),
