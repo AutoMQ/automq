@@ -327,6 +327,9 @@ public class AutoMQConfig {
 
     private static String genWALConfig(KafkaConfig config) {
         String walConfig = config.getString(S3_WAL_PATH_CONFIG);
+        if (walConfig == null) {
+            return null;
+        }
         if (walConfig.contains("@")) {
             return walConfig;
         }

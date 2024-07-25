@@ -22,7 +22,7 @@ import static com.automq.stream.utils.URIUtils.URI_PATTERN;
 public class IdURI {
     private final short id;
     private final String protocol;
-    private final String host;
+    private final String path;
     private final Map<String, List<String>> extension;
 
     private IdURI(short id, URI uri) {
@@ -34,7 +34,7 @@ public class IdURI {
         if (queryIndex != -1) {
             path = path.substring(0, queryIndex);
         }
-        this.host = path.substring(2);
+        this.path = path.substring(2);
         this.extension = URIUtils.splitQuery(uri);
     }
 
@@ -60,8 +60,8 @@ public class IdURI {
         return protocol;
     }
 
-    public String host() {
-        return host;
+    public String path() {
+        return path;
     }
 
     public String extensionString(String key) {

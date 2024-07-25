@@ -156,7 +156,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     public static BlockWALServiceBuilder builder(IdURI uri) {
-        BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(uri.host(), uri.extensionLong("capacity", 2147483648L));
+        BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(uri.path(), uri.extensionLong("capacity", 2147483648L));
         Optional.ofNullable(uri.extensionString("iops")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeRateLimit(Integer.parseInt(v)));
         Optional.ofNullable(uri.extensionString("iodepth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.ioThreadNums(Integer.parseInt(v)));
         return builder;
