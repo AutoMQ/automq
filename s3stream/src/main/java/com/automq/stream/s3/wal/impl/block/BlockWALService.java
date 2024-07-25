@@ -31,6 +31,7 @@ import com.automq.stream.s3.wal.exception.UnmarshalException;
 import com.automq.stream.s3.wal.util.WALCachedChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
+import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -47,6 +48,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Function;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -153,8 +155,15 @@ public class BlockWALService implements WriteAheadLog {
         return new BlockWALServiceBuilder(path, capacity);
     }
 
+    public static BlockWALServiceBuilder builder(IdURI uri) {
+        BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(uri.host(), uri.extensionLong("capacity", 2147483648L));
+        Optional.ofNullable(uri.extensionString("iops")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeRateLimit(Integer.parseInt(v)));
+        Optional.ofNullable(uri.extensionString("iodepth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.ioThreadNums(Integer.parseInt(v)));
+        return builder;
+    }
+
     public static BlockWALServiceBuilder recoveryBuilder(String path) {
-        return new BlockWALServiceBuilder(path);
+        return new BlockWALServiceBuilder(path).recoveryMode(true);
     }
 
     private void flushWALHeader(ShutdownType shutdownType) {
@@ -555,7 +564,11 @@ public class BlockWALService implements WriteAheadLog {
 
         public BlockWALServiceBuilder(String blockDevicePath) {
             this.blockDevicePath = blockDevicePath;
-            this.recoveryMode = true;
+        }
+
+        public BlockWALServiceBuilder recoveryMode(boolean recoveryMode) {
+            this.recoveryMode = recoveryMode;
+            return this;
         }
 
         public BlockWALServiceBuilder capacity(long capacity) {
@@ -565,15 +578,6 @@ public class BlockWALService implements WriteAheadLog {
 
         public BlockWALServiceBuilder config(Config config) {
             return this
-                .capacity(config.walCapacity())
-                .initBufferSize(config.walInitBufferSize())
-                .maxBufferSize(config.walMaxBufferSize())
-                .ioThreadNums(config.walThread())
-                .slidingWindowInitialSize(config.walWindowInitial())
-                .slidingWindowScaleUnit(config.walWindowIncrement())
-                .slidingWindowUpperLimit(config.walWindowMax())
-                .blockSoftLimit(config.walBlockSoftLimit())
-                .writeRateLimit(config.walWriteRateLimit())
                 .nodeId(config.nodeId())
                 .epoch(config.nodeEpoch());
         }
@@ -691,21 +695,21 @@ public class BlockWALService implements WriteAheadLog {
         @Override
         public String toString() {
             return "BlockWALServiceBuilder{"
-                   + "blockDevicePath='" + blockDevicePath
-                   + ", blockDeviceCapacityWant=" + blockDeviceCapacityWant
-                   + ", direct=" + direct
-                   + ", initBufferSize=" + initBufferSize
-                   + ", maxBufferSize=" + maxBufferSize
-                   + ", ioThreadNums=" + ioThreadNums
-                   + ", slidingWindowInitialSize=" + slidingWindowInitialSize
-                   + ", slidingWindowUpperLimit=" + slidingWindowUpperLimit
-                   + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
-                   + ", blockSoftLimit=" + blockSoftLimit
-                   + ", writeRateLimit=" + writeRateLimit
-                   + ", nodeId=" + nodeId
-                   + ", epoch=" + epoch
-                   + ", recoveryMode=" + recoveryMode
-                   + '}';
+                + "blockDevicePath='" + blockDevicePath
+                + ", blockDeviceCapacityWant=" + blockDeviceCapacityWant
+                + ", direct=" + direct
+                + ", initBufferSize=" + initBufferSize
+                + ", maxBufferSize=" + maxBufferSize
+                + ", ioThreadNums=" + ioThreadNums
+                + ", slidingWindowInitialSize=" + slidingWindowInitialSize
+                + ", slidingWindowUpperLimit=" + slidingWindowUpperLimit
+                + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
+                + ", blockSoftLimit=" + blockSoftLimit
+                + ", writeRateLimit=" + writeRateLimit
+                + ", nodeId=" + nodeId
+                + ", epoch=" + epoch
+                + ", recoveryMode=" + recoveryMode
+                + '}';
         }
     }
 
@@ -734,7 +738,7 @@ public class BlockWALService implements WriteAheadLog {
             }
             var that = (InvalidRecoverResult) obj;
             return Objects.equals(this.detail, that.detail) &&
-                   super.equals(obj);
+                super.equals(obj);
         }
 
         @Override

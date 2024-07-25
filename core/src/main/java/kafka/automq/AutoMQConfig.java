@@ -51,18 +51,8 @@ public class AutoMQConfig {
     public static final String S3_OPS_BUCKETS_DOC = "With the same format as s3.data.buckets";
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
-    public static final String S3_WAL_PATH_DOC = "The local WAL path for AutoMQ can be set to a block device path such as /dev/xxx or a filesystem file path." +
+    public static final String S3_WAL_PATH_DOC = "The local WAL path for AutoMQ can be set to a block device path such as 0@file:///dev/xxx?iops=3000&iodepth=8 or a filesystem file path." +
         "It is recommended to use a block device for better write performance.";
-
-    public static final String S3_WAL_CAPACITY_CONFIG = "s3.wal.capacity";
-    public static final String S3_WAL_CAPACITY_DOC = "The size of the local WAL for AutoMQ. This determines the maximum amount of data that can be written to the buffer before data is uploaded to object storage." +
-        "A larger capacity can tolerate more write jitter in object storage.";
-
-    public static final String S3_WAL_THREAD_CONFIG = "s3.wal.thread";
-    public static final String S3_WAL_THREAD_DOC = "The IO thread count for S3 WAL.";
-
-    public static final String S3_WAL_IOPS_CONFIG = "s3.wal.iops";
-    public static final String S3_WAL_IOPS_DOC = "The max iops for S3 WAL.";
 
     public static final String S3_WAL_CACHE_SIZE_CONFIG = "s3.wal.cache.size";
     public static final String S3_WAL_CACHE_SIZE_DOC = "The WAL (Write-Ahead Log) cache is a FIFO (First In, First Out) queue that contains data that has not yet been uploaded to object storage, as well as data that has been uploaded but not yet evicted from the cache." +
@@ -219,6 +209,16 @@ public class AutoMQConfig {
 
     public static final String S3_OPS_BUCKET_CONFIG = "s3.ops.bucket";
     public static final String S3_OPS_BUCKET_DOC = "[DEPRECATED]please use s3.ops.buckets. The object storage ops bucket.";
+
+    public static final String S3_WAL_CAPACITY_CONFIG = "s3.wal.capacity";
+    public static final String S3_WAL_CAPACITY_DOC = "[DEPRECATED]please use s3.wal.path. The size of the local WAL for AutoMQ. This determines the maximum amount of data that can be written to the buffer before data is uploaded to object storage." +
+        "A larger capacity can tolerate more write jitter in object storage.";
+
+    public static final String S3_WAL_THREAD_CONFIG = "s3.wal.thread";
+    public static final String S3_WAL_THREAD_DOC = "[DEPRECATED]please use s3.wal.path. The IO thread count for S3 WAL.";
+
+    public static final String S3_WAL_IOPS_CONFIG = "s3.wal.iops";
+    public static final String S3_WAL_IOPS_DOC = "[DEPRECATED]please use s3.wal.path. The max iops for S3 WAL.";
     // Deprecated config end
 
     public static void define(ConfigDef configDef) {
@@ -230,9 +230,6 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_CONFIG, BOOLEAN, true, HIGH, AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_DOC)
             .define(AutoMQConfig.S3_WAL_PATH_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_WAL_PATH_DOC)
             .define(AutoMQConfig.S3_WAL_CACHE_SIZE_CONFIG, LONG, -1L, MEDIUM, AutoMQConfig.S3_WAL_CACHE_SIZE_DOC)
-            .define(AutoMQConfig.S3_WAL_CAPACITY_CONFIG, LONG, 2147483648L, MEDIUM, AutoMQConfig.S3_WAL_CAPACITY_DOC)
-            .define(AutoMQConfig.S3_WAL_THREAD_CONFIG, INT, 8, MEDIUM, AutoMQConfig.S3_WAL_THREAD_DOC)
-            .define(AutoMQConfig.S3_WAL_IOPS_CONFIG, INT, 3000, MEDIUM, AutoMQConfig.S3_WAL_IOPS_DOC)
             .define(AutoMQConfig.S3_WAL_UPLOAD_THRESHOLD_CONFIG, LONG, -1L, MEDIUM, AutoMQConfig.S3_WAL_UPLOAD_THRESHOLD_DOC)
             .define(AutoMQConfig.S3_STREAM_SPLIT_SIZE_CONFIG, INT, 8388608, MEDIUM, AutoMQConfig.S3_STREAM_SPLIT_SIZE_DOC)
             .define(AutoMQConfig.S3_OBJECT_BLOCK_SIZE_CONFIG, INT, 524288, MEDIUM, AutoMQConfig.S3_OBJECT_BLOCK_SIZE_DOC)
@@ -274,15 +271,20 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
             .define(AutoMQConfig.S3_PATH_STYLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_PATH_STYLE_DOC)
             .define(AutoMQConfig.S3_BUCKET_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_BUCKET_DOC)
-            .define(AutoMQConfig.S3_OPS_BUCKET_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_OPS_BUCKET_DOC);
+            .define(AutoMQConfig.S3_OPS_BUCKET_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_OPS_BUCKET_DOC)
+            .define(AutoMQConfig.S3_WAL_CAPACITY_CONFIG, LONG, 2147483648L, MEDIUM, AutoMQConfig.S3_WAL_CAPACITY_DOC)
+            .define(AutoMQConfig.S3_WAL_THREAD_CONFIG, INT, 8, MEDIUM, AutoMQConfig.S3_WAL_THREAD_DOC)
+            .define(AutoMQConfig.S3_WAL_IOPS_CONFIG, INT, 3000, MEDIUM, AutoMQConfig.S3_WAL_IOPS_DOC);
     }
 
     private List<BucketURI> dataBuckets;
     private List<BucketURI> opsBuckets;
+    private String walConfig;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
         opsBuckets = genOpsBuckets(config);
+        walConfig = genWALConfig(config);
         return this;
     }
 
@@ -292,6 +294,10 @@ public class AutoMQConfig {
 
     public List<BucketURI> opsBuckets() {
         return opsBuckets;
+    }
+
+    public String walConfig() {
+        return walConfig;
     }
 
     private static List<BucketURI> genDataBuckets(KafkaConfig config) {
@@ -317,6 +323,19 @@ public class AutoMQConfig {
             LOGGER.warn("The s3.ops.bucket config is deprecated. The new s3.ops.buckets config should be used.");
         }
         return BucketURI.parseBuckets(opsBuckets);
+    }
+
+    private static String genWALConfig(KafkaConfig config) {
+        String walConfig = config.getString(S3_WAL_PATH_CONFIG);
+        if (walConfig.contains("@")) {
+            return walConfig;
+        }
+        walConfig = String.format("0@file://%s?capacity=%d&iops=%d&iodepth=%d",
+            walConfig,
+            config.getLong(S3_WAL_CAPACITY_CONFIG),
+            config.getInt(S3_WAL_IOPS_CONFIG),
+            config.getInt(S3_WAL_THREAD_CONFIG));
+        return walConfig;
     }
 
 }
