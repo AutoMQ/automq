@@ -736,7 +736,7 @@ public class StreamControlManager {
             } else {
                 log.info("stream already deleted, then fast delete the stream object from compaction. streamId={}, streamObject={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
                     streamObject.streamId(), streamObject, req.objectId(), req.nodeId(), req.nodeEpoch());
-                ControllerResult<Boolean> deleteRst = this.s3ObjectControlManager.markDestroyObjects(List.of(streamObject.objectId()));
+                ControllerResult<Boolean> deleteRst = this.s3ObjectControlManager.markDestroyObjects(List.of(streamObject.objectId()), List.of(CompactOperations.DEEP_DELETE));
                 records.addAll(deleteRst.records());
             }
         }
