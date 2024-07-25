@@ -348,7 +348,7 @@ public class S3Storage implements Storage {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
             DeltaWALUploadTask task = DeltaWALUploadTask.builder().config(config).streamRecordsMap(cacheBlock.records())
                 .objectManager(objectManager).objectStorage(objectStorage).executor(uploadWALExecutor).build();
-            task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
+            task.prepare().thenCompose(nil -> task.upload(true)).thenCompose(nil -> task.commit()).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
             // no need to wait for response
             LocalStreamRangeIndexCache.getInstance().upload();
@@ -696,25 +696,12 @@ public class S3Storage implements Storage {
     }
 
     private void uploadDeltaWAL0(DeltaWALUploadTaskContext context) {
-        // calculate upload rate
-        long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
-        double rate;
-        if (context.force || elapsed <= 100L) {
-            rate = Long.MAX_VALUE;
-        } else {
-            rate = context.cache.size() * 1000.0 / Math.min(5000L, elapsed);
-            if (rate > maxDataWriteRate) {
-                maxDataWriteRate = rate;
-            }
-            rate = maxDataWriteRate;
-        }
         context.task = DeltaWALUploadTask.builder()
             .config(config)
             .streamRecordsMap(context.cache.records())
             .objectManager(objectManager)
             .objectStorage(objectStorage)
             .executor(uploadWALExecutor)
-            .rate(rate)
             .build();
         boolean walObjectPrepareQueueEmpty = walPrepareQueue.isEmpty();
         walPrepareQueue.add(context);
@@ -730,7 +717,7 @@ public class S3Storage implements Storage {
             StorageOperationStats.getInstance().uploadWALPrepareStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             // 1. poll out current task and trigger upload.
             DeltaWALUploadTaskContext peek = walPrepareQueue.poll();
-            Objects.requireNonNull(peek).task.upload().thenAccept(nil2 -> StorageOperationStats.getInstance()
+            Objects.requireNonNull(peek).task.upload(context.force).thenAccept(nil2 -> StorageOperationStats.getInstance()
                 .uploadWALUploadStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS)));
             // 2. add task to commit queue.
             boolean walObjectCommitQueueEmpty = walCommitQueue.isEmpty();

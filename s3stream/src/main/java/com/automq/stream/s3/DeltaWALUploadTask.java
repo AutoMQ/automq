@@ -13,13 +13,13 @@ package com.automq.stream.s3;
 
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.utils.AsyncRateLimiter;
 import com.automq.stream.utils.FutureUtil;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -49,8 +49,6 @@ public class DeltaWALUploadTask {
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
     private final CompletableFuture<CommitStreamSetObjectRequest> uploadCf = new CompletableFuture<>();
     private final ExecutorService executor;
-    private final double rate;
-    private final AsyncRateLimiter limiter;
     private long startTimestamp;
     private long uploadTimestamp;
     private long commitTimestamp;
@@ -58,7 +56,7 @@ public class DeltaWALUploadTask {
 
     public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
         ObjectManager objectManager, ObjectStorage objectStorage,
-        ExecutorService executor, boolean forceSplit, double rate) {
+        ExecutorService executor, boolean forceSplit) {
         this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.nodeId()));
         this.streamRecordsMap = streamRecordsMap;
         this.objectBlockSize = config.objectBlockSize();
@@ -69,8 +67,6 @@ public class DeltaWALUploadTask {
         this.objectStorage = objectStorage;
         this.forceSplit = forceSplit;
         this.executor = executor;
-        this.rate = rate;
-        this.limiter = new AsyncRateLimiter(rate);
     }
 
     public static Builder builder() {
@@ -93,39 +89,42 @@ public class DeltaWALUploadTask {
         return prepareCf;
     }
 
-    public CompletableFuture<CommitStreamSetObjectRequest> upload() {
-        prepareCf.thenAcceptAsync(objectId -> FutureUtil.exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"), executor);
+    public CompletableFuture<CommitStreamSetObjectRequest> upload(boolean forceUpload) {
+        prepareCf.thenAcceptAsync(objectId -> FutureUtil.exec(() -> upload0(objectId, forceUpload), uploadCf, LOGGER, "upload"), executor);
         return uploadCf;
     }
 
-    private void upload0(long objectId) {
+    private void upload0(long objectId, boolean forceUpload) {
         uploadTimestamp = System.currentTimeMillis();
         List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
         Collections.sort(streamIds);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
+
+        ObjectStorage.WriteOptions writeOptions =
+            ObjectStorage.WriteOptions.DEFAULT.copy()
+                .throttleStrategy(forceUpload ? ThrottleStrategy.BYPASS : ThrottleStrategy.UPLOAD_WAL);
 
         ObjectWriter streamSetObject;
         if (forceSplit) {
             // when only has one stream, we only need to write the stream data.
             streamSetObject = ObjectWriter.noop(objectId);
         } else {
-            streamSetObject = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
+            streamSetObject = ObjectWriter.writerWithOptions(objectId, objectStorage, objectBlockSize, objectPartSize, writeOptions);
         }
 
         List<CompletableFuture<Void>> streamObjectCfList = new LinkedList<>();
 
-        List<CompletableFuture<Void>> streamSetWriteCfList = new LinkedList<>();
         for (Long streamId : streamIds) {
             List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
             int streamSize = streamRecords.stream().mapToInt(StreamRecordBatch::size).sum();
             if (forceSplit || streamSize >= streamSplitSizeThreshold) {
-                streamObjectCfList.add(writeStreamObject(streamRecords, streamSize).thenAccept(so -> {
+                streamObjectCfList.add(writeStreamObject(streamRecords, streamSize, writeOptions).thenAccept(so -> {
                     synchronized (request) {
                         request.addStreamObject(so);
                     }
                 }));
             } else {
-                streamSetWriteCfList.add(limiter.acquire(streamSize).thenAccept(nil -> streamSetObject.write(streamId, streamRecords)));
+                streamSetObject.write(streamId, streamRecords);
                 long startOffset = streamRecords.get(0).getBaseOffset();
                 long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
                 request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset, streamSize));
@@ -133,11 +132,10 @@ public class DeltaWALUploadTask {
         }
         request.setObjectId(objectId);
         request.setOrderId(objectId);
-        CompletableFuture<Void> streamSetObjectCf = CompletableFuture.allOf(streamSetWriteCfList.toArray(new CompletableFuture[0]))
-            .thenCompose(nil -> streamSetObject.close().thenAccept(nil2 -> {
-                request.setObjectSize(streamSetObject.size());
-                request.setAttributes(ObjectAttributes.builder().bucket(streamSetObject.bucketId()).build().attributes());
-            }));
+        CompletableFuture<Void> streamSetObjectCf = streamSetObject.close().thenAccept(nil2 -> {
+            request.setObjectSize(streamSetObject.size());
+            request.setAttributes(ObjectAttributes.builder().bucket(streamSetObject.bucketId()).build().attributes());
+        });
         List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
         allCf.add(streamSetObjectCf);
         CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
@@ -154,23 +152,21 @@ public class DeltaWALUploadTask {
             commitTimestamp = System.currentTimeMillis();
             return objectManager.commitStreamSetObject(request).thenCompose(resp -> {
                 long now = System.currentTimeMillis();
-                LOGGER.info("Upload delta WAL finished, cost {}ms, prepare {}ms, upload {}ms, commit {}ms, rate limiter {}bytes/s, request: {}",
+                LOGGER.info("Upload delta WAL finished, cost {}ms, prepare {}ms, upload {}ms, commit {}ms, request: {}",
                     now - startTimestamp,
                     uploadTimestamp - startTimestamp,
                     commitTimestamp - uploadTimestamp,
                     now - commitTimestamp,
-                    rate,
                     commitStreamSetObjectRequest);
                 return LocalStreamRangeIndexCache.getInstance().updateIndexFromRequest(request);
-            }).whenComplete((nil, ex) -> limiter.close());
+            });
         });
     }
 
-    private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords, int streamSize) {
+    private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords, int streamSize, ObjectStorage.WriteOptions writeOptions) {
         CompletableFuture<Long> cf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60));
-        cf = cf.thenCompose(objectId -> limiter.acquire(streamSize).thenApply(nil -> objectId));
         return cf.thenComposeAsync(objectId -> {
-            ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
+            ObjectWriter streamObjectWriter = ObjectWriter.writerWithOptions(objectId, objectStorage, objectBlockSize, objectPartSize, writeOptions);
             long streamId = streamRecords.get(0).getStreamId();
             streamObjectWriter.write(streamId, streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();
@@ -195,7 +191,6 @@ public class DeltaWALUploadTask {
         private ObjectStorage objectStorage;
         private ExecutorService executor;
         private Boolean forceSplit;
-        private double rate = Long.MAX_VALUE;
 
         public Builder config(Config config) {
             this.config = config;
@@ -227,11 +222,6 @@ public class DeltaWALUploadTask {
             return this;
         }
 
-        public Builder rate(double rate) {
-            this.rate = rate;
-            return this;
-        }
-
         public DeltaWALUploadTask build() {
             if (forceSplit == null) {
                 boolean forceSplit = streamRecordsMap.size() == 1;
@@ -247,7 +237,7 @@ public class DeltaWALUploadTask {
                 }
                 this.forceSplit = forceSplit;
             }
-            return new DeltaWALUploadTask(config, streamRecordsMap, objectManager, objectStorage, executor, forceSplit, rate);
+            return new DeltaWALUploadTask(config, streamRecordsMap, objectManager, objectStorage, executor, forceSplit);
         }
     }
 
