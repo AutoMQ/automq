@@ -37,6 +37,7 @@ import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
+import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.PingS3Helper;
 import com.automq.stream.utils.Time;
@@ -48,39 +49,41 @@ import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
 import kafka.server.BrokerServer;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.image.MetadataImage;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class DefaultS3Client implements Client {
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
-    private final Config config;
+    protected final Config config;
     private final StreamMetadataManager metadataManager;
 
-    private final ControllerRequestSender requestSender;
+    protected final ControllerRequestSender requestSender;
 
-    private final WriteAheadLog writeAheadLog;
-    private final S3Storage storage;
+    protected final WriteAheadLog writeAheadLog;
+    protected final S3Storage storage;
 
-    private final ObjectReaderFactory objectReaderFactory;
-    private final S3BlockCache blockCache;
+    protected final ObjectReaderFactory objectReaderFactory;
+    protected final S3BlockCache blockCache;
 
-    private final ObjectManager objectManager;
+    protected final ObjectManager objectManager;
 
-    private final StreamManager streamManager;
+    protected final StreamManager streamManager;
 
-    private final CompactionManager compactionManager;
+    protected final CompactionManager compactionManager;
 
-    private final S3StreamClient streamClient;
+    protected final S3StreamClient streamClient;
 
-    private final KVClient kvClient;
+    protected final KVClient kvClient;
 
-    private final Failover failover;
+    protected final Failover failover;
 
-    private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
-    private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
+    protected final AsyncNetworkBandwidthLimiter networkInboundLimiter;
+    protected final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
-    private final BrokerServer brokerServer;
+    protected final BrokerServer brokerServer;
+    protected final LocalStreamRangeIndexCache localIndexCache;
 
     public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;
@@ -108,69 +111,47 @@ public class DefaultS3Client implements Client {
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
             config.controllerRequestRetryBaseDelayMs());
+        localIndexCache = new LocalStreamRangeIndexCache();
+        localIndexCache.start();
+        localIndexCache.init(config.nodeId(), objectStorage);
         this.objectReaderFactory = new DefaultObjectReaderFactory(objectStorage);
-        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory);
+        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = newStreamManager(config.nodeId(), config.nodeEpoch(), false);
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
+        this.objectManager.setCommitStreamSetObjectHook(localIndexCache::updateIndexFromRequest);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
         this.writeAheadLog = buildWAL();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
+        this.streamClient.registerStreamLifeCycleListener(localIndexCache);
         this.kvClient = new ControllerKVClient(this.requestSender);
         this.failover = failover();
-        LocalStreamRangeIndexCache.getInstance().init(config.nodeId(), objectStorage);
 
         S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
         S3StreamThreadPoolMonitor.init();
     }
 
-    private WriteAheadLog buildWAL() {
-        BucketURI bucketURI;
-        try {
-            bucketURI = BucketURI.parse(config.walPath());
-        } catch (Exception e) {
-            bucketURI = BucketURI.parse("0@file://" + config.walPath());
-        }
-        switch (bucketURI.protocol()) {
+    protected WriteAheadLog buildWAL() {
+        IdURI uri = IdURI.parse(config.walConfig());
+        switch (uri.protocol()) {
             case "file":
-                return BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
+                return BlockWALService.builder(uri).config(config).build();
             case "s3":
-                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(bucketURI)
+                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(config.walConfig()))
                     .tagging(config.objectTagging())
                     .build();
 
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder()
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
                     .withClusterId(brokerServer.clusterId())
                     .withNodeId(config.nodeId())
-                    .withEpoch(config.nodeEpoch())
-                    .withBucketId(bucketURI.bucketId());
+                    .withEpoch(config.nodeEpoch());
 
-                String batchInterval = bucketURI.extensionString("batchInterval");
-                if (StringUtils.isNumeric(batchInterval)) {
-                    configBuilder.withBatchInterval(Long.parseLong(batchInterval));
-                }
-                String maxBytesInBatch = bucketURI.extensionString("maxBytesInBatch");
-                if (StringUtils.isNumeric(maxBytesInBatch)) {
-                    configBuilder.withMaxBytesInBatch(Long.parseLong(maxBytesInBatch));
-                }
-                String maxUnflushedBytes = bucketURI.extensionString("maxUnflushedBytes");
-                if (StringUtils.isNumeric(maxUnflushedBytes)) {
-                    configBuilder.withMaxUnflushedBytes(Long.parseLong(maxUnflushedBytes));
-                }
-                String maxInflightUploadCount = bucketURI.extensionString("maxInflightUploadCount");
-                if (StringUtils.isNumeric(maxInflightUploadCount)) {
-                    configBuilder.withMaxInflightUploadCount(Integer.parseInt(maxInflightUploadCount));
-                }
-                String readAheadObjectCount = bucketURI.extensionString("readAheadObjectCount");
-                if (StringUtils.isNumeric(readAheadObjectCount)) {
-                    configBuilder.withReadAheadObjectCount(Integer.parseInt(readAheadObjectCount));
-                }
                 return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
             default:
-                throw new IllegalArgumentException("Invalid WAL schema: " + bucketURI.protocol());
+                throw new IllegalArgumentException("Invalid WAL schema: " + uri.protocol());
         }
     }
 
@@ -208,11 +189,13 @@ public class DefaultS3Client implements Client {
     }
 
     StreamManager newStreamManager(int nodeId, long nodeEpoch, boolean failoverMode) {
-        return new ControllerStreamManager(this.metadataManager, this.requestSender, nodeId, nodeEpoch, () -> brokerServer.metadataCache().autoMQVersion(), failoverMode);
+        return new ControllerStreamManager(this.metadataManager, this.requestSender, nodeId, nodeEpoch,
+            this::getAutoMQVersion, failoverMode);
     }
 
     ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
-        return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch, () -> brokerServer.metadataCache().autoMQVersion(), failoverMode);
+        return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch,
+            this::getAutoMQVersion, failoverMode);
     }
 
     Failover failover() {
@@ -233,5 +216,12 @@ public class DefaultS3Client implements Client {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    private AutoMQVersion getAutoMQVersion() {
+        if (brokerServer.metadataCache().currentImage() == MetadataImage.EMPTY) {
+            throw new IllegalStateException("The image should be loaded first");
+        }
+        return brokerServer.metadataCache().autoMQVersion();
     }
 }

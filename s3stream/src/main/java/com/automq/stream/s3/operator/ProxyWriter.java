@@ -54,7 +54,7 @@ class ProxyWriter implements Writer {
         } else {
             objectWriter.write(part);
             if (objectWriter.isFull()) {
-                newLargeObjectWriter(writeOptions, objectStorage, path, minPartSize);
+                newLargeObjectWriter(writeOptions, objectStorage, path);
             }
             return objectWriter.cf;
         }
@@ -72,7 +72,7 @@ class ProxyWriter implements Writer {
     @Override
     public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
         if (largeObjectWriter == null) {
-            newLargeObjectWriter(writeOptions, objectStorage, path, minPartSize);
+            newLargeObjectWriter(writeOptions, objectStorage, path);
         }
         largeObjectWriter.copyWrite(s3ObjectMetadata, start, end);
     }
@@ -109,7 +109,7 @@ class ProxyWriter implements Writer {
         return writeOptions.bucketId();
     }
 
-    protected void newLargeObjectWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path, long minPartSize) {
+    protected void newLargeObjectWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path) {
         this.largeObjectWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
         if (objectWriter.data.readableBytes() > 0) {
             FutureUtil.propagate(largeObjectWriter.write(objectWriter.data), objectWriter.cf);

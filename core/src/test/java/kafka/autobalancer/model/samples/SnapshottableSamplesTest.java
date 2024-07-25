@@ -42,4 +42,19 @@ public class SnapshottableSamplesTest {
         Assertions.assertEquals(1948, snapshot.get90thPercentile(), 1);
         Assertions.assertEquals(1744, snapshot.getValue(0.5), 1);
     }
+
+    @Test
+    public void testSnapshot() {
+        SnapshottableSamples sequence = new SnapshottableSamples(512);
+        for (int i = 0; i < 1000; i++) {
+            sequence.append(i);
+        }
+        for (int i = 0; i < 100; i++) {
+            sequence.snapshot();
+        }
+        Snapshot snapshot = sequence.snapshot();
+        Assertions.assertNotNull(snapshot);
+        Assertions.assertNotNull(snapshot.getPrev());
+        Assertions.assertNull(snapshot.getPrev().getPrev());
+    }
 }

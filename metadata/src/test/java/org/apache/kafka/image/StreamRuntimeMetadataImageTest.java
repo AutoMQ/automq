@@ -44,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Timeout(value = 40)
 @Tag("S3Unit")
-public class S3StreamMetadataImageTest {
+public class StreamRuntimeMetadataImageTest {
 
     private static final long STREAM0 = 0L;
 

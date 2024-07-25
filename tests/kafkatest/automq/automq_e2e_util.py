@@ -94,3 +94,13 @@ def parse_producer_performance_stdout(input_string):
         return extracted_data
     else:
         raise ValueError("Input string does not match the expected format.")
+
+def publish_broker_configuration(kafka, producer_byte_rate, consumer_byte_rate, broker_id):
+    force_use_zk_connection = False
+    node = kafka.nodes[0]
+    cmd = "%s --alter --add-config broker.quota.produce.bytes=%d,broker.quota.fetch.bytes=%d" % \
+          (kafka.kafka_configs_cmd_with_optional_security_settings(node, force_use_zk_connection), producer_byte_rate,
+           consumer_byte_rate)
+    cmd += " --entity-type " + 'brokers'
+    cmd += " --entity-name " + broker_id
+    node.account.ssh(cmd)

@@ -36,6 +36,8 @@ import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
 import org.apache.kafka.common.message.AssignReplicasToDirsResponseData;
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
+import org.apache.kafka.common.message.AutomqRegisterNodeResponseData;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
 import org.apache.kafka.common.message.CloseStreamsRequestData;
@@ -85,6 +87,8 @@ import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
 import org.apache.kafka.common.requests.ApiError;
+import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
+import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
@@ -602,6 +606,22 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<DeleteKVsResponseData> deleteKVs(
         ControllerRequestContext context,
         DeleteKVsRequestData request
+    );
+
+    /**
+     * Register node metadata
+     */
+    CompletableFuture<AutomqRegisterNodeResponseData> registerNode(
+        ControllerRequestContext context,
+        AutomqRegisterNodeRequest req
+    );
+
+    /**
+     * Get nodes metadata
+     */
+    CompletableFuture<AutomqGetNodesResponseData> getNodes(
+        ControllerRequestContext context,
+        AutomqGetNodesRequest req
     );
 
     default <T> CompletableFuture<T> appendWriteEvent(

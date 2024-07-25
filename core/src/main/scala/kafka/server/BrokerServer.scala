@@ -377,10 +377,6 @@ class BrokerServer(
           k -> VersionRange.of(v.min, v.max)
       }.asJava
 
-      // AutoMQ for Kafka inject start
-      initElasticLogManager()
-      // AutoMQ for Kafka inject end
-
       val brokerLifecycleChannelManager = new NodeToControllerChannelManagerImpl(
         controllerNodeProvider,
         time,
@@ -534,6 +530,11 @@ class BrokerServer(
       // by the dynamic configuration publisher. Ironically, KafkaConfig.originals does not
       // contain the original configuration values.
       new KafkaConfig(config.originals(), true)
+
+
+      // AutoMQ for Kafka inject start
+      ElasticLogManager.init(config, clusterId, this)
+      // AutoMQ for Kafka inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
       // from RECOVERY state to RUNNING state, once the controller unfences the broker.
@@ -790,16 +791,6 @@ class BrokerServer(
       s"broker-${config.nodeId}-",
       retryTimeout
     )
-  }
-
-  protected def initElasticLogManager(): Unit = {
-    if (config.elasticStreamEnabled) {
-      if (!ElasticLogManager.init(config, clusterId, this)) {
-        throw new UnsupportedOperationException("Elastic stream client failed to be configured. Please check your configuration.")
-      }
-    } else {
-      warn("Elastic stream is disabled. This node will store data locally.")
-    }
   }
 
 }

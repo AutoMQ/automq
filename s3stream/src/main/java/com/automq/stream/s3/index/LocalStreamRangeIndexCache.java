@@ -12,6 +12,7 @@
 package com.automq.stream.s3.index;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.S3StreamClient;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectStreamRange;
@@ -40,12 +41,11 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class LocalStreamRangeIndexCache {
+public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycleListener {
     private static final short VERSION = 0;
     private static final Logger LOGGER = LoggerFactory.getLogger(LocalStreamRangeIndexCache.class);
     private static final int COMPACT_NUM = Systems.getEnvInt("AUTOMQ_STREAM_RANGE_INDEX_COMPACT_NUM", 5);
     private static final int SPARSE_PADDING = Systems.getEnvInt("AUTOMQ_STREAM_RANGE_INDEX_SPARSE_PADDING", 1);
-    private volatile static LocalStreamRangeIndexCache instance = null;
     private final Map<Long, SparseRangeIndex> streamRangeIndexMap = new HashMap<>();
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     private final Lock readLock = lock.readLock();
@@ -57,20 +57,9 @@ public class LocalStreamRangeIndexCache {
     private ObjectStorage objectStorage;
     private CompletableFuture<Void> initCf = new CompletableFuture<>();
 
-    private LocalStreamRangeIndexCache() {
+    public void start() {
         executorService.scheduleAtFixedRate(this::batchUpload, 0, 10, TimeUnit.MILLISECONDS);
-        executorService.scheduleAtFixedRate(this::flush, 0, 1, TimeUnit.MINUTES);
-    }
-
-    public static LocalStreamRangeIndexCache getInstance() {
-        if (instance == null) {
-            synchronized (LocalStreamRangeIndexCache.class) {
-                if (instance == null) {
-                    instance = new LocalStreamRangeIndexCache();
-                }
-            }
-        }
-        return instance;
+        executorService.scheduleAtFixedRate(this::flush, 1, 1, TimeUnit.MINUTES);
     }
 
     // for test
@@ -119,20 +108,34 @@ public class LocalStreamRangeIndexCache {
 
     private CompletableFuture<Void> flush() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        ByteBuf buf = null;
         readLock.lock();
         try {
-            objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, ObjectUtils.genIndexKey(0, nodeId), toBuffer(streamRangeIndexMap))
+            if (streamRangeIndexMap.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            buf = toBuffer(streamRangeIndexMap);
+            objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, ObjectUtils.genIndexKey(0, nodeId), buf)
                 .whenComplete((v, ex) -> {
                     if (ex != null) {
-                        LOGGER.error("Upload index failed", ex);
                         cf.completeExceptionally(ex);
                         return;
                     }
                     cf.complete(null);
                 });
+        } catch (Throwable t) {
+            if (buf != null) {
+                buf.release();
+            }
+            cf.completeExceptionally(t);
         } finally {
             readLock.unlock();
         }
+        cf.whenComplete((v, ex) -> {
+            if (ex != null) {
+                LOGGER.error("Failed to flush index to object storage", ex);
+            }
+        });
         return cf;
     }
 
@@ -261,7 +264,7 @@ public class LocalStreamRangeIndexCache {
         if (request.getCompactedObjectIds().isEmpty()) {
             return append(rangeIndexMap);
         }
-        return compact(rangeIndexMap, new HashSet<>(request.getCompactedObjectIds()));
+        return compact(rangeIndexMap, new HashSet<>(request.getCompactedObjectIds())).thenCompose(v -> upload());
     }
 
     public static ByteBuf toBuffer(Map<Long, SparseRangeIndex> streamRangeIndexMap) {
@@ -271,17 +274,22 @@ public class LocalStreamRangeIndexCache {
             + Integer.BYTES // range index num
             + index.getRangeIndexList().size() * RangeIndex.SIZE).sum();
         ByteBuf buffer = ByteBufAlloc.byteBuffer(capacity);
-        buffer.writeShort(VERSION);
-        buffer.writeInt(streamRangeIndexMap.size());
-        streamRangeIndexMap.forEach((streamId, sparseRangeIndex) -> {
-            buffer.writeLong(streamId);
-            buffer.writeInt(sparseRangeIndex.getRangeIndexList().size());
-            sparseRangeIndex.getRangeIndexList().forEach(rangeIndex -> {
-                buffer.writeLong(rangeIndex.getStartOffset());
-                buffer.writeLong(rangeIndex.getEndOffset());
-                buffer.writeLong(rangeIndex.getObjectId());
+        try {
+            buffer.writeShort(VERSION);
+            buffer.writeInt(streamRangeIndexMap.size());
+            streamRangeIndexMap.forEach((streamId, sparseRangeIndex) -> {
+                buffer.writeLong(streamId);
+                buffer.writeInt(sparseRangeIndex.getRangeIndexList().size());
+                sparseRangeIndex.getRangeIndexList().forEach(rangeIndex -> {
+                    buffer.writeLong(rangeIndex.getStartOffset());
+                    buffer.writeLong(rangeIndex.getEndOffset());
+                    buffer.writeLong(rangeIndex.getObjectId());
+                });
             });
-        });
+        } catch (Throwable t) {
+            buffer.release();
+            throw t;
+        }
         return buffer;
     }
 
@@ -338,5 +346,10 @@ public class LocalStreamRangeIndexCache {
             return rangeIndexList.get(rangeIndexList.size() - 1).getObjectId();
         }
         return rangeIndexList.get(index).getObjectId();
+    }
+
+    @Override
+    public void onStreamClose(long streamId) {
+        upload();
     }
 }

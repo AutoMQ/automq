@@ -129,6 +129,11 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         }
     }
 
+    public CompletableFuture<InRangeObjects> getObjects(long streamId, long startOffset, long endOffset, int limit,
+        RangeGetter rangeGetter) {
+        return getObjects(streamId, startOffset, endOffset, limit, rangeGetter, null);
+    }
+
     /**
      * Get objects in range [startOffset, endOffset) with limit.
      *
@@ -140,8 +145,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      * @return s3 objects within the range
      */
     public CompletableFuture<InRangeObjects> getObjects(long streamId, long startOffset, long endOffset, int limit,
-        RangeGetter rangeGetter) {
-        GetObjectsContext ctx = new GetObjectsContext(streamId, startOffset, endOffset, limit, rangeGetter);
+        RangeGetter rangeGetter, LocalStreamRangeIndexCache indexCache) {
+        GetObjectsContext ctx = new GetObjectsContext(streamId, startOffset, endOffset, limit, rangeGetter, indexCache);
         try {
             getObjects0(ctx);
         } catch (Throwable e) {
@@ -189,7 +194,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         List<S3StreamSetObject> streamSetObjects,
         NodeS3StreamSetObjectMetadataImage node
     ) {
-        long nextStartOffset = ctx.startOffset;
+        long nextStartOffset = ctx.nextStartOffset;
         for (; ; ) {
             int roundStartObjectSize = objects.size();
 
@@ -211,7 +216,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 objects.add(streamObject.toMetadata());
                 nextStartOffset = streamObject.endOffset();
                 if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
-                    ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+                    completeWithSanityCheck(ctx, objects);
                     return;
                 }
             }
@@ -221,7 +226,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 // 1. can not find the range containing nextStartOffset, or
                 // 2. the range is the same as the last one, which means the nextStartOffset does not move on.
                 if (rangeIndex < 0 || lastRangeIndex == rangeIndex) {
-                    ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+                    completeWithSanityCheck(ctx, objects);
                     break;
                 }
                 lastRangeIndex = rangeIndex;
@@ -245,7 +250,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                     // load stream set object index
                     int finalIndex = index;
                     loadStreamSetObjectInfo(ctx, finalStreamSetObjects, index).thenAccept(v -> {
-                        ctx.startOffset = finalNextStartOffset;
+                        ctx.nextStartOffset = finalNextStartOffset;
                         fillObjects(ctx, stream, objects, finalLastRangeIndex, finalStreamObjectIndex, streamObjects,
                             finalIndex, finalStreamSetObjects, finalNode);
                     });
@@ -270,7 +275,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                         streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
                     if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
-                        ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+                        completeWithSanityCheck(ctx, objects);
                         return;
                     }
                 } else {
@@ -287,6 +292,53 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 streamSetObjects = null;
             }
         }
+    }
+
+    private void completeWithSanityCheck(GetObjectsContext ctx, List<S3ObjectMetadata> objects) {
+        try {
+            sanityCheck(ctx, objects);
+        } catch (Throwable t) {
+            ctx.cf.completeExceptionally(new IllegalStateException(String.format("Get objects failed for streamId=%d," +
+                    " range=[%d, %d), limit=%d", ctx.streamId, ctx.startOffset, ctx.endOffset, ctx.limit), t));
+            return;
+        }
+        ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
+    }
+
+    /**
+     * Check for continuity of stream range and range matching.
+     * Note: insufficient range is possible and caller should retry after
+     */
+    void sanityCheck(GetObjectsContext ctx, List<S3ObjectMetadata> objects) {
+        if (objects.size() > ctx.limit) {
+            throw new IllegalArgumentException(String.format("number of objects %d exceeds limit %d", objects.size(), ctx.limit));
+        }
+        long nextStartOffset = -1L;
+        for (S3ObjectMetadata object : objects) {
+            StreamOffsetRange range = findStreamOffsetRange(object.getOffsetRanges(), ctx.streamId);
+            if (range == null) {
+                throw new IllegalArgumentException(String.format("range not found in object %s", object));
+            }
+            if (nextStartOffset == -1L) {
+                if (range.startOffset() > ctx.startOffset) {
+                    throw new IllegalArgumentException(String.format("first matched range %s in object %s is greater than" +
+                        " requested start offset %d", range, object, ctx.startOffset));
+                }
+            } else if (nextStartOffset != range.startOffset()) {
+                throw new IllegalArgumentException(String.format("range is not continuous, expected start offset %d," +
+                    " actual %d in object %s", nextStartOffset, range.startOffset(), object));
+            }
+            nextStartOffset = range.endOffset();
+        }
+    }
+
+    private StreamOffsetRange findStreamOffsetRange(List<StreamOffsetRange> ranges, long streamId) {
+        for (StreamOffsetRange range : ranges) {
+            if (range.streamId() == streamId) {
+                return range;
+            }
+        }
+        return null;
     }
 
     private int findStartSearchIndex(long startObjectId, List<S3StreamSetObject> streamSetObjects, int nodeId) {
@@ -339,12 +391,18 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      *       should be invalidated, so we can refresh the index from object storage next time
      */
     private CompletableFuture<Long> getStartStreamSetObjectId(int nodeId, long startOffset, GetObjectsContext ctx) {
-        if (LocalStreamRangeIndexCache.getInstance().nodeId() == nodeId) {
-            return LocalStreamRangeIndexCache.getInstance().searchObjectId(ctx.streamId, startOffset);
+        if (ctx.indexCache != null && ctx.indexCache.nodeId() == nodeId) {
+            return ctx.indexCache.searchObjectId(ctx.streamId, startOffset);
         }
         // search from cache and refresh the cache from remote if necessary
         return NodeRangeIndexCache.getInstance().searchObjectId(nodeId, ctx.streamId, startOffset,
-            () -> ctx.rangeGetter.readNodeRangeIndex(nodeId).thenApply(LocalStreamRangeIndexCache::fromBuffer));
+            () -> ctx.rangeGetter.readNodeRangeIndex(nodeId).thenApply(buff -> {
+                try {
+                    return LocalStreamRangeIndexCache.fromBuffer(buff);
+                } finally {
+                    buff.release();
+                }
+            }));
     }
 
     /**
@@ -555,22 +613,26 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     }
 
     static class GetObjectsContext {
-        long streamId;
+        final long streamId;
         long startOffset;
+        long nextStartOffset;
         long endOffset;
         int limit;
         RangeGetter rangeGetter;
+        LocalStreamRangeIndexCache indexCache;
 
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
         Map<Long, Optional<StreamOffsetRange>> object2range = new HashMap<>();
 
         GetObjectsContext(long streamId, long startOffset, long endOffset, int limit,
-            RangeGetter rangeGetter) {
+            RangeGetter rangeGetter, LocalStreamRangeIndexCache indexCache) {
             this.streamId = streamId;
             this.startOffset = startOffset;
+            this.nextStartOffset = startOffset;
             this.endOffset = endOffset;
             this.limit = limit;
             this.rangeGetter = rangeGetter;
+            this.indexCache = indexCache;
         }
     }
 

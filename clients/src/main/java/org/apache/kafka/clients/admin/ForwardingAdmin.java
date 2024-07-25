@@ -296,6 +296,11 @@ public class ForwardingAdmin implements Admin {
     }
 
     @Override
+    public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
+        return delegate.getNodes(nodeIdList, options);
+    }
+
+    @Override
     public Map<MetricName, ? extends Metric> metrics() {
         return delegate.metrics();
     }

@@ -21,17 +21,8 @@ import java.util.function.Supplier;
 public class Config {
     private int nodeId;
     private List<BucketURI> dataBuckets;
-    private String walPath = "/tmp/s3stream_wal";
+    private String walConfig = "0@file:///tmp/s3stream_wal";
     private long walCacheSize = 200 * 1024 * 1024;
-    private long walCapacity = 1024L * 1024 * 1024;
-    private int walInitBufferSize = 1024 * 1024;
-    private int walMaxBufferSize = 16 * 1024 * 1024;
-    private int walThread = 8;
-    private long walWindowInitial = 1048576L;
-    private long walWindowIncrement = 4194304L;
-    private long walWindowMax = 536870912L;
-    private long walBlockSoftLimit = 256 * 1024;
-    private int walWriteRateLimit = 3000;
     private long walUploadThreshold = 100 * 1024 * 1024;
     private int streamSplitSize = 16777216;
     private int objectBlockSize = 1048576;
@@ -70,48 +61,12 @@ public class Config {
         return dataBuckets;
     }
 
-    public String walPath() {
-        return walPath;
+    public String walConfig() {
+        return walConfig;
     }
 
     public long walCacheSize() {
         return walCacheSize;
-    }
-
-    public long walCapacity() {
-        return walCapacity;
-    }
-
-    public int walInitBufferSize() {
-        return walInitBufferSize;
-    }
-
-    public int walMaxBufferSize() {
-        return walMaxBufferSize;
-    }
-
-    public int walThread() {
-        return walThread;
-    }
-
-    public long walWindowInitial() {
-        return walWindowInitial;
-    }
-
-    public long walWindowIncrement() {
-        return walWindowIncrement;
-    }
-
-    public long walWindowMax() {
-        return walWindowMax;
-    }
-
-    public long walBlockSoftLimit() {
-        return walBlockSoftLimit;
-    }
-
-    public int walWriteRateLimit() {
-        return walWriteRateLimit;
     }
 
     public long walUploadThreshold() {
@@ -216,58 +171,13 @@ public class Config {
         return this;
     }
 
-    public Config walPath(String s3WALPath) {
-        this.walPath = s3WALPath;
+    public Config walConfig(String walConfig) {
+        this.walConfig = walConfig;
         return this;
     }
 
     public Config walCacheSize(long s3WALCacheSize) {
         this.walCacheSize = s3WALCacheSize;
-        return this;
-    }
-
-    public Config walCapacity(long s3WALCapacity) {
-        this.walCapacity = s3WALCapacity;
-        return this;
-    }
-
-    public Config walInitBufferSize(int walInitBufferSize) {
-        this.walInitBufferSize = walInitBufferSize;
-        return this;
-    }
-
-    public Config walMaxBufferSize(int walMaxBufferSize) {
-        this.walMaxBufferSize = walMaxBufferSize;
-        return this;
-    }
-
-    public Config walThread(int s3WALThread) {
-        this.walThread = s3WALThread;
-        return this;
-    }
-
-    public Config walWindowInitial(long s3WALWindowInitial) {
-        this.walWindowInitial = s3WALWindowInitial;
-        return this;
-    }
-
-    public Config walWindowIncrement(long s3WALWindowIncrement) {
-        this.walWindowIncrement = s3WALWindowIncrement;
-        return this;
-    }
-
-    public Config walWindowMax(long s3WALWindowMax) {
-        this.walWindowMax = s3WALWindowMax;
-        return this;
-    }
-
-    public Config walBlockSoftLimit(long s3WALBlockSoftLimit) {
-        this.walBlockSoftLimit = s3WALBlockSoftLimit;
-        return this;
-    }
-
-    public Config walWriteRateLimit(int s3WALWriteRateLimit) {
-        this.walWriteRateLimit = s3WALWriteRateLimit;
         return this;
     }
 
