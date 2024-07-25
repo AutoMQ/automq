@@ -38,6 +38,13 @@ public class IdURI {
         this.extension = URIUtils.splitQuery(uri);
     }
 
+    private IdURI(short id, String protocol, String path, Map<String, List<String>> extension) {
+        this.id = id;
+        this.protocol = protocol;
+        this.path = path;
+        this.extension = extension;
+    }
+
     public static IdURI parse(String raw) {
         Matcher matcher = URI_PATTERN.matcher(raw);
         if (!matcher.find()) {
@@ -62,6 +69,10 @@ public class IdURI {
 
     public String path() {
         return path;
+    }
+
+    public IdURI path(String newPath) {
+        return new IdURI(id, protocol, newPath, extension);
     }
 
     public String extensionString(String key) {
