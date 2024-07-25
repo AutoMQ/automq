@@ -157,7 +157,7 @@ public class DeltaWALUploadTask {
                     commitTimestamp - uploadTimestamp,
                     now - commitTimestamp,
                     commitStreamSetObjectRequest);
-            }).whenComplete((nil, ex) -> limiter.close());
+            });
         });
     }
 
