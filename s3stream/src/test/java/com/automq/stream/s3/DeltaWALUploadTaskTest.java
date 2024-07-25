@@ -83,7 +83,7 @@ public class DeltaWALUploadTaskTest {
             .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
-        deltaWALUploadTask.upload().get();
+        deltaWALUploadTask.upload(true).get();
         deltaWALUploadTask.commit().get();
 
         // Release all the buffers
@@ -163,7 +163,7 @@ public class DeltaWALUploadTaskTest {
             .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
-        deltaWALUploadTask.upload().get();
+        deltaWALUploadTask.upload(true).get();
         deltaWALUploadTask.commit().get();
 
         // Release all the buffers

@@ -15,7 +15,7 @@ public enum ThrottleStrategy {
     BYPASS(0, "bypass"),
     CATCH_UP(1, "catchup"),
     COMPACTION(2, "compaction"),
-    UPLOAD_WAL(1,"uploadWal");
+    UPLOAD_WAL(1, "uploadWal");
 
     private final int priority;
     private final String name;
