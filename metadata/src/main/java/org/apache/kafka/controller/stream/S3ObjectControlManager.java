@@ -261,6 +261,11 @@ public class S3ObjectControlManager {
                 log.error("object {} not exist when mark destroy object", objectId);
                 return ControllerResult.of(Collections.emptyList(), false);
             }
+            int attributes = object.getAttributes();
+            if (object.getS3ObjectState() == S3ObjectState.PREPARED) {
+                attributes = ObjectAttributes.builder(attributes).bucket(ObjectAttributes.MATCH_ALL_BUCKET).build().attributes();
+            }
+
             switch (operation) {
                 case DELETE: {
                     S3ObjectRecord record = new S3ObjectRecord()
@@ -273,7 +278,7 @@ public class S3ObjectControlManager {
                         record.setMarkDestroyedTimeInMs(now);
                     }
                     if (version.isCompositeObjectSupported()) {
-                        record.setAttributes(object.getAttributes());
+                        record.setAttributes(attributes);
                     }
                     records.add(new ApiMessageAndVersion(record, objectRecordVersion));
                     break;
@@ -293,8 +298,8 @@ public class S3ObjectControlManager {
                         record.setMarkDestroyedTimeInMs(now);
                     }
                     if (version.isCompositeObjectSupported()) {
-                        int attributes = ObjectAttributes.builder(object.getAttributes()).deepDelete().build().attributes();
-                        record.setAttributes(attributes);
+                        int newAttributes = ObjectAttributes.builder(attributes).deepDelete().build().attributes();
+                        record.setAttributes(newAttributes);
                     }
                     records.add(new ApiMessageAndVersion(record, objectRecordVersion));
                     break;
@@ -545,13 +550,13 @@ public class S3ObjectControlManager {
         private CompletableFuture<Void> shallowlyDelete(List<S3Object> s3objects) {
             List<ObjectPath> objectPaths = s3objects.stream().map(o -> new ObjectPath(o.bucket(), o.getObjectKey())).collect(Collectors.toList());
             return objectStorage.delete(objectPaths)
-                .exceptionally(e -> {
+                .thenAccept(rst -> {
+                    List<Long> deletedObjectIds = s3objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
+                    notifyS3ObjectDeleted(deletedObjectIds);
+                }).exceptionally(e -> {
                     log.error("Failed to delete the S3Object from S3, objectKeys: {}",
                         objectPaths.stream().map(ObjectPath::key).collect(Collectors.joining(",")), e);
                     return null;
-                }).thenAccept(rst -> {
-                    List<Long> deletedObjectIds = s3objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
-                    notifyS3ObjectDeleted(deletedObjectIds);
                 });
         }
 

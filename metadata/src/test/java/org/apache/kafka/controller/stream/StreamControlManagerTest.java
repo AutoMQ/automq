@@ -454,6 +454,20 @@ public class StreamControlManagerTest {
                 ),
                 true);
         });
+        when(objectControlManager.markDestroyObjects(anyList(), anyList())).then(args -> {
+            List<Long> objectIds = args.getArgument(0);
+            return ControllerResult.of(
+                objectIds
+                    .stream()
+                    .map(id ->
+                        new ApiMessageAndVersion(
+                            new S3ObjectRecord().setObjectId(id).setObjectState(S3ObjectState.MARK_DESTROYED.toByte()),
+                            (short) 0
+                        )
+                    )
+                    .collect(Collectors.toList()),
+                true);
+        });
         when(objectControlManager.markDestroyObjects(anyList())).then(args -> {
             List<Long> objectIds = args.getArgument(0);
             return ControllerResult.of(
