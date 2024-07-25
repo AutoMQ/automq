@@ -126,6 +126,20 @@ class AbstractObjectStorageTest {
     }
 
     @Test
+    void testByteBufRefCnt() throws ExecutionException, InterruptedException {
+        objectStorage = new MemoryObjectStorage(false);
+        S3ObjectMetadata s3ObjectMetadata1 = new S3ObjectMetadata(1, 100, S3ObjectType.STREAM);
+        objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata1.key(), TestUtils.random((int) s3ObjectMetadata1.objectSize())).get();
+        objectStorage = spy(objectStorage);
+        objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata1.key(), 0, 100)
+            .thenCompose(buf -> {
+                assertEquals(1, buf.refCnt());
+                buf.release();
+                return CompletableFuture.completedFuture(null);
+            }).get();
+    }
+
+    @Test
     void testReadToEndOfObject() throws ExecutionException, InterruptedException {
         objectStorage = new MemoryObjectStorage(true);
         S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 4096, S3ObjectType.STREAM);
