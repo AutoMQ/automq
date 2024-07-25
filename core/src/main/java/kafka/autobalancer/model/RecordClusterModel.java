@@ -14,6 +14,7 @@ package kafka.autobalancer.model;
 import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.listeners.TopicPartitionStatusListener;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
@@ -23,6 +24,7 @@ import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
+import org.apache.kafka.metadata.LeaderConstants;
 
 public class RecordClusterModel extends ClusterModel implements BrokerStatusListener, TopicPartitionStatusListener {
 
@@ -75,19 +77,23 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
 
     @Override
     public void onPartitionCreate(PartitionRecord record) {
-        if (record.leader() < 0) {
-            deletePartition(record.topicId(), record.partitionId());
-            return;
-        }
-        reassignPartition(record.topicId(), record.partitionId(), record.leader());
+        changePartition(record.topicId(), record.partitionId(), record.leader());
     }
 
     @Override
     public void onPartitionChange(PartitionChangeRecord record) {
-        if (record.leader() < 0) {
-            deletePartition(record.topicId(), record.partitionId());
+        changePartition(record.topicId(), record.partitionId(), record.leader());
+    }
+
+    private void changePartition(Uuid topicId, int partitionId, int leader) {
+        if (leader == LeaderConstants.NO_LEADER) {
+            deletePartition(topicId, partitionId);
             return;
+        } else if (leader == LeaderConstants.NO_LEADER_CHANGE) {
+            return;
+        } else if (leader < 0) {
+            throw new IllegalStateException("Unexpected leader value: " + leader);
         }
-        reassignPartition(record.topicId(), record.partitionId(), record.leader());
+        reassignPartition(topicId, partitionId, leader);
     }
 }
