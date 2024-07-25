@@ -37,6 +37,7 @@ import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
+import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.PingS3Helper;
 import com.automq.stream.utils.Time;
@@ -48,7 +49,6 @@ import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
 import kafka.server.BrokerServer;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.slf4j.Logger;
@@ -135,49 +135,23 @@ public class DefaultS3Client implements Client {
     }
 
     protected WriteAheadLog buildWAL() {
-        BucketURI bucketURI;
-        try {
-            bucketURI = BucketURI.parse(config.walPath());
-        } catch (Exception e) {
-            bucketURI = BucketURI.parse("0@file://" + config.walPath());
-        }
-        switch (bucketURI.protocol()) {
+        IdURI uri = IdURI.parse(config.walConfig());
+        switch (uri.protocol()) {
             case "file":
-                return BlockWALService.builder(this.config.walPath(), this.config.walCapacity()).config(this.config).build();
+                return BlockWALService.builder(uri).config(config).build();
             case "s3":
-                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(bucketURI)
+                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(config.walConfig()))
                     .tagging(config.objectTagging())
                     .build();
 
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder()
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
                     .withClusterId(brokerServer.clusterId())
                     .withNodeId(config.nodeId())
-                    .withEpoch(config.nodeEpoch())
-                    .withBucketId(bucketURI.bucketId());
+                    .withEpoch(config.nodeEpoch());
 
-                String batchInterval = bucketURI.extensionString("batchInterval");
-                if (StringUtils.isNumeric(batchInterval)) {
-                    configBuilder.withBatchInterval(Long.parseLong(batchInterval));
-                }
-                String maxBytesInBatch = bucketURI.extensionString("maxBytesInBatch");
-                if (StringUtils.isNumeric(maxBytesInBatch)) {
-                    configBuilder.withMaxBytesInBatch(Long.parseLong(maxBytesInBatch));
-                }
-                String maxUnflushedBytes = bucketURI.extensionString("maxUnflushedBytes");
-                if (StringUtils.isNumeric(maxUnflushedBytes)) {
-                    configBuilder.withMaxUnflushedBytes(Long.parseLong(maxUnflushedBytes));
-                }
-                String maxInflightUploadCount = bucketURI.extensionString("maxInflightUploadCount");
-                if (StringUtils.isNumeric(maxInflightUploadCount)) {
-                    configBuilder.withMaxInflightUploadCount(Integer.parseInt(maxInflightUploadCount));
-                }
-                String readAheadObjectCount = bucketURI.extensionString("readAheadObjectCount");
-                if (StringUtils.isNumeric(readAheadObjectCount)) {
-                    configBuilder.withReadAheadObjectCount(Integer.parseInt(readAheadObjectCount));
-                }
                 return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
             default:
-                throw new IllegalArgumentException("Invalid WAL schema: " + bucketURI.protocol());
+                throw new IllegalArgumentException("Invalid WAL schema: " + uri.protocol());
         }
     }
 

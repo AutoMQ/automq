@@ -9,20 +9,38 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.operator;
+package com.automq.stream.utils;
 
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringUtils;
 
 public class URIUtils {
+    public static final Pattern URI_LIST_PATTERN = Pattern.compile("\\d+@.*?(?=,\\d+@|$)");
+    public static final Pattern URI_PATTERN = Pattern.compile("(\\d+)@(.+)");
+
+    public static List<String> parseIdURIList(String uriList) {
+        if (StringUtils.isBlank(uriList)) {
+            return Collections.emptyList();
+        }
+        List<String> list = new ArrayList<>();
+        Matcher matcher = URI_LIST_PATTERN.matcher(uriList);
+        while (matcher.find()) {
+            list.add(matcher.group(0));
+        }
+        return list;
+    }
+
     public static String getString(Map<String, List<String>> queries, String key, String defaultValue) {
         List<String> value = queries.get(key);
         if (value == null) {
