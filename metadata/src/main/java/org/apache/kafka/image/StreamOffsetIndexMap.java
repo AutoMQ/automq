@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -76,6 +76,14 @@ public class StreamOffsetIndexMap {
     @VisibleForTesting
     int entrySize() {
         return streamOffsetIndexMap.values().stream().mapToInt(NavigableMap::size).sum();
+    }
+
+    @VisibleForTesting
+    void clear() {
+        while (streamOffsetCache.size() > 0) {
+            streamOffsetCache.pop();
+        }
+        streamOffsetIndexMap.clear();
     }
 
     private static class StreamOffset {

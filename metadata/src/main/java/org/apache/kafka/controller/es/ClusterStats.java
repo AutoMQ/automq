@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -11,6 +11,7 @@
 
 package org.apache.kafka.controller.es;
 
+import java.util.HashMap;
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.Map;
@@ -21,8 +22,8 @@ public class ClusterStats {
     private static final long EXPIRE_TIME_MS = 60000; // 1 minute
     private volatile static ClusterStats instance = null;
     private volatile Set<Integer> excludedBrokers;
-    private volatile Map<Integer, Double> brokerLoads;
-    private volatile Map<TopicPartition, Double> partitionLoads;
+    private volatile Map<Integer, Double> brokerLoads = new HashMap<>();
+    private volatile Map<TopicPartition, Double> partitionLoads = new HashMap<>();
     private volatile long lastUpdateTime = 0;
 
     private ClusterStats() {

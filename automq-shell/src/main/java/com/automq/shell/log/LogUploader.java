@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -12,8 +12,6 @@
 package com.automq.shell.log;
 
 import com.automq.shell.AutoMQApplication;
-import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
@@ -95,7 +93,7 @@ public class LogUploader implements LogRecorder {
 
     private boolean couldUpload() {
         initConfiguration();
-        boolean enabled = config != null && config.isEnabled() && config.bucket() != null;
+        boolean enabled = config != null && config.isEnabled() && config.objectStorage() != null;
 
         if (enabled) {
             initUploadComponent();
@@ -120,10 +118,7 @@ public class LogUploader implements LogRecorder {
                 if (startFuture == null) {
                     startFuture = CompletableFuture.runAsync(() -> {
                         try {
-                            objectStorage = AwsObjectStorage.builder()
-                                .bucket(config.bucket())
-                                .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
-                                .build();
+                            objectStorage = config.objectStorage();
                             uploadThread = new Thread(new UploadTask());
                             uploadThread.setName("log-uploader-upload-thread");
                             uploadThread.setDaemon(true);
@@ -241,7 +236,7 @@ public class LogUploader implements LogRecorder {
                     if (!objects.isEmpty()) {
                         List<ObjectPath> keyList = objects.stream()
                             .filter(object -> object.timestamp() < expiredTime)
-                            .map(object -> new ObjectPath(object.bucket(), object.key()))
+                            .map(object -> new ObjectPath(object.bucketId(), object.key()))
                             .collect(Collectors.toList());
 
                         if (!keyList.isEmpty()) {

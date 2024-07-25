@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -62,12 +62,7 @@ public class S3ObjectMetadata {
             S3StreamConstant.INVALID_ORDER_ID);
     }
 
-    public S3ObjectMetadata(long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
-        long orderId) {
-        this(objectId, type, offsetRanges, dataTimeInMs, S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_OBJECT_SIZE,
-            orderId);
-    }
-
+    // Only used for testing
     public S3ObjectMetadata(
         long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
         long committedTimestamp, long objectSize,
@@ -76,7 +71,11 @@ public class S3ObjectMetadata {
     }
 
     public S3ObjectMetadata(long objectId, int attributes) {
-        this(objectId, S3ObjectType.UNKNOWN, Collections.emptyList(), S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_OBJECT_SIZE,
+        this(objectId, -1L, attributes);
+    }
+
+    public S3ObjectMetadata(long objectId, long objectSize, int attributes) {
+        this(objectId, S3ObjectType.UNKNOWN, Collections.emptyList(), S3StreamConstant.INVALID_TS, S3StreamConstant.INVALID_TS, objectSize,
             S3StreamConstant.INVALID_ORDER_ID, attributes);
     }
 

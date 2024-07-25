@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -18,6 +18,9 @@ import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.operator.BucketURI;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
+import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.Attributes;
@@ -61,10 +64,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import kafka.log.stream.s3.telemetry.otel.OTelHistogramReporter;
 import kafka.server.KafkaConfig;
 import kafka.server.KafkaRaftServer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.server.ProcessRole;
+import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,6 +85,7 @@ public class TelemetryManager {
     private final String clusterId;
     protected final List<MetricReader> metricReaderList;
     private final List<AutoCloseable> autoCloseables;
+    private final OTelHistogramReporter oTelHistogramReporter;
     private JmxMetricInsight jmxMetricInsight;
     private PrometheusHttpServer prometheusHttpServer;
 
@@ -88,6 +94,7 @@ public class TelemetryManager {
         this.clusterId = clusterId;
         this.metricReaderList = new ArrayList<>();
         this.autoCloseables = new ArrayList<>();
+        this.oTelHistogramReporter = new OTelHistogramReporter(KafkaYammerMetrics.defaultRegistry());
         // redirect JUL from OpenTelemetry SDK to SLF4J
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
@@ -172,6 +179,12 @@ public class TelemetryManager {
 
         S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
         S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
+
+        // kraft controller may not have s3WALPath config.
+        if (StringUtils.isNotEmpty(kafkaConfig.s3WALPath()) && kafkaConfig.s3WALPath().startsWith("0@s3://")) {
+            ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
+        }
+        this.oTelHistogramReporter.start(meter);
     }
 
     public static OpenTelemetrySdk getOpenTelemetrySdk() {
@@ -292,6 +305,7 @@ public class TelemetryManager {
         }
         BucketURI bucket = kafkaConfig.automq().opsBuckets().get(0);
 
+        ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(kafkaConfig.automq().opsBuckets().get(0)).build();
         S3MetricsExporter s3MetricsExporter = new S3MetricsExporter(new S3MetricsConfig() {
             @Override
             public String clusterId() {
@@ -310,8 +324,8 @@ public class TelemetryManager {
             }
 
             @Override
-            public BucketURI bucket() {
-                return bucket;
+            public ObjectStorage objectStorage() {
+                return objectStorage;
             }
         });
         s3MetricsExporter.start();

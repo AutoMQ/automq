@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -76,6 +76,7 @@ public class S3StreamMetricsManager {
     private static ObservableLongGauge usedMemorySize = new NoopObservableLongGauge();
     private static ObservableLongGauge pendingStreamAppendLatencyMetrics = new NoopObservableLongGauge();
     private static ObservableLongGauge pendingStreamFetchLatencyMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge compactionDelayTimeMetrics = new NoopObservableLongGauge();
     private static LongCounter compactionReadSizeInTotal = new NoopLongCounter();
     private static LongCounter compactionWriteSizeInTotal = new NoopLongCounter();
     private static Supplier<Long> networkInboundAvailableBandwidthSupplier = () -> 0L;
@@ -87,6 +88,7 @@ public class S3StreamMetricsManager {
     private static Supplier<Long> deltaWalTrimmedOffsetSupplier = () -> 0L;
     private static Supplier<Long> deltaWALCacheSizeSupplier = () -> 0L;
     private static Supplier<Long> blockCacheSizeSupplier = () -> 0L;
+    private static Supplier<Long> compactionDelayTimeSupplier = () -> 0L;
     private static LongCounter blockCacheOpsThroughput = new NoopLongCounter();
 
     private static Map<Integer, Supplier<Integer>> availableInflightS3ReadQuotaSupplier = new ConcurrentHashMap<>();
@@ -317,6 +319,15 @@ public class S3StreamMetricsManager {
             .setDescription("Block cache operation throughput")
             .setUnit("bytes")
             .build();
+        compactionDelayTimeMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.COMPACTION_DELAY_TIME_METRIC_NAME)
+            .setDescription("Compaction delay time")
+            .setUnit("milliseconds")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(compactionDelayTimeSupplier.get(), metricsConfig.getBaseAttributes());
+                }
+            });
     }
 
     public static void registerNetworkLimiterSupplier(AsyncNetworkBandwidthLimiter.Type type,
@@ -597,5 +608,9 @@ public class S3StreamMetricsManager {
 
     public static long maxPendingStreamFetchLatency() {
         return pendingStreamFetchLatencySupplier.values().stream().map(Supplier::get).max(Long::compareTo).orElse(0L);
+    }
+
+    public static void registerCompactionDelayTimeSuppler(Supplier<Long> compactionDelayTimeSupplier) {
+        S3StreamMetricsManager.compactionDelayTimeSupplier = compactionDelayTimeSupplier;
     }
 }

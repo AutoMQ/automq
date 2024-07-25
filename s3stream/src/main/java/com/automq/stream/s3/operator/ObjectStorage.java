@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface ObjectStorage {
+    long RANGE_READ_TO_END = -1L;
 
     void close();
 
@@ -27,32 +28,59 @@ public interface ObjectStorage {
     Writer writer(WriteOptions options, String objectPath);
 
     /**
-     * Range read object from the object.
+     * Read object from the object storage.
+     * It will throw {@link ObjectNotFoundException} if the object not found.
+     */
+    default CompletableFuture<ByteBuf> read(ReadOptions options, String objectPath) {
+        return rangeRead(options, objectPath, 0, RANGE_READ_TO_END);
+    }
+
+    /**
+     * Range read object from the object storage.
+     * It will throw {@link ObjectNotFoundException} if the object not found.
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
     // Low level API
-    CompletableFuture<Void> write(WriteOptions options, String objectPath, ByteBuf buf);
+    CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf);
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
 
+    // NOTE: this is a temporary method to get bucketId for direct read with object storage interface
+    short bucketId();
+
+    /**
+     * The deleteObjects API have max batch limit.
+     * see <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html"/>
+     * Implementation should handle the objectPaths size exceeded limit condition.
+     * When batch split logic is triggered the CompletableFuture means all the deleteBatch if success.
+     * The caller may do the batch split logic if the delete operation need fine-grained control
+     */
     CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
 
     class ObjectPath {
-        private final short bucket;
+        private final short bucketId;
         private final String key;
 
-        public ObjectPath(short bucket, String key) {
-            this.bucket = bucket;
+        public ObjectPath(short bucketId, String key) {
+            this.bucketId = bucketId;
             this.key = key;
         }
 
-        public short bucket() {
-            return bucket;
+        public short bucketId() {
+            return bucketId;
         }
 
         public String key() {
             return key;
+        }
+
+        @Override
+        public String toString() {
+            return "ObjectPath{" +
+                "bucketId=" + bucketId +
+                ", key='" + key + '\'' +
+                '}';
         }
     }
 
@@ -60,8 +88,8 @@ public interface ObjectStorage {
         private final long timestamp;
         private final long size;
 
-        public ObjectInfo(short bucket, String key, long timestamp, long size) {
-            super(bucket, key);
+        public ObjectInfo(short bucketId, String key, long timestamp, long size) {
+            super(bucketId, key);
             this.timestamp = timestamp;
             this.size = size;
         }
@@ -81,6 +109,9 @@ public interface ObjectStorage {
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private int allocType = ByteBufAlloc.DEFAULT;
         private long apiCallAttemptTimeout = -1L;
+        private short bucketId;
+        private boolean enableFastRetry;
+        private boolean retry;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -97,6 +128,16 @@ public interface ObjectStorage {
             return this;
         }
 
+        public WriteOptions enableFastRetry(boolean enableFastRetry) {
+            this.enableFastRetry = enableFastRetry;
+            return this;
+        }
+
+        public WriteOptions retry(boolean retry) {
+            this.retry = retry;
+            return this;
+        }
+
         public ThrottleStrategy throttleStrategy() {
             return throttleStrategy;
         }
@@ -109,6 +150,34 @@ public interface ObjectStorage {
             return apiCallAttemptTimeout;
         }
 
+        // The value will be set by writer
+        WriteOptions bucketId(short bucketId) {
+            this.bucketId = bucketId;
+            return this;
+        }
+
+        public short bucketId() {
+            return bucketId;
+        }
+
+        public boolean enableFastRetry() {
+            return enableFastRetry;
+        }
+
+        public boolean retry() {
+            return retry;
+        }
+
+        public WriteOptions copy() {
+            WriteOptions copy = new WriteOptions();
+            copy.throttleStrategy = throttleStrategy;
+            copy.allocType = allocType;
+            copy.apiCallAttemptTimeout = apiCallAttemptTimeout;
+            copy.bucketId = bucketId;
+            copy.enableFastRetry = enableFastRetry;
+            copy.retry = retry;
+            return copy;
+        }
     }
 
     class ReadOptions {
@@ -133,6 +202,24 @@ public interface ObjectStorage {
 
         public short bucket() {
             return bucket;
+        }
+    }
+
+    class WriteResult {
+        private final short bucket;
+
+        public WriteResult(short bucket) {
+            this.bucket = bucket;
+        }
+
+        public short bucket() {
+            return bucket;
+        }
+    }
+
+    class ObjectNotFoundException extends Exception {
+        public ObjectNotFoundException(Throwable cause) {
+            super(cause);
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -16,6 +16,7 @@ import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.charset.StandardCharsets;
@@ -31,8 +32,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -42,7 +41,6 @@ public class PingS3Helper {
     private static final Logger LOGGER = LoggerFactory.getLogger(PingS3Helper.class);
     private ObjectStorage objectStorage;
     private BucketURI bucket;
-    private List<AwsCredentialsProvider> credentialsProviders;
     private Map<String, String> tagging;
     private final boolean needPrintToConsole;
 
@@ -57,7 +55,6 @@ public class PingS3Helper {
     public static class Builder {
         private boolean needPrintToConsole;
         private BucketURI bucket;
-        private List<AwsCredentialsProvider> credentialsProviders;
         private Map<String, String> tagging;
 
         public Builder needPrintToConsole(boolean needPrintToConsole) {
@@ -70,11 +67,6 @@ public class PingS3Helper {
             return this;
         }
 
-        public Builder credentialsProviders(List<AwsCredentialsProvider> credentialsProviders) {
-            this.credentialsProviders = credentialsProviders;
-            return this;
-        }
-
         public Builder tagging(Map<String, String> tagging) {
             this.tagging = tagging;
             return this;
@@ -83,7 +75,6 @@ public class PingS3Helper {
         public PingS3Helper build() {
             PingS3Helper pingS3Helper = new PingS3Helper(this);
             pingS3Helper.bucket = bucket;
-            pingS3Helper.credentialsProviders = this.credentialsProviders;
             pingS3Helper.tagging = this.tagging;
             return pingS3Helper;
         }
@@ -93,7 +84,6 @@ public class PingS3Helper {
     public String toString() {
         return "s3 parameters{" +
             ", bucket='" + bucket + '\'' +
-            ", credentialsProviders=" + credentialsProviders +
             ", tagging=" + tagging +
             '}';
     }
@@ -101,12 +91,7 @@ public class PingS3Helper {
     public void pingS3() {
         // TODO: better ping to support multiple buckets and multiple cloud
         try {
-            objectStorage = AwsObjectStorage.builder()
-                .bucket(bucket)
-                .credentialsProviders(credentialsProviders)
-                .tagging(tagging)
-                .checkS3ApiModel(true)
-                .build();
+            objectStorage = ObjectStorageFactory.instance().builder(bucket).tagging(tagging).checkS3ApiModel(true).build();
         } catch (Exception e) {
             handleException(e, "Delete objects");
         }
@@ -155,7 +140,7 @@ public class PingS3Helper {
     }
 
     private CompletableFuture<Void> checkRead(String path, ByteBuf data) {
-        return objectStorage.rangeRead(ReadOptions.DEFAULT, path, 0, data.readableBytes()).thenAccept(buf -> {
+        return objectStorage.rangeRead(new ReadOptions().bucket(bucket.bucketId()), path, 0, data.readableBytes()).thenAccept(buf -> {
 
             if (data.equals(buf)) {
                 LOGGER.info("Successfully rangeRead object");
@@ -169,7 +154,7 @@ public class PingS3Helper {
     }
 
     private CompletableFuture<Void> checkDelete(String path) {
-        return objectStorage.delete(List.of(new ObjectStorage.ObjectPath((short) 0, path))).thenRun(() -> {
+        return objectStorage.delete(List.of(new ObjectStorage.ObjectPath(bucket.bucketId(), path))).thenRun(() -> {
             LOGGER.info("Successfully delete object to s3");
             printOperationStatus("Delete object", true);
         }).exceptionally(ex -> handleException(ex, "Delete object"));
@@ -339,7 +324,6 @@ public class PingS3Helper {
         List<String> advises = new ArrayList<>();
         checkBucketName(advises);
         checkEndpoint(advises);
-        checkCredentialsProvider(advises);
         checkRegion(advises);
         checkForcePathStyle(advises);
         checkTagging(advises);
@@ -377,19 +361,6 @@ public class PingS3Helper {
         }
     }
 
-    private void checkCredentialsProvider(List<String> advises) {
-        if (credentialsProviders == null || credentialsProviders.isEmpty()) {
-            advises.add("no credentials provider is supplied. Please supply a credentials provider.");
-        } else {
-            try {
-                AwsCredentialsProviderChain chain = AwsCredentialsProviderChain.builder().credentialsProviders(credentialsProviders).build();
-                chain.resolveCredentials();
-            } catch (SdkClientException e) {
-                advises.add("all provided credentials providers are invalid. Please supply a valid credentials provider. Error msg: " + e.getMessage());
-            }
-        }
-    }
-
     private void checkRegion(List<String> advises) {
         if (StringUtils.isBlank(bucket.region())) {
             advises.add("region is blank. Please supply a valid region.");
@@ -397,7 +368,7 @@ public class PingS3Helper {
     }
 
     private void checkForcePathStyle(List<String> advises) {
-        if (!bucket.extensionBool(AwsObjectStorage.PATH_STYLE, false)) {
+        if (!bucket.extensionBool(AwsObjectStorage.PATH_STYLE_KEY, false)) {
             advises.add("forcePathStyle is set as false. Please set it as true if you are using minio.");
         }
     }

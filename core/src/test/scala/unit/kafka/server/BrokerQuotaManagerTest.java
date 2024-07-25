@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import scala.Option;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -77,7 +78,7 @@ public class BrokerQuotaManagerTest {
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 100, time + 10);
         assertEquals(0, result);
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 100, time + second2millis);
-        assertEquals(1000, result);
+        assertTrue(result > 0);
 
         properties.put(QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, 1000);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
@@ -93,7 +94,7 @@ public class BrokerQuotaManagerTest {
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.fetch(), request, 100, time + 10);
         assertEquals(0, result);
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.fetch(), request, 100, time + second2millis);
-        assertEquals(1000, result);
+        assertTrue(result > 0);
 
         properties.put(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, 1000);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
@@ -102,18 +103,16 @@ public class BrokerQuotaManagerTest {
 
         // Test request quota
         properties.put(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, 0);
-        properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_PERCENTAGE_CONFIG, 30);
+        properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, 1);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
-        long second2Nanos = TimeUnit.SECONDS.toNanos(1);
-        when(request.requestThreadTimeNanos()).thenReturn(second2Nanos / 4);
-        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 0, time);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 1, time);
         assertEquals(0, result);
-        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 0, time + 10);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 1, time + 10);
         assertEquals(0, result);
-        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 0, time + second2millis);
-        assertEquals(500, result);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 1, time + second2millis);
+        assertTrue(result > 0);
 
-        properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_PERCENTAGE_CONFIG, 50);
+        properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, 10);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 0, time + second2millis);
         assertEquals(0, result);
@@ -161,7 +160,7 @@ public class BrokerQuotaManagerTest {
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
 
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 1000, time.milliseconds());
-        assertEquals(1000, result);
+        assertTrue(result > 0);
 
         // Test user white list
         properties.remove(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG);

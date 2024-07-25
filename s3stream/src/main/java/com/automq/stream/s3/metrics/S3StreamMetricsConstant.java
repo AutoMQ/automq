@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -104,6 +104,7 @@ public class S3StreamMetricsConstant {
     public static final String GET_INDEX_TIME_METRIC_NAME = "get_index_time";
     public static final String READ_BLOCK_CACHE_METRIC_NAME = "read_block_cache_stage_time";
     public static final String READ_BLOCK_CACHE_THROUGHPUT_METRIC_NAME = "block_cache_ops_throughput";
+    public static final String COMPACTION_DELAY_TIME_METRIC_NAME = "compaction_delay_time";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
     public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");

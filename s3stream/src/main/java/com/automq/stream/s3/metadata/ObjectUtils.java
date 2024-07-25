@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -21,6 +21,7 @@ public class ObjectUtils {
     public static final long NOOP_OBJECT_ID = -1L;
     public static final long NOOP_OFFSET = -1L;
     private static final String OBJECT_TAG_KEY = "s3stream:namespace";
+    private static final String SPARSE_INDEX_OBJECT_HASH_MIX = "sparse-index";
     private static String namespace = "DEFAULT";
 
     public static void setNamespace(String namespace) {
@@ -29,6 +30,22 @@ public class ObjectUtils {
 
     public static void main(String[] args) {
         System.out.printf("%s%n", genKey(0, 11154));
+    }
+
+    public static String genIndexKey(int version, long nodeId) {
+        if (namespace.isEmpty()) {
+            throw new IllegalStateException("NAMESPACE is not set");
+        }
+        return genIndexKey(version, namespace, nodeId);
+    }
+
+    public static String genIndexKey(int version, String namespace, long nodeId) {
+        if (version == 0) {
+            String hashPrefix = String.format("%08x", (SPARSE_INDEX_OBJECT_HASH_MIX + nodeId).hashCode());
+            return hashPrefix + "/" + namespace + "/node-" + nodeId;
+        } else {
+            throw new UnsupportedOperationException("Unsupported version: " + version);
+        }
     }
 
     public static String genKey(int version, long objectId) {

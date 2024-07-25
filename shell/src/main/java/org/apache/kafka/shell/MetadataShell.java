@@ -92,7 +92,7 @@ public final class MetadataShell {
         File parent = file.getParentFile();
         return parent == null ? file : parent;
     }
-    
+
     static File parentParent(File file) {
         return parent(parent(file));
     }
@@ -239,9 +239,7 @@ public final class MetadataShell {
 
     public static void main(String[] args) {
         ArgumentParser parser = ArgumentParsers
-            .newFor("kafka-metadata-shell")
-            .build()
-            .defaultHelp(true)
+            .newArgumentParser("kafka-metadata-shell")
             .description("The Apache Kafka metadata shell");
         parser.addArgument("--snapshot", "-s")
             .type(String.class)

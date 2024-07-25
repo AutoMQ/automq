@@ -49,10 +49,6 @@ rules:
         metric: kafka.event.queue.time
         type: counter
         desc: The total time the event waits in the queue
-      Mean:
-        metric: kafka.event.queue.time.mean
-        type: gauge
-        desc: The mean time the event waits in the queue
       50thPercentile:
         metric: kafka.event.queue.time.50p
         type: gauge
@@ -73,10 +69,6 @@ rules:
         metric: kafka.event.queue.processing.time
         type: counter
         desc: The total time used to process the event in the event queue
-      Mean:
-        metric: kafka.event.queue.processing.time.mean
-        type: gauge
-        desc: The mean time used to process the event in the event queue
       50thPercentile:
         metric: kafka.event.queue.processing.time.50p
         type: gauge

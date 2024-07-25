@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -13,7 +13,9 @@ package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.operator.ObjectStorage;
 
 public interface ObjectReaderFactory {
     ObjectReader get(S3ObjectMetadata metadata);
+    ObjectStorage getObjectStorage();
 }

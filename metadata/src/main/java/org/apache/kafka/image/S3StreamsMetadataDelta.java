@@ -142,9 +142,9 @@ public final class S3StreamsMetadataDelta {
     private S3StreamMetadataDelta getOrCreateStreamMetadataDelta(Long streamId) {
         S3StreamMetadataDelta delta = changedStreams.get(streamId);
         if (delta == null) {
-            delta = new S3StreamMetadataDelta(image.streamsMetadata().getOrDefault(streamId, S3StreamMetadataImage.EMPTY));
+            delta = new S3StreamMetadataDelta(image.timelineStreamMetadata().getOrDefault(streamId, S3StreamMetadataImage.EMPTY));
             changedStreams.put(streamId, delta);
-            if (!image.streamsMetadata().containsKey(streamId)) {
+            if (!image.timelineStreamMetadata().containsKey(streamId)) {
                 newStreams.add(streamId);
             }
         }
@@ -155,7 +155,7 @@ public final class S3StreamsMetadataDelta {
         NodeS3WALMetadataDelta delta = changedNodes.get(nodeId);
         if (delta == null) {
             delta = new NodeS3WALMetadataDelta(
-                image.nodeWALMetadata().
+                image.timelineNodeMetadata().
                     getOrDefault(nodeId, NodeS3StreamSetObjectMetadataImage.EMPTY));
             changedNodes.put(nodeId, delta);
         }
@@ -163,67 +163,81 @@ public final class S3StreamsMetadataDelta {
     }
 
     S3StreamsMetadataImage apply() {
-        DeltaMap<Long, S3StreamMetadataImage> streams = image.streamsMetadata().copy();
-        // apply the delta changes of old streams since the last image
-        changedStreams.forEach((streamId, delta) -> streams.put(streamId, delta.apply()));
-        streams.removeAll(deletedStreams);
-        DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodes = image.nodeWALMetadata().copy();
-        // apply the delta changes of old nodes since the last image
-        this.changedNodes.forEach((nodeId, delta) -> nodes.put(nodeId, delta.apply()));
-        // remove the deleted nodes
-        nodes.removeAll(deletedNodes);
-
-        Map<TopicIdPartition, Set<Long>> newPartition2streams = new HashMap<>();
-        DeltaMap<TopicIdPartition, Set<Long>> partition2streams = image.partition2streams().copy();
-        DeltaMap<Long, TopicIdPartition> stream2partition = image.stream2partition().copy();
-        Function<TopicIdPartition, Set<Long>> getPartitionStreams = k -> {
-            Set<Long> s = partition2streams.get(k);
-            s = new HashSet<>(s == null ? Collections.emptySet() : s);
-            partition2streams.put(k, s);
-            return s;
-        };
-        for (Long streamId : deletedStreams) {
-            TopicIdPartition tp = stream2partition.get(streamId);
-            stream2partition.remove(streamId);
-            Set<Long> partitionStreams = newPartition2streams.computeIfAbsent(tp, getPartitionStreams);
-            if (partitionStreams != null) {
-                partitionStreams.remove(streamId);
-            }
-        }
-        for (Long streamId : newStreams) {
-            S3StreamRecord.Tag topicTag = streams.get(streamId).tags().find(StreamTags.Topic.KEY);
-            S3StreamRecord.Tag partitionTag = streams.get(streamId).tags().find(StreamTags.Partition.KEY);
-            if (topicTag == null || partitionTag == null) {
-                continue;
-            }
-            try {
-                Uuid topicId = StreamTags.Topic.decode(topicTag.value());
-                int partition = StreamTags.Partition.decode(partitionTag.value());
-                TopicIdPartition tp = new TopicIdPartition(topicId, partition);
-                Set<Long> partitionStreams = newPartition2streams.computeIfAbsent(tp, getPartitionStreams);
-                if (partitionStreams != null) {
-                    partitionStreams.add(streamId);
-                }
-                stream2partition.put(streamId, tp);
-            } catch (Throwable e) {
-                // skip
-            }
-        }
 
         RegistryRef registry = image.registryRef();
         TimelineHashMap<Long, Long> newStreamEndOffsets;
+        TimelineHashMap<Long, S3StreamMetadataImage> newStreamMetadataMap;
+        TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> newNodeMetadataMap;
+        TimelineHashMap<TopicIdPartition, Set<Long>> partition2streams;
+        TimelineHashMap<Long, TopicIdPartition> stream2partition;
         if (registry == RegistryRef.NOOP) {
             registry = new RegistryRef();
             newStreamEndOffsets = new TimelineHashMap<>(registry.registry(), 100000);
+            newStreamMetadataMap = new TimelineHashMap<>(registry.registry(), 100000);
+            newNodeMetadataMap = new TimelineHashMap<>(registry.registry(), 100);
+            partition2streams = new TimelineHashMap<>(registry.registry(), 100000);
+            stream2partition = new TimelineHashMap<>(registry.registry(), 100000);
         } else {
             newStreamEndOffsets = image.timelineStreamEndOffsets();
+            newStreamMetadataMap = image.timelineStreamMetadata();
+            newNodeMetadataMap = image.timelineNodeMetadata();
+            partition2streams = image.partition2streams();
+            stream2partition = image.stream2partition();
         }
         registry.inLock(() -> {
             newStreamEndOffsets.putAll(changedStreamEndOffsets);
             deletedStreams.forEach(newStreamEndOffsets::remove);
+
+            // apply the delta changes of old streams since the last image
+            changedStreams.forEach((streamId, delta) -> newStreamMetadataMap.put(streamId, delta.apply()));
+            deletedStreams.forEach(newStreamMetadataMap::remove);
+
+            // apply the delta changes of old nodes since the last image
+            this.changedNodes.forEach((nodeId, delta) -> newNodeMetadataMap.put(nodeId, delta.apply()));
+            // remove the deleted nodes
+            deletedNodes.forEach(newNodeMetadataMap::remove);
+
+            Map<TopicIdPartition, Set<Long>> newPartition2streams = new HashMap<>();
+            Function<TopicIdPartition, Set<Long>> getPartitionStreams = k -> {
+                Set<Long> s = partition2streams.get(k);
+                s = new HashSet<>(s == null ? Collections.emptySet() : s);
+                partition2streams.put(k, s);
+                return s;
+            };
+            for (Long streamId : deletedStreams) {
+                TopicIdPartition tp = stream2partition.get(streamId);
+                if (tp == null) {
+                    continue;
+                }
+                stream2partition.remove(streamId);
+                Set<Long> partitionStreams = newPartition2streams.computeIfAbsent(tp, getPartitionStreams);
+                if (partitionStreams != null) {
+                    partitionStreams.remove(streamId);
+                }
+            }
+            for (Long streamId : newStreams) {
+                S3StreamRecord.Tag topicTag = newStreamMetadataMap.get(streamId).tags().find(StreamTags.Topic.KEY);
+                S3StreamRecord.Tag partitionTag = newStreamMetadataMap.get(streamId).tags().find(StreamTags.Partition.KEY);
+                if (topicTag == null || partitionTag == null) {
+                    continue;
+                }
+                try {
+                    Uuid topicId = StreamTags.Topic.decode(topicTag.value());
+                    int partition = StreamTags.Partition.decode(partitionTag.value());
+                    TopicIdPartition tp = new TopicIdPartition(topicId, partition);
+                    Set<Long> partitionStreams = newPartition2streams.computeIfAbsent(tp, getPartitionStreams);
+                    if (partitionStreams != null) {
+                        partitionStreams.add(streamId);
+                    }
+                    stream2partition.put(streamId, tp);
+                } catch (Throwable e) {
+                    // skip
+                }
+            }
         });
         registry = registry.next();
-        return new S3StreamsMetadataImage(currentAssignedStreamId, registry, streams, nodes, partition2streams, stream2partition, newStreamEndOffsets);
+        return new S3StreamsMetadataImage(currentAssignedStreamId, registry, newStreamMetadataMap, newNodeMetadataMap,
+            partition2streams, stream2partition, newStreamEndOffsets);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -167,6 +167,11 @@ public class MultiPartWriter implements Writer {
                 objectPart.release();
             }
         });
+    }
+
+    @Override
+    public short bucketId() {
+        return writeOptions.bucketId();
     }
 
     private List<AbstractObjectStorage.ObjectStorageCompletedPart> genCompleteParts() {

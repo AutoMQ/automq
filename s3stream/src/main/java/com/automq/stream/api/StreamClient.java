@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -36,7 +36,7 @@ public interface StreamClient {
     CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions options);
 
     /**
-     * Retrive an opened stream.
+     * Retrieve an opened stream.
      *
      * @param streamId stream id.
      * @return {@link Optional<Stream>}.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -14,15 +14,15 @@ package org.apache.kafka.image.node.automq;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
-import org.apache.kafka.image.DeltaMap;
 import org.apache.kafka.image.NodeS3StreamSetObjectMetadataImage;
 import org.apache.kafka.image.node.MetadataNode;
+import org.apache.kafka.timeline.TimelineHashMap;
 
 public class NodesImageNode implements MetadataNode {
     public final static String NAME = "nodes";
-    private final DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodes;
+    private final TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodes;
 
-    public NodesImageNode(DeltaMap<Integer, NodeS3StreamSetObjectMetadataImage> nodes) {
+    public NodesImageNode(TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodes) {
         this.nodes = nodes;
     }
 

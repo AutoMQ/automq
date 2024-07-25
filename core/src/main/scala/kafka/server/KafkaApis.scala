@@ -266,6 +266,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.PUT_KVS => forwardToControllerOrFail(request)
         case ApiKeys.GET_KVS => forwardToControllerOrFail(request)
         case ApiKeys.DELETE_KVS => forwardToControllerOrFail(request)
+        case ApiKeys.AUTOMQ_GET_NODES => forwardToControllerOrFail(request)
         case _ => throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
       }
     } catch {

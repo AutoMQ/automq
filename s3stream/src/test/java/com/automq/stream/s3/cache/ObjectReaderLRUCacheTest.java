@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -19,11 +19,16 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 public class ObjectReaderLRUCacheTest {
 
@@ -60,8 +65,27 @@ public class ObjectReaderLRUCacheTest {
         cache.put(235L, objectReader3);
         cache.put(234L, objectReader2);
         cache.put(233L, objectReader);
+        Assertions.assertEquals(1, cache.size());
         Map.Entry<Long, ObjectReader> entry = cache.pop();
         Assertions.assertNotNull(entry);
-        Assertions.assertEquals(objectReader2, entry.getValue());
+        Assertions.assertEquals(objectReader, entry.getValue());
+    }
+
+    @Test
+    public void testConcurrentGetPut() throws InterruptedException {
+        ObjectReaderLRUCache cache = new ObjectReaderLRUCache(5000);
+        List<CompletableFuture<Integer>> cfs = new ArrayList<>();
+        Random r = new Random();
+        for (int i = 0; i < 100; i++) {
+            ObjectReader reader = Mockito.mock(ObjectReader.class);
+            CompletableFuture<Integer> cf = CompletableFuture.supplyAsync(() -> 100,
+                CompletableFuture.delayedExecutor(r.nextInt(1000), TimeUnit.MILLISECONDS));
+            cfs.add(cf);
+            Mockito.doAnswer(invocation -> cf).when(reader).size();
+            cache.put((long) i, reader);
+        }
+        CompletableFuture.allOf(cfs.toArray(new CompletableFuture[0])).join();
+        Thread.sleep(1000);
+        Assertions.assertEquals(50, cache.size());
     }
 }

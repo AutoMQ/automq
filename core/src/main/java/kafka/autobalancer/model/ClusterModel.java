@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -158,6 +158,7 @@ public class ClusterModel {
             long now = System.currentTimeMillis();
             for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> entry : brokerReplicaMap.entrySet()) {
                 int brokerId = entry.getKey();
+                brokerLoads.put(brokerId, 0.0);
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
                     TopicPartition tp = tpEntry.getKey();
                     TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();

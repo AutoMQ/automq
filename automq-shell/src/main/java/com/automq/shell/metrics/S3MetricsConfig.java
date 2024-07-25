@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -11,7 +11,7 @@
 
 package com.automq.shell.metrics;
 
-import com.automq.stream.s3.operator.BucketURI;
+import com.automq.stream.s3.operator.ObjectStorage;
 
 public interface S3MetricsConfig {
 
@@ -21,5 +21,5 @@ public interface S3MetricsConfig {
 
     int nodeId();
 
-    BucketURI bucket();
+    ObjectStorage objectStorage();
 }

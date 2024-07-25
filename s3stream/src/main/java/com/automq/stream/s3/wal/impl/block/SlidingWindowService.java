@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -15,6 +15,7 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.WALShutdownException;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
@@ -22,8 +23,11 @@ import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import java.util.Collection;
 import java.util.LinkedList;
+import java.util.Iterator;
 import java.util.PriorityQueue;
 import java.util.Queue;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -141,13 +145,43 @@ public class SlidingWindowService {
         boolean gracefulShutdown;
         this.ioExecutor.shutdown();
         this.pollBlockScheduler.shutdownNow();
+        List<Runnable> tasks = new LinkedList<>();
         try {
             gracefulShutdown = this.ioExecutor.awaitTermination(timeout, unit);
         } catch (InterruptedException e) {
-            this.ioExecutor.shutdownNow();
+            tasks = this.ioExecutor.shutdownNow();
             gracefulShutdown = false;
         }
+
+        notifyWriteFuture(tasks);
+
         return gracefulShutdown;
+    }
+
+    private void notifyWriteFuture(List<Runnable> tasks) {
+        Collection<CompletableFuture<AppendResult.CallbackResult>> futures = new LinkedList<>();
+        for (Runnable task : tasks) {
+            if (task instanceof WriteBlockProcessor) {
+                Iterator<CompletableFuture<AppendResult.CallbackResult>> iterator = ((WriteBlockProcessor) task).blocks.futures();
+                while (iterator.hasNext()) {
+                    futures.add(iterator.next());
+                }
+            }
+        }
+        for (Block block : this.pendingBlocks) {
+            futures.addAll(block.futures());
+        }
+        if (currentBlock != null && !currentBlock.isEmpty()) {
+            futures.addAll(currentBlock.futures());
+        }
+
+        doNotify(futures);
+    }
+
+    private void doNotify(Collection<CompletableFuture<AppendResult.CallbackResult>> futures) {
+        for (CompletableFuture<AppendResult.CallbackResult> future : futures) {
+            future.completeExceptionally(new WALShutdownException("failed to write: ring buffer is shutdown"));
+        }
     }
 
     /**

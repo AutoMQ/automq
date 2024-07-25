@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -97,5 +97,7 @@ public interface ObjectManager {
      * Get the cluster objects count.
      */
     CompletableFuture<Integer> getObjectsCount();
+
+    void setCommitStreamSetObjectHook(CommitStreamSetObjectHook hook);
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.cache.AsyncMeasurable;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -38,7 +39,7 @@ import static com.automq.stream.s3.ByteBufAlloc.READ_INDEX_BLOCK;
 import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 
-public interface ObjectReader extends AutoCloseable {
+public interface ObjectReader extends AsyncMeasurable {
 
     static ObjectReader reader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
         switch (ObjectAttributes.from(metadata.attributes()).type()) {
@@ -72,6 +73,10 @@ public interface ObjectReader extends AutoCloseable {
     ObjectReader release();
 
     void close();
+
+    default CompletableFuture<Integer> size() {
+        return basicObjectInfo().thenApply(BasicObjectInfo::size);
+    }
 
     interface RangeReader {
         CompletableFuture<ByteBuf> rangeRead(S3ObjectMetadata metadata, long start, long end);
@@ -150,6 +155,7 @@ public interface ObjectReader extends AutoCloseable {
                     asyncGetBasicObjectInfo0(ex.indexBlockPosition, false);
                 }
             }).exceptionally(ex -> {
+                LOGGER.error("get {} object info failed", metadata, ex);
                 basicObjectInfo().completeExceptionally(ex);
                 return null;
             });

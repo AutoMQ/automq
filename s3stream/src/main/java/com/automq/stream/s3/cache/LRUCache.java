@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -70,5 +70,9 @@ public class LRUCache<K, V> {
 
     public synchronized boolean containsKey(K key) {
         return cache.containsKey(key);
+    }
+
+    public synchronized void clear() {
+        cache.clear();
     }
 }

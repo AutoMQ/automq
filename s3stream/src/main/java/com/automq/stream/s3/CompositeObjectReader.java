@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -30,6 +30,7 @@ import static com.automq.stream.s3.CompositeObject.OBJECTS_BLOCK_MAGIC;
 import static com.automq.stream.s3.CompositeObject.OBJECT_BLOCK_HEADER_SIZE;
 import static com.automq.stream.s3.CompositeObject.OBJECT_UNIT_SIZE;
 import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
+import static com.automq.stream.s3.operator.ObjectStorage.RANGE_READ_TO_END;
 
 public class CompositeObjectReader implements ObjectReader {
     private final S3ObjectMetadata objectMetadata;
@@ -105,7 +106,7 @@ public class CompositeObjectReader implements ObjectReader {
     }
 
     private void asyncGetBasicObjectInfo(CompletableFuture<BasicObjectInfo> basicObjectInfoCf) {
-        CompletableFuture<ByteBuf> cf = rangeReader.rangeRead(objectMetadata, 0, -1L);
+        CompletableFuture<ByteBuf> cf = rangeReader.rangeRead(objectMetadata, 0, RANGE_READ_TO_END);
         cf.thenAccept(buf -> {
             try {
                 buf = buf.slice();
@@ -331,6 +332,16 @@ public class CompositeObjectReader implements ObjectReader {
 
         public short bucketId() {
             return bucketId;
+        }
+
+        @Override
+        public String toString() {
+            return "ObjectIndex{" +
+                "objectId=" + objectId +
+                ", blockStartIndex=" + blockStartIndex +
+                ", blockEndIndex=" + blockEndIndex +
+                ", bucketId=" + bucketId +
+                '}';
         }
     }
 

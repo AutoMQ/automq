@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -65,12 +65,12 @@ public class ProxyWriterTest {
         when(operator.completeMultipartUpload(any(), eq("testpath"), eq("test_upload_id"), any())).thenReturn(CompletableFuture.completedFuture(null));
         writer.write(TestUtils.random(17 * 1024 * 1024));
         assertTrue(writer.hasBatchingPart());
-        assertNull(writer.multiPartWriter);
+        assertNull(writer.largeObjectWriter);
         writer.write(TestUtils.random(17 * 1024 * 1024));
-        assertNotNull(writer.multiPartWriter);
+        assertNotNull(writer.largeObjectWriter);
         assertFalse(writer.hasBatchingPart());
         writer.write(TestUtils.random(17 * 1024 * 1024));
-        assertNotNull(writer.multiPartWriter);
+        assertNotNull(writer.largeObjectWriter);
         assertFalse(writer.hasBatchingPart());
         writer.close();
         verify(operator, times(2)).uploadPart(any(), any(), any(), anyInt(), any());

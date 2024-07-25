@@ -1,5 +1,5 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
  * Use of this software is governed by the Business Source License
  * included in the file BSL.md
@@ -598,7 +598,8 @@ public class S3Storage implements Storage {
                 callbackSequencer.tryFree(streamId);
             }
         });
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(
+            TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -734,7 +735,10 @@ public class S3Storage implements Storage {
             if (next != null) {
                 prepareDeltaWALUpload(next);
             }
-        }, backgroundExecutor);
+        }, backgroundExecutor).exceptionally(ex -> {
+            LOGGER.error("Unexpected exception when prepare commit stream set object", ex);
+            return null;
+        });
     }
 
     private void commitDeltaWALUpload(DeltaWALUploadTaskContext context) {
