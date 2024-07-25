@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface ObjectStorage {
+    long RANGE_READ_TO_END = -1L;
 
     void close();
 
@@ -31,7 +32,7 @@ public interface ObjectStorage {
      * It will throw {@link ObjectNotFoundException} if the object not found.
      */
     default CompletableFuture<ByteBuf> read(ReadOptions options, String objectPath) {
-        return rangeRead(options, objectPath, 0, -1);
+        return rangeRead(options, objectPath, 0, RANGE_READ_TO_END);
     }
 
     /**
@@ -72,6 +73,14 @@ public interface ObjectStorage {
 
         public String key() {
             return key;
+        }
+
+        @Override
+        public String toString() {
+            return "ObjectPath{" +
+                "bucketId=" + bucketId +
+                ", key='" + key + '\'' +
+                '}';
         }
     }
 

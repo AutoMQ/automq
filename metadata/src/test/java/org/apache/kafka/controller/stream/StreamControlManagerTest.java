@@ -189,7 +189,7 @@ public class StreamControlManagerTest {
         manager.replay(assignedRecord);
         manager.replay(streamRecord0);
         // verify the stream_0 is created
-        Map<Long, S3StreamMetadata> streamsMetadata =
+        Map<Long, StreamRuntimeMetadata> streamsMetadata =
             manager.streamsMetadata();
         assertEquals(1, streamsMetadata.size());
         verifyInitializedStreamMetadata(streamsMetadata.get(STREAM0));
@@ -240,7 +240,7 @@ public class StreamControlManagerTest {
         replay(manager, result1.records());
 
         // verify the streams are created
-        Map<Long, S3StreamMetadata> streamsMetadata = manager.streamsMetadata();
+        Map<Long, StreamRuntimeMetadata> streamsMetadata = manager.streamsMetadata();
         assertEquals(2, streamsMetadata.size());
         verifyInitializedStreamMetadata(streamsMetadata.get(STREAM0));
         verifyInitializedStreamMetadata(streamsMetadata.get(STREAM1));
@@ -269,7 +269,7 @@ public class StreamControlManagerTest {
         manager.replay(rangeRecord);
 
         // verify the stream_0 and stream_1 metadata are updated, and the range_0 is created
-        S3StreamMetadata streamMetadata0 = manager.streamsMetadata().get(STREAM0);
+        StreamRuntimeMetadata streamMetadata0 = manager.streamsMetadata().get(STREAM0);
         verifyFirstRange(manager.streamsMetadata().get(STREAM0), EPOCH0, BROKER0);
         verifyFirstRange(manager.streamsMetadata().get(STREAM1), EPOCH0, BROKER0);
 
@@ -332,7 +332,7 @@ public class StreamControlManagerTest {
         replay(manager, result14.records());
 
         // 13. verify the stream_1 metadata are updated, and the range_1 is created
-        S3StreamMetadata streamMetadata1 = manager.streamsMetadata().get(STREAM1);
+        StreamRuntimeMetadata streamMetadata1 = manager.streamsMetadata().get(STREAM1);
         assertEquals(EPOCH1, streamMetadata1.currentEpoch());
         RangeMetadata range = streamMetadata1.ranges().get(streamMetadata1.currentRangeIndex());
         assertEquals(EPOCH1, range.epoch());
@@ -374,7 +374,7 @@ public class StreamControlManagerTest {
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
         replay(manager, result3.records());
         // verify range's end offset advanced and stream set object is added
-        S3StreamMetadata streamMetadata0 = manager.streamsMetadata().get(STREAM0);
+        StreamRuntimeMetadata streamMetadata0 = manager.streamsMetadata().get(STREAM0);
         assertEquals(1, streamMetadata0.ranges().size());
         RangeMetadata rangeMetadata0 = streamMetadata0.ranges().get(0);
         assertEquals(0L, rangeMetadata0.startOffset());
@@ -453,6 +453,20 @@ public class StreamControlManagerTest {
                         (short) 0
                     )
                 ),
+                true);
+        });
+        when(objectControlManager.markDestroyObjects(anyList(), anyList())).then(args -> {
+            List<Long> objectIds = args.getArgument(0);
+            return ControllerResult.of(
+                objectIds
+                    .stream()
+                    .map(id ->
+                        new ApiMessageAndVersion(
+                            new S3ObjectRecord().setObjectId(id).setObjectState(S3ObjectState.MARK_DESTROYED.toByte()),
+                            (short) 0
+                        )
+                    )
+                    .collect(Collectors.toList()),
                 true);
         });
         when(objectControlManager.markDestroyObjects(anyList())).then(args -> {
@@ -1114,7 +1128,7 @@ public class StreamControlManagerTest {
         replay(manager, result1.records());
 
         // 2. verify
-        S3StreamMetadata streamMetadata = manager.streamsMetadata().get(STREAM0);
+        StreamRuntimeMetadata streamMetadata = manager.streamsMetadata().get(STREAM0);
         assertEquals(60, streamMetadata.startOffset());
         assertEquals(1, streamMetadata.ranges().size());
         RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
@@ -1283,6 +1297,10 @@ public class StreamControlManagerTest {
         assertEquals(0, result1.response().streamMetadataList().size());
         replay(manager, result1.records());
 
+        replay(manager, manager.getOpeningStreams(new GetOpeningStreamsRequestData()
+            .setNodeId(BROKER1)
+            .setNodeEpoch(2)).records());
+
         // 3. register with lower epoch again
         request1 = new GetOpeningStreamsRequestData()
             .setNodeId(BROKER0)
@@ -1309,12 +1327,35 @@ public class StreamControlManagerTest {
         assertEquals(Errors.NODE_EPOCH_EXPIRED, Errors.forCode(result2.response().errorCode()));
 
         // 7. create stream with matched epoch
-        CreateStreamRequest request3 = new CreateStreamRequest()
-            .setNodeId(BROKER0);
-        ControllerResult<CreateStreamResponse> result3 = manager.createStream(BROKER0, 2, request3);
+        ControllerResult<CreateStreamResponse> result3 = manager.createStream(BROKER0, 2,
+            new CreateStreamRequest().setNodeId(BROKER0));
         assertEquals(Errors.NONE, Errors.forCode(result3.response().errorCode()));
         replay(manager, result3.records());
 
+        replay(manager, manager.createStream(BROKER0, 2, new CreateStreamRequest().setNodeId(BROKER0)).records());
+
+        replay(manager, manager.openStream(BROKER0, 2, new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(0L)).records());
+        replay(manager, manager.openStream(BROKER0, 2, new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(0L)).records());
+
+        List<Long> streams = manager.getOpeningStreams(BROKER0).stream().map(StreamRuntimeMetadata::streamId).sorted().collect(Collectors.toList());
+        assertEquals(List.of(STREAM0, STREAM1), streams);
+
+        replay(manager, manager.closeStream(BROKER0, 2, new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(0L)).records());
+        streams = manager.getOpeningStreams(BROKER0).stream().map(StreamRuntimeMetadata::streamId).sorted().collect(Collectors.toList());
+        assertEquals(List.of(STREAM0), streams);
+
+        replay(manager, manager.openStream(BROKER1, 2, new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(1L)).records());
+        streams = manager.getOpeningStreams(BROKER0).stream().map(StreamRuntimeMetadata::streamId).sorted().collect(Collectors.toList());
+        assertEquals(List.of(STREAM0), streams);
+        streams = manager.getOpeningStreams(BROKER1).stream().map(StreamRuntimeMetadata::streamId).sorted().collect(Collectors.toList());
+        assertEquals(List.of(STREAM1), streams);
+
+        replay(manager, manager.closeStream(BROKER1, 2, new CloseStreamRequest().setStreamId(STREAM1).setStreamEpoch(1L)).records());
+        replay(manager, manager.openStream(BROKER0, 2, new OpenStreamRequest().setStreamId(STREAM1).setStreamEpoch(2L)).records());
+        streams = manager.getOpeningStreams(BROKER0).stream().map(StreamRuntimeMetadata::streamId).sorted().collect(Collectors.toList());
+        assertEquals(List.of(STREAM0, STREAM1), streams);
+        streams = manager.getOpeningStreams(BROKER1).stream().map(StreamRuntimeMetadata::streamId).sorted().collect(Collectors.toList());
+        assertEquals(Collections.emptyList(), streams);
     }
 
     @Test
@@ -1429,7 +1470,7 @@ public class StreamControlManagerTest {
         }
     }
 
-    private void verifyInitializedStreamMetadata(S3StreamMetadata metadata) {
+    private void verifyInitializedStreamMetadata(StreamRuntimeMetadata metadata) {
         assertNotNull(metadata);
         assertEquals(S3StreamConstant.INIT_EPOCH, metadata.currentEpoch());
         assertEquals(S3StreamConstant.INIT_RANGE_INDEX, metadata.currentRangeIndex());
@@ -1461,7 +1502,7 @@ public class StreamControlManagerTest {
         assertEquals(0L, rangeRecord0.endOffset());
     }
 
-    private void verifyFirstRange(S3StreamMetadata streamMetadata, long expectedEpoch, int expectedNodeId) {
+    private void verifyFirstRange(StreamRuntimeMetadata streamMetadata, long expectedEpoch, int expectedNodeId) {
         assertNotNull(streamMetadata);
         assertEquals(expectedEpoch, streamMetadata.currentEpoch());
         assertEquals(0, streamMetadata.currentRangeIndex());

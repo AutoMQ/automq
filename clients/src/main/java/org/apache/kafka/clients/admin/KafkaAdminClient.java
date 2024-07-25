@@ -107,6 +107,7 @@ import org.apache.kafka.common.message.AlterReplicaLogDirsResponseData.AlterRepl
 import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.ApiVersionsResponseData.FinalizedFeatureKey;
 import org.apache.kafka.common.message.ApiVersionsResponseData.SupportedFeatureKey;
+import org.apache.kafka.common.message.AutomqGetNodesRequestData;
 import org.apache.kafka.common.message.CreateAclsRequestData;
 import org.apache.kafka.common.message.CreateAclsRequestData.AclCreation;
 import org.apache.kafka.common.message.CreateAclsResponseData.AclCreationResult;
@@ -239,6 +240,8 @@ import org.apache.kafka.common.requests.UnregisterBrokerRequest;
 import org.apache.kafka.common.requests.UnregisterBrokerResponse;
 import org.apache.kafka.common.requests.UpdateFeaturesRequest;
 import org.apache.kafka.common.requests.UpdateFeaturesResponse;
+import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
+import org.apache.kafka.common.requests.s3.AutomqGetNodesResponse;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdResponse;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
@@ -4684,6 +4687,42 @@ public class KafkaAdminClient extends AdminClient {
         }
 
         return clientInstanceId;
+    }
+
+    @Override
+    public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
+        final KafkaFutureImpl<List<NodeMetadata>> future = new KafkaFutureImpl<>();
+        final long now = time.milliseconds();
+        final Call call = new Call(
+            "getNodes", calcDeadlineMs(now, options.timeoutMs()), new LeastLoadedBrokerOrActiveKController()) {
+
+            private List<NodeMetadata> createResult(final AutomqGetNodesResponse response) {
+                return response.data().nodes().stream().map(NodeMetadata::new).collect(Collectors.toList());
+            }
+
+            @Override
+            AutomqGetNodesRequest.Builder createRequest(int timeoutMs) {
+                return new AutomqGetNodesRequest.Builder(new AutomqGetNodesRequestData().setNodeIds(new ArrayList<>(nodeIdList)));
+            }
+
+            @Override
+            void handleResponse(AbstractResponse response) {
+                final AutomqGetNodesResponse resp = (AutomqGetNodesResponse) response;
+                if (resp.data().errorCode() == Errors.NONE.code()) {
+                    future.complete(createResult(resp));
+                } else {
+                    future.completeExceptionally(Errors.forCode(resp.data().errorCode()).exception());
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                completeAllExceptionally(Collections.singletonList(future), throwable);
+            }
+        };
+
+        runnable.call(call, now);
+        return new GetNodesResult(future);
     }
 
     private <K, V> void invokeDriver(

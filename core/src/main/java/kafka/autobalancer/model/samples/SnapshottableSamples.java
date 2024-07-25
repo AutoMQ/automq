@@ -54,6 +54,9 @@ public class SnapshottableSamples implements Samples {
     }
 
     public Snapshot snapshot() {
+        if (this.prev != null) {
+            this.prev.setPrev(null);
+        }
         Snapshot snapshot = new Snapshot(prev, values);
         this.prev = snapshot;
         return snapshot;

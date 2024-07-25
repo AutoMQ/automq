@@ -1,0 +1,64 @@
+/*
+ * Copyright 2024, AutoMQ HK Limited.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+package kafka.log.stream.s3.telemetry.otel;
+
+import com.yammer.metrics.core.Metric;
+import com.yammer.metrics.core.MetricName;
+import com.yammer.metrics.core.MetricsRegistry;
+import com.yammer.metrics.core.MetricsRegistryListener;
+import io.opentelemetry.api.metrics.Meter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+// This class is responsible for transforming yammer histogram metrics (mean, max) into OTel metrics
+public class OTelHistogramReporter implements MetricsRegistryListener {
+    private static final Logger LOGGER = LoggerFactory.getLogger(OTelHistogramReporter.class);
+    private final MetricsRegistry metricsRegistry;
+    private final OTelMetricsProcessor metricsProcessor;
+    private volatile Meter meter;
+
+    public OTelHistogramReporter(MetricsRegistry metricsRegistry) {
+        this.metricsRegistry = metricsRegistry;
+        this.metricsProcessor = new OTelMetricsProcessor();
+    }
+
+    public void start(Meter meter) {
+        this.meter = meter;
+        this.metricsProcessor.init(meter);
+        metricsRegistry.addListener(this);
+        LOGGER.info("OTelHistogramReporter started");
+    }
+
+    @Override
+    public void onMetricAdded(MetricName name, Metric metric) {
+        if (OTelMetricUtils.isInterestedMetric(name)) {
+            if (this.meter == null) {
+                LOGGER.info("Not initialized yet, skipping metric: {}", name);
+                return;
+            }
+            try {
+                metric.processWith(this.metricsProcessor, name, null);
+            } catch (Throwable t) {
+                LOGGER.error("Failed to process metric: {}", name, t);
+            }
+        }
+    }
+
+    @Override
+    public void onMetricRemoved(MetricName name) {
+        try {
+            this.metricsProcessor.remove(name);
+        } catch (Throwable ignored) {
+
+        }
+    }
+}

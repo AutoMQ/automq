@@ -158,6 +158,7 @@ public class ClusterModel {
             long now = System.currentTimeMillis();
             for (Map.Entry<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> entry : brokerReplicaMap.entrySet()) {
                 int brokerId = entry.getKey();
+                brokerLoads.put(brokerId, 0.0);
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
                     TopicPartition tp = tpEntry.getKey();
                     TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();

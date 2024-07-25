@@ -11,7 +11,6 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -30,7 +29,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -58,12 +56,6 @@ public class DeltaWALUploadTaskTest {
     public void setup() {
         objectManager = mock(ObjectManager.class);
         objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache.getInstance().init(0, objectStorage);
-    }
-
-    @AfterEach
-    public void tearDown() {
-        LocalStreamRangeIndexCache.getInstance().clear();
     }
 
     @Test

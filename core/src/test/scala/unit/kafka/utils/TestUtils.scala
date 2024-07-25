@@ -377,6 +377,11 @@ object TestUtils extends Logging {
       props.put(ServerConfigs.BROKER_RACK_CONFIG, nodeId.toString)
       props.put(ReplicationConfigs.REPLICA_SELECTOR_CLASS_CONFIG, "org.apache.kafka.common.replica.RackAwareReplicaSelector")
     }
+
+    // AutoMQ inject start
+    props.put(AutoMQConfig.S3_WAL_PATH_CONFIG, "0@file:///tmp/automq_wal")
+    // AutoMQ inject end
+
     props
   }
 

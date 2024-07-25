@@ -11,18 +11,20 @@
 
 package com.automq.stream.s3.index;
 
+import com.automq.stream.s3.cache.AsyncMeasurable;
+import com.automq.stream.s3.cache.AsyncObjectLRUCache;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class NodeRangeIndexCache {
+    private static final Integer MAX_CACHE_SIZE = 100 * 1024 * 1024;
     private static final Logger LOGGER = LoggerFactory.getLogger(NodeRangeIndexCache.class);
     private volatile static NodeRangeIndexCache instance = null;
-    private final Map<Long, StreamRangeIndexCache> nodeRangeIndexMap = new ConcurrentHashMap<>();
+    private final LRUCache nodeRangeIndexMap = new LRUCache(MAX_CACHE_SIZE);
 
     private NodeRangeIndexCache() {
 
@@ -39,58 +41,62 @@ public class NodeRangeIndexCache {
         return instance;
     }
 
-    public void clear() {
+    void clear() {
         this.nodeRangeIndexMap.clear();
     }
 
     // fot test only
     boolean isValid(long nodeId) {
-        StreamRangeIndexCache indexCache = this.nodeRangeIndexMap.get(nodeId);
-        return indexCache != null && indexCache.isValid();
+        return this.nodeRangeIndexMap.containsKey(nodeId);
     }
 
-    public void invalidate(long nodeId) {
-        this.nodeRangeIndexMap.computeIfPresent(nodeId, (k, v) -> {
-            v.invalidate();
-            LOGGER.info("Invalidate stream range index for node {}", nodeId);
-            return v;
-        });
+    // for test only
+    LRUCache cache() {
+        return this.nodeRangeIndexMap;
     }
 
-    public CompletableFuture<Long> searchObjectId(long nodeId, long streamId, long startOffset,
+    public synchronized void invalidate(long nodeId) {
+        this.nodeRangeIndexMap.remove(nodeId);
+        LOGGER.info("Invalidate stream range index for node {}", nodeId);
+    }
+
+    public synchronized CompletableFuture<Long> searchObjectId(long nodeId, long streamId, long startOffset,
         Supplier<CompletableFuture<Map<Long, List<RangeIndex>>>> cacheSupplier) {
-        StreamRangeIndexCache indexCache = this.nodeRangeIndexMap.compute(nodeId, (k, v) -> {
-            if (v == null || !v.isValid()) {
-                LOGGER.info("Update stream range index for node {}", nodeId);
-                return new StreamRangeIndexCache(cacheSupplier.get());
-            }
-            return v;
-        });
+        StreamRangeIndexCache indexCache = this.nodeRangeIndexMap.get(nodeId);
+        if (indexCache == null) {
+            indexCache = new StreamRangeIndexCache(cacheSupplier.get());
+            this.nodeRangeIndexMap.put(nodeId, indexCache);
+            LOGGER.info("Update stream range index for node {}", nodeId);
+        }
         return indexCache.searchObjectId(streamId, startOffset);
     }
 
-    static class StreamRangeIndexCache {
+    static class StreamRangeIndexCache implements AsyncMeasurable {
         private final CompletableFuture<Map<Long, List<RangeIndex>>> streamRangeIndexMapCf;
-        private boolean valid;
 
         public StreamRangeIndexCache(CompletableFuture<Map<Long, List<RangeIndex>>> streamRangeIndexMapCf) {
             this.streamRangeIndexMapCf = streamRangeIndexMapCf;
-            this.valid = true;
         }
 
         public CompletableFuture<Long> searchObjectId(long streamId, long startOffset) {
-            if (!this.valid) {
-                return CompletableFuture.completedFuture(-1L);
-            }
             return this.streamRangeIndexMapCf.thenApply(v -> LocalStreamRangeIndexCache.binarySearchObjectId(startOffset, v.get(streamId)));
         }
 
-        public void invalidate() {
-            this.valid = false;
+        @Override
+        public CompletableFuture<Integer> size() {
+            return this.streamRangeIndexMapCf.thenApply(v -> v.values().stream()
+                .mapToInt(rangeIndices -> Long.BYTES + rangeIndices.size() * RangeIndex.SIZE).sum());
         }
 
-        public boolean isValid() {
-            return this.valid;
+        @Override
+        public void close() {
+
+        }
+    }
+
+    static class LRUCache extends AsyncObjectLRUCache<Long, StreamRangeIndexCache> {
+        public LRUCache(int maxSize) {
+            super(maxSize);
         }
     }
 }

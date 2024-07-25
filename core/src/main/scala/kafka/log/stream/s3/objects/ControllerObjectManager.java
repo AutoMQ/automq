@@ -14,6 +14,7 @@ package kafka.log.stream.s3.objects;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.objects.CommitStreamSetObjectHook;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
@@ -59,6 +60,7 @@ public class ControllerObjectManager implements ObjectManager {
     private final long nodeEpoch;
     private final Supplier<AutoMQVersion> version;
     private final boolean failoverMode;
+    private CommitStreamSetObjectHook commitStreamSetObjectHook;
 
     public ControllerObjectManager(ControllerRequestSender requestSender, StreamMetadataManager metadataManager,
         int nodeId, long nodeEpoch, Supplier<AutoMQVersion> version, boolean failoverMode) {
@@ -68,6 +70,7 @@ public class ControllerObjectManager implements ObjectManager {
         this.nodeEpoch = nodeEpoch;
         this.version = version;
         this.failoverMode = failoverMode;
+        this.commitStreamSetObjectHook = request -> CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -103,10 +106,16 @@ public class ControllerObjectManager implements ObjectManager {
     }
 
     @Override
+    public void setCommitStreamSetObjectHook(CommitStreamSetObjectHook hook) {
+        this.commitStreamSetObjectHook = hook;
+    }
+
+    @Override
     public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(
         CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
         try {
-            return commitStreamSetObject0(commitStreamSetObjectRequest);
+            return commitStreamSetObject0(commitStreamSetObjectRequest).thenCompose(resp ->
+                commitStreamSetObjectHook.onCommitSuccess(commitStreamSetObjectRequest).thenApply(v -> resp));
         } catch (Throwable e) {
             return FutureUtil.failedFuture(e);
         }
@@ -129,10 +138,12 @@ public class ControllerObjectManager implements ObjectManager {
             .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
             .setFailoverMode(failoverMode);
         if (commitStreamSetObjectRequest.getObjectId() != NOOP_OBJECT_ID && commitStreamSetObjectRequest.getAttributes() == ObjectAttributes.UNSET.attributes()) {
-            throw new IllegalArgumentException("[BUG]attributes must be set");
+            FutureUtil.failedFuture(new IllegalArgumentException("[BUG]attributes must be set"));
         }
         if (version.get().isObjectAttributesSupported()) {
             request.setAttributes(commitStreamSetObjectRequest.getAttributes());
+        } else if (commitStreamSetObjectRequest.getAttributes() != 0) {
+            return FutureUtil.failedFuture(new UnsupportedOperationException("The attribute is set to " + commitStreamSetObjectRequest.getAttributes()));
         }
         WrapRequest req = new WrapRequest() {
             @Override

@@ -11,7 +11,6 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
@@ -150,7 +149,7 @@ public class DeltaWALUploadTask {
     public CompletableFuture<Void> commit() {
         return uploadCf.thenCompose(request -> {
             commitTimestamp = System.currentTimeMillis();
-            return objectManager.commitStreamSetObject(request).thenCompose(resp -> {
+            return objectManager.commitStreamSetObject(request).thenAccept(resp -> {
                 long now = System.currentTimeMillis();
                 LOGGER.info("Upload delta WAL finished, cost {}ms, prepare {}ms, upload {}ms, commit {}ms, request: {}",
                     now - startTimestamp,
@@ -158,8 +157,7 @@ public class DeltaWALUploadTask {
                     commitTimestamp - uploadTimestamp,
                     now - commitTimestamp,
                     commitStreamSetObjectRequest);
-                return LocalStreamRangeIndexCache.getInstance().updateIndexFromRequest(request);
-            });
+            }).whenComplete((nil, ex) -> limiter.close());
         });
     }
 

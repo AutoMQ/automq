@@ -1721,6 +1721,16 @@ public interface Admin extends AutoCloseable {
      */
     Uuid clientInstanceId(Duration timeout);
 
+    // AutoMQ inject start
+
+    /**
+     * Get node metadata.
+     * @param nodeIdList node id list
+     * @return {@link GetNodesResult}
+     */
+    GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options);
+    // AutoMQ inject end
+
     /**
      * Get the metrics kept by the adminClient
      */

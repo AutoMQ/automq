@@ -28,17 +28,20 @@ import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.utils.CollectionHelper;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -73,12 +76,13 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 /**
  * The S3ObjectControlManager manages all S3Object's lifecycle, such as apply, create, destroy, etc.
  */
+@SuppressWarnings({"NPathComplexity", "CyclomaticComplexity"})
 public class S3ObjectControlManager {
 
     // TODO: config it in properties
-    private static final long DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS = 3000L;
-
-    private static final long DEFAULT_INITIAL_DELAY_MS = 5000L;
+    private static final long DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS = 1000L;
+    private static final long DEFAULT_INITIAL_DELAY_MS = 1000L;
+    private static final int MAX_DELETE_BATCH_COUNT = 2000;
 
     private final QuorumController quorumController;
     private final Logger log;
@@ -94,10 +98,16 @@ public class S3ObjectControlManager {
      */
     private final TimelineLong nextAssignedObjectId;
 
-    private final TimelineHashSet<Long /* objectId */> preparedObjects;
+    private TimelineHashMap<Long /* objectId */, Long /* deadline */> preparedObjects0;
+    private TimelineHashMap<Long /* objectId */, Long /* deadline */> preparedObjects1;
+    private long lastPreparedObjectsSwitchTimestamp;
+    private final HashedWheelTimer preparedObjectsTimer = new HashedWheelTimer(1, TimeUnit.SECONDS);
+    final Map<Long, Timeout> preparedObjectsTimeouts = new HashMap<>();
+    final Queue<Long> waitingDeadlineCheckPreparedObjects = new ConcurrentLinkedQueue<>();
 
-    // TODO: support different deletion policies, based on time dimension or space dimension?
-    private final Queue<Long/*objectId*/> markDestroyedObjects;
+    private TimelineHashSet<Long/*objectId*/> markDestroyedObjects0;
+    private TimelineHashSet<Long/*objectId*/> markDestroyedObjects1;
+    private long lastMarkDestroyedObjectsSwitchTimestamp;
 
     private final ObjectStorage objectStorage;
 
@@ -126,9 +136,13 @@ public class S3ObjectControlManager {
         this.config = config;
         this.nextAssignedObjectId = new TimelineLong(snapshotRegistry);
         this.objectsMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
-        this.preparedObjects = new TimelineHashSet<>(snapshotRegistry, 0);
+        this.preparedObjects0 = new TimelineHashMap<>(snapshotRegistry, 0);
+        this.preparedObjects1 = new TimelineHashMap<>(snapshotRegistry, 0);
+        this.lastPreparedObjectsSwitchTimestamp = time.milliseconds();
         this.s3ObjectSize = new TimelineLong(snapshotRegistry);
-        this.markDestroyedObjects = new LinkedBlockingDeque<>();
+        this.markDestroyedObjects0 = new TimelineHashSet<>(snapshotRegistry, 0);
+        this.markDestroyedObjects1 = new TimelineHashSet<>(snapshotRegistry, 0);
+        this.lastMarkDestroyedObjectsSwitchTimestamp = time.milliseconds();
         this.objectStorage = objectStorage;
         this.version = version;
         this.time = time;
@@ -138,10 +152,10 @@ public class S3ObjectControlManager {
             DEFAULT_INITIAL_DELAY_MS, DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         this.objectCleaner = new ObjectCleaner();
         S3StreamKafkaMetricsManager.setS3ObjectCountMapSupplier(() -> Map.of(
-            S3StreamKafkaMetricsConstants.S3_OBJECT_PREPARED_STATE, preparedObjects.size(),
-            S3StreamKafkaMetricsConstants.S3_OBJECT_MARK_DESTROYED_STATE, markDestroyedObjects.size(),
+            S3StreamKafkaMetricsConstants.S3_OBJECT_PREPARED_STATE, preparedObjects0.size() + preparedObjects1.size(),
+            S3StreamKafkaMetricsConstants.S3_OBJECT_MARK_DESTROYED_STATE, markDestroyedObjects0.size() + markDestroyedObjects1.size(),
             S3StreamKafkaMetricsConstants.S3_OBJECT_COMMITTED_STATE, objectsMetadata.size()
-                - preparedObjects.size() - markDestroyedObjects.size()));
+                - preparedObjects0.size() - markDestroyedObjects0.size() - preparedObjects1.size() - markDestroyedObjects1.size()));
         S3StreamKafkaMetricsManager.setS3ObjectSizeSupplier(s3ObjectSize::get);
     }
 
@@ -247,6 +261,11 @@ public class S3ObjectControlManager {
                 log.error("object {} not exist when mark destroy object", objectId);
                 return ControllerResult.of(Collections.emptyList(), false);
             }
+            int attributes = object.getAttributes();
+            if (object.getS3ObjectState() == S3ObjectState.PREPARED) {
+                attributes = ObjectAttributes.builder(attributes).bucket(ObjectAttributes.MATCH_ALL_BUCKET).build().attributes();
+            }
+
             switch (operation) {
                 case DELETE: {
                     S3ObjectRecord record = new S3ObjectRecord()
@@ -259,7 +278,7 @@ public class S3ObjectControlManager {
                         record.setMarkDestroyedTimeInMs(now);
                     }
                     if (version.isCompositeObjectSupported()) {
-                        record.setAttributes(object.getAttributes());
+                        record.setAttributes(attributes);
                     }
                     records.add(new ApiMessageAndVersion(record, objectRecordVersion));
                     break;
@@ -279,8 +298,8 @@ public class S3ObjectControlManager {
                         record.setMarkDestroyedTimeInMs(now);
                     }
                     if (version.isCompositeObjectSupported()) {
-                        int attributes = ObjectAttributes.builder(object.getAttributes()).deepDelete().build().attributes();
-                        record.setAttributes(attributes);
+                        int newAttributes = ObjectAttributes.builder(attributes).deepDelete().build().attributes();
+                        record.setAttributes(newAttributes);
                     }
                     records.add(new ApiMessageAndVersion(record, objectRecordVersion));
                     break;
@@ -299,12 +318,14 @@ public class S3ObjectControlManager {
     public void replay(S3ObjectRecord record) {
         S3Object object = S3Object.of(record);
         objectsMetadata.put(record.objectId(), object);
+        long objectId = object.getObjectId();
         if (object.getS3ObjectState() == S3ObjectState.PREPARED) {
-            preparedObjects.add(object.getObjectId());
+            preparedObjects0.put(objectId, object.getTimestamp());
+            preparedObjectsTimeouts.put(objectId, newPreparedObjectTimeout(objectId, object.getTimestamp()));
         } else {
-            preparedObjects.remove(object.getObjectId());
+            removePreparedObject(objectId);
             if (object.getS3ObjectState() == S3ObjectState.MARK_DESTROYED) {
-                markDestroyedObjects.add(object.getObjectId());
+                markDestroyedObjects0.add(object.getObjectId());
                 ObjectAttributes attributes = ObjectAttributes.from(object.getAttributes());
                 if (attributes.type() == Type.Composite && !attributes.deepDelete()) {
                     // It means the composite object is compacted by another composite object.
@@ -327,7 +348,8 @@ public class S3ObjectControlManager {
                 s3ObjectSize.set(s3ObjectSize.get() - object.getObjectSize());
             }
         }
-        preparedObjects.remove(record.objectId());
+        removePreparedObject(record.objectId());
+        removeMarkDestroyedObject(record.objectId());
     }
 
     /**
@@ -345,11 +367,20 @@ public class S3ObjectControlManager {
         List<ApiMessageAndVersion> records = new ArrayList<>();
         List<Long> ttlReachedObjects = new LinkedList<>();
         long now = time.milliseconds();
-        // check the expired objects
-        this.preparedObjects.stream().
-            map(objectsMetadata::get).
-            filter(o -> o.isExpired(now)).
-            forEach(obj -> {
+
+        // check the prepared object deadline
+        for (int i = 0; i < MAX_DELETE_BATCH_COUNT; i++) {
+            // only allow checking MAX_DELETE_BATCH_COUNT objects in one round to avoid blocking the event loop
+            Long waitingDeadlineCheckPreparedObject = waitingDeadlineCheckPreparedObjects.poll();
+            if (waitingDeadlineCheckPreparedObject == null) {
+                break;
+            }
+            preparedObjectsTimeouts.remove(waitingDeadlineCheckPreparedObject);
+            S3Object obj = objectsMetadata.get(waitingDeadlineCheckPreparedObject);
+            if (obj == null) {
+                continue;
+            }
+            if (obj.isExpired(now)) {
                 S3ObjectRecord record = new S3ObjectRecord()
                     .setObjectId(obj.getObjectId())
                     .setObjectState((byte) S3ObjectState.MARK_DESTROYED.ordinal())
@@ -359,39 +390,71 @@ public class S3ObjectControlManager {
                 } else {
                     record.setMarkDestroyedTimeInMs(obj.getTimestamp());
                 }
+                if (version.isObjectAttributesSupported()) {
+                    record.setAttributes(ObjectAttributes.builder().bucket(ObjectAttributes.MATCH_ALL_BUCKET).build().attributes());
+                }
                 ttlReachedObjects.add(obj.getObjectId());
                 // generate the records which mark the expired objects as destroyed
                 records.add(new ApiMessageAndVersion(record, objectRecordVersion));
-            });
+            } else {
+                // reschedule the deadline check
+                preparedObjectsTimeouts.put(obj.getObjectId(), newPreparedObjectTimeout(obj.getObjectId(), obj.getTimestamp()));
+            }
+        }
+        if (now - lastPreparedObjectsSwitchTimestamp > TimeUnit.HOURS.toMillis(60)) {
+            // The preparedObjectsTimeouts isn't a Timeline struct, so it's not consistent with the preparedObjects0/1.
+            // Consider the following scenario:
+            // 1. Prepare(obj1), add timeout check.
+            // 2. Commit(obj1), cancel timeout check.
+            // 3. The image is reset back to step 1, and no commit.
+            // 4. The obj1 timeout check is missing.
+            // So we try to add missing timeout check when swap the preparedObjects0/1.
+            TimelineHashMap<Long, Long> tmp = preparedObjects1;
+            preparedObjects1 = preparedObjects0;
+            preparedObjects0 = tmp;
+            tmp.forEach((objectId, deadline) ->
+                preparedObjectsTimeouts.computeIfAbsent(objectId, id -> newPreparedObjectTimeout(objectId, deadline))
+            );
+            lastPreparedObjectsSwitchTimestamp = now;
+        }
         if (!ttlReachedObjects.isEmpty()) {
             log.info("objects TTL is reached, objects={}", ttlReachedObjects);
         }
-        // check the mark destroyed objects
-        List<S3Object> requiredDeleteKeys = new LinkedList<>();
-        while (true) {
-            Long objectId = this.markDestroyedObjects.peek();
-            if (objectId == null) {
-                break;
-            }
-            S3Object object = this.objectsMetadata.get(objectId);
-            if (object == null) {
-                // markDestroyedObjects isn't Timeline structure, so it may contains dirty / duplicated objectId
-                this.markDestroyedObjects.poll();
-                continue;
-            }
-            if (object.getTimestamp() + (this.config.objectRetentionTimeInSecond() * 1000L) < now) {
-                this.markDestroyedObjects.poll();
-                // exceed delete retention time, trigger the truly deletion
-                requiredDeleteKeys.add(object);
-            } else {
-                // the following objects' mark destroyed time is not expired, so break the loop
-                break;
-            }
-        }
 
-        if (!requiredDeleteKeys.isEmpty()) {
-            this.lastCleanStartTimestamp = now;
-            this.lastCleanCf = this.objectCleaner.clean(requiredDeleteKeys);
+        // The mark destroyed object will be truly deleted after the [retention time, 2 * retention time]
+        if (now - lastMarkDestroyedObjectsSwitchTimestamp > this.config.objectRetentionTimeInSecond() * 1000L) {
+            TimelineHashSet<Long> expired = this.markDestroyedObjects1;
+            boolean swap = true;
+            if (!expired.isEmpty()) {
+                List<Long> fastDeleteObjects = new ArrayList<>();
+                int expiredSize = expired.size();
+                if (expiredSize > MAX_DELETE_BATCH_COUNT) {
+                    swap = false;
+                }
+                List<S3Object> requiredDeleteObjects = new ArrayList<>(Math.min(expiredSize, MAX_DELETE_BATCH_COUNT));
+                int deleteCount = 0;
+                for (Long objectId : expired) {
+                    S3Object s3Object = objectsMetadata.get(objectId);
+                    if (s3Object == null) {
+                        fastDeleteObjects.add(objectId);
+                    } else {
+                        requiredDeleteObjects.add(s3Object);
+                    }
+                    if (++deleteCount >= MAX_DELETE_BATCH_COUNT) {
+                        // only allow checking MAX_DELETE_BATCH_COUNT objects in one round to avoid blocking the event loop
+                        break;
+                    }
+                }
+                fastDeleteObjects.forEach(expired::remove);
+                this.lastCleanCf = this.objectCleaner.clean(requiredDeleteObjects);
+                this.lastCleanStartTimestamp = now;
+            }
+            if (swap) {
+                // When the markDestroyedObjects1 could be completely deleted in MAX_DELETE_BATCH_COUNT, then swap the markDestroyedObjects0/1.
+                this.markDestroyedObjects1 = markDestroyedObjects0;
+                this.markDestroyedObjects0 = expired;
+                this.lastMarkDestroyedObjectsSwitchTimestamp = now;
+            }
         }
         return ControllerResult.of(records, null);
     }
@@ -426,18 +489,29 @@ public class S3ObjectControlManager {
         return ObjectReader.reader(new S3ObjectMetadata(objectId, object.getObjectSize(), object.getAttributes()), objectStorage);
     }
 
-    /**
-     * S3Object's lifecycle listener.
-     */
-    public interface S3ObjectLifeCycleListener {
+    private Timeout newPreparedObjectTimeout(long objectId, long deadline) {
+        return preparedObjectsTimer.newTimeout(
+            t -> handlePreparedObjectTimeout(objectId), Math.max(time.milliseconds() - deadline, TimeUnit.MINUTES.toMillis(30)),
+            TimeUnit.MILLISECONDS
+        );
+    }
 
-        /**
-         * Notify the listener that the S3Object has been destroyed.
-         *
-         * @param objectId the destroyed S3Object's id
-         * @return the result of the listener, contains the records which should be applied to the raft.
-         */
-        ControllerResult<Void> onDestroy(Long objectId);
+    void handlePreparedObjectTimeout(long objectId) {
+        waitingDeadlineCheckPreparedObjects.add(objectId);
+    }
+
+    private void removePreparedObject(long objectId) {
+        preparedObjects0.remove(objectId);
+        preparedObjects1.remove(objectId);
+        preparedObjectsTimeouts.computeIfPresent(objectId, (id, timeout) -> {
+            timeout.cancel();
+            return null;
+        });
+    }
+
+    private void removeMarkDestroyedObject(long objectId) {
+        markDestroyedObjects0.remove(objectId);
+        markDestroyedObjects1.remove(objectId);
     }
 
     class ObjectCleaner {
@@ -476,13 +550,13 @@ public class S3ObjectControlManager {
         private CompletableFuture<Void> shallowlyDelete(List<S3Object> s3objects) {
             List<ObjectPath> objectPaths = s3objects.stream().map(o -> new ObjectPath(o.bucket(), o.getObjectKey())).collect(Collectors.toList());
             return objectStorage.delete(objectPaths)
-                .exceptionally(e -> {
+                .thenAccept(rst -> {
+                    List<Long> deletedObjectIds = s3objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
+                    notifyS3ObjectDeleted(deletedObjectIds);
+                }).exceptionally(e -> {
                     log.error("Failed to delete the S3Object from S3, objectKeys: {}",
                         objectPaths.stream().map(ObjectPath::key).collect(Collectors.joining(",")), e);
                     return null;
-                }).thenAccept(rst -> {
-                    List<Long> deletedObjectIds = s3objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
-                    notifyS3ObjectDeleted(deletedObjectIds);
                 });
         }
 

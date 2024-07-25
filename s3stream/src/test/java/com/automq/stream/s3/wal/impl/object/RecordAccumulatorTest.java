@@ -46,7 +46,13 @@ public class RecordAccumulatorTest {
     @BeforeEach
     public void setUp() {
         objectStorage = new MemoryObjectStorage();
-        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build());
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withMaxBytesInBatch(115)
+            .withNodeId(100)
+            .withEpoch(1000)
+            .withBatchInterval(Long.MAX_VALUE)
+            .build();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
         recordAccumulatorExt.start();
         generatedByteBufMap = new ConcurrentSkipListMap<>();
         random = new Random();
@@ -62,24 +68,99 @@ public class RecordAccumulatorTest {
 
     @Test
     public void testOffset() throws OverCapacityException {
-        ByteBuf byteBuf = generateByteBuf(10);
+        ByteBuf byteBuf1 = generateByteBuf(50);
         CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
-        recordAccumulatorExt.append(byteBuf.readableBytes(), offset -> byteBuf.retainedSlice().asReadOnly(), future);
-        assertEquals(10, recordAccumulatorExt.nextOffset());
+        recordAccumulatorExt.append(byteBuf1.readableBytes(), offset -> byteBuf1.retainedSlice().asReadOnly(), future);
+        assertEquals(50, recordAccumulatorExt.nextOffset());
 
         recordAccumulatorExt.unsafeUpload(true);
         long flushedOffset = future.join().flushedOffset();
-        assertEquals(10, flushedOffset);
-        assertEquals(10, recordAccumulatorExt.flushedOffset());
+        assertEquals(50, flushedOffset);
+        assertEquals(50, recordAccumulatorExt.flushedOffset());
 
         List<RecordAccumulator.WALObject> objectList = recordAccumulatorExt.objectList();
         assertEquals(1, objectList.size());
 
         RecordAccumulator.WALObject object = objectList.get(0);
+        assertEquals(WALObjectHeader.WAL_HEADER_SIZE + 50, object.length());
         ByteBuf result = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
+        ByteBuf headerBuf = result.readBytes(WALObjectHeader.WAL_HEADER_SIZE);
+        WALObjectHeader objectHeader = WALObjectHeader.unmarshal(headerBuf);
+        headerBuf.release();
+        assertEquals(WALObjectHeader.WAL_HEADER_MAGIC_CODE, objectHeader.magicCode());
+        assertEquals(0, objectHeader.startOffset());
+        assertEquals(50, objectHeader.length());
+        // The last write timestamp is not set currently.
+        assertEquals(0L, objectHeader.stickyRecordLength());
+        assertEquals(100, objectHeader.nodeId());
+        assertEquals(1000, objectHeader.epoch());
+
+        assertEquals(byteBuf1, result);
+        byteBuf1.release();
+
+        // Test huge record.
+        ByteBuf byteBuf2 = generateByteBuf(50);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf2.readableBytes(), offset -> byteBuf2.retainedSlice().asReadOnly(), future);
+        assertEquals(100, recordAccumulatorExt.nextOffset());
+
+        ByteBuf byteBuf3 = generateByteBuf(75);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf3.readableBytes(), offset -> byteBuf3.retainedSlice().asReadOnly(), future);
+        assertEquals(175, recordAccumulatorExt.nextOffset());
+
+        recordAccumulatorExt.unsafeUpload(true);
+        flushedOffset = future.join().flushedOffset();
+        assertEquals(175, flushedOffset);
+        assertEquals(175, recordAccumulatorExt.flushedOffset());
+
+        objectList = recordAccumulatorExt.objectList();
+        assertEquals(2, objectList.size());
+
+        object = objectList.get(1);
+        assertEquals(WALObjectHeader.WAL_HEADER_SIZE + 50 + 75, object.length());
+        result = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
         result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
-        assertEquals(byteBuf, result);
-        byteBuf.release();
+        CompositeByteBuf compositeBuffer = Unpooled.compositeBuffer();
+        compositeBuffer.addComponents(true, byteBuf2);
+        compositeBuffer.addComponents(true, byteBuf3);
+        assertEquals(compositeBuffer, result);
+        compositeBuffer.release();
+
+        // Test record part
+        ByteBuf byteBuf4 = generateByteBuf(50);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf4.readableBytes(), offset -> byteBuf4.retainedSlice().asReadOnly(), future);
+        assertEquals(225, recordAccumulatorExt.nextOffset());
+
+        ByteBuf byteBuf5 = generateByteBuf(50);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf5.readableBytes(), offset -> byteBuf5.retainedSlice().asReadOnly(), future);
+        assertEquals(275, recordAccumulatorExt.nextOffset());
+
+        recordAccumulatorExt.unsafeUpload(true);
+        flushedOffset = future.join().flushedOffset();
+        assertEquals(275, flushedOffset);
+        assertEquals(275, recordAccumulatorExt.flushedOffset());
+
+        objectList = recordAccumulatorExt.objectList();
+        assertEquals(4, objectList.size());
+
+        object = objectList.get(2);
+        assertEquals(115, object.length());
+        result = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
+        result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
+        assertEquals(byteBuf4, result.readBytes(50));
+
+        object = objectList.get(3);
+        compositeBuffer = Unpooled.compositeBuffer();
+        compositeBuffer.addComponents(true, result);
+        result = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
+        result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
+        compositeBuffer.addComponents(true, result);
+        assertEquals(compositeBuffer, byteBuf5);
+        byteBuf4.release();
+        byteBuf5.release();
     }
 
     @Test
@@ -98,13 +179,15 @@ public class RecordAccumulatorTest {
                 }
 
                 for (int j = 0; j < 100; j++) {
-                    ByteBuf byteBuf = generateByteBuf(25);
+                    ByteBuf byteBuf = generateByteBuf(40);
                     try {
                         CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
                         long offset = recordAccumulatorExt.append(byteBuf.readableBytes(), o -> byteBuf.retainedSlice().asReadOnly(), future);
                         futureList.add(future);
                         generatedByteBufMap.put(offset, byteBuf);
-                    } catch (OverCapacityException e) {
+
+                        Thread.sleep(15);
+                    } catch (Exception e) {
                         byteBuf.release();
                         throw new RuntimeException(e);
                     }
@@ -150,6 +233,9 @@ public class RecordAccumulatorTest {
 
     @Test
     public void testUploadPeriodically() throws OverCapacityException {
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build());
+        recordAccumulatorExt.start();
+
         assertTrue(recordAccumulatorExt.objectList().isEmpty());
 
         ByteBuf byteBuf = generateByteBuf(25);
@@ -177,5 +263,28 @@ public class RecordAccumulatorTest {
         recordAccumulatorExt.close();
         assertTrue(future.isDone());
         assertEquals(1, recordAccumulatorExt.objectList().size());
+    }
+
+    @Test
+    public void testTrim() throws OverCapacityException {
+        ByteBuf byteBuf1 = generateByteBuf(50);
+        CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf1.readableBytes(), offset -> byteBuf1.retainedSlice().asReadOnly(), future);
+
+        ByteBuf byteBuf2 = generateByteBuf(50);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf2.readableBytes(), offset -> byteBuf2.retainedSlice().asReadOnly(), future);
+
+        recordAccumulatorExt.unsafeUpload(true);
+        long flushedOffset = future.join().flushedOffset();
+        assertEquals(100, flushedOffset);
+        assertEquals(100, recordAccumulatorExt.flushedOffset());
+        assertEquals(2, recordAccumulatorExt.objectList().size());
+
+        recordAccumulatorExt.trim(50).join();
+        assertEquals(2, recordAccumulatorExt.objectList().size());
+
+        recordAccumulatorExt.trim(100).join();
+        assertEquals(0, recordAccumulatorExt.objectList().size());
     }
 }

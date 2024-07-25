@@ -83,12 +83,12 @@ public class TopicDeletionManager {
             return ControllerResult.of(Collections.emptyList(), null);
         }
         String topicId = waitingCleanupTopics.entrySet(lastStableOffset).iterator().next().getKey().toString();
-        TimelineHashMap<Long, S3StreamMetadata> streams = streamControlManager.streamsMetadata();
+        TimelineHashMap<Long, StreamRuntimeMetadata> streams = streamControlManager.streamsMetadata();
         List<Long> streamsToDelete = new LinkedList<>();
         // check all streams are closed
-        for (Map.Entry<Long, S3StreamMetadata> entry : streams.entrySet(lastStableOffset)) {
+        for (Map.Entry<Long, StreamRuntimeMetadata> entry : streams.entrySet(lastStableOffset)) {
             Long streamId = entry.getKey();
-            S3StreamMetadata metadata = entry.getValue();
+            StreamRuntimeMetadata metadata = entry.getValue();
             if (topicId.equals(metadata.tags().get(StreamTags.Topic.KEY))) {
                 if (metadata.currentState() == StreamState.CLOSED) {
                     streamsToDelete.add(streamId);

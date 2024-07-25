@@ -9,9 +9,9 @@ import org.apache.kafka.common.acl.AclOperation.CLUSTER_ACTION
 import org.apache.kafka.common.errors.ApiException
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.message.{DeleteKVsResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData}
-import org.apache.kafka.common.protocol.{ApiKeys, Errors}
 import org.apache.kafka.common.protocol.Errors.{NONE, UNKNOWN_SERVER_ERROR}
-import org.apache.kafka.common.requests.s3.{CloseStreamsRequest, CloseStreamsResponse, CommitStreamObjectRequest, CommitStreamObjectResponse, CommitStreamSetObjectRequest, CommitStreamSetObjectResponse, CreateStreamsRequest, CreateStreamsResponse, DeleteKVsRequest, DeleteKVsResponse, DeleteStreamsRequest, DeleteStreamsResponse, DescribeStreamsRequest, DescribeStreamsResponse, GetKVsRequest, GetKVsResponse, GetNextNodeIdRequest, GetNextNodeIdResponse, GetOpeningStreamsRequest, GetOpeningStreamsResponse, OpenStreamsRequest, OpenStreamsResponse, PrepareS3ObjectRequest, PrepareS3ObjectResponse, PutKVsRequest, PutKVsResponse, TrimStreamsRequest, TrimStreamsResponse}
+import org.apache.kafka.common.protocol.{ApiKeys, Errors}
+import org.apache.kafka.common.requests.s3._
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.controller.{Controller, ControllerRequestContext}
 import org.apache.kafka.image.publisher.ControllerRegistrationsPublisher
@@ -51,6 +51,8 @@ class ElasticControllerApis(
         case ApiKeys.GET_KVS => handleGetKV(request)
         case ApiKeys.PUT_KVS => handlePutKV(request)
         case ApiKeys.DELETE_KVS => handleDeleteKV(request)
+        case ApiKeys.AUTOMQ_REGISTER_NODE => handleRegisterNode(request)
+        case ApiKeys.AUTOMQ_GET_NODES => handleGetNodes(request)
         case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
         case ApiKeys.DESCRIBE_STREAMS => handleDescribeStreams(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
@@ -85,10 +87,23 @@ class ElasticControllerApis(
 
   override def handle(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     request.header.apiKey match {
-      case ApiKeys.CREATE_STREAMS | ApiKeys.OPEN_STREAMS | ApiKeys.CLOSE_STREAMS | ApiKeys.DELETE_STREAMS
-           | ApiKeys.TRIM_STREAMS | ApiKeys.PREPARE_S3_OBJECT | ApiKeys.COMMIT_STREAM_SET_OBJECT
-        | ApiKeys.COMMIT_STREAM_OBJECT | ApiKeys.GET_OPENING_STREAMS | ApiKeys.GET_KVS | ApiKeys.PUT_KVS
-        | ApiKeys.DELETE_KVS | ApiKeys.GET_NEXT_NODE_ID | ApiKeys.DESCRIBE_STREAMS => handleExtensionRequest(request, requestLocal)
+      case ApiKeys.CREATE_STREAMS
+           | ApiKeys.OPEN_STREAMS
+           | ApiKeys.CLOSE_STREAMS
+           | ApiKeys.DELETE_STREAMS
+           | ApiKeys.TRIM_STREAMS
+           | ApiKeys.PREPARE_S3_OBJECT
+           | ApiKeys.COMMIT_STREAM_SET_OBJECT
+           | ApiKeys.COMMIT_STREAM_OBJECT
+           | ApiKeys.GET_OPENING_STREAMS
+           | ApiKeys.GET_KVS
+           | ApiKeys.PUT_KVS
+           | ApiKeys.DELETE_KVS
+           | ApiKeys.AUTOMQ_REGISTER_NODE
+           | ApiKeys.AUTOMQ_GET_NODES
+           | ApiKeys.GET_NEXT_NODE_ID
+           | ApiKeys.DESCRIBE_STREAMS
+      => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }
@@ -100,8 +115,8 @@ class ElasticControllerApis(
       OptionalLong.empty())
     controller.getNextNodeId(context, getNextNodeIdRequest.data()).handle[Unit] { (reply, e) =>
       def createResponseCallback(requestThrottleMs: Int,
-                                 reply: Int,
-                                 e: Throwable): GetNextNodeIdResponse = {
+        reply: Int,
+        e: Throwable): GetNextNodeIdResponse = {
         if (e != null) {
           new GetNextNodeIdResponse(new GetNextNodeIdResponseData().
             setThrottleTimeMs(requestThrottleMs).
@@ -113,6 +128,7 @@ class ElasticControllerApis(
             setNodeId(reply))
         }
       }
+
       requestHelper.sendResponseMaybeThrottle(request,
         requestThrottleMs => createResponseCallback(requestThrottleMs, reply, e))
     }
@@ -340,6 +356,38 @@ class ElasticControllerApis(
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
             new DeleteKVsResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleRegisterNode(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val req = request.body[AutomqRegisterNodeRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.registerNode(context, req)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new AutomqRegisterNodeResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleGetNodes(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val req = request.body[AutomqGetNodesRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.getNodes(context, req)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new AutomqGetNodesResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }
