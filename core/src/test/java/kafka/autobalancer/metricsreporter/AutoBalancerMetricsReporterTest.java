@@ -18,31 +18,14 @@
 package kafka.autobalancer.metricsreporter;
 
 import java.util.HashMap;
-import kafka.autobalancer.common.types.MetricTypes;
-import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.config.StaticAutoBalancerConfig;
-import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
-import kafka.autobalancer.metricsreporter.metric.MetricSerde;
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.common.internals.Topic;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.network.SocketServerConfigs;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
 import org.mockito.Mockito;
 
 @Tag("S3Unit")
