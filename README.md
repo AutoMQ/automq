@@ -2,7 +2,7 @@
 
 <p align="center">
   🔥&nbsp <a
-    href="https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud"
+    href="https://www.automq.com/quick-start?utm_source=github_automq_cloud#Cloud"
     target="_blank"
   ><b>Free trail of AutoMQ Business Edition</b></a>&nbsp&nbsp&nbsp
   📑&nbsp <a
@@ -15,9 +15,9 @@
 [![Twitter](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)
 [![Wechat](https://img.shields.io/badge/-%20Wechat%20-red?style=social&logo=discourse)](docs/images/automq-wechat.png)
 [![Slack](https://badgen.net/badge/Slack/Join%20AutoMQ/0abd59?icon=slack)](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA)
-[![License](https://img.shields.io/badge/license-BSL-brightgreen)](licenses/BSL.md)
 [![Cost comparison](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison)
 [![Peformance comparison](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd)
+[![License](https://img.shields.io/badge/license-BSL-brightgreen)](licenses/BSL.md)
 
 ---
 
