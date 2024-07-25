@@ -12,21 +12,18 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.utils.SecretUtils;
-
+import com.automq.stream.utils.URIUtils;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 
+import static com.automq.stream.utils.URIUtils.URI_PATTERN;
+
 public class BucketURI {
-    private static final Pattern BUCKETS_URL_PATTERN = Pattern.compile("\\d+@.*?(?=,\\d+@|$)");
-    private static final Pattern BUCKET_URL_PATTERN = Pattern.compile("(\\d+)@(.+)");
     private static final String ENDPOINT_KEY = "endpoint";
     private static final String REGION_KEY = "region";
     public static final String ACCESS_KEY_KEY = "accessKey";
@@ -47,10 +44,11 @@ public class BucketURI {
         this.bucket = bucket;
         this.region = region;
         this.extension = extension;
+        // TODO: extend IdURI
     }
 
     public static BucketURI parse(String bucketStr) {
-        Matcher matcher = BUCKET_URL_PATTERN.matcher(bucketStr);
+        Matcher matcher = URI_PATTERN.matcher(bucketStr);
         if (!matcher.find()) {
             throw new IllegalArgumentException("Invalid bucket url: " + bucketStr);
         }
@@ -77,15 +75,7 @@ public class BucketURI {
     }
 
     public static List<BucketURI> parseBuckets(String bucketsStr) {
-        if (StringUtils.isBlank(bucketsStr)) {
-            return Collections.emptyList();
-        }
-        List<BucketURI> bucketURIList = new ArrayList<>();
-        Matcher matcher = BUCKETS_URL_PATTERN.matcher(bucketsStr);
-        while (matcher.find()) {
-            bucketURIList.add(BucketURI.parse(matcher.group(0)));
-        }
-        return bucketURIList;
+        return URIUtils.parseIdURIList(bucketsStr).stream().map(BucketURI::parse).collect(Collectors.toList());
     }
 
     public short bucketId() {
@@ -138,7 +128,6 @@ public class BucketURI {
 
     @Override
     public String toString() {
-        // TODO: mask the secret info
         StringBuilder sb = new StringBuilder();
         sb.append("BucketURL{" +
             "bucketId=" + bucketId +

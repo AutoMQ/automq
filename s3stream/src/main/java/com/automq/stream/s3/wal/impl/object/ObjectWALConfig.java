@@ -11,6 +11,9 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.utils.IdURI;
+import org.apache.commons.lang3.StringUtils;
+
 public class ObjectWALConfig {
     private final long batchInterval;
     private final long maxBytesInBatch;
@@ -94,6 +97,32 @@ public class ObjectWALConfig {
         private short bucketId;
 
         private Builder() {
+        }
+
+        public Builder withURI(IdURI uri) {
+            withBucketId(uri.id());
+
+            String batchInterval = uri.extensionString("batchInterval");
+            if (StringUtils.isNumeric(batchInterval)) {
+                withBatchInterval(Long.parseLong(batchInterval));
+            }
+            String maxBytesInBatch = uri.extensionString("maxBytesInBatch");
+            if (StringUtils.isNumeric(maxBytesInBatch)) {
+                withMaxBytesInBatch(Long.parseLong(maxBytesInBatch));
+            }
+            String maxUnflushedBytes = uri.extensionString("maxUnflushedBytes");
+            if (StringUtils.isNumeric(maxUnflushedBytes)) {
+                withMaxUnflushedBytes(Long.parseLong(maxUnflushedBytes));
+            }
+            String maxInflightUploadCount = uri.extensionString("maxInflightUploadCount");
+            if (StringUtils.isNumeric(maxInflightUploadCount)) {
+                withMaxInflightUploadCount(Integer.parseInt(maxInflightUploadCount));
+            }
+            String readAheadObjectCount = uri.extensionString("readAheadObjectCount");
+            if (StringUtils.isNumeric(readAheadObjectCount)) {
+                withReadAheadObjectCount(Integer.parseInt(readAheadObjectCount));
+            }
+            return this;
         }
 
         public Builder withBatchInterval(long batchInterval) {
