@@ -75,6 +75,10 @@ public class IdURI {
         return new IdURI(id, protocol, newPath, extension);
     }
 
+    public Map<String, List<String>> extension() {
+        return extension;
+    }
+
     public String extensionString(String key) {
         return URIUtils.getString(extension, key, null);
     }
