@@ -194,9 +194,6 @@ public class AutoMQConfig {
     public static final String S3_METRICS_ENABLE_CONFIG = "s3.telemetry.metrics.enable";
     public static final String S3_METRICS_ENABLE_DOC = "[DEPRECATED] use s3.metrics.uri instead.";
 
-    public static final String S3_TRACE_ENABLE_CONFIG = "s3.telemetry.tracer.enable";
-    public static final String S3_TRACE_ENABLE_DOC = "[DEPRECATED] trace is no longer supported.";
-
     public static final String S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_CONFIG = "s3.telemetry.exporter.otlp.endpoint";
     public static final String S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_DOC = "[DEPRECATED] use s3.telemetry.metrics.uri instead";
 
@@ -207,9 +204,6 @@ public class AutoMQConfig {
     public static final String S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG = "s3.telemetry.exporter.otlp.compression.enable";
     public static final String S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_DOC = "[DEPRECATED] use s3.telemetry.metrics.uri instead. Whether to enable compression for OTLP exporter, valid only when use http protocol.";
 
-    public static final String S3_TELEMETRY_TRACE_EXPORTER_OTLP_ENDPOINT_CONFIG = "s3.telemetry.trace.exporter.otlp.endpoint";
-    public static final String S3_TELEMETRY_TRACE_EXPORTER_OTLP_ENDPOINT_DOC = "[DEPRECATED] trace is no longer supported.";
-
     public static final String S3_TELEMETRY_METRICS_EXPORTER_TYPE_CONFIG = "s3.telemetry.metrics.exporter.type";
     public static final String S3_TELEMETRY_METRICS_EXPORTER_TYPE_DOC = "[DEPRECATED] use s3.telemetry.metrics.uri instead. The list of metrics exporter types that should be used. The \"otlp\" type will export metrics to backend service with OTLP protocol. The \"prometheus\" type will start a built-in HTTP server that allows Prometheus backend scrape metrics from it.";
 
@@ -218,18 +212,6 @@ public class AutoMQConfig {
 
     public static final String S3_METRICS_EXPORTER_PROM_PORT_CONFIG = "s3.metrics.exporter.prom.port";
     public static final String S3_METRICS_EXPORTER_PROM_PORT_DOC = "[DEPRECATED] use s3.telemetry.metrics.uri instead. The port number of the built-in Prometheus HTTP server that used to expose the OTel metrics.";
-
-    public static final String S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG = "s3.telemetry.tracer.span.scheduled.delay.ms";
-    public static final String S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_DOC = "[DEPRECATED] trace is no longer supported.";
-    public static final int S3_SPAN_SCHEDULED_DELAY_MS = 1000; // 1s
-
-    public static final String S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG = "s3.telemetry.tracer.span.max.queue.size";
-    public static final String S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_DOC = "[DEPRECATED] trace is no longer supported.";
-    public static final int S3_SPAN_MAX_QUEUE_SIZE = 5120;
-
-    public static final String S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG = "s3.telemetry.tracer.span.max.batch.size";
-    public static final String S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_DOC = "[DEPRECATED] trace is no longer supported.";
-    public static final int S3_SPAN_MAX_BATCH_SIZE = 1024;
 
     public static final String S3_TELEMETRY_OPS_ENABLED_CONFIG = "s3.telemetry.ops.enabled";
     public static final String S3_TELEMETRY_OPS_ENABLED_DOC = "[DEPRECATED] use s3.telemetry.metrics.uri instead.";
@@ -279,18 +261,12 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_WAL_IOPS_CONFIG, INT, 3000, MEDIUM, AutoMQConfig.S3_WAL_IOPS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_CONFIG, BOOLEAN, true, HIGH, AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_DOC)
             .define(AutoMQConfig.S3_METRICS_ENABLE_CONFIG, BOOLEAN, true, MEDIUM, AutoMQConfig.S3_METRICS_ENABLE_DOC)
-            .define(AutoMQConfig.S3_TRACE_ENABLE_CONFIG, BOOLEAN, false, MEDIUM, AutoMQConfig.S3_TRACE_ENABLE_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_TYPE_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_TYPE_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG, STRING, S3_EXPORTER_OTLPPROTOCOL, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG, BOOLEAN, false, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_TRACE_EXPORTER_OTLP_ENDPOINT_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACE_EXPORTER_OTLP_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_CONFIG, STRING, "localhost", MEDIUM, AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_DOC)
-            .define(AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_CONFIG, INT, 9090, MEDIUM, AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG, INT, S3_SPAN_SCHEDULED_DELAY_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG, INT, S3_SPAN_MAX_QUEUE_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_DOC)
-            .define(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG, INT, S3_SPAN_MAX_BATCH_SIZE, MEDIUM, AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_DOC);
-
+            .define(AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_CONFIG, INT, 9090, MEDIUM, AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_DOC);
     }
 
     private List<BucketURI> dataBuckets;
