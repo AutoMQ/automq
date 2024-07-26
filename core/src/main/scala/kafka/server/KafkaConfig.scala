@@ -1184,6 +1184,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3SpanScheduledDelayMs = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG)
   val s3SpanMaxQueueSize = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG)
   val s3SpanMaxBatchSize = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG)
+  val s3MetricsExporterURI = getString(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG)
   // AutoMQ inject end
 
   /** Internal Configurations **/
