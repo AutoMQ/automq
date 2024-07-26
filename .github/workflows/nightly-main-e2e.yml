@@ -46,7 +46,7 @@ jobs:
     uses: ./.github/workflows/e2e-run.yml
     if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
-      suite-id: "main4"
+      suite-id: "main5"
       test-yaml: "tests/suites/main_kos_test_suite5.yml"
       storage-path: "/data/github-actions/reports"
       runner: "main"
