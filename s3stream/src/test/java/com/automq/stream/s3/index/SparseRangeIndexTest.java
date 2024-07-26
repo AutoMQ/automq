@@ -32,12 +32,19 @@ public class SparseRangeIndexTest {
             originList.add(rangeIndex);
             nextStartOffset += 10;
         }
-        Assertions.assertThrowsExactly(IllegalArgumentException.class, () -> {
-            // test append out of order range
-            sparseRangeIndex.append(new RangeIndex(0, 5, 10));
-        });
+        // test append out of order range
+        sparseRangeIndex.append(new RangeIndex(0, 10, 0));
+        Assertions.assertEquals(1, sparseRangeIndex.size());
+
+        nextStartOffset = 10;
+        for (int i = 1; i < 10; i++) {
+            RangeIndex rangeIndex = new RangeIndex(nextStartOffset, nextStartOffset + 10, i);
+            sparseRangeIndex.append(rangeIndex);
+            nextStartOffset += 10;
+        }
+
+        Assertions.assertEquals(7, sparseRangeIndex.size());
         List<RangeIndex> rangeIndexList = sparseRangeIndex.getRangeIndexList();
-        Assertions.assertEquals(7, rangeIndexList.size());
         checkOrder(rangeIndexList);
         for (int i = 0; i < originList.size(); i++) {
             if (i >= originList.size() - compactNum || i % 2 != 0) {

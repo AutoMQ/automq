@@ -15,9 +15,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import javax.annotation.concurrent.NotThreadSafe;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @NotThreadSafe
 public class SparseRangeIndex {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SparseRangeIndex.class);
     private final int compactNum;
     private final int sparsePadding;
     // sorted by startOffset in descending order
@@ -40,10 +43,17 @@ public class SparseRangeIndex {
         }
         if (!this.sortedRangeIndexList.isEmpty()
             && newRangeIndex.compareTo(this.sortedRangeIndexList.get(this.sortedRangeIndexList.size() - 1)) <= 0) {
-            throw new IllegalArgumentException("new range should be greater than the last element in list");
+            LOGGER.error("Unexpected new range index {}, last: {}, maybe initialized with outdated index file, " +
+                    "reset local cache", newRangeIndex, this.sortedRangeIndexList.get(this.sortedRangeIndexList.size() - 1));
+            reset();
         }
         this.sortedRangeIndexList.add(newRangeIndex);
         evict();
+    }
+
+    public void reset() {
+        this.sortedRangeIndexList.clear();
+        evictIndex = 0;
     }
 
     public void compact(RangeIndex newRangeIndex, Set<Long> compactedObjectIds) {
