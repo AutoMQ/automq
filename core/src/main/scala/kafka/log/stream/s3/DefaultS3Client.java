@@ -188,17 +188,17 @@ public class DefaultS3Client implements Client {
         return this.failover.failover(request);
     }
 
-    StreamManager newStreamManager(int nodeId, long nodeEpoch, boolean failoverMode) {
+    protected StreamManager newStreamManager(int nodeId, long nodeEpoch, boolean failoverMode) {
         return new ControllerStreamManager(this.metadataManager, this.requestSender, nodeId, nodeEpoch,
             this::getAutoMQVersion, failoverMode);
     }
 
-    ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
+    protected ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
         return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch,
             this::getAutoMQVersion, failoverMode);
     }
 
-    Failover failover() {
+    protected Failover failover() {
         return new Failover(new FailoverFactory() {
             @Override
             public StreamManager getStreamManager(int nodeId, long nodeEpoch) {
@@ -209,6 +209,11 @@ public class DefaultS3Client implements Client {
             public ObjectManager getObjectManager(int nodeId, long nodeEpoch) {
                 return newObjectManager(nodeId, nodeEpoch, true);
             }
+
+            @Override
+            public WriteAheadLog getWal(FailoverRequest request) {
+                return BlockWALService.recoveryBuilder(request.getDevice()).build();
+            }
         }, (wal, sm, om, logger) -> {
             try {
                 storage.recover(wal, sm, om, logger);
@@ -218,7 +223,7 @@ public class DefaultS3Client implements Client {
         });
     }
 
-    private AutoMQVersion getAutoMQVersion() {
+    protected AutoMQVersion getAutoMQVersion() {
         if (brokerServer.metadataCache().currentImage() == MetadataImage.EMPTY) {
             throw new IllegalStateException("The image should be loaded first");
         }

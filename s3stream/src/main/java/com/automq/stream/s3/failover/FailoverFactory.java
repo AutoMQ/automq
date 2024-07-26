@@ -13,6 +13,7 @@ package com.automq.stream.s3.failover;
 
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.wal.WriteAheadLog;
 
 public interface FailoverFactory {
 
@@ -20,4 +21,5 @@ public interface FailoverFactory {
 
     ObjectManager getObjectManager(int nodeId, long epoch);
 
+    WriteAheadLog getWal(FailoverRequest request);
 }
