@@ -1,19 +1,24 @@
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
+#  Copyright 2024, AutoMQ HK Limited.
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#  Use of this software is governed by the Business Source License
+#  included in the file BSL.md
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#  As of the Change Date specified in that file, in accordance with
+#  the Business Source License, use of this software will be governed
+#  by the Apache License, Version 2.0
+#
+# Use of this software is governed by the Business Source License
+# included in the file BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
 import re
 import time
+
+from kafkatest.services.console_consumer import ConsoleConsumer
+from kafkatest.services.performance import ProducerPerformanceService
+from kafkatest.version import DEV_BRANCH
 
 
 def formatted_time(msg):
@@ -95,7 +100,11 @@ def parse_producer_performance_stdout(input_string):
     else:
         raise ValueError("Input string does not match the expected format.")
 
+
 def publish_broker_configuration(kafka, producer_byte_rate, consumer_byte_rate, broker_id):
+    """
+    Publish broker configuration to alter the producer and consumer byte rate.
+    """
     force_use_zk_connection = False
     node = kafka.nodes[0]
     cmd = "%s --alter --add-config broker.quota.produce.bytes=%d,broker.quota.fetch.bytes=%d" % \
@@ -104,3 +113,131 @@ def publish_broker_configuration(kafka, producer_byte_rate, consumer_byte_rate, 
     cmd += " --entity-type " + 'brokers'
     cmd += " --entity-name " + broker_id
     node.account.ssh(cmd)
+
+
+RECORD_SIZE = 3000
+RECORD_NUM = 50000
+TOPIC = 'test_topic'
+CONSUMER_GROUP = "test_consume_group"
+DEFAULT_CONSUMER_CLIENT_ID = 'test_producer_client_id'
+DEFAULT_PRODUCER_CLIENT_ID = 'test_producer_client_id'
+BATCH_SIZE = 16 * 1024
+BUFFER_MEMORY = 64 * 1024 * 1024
+DEFAULT_THROUGHPUT = -1
+DEFAULT_CLIENT_VERSION = DEV_BRANCH
+JMX_BROKER_IN = 'kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec'
+JMX_BROKER_OUT = 'kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec'
+JMX_TOPIC_IN = f'kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic={TOPIC}'
+JMX_TOPIC_OUT = f'kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec,topic={TOPIC}'
+JMX_ONE_MIN = ':OneMinuteRate'
+
+
+def run_perf_producer(test_context, kafka, num_records=RECORD_NUM, throughput=DEFAULT_THROUGHPUT,
+                      client_version=DEFAULT_CLIENT_VERSION, topic=TOPIC):
+    """
+    Initiates and runs a performance test for the producer.
+
+    This function creates and executes a Producer Performance Service to test the performance of sending messages under specified conditions.
+
+    :param test_context: A test context object providing information about the test environment.
+    :param kafka: An instance of Kafka for producing messages.
+    :param num_records: The number of messages to send, default is RECORD_NUM.
+    :param throughput: Specified throughput, default is DEFAULT_THROUGHPUT.
+    :param client_version: The version of the client, default is DEFAULT_CLIENT_VERSION.
+    :param topic: The target topic for message delivery, default is TOPIC.
+
+    :return: An instance of ProducerPerformanceService used for testing producer performance.
+    """
+    producer = ProducerPerformanceService(
+        test_context, 1, kafka,
+        topic=topic, num_records=num_records, record_size=RECORD_SIZE, throughput=throughput,
+        client_id=DEFAULT_PRODUCER_CLIENT_ID, version=client_version,
+        settings={
+            'acks': 1,
+            'compression.type': "none",
+            'batch.size': BATCH_SIZE,
+            'buffer.memory': BUFFER_MEMORY
+        })
+    producer.run()
+    return producer
+
+
+def run_console_consumer(test_context, kafka, client_version=DEFAULT_CLIENT_VERSION, topic=TOPIC):
+    """
+    Launches a console consumer to consume messages from a specified topic.
+
+    :param test_context: A test context object that provides configuration information for the test environment.
+    :param kafka: A Kafka instance for connecting to and operating on a Kafka cluster.
+    :param client_version: The version of the consumer client, defaulting to DEFAULT_CLIENT_VERSION.
+    :param topic: The topic from which the consumer will consume messages, defaulting to TOPIC.
+
+    :return: The launched ConsoleConsumer instance.
+    """
+    consumer = ConsoleConsumer(test_context, 1, topic=topic, kafka=kafka,
+                               consumer_timeout_ms=60000, client_id=DEFAULT_CONSUMER_CLIENT_ID,
+                               jmx_object_names=[
+                                   'kafka.consumer:type=consumer-fetch-manager-metrics,client-id=%s' % DEFAULT_CONSUMER_CLIENT_ID],
+                               jmx_attributes=['bytes-consumed-rate'], version=client_version)
+    consumer.run()
+    for idx, messages in consumer.messages_consumed.items():
+        assert len(messages) > 0, "consumer %d didn't consume any message before timeout" % idx
+    return consumer
+
+
+def validate_num(producer, consumer, logger):
+    """
+    Validates the consistency of the number of messages produced and consumed.
+
+    :param producer: The producer object, containing the results of message production.
+    :param consumer: The consumer object, containing the consumed messages.
+    :param logger: The logging object, used for logging information.
+
+    :return: A tuple containing a boolean value indicating whether the validation passed and a string containing the validation failure message.
+    """
+    success = True
+    msg = ''
+    produced_num = sum([value['records'] for value in producer.results])
+    consumed_num = sum([len(value) for value in consumer.messages_consumed.values()])
+    logger.info('producer produced %d messages' % produced_num)
+    logger.info('consumer consumed %d messages' % consumed_num)
+    if produced_num != consumed_num:
+        success = False
+        msg += "number of produced messages %d doesn't equal number of consumed messages %d\n" % (
+            produced_num, consumed_num)
+    return success, msg
+
+
+def run_simple_load(test_context, kafka, logger, topic=TOPIC, num_records=RECORD_NUM, throughput=DEFAULT_THROUGHPUT):
+    """
+    Execute a simple load test.
+
+    This function initializes a performance producer and a console consumer to send and receive a specified number of messages.
+    Then, it validates that the number of messages received by the consumer matches the expected count.
+
+    :param test_context: Test context object for storing and sharing state and configuration relevant to the tests.
+    :param kafka: Kafka instance for interacting with the Kafka cluster.
+    :param logger: Logger for recording information during the test process.
+    :param topic: The topic where the messages will be sent by the producer and received by the consumer.
+    :param num_records: Total number of records the producer should send.
+    :param throughput: Target throughput for the producer, i.e., the number of messages per second.
+    :return: None
+    """
+    producer = run_perf_producer(test_context=test_context, kafka=kafka, topic=topic, num_records=num_records, throughput=throughput)
+    consumer = run_console_consumer(test_context=test_context, kafka=kafka, topic=topic)
+    success, msg = validate_num(producer, consumer, logger)
+    assert success, msg
+
+
+def append_info(msg, boolean, cur_msg):
+    """
+    Appends additional information to a message based on a boolean condition.
+
+    :param msg: The original message.
+    :param boolean: The condition to check.
+    :param cur_msg: The message to append if the condition is False.
+
+    :return: The updated message.
+    """
+    if not boolean:
+        msg += '\n' + cur_msg
+    return msg
