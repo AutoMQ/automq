@@ -13,7 +13,7 @@ package com.automq.stream.s3.failover;
 
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.streams.StreamManager;
-import com.automq.stream.s3.wal.impl.block.BlockWALService;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.WALNotInitializedException;
 import com.automq.stream.utils.FutureUtil;
@@ -74,7 +74,7 @@ public class Failover {
             resp.setNodeId(request.getNodeId());
             // fence the device to ensure the old node stops writing to the delta WAL
             // recover WAL data and upload to S3
-            BlockWALService wal = BlockWALService.recoveryBuilder(request.getDevice()).build();
+            WriteAheadLog wal = factory.getWal(request);
             try {
                 wal.start();
             } catch (WALNotInitializedException ex) {
