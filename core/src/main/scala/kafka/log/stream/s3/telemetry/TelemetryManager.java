@@ -112,11 +112,7 @@ public class TelemetryManager {
     }
 
     protected SdkMeterProvider buildMeterProvider(KafkaConfig kafkaConfig) {
-        MetricsExporterURI metricsExporterURI = MetricsExporterURI.parse(clusterId, kafkaConfig);
-        if (metricsExporterURI == null || metricsExporterURI.metricsExporters().isEmpty()) {
-            LOGGER.info("No valid metrics exporter found");
-            return null;
-        }
+        MetricsExporterURI metricsExporterURI = buildMetricsExporterURI(clusterId, kafkaConfig);
         Resource resource = Resource.empty().toBuilder()
             .putAll(Attributes.builder()
                 .put(ResourceAttributes.SERVICE_NAME, clusterId)
@@ -134,6 +130,15 @@ public class TelemetryManager {
                 instrumentType -> TelemetryConstants.CARDINALITY_LIMIT);
         }
         return sdkMeterProviderBuilder.build();
+    }
+
+    protected MetricsExporterURI buildMetricsExporterURI(String clusterId, KafkaConfig kafkaConfig) {
+        MetricsExporterURI metricsExporterURI = MetricsExporterURI.parse(clusterId, kafkaConfig);
+        if (metricsExporterURI == null || metricsExporterURI.metricsExporters().isEmpty()) {
+            LOGGER.info("No valid metrics exporter found");
+            return null;
+        }
+        return metricsExporterURI;
     }
 
     protected void initializeMetricsManager(Meter meter) {

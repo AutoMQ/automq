@@ -13,7 +13,9 @@ package kafka.automq;
 
 import com.automq.stream.s3.ByteBufAllocPolicy;
 import com.automq.stream.s3.operator.BucketURI;
+import java.util.ArrayList;
 import java.util.List;
+import kafka.log.stream.s3.telemetry.exporter.ExporterConstants;
 import kafka.server.KafkaConfig;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.config.ConfigDef;
@@ -272,11 +274,13 @@ public class AutoMQConfig {
     private List<BucketURI> dataBuckets;
     private List<BucketURI> opsBuckets;
     private String walConfig;
+    private String metricsExporterURI;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
         opsBuckets = genOpsBuckets(config);
         walConfig = genWALConfig(config);
+        metricsExporterURI = genMetricsExporterURI(config);
         return this;
     }
 
@@ -286,6 +290,10 @@ public class AutoMQConfig {
 
     public List<BucketURI> opsBuckets() {
         return opsBuckets;
+    }
+
+    public String metricsExporterURI() {
+        return metricsExporterURI;
     }
 
     public String walConfig() {
@@ -333,4 +341,65 @@ public class AutoMQConfig {
         return walConfig;
     }
 
+    private static String genMetricsExporterURI(KafkaConfig config) {
+        String uri = config.getString(S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG);
+        if (uri == null) {
+            uri = buildMetrixExporterURIWithOldConfigs(config);
+        }
+        return uri;
+    }
+
+    private static String buildMetrixExporterURIWithOldConfigs(KafkaConfig kafkaConfig) {
+        if (!kafkaConfig.getBoolean(S3_METRICS_ENABLE_CONFIG)) {
+            return null;
+        }
+        List<String> exportedUris = new ArrayList<>();
+        String exporterTypes = kafkaConfig.getString(S3_TELEMETRY_METRICS_EXPORTER_TYPE_CONFIG);
+        if (!StringUtils.isBlank(exporterTypes)) {
+            String[] exporterTypeArray = exporterTypes.split(",");
+            for (String exporterType : exporterTypeArray) {
+                exporterType = exporterType.trim();
+                switch (exporterType) {
+                    case "otlp":
+                        exportedUris.add(buildOTLPExporterURI(kafkaConfig));
+                        break;
+                    case "prometheus":
+                        exportedUris.add(buildPrometheusExporterURI(kafkaConfig));
+                        break;
+                    default:
+                        LOGGER.error("illegal metrics exporter type: {}", exporterType);
+                        break;
+                }
+            }
+        }
+
+        if (kafkaConfig.s3OpsTelemetryEnabled()) {
+            exportedUris.add(buildOpsExporterURI());
+        }
+
+        return String.join(",", exportedUris);
+    }
+
+    private static String buildOTLPExporterURI(KafkaConfig kafkaConfig) {
+        StringBuilder uriBuilder = new StringBuilder()
+            .append(ExporterConstants.OTLP_TYPE)
+            .append(ExporterConstants.URI_DELIMITER)
+            .append(ExporterConstants.ENDPOINT).append("=").append(kafkaConfig.getString(S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_CONFIG))
+            .append("&")
+            .append(ExporterConstants.PROTOCOL).append("=").append(kafkaConfig.getString(S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG));
+        if (kafkaConfig.getBoolean(S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG)) {
+            uriBuilder.append("&").append(ExporterConstants.COMPRESSION).append("=").append("gzip");
+        }
+        return uriBuilder.toString();
+    }
+
+    private static String buildPrometheusExporterURI(KafkaConfig kafkaConfig) {
+        return ExporterConstants.PROMETHEUS_TYPE + ExporterConstants.URI_DELIMITER +
+            ExporterConstants.HOST + "=" + kafkaConfig.getString(S3_METRICS_EXPORTER_PROM_HOST_CONFIG) + "&" +
+            ExporterConstants.PORT + "=" + kafkaConfig.getInt(S3_METRICS_EXPORTER_PROM_PORT_CONFIG);
+    }
+
+    private static String buildOpsExporterURI() {
+        return ExporterConstants.OPS_TYPE + ExporterConstants.URI_DELIMITER;
+    }
 }
