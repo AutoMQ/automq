@@ -24,8 +24,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 public class FailoverTest {
     String path;
@@ -58,6 +60,8 @@ public class FailoverTest {
         request.setNodeId(234);
         request.setDevice(path);
         request.setVolumeId("test_volume_id");
+
+        when(failoverFactory.getWal(any())).thenReturn(BlockWALService.builder(path, 1024 * 1024).nodeId(233).epoch(100).build());
 
         boolean exceptionThrown = false;
         try {
