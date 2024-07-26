@@ -12,6 +12,8 @@
 package com.automq.stream.utils;
 
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -107,4 +109,17 @@ public class IdURI {
         return Long.parseLong(value);
     }
 
+    public String encode() {
+        StringBuilder raw = new StringBuilder(id() + "@" + protocol() + "://" + path());
+        if (extension.isEmpty()) {
+            return raw.toString();
+        }
+        raw.append("?");
+        for (Map.Entry<String, List<String>> entry : extension().entrySet()) {
+            for (String value : entry.getValue()) {
+                raw.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)).append("=").append(URLEncoder.encode(value, StandardCharsets.UTF_8)).append("&");
+            }
+        }
+        return raw.substring(0, raw.length() - 1);
+    }
 }
