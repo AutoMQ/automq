@@ -78,7 +78,8 @@ public class FutureTicker {
             if (burstUpload) {
                 // spot bugs report the null can't pass but this is supported
                 currentTick = new CompletableFuture<>()
-                    .completeOnTimeout(BURST_UPLOAD_OBJECT, burstUploadTickTime, TimeUnit.MILLISECONDS).thenAccept(__ -> {});
+                    .completeOnTimeout(BURST_UPLOAD_OBJECT, burstUploadTickTime, TimeUnit.MILLISECONDS).thenAccept(__ -> {
+                    });
             } else {
                 // a future which will complete after delay
                 currentTick = CompletableFuture.runAsync(() -> {
