@@ -134,9 +134,8 @@ public class TelemetryManager {
 
     protected MetricsExporterURI buildMetricsExporterURI(String clusterId, KafkaConfig kafkaConfig) {
         MetricsExporterURI metricsExporterURI = MetricsExporterURI.parse(clusterId, kafkaConfig);
-        if (metricsExporterURI == null || metricsExporterURI.metricsExporters().isEmpty()) {
+        if (metricsExporterURI.metricsExporters().isEmpty()) {
             LOGGER.info("No valid metrics exporter found");
-            return null;
         }
         return metricsExporterURI;
     }

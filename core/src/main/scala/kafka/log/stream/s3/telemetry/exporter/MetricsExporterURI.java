@@ -15,19 +15,21 @@ import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.utils.URIUtils;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.annotations.NotNull;
 
 public class MetricsExporterURI {
     private static final Logger LOGGER = LoggerFactory.getLogger(MetricsExporterURI.class);
     private final List<MetricsExporter> metricsExporters;
 
     public MetricsExporterURI(List<MetricsExporter> metricsExporters) {
-        this.metricsExporters = metricsExporters;
+        this.metricsExporters = metricsExporters == null ? new ArrayList<>() : metricsExporters;
     }
 
     public static MetricsExporter parseExporter(String clusterId, KafkaConfig kafkaConfig, String uriStr) {
@@ -61,14 +63,14 @@ public class MetricsExporterURI {
         }
     }
 
-    public static MetricsExporterURI parse(String clusterId, KafkaConfig kafkaConfig) {
+    public static @NotNull MetricsExporterURI parse(String clusterId, KafkaConfig kafkaConfig) {
         String uriStr = kafkaConfig.automq().metricsExporterURI();
         if (Utils.isBlank(uriStr)) {
-            return null;
+            return new MetricsExporterURI(Collections.emptyList());
         }
         String[] exporterUri = uriStr.split(",");
         if (exporterUri.length == 0) {
-            return null;
+            return new MetricsExporterURI(Collections.emptyList());
         }
         List<MetricsExporter> exporters = new ArrayList<>();
         for (String uri : exporterUri) {
