@@ -40,7 +40,7 @@ public class MetricsExporterURITest {
         Mockito.when(kafkaConfig.getString(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG)).thenReturn("http");
         Mockito.when(kafkaConfig.getString(AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_CONFIG)).thenReturn("127.0.0.1");
         Mockito.when(kafkaConfig.getInt(AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_CONFIG)).thenReturn(9999);
-        Mockito.when(kafkaConfig.s3OpsTelemetryEnabled()).thenReturn(true);
+        Mockito.when(kafkaConfig.getBoolean(AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_CONFIG)).thenReturn(true);
         Mockito.when(kafkaConfig.getString(AutoMQConfig.S3_OPS_BUCKETS_CONFIG)).thenReturn("0@s3://bucket0?region=us-west-1");
         automqConfig = new AutoMQConfig();
         automqConfig.setup(kafkaConfig);
