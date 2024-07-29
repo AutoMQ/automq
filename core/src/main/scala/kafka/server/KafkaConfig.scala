@@ -1170,20 +1170,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectLogEnable = getBoolean(AutoMQConfig.S3_OBJECT_LOG_ENABLE_CONFIG)
   val s3NetworkBaselineBandwidthProp = getLong(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG)
   val s3RefillPeriodMsProp = getInt(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG)
-  val s3MetricsEnable = getBoolean(AutoMQConfig.S3_METRICS_ENABLE_CONFIG)
-  val s3TracerEnable = getBoolean(AutoMQConfig.S3_TRACE_ENABLE_CONFIG)
   val s3MetricsLevel = getString(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG)
-  val s3MetricsExporterType = getString(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_TYPE_CONFIG)
-  val s3ExporterOTLPEndpoint = getString(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_CONFIG)
-  val s3ExporterOTLPProtocol = getString(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG)
-  val s3ExporterOTLPCompressionEnable = getBoolean(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG)
-  val s3TraceExporterOTLPEndpoint = getString(AutoMQConfig.S3_TELEMETRY_TRACE_EXPORTER_OTLP_ENDPOINT_CONFIG)
   val s3ExporterReportIntervalMs = getInt(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG)
-  val s3MetricsExporterPromHost = getString(AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_CONFIG)
-  val s3MetricsExporterPromPort = getInt(AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_CONFIG)
-  val s3SpanScheduledDelayMs = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG)
-  val s3SpanMaxQueueSize = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG)
-  val s3SpanMaxBatchSize = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG)
   // AutoMQ inject end
 
   /** Internal Configurations **/
