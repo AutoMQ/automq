@@ -35,6 +35,7 @@ import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -79,6 +80,12 @@ import static com.automq.stream.utils.FutureUtil.suppress;
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
     private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
+    private static boolean ENABLE_BURST_FORCE_UPLOAD = true;
+
+    static {
+        ENABLE_BURST_FORCE_UPLOAD = Systems.getEnvInt("AUTOMQ_ENABLE_BURST_FORCE_UPLOAD", 1) == 1;
+    }
+
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
     private final long maxDeltaWALCacheSize;
     private final Config config;
@@ -122,6 +129,10 @@ public class S3Storage implements Storage {
     private long lastLogTimestamp = 0L;
     private volatile double maxDataWriteRate = 0.0;
 
+    private final AtomicLong uploadTaskIdCounter = new AtomicLong(0L);
+    private final AtomicLong forceUploadTaskId = new AtomicLong(-1L);
+    private final AtomicLong pendingUploadBytes = new AtomicLong(0L);
+
     @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         S3BlockCache blockCache, ObjectStorage objectStorage) {
@@ -135,6 +146,7 @@ public class S3Storage implements Storage {
         this.objectStorage = objectStorage;
         this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
+        S3StreamMetricsManager.registerDeltaWalPendingUploadBytesSupplier(this.pendingUploadBytes::get);
     }
 
     /**
@@ -590,7 +602,7 @@ public class S3Storage implements Storage {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // Wait for a while to group force upload tasks.
-        forceUploadTicker.tick().whenComplete((nil, ex) -> {
+        forceUploadTicker.tick(ENABLE_BURST_FORCE_UPLOAD && streamId != LogCache.MATCH_ALL_STREAMS).whenComplete((nil, ex) -> {
             StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
@@ -659,7 +671,7 @@ public class S3Storage implements Storage {
             Optional<LogCache.LogCacheBlock> blockOpt = deltaWALCache.archiveCurrentBlockIfContains(streamId);
             if (blockOpt.isPresent()) {
                 LogCache.LogCacheBlock logCacheBlock = blockOpt.get();
-                DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(logCacheBlock);
+                DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(uploadTaskIdCounter.incrementAndGet(), logCacheBlock);
                 context.objectManager = this.objectManager;
                 context.force = force;
                 return uploadDeltaWAL(context);
@@ -671,7 +683,7 @@ public class S3Storage implements Storage {
 
     // only for test
     CompletableFuture<Void> uploadDeltaWAL(LogCache.LogCacheBlock logCacheBlock) {
-        DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(logCacheBlock);
+        DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(uploadTaskIdCounter.incrementAndGet(), logCacheBlock);
         context.objectManager = this.objectManager;
         return uploadDeltaWAL(context);
     }
@@ -684,9 +696,26 @@ public class S3Storage implements Storage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         context.cf = cf;
         inflightWALUploadTasks.add(context);
+
+        long size = context.cache.size();
+        pendingUploadBytes.addAndGet(size);
+
+        if (ENABLE_BURST_FORCE_UPLOAD && context.force) {
+            forceUploadTaskId.set(context.id);
+
+            // trigger previous task burst.
+            inflightWALUploadTasks.forEach(ctx -> {
+                ctx.force = true;
+                if (ctx.task != null) {
+                    ctx.task.burst();
+                }
+            });
+        }
+
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         cf.whenComplete((nil, ex) -> {
             StorageOperationStats.getInstance().uploadWALCompleteStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+            pendingUploadBytes.addAndGet(-size);
             inflightWALUploadTasks.remove(context);
             if (ex != null) {
                 LOGGER.error("upload delta WAL fail", ex);
@@ -714,6 +743,8 @@ public class S3Storage implements Storage {
             .objectManager(objectManager)
             .objectStorage(objectStorage)
             .executor(uploadWALExecutor)
+            .id(context.id)
+            .burstTaskSupplier(forceUploadTaskId::get)
             .rate(rate)
             .build();
         boolean walObjectPrepareQueueEmpty = walPrepareQueue.isEmpty();
@@ -729,8 +760,13 @@ public class S3Storage implements Storage {
         context.task.prepare().thenAcceptAsync(nil -> {
             StorageOperationStats.getInstance().uploadWALPrepareStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             // 1. poll out current task and trigger upload.
-            DeltaWALUploadTaskContext peek = walPrepareQueue.poll();
-            Objects.requireNonNull(peek).task.upload().thenAccept(nil2 -> StorageOperationStats.getInstance()
+            DeltaWALUploadTaskContext peek = Objects.requireNonNull(walPrepareQueue.poll());
+
+            if (peek.id <= forceUploadTaskId.get()) {
+                peek.task.burst();
+            }
+
+            peek.task.upload().thenAccept(nil2 -> StorageOperationStats.getInstance()
                 .uploadWALUploadStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS)));
             // 2. add task to commit queue.
             boolean walObjectCommitQueueEmpty = walCommitQueue.isEmpty();
@@ -997,6 +1033,7 @@ public class S3Storage implements Storage {
     }
 
     public static class DeltaWALUploadTaskContext {
+        long id;
         TimerUtil timer;
         LogCache.LogCacheBlock cache;
         DeltaWALUploadTask task;
@@ -1008,8 +1045,9 @@ public class S3Storage implements Storage {
          */
         boolean force;
 
-        public DeltaWALUploadTaskContext(LogCache.LogCacheBlock cache) {
+        public DeltaWALUploadTaskContext(long id, LogCache.LogCacheBlock cache) {
             this.cache = cache;
+            this.id = id;
         }
     }
 

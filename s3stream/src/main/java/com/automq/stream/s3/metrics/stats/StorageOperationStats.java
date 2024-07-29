@@ -48,17 +48,17 @@ public class StorageOperationStats {
     public final HistogramMetric appendLogCacheFullStats = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE_FULL);
     public final HistogramMetric uploadWALPrepareStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.UPLOAD_WAL_PREPARE);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_PREPARE);
     public final HistogramMetric uploadWALUploadStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.UPLOAD_WAL_UPLOAD);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_UPLOAD);
     public final HistogramMetric uploadWALCommitStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.UPLOAD_WAL_COMMIT);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_COMMIT);
     public final HistogramMetric uploadWALCompleteStats = S3StreamMetricsManager
             .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_COMPLETE);
     public final HistogramMetric forceUploadWALAwaitStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.FORCE_UPLOAD_WAL_AWAIT);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.FORCE_UPLOAD_WAL_AWAIT);
     public final HistogramMetric forceUploadWALCompleteStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.FORCE_UPLOAD_WAL_COMPLETE);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.FORCE_UPLOAD_WAL_COMPLETE);
     public final HistogramMetric readStats = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE);
     private final HistogramMetric readLogCacheHitStats = S3StreamMetricsManager

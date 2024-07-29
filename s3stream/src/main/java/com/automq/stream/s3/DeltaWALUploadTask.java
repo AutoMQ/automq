@@ -30,6 +30,9 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.function.LongSupplier;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,10 +58,18 @@ public class DeltaWALUploadTask {
     private long uploadTimestamp;
     private long commitTimestamp;
     private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
+    private volatile boolean burst = false;
+    private final long id;
+    private final LongAdder rateLimitTime = new LongAdder();
+    private final LongAdder burstBytes = new LongAdder();
+
+    public S3Storage.DeltaWALUploadTaskContext ctx;
+    public LongSupplier burstTaskId;
 
     public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
-        ObjectManager objectManager, ObjectStorage objectStorage,
-        ExecutorService executor, boolean forceSplit, double rate) {
+                              ObjectManager objectManager, ObjectStorage objectStorage,
+                              ExecutorService executor, boolean forceSplit, double rate,
+                              long id, LongSupplier burstTaskId) {
         this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.nodeId()));
         this.streamRecordsMap = streamRecordsMap;
         this.objectBlockSize = config.objectBlockSize();
@@ -70,6 +81,8 @@ public class DeltaWALUploadTask {
         this.forceSplit = forceSplit;
         this.executor = executor;
         this.rate = rate;
+        this.id = id;
+        this.burstTaskId = burstTaskId;
         this.limiter = new AsyncRateLimiter(rate);
     }
 
@@ -93,9 +106,41 @@ public class DeltaWALUploadTask {
         return prepareCf;
     }
 
+    /**
+     * bypass the uploadTask rateLimit to make the task finish as fast as possible.
+     */
+    public void burst() {
+        if (this.burst) {
+            return;
+        }
+
+        synchronized (this) {
+            if (!this.burst) {
+                this.limiter.burst();
+                this.burst = true;
+            }
+        }
+    }
+
+    private CompletableFuture<Void> acquireLimiter(int size) {
+        if (this.burst) {
+            burstBytes.add(size);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        long startTime = System.nanoTime();
+        return limiter.acquire(size).whenComplete((res, e) -> rateLimitTime.add(System.nanoTime() - startTime));
+    }
+
     public CompletableFuture<CommitStreamSetObjectRequest> upload() {
         prepareCf.thenAcceptAsync(objectId -> FutureUtil.exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"), executor);
         return uploadCf;
+    }
+
+    private void checkBurst() {
+        if (!burst && this.id <= burstTaskId.getAsLong()) {
+            burst();
+        }
     }
 
     private void upload0(long objectId) {
@@ -116,6 +161,8 @@ public class DeltaWALUploadTask {
 
         List<CompletableFuture<Void>> streamSetWriteCfList = new LinkedList<>();
         for (Long streamId : streamIds) {
+            checkBurst();
+
             List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
             int streamSize = streamRecords.stream().mapToInt(StreamRecordBatch::size).sum();
             if (forceSplit || streamSize >= streamSplitSizeThreshold) {
@@ -125,7 +172,8 @@ public class DeltaWALUploadTask {
                     }
                 }));
             } else {
-                streamSetWriteCfList.add(limiter.acquire(streamSize).thenAccept(nil -> streamSetObject.write(streamId, streamRecords)));
+                streamSetWriteCfList.add(acquireLimiter(streamSize)
+                    .thenAccept(nil -> streamSetObject.write(streamId, streamRecords)));
                 long startOffset = streamRecords.get(0).getBaseOffset();
                 long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
                 request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset, streamSize));
@@ -168,7 +216,7 @@ public class DeltaWALUploadTask {
 
     private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords, int streamSize) {
         CompletableFuture<Long> cf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60));
-        cf = cf.thenCompose(objectId -> limiter.acquire(streamSize).thenApply(nil -> objectId));
+        cf = cf.thenCompose(objectId -> acquireLimiter(streamSize).thenApply(nil -> objectId));
         return cf.thenComposeAsync(objectId -> {
             ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
             long streamId = streamRecords.get(0).getStreamId();
@@ -196,6 +244,8 @@ public class DeltaWALUploadTask {
         private ExecutorService executor;
         private Boolean forceSplit;
         private double rate = Long.MAX_VALUE;
+        private long id = -1;
+        private LongSupplier burstTaskSupplier = () -> -1L;
 
         public Builder config(Config config) {
             this.config = config;
@@ -232,6 +282,16 @@ public class DeltaWALUploadTask {
             return this;
         }
 
+        public Builder id(long id) {
+            this.id = id;
+            return this;
+        }
+
+        public Builder burstTaskSupplier(LongSupplier burstTaskSupplier) {
+            this.burstTaskSupplier = burstTaskSupplier;
+            return this;
+        }
+
         public DeltaWALUploadTask build() {
             if (forceSplit == null) {
                 boolean forceSplit = streamRecordsMap.size() == 1;
@@ -247,7 +307,7 @@ public class DeltaWALUploadTask {
                 }
                 this.forceSplit = forceSplit;
             }
-            return new DeltaWALUploadTask(config, streamRecordsMap, objectManager, objectStorage, executor, forceSplit, rate);
+            return new DeltaWALUploadTask(config, streamRecordsMap, objectManager, objectStorage, executor, forceSplit, rate, id, burstTaskSupplier);
         }
     }
 
