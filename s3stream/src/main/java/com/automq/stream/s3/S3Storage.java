@@ -80,10 +80,10 @@ import static com.automq.stream.utils.FutureUtil.suppress;
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
     private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
-    private static boolean ENABLE_BURST_FORCE_UPLOAD = true;
+    private static boolean enableBurstForceUpload = true;
 
     static {
-        ENABLE_BURST_FORCE_UPLOAD = Systems.getEnvInt("AUTOMQ_ENABLE_BURST_FORCE_UPLOAD", 1) == 1;
+        enableBurstForceUpload = Systems.getEnvInt("AUTOMQ_ENABLE_BURST_FORCE_UPLOAD", 1) == 1;
     }
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
@@ -602,7 +602,7 @@ public class S3Storage implements Storage {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // Wait for a while to group force upload tasks.
-        forceUploadTicker.tick(ENABLE_BURST_FORCE_UPLOAD && streamId != LogCache.MATCH_ALL_STREAMS).whenComplete((nil, ex) -> {
+        forceUploadTicker.tick(enableBurstForceUpload && streamId != LogCache.MATCH_ALL_STREAMS).whenComplete((nil, ex) -> {
             StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
@@ -700,7 +700,7 @@ public class S3Storage implements Storage {
         long size = context.cache.size();
         pendingUploadBytes.addAndGet(size);
 
-        if (ENABLE_BURST_FORCE_UPLOAD && context.force) {
+        if (enableBurstForceUpload && context.force) {
             forceUploadTaskId.set(context.id);
 
             // trigger previous task burst.
