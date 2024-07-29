@@ -42,11 +42,6 @@ public class OTLPMetricsExporter implements MetricsExporter {
             endpoint, protocol, compression, intervalMs);
     }
 
-    @Override
-    public MetricsExporterType type() {
-        return MetricsExporterType.OTLP;
-    }
-
     public String endpoint() {
         return endpoint;
     }

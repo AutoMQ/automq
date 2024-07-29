@@ -34,11 +34,6 @@ public class PrometheusMetricsExporter implements MetricsExporter {
         LOGGER.info("PrometheusMetricsExporter initialized with host: {}, port: {}", host, port);
     }
 
-    @Override
-    public MetricsExporterType type() {
-        return MetricsExporterType.PROMETHEUS;
-    }
-
     public String host() {
         return host;
     }

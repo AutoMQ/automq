@@ -50,29 +50,26 @@ public class MetricsExporterURITest {
         Assertions.assertNotNull(uri);
         Assertions.assertEquals(3, uri.metricsExporters().size());
         for (MetricsExporter metricsExporter : uri.metricsExporters()) {
-            switch (metricsExporter.type()) {
-                case OTLP:
-                    OTLPMetricsExporter otlpExporter = (OTLPMetricsExporter) metricsExporter;
-                    Assertions.assertEquals(1000, otlpExporter.intervalMs());
-                    Assertions.assertEquals("http://localhost:4318", otlpExporter.endpoint());
-                    Assertions.assertEquals(OTLPProtocol.HTTP, otlpExporter.protocol());
-                    Assertions.assertEquals(OTLPCompressionType.GZIP, otlpExporter.compression());
-                    break;
-                case PROMETHEUS:
-                    PrometheusMetricsExporter promExporter = (PrometheusMetricsExporter) metricsExporter;
-                    Assertions.assertEquals("127.0.0.1", promExporter.host());
-                    Assertions.assertEquals(9999, promExporter.port());
-                    break;
-                case OPS:
-                    OpsMetricsExporter opsExporter = (OpsMetricsExporter) metricsExporter;
-                    Assertions.assertEquals(clusterId, opsExporter.clusterId());
-                    Assertions.assertEquals(1, opsExporter.nodeId());
-                    Assertions.assertEquals(1000, opsExporter.intervalMs());
-                    Assertions.assertEquals(1, opsExporter.opsBuckets().size());
-                    Assertions.assertEquals("bucket0", opsExporter.opsBuckets().get(0).bucket());
-                    Assertions.assertEquals("us-west-1", opsExporter.opsBuckets().get(0).region());
-                    break;
-
+            if (metricsExporter instanceof OTLPMetricsExporter) {
+                OTLPMetricsExporter otlpExporter = (OTLPMetricsExporter) metricsExporter;
+                Assertions.assertEquals(1000, otlpExporter.intervalMs());
+                Assertions.assertEquals("http://localhost:4318", otlpExporter.endpoint());
+                Assertions.assertEquals(OTLPProtocol.HTTP, otlpExporter.protocol());
+                Assertions.assertEquals(OTLPCompressionType.GZIP, otlpExporter.compression());
+            } else if (metricsExporter instanceof PrometheusMetricsExporter) {
+                PrometheusMetricsExporter promExporter = (PrometheusMetricsExporter) metricsExporter;
+                Assertions.assertEquals("127.0.0.1", promExporter.host());
+                Assertions.assertEquals(9999, promExporter.port());
+            } else if (metricsExporter instanceof OpsMetricsExporter) {
+                OpsMetricsExporter opsExporter = (OpsMetricsExporter) metricsExporter;
+                Assertions.assertEquals(clusterId, opsExporter.clusterId());
+                Assertions.assertEquals(1, opsExporter.nodeId());
+                Assertions.assertEquals(1000, opsExporter.intervalMs());
+                Assertions.assertEquals(1, opsExporter.opsBuckets().size());
+                Assertions.assertEquals("bucket0", opsExporter.opsBuckets().get(0).bucket());
+                Assertions.assertEquals("us-west-1", opsExporter.opsBuckets().get(0).region());
+            } else {
+                Assertions.fail("Unknown exporter type");
             }
         }
     }
@@ -167,30 +164,28 @@ public class MetricsExporterURITest {
         Assertions.assertNotNull(uri);
         Assertions.assertEquals(3, uri.metricsExporters().size());
         for (MetricsExporter metricsExporter : uri.metricsExporters()) {
-            switch (metricsExporter.type()) {
-                case OTLP:
-                    OTLPMetricsExporter otlpExporter = (OTLPMetricsExporter) metricsExporter;
-                    Assertions.assertEquals(1000, otlpExporter.intervalMs());
-                    Assertions.assertEquals("http://localhost:4317", otlpExporter.endpoint());
-                    Assertions.assertEquals(OTLPProtocol.HTTP, otlpExporter.protocol());
-                    Assertions.assertEquals(OTLPCompressionType.GZIP, otlpExporter.compression());
-                    Assertions.assertNotNull(metricsExporter.asMetricReader());
-                    break;
-                case PROMETHEUS:
-                    PrometheusMetricsExporter promExporter = (PrometheusMetricsExporter) metricsExporter;
-                    Assertions.assertEquals("127.0.0.1", promExporter.host());
-                    Assertions.assertEquals(9999, promExporter.port());
-                    Assertions.assertNotNull(metricsExporter.asMetricReader());
-                    break;
-                case OPS:
-                    OpsMetricsExporter opsExporter = (OpsMetricsExporter) metricsExporter;
-                    Assertions.assertEquals(clusterId, opsExporter.clusterId());
-                    Assertions.assertEquals(1, opsExporter.nodeId());
-                    Assertions.assertEquals(1000, opsExporter.intervalMs());
-                    Assertions.assertEquals(1, opsExporter.opsBuckets().size());
-                    Assertions.assertEquals("bucket0", opsExporter.opsBuckets().get(0).bucket());
-                    Assertions.assertEquals("us-west-1", opsExporter.opsBuckets().get(0).region());
-                    break;
+            if (metricsExporter instanceof OTLPMetricsExporter) {
+                OTLPMetricsExporter otlpExporter = (OTLPMetricsExporter) metricsExporter;
+                Assertions.assertEquals(1000, otlpExporter.intervalMs());
+                Assertions.assertEquals("http://localhost:4317", otlpExporter.endpoint());
+                Assertions.assertEquals(OTLPProtocol.HTTP, otlpExporter.protocol());
+                Assertions.assertEquals(OTLPCompressionType.GZIP, otlpExporter.compression());
+                Assertions.assertNotNull(metricsExporter.asMetricReader());
+            } else if (metricsExporter instanceof PrometheusMetricsExporter) {
+                PrometheusMetricsExporter promExporter = (PrometheusMetricsExporter) metricsExporter;
+                Assertions.assertEquals("127.0.0.1", promExporter.host());
+                Assertions.assertEquals(9999, promExporter.port());
+                Assertions.assertNotNull(metricsExporter.asMetricReader());
+            } else if (metricsExporter instanceof OpsMetricsExporter) {
+                OpsMetricsExporter opsExporter = (OpsMetricsExporter) metricsExporter;
+                Assertions.assertEquals(clusterId, opsExporter.clusterId());
+                Assertions.assertEquals(1, opsExporter.nodeId());
+                Assertions.assertEquals(1000, opsExporter.intervalMs());
+                Assertions.assertEquals(1, opsExporter.opsBuckets().size());
+                Assertions.assertEquals("bucket0", opsExporter.opsBuckets().get(0).bucket());
+                Assertions.assertEquals("us-west-1", opsExporter.opsBuckets().get(0).region());
+            } else {
+                Assertions.fail("Unknown exporter type");
             }
         }
     }

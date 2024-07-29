@@ -15,5 +15,4 @@ import io.opentelemetry.sdk.metrics.export.MetricReader;
 
 public interface MetricsExporter {
     MetricReader asMetricReader();
-    MetricsExporterType type();
 }

@@ -44,11 +44,6 @@ public class OpsMetricsExporter implements MetricsExporter {
             clusterId, nodeId, intervalMs, opsBuckets);
     }
 
-    @Override
-    public MetricsExporterType type() {
-        return MetricsExporterType.OPS;
-    }
-
     public String clusterId() {
         return clusterId;
     }
