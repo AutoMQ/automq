@@ -361,10 +361,10 @@ public class AutoMQConfig {
             for (String exporterType : exporterTypeArray) {
                 exporterType = exporterType.trim();
                 switch (exporterType) {
-                    case "otlp":
+                    case ExporterConstants.OTLP_TYPE:
                         exportedUris.add(buildOTLPExporterURI(kafkaConfig));
                         break;
-                    case "prometheus":
+                    case ExporterConstants.PROMETHEUS_TYPE:
                         exportedUris.add(buildPrometheusExporterURI(kafkaConfig));
                         break;
                     default:
