@@ -54,7 +54,7 @@ jobs:
     name: "E2E Tests Summary"
     runs-on: [ self-hosted, main ]
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
-    needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4 ]
+    needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5 ]
     steps:
       - name: Report results
         run: python3 tests/report_e2e_results.py
