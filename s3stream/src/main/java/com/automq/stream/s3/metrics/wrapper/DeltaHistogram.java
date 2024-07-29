@@ -14,12 +14,16 @@ package com.automq.stream.s3.metrics.wrapper;
 import org.HdrHistogram.Histogram;
 import org.HdrHistogram.Recorder;
 
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.BiPredicate;
 
 public class DeltaHistogram {
     private static final Long DEFAULT_SNAPSHOT_INTERVAL_MS = 5000L;
     private final LongAdder cumulativeCount = new LongAdder();
     private final LongAdder cumulativeSum = new LongAdder();
+    private final AtomicLong min = new AtomicLong(Long.MAX_VALUE);
+    private final AtomicLong max = new AtomicLong(Long.MIN_VALUE);
 
     private final Recorder recorder;
     // the snapshot of histogram for recorder.
@@ -73,10 +77,28 @@ public class DeltaHistogram {
         return lastSnapshot.sum;
     }
 
+    private void updateMax(long value) {
+        update(value, max, (curr, candidate) -> candidate > curr);
+    }
+
+    private void updateMin(long value) {
+        update(value, min, (curr, candidate) -> candidate < curr);
+    }
+
+    private void update(long candidate, AtomicLong target, BiPredicate<Long, Long> predicate) {
+        long curr;
+        do {
+            curr = target.get();
+        }
+        while (predicate.test(curr, candidate) && !target.compareAndSet(curr, candidate));
+    }
+
     public void record(long value) {
         cumulativeCount.increment();
         cumulativeSum.add(value);
         this.recorder.recordValue(value);
+        updateMax(value);
+        updateMin(value);
     }
 
     public long cumulativeCount() {
@@ -107,8 +129,8 @@ public class DeltaHistogram {
             if (lastSnapshot == null || System.currentTimeMillis() - lastSnapshotTime > snapshotInterval) {
                 this.intervalHistogram = this.recorder.getIntervalHistogram(this.intervalHistogram);
 
-                long snapshotMin = this.intervalHistogram.getMinValue();
-                long snapshotMax = this.intervalHistogram.getMaxValue();
+                long snapshotMin = min.get();
+                long snapshotMax = max.get();
 
                 long newCount = cumulativeCount.sum();
                 long newSum = cumulativeSum.sum();
@@ -123,6 +145,8 @@ public class DeltaHistogram {
                 lastCount = newCount;
                 lastSum = newSum;
 
+                min.set(0);
+                max.set(0);
                 lastSnapshot = new SnapshotExt(snapshotMin, snapshotMax, snapshotCount, snapshotSum, p99, p95, p50);
                 lastSnapshotTime = System.currentTimeMillis();
             }
