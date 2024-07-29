@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit;
  * Operations will be batched every 100ms.
  */
 public class FutureTicker {
+    public static final Object BURST_UPLOAD_OBJECT = new Object();
+
     private static long burstUploadTickTime = 100;
 
     static {
@@ -69,15 +71,14 @@ public class FutureTicker {
     /**
      * Generate a new tick if the current tick is done
      */
-    @SuppressWarnings("NP_NONNULL_PARAM_VIOLATION")
     private synchronized CompletableFuture<Void> maybeNextTick(boolean burstUpload) {
         if (currentTick.isDone()) {
             lastTickTime = System.currentTimeMillis();
 
             if (burstUpload) {
                 // spot bugs report the null can't pass but this is supported
-                currentTick = new CompletableFuture<Void>()
-                    .completeOnTimeout(null, burstUploadTickTime, TimeUnit.MILLISECONDS);
+                currentTick = new CompletableFuture<>()
+                    .completeOnTimeout(BURST_UPLOAD_OBJECT, burstUploadTickTime, TimeUnit.MILLISECONDS).thenAccept(__ -> {});
             } else {
                 // a future which will complete after delay
                 currentTick = CompletableFuture.runAsync(() -> {
