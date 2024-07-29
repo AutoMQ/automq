@@ -14,6 +14,7 @@ package com.automq.stream.utils;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -78,7 +79,7 @@ public class IdURI {
     }
 
     public Map<String, List<String>> extension() {
-        return extension;
+        return Collections.unmodifiableMap(extension);
     }
 
     public String extensionString(String key) {

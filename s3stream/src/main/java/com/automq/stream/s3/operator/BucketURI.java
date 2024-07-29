@@ -11,10 +11,12 @@
 
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.SecretUtils;
 import com.automq.stream.utils.URIUtils;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -72,6 +74,20 @@ public class BucketURI {
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException(e);
         }
+    }
+
+    public static BucketURI parse(IdURI idURI) {
+        Map<String, List<String>> queries = new HashMap<>(idURI.extension());
+        queries.remove(ENDPOINT_KEY);
+        queries.remove(REGION_KEY);
+        return new BucketURI(
+            idURI.id(),
+            idURI.protocol(),
+            idURI.extensionString(ENDPOINT_KEY, EMPTY_STRING),
+            idURI.path(),
+            idURI.extensionString(REGION_KEY, EMPTY_STRING),
+            queries
+        );
     }
 
     public static List<BucketURI> parseBuckets(String bucketsStr) {
