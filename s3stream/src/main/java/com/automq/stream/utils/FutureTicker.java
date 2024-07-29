@@ -69,11 +69,13 @@ public class FutureTicker {
     /**
      * Generate a new tick if the current tick is done
      */
+    @SuppressWarnings("NP_NONNULL_PARAM_VIOLATION")
     private synchronized CompletableFuture<Void> maybeNextTick(boolean burstUpload) {
         if (currentTick.isDone()) {
             lastTickTime = System.currentTimeMillis();
 
             if (burstUpload) {
+                // spot bugs report the null can't pass but this is supported
                 currentTick = new CompletableFuture<Void>()
                     .completeOnTimeout(null, burstUploadTickTime, TimeUnit.MILLISECONDS);
             } else {
