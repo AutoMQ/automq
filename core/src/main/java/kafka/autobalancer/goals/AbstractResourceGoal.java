@@ -102,12 +102,11 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
         for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : srcReplicas) {
             candidateBrokers.sort(lowLoadComparator()); // lower load first
             Optional<Action> optionalAction;
+            ActionParameters parameters = new ActionParameters(cluster, tp, srcBroker, candidateBrokers, goalsByPriority, optimizedGoals, goalsByGroup);
             if (actionType == ActionType.MOVE) {
-                optionalAction = tryMovePartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority,
-                        optimizedGoals, goalsByGroup);
+                optionalAction = tryMovePartitionOut(parameters);
             } else {
-                optionalAction = trySwapPartitionOut(cluster, tp, srcBroker, candidateBrokers, goalsByPriority,
-                        optimizedGoals, goalsByGroup, Comparator.comparingDouble(p -> p.loadValue(resource())),
+                optionalAction = trySwapPartitionOut(parameters, Comparator.comparingDouble(p -> p.loadValue(resource())),
                         (src, candidate) -> src.loadValue(resource()) > candidate.loadValue(resource()));
             }
 
@@ -156,12 +155,11 @@ public abstract class AbstractResourceGoal extends AbstractGoal {
                     .collect(Collectors.toList());
             for (TopicPartitionReplicaUpdater.TopicPartitionReplica tp : candidateReplicas) {
                 Optional<Action> optionalAction;
+                ActionParameters parameters = new ActionParameters(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority, optimizedGoals, goalsByGroup);
                 if (actionType == ActionType.MOVE) {
-                    optionalAction = tryMovePartitionOut(cluster, tp, candidateBroker, List.of(srcBroker),
-                            goalsByPriority, optimizedGoals, goalsByGroup);
+                    optionalAction = tryMovePartitionOut(parameters);
                 } else {
-                    optionalAction = trySwapPartitionOut(cluster, tp, candidateBroker, List.of(srcBroker), goalsByPriority,
-                            optimizedGoals, goalsByGroup, Comparator.comparingDouble(p -> p.loadValue(resource())),
+                    optionalAction = trySwapPartitionOut(parameters, Comparator.comparingDouble(p -> p.loadValue(resource())),
                             (src, candidate) -> src.loadValue(resource()) > candidate.loadValue(resource()));
                 }
 

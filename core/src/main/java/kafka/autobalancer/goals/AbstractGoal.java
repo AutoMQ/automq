@@ -44,52 +44,40 @@ public abstract class AbstractGoal implements Goal {
         return initialized;
     }
 
-    protected Optional<Action> tryMovePartitionOut(ClusterModelSnapshot cluster,
-                                                   TopicPartitionReplicaUpdater.TopicPartitionReplica replica,
-                                                   BrokerUpdater.Broker srcBroker,
-                                                   List<BrokerUpdater.Broker> candidates,
-                                                   Collection<Goal> goalsByPriority,
-                                                   Collection<Goal> optimizedGoals,
-                                                   Map<String, Set<String>> goalsByGroup) {
+    protected Optional<Action> tryMovePartitionOut(ActionParameters parameters) {
         List<Map.Entry<Action, Double>> candidateActionScores = new ArrayList<>();
-        for (BrokerUpdater.Broker candidate : candidates) {
-            Action action = new Action(ActionType.MOVE, replica.getTopicPartition(), srcBroker.getBrokerId(), candidate.getBrokerId());
-            double score = calculateCandidateActionScores(goalsByPriority, action, cluster, optimizedGoals, goalsByGroup);
+        for (BrokerUpdater.Broker candidate : parameters.candidates) {
+            Action action = new Action(ActionType.MOVE, parameters.replica.getTopicPartition(), parameters.srcBroker.getBrokerId(), candidate.getBrokerId());
+            double score = calculateCandidateActionScores(parameters.goalsByPriority, action, parameters.cluster, parameters.optimizedGoals, parameters.goalsByGroup);
             if (score > POSITIVE_ACTION_SCORE_THRESHOLD) {
                 candidateActionScores.add(Map.entry(action, score));
             }
         }
-        LOGGER.debug("try move partition {} out for broker {}, all possible action score: {} on goal {}", replica.getTopicPartition(),
-                srcBroker.getBrokerId(), candidateActionScores, name());
+        LOGGER.debug("try move partition {} out for broker {}, all possible action score: {} on goal {}", parameters.replica.getTopicPartition(),
+                parameters.srcBroker.getBrokerId(), candidateActionScores, name());
         return getAcceptableAction(candidateActionScores);
     }
 
-    protected Optional<Action> trySwapPartitionOut(ClusterModelSnapshot cluster,
-                                                   TopicPartitionReplicaUpdater.TopicPartitionReplica srcReplica,
-                                                   BrokerUpdater.Broker srcBroker,
-                                                   List<BrokerUpdater.Broker> candidates,
-                                                   Collection<Goal> goalsByPriority,
-                                                   Collection<Goal> optimizedGoals,
-                                                   Map<String, Set<String>> goalsByGroup,
+    protected Optional<Action> trySwapPartitionOut(ActionParameters parameters,
                                                    Comparator<TopicPartitionReplicaUpdater.TopicPartitionReplica> replicaComparator,
                                                    BiPredicate<TopicPartitionReplicaUpdater.TopicPartitionReplica,
                                                            TopicPartitionReplicaUpdater.TopicPartitionReplica> replicaBiPredicate) {
-        for (BrokerUpdater.Broker candidate : candidates) {
-            List<TopicPartitionReplicaUpdater.TopicPartitionReplica> candidateReplicas = cluster
+        for (BrokerUpdater.Broker candidate : parameters.candidates) {
+            List<TopicPartitionReplicaUpdater.TopicPartitionReplica> candidateReplicas = parameters.cluster
                     .replicasFor(candidate.getBrokerId())
                     .stream()
                     .sorted(replicaComparator)
                     .collect(Collectors.toList());
             for (TopicPartitionReplicaUpdater.TopicPartitionReplica candidateReplica : candidateReplicas) {
-                if (!replicaBiPredicate.test(srcReplica, candidateReplica)) {
+                if (!replicaBiPredicate.test(parameters.replica, candidateReplica)) {
                     break;
                 }
-                Action action = new Action(ActionType.SWAP, srcReplica.getTopicPartition(), srcBroker.getBrokerId(),
+                Action action = new Action(ActionType.SWAP, parameters.replica.getTopicPartition(), parameters.srcBroker.getBrokerId(),
                         candidate.getBrokerId(), candidateReplica.getTopicPartition());
-                double score = calculateCandidateActionScores(goalsByPriority, action, cluster, optimizedGoals, goalsByGroup);
+                double score = calculateCandidateActionScores(parameters.goalsByPriority, action, parameters.cluster, parameters.optimizedGoals, parameters.goalsByGroup);
                 if (score > POSITIVE_ACTION_SCORE_THRESHOLD) {
-                    LOGGER.debug("try swap partition {} out for broker {} with {}, action score: {}", srcReplica.getTopicPartition(),
-                            srcBroker.getBrokerId(), candidateReplica.getTopicPartition(), score);
+                    LOGGER.debug("try swap partition {} out for broker {} with {}, action score: {}", parameters.replica.getTopicPartition(),
+                            parameters.srcBroker.getBrokerId(), candidateReplica.getTopicPartition(), score);
                     return Optional.of(action);
                 }
             }
