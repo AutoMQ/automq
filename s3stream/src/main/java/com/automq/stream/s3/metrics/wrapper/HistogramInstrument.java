@@ -28,7 +28,6 @@ public class HistogramInstrument {
     private final ObservableLongGauge count;
     private final ObservableLongGauge sum;
     private final ObservableDoubleGauge histP50Value;
-    private final ObservableDoubleGauge histP95Value;
     private final ObservableDoubleGauge histP99Value;
     private final ObservableDoubleGauge histMaxValue;
 
@@ -75,18 +74,6 @@ public class HistogramInstrument {
                 histograms.forEach(histogram -> {
                     if (histogram.shouldRecord()) {
                         result.record(histogram.p99(), histogram.attributes);
-                    }
-                });
-            });
-
-        this.histP95Value = meter.gaugeBuilder(name + S3StreamMetricsConstant.P99_METRIC_NAME_SUFFIX)
-            .setDescription(desc + " (95th percentile)")
-            .setUnit(unit)
-            .buildWithCallback(result -> {
-                List<HistogramMetric> histograms = histogramsSupplier.get();
-                histograms.forEach(histogram -> {
-                    if (histogram.shouldRecord()) {
-                        result.record(histogram.p95(), histogram.attributes);
                     }
                 });
             });
