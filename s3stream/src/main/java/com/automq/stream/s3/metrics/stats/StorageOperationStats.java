@@ -74,16 +74,16 @@ public class StorageOperationStats {
                 S3Operation.READ_STORAGE_LOG_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_MISS);
     private final HistogramMetric readBlockCacheHitStats = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE.getType().getName(),
-                S3Operation.READ_STORAGE_LOG_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_HIT);
+                S3Operation.READ_STORAGE_BLOCK_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_HIT);
     private final HistogramMetric readBlockCacheMissStats = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE.getType().getName(),
-                S3Operation.READ_STORAGE_LOG_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_MISS);
+                S3Operation.READ_STORAGE_BLOCK_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_MISS);
     private final HistogramMetric readAheadSyncTimeStats = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD.getType().getName(),
-                S3Operation.READ_STORAGE_LOG_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_SYNC);
+                S3Operation.BLOCK_CACHE_READ_AHEAD.getName(), S3StreamMetricsConstant.LABEL_STATUS_SYNC);
     private final HistogramMetric readAheadAsyncTimeStats = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD.getType().getName(),
-                S3Operation.READ_STORAGE_LOG_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_ASYNC);
+                S3Operation.BLOCK_CACHE_READ_AHEAD.getName(), S3StreamMetricsConstant.LABEL_STATUS_ASYNC);
     public final HistogramMetric readAheadGetIndicesTimeStats = S3StreamMetricsManager
             .buildReadAheadStageTimeMetric(MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_GET_INDICES);
     public final HistogramMetric readAheadThrottleTimeStats = S3StreamMetricsManager

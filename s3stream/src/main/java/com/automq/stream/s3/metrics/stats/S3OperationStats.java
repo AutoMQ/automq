@@ -38,9 +38,9 @@ public class S3OperationStats {
     private final HistogramMetric deleteObjectFailedStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.DELETE_OBJECT.getType().getName(), S3Operation.DELETE_OBJECT.getName(), S3StreamMetricsConstant.LABEL_STATUS_FAILED);
     private final HistogramMetric deleteObjectsSuccessStats = S3StreamMetricsManager.buildOperationMetric(
-        MetricsLevel.INFO, S3Operation.DELETE_OBJECTS.getType().getName(), S3Operation.DELETE_OBJECT.getName(), S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
+        MetricsLevel.INFO, S3Operation.DELETE_OBJECTS.getType().getName(), S3Operation.DELETE_OBJECTS.getName(), S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
     private final HistogramMetric deleteObjectsFailedStats = S3StreamMetricsManager.buildOperationMetric(
-        MetricsLevel.INFO, S3Operation.DELETE_OBJECTS.getType().getName(), S3Operation.DELETE_OBJECT.getName(), S3StreamMetricsConstant.LABEL_STATUS_FAILED);
+        MetricsLevel.INFO, S3Operation.DELETE_OBJECTS.getType().getName(), S3Operation.DELETE_OBJECTS.getName(), S3StreamMetricsConstant.LABEL_STATUS_FAILED);
     private final HistogramMetric createMultiPartUploadSuccessStats = S3StreamMetricsManager.buildOperationMetric(
         MetricsLevel.INFO, S3Operation.CREATE_MULTI_PART_UPLOAD.getType().getName(),
         S3Operation.CREATE_MULTI_PART_UPLOAD.getName(), S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
