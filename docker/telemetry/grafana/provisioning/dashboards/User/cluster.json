@@ -1888,7 +1888,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
+        "definition": "label_values(kafka_broker_active_count,job)",
         "description": "The cluster id of a Kafka cluster",
         "hide": 0,
         "includeAll": false,
@@ -1898,7 +1898,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(process_runtime_jvm_cpu_utilization_ratio,job)",
+          "query": "label_values(kafka_broker_active_count,job)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
