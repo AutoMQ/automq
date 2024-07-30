@@ -13,7 +13,6 @@ package com.automq.stream.s3.metrics;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
-import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
@@ -417,31 +416,31 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static HistogramMetric buildOperationMetric(MetricsLevel metricsLevel, S3Operation operation) {
+    public static HistogramMetric buildOperationMetric(MetricsLevel metricsLevel, String operationType, String operationName) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             HistogramMetric metric = new HistogramMetric(metricsLevel, metricsConfig,
-                    AttributesUtils.buildAttributes(operation));
+                    AttributesUtils.buildOperationAttributes(operationType, operationName));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             OPERATION_LATENCY_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static HistogramMetric buildOperationMetric(MetricsLevel metricsLevel,
-                                                       S3Operation operation, String status, String sizeLabelName) {
+    public static HistogramMetric buildOperationMetric(MetricsLevel metricsLevel, String operationType,
+        String operationName, String status, String sizeLabelName) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             HistogramMetric metric = new HistogramMetric(metricsLevel, metricsConfig,
-                    AttributesUtils.buildAttributes(operation, status, sizeLabelName));
+                    AttributesUtils.buildOperationAttributesWithStatusAndSize(operationType, operationName, status, sizeLabelName));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             OPERATION_LATENCY_METRICS.add(metric);
             return metric;
         }
     }
 
-    public static HistogramMetric buildOperationMetric(MetricsLevel metricsLevel, S3Operation operation, String status) {
+    public static HistogramMetric buildOperationMetric(MetricsLevel metricsLevel, String operationType, String operationName, String status) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             HistogramMetric metric = new HistogramMetric(metricsLevel, metricsConfig,
-                    AttributesUtils.buildAttributes(operation, status));
+                    AttributesUtils.buildOperationAttributesWithStatus(operationType, operationName, status));
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             OPERATION_LATENCY_METRICS.add(metric);
             return metric;
