@@ -36,7 +36,7 @@ public class FutureTicker {
     private static long burstUploadTickTime = 100;
 
     static {
-        burstUploadTickTime = Systems.getEnvInt("AUTOMQ_BURST_UPLOAD_DELAY_TICK_TIME", 250);
+        burstUploadTickTime = Systems.getEnvInt("AUTOMQ_BURST_UPLOAD_DELAY_TICK_TIME", 100);
     }
 
     private final Executor delayedExecutor;
