@@ -23,6 +23,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -171,16 +173,26 @@ public class ElasticLogSegmentManager {
             }
         }
 
+        @VisibleForTesting
+        Queue<Long> getPendingDeleteSegmentQueue() {
+            return pendingDeleteSegmentBaseOffset;
+        }
+
+        @VisibleForTesting
+        synchronized CompletableFuture<ElasticLogMeta> getPendingPersistentMetaCf() {
+            return pendingPersistentMetaCf;
+        }
+
         private void submitOrDrainPendingPersistentMetaQueue(long segmentBaseOffset) {
             if (segmentBaseOffset != NO_OP_OFFSET) {
                 pendingDeleteSegmentBaseOffset.add(segmentBaseOffset);
             }
 
-            if (pendingPersistentMetaCf != null && !pendingPersistentMetaCf.isDone()) {
-                return;
-            }
-
             synchronized (this) {
+                if (pendingPersistentMetaCf != null && !pendingPersistentMetaCf.isDone()) {
+                    return;
+                }
+
                 long maxOffset = NO_OP_OFFSET;
 
                 while (!pendingDeleteSegmentBaseOffset.isEmpty()) {
@@ -198,7 +210,8 @@ public class ElasticLogSegmentManager {
                     }
 
                     long finalMaxOffset = maxOffset;
-                    pendingPersistentMetaCf = asyncPersistLogMeta().whenCompleteAsync((res, e) -> {
+                    pendingPersistentMetaCf = asyncPersistLogMeta();
+                    pendingPersistentMetaCf.whenCompleteAsync((res, e) -> {
                         if (e != null) {
                             LOGGER.error("error when persisLogMeta maxOffset {}", finalMaxOffset, e);
                         }

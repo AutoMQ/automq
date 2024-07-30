@@ -15,10 +15,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
-import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,6 +27,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -69,45 +70,48 @@ public class ElasticLogSegmentManagerTest {
 
         Set<Long> removedSegmentId = new HashSet<>();
 
-
         when(manager.remove(anyLong())).thenAnswer(invocation -> {
             long id = invocation.getArgument(0);
             removedSegmentId.add(id);
             return logSegment;
         });
 
-        Queue<CompletableFuture<ElasticLogMeta>> queue = new ConcurrentLinkedQueue<>();
+        CountDownLatch latch = new CountDownLatch(2);
 
-        when(manager.asyncPersistLogMeta()).thenAnswer(invocation -> {
-            CompletableFuture<ElasticLogMeta> cf = new CompletableFuture<>();
-            queue.add(cf);
+        when(manager.asyncPersistLogMeta())
+            .thenAnswer(invocation -> {
+                CompletableFuture<Object> cf = new CompletableFuture<>()
+                    .completeOnTimeout(logMeta, 100, TimeUnit.MILLISECONDS);
 
-            return cf;
-        });
+                cf.whenComplete((res, e) -> {
+                    latch.countDown();
+                });
+
+                return cf;
+            });
 
         ElasticLogSegmentManager.EventListener listener = spy(manager.new EventListener());
 
-        for (long i = 0L; i < 1000L; i++) {
+        for (long i = 0L; i < 10L; i++) {
             listener.onEvent(i, ElasticLogSegmentEvent.SEGMENT_DELETE);
         }
 
-        Thread.sleep(20);
+        // expect the first and the tail should call the persist method.
+        verify(manager, times(2)).asyncPersistLogMeta();
 
-        for (long i = 1000L; i < 2000L; i++) {
-            listener.onEvent(i, ElasticLogSegmentEvent.SEGMENT_DELETE);
-        }
-
-        for (CompletableFuture<ElasticLogMeta> elasticLogMetaCompletableFuture : queue) {
-            elasticLogMetaCompletableFuture.complete(logMeta);
-        }
-
-        verify(manager, atLeastOnce()).asyncPersistLogMeta();
-        verify(manager, atMost(2)).asyncPersistLogMeta();
-
-
-        for (long i = 0; i < 2000L; i++) {
+        // check all segmentId removed.
+        for (long i = 0; i < 10L; i++) {
             assertTrue(removedSegmentId.contains(i));
         }
+
+        latch.await();
+
+        // the request can be finished.
+        CompletableFuture<ElasticLogMeta> pendingPersistentMetaCf = listener.getPendingPersistentMetaCf();
+        pendingPersistentMetaCf.join();
+
+        // all the queue can be removed.
+        assertTrue(listener.getPendingDeleteSegmentQueue().isEmpty());
 
     }
 }
