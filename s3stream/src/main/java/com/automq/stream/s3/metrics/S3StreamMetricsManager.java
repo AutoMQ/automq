@@ -96,7 +96,7 @@ public class S3StreamMetricsManager {
     private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
     private static Map<Long, Supplier<Long>> pendingStreamAppendLatencySupplier = new ConcurrentHashMap<>();
     private static Map<Long, Supplier<Long>> pendingStreamFetchLatencySupplier = new ConcurrentHashMap<>();
-    private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
+    protected static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
     private static final MultiAttributes<String> ALLOC_TYPE_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
         S3StreamMetricsConstant.LABEL_TYPE);
     private static final MultiAttributes<String> OPERATOR_INDEX_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
@@ -106,6 +106,12 @@ public class S3StreamMetricsManager {
     static {
         BASE_ATTRIBUTES_LISTENERS.add(ALLOC_TYPE_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(OPERATOR_INDEX_ATTRIBUTES);
+    }
+
+    protected static void addBaseAttributesListener(HistogramMetric metric) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+        }
     }
 
     public static void configure(MetricsConfig metricsConfig) {
