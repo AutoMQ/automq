@@ -20,19 +20,19 @@ import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 public class StreamOperationStats {
     private volatile static StreamOperationStats instance = null;
     public final HistogramMetric createStreamLatency = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.CREATE_STREAM);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.CREATE_STREAM.getType().getName(), S3Operation.CREATE_STREAM.getName());
     public final HistogramMetric openStreamLatency = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.OPEN_STREAM);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.OPEN_STREAM.getType().getName(), S3Operation.OPEN_STREAM.getName());
     public final HistogramMetric appendStreamLatency = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STREAM);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STREAM.getType().getName(), S3Operation.APPEND_STREAM.getName());
     public final HistogramMetric fetchStreamLatency = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.FETCH_STREAM);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.FETCH_STREAM.getType().getName(), S3Operation.FETCH_STREAM.getName());
     public final HistogramMetric trimStreamLatency = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.TRIM_STREAM);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.TRIM_STREAM.getType().getName(), S3Operation.TRIM_STREAM.getName());
     private final HistogramMetric closeStreamSuccessLatency = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.CLOSE_STREAM, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.CLOSE_STREAM.getType().getName(), S3Operation.CLOSE_STREAM.getName(), S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
     private final HistogramMetric closeStreamFailLatency = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.CLOSE_STREAM, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.CLOSE_STREAM.getType().getName(), S3Operation.CLOSE_STREAM.getName(), S3StreamMetricsConstant.LABEL_STATUS_FAILED);
 
     private StreamOperationStats() {
     }
