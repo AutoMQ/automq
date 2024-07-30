@@ -65,6 +65,7 @@ public class S3StreamMetricsManager {
     private static HistogramInstrument getIndexTime;
     private static HistogramInstrument readBlockCacheTime;
     private static ObservableLongGauge deltaWalStartOffset = new NoopObservableLongGauge();
+    private static ObservableLongGauge pendUploadWalBytes = new NoopObservableLongGauge();
     private static ObservableLongGauge deltaWalTrimmedOffset = new NoopObservableLongGauge();
     private static ObservableLongGauge deltaWalCacheSize = new NoopObservableLongGauge();
     private static ObservableLongGauge blockCacheSize = new NoopObservableLongGauge();
@@ -85,6 +86,7 @@ public class S3StreamMetricsManager {
     private static Supplier<Integer> networkOutboundLimiterQueueSizeSupplier = () -> 0;
     private static Supplier<Integer> availableInflightReadAheadSizeSupplier = () -> 0;
     private static Supplier<Long> deltaWalStartOffsetSupplier = () -> 0L;
+    private static Supplier<Long> deltaWalPendingUploadBytesSupplier = () -> 0L;
     private static Supplier<Long> deltaWalTrimmedOffsetSupplier = () -> 0L;
     private static Supplier<Long> deltaWALCacheSizeSupplier = () -> 0L;
     private static Supplier<Long> blockCacheSizeSupplier = () -> 0L;
@@ -203,6 +205,14 @@ public class S3StreamMetricsManager {
                     result.record(deltaWalStartOffsetSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
+
+        pendUploadWalBytes = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_PENDING_UPLOAD_BYTES)
+            .setDescription("Delta WAL pending upload bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                result.record(deltaWalPendingUploadBytesSupplier.get(), metricsConfig.getBaseAttributes());
+            });
+
         deltaWalTrimmedOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_TRIMMED_OFFSET)
             .setDescription("Delta WAL trimmed offset")
             .ofLongs()
@@ -349,6 +359,10 @@ public class S3StreamMetricsManager {
         Supplier<Long> deltaWalTrimmedOffsetSupplier) {
         S3StreamMetricsManager.deltaWalStartOffsetSupplier = deltaWalStartOffsetSupplier;
         S3StreamMetricsManager.deltaWalTrimmedOffsetSupplier = deltaWalTrimmedOffsetSupplier;
+    }
+
+    public static void registerDeltaWalPendingUploadBytesSupplier(Supplier<Long> deltaWalPendingUploadBytesSupplier) {
+        S3StreamMetricsManager.deltaWalPendingUploadBytesSupplier = deltaWalPendingUploadBytesSupplier;
     }
 
     public static void registerDeltaWalCacheSizeSupplier(Supplier<Long> deltaWalCacheSizeSupplier) {
