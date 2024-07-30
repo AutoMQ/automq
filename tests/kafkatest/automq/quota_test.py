@@ -106,16 +106,16 @@ class QuotaTest(Test):
         self.kafka.start()
         records = 50000
         self.logger.info(f'update to {broker_in},{broker_out}')
-        self.test_quota0(records, broker_in, broker_out)
+        self.run0(records, broker_in, broker_out)
         # quota reduction
         broker_in = broker_in // 2
         broker_out = broker_out // 2
         self.update_quota_config(broker_in, broker_out)
         self.logger.info(f'update to {broker_in},{broker_out}')
-        self.test_quota0(records, broker_in, broker_out)
+        self.run0(records, broker_in, broker_out)
         assert self.success, self.msg
 
-    def test_quota0(self, num_records, broker_in, broker_out):
+    def run0(self, num_records, broker_in, broker_out):
         # Produce all messages
         self.start_perf_producer(num_records=num_records, throughput=-1)
         # Consume all messages
