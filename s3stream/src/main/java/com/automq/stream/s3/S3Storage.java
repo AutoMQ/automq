@@ -111,7 +111,7 @@ public class S3Storage implements Storage {
      *
      * @see #forceUpload
      */
-    private final FutureTicker forceUploadTicker = new FutureTicker(500, TimeUnit.MILLISECONDS, backgroundExecutor);
+    private final FutureTicker forceUploadTicker = new FutureTicker(100, TimeUnit.MILLISECONDS, backgroundExecutor);
     private final Queue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
     private final StreamManager streamManager;
@@ -600,7 +600,7 @@ public class S3Storage implements Storage {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // Wait for a while to group force upload tasks.
-        forceUploadTicker.tick(enableBurstForceUpload && streamId != LogCache.MATCH_ALL_STREAMS).whenComplete((nil, ex) -> {
+        forceUploadTicker.tick().whenComplete((nil, ex) -> {
             StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
