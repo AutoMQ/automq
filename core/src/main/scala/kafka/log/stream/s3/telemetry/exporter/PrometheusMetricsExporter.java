@@ -13,6 +13,7 @@ package kafka.log.stream.s3.telemetry.exporter;
 
 import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
+import kafka.log.stream.s3.telemetry.MetricsConstants;
 import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,9 @@ public class PrometheusMetricsExporter implements MetricsExporter {
         return PrometheusHttpServer.builder()
             .setHost(host)
             .setPort(port)
+            .setAllowedResourceAttributesFilter(resourceAttributes ->
+                MetricsConstants.JOB.equals(resourceAttributes)
+                    || MetricsConstants.INSTANCE.equals(resourceAttributes))
             .build();
     }
 }

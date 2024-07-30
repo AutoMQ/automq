@@ -25,7 +25,6 @@ import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.instrumentation.jmx.engine.JmxMetricInsight;
 import io.opentelemetry.instrumentation.jmx.engine.MetricConfiguration;
 import io.opentelemetry.instrumentation.jmx.yaml.RuleParser;
-import io.opentelemetry.instrumentation.runtimemetrics.java8.BufferPools;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.Cpu;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.GarbageCollector;
 import io.opentelemetry.instrumentation.runtimemetrics.java8.MemoryPools;
@@ -37,7 +36,6 @@ import io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
 import io.opentelemetry.sdk.metrics.internal.SdkMeterProviderUtil;
 import io.opentelemetry.sdk.resources.Resource;
-import io.opentelemetry.semconv.ResourceAttributes;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -115,11 +113,12 @@ public class TelemetryManager {
         MetricsExporterURI metricsExporterURI = buildMetricsExporterURI(clusterId, kafkaConfig);
         Resource resource = Resource.empty().toBuilder()
             .putAll(Attributes.builder()
-                .put(ResourceAttributes.SERVICE_NAME, clusterId)
-                .put(ResourceAttributes.SERVICE_INSTANCE_ID, String.valueOf(kafkaConfig.nodeId()))
-                .put(ResourceAttributes.HOST_NAME, getHostName())
-                .put("instance", String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
-                .put("node_type", getNodeType())
+                .put(MetricsConstants.SERVICE_NAME, clusterId)
+                .put(MetricsConstants.SERVICE_INSTANCE, String.valueOf(kafkaConfig.nodeId()))
+                .put(MetricsConstants.HOST_NAME, getHostName())
+                .put(MetricsConstants.JOB, clusterId) // for Prometheus HTTP server compatibility
+                .put(MetricsConstants.INSTANCE, String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
+                .put(MetricsConstants.NODE_TYPE, getNodeType())
                 .build())
             .build();
         SdkMeterProviderBuilder sdkMeterProviderBuilder = SdkMeterProvider.builder().setResource(resource);
@@ -181,7 +180,6 @@ public class TelemetryManager {
         autoCloseableList.addAll(MemoryPools.registerObservers(openTelemetry));
         autoCloseableList.addAll(Cpu.registerObservers(openTelemetry));
         autoCloseableList.addAll(GarbageCollector.registerObservers(openTelemetry));
-        autoCloseableList.addAll(BufferPools.registerObservers(openTelemetry));
         autoCloseableList.addAll(Threads.registerObservers(openTelemetry));
     }
 
