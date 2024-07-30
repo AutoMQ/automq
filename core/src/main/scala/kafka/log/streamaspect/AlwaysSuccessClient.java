@@ -63,26 +63,32 @@ public class AlwaysSuccessClient implements Client {
     private final ExecutorService generalCallbackExecutors = Executors.newFixedThreadPool(4,
             ThreadUtils.createThreadFactory("general-callback-scheduler-%d", true));
     private final Client innerClient;
-    private final StreamClient streamClient;
-    private final KVClient kvClient;
+    private volatile StreamClient streamClient;
     private final HashedWheelTimer fetchTimeout = new HashedWheelTimer(
             ThreadUtils.createThreadFactory("fetch-timeout-%d", true),
             1, TimeUnit.SECONDS, 512);
 
     public AlwaysSuccessClient(Client client) {
         this.innerClient = client;
-        this.streamClient = new StreamClientImpl(client.streamClient());
-        this.kvClient = client.kvClient();
     }
 
     @Override
     public StreamClient streamClient() {
+        if (streamClient != null) {
+            return streamClient;
+        }
+        synchronized (this) {
+            if (streamClient != null) {
+                return streamClient;
+            }
+            streamClient = new StreamClientImpl(innerClient.streamClient());
+        }
         return streamClient;
     }
 
     @Override
     public KVClient kvClient() {
-        return kvClient;
+        return innerClient.kvClient();
     }
 
     @Override
