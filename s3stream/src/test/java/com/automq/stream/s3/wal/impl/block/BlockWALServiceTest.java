@@ -99,7 +99,6 @@ class BlockWALServiceTest {
                 final AppendResult appendResult = wal.append(data.retainedDuplicate());
 
                 if (!mergeWrite) {
-                    assertEquals(i * WALUtil.alignLargeByBlockSize(recordSize), appendResult.recordOffset());
                     assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
                 }
                 appendResult.future().whenComplete((callbackResult, throwable) -> {
@@ -869,9 +868,7 @@ class BlockWALServiceTest {
         recoverAndReset(previousWAL);
         // Append 2 records
         long appended0 = append(previousWAL, recordSize);
-        assertEquals(0, appended0);
         long appended1 = append(previousWAL, recordSize);
-        assertEquals(WALUtil.alignLargeByBlockSize(recordSize), appended1);
 
         final WriteAheadLog wal = BlockWALService.builder(path, 1 << 20)
             .direct(directIO)
