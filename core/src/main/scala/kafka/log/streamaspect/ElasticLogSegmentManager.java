@@ -16,8 +16,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -138,6 +140,10 @@ public class ElasticLogSegmentManager {
     }
 
     class EventListener implements ElasticLogSegmentEventListener {
+        public static final long NO_OP_OFFSET = -1L;
+        private final Queue<Long> pendingDeleteSegmentBaseOffset = new ConcurrentLinkedQueue<>();
+        private volatile CompletableFuture<ElasticLogMeta> pendingPersistentMetaCf = null;
+
         @Override
         public void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event) {
             switch (event) {
@@ -150,7 +156,7 @@ public class ElasticLogSegmentManager {
                                 LOGGER.debug("{} meta stream is closed, skip persisting log meta", logIdent);
                             }
                         } else {
-                            asyncPersistLogMeta();
+                            submitOrDrainPendingPersistentMetaQueue(segmentBaseOffset);
                         }
                     }
                     break;
@@ -161,6 +167,36 @@ public class ElasticLogSegmentManager {
                 }
                 default: {
                     throw new IllegalStateException("Unsupported event " + event);
+                }
+            }
+        }
+
+        private void submitOrDrainPendingPersistentMetaQueue(long segmentBaseOffset) {
+            if (segmentBaseOffset != NO_OP_OFFSET) {
+                pendingDeleteSegmentBaseOffset.add(segmentBaseOffset);
+            }
+
+            if (pendingPersistentMetaCf != null && !pendingPersistentMetaCf.isDone()) {
+                return;
+            }
+
+            synchronized (this) {
+                long maxOffset = NO_OP_OFFSET;
+
+                while (!pendingDeleteSegmentBaseOffset.isEmpty()) {
+                    long baseOffset = pendingDeleteSegmentBaseOffset.poll();
+                    maxOffset = Math.max(maxOffset, baseOffset);
+                }
+
+                if (maxOffset != NO_OP_OFFSET) {
+                    long finalMaxOffset = maxOffset;
+                    pendingPersistentMetaCf = asyncPersistLogMeta().whenCompleteAsync((res, e) -> {
+                        if (e != null) {
+                            LOGGER.error("error when persisLogMeta maxOffset {}", finalMaxOffset, e);
+                        }
+
+                        submitOrDrainPendingPersistentMetaQueue(-1);
+                    });
                 }
             }
         }
