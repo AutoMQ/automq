@@ -31,7 +31,6 @@ import java.util.concurrent.TimeUnit;
  * Operations will be batched every 100ms.
  */
 public class FutureTicker {
-
     private final Executor delayedExecutor;
 
     private CompletableFuture<Void> currentTick = CompletableFuture.completedFuture(null);
