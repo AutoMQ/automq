@@ -35,7 +35,6 @@ import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 
 import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
-import static com.automq.stream.s3.wal.benchmark.BenchTool.recoverAndReset;
 import static com.automq.stream.s3.wal.benchmark.BenchTool.resetWALHeader;
 
 /**
@@ -61,7 +60,7 @@ public class WriteBench implements AutoCloseable {
         }
         this.log = builder.build();
         this.log.start();
-        recoverAndReset(this.log);
+        this.log.reset();
     }
 
     public static void main(String[] args) throws IOException {

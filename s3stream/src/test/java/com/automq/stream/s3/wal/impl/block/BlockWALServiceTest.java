@@ -57,6 +57,7 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.impl.block.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 import static com.automq.stream.s3.wal.util.WALChannelTest.TEST_BLOCK_DEVICE_KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -98,7 +99,6 @@ class BlockWALServiceTest {
                 final AppendResult appendResult = wal.append(data.retainedDuplicate());
 
                 if (!mergeWrite) {
-                    assertEquals(i * WALUtil.alignLargeByBlockSize(recordSize), appendResult.recordOffset());
                     assertEquals(0, appendResult.recordOffset() % WALUtil.BLOCK_SIZE);
                 }
                 appendResult.future().whenComplete((callbackResult, throwable) -> {
@@ -299,7 +299,6 @@ class BlockWALServiceTest {
             .start();
         try {
             Iterator<RecoverResult> recover = recover(wal);
-
             List<Long> recovered = new ArrayList<>(recordCount);
             while (recover.hasNext()) {
                 RecoverResult next = recover.next();
@@ -806,9 +805,6 @@ class BlockWALServiceTest {
             .start();
         try {
             Iterator<RecoverResult> recover = recover(wal);
-            assertNotNull(recover);
-            ((RecoverIterator) recover).strictMode();
-
             List<Long> recovered = new ArrayList<>(recordCount);
             while (recover.hasNext()) {
                 RecoverResult next = recover.next();
@@ -872,9 +868,7 @@ class BlockWALServiceTest {
         recoverAndReset(previousWAL);
         // Append 2 records
         long appended0 = append(previousWAL, recordSize);
-        assertEquals(0, appended0);
         long appended1 = append(previousWAL, recordSize);
-        assertEquals(WALUtil.alignLargeByBlockSize(recordSize), appended1);
 
         final WriteAheadLog wal = BlockWALService.builder(path, 1 << 20)
             .direct(directIO)
@@ -883,9 +877,6 @@ class BlockWALServiceTest {
         try {
             // Recover records
             Iterator<RecoverResult> recover = recover(wal);
-            assertNotNull(recover);
-            ((RecoverIterator) recover).strictMode();
-
             List<Long> recovered = new ArrayList<>();
             while (recover.hasNext()) {
                 RecoverResult next = recover.next();
@@ -1006,9 +997,6 @@ class BlockWALServiceTest {
         try {
             // Recover records
             Iterator<RecoverResult> recover = recover(wal);
-            assertNotNull(recover);
-            ((RecoverIterator) recover).strictMode();
-
             List<Long> recovered = new ArrayList<>();
             while (recover.hasNext()) {
                 RecoverResult next = recover.next();
@@ -1058,7 +1046,6 @@ class BlockWALServiceTest {
             .build()
             .start();
         Iterator<RecoverResult> recover = recover(wal2);
-        assertNotNull(recover);
         List<Long> recovered1 = new ArrayList<>(recordCount);
         while (recover.hasNext()) {
             RecoverResult next = recover.next();
@@ -1077,7 +1064,6 @@ class BlockWALServiceTest {
             .build()
             .start();
         recover = recover(wal3);
-        assertNotNull(recover);
         List<Long> recovered2 = new ArrayList<>(recordCount);
         while (recover.hasNext()) {
             RecoverResult next = recover.next();
@@ -1300,6 +1286,62 @@ class BlockWALServiceTest {
             .direct(directIO)
             .build();
         assertThrows(WALNotInitializedException.class, wal2::start);
+    }
+
+    @ParameterizedTest(name = "Test {index}: recordCount={0}")
+    @ValueSource(ints = {10, 20, 30, 40})
+    public void testResetWithoutRecover(int recordCount) throws IOException {
+        testResetWithoutRecover0(recordCount, false);
+    }
+
+    @ParameterizedTest(name = "Test {index}: recordCount={0}")
+    @ValueSource(ints = {10, 20, 30, 40})
+    @EnabledOnOs({OS.LINUX})
+    public void testResetWithoutRecoverDirectIO(int recordCount) throws IOException {
+        testResetWithoutRecover0(recordCount, true);
+    }
+
+    private void testResetWithoutRecover0(int recordCount, boolean directIO) throws IOException {
+        final int recordSize = 4096 + 1;
+        long blockDeviceCapacity = WALUtil.alignLargeByBlockSize(recordSize) * recordCount / 3 + WAL_HEADER_TOTAL_CAPACITY;
+        String path = TestUtils.tempFilePath();
+
+        if (directIO && TEST_BLOCK_DEVICE != null) {
+            path = TEST_BLOCK_DEVICE;
+            blockDeviceCapacity = WALUtil.alignLargeByBlockSize(blockDeviceCapacity);
+            resetBlockDevice(path, blockDeviceCapacity);
+        }
+
+        // Append records
+        final WriteAheadLog wal1 = BlockWALService.builder(path, blockDeviceCapacity)
+            .direct(directIO)
+            .build()
+            .start();
+        recoverAndReset(wal1);
+        wal1.shutdownGracefully();
+
+        // Reset WAL without recover
+        final WriteAheadLog wal2 = BlockWALService.builder(path, blockDeviceCapacity)
+            .direct(directIO)
+            .build()
+            .start();
+        try {
+            wal2.reset().join();
+        } finally {
+            wal2.shutdownGracefully();
+        }
+
+        // Try to recover records
+        final WriteAheadLog wal3 = BlockWALService.builder(path, blockDeviceCapacity)
+            .direct(directIO)
+            .build()
+            .start();
+        try {
+            Iterator<RecoverResult> recover = recover(wal3);
+            assertFalse(recover.hasNext());
+        } finally {
+            wal3.shutdownGracefully();
+        }
     }
 
     private static class RecoverFromDisasterParam {

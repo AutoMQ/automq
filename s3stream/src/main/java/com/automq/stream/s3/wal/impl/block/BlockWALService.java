@@ -70,7 +70,7 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT
  * 1. Call {@link BlockWALService#start} to start the service. Any other methods will throw an
  * {@link IllegalStateException} if called before {@link BlockWALService#start}.
  * <p>
- * 2. Call {@link BlockWALService#recover} to recover all untrimmed records if any.
+ * 2. Maybe call {@link BlockWALService#recover} to recover all untrimmed records if any.
  * <p>
  * 3. Call {@link BlockWALService#reset} to reset the service. This will clear all records, so make sure
  * all recovered records are processed before calling this method.
@@ -128,11 +128,6 @@ public class BlockWALService implements WriteAheadLog {
     private boolean firstStart;
     private int nodeId = NOOP_NODE_ID;
     private long epoch = NOOP_EPOCH;
-    /**
-     * The offset at which the recovery is complete. It is safe to write records at this offset.
-     * It is always aligned to the {@link WALUtil#BLOCK_SIZE}.
-     */
-    private long recoveryCompleteOffset = -1;
 
     private BlockWALService() {
     }
@@ -461,7 +456,6 @@ public class BlockWALService implements WriteAheadLog {
     public Iterator<RecoverResult> recover() {
         checkStarted();
         if (firstStart) {
-            recoveryCompleteOffset = 0;
             return Collections.emptyIterator();
         }
 
@@ -477,14 +471,15 @@ public class BlockWALService implements WriteAheadLog {
     @Override
     public CompletableFuture<Void> reset() {
         checkStarted();
-        checkRecoverFinished();
+
+        long newStartOffset = WALUtil.alignLargeByBlockSize(walHeader.getTrimOffset() + walHeader.getCapacity());
 
         if (!recoveryMode) {
             // in recovery mode, no need to start sliding window service
-            slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), recoveryCompleteOffset);
+            slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), newStartOffset);
         }
-        LOGGER.info("reset sliding window to offset: {}", recoveryCompleteOffset);
-        CompletableFuture<Void> cf = trim(recoveryCompleteOffset - 1, true)
+        LOGGER.info("reset sliding window to offset: {}", newStartOffset);
+        CompletableFuture<Void> cf = trim(newStartOffset - 1, true)
             .thenRun(() -> resetFinished.set(true));
 
         if (!recoveryMode) {
@@ -522,12 +517,6 @@ public class BlockWALService implements WriteAheadLog {
     private void checkWriteMode() {
         if (recoveryMode) {
             throw new IllegalStateException("WriteAheadLog is in recovery mode");
-        }
-    }
-
-    private void checkRecoverFinished() {
-        if (recoveryCompleteOffset < 0) {
-            throw new IllegalStateException("WriteAheadLog has not been completely recovered yet");
         }
     }
 
@@ -799,7 +788,6 @@ public class BlockWALService implements WriteAheadLog {
             boolean hasNext = tryReadNextRecord();
             if (!hasNext) {
                 // recovery complete
-                recoveryCompleteOffset = WALUtil.alignLargeByBlockSize(nextRecoverOffset);
                 walChannel.releaseCache();
             }
             return hasNext;
