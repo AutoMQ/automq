@@ -30,7 +30,6 @@ public class AsyncRateLimiter {
     private final RateLimiter rateLimiter;
     private final ScheduledFuture<?> tickTask;
     private volatile boolean burst = false;
-    private long burstBytes = 0L;
 
     public AsyncRateLimiter(double bytesPerSec) {
         rateLimiter = RateLimiter.create(bytesPerSec, 100, TimeUnit.MILLISECONDS);
@@ -39,9 +38,6 @@ public class AsyncRateLimiter {
 
     public synchronized CompletableFuture<Void> acquire(int size) {
         if (acquireQueue.isEmpty() && rateLimiter.tryAcquire(size)) {
-            if (burst) {
-                burstBytes += size;
-            }
             return CompletableFuture.completedFuture(null);
         } else {
             CompletableFuture<Void> cf = new CompletableFuture<>();
@@ -57,10 +53,6 @@ public class AsyncRateLimiter {
         }
     }
 
-    public long getBurstBytes() {
-        return this.burstBytes;
-    }
-
     public void close() {
         tickTask.cancel(false);
     }
@@ -73,9 +65,6 @@ public class AsyncRateLimiter {
             }
             if (burst || rateLimiter.tryAcquire(acquire.size)) {
                 acquireQueue.poll();
-                if (burst) {
-                    burstBytes += acquire.size;
-                }
                 acquire.cf.complete(null);
             } else {
                 break;

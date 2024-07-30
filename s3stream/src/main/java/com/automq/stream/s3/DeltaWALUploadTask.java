@@ -58,8 +58,6 @@ public class DeltaWALUploadTask {
     private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
     private volatile boolean burst = false;
 
-    public S3Storage.DeltaWALUploadTaskContext ctx;
-
     public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
                               ObjectManager objectManager, ObjectStorage objectStorage,
                               ExecutorService executor, boolean forceSplit, double rate) {
@@ -153,8 +151,7 @@ public class DeltaWALUploadTask {
                     }
                 }));
             } else {
-                streamSetWriteCfList.add(acquireLimiter(streamSize)
-                    .thenAccept(nil -> streamSetObject.write(streamId, streamRecords)));
+                streamSetWriteCfList.add(acquireLimiter(streamSize).thenAccept(nil -> streamSetObject.write(streamId, streamRecords)));
                 long startOffset = streamRecords.get(0).getBaseOffset();
                 long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
                 request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset, streamSize));
