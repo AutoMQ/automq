@@ -189,6 +189,14 @@ public class ElasticLogSegmentManager {
                 }
 
                 if (maxOffset != NO_OP_OFFSET) {
+                    if (metaStream.isFenced()) {
+                        if (LOGGER.isDebugEnabled()) {
+                            LOGGER.debug("{} meta stream is closed, skip persisting log meta", logIdent);
+                        }
+
+                        return;
+                    }
+
                     long finalMaxOffset = maxOffset;
                     pendingPersistentMetaCf = asyncPersistLogMeta().whenCompleteAsync((res, e) -> {
                         if (e != null) {
