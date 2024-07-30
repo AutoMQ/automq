@@ -70,7 +70,7 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT
  * 1. Call {@link BlockWALService#start} to start the service. Any other methods will throw an
  * {@link IllegalStateException} if called before {@link BlockWALService#start}.
  * <p>
- * 2. Call {@link BlockWALService#recover} to recover all untrimmed records if any.
+ * 2. Maybe call {@link BlockWALService#recover} to recover all untrimmed records if any.
  * <p>
  * 3. Call {@link BlockWALService#reset} to reset the service. This will clear all records, so make sure
  * all recovered records are processed before calling this method.
@@ -474,10 +474,22 @@ public class BlockWALService implements WriteAheadLog {
         return new RecoverIterator(recoverStartOffset, windowLength, trimmedOffset);
     }
 
+    public void recoverAndDropAllRecords() {
+        int recovered = 0;
+        for (Iterator<RecoverResult> it = recover(); it.hasNext(); ) {
+            it.next().record().release();
+            recovered++;
+        }
+        assert isRecoverFinished();
+        LOGGER.info("recovered and dropped {} records", recovered);
+    }
+
     @Override
     public CompletableFuture<Void> reset() {
         checkStarted();
-        checkRecoverFinished();
+        if (!isRecoverFinished()) {
+            recoverAndDropAllRecords();
+        }
 
         if (!recoveryMode) {
             // in recovery mode, no need to start sliding window service
@@ -525,10 +537,8 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 
-    private void checkRecoverFinished() {
-        if (recoveryCompleteOffset < 0) {
-            throw new IllegalStateException("WriteAheadLog has not been completely recovered yet");
-        }
+    private boolean isRecoverFinished() {
+        return recoveryCompleteOffset >= 0;
     }
 
     private void checkResetFinished() {
