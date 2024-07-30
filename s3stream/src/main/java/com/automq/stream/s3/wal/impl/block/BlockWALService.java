@@ -128,11 +128,6 @@ public class BlockWALService implements WriteAheadLog {
     private boolean firstStart;
     private int nodeId = NOOP_NODE_ID;
     private long epoch = NOOP_EPOCH;
-    /**
-     * The offset at which the recovery is complete. It is safe to write records at this offset.
-     * It is always aligned to the {@link WALUtil#BLOCK_SIZE}.
-     */
-    private long recoveryCompleteOffset = -1;
 
     private BlockWALService() {
     }
@@ -461,7 +456,6 @@ public class BlockWALService implements WriteAheadLog {
     public Iterator<RecoverResult> recover() {
         checkStarted();
         if (firstStart) {
-            recoveryCompleteOffset = 0;
             return Collections.emptyIterator();
         }
 
@@ -474,29 +468,18 @@ public class BlockWALService implements WriteAheadLog {
         return new RecoverIterator(recoverStartOffset, windowLength, trimmedOffset);
     }
 
-    public void recoverAndDropAllRecords() {
-        int recovered = 0;
-        for (Iterator<RecoverResult> it = recover(); it.hasNext(); ) {
-            it.next().record().release();
-            recovered++;
-        }
-        assert isRecoverFinished();
-        LOGGER.info("recovered and dropped {} records", recovered);
-    }
-
     @Override
     public CompletableFuture<Void> reset() {
         checkStarted();
-        if (!isRecoverFinished()) {
-            recoverAndDropAllRecords();
-        }
+
+        long newStartOffset = WALUtil.alignLargeByBlockSize(walHeader.getTrimOffset() + walHeader.getCapacity());
 
         if (!recoveryMode) {
             // in recovery mode, no need to start sliding window service
-            slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), recoveryCompleteOffset);
+            slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), newStartOffset);
         }
-        LOGGER.info("reset sliding window to offset: {}", recoveryCompleteOffset);
-        CompletableFuture<Void> cf = trim(recoveryCompleteOffset - 1, true)
+        LOGGER.info("reset sliding window to offset: {}", newStartOffset);
+        CompletableFuture<Void> cf = trim(newStartOffset - 1, true)
             .thenRun(() -> resetFinished.set(true));
 
         if (!recoveryMode) {
@@ -535,10 +518,6 @@ public class BlockWALService implements WriteAheadLog {
         if (recoveryMode) {
             throw new IllegalStateException("WriteAheadLog is in recovery mode");
         }
-    }
-
-    private boolean isRecoverFinished() {
-        return recoveryCompleteOffset >= 0;
     }
 
     private void checkResetFinished() {
@@ -809,7 +788,6 @@ public class BlockWALService implements WriteAheadLog {
             boolean hasNext = tryReadNextRecord();
             if (!hasNext) {
                 // recovery complete
-                recoveryCompleteOffset = WALUtil.alignLargeByBlockSize(nextRecoverOffset);
                 walChannel.releaseCache();
             }
             return hasNext;
