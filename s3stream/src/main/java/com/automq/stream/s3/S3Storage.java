@@ -35,7 +35,6 @@ import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
-import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -80,11 +79,6 @@ import static com.automq.stream.utils.FutureUtil.suppress;
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
     private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
-    private static boolean enableBurstForceUpload = true;
-
-    static {
-        enableBurstForceUpload = Systems.getEnvInt("AUTOMQ_ENABLE_BURST_FORCE_UPLOAD", 1) == 1;
-    }
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
     private final long maxDeltaWALCacheSize;
@@ -698,7 +692,7 @@ public class S3Storage implements Storage {
         long size = context.cache.size();
         pendingUploadBytes.addAndGet(size);
 
-        if (enableBurstForceUpload && context.force) {
+        if (context.force) {
             // trigger previous task burst.
             inflightWALUploadTasks.forEach(ctx -> {
                 ctx.force = true;
