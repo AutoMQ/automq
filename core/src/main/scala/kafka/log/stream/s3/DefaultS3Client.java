@@ -57,37 +57,41 @@ import org.slf4j.LoggerFactory;
 public class DefaultS3Client implements Client {
     private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     protected final Config config;
-    private final StreamMetadataManager metadataManager;
+    private StreamMetadataManager metadataManager;
 
-    protected final ControllerRequestSender requestSender;
+    protected ControllerRequestSender requestSender;
 
-    protected final WriteAheadLog writeAheadLog;
-    protected final S3Storage storage;
+    protected WriteAheadLog writeAheadLog;
+    protected S3Storage storage;
 
-    protected final ObjectReaderFactory objectReaderFactory;
-    protected final S3BlockCache blockCache;
+    protected ObjectReaderFactory objectReaderFactory;
+    protected S3BlockCache blockCache;
 
-    protected final ObjectManager objectManager;
+    protected ObjectManager objectManager;
 
-    protected final StreamManager streamManager;
+    protected StreamManager streamManager;
 
-    protected final CompactionManager compactionManager;
+    protected CompactionManager compactionManager;
 
-    protected final S3StreamClient streamClient;
+    protected S3StreamClient streamClient;
 
-    protected final KVClient kvClient;
+    protected KVClient kvClient;
 
-    protected final Failover failover;
+    protected Failover failover;
 
-    protected final AsyncNetworkBandwidthLimiter networkInboundLimiter;
-    protected final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
+    protected AsyncNetworkBandwidthLimiter networkInboundLimiter;
+    protected AsyncNetworkBandwidthLimiter networkOutboundLimiter;
 
-    protected final BrokerServer brokerServer;
-    protected final LocalStreamRangeIndexCache localIndexCache;
+    protected BrokerServer brokerServer;
+    protected LocalStreamRangeIndexCache localIndexCache;
 
     public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;
         this.config = config;
+    }
+
+    @Override
+    public void start() {
         BucketURI dataBucket = config.dataBuckets().get(0);
         long refillToken = (long) (config.networkBaselineBandwidth() * ((double) config.refillPeriodMs() / 1000));
         if (refillToken <= 0) {
@@ -132,31 +136,7 @@ public class DefaultS3Client implements Client {
 
         S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
         S3StreamThreadPoolMonitor.init();
-    }
 
-    protected WriteAheadLog buildWAL() {
-        IdURI uri = IdURI.parse(config.walConfig());
-        switch (uri.protocol()) {
-            case "file":
-                return BlockWALService.builder(uri).config(config).build();
-            case "s3":
-                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(config.walConfig()))
-                    .tagging(config.objectTagging())
-                    .build();
-
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
-                    .withClusterId(brokerServer.clusterId())
-                    .withNodeId(config.nodeId())
-                    .withEpoch(config.nodeEpoch());
-
-                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
-            default:
-                throw new IllegalArgumentException("Invalid WAL schema: " + uri.protocol());
-        }
-    }
-
-    @Override
-    public void start() {
         this.storage.startup();
         this.compactionManager.start();
         LOGGER.info("S3Client started");
@@ -186,6 +166,27 @@ public class DefaultS3Client implements Client {
     @Override
     public CompletableFuture<FailoverResponse> failover(FailoverRequest request) {
         return this.failover.failover(request);
+    }
+
+    protected WriteAheadLog buildWAL() {
+        IdURI uri = IdURI.parse(config.walConfig());
+        switch (uri.protocol()) {
+            case "file":
+                return BlockWALService.builder(uri).config(config).build();
+            case "s3":
+                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(config.walConfig()))
+                    .tagging(config.objectTagging())
+                    .build();
+
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
+                    .withClusterId(brokerServer.clusterId())
+                    .withNodeId(config.nodeId())
+                    .withEpoch(config.nodeEpoch());
+
+                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
+            default:
+                throw new IllegalArgumentException("Invalid WAL schema: " + uri.protocol());
+        }
     }
 
     protected StreamManager newStreamManager(int nodeId, long nodeEpoch, boolean failoverMode) {
