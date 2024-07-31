@@ -5,7 +5,7 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
- * 
+ *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -21,10 +21,12 @@ import com.automq.shell.AutoMQApplication
 import com.automq.shell.log.{LogUploader, S3LogConfig}
 import com.automq.stream.s3.ByteBufAlloc
 import joptsimple.OptionParser
+import kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter
 import kafka.automq.StorageUtil
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
 import kafka.utils.{Exit, Logging}
+import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.common.utils._
 import org.apache.kafka.server.util.CommandLineUtils
 
@@ -100,10 +102,23 @@ object Kafka extends Logging {
     }
   }
 
+  private def addDefaultProps(properties: Properties): Unit = {
+    var metricsReporters = properties.getProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG)
+    if (metricsReporters == null) {
+      properties.setProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG, classOf[AutoBalancerMetricsReporter].getName)
+      return
+    }
+    if (!metricsReporters.contains(classOf[AutoBalancerMetricsReporter].getName)) {
+      metricsReporters = metricsReporters + "," + classOf[AutoBalancerMetricsReporter].getName
+      properties.setProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG, metricsReporters)
+    }
+  }
+
   def main(args: Array[String]): Unit = {
     try {
       // AutoMQ for Kafka inject start
       val serverProps = getPropsFromArgs(args)
+      addDefaultProps(serverProps)
       StorageUtil.formatStorage(serverProps)
       val server = buildServer(serverProps)
       AutoMQApplication.registerSingleton(classOf[Server], server)
