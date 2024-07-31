@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -57,7 +57,7 @@ public class ElasticTimeIndexTest {
         ElasticTimeIndex idx1 = new ElasticTimeIndex(TestUtils.tempFile(), baseOffset, maxEntries * 12,
             new IStreamSliceSupplier(slice1), TimestampOffset.UNKNOWN, cache);
         long now = System.currentTimeMillis();
-        idx1.maybeAppend(System.currentTimeMillis(), 100L, false);
+        idx1.maybeAppend(now, 100L, false);
         TimestampOffset to = idx1.tryGetEntryFromCache(0);
         Assertions.assertEquals(now, to.timestamp);
         Assertions.assertEquals(100L, to.offset);

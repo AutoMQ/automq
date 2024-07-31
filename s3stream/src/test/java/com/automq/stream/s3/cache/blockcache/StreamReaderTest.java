@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -11,11 +11,15 @@
 
 package com.automq.stream.s3.cache.blockcache;
 
+import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.threads.EventLoop;
 import java.util.HashMap;
@@ -97,7 +101,17 @@ public class StreamReaderTest {
 
         objectManager = mock(ObjectManager.class);
         when(objectManager.isObjectExist(anyLong())).thenReturn(true);
-        objectReaderFactory = m -> objects.get(m.objectId()).objectReader();
+        objectReaderFactory = new ObjectReaderFactory() {
+            @Override
+            public ObjectReader get(S3ObjectMetadata metadata) {
+                return objects.get(metadata.objectId()).objectReader();
+            }
+
+            @Override
+            public ObjectStorage getObjectStorage() {
+                return mock(MemoryObjectStorage.class);
+            }
+        };
         dataBlockCache = spy(new DataBlockCache(Long.MAX_VALUE, eventLoops));
         streamReader = new StreamReader(STREAM_ID, 0, eventLoops[0], objectManager, objectReaderFactory, dataBlockCache);
     }
@@ -113,6 +127,7 @@ public class StreamReaderTest {
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(0, 29, 21))).get();
         ReadDataBlock rst = readCf.get().get();
+        waitForStreamReaderUpdate();
         assertEquals(3, rst.getRecords().size());
         assertEquals(0, rst.getRecords().get(0).getBaseOffset());
         assertEquals(1, rst.getRecords().get(1).getBaseOffset());
@@ -141,6 +156,7 @@ public class StreamReaderTest {
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(3L, 29L, 1))).get();
         rst = readCf.get().get();
+        waitForStreamReaderUpdate();
         assertEquals(1, rst.getRecords().size());
         assertEquals(3, rst.getRecords().get(0).getBaseOffset());
         rst.getRecords().forEach(StreamRecordBatch::release);
@@ -157,6 +173,7 @@ public class StreamReaderTest {
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(4L, 29L, 1))).get();
         rst = readCf.get().get();
+        waitForStreamReaderUpdate();
         assertEquals(1, rst.getRecords().size());
         assertEquals(4, rst.getRecords().get(0).getBaseOffset());
         rst.getRecords().forEach(StreamRecordBatch::release);
@@ -172,6 +189,7 @@ public class StreamReaderTest {
 
         eventLoops[0].submit(() -> readCf.set(streamReader.read(5L, 14L, Integer.MAX_VALUE))).get();
         rst = readCf.get().get();
+        waitForStreamReaderUpdate();
         assertEquals(9, rst.getRecords().size());
         rst.getRecords().forEach(StreamRecordBatch::release);
         // - load more index
@@ -202,6 +220,19 @@ public class StreamReaderTest {
         }).when(objectManager).isObjectExist(anyLong());
         eventLoops[0].submit(() -> readCf.set(streamReader.read(14L, 15L, Integer.MAX_VALUE))).get();
 
+    }
+
+    public void waitForStreamReaderUpdate() throws ExecutionException, InterruptedException {
+        // The order of waiting cannot be changed
+        CompletableFuture<Void> afterReadTryReadaheadCf = streamReader.getAfterReadTryReadaheadCf();
+        if (afterReadTryReadaheadCf != null) {
+            afterReadTryReadaheadCf.get();
+        }
+
+        CompletableFuture<Void> inflightReadaheadCf = streamReader.getReadaheadInflightReadaheadCf();
+        if (inflightReadaheadCf != null) {
+            inflightReadaheadCf.get();
+        }
     }
 
 }

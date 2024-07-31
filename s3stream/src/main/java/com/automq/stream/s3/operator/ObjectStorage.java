@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface ObjectStorage {
+    long RANGE_READ_TO_END = -1L;
 
     void close();
 
@@ -27,7 +28,16 @@ public interface ObjectStorage {
     Writer writer(WriteOptions options, String objectPath);
 
     /**
-     * Range read object from the object.
+     * Read object from the object storage.
+     * It will throw {@link ObjectNotFoundException} if the object not found.
+     */
+    default CompletableFuture<ByteBuf> read(ReadOptions options, String objectPath) {
+        return rangeRead(options, objectPath, 0, RANGE_READ_TO_END);
+    }
+
+    /**
+     * Range read object from the object storage.
+     * It will throw {@link ObjectNotFoundException} if the object not found.
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
@@ -35,6 +45,9 @@ public interface ObjectStorage {
     CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf);
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
+
+    // NOTE: this is a temporary method to get bucketId for direct read with object storage interface
+    short bucketId();
 
     /**
      * The deleteObjects API have max batch limit.
@@ -60,6 +73,14 @@ public interface ObjectStorage {
 
         public String key() {
             return key;
+        }
+
+        @Override
+        public String toString() {
+            return "ObjectPath{" +
+                "bucketId=" + bucketId +
+                ", key='" + key + '\'' +
+                '}';
         }
     }
 
@@ -89,6 +110,8 @@ public interface ObjectStorage {
         private int allocType = ByteBufAlloc.DEFAULT;
         private long apiCallAttemptTimeout = -1L;
         private short bucketId;
+        private boolean enableFastRetry;
+        private boolean retry;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -102,6 +125,16 @@ public interface ObjectStorage {
 
         public WriteOptions apiCallAttemptTimeout(long apiCallAttemptTimeout) {
             this.apiCallAttemptTimeout = apiCallAttemptTimeout;
+            return this;
+        }
+
+        public WriteOptions enableFastRetry(boolean enableFastRetry) {
+            this.enableFastRetry = enableFastRetry;
+            return this;
+        }
+
+        public WriteOptions retry(boolean retry) {
+            this.retry = retry;
             return this;
         }
 
@@ -127,12 +160,22 @@ public interface ObjectStorage {
             return bucketId;
         }
 
+        public boolean enableFastRetry() {
+            return enableFastRetry;
+        }
+
+        public boolean retry() {
+            return retry;
+        }
+
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
             copy.allocType = allocType;
             copy.apiCallAttemptTimeout = apiCallAttemptTimeout;
             copy.bucketId = bucketId;
+            copy.enableFastRetry = enableFastRetry;
+            copy.retry = retry;
             return copy;
         }
     }
@@ -171,6 +214,12 @@ public interface ObjectStorage {
 
         public short bucket() {
             return bucket;
+        }
+    }
+
+    class ObjectNotFoundException extends Exception {
+        public ObjectNotFoundException(Throwable cause) {
+            super(cause);
         }
     }
 }

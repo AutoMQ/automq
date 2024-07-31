@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -12,12 +12,14 @@
 package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.sourceforge.argparse4j.ArgumentParsers;
@@ -26,7 +28,6 @@ import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.commons.lang3.time.StopWatch;
 
 import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
-import static com.automq.stream.s3.wal.benchmark.BenchTool.recoverAndReset;
 import static com.automq.stream.s3.wal.benchmark.BenchTool.resetWALHeader;
 
 /**
@@ -40,6 +41,16 @@ public class RecoveryBench implements AutoCloseable {
     public RecoveryBench(Config config) throws IOException {
         this.log = BlockWALService.builder(config.path, config.capacity).build().start();
         recoverAndReset(log);
+    }
+
+    private static int recoverAndReset(WriteAheadLog wal) {
+        int recovered = 0;
+        for (Iterator<RecoverResult> it = wal.recover(); it.hasNext(); ) {
+            it.next().record().release();
+            recovered++;
+        }
+        wal.reset().join();
+        return recovered;
     }
 
     public static void main(String[] args) throws Exception {
@@ -109,9 +120,7 @@ public class RecoveryBench implements AutoCloseable {
 
         static ArgumentParser parser() {
             ArgumentParser parser = ArgumentParsers
-                .newFor("RecoveryBench")
-                .build()
-                .defaultHelp(true)
+                .newArgumentParser("RecoveryBench")
                 .description("Benchmark the recovery performance of BlockWALService");
             parser.addArgument("-p", "--path")
                 .required(true)

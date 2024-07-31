@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2024, AutoMQ CO.,LTD.
+  ~ Copyright 2024, AutoMQ HK Limited.
   ~
-  ~ Use of this software is governed by the Business Source License
-  ~ included in the file BSL.md
+  ~ The use of this file is governed by the Business Source License,
+  ~ as detailed in the file "/LICENSE.S3Stream" included in this repository.
   ~
   ~ As of the Change Date specified in that file, in accordance with
   ~ the Business Source License, use of this software will be governed
@@ -90,7 +90,7 @@
         <dependency>
             <groupId>net.sourceforge.argparse4j</groupId>
             <artifactId>argparse4j</artifactId>
-            <version>0.9.0</version>
+            <version>0.7.0</version>
         </dependency>
         <dependency>
             <groupId>net.java.dev.jna</groupId>

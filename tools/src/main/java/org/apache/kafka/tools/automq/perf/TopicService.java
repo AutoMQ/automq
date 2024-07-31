@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -11,6 +11,7 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -34,8 +35,10 @@ public class TopicService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicService.class);
     private final Admin admin;
 
-    public TopicService(String bootstrapServer) {
-        this.admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer));
+    public TopicService(String bootstrapServer, Map<String, String> adminConfigs) {
+        Map<String, Object> configs = new HashMap<>(adminConfigs);
+        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
+        this.admin = Admin.create(configs);
     }
 
     /**

@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -252,27 +252,25 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     @Override
     public CompletableFuture<FetchDataInfo> readAsync(long startOffset, int maxSize, Optional<Long> maxPositionOpt, long maxOffset,
         boolean minOneMessage) {
-        // TODO: isolate the log clean read to another method
         if (maxSize < 0)
             return CompletableFuture.failedFuture(new IllegalArgumentException("Invalid max size " + maxSize + " for log read from segment " + log));
         // Note that relativePositionInSegment here is a fake value. There are no 'position' in elastic streams.
-        LogOffsetMetadata offsetMetadata = new LogOffsetMetadata(startOffset, baseOffset, (int) (startOffset - baseOffset));
-        if (maxSize == 0) {
+
+        // if the start offset is already off the end of the log, return null
+        if (startOffset >= log.nextOffset()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        LogOffsetMetadata offsetMetadata = new LogOffsetMetadata(startOffset, this.baseOffset, (int) (startOffset - this.baseOffset));
+
+        int adjustedMaxSize = minOneMessage ? Math.max(maxSize, 1) : maxSize;
+
+        // return a log segment but with zero size in the case below
+        if (adjustedMaxSize == 0) {
             return CompletableFuture.completedFuture(new FetchDataInfo(offsetMetadata, MemoryRecords.EMPTY));
         }
-        // Note that 'maxPosition' and 'minOneMessage' are not used here. 'maxOffset' is a better alternative to 'maxPosition'.
-        // 'minOneMessage' is also not used because we always read at least one message ('maxSize' is just a hint in ES SDK).
+
         return log.read(startOffset, maxOffset, maxSize)
-            .thenApply(records -> {
-                if (ReadHint.isReadAll() && records.sizeInBytes() == 0) {
-                    // After topic compact, the read request might be out of range. Segment should return null and log will retry read next segment.
-                    return null;
-                } else {
-                    // We keep 'firstEntryIncomplete' false here since real size of records may exceed 'maxSize'. It is some kind of
-                    // hack but we don't want to return 'firstEntryIncomplete' as true in that case.
-                    return new FetchDataInfo(offsetMetadata, records);
-                }
-            });
+            .thenApply(records -> new FetchDataInfo(offsetMetadata, records));
     }
 
     @Override
@@ -540,7 +538,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
             return new Iterator<>() {
                 @Override
                 public boolean hasNext() {
-                    for (;;) {
+                    for (; ; ) {
                         Iterator<Record> recordIt = recordItRef.get();
                         if (recordIt == null) {
                             if (!recordBatchIt.hasNext()) {

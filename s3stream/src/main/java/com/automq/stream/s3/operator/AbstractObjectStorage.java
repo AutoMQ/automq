@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -21,6 +21,7 @@ import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -29,6 +30,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -42,14 +44,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
+import java.util.function.BiFunction;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
     static final Logger LOGGER = LoggerFactory.getLogger(AbstractObjectStorage.class);
+    private static final int DEFAULT_RETRY_DELAY = 100;
     private static final AtomicInteger INDEX = new AtomicInteger(-1);
     private static final int DEFAULT_CONCURRENCY_PER_CORE = 25;
     private static final int MIN_CONCURRENCY = 50;
@@ -60,9 +65,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final Semaphore inflightReadLimiter;
     private final Semaphore inflightWriteLimiter;
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
-    private final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
-    private final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
-    private final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+    protected final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
+    protected final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
+    protected final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-write-limiter-cb-executor", true, LOGGER);
     private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
         "s3-read-cb-executor", true, LOGGER);
@@ -72,8 +77,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
     final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("objectStorage", true), LOGGER);
+    private final HashedWheelTimer fastRetryTimer = new HashedWheelTimer(
+        ThreadUtils.createThreadFactory("s3-fast-retry-timer", true), 10, TimeUnit.MILLISECONDS, 1000);
+
+    private final DeleteObjectsAccumulator deleteObjectsAccumulator;
     final boolean checkS3ApiMode;
     protected final BucketURI bucketURI;
+    private final S3LatencyCalculator s3LatencyCalculator;
 
     protected AbstractObjectStorage(
         BucketURI bucketURI,
@@ -98,6 +108,16 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         checkConfig();
         S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
+
+        this.deleteObjectsAccumulator = new DeleteObjectsAccumulator(this::doDeleteObjects);
+        this.deleteObjectsAccumulator.start();
+
+        s3LatencyCalculator = new S3LatencyCalculator(
+            new long[] {
+                1024, 16 * 1024, 64 * 1024, 256 * 1024, 512 * 1024,
+                1024 * 1024, 2 * 1024 * 1024, 3 * 1024 * 1024, 4 * 1024 * 1024, 5 * 1024 * 1024, 8 * 1024 * 1024,
+                12 * 1024 * 1024, 16 * 1024 * 1024, 32 * 1024 * 1024},
+            Duration.ofSeconds(3).toMillis());
     }
 
     public AbstractObjectStorage(BucketURI bucketURI,
@@ -121,7 +141,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         if (!bucketCheck(options.bucket(), cf)) {
             return cf;
         }
-        if (end != -1L && start > end) {
+        if (end != RANGE_READ_TO_END && start > end) {
             IllegalArgumentException ex = new IllegalArgumentException();
             LOGGER.error("[UNEXPECTED] rangeRead [{}, {})", start, end, ex);
             cf.completeExceptionally(ex);
@@ -131,10 +151,32 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return cf;
         }
 
-        TimerUtil timerUtil = new TimerUtil();
-        networkInboundBandwidthLimiter.consume(options.throttleStrategy(), end - start).whenComplete((v, ex) -> {
-            NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, options.throttleStrategy())
-                .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        BiFunction<ThrottleStrategy, Long, CompletableFuture<Void>> networkInboundBandwidthLimiterFunction =
+            (throttleStrategy, size) -> {
+                long startTime = System.nanoTime();
+                return networkInboundBandwidthLimiter.consume(throttleStrategy, size)
+                    .whenComplete((v, ex) ->
+                        NetworkStats.getInstance()
+                            .networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, throttleStrategy)
+                            .record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+
+            };
+
+        long acquiredSize = end - start;
+
+        if (end == RANGE_READ_TO_END) {
+            // we don't know the size so acquire size 1 first.
+            acquiredSize = 1;
+
+            // when read complete use bypass to forceConsume limiter token.
+            cf.whenComplete((data, ex) -> {
+                if (ex == null && data.readableBytes() - 1 > 0) {
+                    networkInboundBandwidthLimiterFunction.apply(ThrottleStrategy.BYPASS, (long) (data.readableBytes() - 1));
+                }
+            });
+        }
+
+        networkInboundBandwidthLimiterFunction.apply(options.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
             if (ex != null) {
                 cf.completeExceptionally(ex);
             } else {
@@ -143,6 +185,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 }
             }
         });
+
         Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end), 1, TimeUnit.MINUTES);
         return cf.whenComplete((rst, ex) -> timeout.cancel());
     }
@@ -152,6 +195,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
         if (retCf.isDone()) {
+            data.release();
             return retCf;
         }
         TimerUtil timerUtil = new TimerUtil();
@@ -161,6 +205,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, options.throttleStrategy())
                     .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 if (ex != null) {
+                    data.release();
                     cf.completeExceptionally(ex);
                 } else {
                     write0(options, objectPath, data, cf);
@@ -169,27 +214,72 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return retCf;
     }
 
+    private void recordWriteStats(String path, long objectSize, TimerUtil timerUtil) {
+        s3LatencyCalculator.record(objectSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+        S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
+        S3OperationStats.getInstance().putObjectStats(objectSize, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        }
+    }
+
     private void write0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> cf) {
         TimerUtil timerUtil = new TimerUtil();
         long objectSize = data.readableBytes();
-        doWrite(options, path, data).thenAccept(nil -> {
-            S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
-            S3OperationStats.getInstance().putObjectStats(objectSize, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            }
+
+        CompletableFuture<Void> writeCf = doWrite(options, path, data);
+        AtomicBoolean completedFlag = new AtomicBoolean(false);
+        WriteOptions retryOptions = options.copy().retry(true);
+
+        // Fast retry should only be triggered by the original request.
+        long delayMillis = s3LatencyCalculator.valueAtPercentile(objectSize, 99);
+
+        if (options.enableFastRetry() && delayMillis > 0 && !options.retry()) {
+            data.retain();
+            fastRetryTimer.newTimeout(timeout -> {
+                if (writeCf != null && !writeCf.isDone()) {
+                    TimerUtil retryTimerUtil = new TimerUtil();
+                    doWrite(retryOptions, path, data).thenAccept(nil -> {
+                        recordWriteStats(path, objectSize, retryTimerUtil);
+                        data.release();
+                        if (completedFlag.compareAndSet(false, true)) {
+                            cf.complete(null);
+                            LOGGER.info("Fast retry: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
+                        } else {
+                            LOGGER.info("Fast retry but duplicated: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
+                        }
+                    }).exceptionally(ignore -> {
+                        data.release();
+                        // The fast retry request will not retry again.
+                        S3OperationStats.getInstance().putObjectStats(objectSize, false).record(retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                        return null;
+                    });
+                } else {
+                    data.release();
+                }
+            }, delayMillis, TimeUnit.MILLISECONDS);
+        }
+
+        writeCf.thenAccept(nil -> {
+            recordWriteStats(path, objectSize, timerUtil);
             data.release();
-            cf.complete(null);
+            if (completedFlag.compareAndSet(false, true)) {
+                cf.complete(null);
+            }
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.PUT_OBJECT);
+            Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.PUT_OBJECT);
+            RetryStrategy retryStrategy = strategyAndCause.getLeft();
+            Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                LOGGER.error("PutObject for object {} fail", path, ex);
-                cf.completeExceptionally(ex);
+                LOGGER.error("PutObject for object {} fail", path, cause);
                 data.release();
+                if (completedFlag.compareAndSet(false, true)) {
+                    cf.completeExceptionally(cause);
+                }
             } else {
-                LOGGER.warn("PutObject for object {} fail, retry later", path, ex);
-                scheduler.schedule(() -> write0(options, path, data, cf), 100, TimeUnit.MILLISECONDS);
+                LOGGER.warn("PutObject for object {} fail, retry later", path, cause);
+                scheduler.schedule(() -> write0(retryOptions, path, data, cf), retryDelay(S3Operation.PUT_OBJECT), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -212,13 +302,15 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(uploadId);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().createMultiPartUploadStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.CREATE_MULTI_PART_UPLOAD);
+            Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.CREATE_MULTI_PART_UPLOAD);
+            RetryStrategy retryStrategy = strategyAndCause.getLeft();
+            Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                LOGGER.error("CreateMultipartUpload for object {} fail", path, ex);
-                cf.completeExceptionally(ex);
+                LOGGER.error("CreateMultipartUpload for object {} fail", path, cause);
+                cf.completeExceptionally(cause);
             } else {
-                LOGGER.warn("CreateMultipartUpload for object {} fail, retry later", path, ex);
-                scheduler.schedule(() -> createMultipartUpload0(options, path, cf), 100, TimeUnit.MILLISECONDS);
+                LOGGER.warn("CreateMultipartUpload for object {} fail, retry later", path, cause);
+                scheduler.schedule(() -> createMultipartUpload0(options, path, cf), retryDelay(S3Operation.CREATE_MULTI_PART_UPLOAD), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -229,12 +321,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         CompletableFuture<ObjectStorageCompletedPart> cf = new CompletableFuture<>();
         CompletableFuture<ObjectStorageCompletedPart> refCf = acquireWritePermit(cf);
         if (refCf.isDone()) {
+            data.release();
             return refCf;
         }
         networkOutboundBandwidthLimiter
             .consume(options.throttleStrategy(), data.readableBytes())
             .whenCompleteAsync((v, ex) -> {
                 if (ex != null) {
+                    data.release();
                     cf.completeExceptionally(ex);
                 } else {
                     uploadPart0(options, path, uploadId, partNumber, data, cf);
@@ -254,14 +348,16 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(part);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().uploadPartStats(size, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.UPLOAD_PART);
+            Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.UPLOAD_PART);
+            RetryStrategy retryStrategy = strategyAndCause.getLeft();
+            Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, ex);
+                LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, cause);
                 data.release();
-                cf.completeExceptionally(ex);
+                cf.completeExceptionally(cause);
             } else {
-                LOGGER.warn("UploadPart for object {}-{} fail, retry later", path, partNumber, ex);
-                scheduler.schedule(() -> uploadPart0(options, path, uploadId, partNumber, data, cf), 100, TimeUnit.MILLISECONDS);
+                LOGGER.warn("UploadPart for object {}-{} fail, retry later", path, partNumber, cause);
+                scheduler.schedule(() -> uploadPart0(options, path, uploadId, partNumber, data, cf), retryDelay(S3Operation.UPLOAD_PART), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -287,15 +383,17 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(part);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().uploadPartCopyStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.UPLOAD_PART_COPY);
+            Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.UPLOAD_PART_COPY);
+            RetryStrategy retryStrategy = strategyAndCause.getLeft();
+            Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail", path, partNumber, start, end, ex);
-                cf.completeExceptionally(ex);
+                LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail", path, partNumber, start, end, cause);
+                cf.completeExceptionally(cause);
             } else {
                 long nextApiCallAttemptTimeout = Math.min(options.apiCallAttemptTimeout() * 2, TimeUnit.MINUTES.toMillis(10));
-                LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail, retry later with apiCallAttemptTimeout={}", path, partNumber, start, end, nextApiCallAttemptTimeout, ex);
+                LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail, retry later with apiCallAttemptTimeout={}", path, partNumber, start, end, nextApiCallAttemptTimeout, cause);
                 options.apiCallAttemptTimeout(nextApiCallAttemptTimeout);
-                scheduler.schedule(() -> uploadPartCopy0(options, sourcePath, path, start, end, uploadId, partNumber, cf), 1000, TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> uploadPartCopy0(options, sourcePath, path, start, end, uploadId, partNumber, cf), retryDelay(S3Operation.UPLOAD_PART_COPY), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -320,10 +418,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.complete(null);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().completeMultiPartUploadStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.COMPLETE_MULTI_PART_UPLOAD);
+            Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.COMPLETE_MULTI_PART_UPLOAD);
+            RetryStrategy retryStrategy = strategyAndCause.getLeft();
+            Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                LOGGER.error("CompleteMultipartUpload for object {} fail", path, ex);
-                cf.completeExceptionally(ex);
+                LOGGER.error("CompleteMultipartUpload for object {} fail", path, cause);
+                cf.completeExceptionally(cause);
             } else if (!checkPartNumbers(parts)) {
                 LOGGER.error("CompleteMultipartUpload for object {} fail, part numbers are not continuous", path);
                 cf.completeExceptionally(new IllegalArgumentException("Part numbers are not continuous"));
@@ -331,15 +431,15 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(options.bucketId()), path, 0, 1)
                     .whenComplete((nil, t) -> {
                         if (t != null) {
-                            LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, ex);
-                            scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), 100, TimeUnit.MILLISECONDS);
+                            LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, cause);
+                            scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), retryDelay(S3Operation.COMPLETE_MULTI_PART_UPLOAD), TimeUnit.MILLISECONDS);
                         } else {
                             cf.complete(null);
                         }
                     });
             } else {
-                LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, ex);
-                scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), 100, TimeUnit.MILLISECONDS);
+                LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, cause);
+                scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), retryDelay(S3Operation.COMPLETE_MULTI_PART_UPLOAD), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -351,32 +451,15 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return CompletableFuture.completedFuture(null);
         }
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        for (ObjectPath objectPath: objectPaths) {
+        for (ObjectPath objectPath : objectPaths) {
             if (!bucketCheck(objectPath.bucketId(), cf)) {
+                LOGGER.error("[BUG] {} bucket check fail, expect {}", objectPath, bucketId());
                 return cf;
             }
         }
-        TimerUtil timerUtil = new TimerUtil();
-        List<String> objectKeys = objectPaths.stream().map(ObjectPath::key).collect(Collectors.toList());
-        this.doDeleteObjects(objectKeys).thenAccept(nil -> {
-            LOGGER.info("Delete objects finished, count: {}, cost: {}ms", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-            S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            cf.complete(null);
-        }).exceptionally(ex -> {
-            if (ex instanceof DeleteObjectsException) {
-                DeleteObjectsException deleteObjectsException = (DeleteObjectsException) ex;
-                LOGGER.warn("Delete objects failed, count: {}, cost: {}, failedKeys: {}",
-                    deleteObjectsException.getFailedKeys().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS),
-                    deleteObjectsException.getFailedKeys());
-            } else {
-                S3OperationStats.getInstance().deleteObjectsStats(false)
-                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                LOGGER.info("Delete objects failed, count: {}, cost: {}, ex: {}",
-                    objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
-            }
-            cf.completeExceptionally(ex);
-            return null;
-        });
+
+        deleteObjectsAccumulator.batchOrSubmitDeleteRequests(objectPaths, cf);
+
         return cf;
     }
 
@@ -396,9 +479,19 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     @Override
+    public short bucketId() {
+        return bucketURI == null ? 0 : bucketURI.bucketId();
+    }
+
+    @Override
     public void close() {
+        writeLimiterCallbackExecutor.shutdown();
         readCallbackExecutor.shutdown();
+        writeCallbackExecutor.shutdown();
         scheduler.shutdown();
+        timeoutDetect.stop();
+        fastRetryTimer.stop();
+        deleteObjectsAccumulator.stop();
         doClose();
     }
 
@@ -419,11 +512,20 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     abstract CompletableFuture<Void> doDeleteObjects(List<String> objectKeys);
 
-    abstract RetryStrategy toRetryStrategy(Throwable ex, S3Operation operation);
+    abstract Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation);
 
     abstract void doClose();
 
     abstract CompletableFuture<List<ObjectInfo>> doList(String prefix);
+
+    protected int retryDelay(S3Operation operation) {
+        switch (operation) {
+            case UPLOAD_PART_COPY:
+                return 1000;
+            default:
+                return DEFAULT_RETRY_DELAY;
+        }
+    }
 
     private static boolean checkPartNumbers(List<ObjectStorageCompletedPart> parts) {
         Optional<Integer> maxOpt = parts.stream().map(ObjectStorageCompletedPart::getPartNumber).max(Integer::compareTo);
@@ -504,21 +606,25 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         TimerUtil timerUtil = new TimerUtil();
         long size = end - start;
         doRangeRead(options, path, start, end).thenAccept(buf -> {
+            // the end may be RANGE_READ_TO_END (-1) for read all object
+            long dataSize = buf.readableBytes();
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
-                    path, start, end, size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                    path, start, end, dataSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             }
-            S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, size);
-            S3OperationStats.getInstance().getObjectStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, dataSize);
+            S3OperationStats.getInstance().getObjectStats(dataSize, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             cf.complete(buf);
         }).exceptionally(ex -> {
-            RetryStrategy retryStrategy = toRetryStrategy(ex, S3Operation.GET_OBJECT);
+            Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.GET_OBJECT);
+            RetryStrategy retryStrategy = strategyAndCause.getLeft();
+            Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, ex);
-                cf.completeExceptionally(ex);
+                LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, cause);
+                cf.completeExceptionally(cause);
             } else {
-                LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, ex);
-                scheduler.schedule(() -> mergedRangeRead0(options, path, start, end, cf), 100, TimeUnit.MILLISECONDS);
+                LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, cause);
+                scheduler.schedule(() -> mergedRangeRead0(options, path, start, end, cf), retryDelay(S3Operation.GET_OBJECT), TimeUnit.MILLISECONDS);
             }
             S3OperationStats.getInstance().getObjectStats(size, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return null;
@@ -600,6 +706,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     protected <T> boolean bucketCheck(int bucketId, CompletableFuture<T> cf) {
+        if (bucketId == ObjectAttributes.MATCH_ALL_BUCKET) {
+            return true;
+        }
         if (bucketId != bucketURI.bucketId()) {
             cf.completeExceptionally(new IllegalArgumentException(String.format("bucket not match, expect %d, actual %d",
                 bucketURI.bucketId(), bucketId)));
@@ -681,24 +790,29 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         private boolean canMerge(AbstractObjectStorage.ReadTask readTask) {
             return objectPath != null &&
-                objectPath.equals(readTask.objectPath) &&
-                dataSparsityRate <= this.maxMergeReadSparsityRate &&
-                readTask.end != -1;
+                   objectPath.equals(readTask.objectPath) &&
+                   dataSparsityRate <= this.maxMergeReadSparsityRate &&
+                   readTask.end != RANGE_READ_TO_END;
         }
 
         void handleReadCompleted(ByteBuf rst, Throwable ex) {
             if (ex != null) {
                 readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
             } else {
+                ArrayList<ByteBuf> sliceByteBufList = new ArrayList<>();
                 for (AbstractObjectStorage.ReadTask readTask : readTasks) {
                     int sliceStart = (int) (readTask.start - start);
-                    if (readTask.end == -1L) {
-                        readTask.cf.complete(rst.retainedSlice(sliceStart, rst.readableBytes()));
+                    if (readTask.end == RANGE_READ_TO_END) {
+                        sliceByteBufList.add(rst.retainedSlice(sliceStart, rst.readableBytes()));
                     } else {
-                        readTask.cf.complete(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));
+                        sliceByteBufList.add(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));
                     }
                 }
                 rst.release();
+                for (int i = 0; i < readTasks.size(); i++) {
+                    readTasks.get(i).cf.complete(sliceByteBufList.get(i));
+                }
+
             }
         }
     }
@@ -746,9 +860,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return false;
             var that = (AbstractObjectStorage.ReadTask) obj;
             return Objects.equals(this.objectPath, that.objectPath) &&
-                this.start == that.start &&
-                this.end == that.end &&
-                Objects.equals(this.cf, that.cf);
+                   this.start == that.start &&
+                   this.end == that.end &&
+                   Objects.equals(this.cf, that.cf);
         }
 
         @Override
@@ -759,10 +873,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         @Override
         public String toString() {
             return "ReadTask[" +
-                "s3ObjectMetadata=" + objectPath + ", " +
-                "start=" + start + ", " +
-                "end=" + end + ", " +
-                "cf=" + cf + ']';
+                   "s3ObjectMetadata=" + objectPath + ", " +
+                   "start=" + start + ", " +
+                   "end=" + end + ", " +
+                   "cf=" + cf + ']';
         }
     }
 

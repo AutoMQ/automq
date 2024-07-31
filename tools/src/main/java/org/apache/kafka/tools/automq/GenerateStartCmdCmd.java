@@ -28,7 +28,6 @@ import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 import org.apache.kafka.tools.automq.util.ConfigParserUtil;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
-import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_CONFIG_PROPERTIES_CMD;
 import static org.apache.kafka.tools.automq.AutoMQKafkaAdminTool.GENERATE_S3_URL_CMD;
 
 public class GenerateStartCmdCmd {
@@ -58,9 +57,6 @@ public class GenerateStartCmdCmd {
     }
 
     public static ArgumentParser addArguments(Subparser parser) {
-        parser.addArgument(GENERATE_CONFIG_PROPERTIES_CMD)
-            .action(store())
-            .required(true);
         parser.addArgument("--s3-url")
             .action(store())
             .required(true)
@@ -89,7 +85,7 @@ public class GenerateStartCmdCmd {
             .dest("controller-only-mode")
             .setDefault(false)
             .metavar("CONTROLLER-ONLY-MODE")
-            .help("If this is set to true, all controllers is also seen as broker. If you want to run controller only, set this to true. Default is false.");
+            .help("If this is set to false, all controllers is also seen as broker. If you want to run controller only, set this to true. Default is false.");
         parser.addArgument("--network-baseline-bandwidth-mb")
             .action(store())
             .required(false)

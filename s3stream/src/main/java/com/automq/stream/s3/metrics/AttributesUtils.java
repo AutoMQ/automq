@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -12,23 +12,22 @@
 package com.automq.stream.s3.metrics;
 
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
-import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.opentelemetry.api.common.Attributes;
 
 public class AttributesUtils {
 
-    public static Attributes buildAttributes(S3Operation operation) {
+    public static Attributes buildOperationAttributes(String operationType, String operationName) {
         return Attributes.builder()
-            .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operation.getType().getName())
-            .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operation.getName())
+            .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operationType)
+            .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operationName)
             .build();
     }
 
-    public static Attributes buildAttributes(S3Operation operation, String status) {
+    public static Attributes buildOperationAttributesWithStatus(String operationType, String operationName, String status) {
         return Attributes.builder()
-            .putAll(buildAttributes(operation))
+            .putAll(buildOperationAttributes(operationType, operationName))
             .put(S3StreamMetricsConstant.LABEL_STATUS, status)
             .build();
     }
@@ -60,14 +59,14 @@ public class AttributesUtils {
 
     public static Attributes buildAttributes(S3Stage stage) {
         return Attributes.builder()
-            .putAll(buildAttributes(stage.getOperation()))
+            .putAll(buildOperationAttributes(stage.getOperation().getType().getName(), stage.getOperation().getName()))
             .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
             .build();
     }
 
-    public static Attributes buildAttributes(S3Operation operation, String status, String sizeLabelName) {
+    public static Attributes buildOperationAttributesWithStatusAndSize(String operationType, String operationName, String status, String sizeLabelName) {
         return Attributes.builder()
-            .putAll(buildAttributes(operation, status))
+            .putAll(buildOperationAttributesWithStatus(operationType, operationName, status))
             .put(S3StreamMetricsConstant.LABEL_SIZE_NAME, sizeLabelName)
             .build();
     }

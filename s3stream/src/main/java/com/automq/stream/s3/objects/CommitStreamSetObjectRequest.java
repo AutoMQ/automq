@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -14,6 +14,7 @@ package com.automq.stream.s3.objects;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 
 public class CommitStreamSetObjectRequest {
 
@@ -74,10 +75,7 @@ public class CommitStreamSetObjectRequest {
     }
 
     public List<Long> getCompactedObjectIds() {
-        if (compactedObjectIds == null) {
-            return Collections.emptyList();
-        }
-        return compactedObjectIds;
+        return Objects.requireNonNullElse(compactedObjectIds, Collections.emptyList());
     }
 
     public void setCompactedObjectIds(List<Long> compactedObjectIds) {

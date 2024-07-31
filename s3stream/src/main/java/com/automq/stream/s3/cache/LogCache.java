@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -38,7 +38,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.cache.LogCache.StreamRange.NOOP_OFFSET;
-import static com.automq.stream.s3.model.StreamRecordBatch.OBJECT_OVERHEAD;
 import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class LogCache {
@@ -86,7 +85,7 @@ public class LogCache {
     public boolean put(StreamRecordBatch recordBatch) {
         long startTime = System.nanoTime();
         tryRealFree();
-        size.addAndGet(recordBatch.size() + OBJECT_OVERHEAD);
+        size.addAndGet(recordBatch.occupiedSize());
         readLock.lock();
         boolean full;
         try {
@@ -341,8 +340,7 @@ public class LogCache {
                 cache.add(recordBatch);
                 return cache;
             });
-            int recordSize = recordBatch.size();
-            return size.addAndGet(recordSize + OBJECT_OVERHEAD) >= maxSize || map.size() >= maxStreamCount;
+            return size.addAndGet(recordBatch.occupiedSize()) >= maxSize || map.size() >= maxStreamCount;
         }
 
         public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {

@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -12,18 +12,15 @@
 package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
-import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.util.WALChannel;
 import io.netty.buffer.ByteBuf;
 import java.io.File;
 import java.io.IOException;
-import java.util.Iterator;
-import net.sourceforge.argparse4j.helper.HelpScreenException;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
+import net.sourceforge.argparse4j.internal.HelpScreenException;
 
 import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 
@@ -40,16 +37,6 @@ public class BenchTool {
             System.exit(1);
         }
         return ns;
-    }
-
-    public static int recoverAndReset(WriteAheadLog wal) {
-        int recovered = 0;
-        for (Iterator<RecoverResult> it = wal.recover(); it.hasNext(); ) {
-            it.next().record().release();
-            recovered++;
-        }
-        wal.reset().join();
-        return recovered;
     }
 
     public static void resetWALHeader(String path) throws IOException {

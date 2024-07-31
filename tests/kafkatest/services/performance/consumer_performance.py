@@ -96,6 +96,7 @@ class ConsumerPerformanceService(PerformanceService):
         self.num_fetch_threads = None
         self.group = None
         self.from_latest = None
+        self.timeout = None  # AutoMQ inject
 
         for node in self.nodes:
             node.version = version
@@ -106,6 +107,9 @@ class ConsumerPerformanceService(PerformanceService):
             'topic': self.topic,
             'messages': self.messages,
         }
+
+        if self.timeout is not None:
+            args['timeout'] = self.timeout  # AutoMQ inject
 
         if self.new_consumer:
             if version <= LATEST_0_10_0:

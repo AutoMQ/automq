@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -15,6 +15,7 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
@@ -22,18 +23,24 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.Pair;
 
 public class MemoryObjectStorage extends AbstractObjectStorage {
     private final Map<String, ByteBuf> storage = new ConcurrentHashMap<>();
+    private final Set<String> deleteObjectKeys = new ConcurrentSkipListSet<>();
     private long delay = 0;
     private final short bucketId;
 
     public MemoryObjectStorage(boolean manualMergeRead, short bucketId) {
-        super(BucketURI.parse(bucketId + "@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, manualMergeRead);
+        super(BucketURI.parse(bucketId + "@s3://b"),
+            new RecordTestNetworkBandwidthLimiter(), new RecordTestNetworkBandwidthLimiter(),
+            50, 0, true, false, manualMergeRead);
         this.bucketId = bucketId;
     }
 
@@ -153,15 +160,26 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
-        objectKeys.forEach(storage::remove);
+        for (String objectKey : objectKeys) {
+            if (storage.containsKey(objectKey)) {
+                storage.remove(objectKey);
+                deleteObjectKeys.add(objectKey);
+            }
+        }
+
         return CompletableFuture.completedFuture(null);
     }
 
+    public Set<String> getDeleteObjectKeys() {
+        return this.deleteObjectKeys;
+    }
+
     @Override
-    RetryStrategy toRetryStrategy(Throwable ex, S3Operation operation) {
+    Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
         Throwable cause = FutureUtil.cause(ex);
-        return cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException
+        RetryStrategy strategy = cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException
             ? RetryStrategy.ABORT : RetryStrategy.RETRY;
+        return Pair.of(strategy, cause);
     }
 
     @Override
@@ -196,5 +214,13 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
 
     public void setDelay(long delay) {
         this.delay = delay;
+    }
+
+    public NetworkBandwidthLimiter getNetworkInboundBandwidthLimiter() {
+        return this.networkInboundBandwidthLimiter;
+    }
+
+    public NetworkBandwidthLimiter getNetworkOutboundBandwidthLimiter() {
+        return this.networkOutboundBandwidthLimiter;
     }
 }

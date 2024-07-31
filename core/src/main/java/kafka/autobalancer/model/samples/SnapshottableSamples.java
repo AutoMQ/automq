@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -54,6 +54,9 @@ public class SnapshottableSamples implements Samples {
     }
 
     public Snapshot snapshot() {
+        if (this.prev != null) {
+            this.prev.setPrev(null);
+        }
         Snapshot snapshot = new Snapshot(prev, values);
         this.prev = snapshot;
         return snapshot;

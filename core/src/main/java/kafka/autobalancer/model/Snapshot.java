@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -16,9 +16,9 @@ import java.util.Collection;
 
 public class Snapshot {
     public static final double INVALID = -1;
-    private final Snapshot prev;
     private final double[] values;
     private final double latest;
+    private Snapshot prev;
 
     public Snapshot(Snapshot prev, Collection<Double> values) {
         this.prev = prev;
@@ -66,6 +66,10 @@ public class Snapshot {
 
     public Snapshot getPrev() {
         return this.prev;
+    }
+
+    public void setPrev(Snapshot prev) {
+        this.prev = prev;
     }
 
     public int size() {

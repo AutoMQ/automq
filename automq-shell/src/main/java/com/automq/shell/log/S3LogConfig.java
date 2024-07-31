@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -11,7 +11,7 @@
 
 package com.automq.shell.log;
 
-import com.automq.stream.s3.operator.BucketURI;
+import com.automq.stream.s3.operator.ObjectStorage;
 
 public interface S3LogConfig {
 
@@ -23,5 +23,5 @@ public interface S3LogConfig {
 
     int nodeId();
 
-    BucketURI bucket();
+    ObjectStorage objectStorage();
 }

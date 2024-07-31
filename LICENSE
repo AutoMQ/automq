@@ -1,0 +1,29 @@
+Copyright (c) 2023-2024 AutoMQ HK Limited.
+
+this software are licensed as follows:
+
+1. Apache Kafka Source and Dependency Licensing:
+   All code in this repository that is forked from Apache Kafka and its
+   dependencies will continue to be licensed under the original Apache Kafka
+   open source license. For detailed licensing information regarding Apache
+   Kafka and its dependencies, please refer to the files under the "/licenses/"
+   folder in this repository.
+
+2. S3Stream Component Licensing:
+   The S3Stream component added to this project (specifically referring to all
+   files under the "/S3Stream/" directory) is licensed under a revised Business
+   Source License (BSL) by AutoMQ HK Limited, with the specific terms available
+   in the /LICENSE.S3Stream file in this repository. Any dependencies used by
+   the S3Stream component are subject to their respective open source licenses.
+
+3. File-Level License Precedence:
+   For each file in this repository, if the license is explicitly specified in
+   the header of the file, the license stated in the file header shall prevail.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

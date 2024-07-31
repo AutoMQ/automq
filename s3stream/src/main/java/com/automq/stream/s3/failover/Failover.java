@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -13,7 +13,7 @@ package com.automq.stream.s3.failover;
 
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.streams.StreamManager;
-import com.automq.stream.s3.wal.impl.block.BlockWALService;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.WALNotInitializedException;
 import com.automq.stream.utils.FutureUtil;
@@ -74,7 +74,7 @@ public class Failover {
             resp.setNodeId(request.getNodeId());
             // fence the device to ensure the old node stops writing to the delta WAL
             // recover WAL data and upload to S3
-            BlockWALService wal = BlockWALService.recoveryBuilder(request.getDevice()).build();
+            WriteAheadLog wal = factory.getWal(request);
             try {
                 wal.start();
             } catch (WALNotInitializedException ex) {

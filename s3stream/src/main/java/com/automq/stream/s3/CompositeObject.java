@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -76,10 +76,10 @@ public class CompositeObject {
         return new CompositeObjectWriter(writer);
     }
 
-    public static CompletableFuture<Void> delete(S3ObjectMetadata objectMetadata, ObjectStorage objectStorage) {
-        @SuppressWarnings("resource")
-        CompositeObjectReader reader = reader(objectMetadata, objectStorage);
-        // 1. use reader to get all linked object
+    protected static CompletableFuture<Void> deleteWithCompositeObjectReader(
+        S3ObjectMetadata objectMetadata,
+        ObjectStorage objectStorage,
+        CompositeObjectReader reader) {
         return reader.basicObjectInfo().thenCompose(info -> {
             // 2. delete linked object
             List<CompositeObjectReader.ObjectIndex> objectIndexes = ((CompositeObjectReader.BasicObjectInfoExt) info).objectsBlock().indexes();
@@ -96,11 +96,18 @@ public class CompositeObject {
                     ObjectAttributes.from(objectMetadata.attributes()).bucket(), objectMetadata.objectId(), linkedObjects)
             );
         }).thenAccept(rst -> {
-        }).whenComplete((rst, ex) -> {
-            reader.release();
-            if (ex != null) {
-                LOGGER.error("Delete composite object {} fail", objectMetadata, ex);
-            }
         });
+    }
+
+    public static CompletableFuture<Void> delete(S3ObjectMetadata objectMetadata, ObjectStorage objectStorage) {
+        @SuppressWarnings("resource")
+        CompositeObjectReader reader = reader(objectMetadata, objectStorage);
+        return deleteWithCompositeObjectReader(objectMetadata, objectStorage, reader)
+            .whenComplete((rst, ex) -> {
+                reader.release();
+                if (ex != null) {
+                    LOGGER.error("Delete composite object {} fail", objectMetadata, ex);
+                }
+            });
     }
 }

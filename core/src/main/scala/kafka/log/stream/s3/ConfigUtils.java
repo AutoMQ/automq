@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -22,11 +22,8 @@ public class ConfigUtils {
         return new Config()
             .nodeId(s.nodeId())
             .dataBuckets(config.dataBuckets())
-            .walPath(s.s3WALPath())
+            .walConfig(config.walConfig())
             .walCacheSize(s.s3WALCacheSize())
-            .walCapacity(s.s3WALCapacity())
-            .walThread(s.s3WALThread())
-            .walWriteRateLimit(s.s3WALIOPS())
             .walUploadThreshold(s.s3WALUploadThreshold())
             .streamSplitSize(s.s3StreamSplitSize())
             .objectBlockSize(s.s3ObjectBlockSize())
@@ -49,5 +46,4 @@ public class ConfigUtils {
             .refillPeriodMs(s.s3RefillPeriodMsProp())
             .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond());
     }
-
 }

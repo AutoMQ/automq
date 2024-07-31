@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -87,6 +87,7 @@ public class S3StreamMetricsConstant {
     public static final String P99_METRIC_NAME_SUFFIX = "_99p";
     public static final String MAX_METRIC_NAME_SUFFIX = "_max";
     public static final String WAL_START_OFFSET = "wal_start_offset";
+    public static final String WAL_PENDING_UPLOAD_BYTES = "wal_pending_upload_bytes";
     public static final String WAL_TRIMMED_OFFSET = "wal_trimmed_offset";
     public static final String DELTA_WAL_CACHE_SIZE = "delta_wal_cache_size";
     public static final String BLOCK_CACHE_SIZE = "block_cache_size";
@@ -104,6 +105,7 @@ public class S3StreamMetricsConstant {
     public static final String GET_INDEX_TIME_METRIC_NAME = "get_index_time";
     public static final String READ_BLOCK_CACHE_METRIC_NAME = "read_block_cache_stage_time";
     public static final String READ_BLOCK_CACHE_THROUGHPUT_METRIC_NAME = "block_cache_ops_throughput";
+    public static final String COMPACTION_DELAY_TIME_METRIC_NAME = "compaction_delay_time";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
     public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");

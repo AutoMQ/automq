@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -24,11 +24,19 @@ import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
+import java.util.stream.LongStream;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -37,6 +45,8 @@ import static com.automq.stream.s3.metadata.S3StreamConstant.INVALID_TS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @Timeout(60)
 @Tag("S3Unit")
@@ -128,5 +138,87 @@ public class CompositeObjectTest {
             }
         }
         return true;
+    }
+
+    private CompositeObjectReader getCompositeObjectReader(LongSupplier longSupplier, int linkedObjectNumber) {
+        ArrayList<ObjectIndex> list = new ArrayList<>();
+        for (int i = 0; i < linkedObjectNumber; i++) {
+            ObjectIndex index = new ObjectIndex(longSupplier.getAsLong(), 0, 1000, (short) 0);
+            list.add(index);
+        }
+
+        CompositeObjectReader.ObjectsBlock block = mock(CompositeObjectReader.ObjectsBlock.class);
+        when(block.indexes()).then(invocationOnMock -> list);
+
+        BasicObjectInfoExt ext = mock(BasicObjectInfoExt.class);
+        when(ext.objectsBlock()).thenReturn(block);
+
+        CompositeObjectReader reader = mock(CompositeObjectReader.class);
+        when(reader.basicObjectInfo()).thenReturn(CompletableFuture.completedFuture(ext));
+
+        return reader;
+    }
+
+    @Test
+    public void batchDeleteCompositeObject() {
+        MemoryObjectStorage objectStorage = new MemoryObjectStorage();
+        AtomicLong objectId = new AtomicLong(0);
+
+        LongSupplier supplier = objectId::getAndIncrement;
+
+        long compositeObjectNumber = 1002;
+        int linkedObjectNumberPerObject = 200;
+
+        List<CompletableFuture<Void>> cfs = new ArrayList<>();
+
+        List<CompositeObjectReader> readers = new ArrayList<>();
+        List<S3ObjectMetadata> metadataList = new ArrayList<>();
+        for (long l = 0; l < compositeObjectNumber; l++) {
+            CompositeObjectReader compositeObjectReader = getCompositeObjectReader(supplier, linkedObjectNumberPerObject);
+            S3ObjectMetadata metadata = new S3ObjectMetadata(objectId.getAndIncrement(), 1024, S3ObjectType.COMPOSITE);
+
+            readers.add(compositeObjectReader);
+            metadataList.add(metadata);
+        }
+
+        List<CompletableFuture<ObjectStorage.WriteResult>> writeCf = new ArrayList<>();
+        LongStream.range(0, objectId.get()).forEach(id -> {
+            writeCf.add(objectStorage.write(WriteOptions.DEFAULT, ObjectUtils.genKey(0, id), ByteBufAlloc.byteBuffer(10)));
+        });
+
+        try {
+            CompletableFuture.allOf(writeCf.toArray(new CompletableFuture[0])).get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+
+        for (int i = 0; i < readers.size(); i++) {
+            CompositeObjectReader compositeObjectReader = readers.get(i);
+            S3ObjectMetadata metadata = metadataList.get(i);
+
+            CompletableFuture<Void> deleteCf = CompositeObject.deleteWithCompositeObjectReader(metadata, objectStorage, compositeObjectReader);
+            cfs.add(deleteCf);
+        }
+
+        try {
+            CompletableFuture.allOf(cfs.toArray(new CompletableFuture[0])).get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+
+        Set<String> deleteObjectKeys = objectStorage.getDeleteObjectKeys();
+
+        long l = objectId.get();
+
+        // check all object deleted.
+        LongStream.range(0, l).forEach(id -> {
+            String key = ObjectUtils.genKey(0, id);
+            assertTrue(deleteObjectKeys.contains(key), "expected object ");
+        });
+
     }
 }

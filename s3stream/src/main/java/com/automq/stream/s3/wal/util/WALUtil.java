@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -11,9 +11,12 @@
 
 package com.automq.stream.s3.wal.util;
 
+import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -22,12 +25,29 @@ import java.util.concurrent.ExecutionException;
 import java.util.zip.CRC32;
 import jnr.posix.POSIXFactory;
 
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
+
 public class WALUtil {
     public static final String BLOCK_SIZE_PROPERTY = "automq.ebswal.blocksize";
     public static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(
         BLOCK_SIZE_PROPERTY,
         "4096"
     ));
+
+    public static ByteBuf generateRecord(ByteBuf body, int crc, long start) {
+        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
+        crc = 0 == crc ? WALUtil.crc32(body) : crc;
+
+        ByteBuf header = new RecordHeader()
+            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
+            .setRecordBodyLength(body.readableBytes())
+            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
+            .setRecordBodyCRC(crc)
+            .marshal();
+        record.addComponents(true, header, body);
+        return record;
+    }
 
     /**
      * Get CRC32 of the given ByteBuf from current reader index to the end.

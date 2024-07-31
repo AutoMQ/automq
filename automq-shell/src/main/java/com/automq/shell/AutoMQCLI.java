@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -11,28 +11,18 @@
 
 package com.automq.shell;
 
+import com.automq.shell.commands.cluster.Cluster;
 import picocli.CommandLine;
 
-import java.util.concurrent.Callable;
-
 @CommandLine.Command(name = "automq-cli", mixinStandardHelpOptions = true, version = "automq-cli 1.0",
-        description = "Command line tool for maintain AutoMQ cluster(s).")
-public class AutoMQCLI implements Callable<Integer> {
-    @CommandLine.Option(names = {"-b", "--bootstrap-server"}, description = "The Kafka server to connect to.", required = true)
-    public String bootstrapServer;
-    @CommandLine.Option(names = {"-c", "--command-config"}, description = "Property file containing configs to be passed to Admin Client.")
-    public String commandConfig;
-
+    description = "Command line tool for maintain AutoMQ cluster(s).",
+    subcommands = {
+        Cluster.class
+    }
+)
+public class AutoMQCLI {
     public static void main(String... args) {
         int exitCode = new CommandLine(new AutoMQCLI()).execute(args);
         System.exit(exitCode);
-    }
-
-    @Override
-    public Integer call() throws Exception {
-        String warning = CommandLine.Help.Ansi.AUTO.string("@|bold,yellow Please use the subcommand.|@");
-        System.out.println(warning);
-        CommandLine.usage(this, System.out);
-        return 0;
     }
 }

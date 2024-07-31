@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -78,6 +78,7 @@ import static com.automq.stream.utils.FutureUtil.suppress;
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
     private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
+
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
     private final long maxDeltaWALCacheSize;
     private final Config config;
@@ -103,7 +104,7 @@ public class S3Storage implements Storage {
      *
      * @see #forceUpload
      */
-    private final FutureTicker forceUploadTicker = new FutureTicker(500, TimeUnit.MILLISECONDS, backgroundExecutor);
+    private final FutureTicker forceUploadTicker = new FutureTicker(100, TimeUnit.MILLISECONDS, backgroundExecutor);
     private final Queue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
     private final StreamManager streamManager;
@@ -121,6 +122,8 @@ public class S3Storage implements Storage {
     private long lastLogTimestamp = 0L;
     private volatile double maxDataWriteRate = 0.0;
 
+    private final AtomicLong pendingUploadBytes = new AtomicLong(0L);
+
     @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         S3BlockCache blockCache, ObjectStorage objectStorage) {
@@ -134,6 +137,7 @@ public class S3Storage implements Storage {
         this.objectStorage = objectStorage;
         this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
+        S3StreamMetricsManager.registerDeltaWalPendingUploadBytesSupplier(this.pendingUploadBytes::get);
     }
 
     /**
@@ -598,7 +602,8 @@ public class S3Storage implements Storage {
                 callbackSequencer.tryFree(streamId);
             }
         });
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(
+            TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -675,9 +680,24 @@ public class S3Storage implements Storage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         context.cf = cf;
         inflightWALUploadTasks.add(context);
+
+        long size = context.cache.size();
+        pendingUploadBytes.addAndGet(size);
+
+        if (context.force) {
+            // trigger previous task burst.
+            inflightWALUploadTasks.forEach(ctx -> {
+                ctx.force = true;
+                if (ctx.task != null) {
+                    ctx.task.burst();
+                }
+            });
+        }
+
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         cf.whenComplete((nil, ex) -> {
             StorageOperationStats.getInstance().uploadWALCompleteStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+            pendingUploadBytes.addAndGet(-size);
             inflightWALUploadTasks.remove(context);
             if (ex != null) {
                 LOGGER.error("upload delta WAL fail", ex);
@@ -734,7 +754,10 @@ public class S3Storage implements Storage {
             if (next != null) {
                 prepareDeltaWALUpload(next);
             }
-        }, backgroundExecutor);
+        }, backgroundExecutor).exceptionally(ex -> {
+            LOGGER.error("Unexpected exception when prepare commit stream set object", ex);
+            return null;
+        });
     }
 
     private void commitDeltaWALUpload(DeltaWALUploadTaskContext context) {

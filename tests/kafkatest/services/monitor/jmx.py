@@ -40,8 +40,20 @@ class JmxMixin(object):
         self.maximum_jmx_value = {}  # map from object_attribute_name to maximum value observed over time
         self.average_jmx_value = {}  # map from object_attribute_name to average value observed over time
 
+        # AutoMQ inject start
+        self.jmx_windows_size = 11
+        self.jmx_window_max_avg_values = {}  # map from object_attribute_name to the maximum average value observed over windows of time
+        self.average_jmx_value_per_node = []
+        self.maximum_jmx_value_per_node = []
+        # AutoMQ inject end
+
         self.jmx_tool_log = os.path.join(root, "jmx_tool.log")
         self.jmx_tool_err_log = os.path.join(root, "jmx_tool.err.log")
+
+        # AutoMQ inject start
+        self.jmx_start_time_sec = None
+        self.jmx_end_time_sec = None
+        # AutoMQ inject end
 
     def clean_node(self, node, idx=None):
         node.account.kill_java_processes(self.jmx_class_name(self.jmxtool_version(node)), clean_shutdown=False,
@@ -93,7 +105,7 @@ class JmxMixin(object):
         except RemoteCommandError:
             return False
 
-    def read_jmx_output(self, idx, node):
+    def read_jmx_output(self, idx, node, start_time_sec=None, end_time_sec=None):
         if not self.started[idx-1]:
             return
 
@@ -118,22 +130,57 @@ class JmxMixin(object):
         if any(not time_to_stats for time_to_stats in self.jmx_stats):
             return
 
-        start_time_sec = min([min(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
-        end_time_sec = max([max(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
+        if start_time_sec is None:
+            start_time_sec = min([min(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
+            self.jmx_start_time_sec = start_time_sec
+        if end_time_sec is None:
+            end_time_sec = max([max(time_to_stats.keys()) for time_to_stats in self.jmx_stats])
+            self.jmx_end_time_sec = end_time_sec
 
+        self.average_jmx_value_per_node = [{} for _ in self.jmx_stats]
+        self.maximum_jmx_value_per_node = [{} for _ in self.jmx_stats]
         for name in object_attribute_names:
             aggregates_per_time = []
             for time_sec in range(start_time_sec, end_time_sec + 1):
+                # AutoMQ inject start
+                for nid, time_to_stats in enumerate(self.jmx_stats):
+                    value = time_to_stats.get(time_sec, {}).get(name, 0)
+                    if name not in self.average_jmx_value_per_node[nid]:
+                        self.average_jmx_value_per_node[nid][name] = 0
+                        self.maximum_jmx_value_per_node[nid][name] = float('-inf')
+                    self.average_jmx_value_per_node[nid][name] += value
+                    self.maximum_jmx_value_per_node[nid][name] = max(self.maximum_jmx_value_per_node[nid][name], value)
+                # AutoMQ inject end
                 # assume that value is 0 if it is not read by jmx tool at the given time. This is appropriate for metrics such as bandwidth
                 values_per_node = [time_to_stats.get(time_sec, {}).get(name, 0) for time_to_stats in self.jmx_stats]
                 # assume that value is aggregated across nodes by sum. This is appropriate for metrics such as bandwidth
                 aggregates_per_time.append(sum(values_per_node))
             self.average_jmx_value[name] = sum(aggregates_per_time) / len(aggregates_per_time)
             self.maximum_jmx_value[name] = max(aggregates_per_time)
+            # AutoMQ inject start
+            max_avg_value = float('-inf')
+            windows_size = self.jmx_windows_size
+            window_sum = sum(aggregates_per_time[:windows_size])
+            window_count = min(windows_size, len(aggregates_per_time))
+            if window_count > 0:
+                max_avg_value = window_sum / window_count
+            for i in range(windows_size, len(aggregates_per_time)):
+                window_sum -= aggregates_per_time[i - windows_size]
+                window_sum += aggregates_per_time[i]
+                window_avg = window_sum / windows_size
+                if window_avg > max_avg_value:
+                    max_avg_value = window_avg
+            self.jmx_window_max_avg_values[name] = max_avg_value if max_avg_value != float('-inf') else 0
+            # AutoMQ inject end
+        # AutoMQ inject start
+        for nid in range(len(self.average_jmx_value_per_node)):
+            for name in object_attribute_names:
+                self.average_jmx_value_per_node[nid][name] /= (end_time_sec - start_time_sec + 1)
+        # AutoMQ inject end
 
-    def read_jmx_output_all_nodes(self):
+    def read_jmx_output_all_nodes(self, start_time_sec=None, end_time_sec=None):
         for node in self.nodes:
-            self.read_jmx_output(self.idx(node), node)
+            self.read_jmx_output(self.idx(node), node, start_time_sec=start_time_sec, end_time_sec=end_time_sec)
 
     def jmxtool_version(self, node):
         # To correctly wait for requested JMX metrics to be added we need the --wait option for JmxTool. This option was

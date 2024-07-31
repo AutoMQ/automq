@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -34,7 +34,7 @@ class ProxyWriter implements Writer {
     private final AbstractObjectStorage objectStorage;
     private final String path;
     private final long minPartSize;
-    Writer multiPartWriter = null;
+    Writer largeObjectWriter = null;
 
     public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path, long minPartSize) {
         this.writeOptions = writeOptions;
@@ -49,12 +49,12 @@ class ProxyWriter implements Writer {
 
     @Override
     public CompletableFuture<Void> write(ByteBuf part) {
-        if (multiPartWriter != null) {
-            return multiPartWriter.write(part);
+        if (largeObjectWriter != null) {
+            return largeObjectWriter.write(part);
         } else {
             objectWriter.write(part);
             if (objectWriter.isFull()) {
-                newMultiPartWriter();
+                newLargeObjectWriter(writeOptions, objectStorage, path);
             }
             return objectWriter.cf;
         }
@@ -62,8 +62,8 @@ class ProxyWriter implements Writer {
 
     @Override
     public void copyOnWrite() {
-        if (multiPartWriter != null) {
-            multiPartWriter.copyOnWrite();
+        if (largeObjectWriter != null) {
+            largeObjectWriter.copyOnWrite();
         } else {
             objectWriter.copyOnWrite();
         }
@@ -71,16 +71,16 @@ class ProxyWriter implements Writer {
 
     @Override
     public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
-        if (multiPartWriter == null) {
-            newMultiPartWriter();
+        if (largeObjectWriter == null) {
+            newLargeObjectWriter(writeOptions, objectStorage, path);
         }
-        multiPartWriter.copyWrite(s3ObjectMetadata, start, end);
+        largeObjectWriter.copyWrite(s3ObjectMetadata, start, end);
     }
 
     @Override
     public boolean hasBatchingPart() {
-        if (multiPartWriter != null) {
-            return multiPartWriter.hasBatchingPart();
+        if (largeObjectWriter != null) {
+            return largeObjectWriter.hasBatchingPart();
         } else {
             return objectWriter.hasBatchingPart();
         }
@@ -88,8 +88,8 @@ class ProxyWriter implements Writer {
 
     @Override
     public CompletableFuture<Void> close() {
-        if (multiPartWriter != null) {
-            return multiPartWriter.close();
+        if (largeObjectWriter != null) {
+            return largeObjectWriter.close();
         } else {
             return objectWriter.close();
         }
@@ -97,8 +97,8 @@ class ProxyWriter implements Writer {
 
     @Override
     public CompletableFuture<Void> release() {
-        if (multiPartWriter != null) {
-            return multiPartWriter.release();
+        if (largeObjectWriter != null) {
+            return largeObjectWriter.release();
         } else {
             return objectWriter.release();
         }
@@ -109,10 +109,10 @@ class ProxyWriter implements Writer {
         return writeOptions.bucketId();
     }
 
-    private void newMultiPartWriter() {
-        this.multiPartWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
+    protected void newLargeObjectWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path) {
+        this.largeObjectWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
         if (objectWriter.data.readableBytes() > 0) {
-            FutureUtil.propagate(multiPartWriter.write(objectWriter.data), objectWriter.cf);
+            FutureUtil.propagate(largeObjectWriter.write(objectWriter.data), objectWriter.cf);
         } else {
             objectWriter.data.release();
             objectWriter.cf.complete(null);

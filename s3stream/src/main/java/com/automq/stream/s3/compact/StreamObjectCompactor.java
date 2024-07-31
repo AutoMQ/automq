@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -37,12 +37,14 @@ import com.automq.stream.s3.operator.Writer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +60,7 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OFFSET;
 import static com.automq.stream.s3.objects.ObjectAttributes.Type.Composite;
+import static com.automq.stream.s3.objects.ObjectAttributes.Type.Normal;
 
 /**
  * Stream objects compaction task.
@@ -77,16 +80,26 @@ public class StreamObjectCompactor {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectCompactor.class);
     public static final int DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD = 1024 * 1024; // 1MiB
     private static final long MAX_DIRTY_BYTES = 512 * 1024 * 1024;
+    protected static final EnumSet<CompactionType> SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP =
+        EnumSet.of(MINOR, MAJOR, MINOR_V1, MAJOR_V1);
+
     private final Logger s3ObjectLogger;
     private final long maxStreamObjectSize;
     private final Stream stream;
     private final ObjectManager objectManager;
     private final ObjectStorage objectStorage;
     private final int dataBlockGroupSizeThreshold;
+    private final long minorV1CompactionThreshold;
+    private final boolean majorV1CompactionSkipSmallObject;
     private CompactStreamObjectRequest request;
 
-    private StreamObjectCompactor(ObjectManager objectManager, ObjectStorage objectStorage, Stream stream,
-        long maxStreamObjectSize, int dataBlockGroupSizeThreshold) {
+    private StreamObjectCompactor(ObjectManager objectManager,
+                                  ObjectStorage objectStorage,
+                                  Stream stream,
+                                  long maxStreamObjectSize,
+                                  int dataBlockGroupSizeThreshold,
+                                  long minorV1CompactionThreshold,
+                                  boolean majorV1CompactionSkipSmallObject) {
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
         this.stream = stream;
@@ -94,6 +107,8 @@ public class StreamObjectCompactor {
         String logIdent = "[StreamObjectsCompactionTask streamId=" + stream.streamId() + "] ";
         this.s3ObjectLogger = S3ObjectLogger.logger(logIdent);
         this.dataBlockGroupSizeThreshold = dataBlockGroupSizeThreshold;
+        this.minorV1CompactionThreshold = minorV1CompactionThreshold;
+        this.majorV1CompactionSkipSmallObject = majorV1CompactionSkipSmallObject;
     }
 
     public void compact(CompactionType compactionType) {
@@ -110,6 +125,28 @@ public class StreamObjectCompactor {
         } else {
             LOGGER.error("[STREAM_OBJECT_COMPACT_FAIL],[UNEXPECTED],{},type={},req={}", stream.streamId(), compactionType, request, e);
         }
+    }
+
+    protected static Predicate<S3ObjectMetadata> getObjectFilter(CompactionType compactionType, long minMajorV1CompactionSize) {
+        boolean includeCompositeObject = CLEANUP_V1.equals(compactionType) || MAJOR_V1.equals(compactionType);
+
+        return object -> {
+            ObjectAttributes.Type objectType = ObjectAttributes.from(object.attributes()).type();
+            if (!includeCompositeObject && objectType == Composite) {
+                return false;
+            }
+
+            // MAJOR_V1 compaction won't compact small object into composite object.
+            // let MINOR_V1 handle small object merge.
+            // set minMajorV1CompactionSize = 0 to disable this.
+            if (MAJOR_V1.equals(compactionType) &&
+                objectType == Normal &&
+                object.objectSize() < minMajorV1CompactionSize) {
+                return false;
+            }
+
+            return true;
+        };
     }
 
     void compact0(CompactionType compactionType) throws ExecutionException, InterruptedException {
@@ -135,8 +172,10 @@ public class StreamObjectCompactor {
         }
 
         // compact the living objects
-        boolean includeCompositeObject = CLEANUP_V1.equals(compactionType) || MAJOR_V1.equals(compactionType);
-        List<List<S3ObjectMetadata>> objectGroups = group0(livingObjects, getMaxGroupSize(compactionType), includeCompositeObject);
+        List<List<S3ObjectMetadata>> objectGroups = group0(livingObjects,
+            getMaxGroupSize(compactionType),
+            getObjectFilter(compactionType, majorV1CompactionSkipSmallObject ? minorV1CompactionThreshold : 0));
+
         for (List<S3ObjectMetadata> objectGroup : objectGroups) {
             if (!checkObjectGroupCouldBeCompact(objectGroup, startOffset, compactionType)) {
                 continue;
@@ -171,7 +210,7 @@ public class StreamObjectCompactor {
             case CLEANUP_V1:
                 return this.maxStreamObjectSize;
             case MINOR_V1:
-                return MINOR_V1_COMPACTION_SIZE_THRESHOLD;
+                return this.minorV1CompactionThreshold;
             case MAJOR_V1:
                 return this.maxStreamObjectSize;
             default:
@@ -181,7 +220,7 @@ public class StreamObjectCompactor {
 
     static boolean checkObjectGroupCouldBeCompact(List<S3ObjectMetadata> objectGroup, long startOffset,
         CompactionType compactionType) {
-        if (objectGroup.size() == 1 && (MINOR.equals(compactionType) || MAJOR.equals(compactionType) || MINOR_V1.equals(compactionType))) {
+        if (objectGroup.size() == 1 && SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP.contains(compactionType)) {
             return false;
         }
         if (CLEANUP_V1.equals(compactionType)) {
@@ -432,8 +471,9 @@ public class StreamObjectCompactor {
         }
     }
 
-    static List<List<S3ObjectMetadata>> group0(List<S3ObjectMetadata> objects, long maxStreamObjectSize,
-        boolean includeCompositeObject) {
+    static List<List<S3ObjectMetadata>> group0(List<S3ObjectMetadata> objects,
+                                               long maxStreamObjectSize,
+                                               Predicate<S3ObjectMetadata> objectFilter) {
         // TODO: switch to include/exclude composite object
         List<List<S3ObjectMetadata>> objectGroups = new LinkedList<>();
         long groupSize = 0;
@@ -441,9 +481,10 @@ public class StreamObjectCompactor {
         List<S3ObjectMetadata> group = new LinkedList<>();
         int partCount = 0;
         for (S3ObjectMetadata object : objects) {
-            if (!includeCompositeObject && ObjectAttributes.from(object.attributes()).type() == Composite) {
+            if (!objectFilter.test(object)) {
                 continue;
             }
+
             int objectPartCount = (int) ((object.objectSize() + Writer.MAX_PART_SIZE - 1) / Writer.MAX_PART_SIZE);
             if (objectPartCount >= Writer.MAX_PART_COUNT) {
                 continue;
@@ -488,6 +529,8 @@ public class StreamObjectCompactor {
         private Stream stream;
         private long maxStreamObjectSize;
         private int dataBlockGroupSizeThreshold = DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD;
+        private long minorV1CompactionThreshold = MINOR_V1_COMPACTION_SIZE_THRESHOLD;
+        private boolean majorV1CompactionSkipSmallObject = false;
 
         public Builder objectManager(ObjectManager objectManager) {
             this.objectManager = objectManager;
@@ -522,8 +565,18 @@ public class StreamObjectCompactor {
             return this;
         }
 
+        public Builder minorV1CompactionThreshold(long minorV1CompactionThreshold) {
+            this.minorV1CompactionThreshold = minorV1CompactionThreshold;
+            return this;
+        }
+
+        public Builder majorV1CompactionSkipSmallObject(boolean majorV1CompactionSkipSmallObject) {
+            this.majorV1CompactionSkipSmallObject = majorV1CompactionSkipSmallObject;
+            return this;
+        }
+
         public StreamObjectCompactor build() {
-            return new StreamObjectCompactor(objectManager, objectStorage, stream, maxStreamObjectSize, dataBlockGroupSizeThreshold);
+            return new StreamObjectCompactor(objectManager, objectStorage, stream, maxStreamObjectSize, dataBlockGroupSizeThreshold, minorV1CompactionThreshold, majorV1CompactionSkipSmallObject);
         }
     }
 

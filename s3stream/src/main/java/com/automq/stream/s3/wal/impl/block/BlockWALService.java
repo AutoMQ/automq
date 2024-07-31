@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -31,10 +31,10 @@ import com.automq.stream.s3.wal.exception.UnmarshalException;
 import com.automq.stream.s3.wal.util.WALCachedChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
+import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
@@ -49,6 +49,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Function;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,7 +71,7 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT
  * 1. Call {@link BlockWALService#start} to start the service. Any other methods will throw an
  * {@link IllegalStateException} if called before {@link BlockWALService#start}.
  * <p>
- * 2. Call {@link BlockWALService#recover} to recover all untrimmed records if any.
+ * 2. Maybe call {@link BlockWALService#recover} to recover all untrimmed records if any.
  * <p>
  * 3. Call {@link BlockWALService#reset} to reset the service. This will clear all records, so make sure
  * all recovered records are processed before calling this method.
@@ -134,11 +135,7 @@ public class BlockWALService implements WriteAheadLog {
     private boolean firstStart;
     private int nodeId = NOOP_NODE_ID;
     private long epoch = NOOP_EPOCH;
-    /**
-     * The offset at which the recovery is complete. It is safe to write records at this offset.
-     * It is always aligned to the {@link WALUtil#BLOCK_SIZE}.
-     */
-    private long recoveryCompleteOffset = -1;
+
     private BlockWALService() {
     }
 
@@ -160,8 +157,15 @@ public class BlockWALService implements WriteAheadLog {
         return new BlockWALServiceBuilder(path, capacity);
     }
 
+    public static BlockWALServiceBuilder builder(IdURI uri) {
+        BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(uri.path(), uri.extensionLong("capacity", 2147483648L));
+        Optional.ofNullable(uri.extensionString("iops")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeRateLimit(Integer.parseInt(v)));
+        Optional.ofNullable(uri.extensionString("iodepth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.ioThreadNums(Integer.parseInt(v)));
+        return builder;
+    }
+
     public static BlockWALServiceBuilder recoveryBuilder(String path) {
-        return new BlockWALServiceBuilder(path);
+        return new BlockWALServiceBuilder(path).recoveryMode(true);
     }
 
     private void flushWALHeader(ShutdownType shutdownType) {
@@ -448,7 +452,6 @@ public class BlockWALService implements WriteAheadLog {
         walChannel.close();
 
         LOGGER.info("block WAL service shutdown gracefully: {}, cost: {} ms", gracefulShutdown, stopWatch.getTime(TimeUnit.MILLISECONDS));
-
     }
 
     @Override
@@ -488,11 +491,11 @@ public class BlockWALService implements WriteAheadLog {
         lock.lock();
         try {
             Block block = slidingWindowService.getCurrentBlockLocked();
-            expectedWriteOffset = block.addRecord(recordSize, offset -> record(body, crc, offset), appendResultFuture);
+            expectedWriteOffset = block.addRecord(recordSize, offset -> WALUtil.generateRecord(body, crc, offset), appendResultFuture);
             if (expectedWriteOffset < 0) {
                 // this block is full, create a new one
                 block = slidingWindowService.sealAndNewBlockLocked(block, recordSize, walHeader.getFlushedTrimOffset(), walHeader.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
-                expectedWriteOffset = block.addRecord(recordSize, offset -> record(body, crc, offset), appendResultFuture);
+                expectedWriteOffset = block.addRecord(recordSize, offset -> WALUtil.generateRecord(body, crc, offset), appendResultFuture);
             }
         } finally {
             lock.unlock();
@@ -505,27 +508,10 @@ public class BlockWALService implements WriteAheadLog {
         return appendResult;
     }
 
-    private ByteBuf recordHeader(ByteBuf body, int crc, long start) {
-        return new RecordHeader()
-            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-            .setRecordBodyLength(body.readableBytes())
-            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
-            .setRecordBodyCRC(crc)
-            .marshal();
-    }
-
-    private ByteBuf record(ByteBuf body, int crc, long start) {
-        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
-        crc = 0 == crc ? WALUtil.crc32(body) : crc;
-        record.addComponents(true, recordHeader(body, crc, start), body);
-        return record;
-    }
-
     @Override
     public Iterator<RecoverResult> recover() {
         checkStarted();
         if (firstStart) {
-            recoveryCompleteOffset = 0;
             return Collections.emptyIterator();
         }
 
@@ -541,14 +527,15 @@ public class BlockWALService implements WriteAheadLog {
     @Override
     public CompletableFuture<Void> reset() {
         checkStarted();
-        checkRecoverFinished();
+
+        long newStartOffset = WALUtil.alignLargeByBlockSize(walHeader.getTrimOffset() + walHeader.getCapacity());
 
         if (!recoveryMode) {
             // in recovery mode, no need to start sliding window service
-            slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), recoveryCompleteOffset);
+            slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), newStartOffset);
         }
-        LOGGER.info("reset sliding window to offset: {}", recoveryCompleteOffset);
-        CompletableFuture<Void> cf = trim(recoveryCompleteOffset - 1, true)
+        LOGGER.info("reset sliding window to offset: {}", newStartOffset);
+        CompletableFuture<Void> cf = trim(newStartOffset - 1, true)
             .thenRun(() -> resetFinished.set(true));
 
         if (!recoveryMode) {
@@ -589,12 +576,6 @@ public class BlockWALService implements WriteAheadLog {
         }
     }
 
-    private void checkRecoverFinished() {
-        if (recoveryCompleteOffset < 0) {
-            throw new IllegalStateException("WriteAheadLog has not been completely recovered yet");
-        }
-    }
-
     private void checkResetFinished() {
         if (!resetFinished.get()) {
             throw new IllegalStateException("WriteAheadLog has not been reset yet");
@@ -628,7 +609,11 @@ public class BlockWALService implements WriteAheadLog {
 
         public BlockWALServiceBuilder(String blockDevicePath) {
             this.blockDevicePath = blockDevicePath;
-            this.recoveryMode = true;
+        }
+
+        public BlockWALServiceBuilder recoveryMode(boolean recoveryMode) {
+            this.recoveryMode = recoveryMode;
+            return this;
         }
 
         public BlockWALServiceBuilder capacity(long capacity) {
@@ -638,15 +623,6 @@ public class BlockWALService implements WriteAheadLog {
 
         public BlockWALServiceBuilder config(Config config) {
             return this
-                .capacity(config.walCapacity())
-                .initBufferSize(config.walInitBufferSize())
-                .maxBufferSize(config.walMaxBufferSize())
-                .ioThreadNums(config.walThread())
-                .slidingWindowInitialSize(config.walWindowInitial())
-                .slidingWindowScaleUnit(config.walWindowIncrement())
-                .slidingWindowUpperLimit(config.walWindowMax())
-                .blockSoftLimit(config.walBlockSoftLimit())
-                .writeRateLimit(config.walWriteRateLimit())
                 .nodeId(config.nodeId())
                 .epoch(config.nodeEpoch());
         }
@@ -764,21 +740,21 @@ public class BlockWALService implements WriteAheadLog {
         @Override
         public String toString() {
             return "BlockWALServiceBuilder{"
-                   + "blockDevicePath='" + blockDevicePath
-                   + ", blockDeviceCapacityWant=" + blockDeviceCapacityWant
-                   + ", direct=" + direct
-                   + ", initBufferSize=" + initBufferSize
-                   + ", maxBufferSize=" + maxBufferSize
-                   + ", ioThreadNums=" + ioThreadNums
-                   + ", slidingWindowInitialSize=" + slidingWindowInitialSize
-                   + ", slidingWindowUpperLimit=" + slidingWindowUpperLimit
-                   + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
-                   + ", blockSoftLimit=" + blockSoftLimit
-                   + ", writeRateLimit=" + writeRateLimit
-                   + ", nodeId=" + nodeId
-                   + ", epoch=" + epoch
-                   + ", recoveryMode=" + recoveryMode
-                   + '}';
+                + "blockDevicePath='" + blockDevicePath
+                + ", blockDeviceCapacityWant=" + blockDeviceCapacityWant
+                + ", direct=" + direct
+                + ", initBufferSize=" + initBufferSize
+                + ", maxBufferSize=" + maxBufferSize
+                + ", ioThreadNums=" + ioThreadNums
+                + ", slidingWindowInitialSize=" + slidingWindowInitialSize
+                + ", slidingWindowUpperLimit=" + slidingWindowUpperLimit
+                + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
+                + ", blockSoftLimit=" + blockSoftLimit
+                + ", writeRateLimit=" + writeRateLimit
+                + ", nodeId=" + nodeId
+                + ", epoch=" + epoch
+                + ", recoveryMode=" + recoveryMode
+                + '}';
         }
     }
 
@@ -807,7 +783,7 @@ public class BlockWALService implements WriteAheadLog {
             }
             var that = (InvalidRecoverResult) obj;
             return Objects.equals(this.detail, that.detail) &&
-                   super.equals(obj);
+                super.equals(obj);
         }
 
         @Override
@@ -868,7 +844,6 @@ public class BlockWALService implements WriteAheadLog {
             boolean hasNext = tryReadNextRecord();
             if (!hasNext) {
                 // recovery complete
-                recoveryCompleteOffset = WALUtil.alignLargeByBlockSize(nextRecoverOffset);
                 walChannel.releaseCache();
             }
             return hasNext;

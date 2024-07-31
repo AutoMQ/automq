@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -14,16 +14,16 @@ package org.apache.kafka.image.node.automq;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
-import org.apache.kafka.image.DeltaMap;
 import org.apache.kafka.image.S3StreamMetadataImage;
 import org.apache.kafka.image.node.MetadataNode;
+import org.apache.kafka.timeline.TimelineHashMap;
 
 public class StreamsImageNode implements MetadataNode {
     public final static String NAME = "streams";
 
-    private final DeltaMap<Long, S3StreamMetadataImage> streams;
+    private final TimelineHashMap<Long, S3StreamMetadataImage> streams;
 
-    public StreamsImageNode(DeltaMap<Long, S3StreamMetadataImage> streams) {
+    public StreamsImageNode(TimelineHashMap<Long, S3StreamMetadataImage> streams) {
         this.streams = streams;
     }
 

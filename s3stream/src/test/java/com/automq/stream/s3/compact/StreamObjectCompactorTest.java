@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -27,12 +27,14 @@ import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import org.junit.jupiter.api.Assertions;
@@ -49,11 +51,18 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByCompos
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByPhysicalMerge;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.builder;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.getObjectFilter;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.group0;
+import static com.automq.stream.s3.objects.ObjectAttributes.Type.Composite;
+import static com.automq.stream.s3.objects.ObjectAttributes.Type.Normal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -136,6 +145,35 @@ class StreamObjectCompactorTest {
                 System.currentTimeMillis(), System.currentTimeMillis(), writer.size(), 4));
         }
         return objects;
+    }
+
+    @Test
+    public void testCheckObjectGroupCouldBeCompact() {
+        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(10, S3ObjectType.COMPOSITE,
+            List.of(new StreamOffsetRange(1, 0, 512 * 1024 * 1024 * 4L)),
+            System.currentTimeMillis());
+        s3ObjectMetadata.setObjectSize(512 * 1024 * 1024 * 4L);
+        s3ObjectMetadata.setAttributes(ObjectAttributes.builder().type(Composite).build().attributes());
+
+        // check only one objectMetadata in group
+        List<S3ObjectMetadata> objectMetadataGroup =
+            List.of(s3ObjectMetadata);
+
+        SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP.forEach(type -> {
+            boolean doCompact = StreamObjectCompactor.checkObjectGroupCouldBeCompact(objectMetadataGroup,
+                0, type);
+
+            // MAJOR_V1 compaction should not compact
+            // only one s3ObjectMetadata in group
+            // which may cause the object to be linked to itself.
+            assertFalse(doCompact);
+        });
+
+        boolean doCleanupWhenMajorV1Compaction =
+            StreamObjectCompactor.checkObjectGroupCouldBeCompact(objectMetadataGroup,
+            512 * 1024 * 1024 * 3, MAJOR_V1);
+        // MAJOR_V1 should not trigger cleanup even exceeded threshold for now.
+        assertFalse(doCleanupWhenMajorV1Compaction);
     }
 
     @Test
@@ -313,11 +351,106 @@ class StreamObjectCompactorTest {
             new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamId, 31, 32)),
                 System.currentTimeMillis(), System.currentTimeMillis(), 1, 6)
         );
-        List<List<S3ObjectMetadata>> groups = group0(objects, 512, false);
+
+        Predicate<S3ObjectMetadata> objectFilter = __ -> true;
+        List<List<S3ObjectMetadata>> groups = group0(objects, 512, objectFilter);
         assertEquals(3, groups.size());
         assertEquals(List.of(2L), groups.get(0).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(3L, 4L), groups.get(1).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(5L, 6L), groups.get(2).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+    }
+
+    private List<S3ObjectMetadata> prepareS3ObjectMetadata(int normalObjectNumber, int compositeObjectNumber, int smallObjectNumber,
+                                                           int compositeObjectSize, int normalObjectSize, int smallObjectSize) {
+        AtomicLong objectNumber = new AtomicLong();
+        AtomicLong startOffset = new AtomicLong();
+        AtomicLong orderId = new AtomicLong();
+
+        int compositeObjectAttribute = ObjectAttributes.builder().bucket((short) 0).type(Composite).build().attributes();
+        int normalObjectAttribute = ObjectAttributes.builder().bucket((short) 0).type(Normal).build().attributes();
+
+        List<S3ObjectMetadata> metadata = new ArrayList<>();
+
+        for (int i = 0; i < compositeObjectNumber; i++) {
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(objectNumber.incrementAndGet(),
+                S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(streamId, startOffset.get(), startOffset.addAndGet(1024))),
+                System.currentTimeMillis(),
+                System.currentTimeMillis(),
+                compositeObjectSize, orderId.getAndIncrement());
+            s3ObjectMetadata
+                .setAttributes(compositeObjectAttribute);
+
+            metadata.add(s3ObjectMetadata);
+        }
+
+        for (int i = 0; i < normalObjectNumber; i++) {
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(objectNumber.incrementAndGet(),
+                S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(streamId, startOffset.get(), startOffset.addAndGet(1024))),
+                System.currentTimeMillis(),
+                System.currentTimeMillis(),
+                normalObjectSize, orderId.getAndIncrement());
+            s3ObjectMetadata
+                .setAttributes(normalObjectAttribute);
+
+            metadata.add(s3ObjectMetadata);
+        }
+
+        for (int i = 0; i < smallObjectNumber; i++) {
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(objectNumber.incrementAndGet(),
+                S3ObjectType.STREAM,
+                List.of(new StreamOffsetRange(streamId, startOffset.get(), startOffset.addAndGet(1024))),
+                System.currentTimeMillis(),
+                System.currentTimeMillis(),
+                smallObjectSize, orderId.getAndIncrement());
+            s3ObjectMetadata
+                .setAttributes(normalObjectAttribute);
+
+            metadata.add(s3ObjectMetadata);
+        }
+
+        return metadata;
+    }
+
+    @Test
+    public void testGroupAndFilterLogic() {
+        int majorCompactionObjectThreshold = 4 * 1024 * 1024;
+        List<S3ObjectMetadata> metadataList = prepareS3ObjectMetadata(20, 20, 20,
+            majorCompactionObjectThreshold, majorCompactionObjectThreshold, 64);
+        Predicate<S3ObjectMetadata> objectFilter = getObjectFilter(MAJOR_V1, majorCompactionObjectThreshold);
+        List<List<S3ObjectMetadata>> groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
+
+        // major_v1 compaction small composite object can still be compacted
+        assertTrue(groups.stream().flatMap(List::stream)
+            .anyMatch(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite)));
+
+        // major_v1 compaction no more small normal object
+        assertTrue(groups.stream().flatMap(List::stream)
+            .filter(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Normal) && meta.objectSize() < majorCompactionObjectThreshold)
+            .findAny().isEmpty());
+
+
+        // major_v1 check disable skip small object logic
+        long disableMajorV1CompactionSkipSmallObject = 0;
+
+        objectFilter = getObjectFilter(MAJOR_V1, disableMajorV1CompactionSkipSmallObject);
+        groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
+
+        assertTrue(groups.stream().flatMap(List::stream)
+            .anyMatch(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite)));
+
+        // now the small object should be contained in the major_v1 compaction
+        assertTrue(groups.stream().flatMap(List::stream)
+            .anyMatch(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Normal) && meta.objectSize() < majorCompactionObjectThreshold));
+
+
+        // MINOR_V1 should skip composite object
+        objectFilter = getObjectFilter(MINOR_V1, majorCompactionObjectThreshold);
+        groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
+
+        assertTrue(groups.stream().flatMap(List::stream).filter(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite))
+            .findAny().isEmpty());
     }
 
     @Test

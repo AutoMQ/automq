@@ -338,7 +338,6 @@ public final class MessageGenerator {
     public static void main(String[] args) throws Exception {
         ArgumentParser parser = ArgumentParsers
             .newArgumentParser("message-generator")
-            .defaultHelp(true)
             .description("The Kafka message generator");
         parser.addArgument("--package", "-p")
             .action(store())

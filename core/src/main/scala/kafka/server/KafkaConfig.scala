@@ -1078,7 +1078,7 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
    *
    * @return (s3WALCacheSize, s3BlockCacheSize, s3WALUploadThreshold)
    */
-  private def adjustS3Configs(s3StreamAllocatorPolicy: ByteBufAllocPolicy, s3WALCapacity: Long): (Long, Long, Long) = {
+  private def adjustS3Configs(s3StreamAllocatorPolicy: ByteBufAllocPolicy): (Long, Long, Long) = {
     val rawS3WALCacheSize = getLong(AutoMQConfig.S3_WAL_CACHE_SIZE_CONFIG)
     val rawS3BlockCacheSize = getLong(AutoMQConfig.S3_BLOCK_CACHE_SIZE_CONFIG)
     val rawS3WALUploadThreshold = getLong(AutoMQConfig.S3_WAL_UPLOAD_THRESHOLD_CONFIG)
@@ -1130,8 +1130,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
       if (s3WALUploadThresholdSet) {
         rawS3WALUploadThreshold
       } else {
-        // it should not be greater than 1/3 of s3WALCapacity, 1/3 of s3WALCacheSize and 500M
-        val adjusted = (s3WALCapacity / 3) min (s3WALCacheSize / 3) min (500L * 1024 * 1024)
+        // it should not be greater than 1/3 of s3WALCacheSize and 500M
+        val adjusted = math.min(s3WALCacheSize / 3, 500L * 1024 * 1024)
         if (doLog) {
           info(s"${AutoMQConfig.S3_WAL_UPLOAD_THRESHOLD_CONFIG} is not set, using $adjusted as the default value")
         }
@@ -1149,15 +1149,11 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val automq = new AutoMQConfig().setup(this)
 
   val s3OpsTelemetryEnabled = getBoolean(AutoMQConfig.S3_TELEMETRY_OPS_ENABLED_CONFIG)
-  val s3WALPath = getString(AutoMQConfig.S3_WAL_PATH_CONFIG)
-  val s3WALCapacity = getLong(AutoMQConfig.S3_WAL_CAPACITY_CONFIG)
-  val s3WALThread = getInt(AutoMQConfig.S3_WAL_THREAD_CONFIG)
-  val s3WALIOPS = getInt(AutoMQConfig.S3_WAL_IOPS_CONFIG)
   val s3StreamSplitSize = getInt(AutoMQConfig.S3_STREAM_SPLIT_SIZE_CONFIG)
   val s3ObjectBlockSize = getInt(AutoMQConfig.S3_OBJECT_BLOCK_SIZE_CONFIG)
   val s3ObjectPartSize = getInt(AutoMQConfig.S3_OBJECT_PART_SIZE_CONFIG)
   val s3StreamAllocatorPolicy = Enum.valueOf(classOf[ByteBufAllocPolicy], getString(AutoMQConfig.S3_STREAM_ALLOCATOR_POLICY_CONFIG))
-  val (s3WALCacheSize, s3BlockCacheSize, s3WALUploadThreshold) = adjustS3Configs(s3StreamAllocatorPolicy, s3WALCapacity)
+  val (s3WALCacheSize, s3BlockCacheSize, s3WALUploadThreshold) = adjustS3Configs(s3StreamAllocatorPolicy)
   val s3StreamObjectCompactionTaskIntervalMinutes = getInt(AutoMQConfig.S3_STREAM_OBJECT_COMPACTION_INTERVAL_MINUTES_CONFIG)
   val s3StreamObjectCompactionMaxSizeBytes = getLong(AutoMQConfig.S3_STREAM_OBJECT_COMPACTION_MAX_SIZE_BYTES_CONFIG)
   val s3ControllerRequestRetryMaxCount = getInt(AutoMQConfig.S3_CONTROLLER_REQUEST_RETRY_MAX_COUNT_CONFIG)
@@ -1174,20 +1170,8 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
   val s3ObjectLogEnable = getBoolean(AutoMQConfig.S3_OBJECT_LOG_ENABLE_CONFIG)
   val s3NetworkBaselineBandwidthProp = getLong(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG)
   val s3RefillPeriodMsProp = getInt(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG)
-  val s3MetricsEnable = getBoolean(AutoMQConfig.S3_METRICS_ENABLE_CONFIG)
-  val s3TracerEnable = getBoolean(AutoMQConfig.S3_TRACE_ENABLE_CONFIG)
   val s3MetricsLevel = getString(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG)
-  val s3MetricsExporterType = getString(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_TYPE_CONFIG)
-  val s3ExporterOTLPEndpoint = getString(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_CONFIG)
-  val s3ExporterOTLPProtocol = getString(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG)
-  val s3ExporterOTLPCompressionEnable = getBoolean(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG)
-  val s3TraceExporterOTLPEndpoint = getString(AutoMQConfig.S3_TELEMETRY_TRACE_EXPORTER_OTLP_ENDPOINT_CONFIG)
   val s3ExporterReportIntervalMs = getInt(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG)
-  val s3MetricsExporterPromHost = getString(AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_CONFIG)
-  val s3MetricsExporterPromPort = getInt(AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_CONFIG)
-  val s3SpanScheduledDelayMs = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_SCHEDULED_DELAY_MS_CONFIG)
-  val s3SpanMaxQueueSize = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_QUEUE_SIZE_CONFIG)
-  val s3SpanMaxBatchSize = getInt(AutoMQConfig.S3_TELEMETRY_TRACER_SPAN_MAX_BATCH_SIZE_CONFIG)
   // AutoMQ inject end
 
   /** Internal Configurations **/

@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -17,6 +17,7 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.objects.CommitStreamSetObjectHook;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.CompactStreamObjectRequest;
@@ -49,6 +50,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private final AtomicLong objectIdAlloc = new AtomicLong();
     private final ConcurrentMap<Long, List<S3ObjectMetadata>> streamObjects = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, Pair<Long, S3ObjectMetadata>> streamSetObjects = new ConcurrentHashMap<>();
+    private CommitStreamSetObjectHook hook = req -> CompletableFuture.completedFuture(null);
 
     public static void advanceNodeId() {
         NODE_ID_ALLOC.getAndIncrement();
@@ -130,7 +132,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             );
         }
         request.getCompactedObjectIds().forEach(streamSetObjects::remove);
-        return CompletableFuture.completedFuture(new CommitStreamSetObjectResponse());
+        return hook.onCommitSuccess(request).thenApply(v -> new CommitStreamSetObjectResponse());
     }
 
     @Override
@@ -222,6 +224,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         streamObjects.forEach((k, v) -> count.addAndGet(v.size()));
         count.addAndGet(streamSetObjects.size());
         return CompletableFuture.completedFuture(count.intValue());
+    }
+
+    @Override
+    public synchronized void setCommitStreamSetObjectHook(CommitStreamSetObjectHook hook) {
+        this.hook = hook;
     }
 
     @Override

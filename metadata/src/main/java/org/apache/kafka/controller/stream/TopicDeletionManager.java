@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -83,12 +83,12 @@ public class TopicDeletionManager {
             return ControllerResult.of(Collections.emptyList(), null);
         }
         String topicId = waitingCleanupTopics.entrySet(lastStableOffset).iterator().next().getKey().toString();
-        TimelineHashMap<Long, S3StreamMetadata> streams = streamControlManager.streamsMetadata();
+        TimelineHashMap<Long, StreamRuntimeMetadata> streams = streamControlManager.streamsMetadata();
         List<Long> streamsToDelete = new LinkedList<>();
         // check all streams are closed
-        for (Map.Entry<Long, S3StreamMetadata> entry : streams.entrySet(lastStableOffset)) {
+        for (Map.Entry<Long, StreamRuntimeMetadata> entry : streams.entrySet(lastStableOffset)) {
             Long streamId = entry.getKey();
-            S3StreamMetadata metadata = entry.getValue();
+            StreamRuntimeMetadata metadata = entry.getValue();
             if (topicId.equals(metadata.tags().get(StreamTags.Topic.KEY))) {
                 if (metadata.currentState() == StreamState.CLOSED) {
                     streamsToDelete.add(streamId);

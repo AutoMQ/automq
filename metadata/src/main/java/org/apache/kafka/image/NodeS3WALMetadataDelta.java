@@ -20,6 +20,7 @@ package org.apache.kafka.image;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
@@ -59,11 +60,11 @@ public class NodeS3WALMetadataDelta {
     }
 
     public NodeS3StreamSetObjectMetadataImage apply() {
-        DeltaMap<Long, S3StreamSetObject> streamSetObjects = image.getObjects().copy();
+        DeltaList<S3StreamSetObject> streamSetObjects = image.getObjects().copy();
         // add all changed stream set objects
-        streamSetObjects.putAll(addedS3StreamSetObjects);
+        addedS3StreamSetObjects.forEach((id, obj) -> streamSetObjects.add(obj));
         // remove all removed stream set objects
-        streamSetObjects.removeAll(removedS3StreamSetObjects);
+        removedS3StreamSetObjects.forEach(id -> streamSetObjects.remove(obj -> Objects.equals(obj.objectId(), id)));
         return new NodeS3StreamSetObjectMetadataImage(this.nodeId, this.nodeEpoch, streamSetObjects);
     }
 

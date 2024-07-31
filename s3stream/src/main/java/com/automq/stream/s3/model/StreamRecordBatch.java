@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -16,7 +16,7 @@ import com.automq.stream.utils.biniarysearch.ComparableItem;
 import io.netty.buffer.ByteBuf;
 
 public class StreamRecordBatch implements Comparable<StreamRecordBatch>, ComparableItem<Long> {
-    public static final int OBJECT_OVERHEAD = 52;
+    private static final int OBJECT_OVERHEAD = 48 /* fields */ + 48 /* ByteBuf payload */ + 48 /* ByteBuf encoded */;
     private final long streamId;
     private final long epoch;
     private final long baseOffset;
@@ -69,6 +69,10 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
 
     public int size() {
         return payload.readableBytes();
+    }
+
+    public int occupiedSize() {
+        return size() + OBJECT_OVERHEAD;
     }
 
     public void retain() {

@@ -1428,6 +1428,11 @@ public class MockAdminClient extends AdminClient {
     }
 
     @Override
+    public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     synchronized public Map<MetricName, ? extends Metric> metrics() {
         return mockMetrics;
     }

@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -13,11 +13,15 @@ package kafka.log.stream.s3.metadata;
 
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.FutureUtil;
+import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -51,12 +55,14 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     private final ExecutorService pendingExecutorService;
     private MetadataImage metadataImage;
     private final ObjectReaderFactory objectReaderFactory;
+    private final LocalStreamRangeIndexCache indexCache;
 
-    public StreamMetadataManager(BrokerServer broker, int nodeId, ObjectReaderFactory objectReaderFactory) {
+    public StreamMetadataManager(BrokerServer broker, int nodeId, ObjectReaderFactory objectReaderFactory, LocalStreamRangeIndexCache indexCache) {
         this.nodeId = nodeId;
         this.metadataImage = broker.metadataCache().currentImage();
         this.pendingGetObjectsTasks = new LinkedList<>();
         this.objectReaderFactory = objectReaderFactory;
+        this.indexCache = indexCache;
         this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
         broker.metadataLoader().installPublishers(List.of(this)).join();
     }
@@ -87,7 +93,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     S3Object s3Object = objectsImage.getObjectMetadata(object.objectId());
                     return new S3ObjectMetadata(object.objectId(), object.objectType(),
                         object.offsetRangeList(), object.dataTimeInMs(),
-                        s3Object.getCommittedTimeInMs(), s3Object.getObjectSize(),
+                        s3Object.getTimestamp(), s3Object.getObjectSize(),
                         object.orderId(), s3Object.getAttributes());
                 })
                 .collect(Collectors.toList());
@@ -109,7 +115,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         try {
             final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
             final S3ObjectsImage objectsImage = image.objectsMetadata();
-            CompletableFuture<InRangeObjects> getObjectsCf = streamsImage.getObjects(streamId, startOffset, endOffset, limit, new DefaultRangeGetter(objectsImage, objectReaderFactory));
+            CompletableFuture<InRangeObjects> getObjectsCf = streamsImage.getObjects(streamId, startOffset, endOffset, limit,
+                new DefaultRangeGetter(objectsImage, objectReaderFactory), indexCache);
             getObjectsCf.thenAccept(rst -> {
                 if (rst.objects().size() >= limit || rst.endOffset() >= endOffset || rst == InRangeObjects.INVALID) {
                     rst.objects().forEach(object -> {
@@ -122,7 +129,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                             throw new IllegalStateException("can't find object metadata for object: " + object.objectId());
                         }
                         object.setObjectSize(objectMetadata.getObjectSize());
-                        object.setCommittedTimestamp(objectMetadata.getCommittedTimeInMs());
+                        object.setCommittedTimestamp(objectMetadata.getTimestamp());
                         object.setAttributes(objectMetadata.getAttributes());
                     });
 
@@ -160,10 +167,10 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
             List<S3ObjectMetadata> s3StreamObjectMetadataList = streamObjects.stream().map(object -> {
                 S3Object objectMetadata = objectsImage.getObjectMetadata(object.objectId());
-                long committedTimeInMs = objectMetadata.getCommittedTimeInMs();
+                long committedTimeInMs = objectMetadata.getTimestamp();
                 long objectSize = objectMetadata.getObjectSize();
                 int attributes = objectMetadata.getAttributes();
-                return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), object.dataTimeInMs(),
+                return new S3ObjectMetadata(object.objectId(), object.objectType(), List.of(object.streamOffsetRange()), objectMetadata.getTimestamp(),
                     committedTimeInMs, objectSize, S3StreamConstant.INVALID_ORDER_ID, attributes);
             }).collect(Collectors.toList());
 
@@ -182,7 +189,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
             List<StreamMetadata> streamMetadataList = new ArrayList<>();
             for (Long streamId : streamIds) {
-                S3StreamMetadataImage streamImage = streamsImage.streamsMetadata().get(streamId);
+                S3StreamMetadataImage streamImage = streamsImage.timelineStreamMetadata().get(streamId);
                 if (streamImage == null) {
                     LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
                     continue;
@@ -298,6 +305,12 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             CompletableFuture<Optional<StreamOffsetRange>> cf = reader.basicObjectInfo().thenApply(info -> info.indexBlock().findStreamOffsetRange(streamId));
             cf.whenComplete((rst, ex) -> reader.release());
             return cf;
+        }
+
+        @Override
+        public CompletableFuture<ByteBuf> readNodeRangeIndex(long nodeId) {
+            ObjectStorage storage = objectReaderFactory.getObjectStorage();
+            return storage.read(ObjectStorage.ReadOptions.DEFAULT, ObjectUtils.genIndexKey(0, nodeId));
         }
     }
 }

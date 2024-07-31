@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -12,9 +12,10 @@
 package kafka.controller.streamaspect.client.s3;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
+import kafka.controller.streamaspect.client.Context;
 import kafka.controller.streamaspect.client.StreamClientFactoryProxy;
 import kafka.log.stream.s3.ConfigUtils;
-import kafka.controller.streamaspect.client.Context;
 import org.apache.kafka.controller.stream.StreamClient;
 
 public class StreamClientFactory {
@@ -24,6 +25,14 @@ public class StreamClientFactory {
      */
     public static StreamClient get(Context context) {
         Config streamConfig = ConfigUtils.to(context.kafkaConfig);
-        return new StreamClient(streamConfig);
+        return StreamClient.builder()
+            .streamConfig(streamConfig)
+            .objectStorage(
+                ObjectStorageFactory.instance()
+                    .builder(streamConfig.dataBuckets().get(0))
+                    .tagging(streamConfig.objectTagging())
+                    .build()
+            )
+            .build();
     }
 }

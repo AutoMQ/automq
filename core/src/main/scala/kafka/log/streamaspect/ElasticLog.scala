@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -450,6 +450,9 @@ class ElasticLog(val metaStream: MetaStream,
         newSegment
     }
 
+    /**
+     * ref. LocalLog#close
+     */
     override private[log] def close(): CompletableFuture[Void] = {
         // already flush in UnifiedLog#close, so it's safe to set cleaned shutdown.
         partitionMeta.setCleanedShutdown(true)
@@ -464,6 +467,13 @@ class ElasticLog(val metaStream: MetaStream,
         }
         info("log(except for streams) closed")
         closeStreams()
+    }
+
+    /**
+     * ref. LocalLog#asyncClose
+     */
+    override private[log] def asyncClose(): CompletableFuture[Void] = {
+        CompletableFuture.runAsync(() => close())
     }
 
     /**
@@ -644,12 +654,12 @@ object ElasticLog extends Logging {
                 stream
             } else {
                 val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
-                awaitStreamReadyForOpen(openStreamChecker, topicId.get, topicPartition.partition(), metaStreamId, leaderEpoch, logIdent = logIdent)
+                val awaitCostMs = awaitStreamReadyForOpen(openStreamChecker, topicId.get, topicPartition.partition(), metaStreamId, leaderEpoch, logIdent = logIdent)
                 // open partition meta stream
                 val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.builder().epoch(leaderEpoch).tags(streamTags).build())
                     .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
                     .get()
-                info(s"${logIdent}opened existing meta stream: streamId=$metaStreamId")
+                info(s"${logIdent}opened existing meta stream: streamId=$metaStreamId awaitCostMs=${TimeUnit.NANOSECONDS.toMillis(awaitCostMs)} ms")
                 stream
             }
             // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
@@ -881,11 +891,12 @@ object ElasticLog extends Logging {
         resultCf
     }
 
-    private def awaitStreamReadyForOpen(checker: OpenStreamChecker, topicId: Uuid, partition: Int, streamId: Long, epoch: Long, logIdent: String): Unit = {
+    private def awaitStreamReadyForOpen(checker: OpenStreamChecker, topicId: Uuid, partition: Int, streamId: Long, epoch: Long, logIdent: String): Long = {
+      val now = System.nanoTime()
       var round = 0
       while(true) {
         if (checker.check(topicId, partition, streamId, epoch)) {
-          return
+          return System.nanoTime() - now
         }
         round += 1
         if (round % 10 == 0) {
@@ -893,5 +904,6 @@ object ElasticLog extends Logging {
         }
         Thread.sleep(100)
       }
+      System.nanoTime() - now
     }
 }

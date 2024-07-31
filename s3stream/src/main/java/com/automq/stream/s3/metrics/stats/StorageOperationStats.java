@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -26,7 +26,8 @@ public class StorageOperationStats {
     private volatile static StorageOperationStats instance = null;
 
     public final HistogramMetric appendStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE.getType().getName(),
+                S3Operation.APPEND_STORAGE.getName());
     public final HistogramMetric appendWALBeforeStats = S3StreamMetricsManager
             .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.APPEND_WAL_BEFORE);
     public final HistogramMetric appendWALBlockPolledStats = S3StreamMetricsManager
@@ -40,39 +41,49 @@ public class StorageOperationStats {
     public final HistogramMetric appendWALCompleteStats = S3StreamMetricsManager
             .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.APPEND_WAL_COMPLETE);
     public final HistogramMetric appendCallbackStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.DEBUG, S3Operation.APPEND_STORAGE_APPEND_CALLBACK);
+            .buildOperationMetric(MetricsLevel.DEBUG, S3Operation.APPEND_STORAGE_APPEND_CALLBACK.getType().getName(),
+                S3Operation.APPEND_STORAGE_APPEND_CALLBACK.getName());
     public final HistogramMetric appendWALFullStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_WAL_FULL);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_WAL_FULL.getType().getName(),
+                S3Operation.APPEND_STORAGE_WAL_FULL.getName());
     public final HistogramMetric appendLogCacheStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE.getType().getName(),
+                S3Operation.APPEND_STORAGE_LOG_CACHE.getName());
     public final HistogramMetric appendLogCacheFullStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE_FULL);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE_FULL.getType().getName(),
+                S3Operation.APPEND_STORAGE_LOG_CACHE_FULL.getName());
     public final HistogramMetric uploadWALPrepareStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.UPLOAD_WAL_PREPARE);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_PREPARE);
     public final HistogramMetric uploadWALUploadStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.UPLOAD_WAL_UPLOAD);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_UPLOAD);
     public final HistogramMetric uploadWALCommitStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.UPLOAD_WAL_COMMIT);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_COMMIT);
     public final HistogramMetric uploadWALCompleteStats = S3StreamMetricsManager
             .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_COMPLETE);
     public final HistogramMetric forceUploadWALAwaitStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.FORCE_UPLOAD_WAL_AWAIT);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.FORCE_UPLOAD_WAL_AWAIT);
     public final HistogramMetric forceUploadWALCompleteStats = S3StreamMetricsManager
-            .buildStageOperationMetric(MetricsLevel.DEBUG, S3Stage.FORCE_UPLOAD_WAL_COMPLETE);
+            .buildStageOperationMetric(MetricsLevel.INFO, S3Stage.FORCE_UPLOAD_WAL_COMPLETE);
     public final HistogramMetric readStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE.getType().getName(), S3Operation.READ_STORAGE.getName());
     private final HistogramMetric readLogCacheHitStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_HIT);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE.getType().getName(),
+                S3Operation.READ_STORAGE_LOG_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_HIT);
     private final HistogramMetric readLogCacheMissStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_MISS);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE.getType().getName(),
+                S3Operation.READ_STORAGE_LOG_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_MISS);
     private final HistogramMetric readBlockCacheHitStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE, S3StreamMetricsConstant.LABEL_STATUS_HIT);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE.getType().getName(),
+                S3Operation.READ_STORAGE_BLOCK_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_HIT);
     private final HistogramMetric readBlockCacheMissStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE, S3StreamMetricsConstant.LABEL_STATUS_MISS);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE.getType().getName(),
+                S3Operation.READ_STORAGE_BLOCK_CACHE.getName(), S3StreamMetricsConstant.LABEL_STATUS_MISS);
     private final HistogramMetric readAheadSyncTimeStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD, S3StreamMetricsConstant.LABEL_STATUS_SYNC);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD.getType().getName(),
+                S3Operation.BLOCK_CACHE_READ_AHEAD.getName(), S3StreamMetricsConstant.LABEL_STATUS_SYNC);
     private final HistogramMetric readAheadAsyncTimeStats = S3StreamMetricsManager
-            .buildOperationMetric(MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD, S3StreamMetricsConstant.LABEL_STATUS_ASYNC);
+            .buildOperationMetric(MetricsLevel.INFO, S3Operation.BLOCK_CACHE_READ_AHEAD.getType().getName(),
+                S3Operation.BLOCK_CACHE_READ_AHEAD.getName(), S3StreamMetricsConstant.LABEL_STATUS_ASYNC);
     public final HistogramMetric readAheadGetIndicesTimeStats = S3StreamMetricsManager
             .buildReadAheadStageTimeMetric(MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_GET_INDICES);
     public final HistogramMetric readAheadThrottleTimeStats = S3StreamMetricsManager

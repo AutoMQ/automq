@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -11,8 +11,6 @@
 
 package com.automq.shell.metrics;
 
-import com.automq.shell.auth.CredentialsProviderHolder;
-import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
@@ -74,10 +72,7 @@ public class S3MetricsExporter implements MetricExporter {
 
     public S3MetricsExporter(S3MetricsConfig config) {
         this.config = config;
-        this.objectStorage = AwsObjectStorage.builder()
-            .bucket(config.bucket())
-            .credentialsProviders(List.of(CredentialsProviderHolder.getAwsCredentialsProvider()))
-            .build();
+        this.objectStorage = config.objectStorage();
 
         defaultTagMap.put("host_name", getHostName());
         defaultTagMap.put("service_name", config.clusterId());

@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -54,20 +54,13 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     clientSensors.quotaSensor.record(value, time.milliseconds(), false)
   }
 
-
   def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, request: RequestChannel.Request, value: Double,
     timeMs: Long): Int = {
     if (!config.quotaEnabled) {
       return 0
     }
 
-    if (quotaType == QuotaType.Request) {
-        request.recordNetworkThreadTimeCallback = Some(timeNanos => recordNoThrottle(quotaType, nanosToPercentage(timeNanos)))
-        maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context,
-          nanosToPercentage(request.requestThreadTimeNanos), timeMs)
-      } else {
-        maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context, value, timeMs)
-      }
+    maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context, value, timeMs)
   }
 
   protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
@@ -102,7 +95,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       0
     } catch {
       case e: QuotaViolationException =>
-        val throttleTimeMs = throttleTime(e, timeMs).toInt
+        val throttleTimeMs = throttleTime(quotaType, e, timeMs).toInt
         debug(s"Quota violated for sensor (${clientSensors.quotaSensor.name}). Delay time: ($throttleTimeMs)")
         throttleTimeMs
     }
@@ -176,13 +169,8 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   }
 
   protected def clientQuotaMetricName(quotaType: QuotaType, quotaMetricTags: Map[String, String]): MetricName = {
-    if (quotaType == QuotaType.Request) {
-      metrics.metricName("broker-request-rate", QuotaType.Request.toString,
-        "Tracking request-rate per broker", quotaMetricTags.asJava)
-    } else {
-      metrics.metricName("broker-byte-rate", quotaType.toString,
-        "Tracking byte-rate per broker", quotaMetricTags.asJava)
-    }
+    metrics.metricName("broker-value-rate", quotaType.toString,
+      "Tracking value-rate per broker", quotaMetricTags.asJava)
   }
 
   protected def throttleMetricName(quotaType: QuotaType, quotaMetricTags: Map[String, String]): MetricName = {

@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,10 +55,11 @@ public class DeltaWALUploadTask {
     private long uploadTimestamp;
     private long commitTimestamp;
     private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
+    private volatile boolean burst = false;
 
     public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
-        ObjectManager objectManager, ObjectStorage objectStorage,
-        ExecutorService executor, boolean forceSplit, double rate) {
+                              ObjectManager objectManager, ObjectStorage objectStorage,
+                              ExecutorService executor, boolean forceSplit, double rate) {
         this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.nodeId()));
         this.streamRecordsMap = streamRecordsMap;
         this.objectBlockSize = config.objectBlockSize();
@@ -92,6 +94,30 @@ public class DeltaWALUploadTask {
         return prepareCf;
     }
 
+    /**
+     * bypass the uploadTask rateLimit to make the task finish as fast as possible.
+     */
+    public void burst() {
+        if (this.burst) {
+            return;
+        }
+
+        synchronized (this) {
+            if (!this.burst) {
+                this.limiter.burst();
+                this.burst = true;
+            }
+        }
+    }
+
+    private CompletableFuture<Void> acquireLimiter(int size) {
+        if (this.burst) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return limiter.acquire(size);
+    }
+
     public CompletableFuture<CommitStreamSetObjectRequest> upload() {
         prepareCf.thenAcceptAsync(objectId -> FutureUtil.exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"), executor);
         return uploadCf;
@@ -124,7 +150,7 @@ public class DeltaWALUploadTask {
                     }
                 }));
             } else {
-                streamSetWriteCfList.add(limiter.acquire(streamSize).thenAccept(nil -> streamSetObject.write(streamId, streamRecords)));
+                streamSetWriteCfList.add(acquireLimiter(streamSize).thenAccept(nil -> streamSetObject.write(streamId, streamRecords)));
                 long startOffset = streamRecords.get(0).getBaseOffset();
                 long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
                 request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset, streamSize));
@@ -166,7 +192,7 @@ public class DeltaWALUploadTask {
 
     private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords, int streamSize) {
         CompletableFuture<Long> cf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60));
-        cf = cf.thenCompose(objectId -> limiter.acquire(streamSize).thenApply(nil -> objectId));
+        cf = cf.thenCompose(objectId -> acquireLimiter(streamSize).thenApply(nil -> objectId));
         return cf.thenComposeAsync(objectId -> {
             ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
             long streamId = streamRecords.get(0).getStreamId();

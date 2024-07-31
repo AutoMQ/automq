@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -38,6 +38,8 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+
+import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -70,6 +72,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
     private final DataBlockCache dataBlockCache;
     long nextReadOffset;
     private CompletableFuture<Void> inflightLoadIndexCf;
+    private volatile CompletableFuture<Void> afterReadTryReadaheadCf;
     private long lastAccessTimestamp = System.currentTimeMillis();
     private boolean reading = false;
 
@@ -219,6 +222,28 @@ import static com.automq.stream.utils.FutureUtil.exec;
         });
     }
 
+    /**
+     * This method is only for unit testing.
+     * AfterReadTryReadaheadCf is empty, the task has been completed
+     * AfterReadTryReadaheadCf is not empty, the task may be completed
+     * @return  afterReadTryReadaheadCf
+     */
+    @VisibleForTesting
+    CompletableFuture<Void> getAfterReadTryReadaheadCf() {
+        return afterReadTryReadaheadCf;
+    }
+
+    /**
+     * This method is only for unit testing.
+     * inflightReadaheadCf is empty, the task has been completed
+     * inflightReadaheadCf is not empty, the task may be completed
+     * @return  readahead.inflightReadaheadCf
+     */
+    @VisibleForTesting
+    CompletableFuture<Void> getReadaheadInflightReadaheadCf() {
+        return readahead.inflightReadaheadCf;
+    }
+
     void afterRead(ReadDataBlock readDataBlock, ReadContext ctx) {
         List<StreamRecordBatch> records = readDataBlock.getRecords();
         if (!records.isEmpty()) {
@@ -242,7 +267,15 @@ import static com.automq.stream.utils.FutureUtil.exec;
             }
         }
         // try readahead to speed up the next read
-        eventLoop.execute(() -> readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS));
+        afterReadTryReadaheadCf = eventLoop.submit(() -> readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS));
+        afterReadTryReadaheadCf.whenComplete((nil, ex) -> {
+            Throwable cause = FutureUtil.cause(ex);
+            if (cause != null && !isRecoverable(cause)) {
+                LOGGER.error("AfterRead failed", ex);
+            }
+            // help gc
+            afterReadTryReadaheadCf = null;
+        });
     }
 
     private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes,
@@ -554,7 +587,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         long readaheadMarkOffset;
         long resetTimestamp;
         boolean requireReset;
-        CompletableFuture<Void> inflightReadaheadCf;
+        volatile CompletableFuture<Void> inflightReadaheadCf;
         private int cacheMissCount;
 
         public void tryReadahead(boolean cacheMiss) {

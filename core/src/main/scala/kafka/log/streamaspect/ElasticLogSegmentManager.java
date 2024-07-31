@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -16,11 +16,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -138,6 +142,10 @@ public class ElasticLogSegmentManager {
     }
 
     class EventListener implements ElasticLogSegmentEventListener {
+        public static final long NO_OP_OFFSET = -1L;
+        private final Queue<Long> pendingDeleteSegmentBaseOffset = new ConcurrentLinkedQueue<>();
+        private volatile CompletableFuture<ElasticLogMeta> pendingPersistentMetaCf = null;
+
         @Override
         public void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event) {
             switch (event) {
@@ -150,7 +158,7 @@ public class ElasticLogSegmentManager {
                                 LOGGER.debug("{} meta stream is closed, skip persisting log meta", logIdent);
                             }
                         } else {
-                            asyncPersistLogMeta();
+                            submitOrDrainPendingPersistentMetaQueue(segmentBaseOffset);
                         }
                     }
                     break;
@@ -161,6 +169,55 @@ public class ElasticLogSegmentManager {
                 }
                 default: {
                     throw new IllegalStateException("Unsupported event " + event);
+                }
+            }
+        }
+
+        @VisibleForTesting
+        Queue<Long> getPendingDeleteSegmentQueue() {
+            return pendingDeleteSegmentBaseOffset;
+        }
+
+        @VisibleForTesting
+        synchronized CompletableFuture<ElasticLogMeta> getPendingPersistentMetaCf() {
+            return pendingPersistentMetaCf;
+        }
+
+        private void submitOrDrainPendingPersistentMetaQueue(long segmentBaseOffset) {
+            if (segmentBaseOffset != NO_OP_OFFSET) {
+                pendingDeleteSegmentBaseOffset.add(segmentBaseOffset);
+            }
+
+            synchronized (this) {
+                if (pendingPersistentMetaCf != null && !pendingPersistentMetaCf.isDone()) {
+                    return;
+                }
+
+                long maxOffset = NO_OP_OFFSET;
+
+                while (!pendingDeleteSegmentBaseOffset.isEmpty()) {
+                    long baseOffset = pendingDeleteSegmentBaseOffset.poll();
+                    maxOffset = Math.max(maxOffset, baseOffset);
+                }
+
+                if (maxOffset != NO_OP_OFFSET) {
+                    if (metaStream.isFenced()) {
+                        if (LOGGER.isDebugEnabled()) {
+                            LOGGER.debug("{} meta stream is closed, skip persisting log meta", logIdent);
+                        }
+
+                        return;
+                    }
+
+                    long finalMaxOffset = maxOffset;
+                    pendingPersistentMetaCf = asyncPersistLogMeta();
+                    pendingPersistentMetaCf.whenCompleteAsync((res, e) -> {
+                        if (e != null) {
+                            LOGGER.error("error when persisLogMeta maxOffset {}", finalMaxOffset, e);
+                        }
+
+                        submitOrDrainPendingPersistentMetaQueue(-1);
+                    });
                 }
             }
         }

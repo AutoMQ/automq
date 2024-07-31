@@ -1,8 +1,8 @@
 /*
- * Copyright 2024, AutoMQ CO.,LTD.
+ * Copyright 2024, AutoMQ HK Limited.
  *
- * Use of this software is governed by the Business Source License
- * included in the file BSL.md
+ * The use of this file is governed by the Business Source License,
+ * as detailed in the file "/LICENSE.S3Stream" included in this repository.
  *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
@@ -35,7 +35,6 @@ import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
 
 import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
-import static com.automq.stream.s3.wal.benchmark.BenchTool.recoverAndReset;
 import static com.automq.stream.s3.wal.benchmark.BenchTool.resetWALHeader;
 
 /**
@@ -61,7 +60,7 @@ public class WriteBench implements AutoCloseable {
         }
         this.log = builder.build();
         this.log.start();
-        recoverAndReset(this.log);
+        this.log.reset();
     }
 
     public static void main(String[] args) throws IOException {
@@ -220,9 +219,7 @@ public class WriteBench implements AutoCloseable {
 
         static ArgumentParser parser() {
             ArgumentParser parser = ArgumentParsers
-                .newFor("WriteBench")
-                .build()
-                .defaultHelp(true)
+                .newArgumentParser("WriteBench")
                 .description("Benchmark write performance of BlockWALService");
             parser.addArgument("-p", "--path")
                 .required(true)
