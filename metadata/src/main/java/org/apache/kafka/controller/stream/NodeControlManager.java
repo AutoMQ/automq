@@ -12,6 +12,7 @@
 package org.apache.kafka.controller.stream;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -86,12 +87,16 @@ public class NodeControlManager {
             nodeMetadataList.stream().map(src -> {
                 AutomqGetNodesResponseData.NodeMetadata metadata = src.to();
                 int nodeId = src.getNodeId();
-                metadata.setState(nodeRuntimeInfoGetter.state(nodeId));
+                metadata.setState(nodeRuntimeInfoGetter.state(nodeId).name());
                 metadata.setHasOpeningStreams(nodeRuntimeInfoGetter.hasOpeningStreams(nodeId));
                 return metadata;
             }).collect(Collectors.toList())
         );
         return ControllerResult.of(Collections.emptyList(), resp);
+    }
+
+    public Collection<NodeMetadata> getMetadata() {
+        return nodeMetadataMap.values();
     }
 
     public void replay(KVRecord kvRecord) {
