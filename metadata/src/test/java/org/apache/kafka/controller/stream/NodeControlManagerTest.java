@@ -91,7 +91,7 @@ public class NodeControlManagerTest {
         assertTrue(nodeControlManager.nodeMetadataMap.containsKey(0));
 
         when(nodeRuntimeInfoGetter.hasOpeningStreams(eq(0))).thenReturn(true);
-        when(nodeRuntimeInfoGetter.state(eq(0))).thenReturn(NodeState.FENCED.name());
+        when(nodeRuntimeInfoGetter.state(eq(0))).thenReturn(NodeState.FENCED);
 
         ControllerResult<AutomqGetNodesResponseData> getRst = nodeControlManager.getMetadata(
             new AutomqGetNodesRequest(new AutomqGetNodesRequestData().setNodeIds(List.of(0, 1)),

@@ -24,18 +24,18 @@ public class DefaultNodeRuntimeInfoGetter implements NodeRuntimeInfoGetter {
     }
 
     @Override
-    public String state(int nodeId) {
+    public NodeState state(int nodeId) {
         BrokerRegistration brokerRegistration = clusterControlManager.registration(nodeId);
         if (brokerRegistration == null) {
-            return NodeState.UNKNOWN.name();
+            return NodeState.UNKNOWN;
         }
         if (brokerRegistration.fenced()) {
-            return NodeState.FENCED.name();
+            return NodeState.FENCED;
         }
         if (brokerRegistration.inControlledShutdown()) {
-            return NodeState.CONTROLLED_SHUTDOWN.name();
+            return NodeState.CONTROLLED_SHUTDOWN;
         }
-        return NodeState.ACTIVE.name();
+        return NodeState.ACTIVE;
     }
 
     @Override
