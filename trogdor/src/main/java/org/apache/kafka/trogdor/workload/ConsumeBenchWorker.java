@@ -508,7 +508,7 @@ public class ConsumeBenchWorker implements TaskWorker {
         ConsumerRecords<byte[], byte[]> poll() {
             this.consumerLock.lock();
             try {
-                return consumer.poll(Duration.ofMillis(50));
+                return consumer.poll(Duration.ofMillis(5000));
             } finally {
                 this.consumerLock.unlock();
             }
