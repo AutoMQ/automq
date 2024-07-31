@@ -15,6 +15,7 @@ import com.automq.stream.s3.metadata.StreamState;
 import kafka.server.metadata.KRaftMetadataCache;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
+import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.S3StreamMetadataImage;
 import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.metadata.PartitionRegistration;
@@ -28,12 +29,16 @@ public class DefaultOpenStreamChecker implements OpenStreamChecker {
 
     @Override
     public boolean check(Uuid topicId, int partition, long streamId, long epoch) throws StreamFencedException {
+        return metadataCache.safeRun(image -> DefaultOpenStreamChecker.check(image, topicId, partition, streamId, epoch));
+    }
+
+    public static boolean check(MetadataImage image, Uuid topicId, int partition, long streamId, long epoch) throws StreamFencedException {
         // When ABA reassign happens:
         // 1. Assign P0 to broker0 with epoch=0, broker0 opens the partition
         // 2. Assign P0 to broker1 with epoch=1, broker1 waits for the partition to be closed
         // 3. Quick reassign P0 to broker0 with epoch=2, broker0 merge step2/3 image and keep stream opened with epoch=0
         // 4. So broker1 should check partition leader epoch to fail the waiting
-        TopicImage topicImage = metadataCache.currentImage().topics().getTopic(topicId);
+        TopicImage topicImage = image.topics().getTopic(topicId);
         if (topicImage == null) {
             throw new StreamFencedException(String.format("topicId=%s cannot be found, it may be deleted or not created yet", topicId));
         }
@@ -45,7 +50,7 @@ public class DefaultOpenStreamChecker implements OpenStreamChecker {
         if (currentEpoch > epoch) {
             throw new StreamFencedException(String.format("partition=%s-%d with epoch=%d is fenced by new leader epoch=%d", topicId, partition, epoch, currentEpoch));
         }
-        S3StreamMetadataImage stream = metadataCache.currentImage().streamsMetadata().getStreamMetadata(streamId);
+        S3StreamMetadataImage stream = image.streamsMetadata().getStreamMetadata(streamId);
         if (stream == null) {
             throw new StreamFencedException(String.format("streamId=%d cannot be found, it may be deleted or not created yet", streamId));
         }

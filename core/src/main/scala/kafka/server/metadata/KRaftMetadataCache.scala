@@ -38,6 +38,7 @@ import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
 
 import java.util
 import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.locks.ReentrantLock
 import java.util.{Collections, Properties}
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Map, Seq, Set, mutable}
@@ -55,6 +56,8 @@ class KRaftMetadataCache(val brokerId: Int) extends MetadataCache with Logging w
   // the duration of their operation. Multiple reads of this value risk getting different
   // image values.
   @volatile private var _currentImage: MetadataImage = MetadataImage.EMPTY
+
+  private final val imageLock = new ReentrantLock();
 
   // This method is the main hotspot when it comes to the performance of metadata requests,
   // we should be careful about adding additional logic here.
@@ -524,7 +527,13 @@ class KRaftMetadataCache(val brokerId: Int) extends MetadataCache with Logging w
   }
 
   def setImage(newImage: MetadataImage): Unit = {
-    _currentImage = newImage
+    val lock = imageLock
+    lock.lock()
+    try {
+      _currentImage = newImage
+    } finally {
+      lock.unlock()
+    }
   }
 
   override def config(configResource: ConfigResource): Properties =
@@ -551,6 +560,26 @@ class KRaftMetadataCache(val brokerId: Int) extends MetadataCache with Logging w
   // AutoMQ inject start
   override def autoMQVersion(): AutoMQVersion = {
     _currentImage.features().autoMQVersion()
+  }
+
+  def safeRun[T](func: Function[MetadataImage, T]): T = {
+    val image = retainedImage()
+    try {
+      func.apply(image)
+    } finally {
+      image.release()
+    }
+  }
+
+  private def retainedImage(): MetadataImage = {
+    imageLock.lock()
+    try {
+      val image = _currentImage
+      image.retain()
+      image
+    } finally {
+      imageLock.unlock()
+    }
   }
   // AutoMQ inject end
 
