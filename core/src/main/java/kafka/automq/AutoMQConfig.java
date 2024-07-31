@@ -151,9 +151,7 @@ public class AutoMQConfig {
         "URI format for type otlp: otlp://?endpoint=$endpoint&protocol=$protocol&compression=$compression" +
         " - endpoint: the endpoint to push metrics to, e.g. http://localhost:4317" +
         " - protocol: the protocol to use when exporting metrics to endpoint, valid values: grpc, http. Default: grpc" +
-        " - compression: compression type, value values: gzip, none. Default: none" +
-        "URI format for type ops: ops://?" +
-        " - when configured, metrics will be exported to S3 with bucket specified by s3.ops.buckets configuration";
+        " - compression: compression type, value values: gzip, none. Default: none";
 
     public static final String S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG = "s3.telemetry.exporter.report.interval.ms";
     public static final String S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC = "This configuration controls how often the metrics should be exported.";
@@ -345,12 +343,15 @@ public class AutoMQConfig {
         if (uri == null) {
             uri = buildMetrixExporterURIWithOldConfigs(config);
         }
+        if (!uri.contains(ExporterConstants.OPS_TYPE)) {
+            uri += "," + buildOpsExporterURI();
+        }
         return uri;
     }
 
     private static String buildMetrixExporterURIWithOldConfigs(KafkaConfig kafkaConfig) {
         if (!kafkaConfig.getBoolean(S3_METRICS_ENABLE_CONFIG)) {
-            return null;
+            return "";
         }
         List<String> exportedUris = new ArrayList<>();
         String exporterTypes = kafkaConfig.getString(S3_TELEMETRY_METRICS_EXPORTER_TYPE_CONFIG);
