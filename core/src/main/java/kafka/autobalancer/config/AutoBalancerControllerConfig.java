@@ -48,7 +48,7 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO = PREFIX + "network.in.trivial.change.ratio";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_TRIVIAL_CHANGE_RATIO = PREFIX + "network.out.trivial.change.ratio";
     /* Default values */
-    public static final boolean DEFAULT_AUTO_BALANCER_CONTROLLER_ENABLE = false;
+    public static final boolean DEFAULT_AUTO_BALANCER_CONTROLLER_ENABLE = true;
     public static final Integer DEFAULT_AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG = 1;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_RETENTION_MS_CONFIG = TimeUnit.MINUTES.toMillis(30);
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_CONSUMER_POLL_TIMEOUT = 1000L;
