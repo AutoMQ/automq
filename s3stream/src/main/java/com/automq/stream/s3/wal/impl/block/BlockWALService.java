@@ -828,6 +828,7 @@ public class BlockWALService implements WriteAheadLog {
             return jumpNextRecoverOffset;
         }
     }
+
     /**
      * Protected for testing purpose.
      */
