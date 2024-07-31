@@ -121,7 +121,8 @@ public class BlockWALService implements WriteAheadLog {
     private static final int STARTED = 3;
     private static final int SHUTTING_DOWN = 4;
     private static final int SHUTDOWN = 5;
-    private static final AtomicInteger WAL_STATE = new AtomicInteger(INIT);
+    @SuppressWarnings("checkstyle:MemberName")
+    private final AtomicInteger WAL_STATE = new AtomicInteger(INIT);
     private final AtomicBoolean resetFinished = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
     private final ExecutorService walHeaderFlusher = Threads.newFixedThreadPool(1, ThreadUtils.createThreadFactory("flush-wal-header-thread-%d", true), LOGGER);
