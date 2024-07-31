@@ -22,6 +22,7 @@ public enum AutoMQVersion {
     // Support composite object
     // Support object bucket index
     // Support huge cluster
+    // Support node registration
     V2((short) 3);
 
     public static final String FEATURE_NAME = "automq.version";
@@ -77,6 +78,10 @@ public enum AutoMQVersion {
     }
 
     public boolean isHugeClusterSupported() {
+        return isAtLeast(V2);
+    }
+
+    public boolean isNodeRegistrationSupported() {
         return isAtLeast(V2);
     }
 
