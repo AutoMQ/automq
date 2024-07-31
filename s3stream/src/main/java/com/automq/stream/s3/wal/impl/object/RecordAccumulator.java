@@ -47,8 +47,8 @@ import org.slf4j.LoggerFactory;
 public class RecordAccumulator implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(RecordAccumulator.class);
 
-    private static final long DEFAULT_LOCK_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(10);
-    private static final long DEFAULT_UPLOAD_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
+    private static final long DEFAULT_LOCK_WARNING_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(5);
+    private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
     protected final ObjectWALConfig config;
     protected final Time time;
     protected final ObjectStorage objectStorage;
@@ -117,8 +117,8 @@ public class RecordAccumulator implements Closeable {
 
             lock.writeLock().lock();
             try {
-                if (time.nanoseconds() - startTime > DEFAULT_LOCK_TIMEOUT) {
-                    log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: scheduled_upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
+                if (time.nanoseconds() - startTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
+                    log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: scheduled_upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
                 }
 
                 if (System.currentTimeMillis() - lastUploadTimestamp >= config.batchInterval()) {
@@ -134,7 +134,7 @@ public class RecordAccumulator implements Closeable {
             try {
                 long count = pendingFutureMap.values()
                     .stream()
-                    .filter(uploadTime -> time.nanoseconds() - uploadTime > DEFAULT_UPLOAD_TIMEOUT)
+                    .filter(uploadTime -> time.nanoseconds() - uploadTime > DEFAULT_UPLOAD_WARNING_TIMEOUT)
                     .count();
                 if (count > 0) {
                     log.warn("Found {} pending upload tasks exceed 5s.", count);
@@ -259,8 +259,8 @@ public class RecordAccumulator implements Closeable {
 
         if (shouldUpload() && lock.writeLock().tryLock()) {
             try {
-                if (time.nanoseconds() - startTime > DEFAULT_LOCK_TIMEOUT) {
-                    log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: append_upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
+                if (time.nanoseconds() - startTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
+                    log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: append_upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
                 }
 
                 if (shouldUpload()) {
@@ -274,8 +274,8 @@ public class RecordAccumulator implements Closeable {
         long acquireAppendLockTime = time.nanoseconds();
         lock.readLock().lock();
         try {
-            if (time.nanoseconds() - acquireAppendLockTime > DEFAULT_LOCK_TIMEOUT) {
-                log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: append", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - acquireAppendLockTime));
+            if (time.nanoseconds() - acquireAppendLockTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
+                log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: append", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - acquireAppendLockTime));
             }
 
             long offset = nextOffset.getAndAdd(recordSize);
@@ -428,8 +428,8 @@ public class RecordAccumulator implements Closeable {
                 long lockStartTime = time.nanoseconds();
                 lock.writeLock().lock();
                 try {
-                    if (time.nanoseconds() - lockStartTime > DEFAULT_LOCK_TIMEOUT) {
-                        log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - lockStartTime));
+                    if (time.nanoseconds() - lockStartTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
+                        log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - lockStartTime));
                     }
 
                     objectMap.put(endOffset, new WALObject(result.bucket(), path, firstOffset, objectLength));
