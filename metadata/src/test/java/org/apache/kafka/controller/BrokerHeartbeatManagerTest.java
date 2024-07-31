@@ -272,6 +272,7 @@ public class BrokerHeartbeatManagerTest {
         list.add(broker2);
         list.add(broker3);
         assertEquals(broker2, list.first());
+        assertEquals(broker0, list.last());
         iterator = list.iterator();
         assertEquals(broker2, iterator.next());
         assertEquals(broker1, iterator.next());

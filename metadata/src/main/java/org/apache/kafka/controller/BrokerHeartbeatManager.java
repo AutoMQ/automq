@@ -21,6 +21,7 @@ import java.util.OptionalLong;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.controller.stream.OverloadCircuitBreaker;
 import org.apache.kafka.metadata.placement.UsableBroker;
 import org.slf4j.Logger;
 
@@ -162,6 +163,11 @@ public class BrokerHeartbeatManager {
             return result == head ? null : result;
         }
 
+        BrokerHeartbeatState last() {
+            BrokerHeartbeatState result = head.prev;
+            return result == head ? null : result;
+        }
+
         /**
          * Add the broker to the list. We start looking for a place to put it at the end
          * of the list.
@@ -251,6 +257,10 @@ public class BrokerHeartbeatManager {
      */
     private final TreeSet<BrokerHeartbeatState> active;
 
+    // AutoMQ inject start
+    private final OverloadCircuitBreaker overloadCircuitBreaker;
+    // AutoMQ inject end
+
     BrokerHeartbeatManager(LogContext logContext,
                            Time time,
                            long sessionTimeoutNs) {
@@ -260,6 +270,10 @@ public class BrokerHeartbeatManager {
         this.brokers = new HashMap<>();
         this.unfenced = new BrokerHeartbeatStateList();
         this.active = new TreeSet<>(MetadataOffsetComparator.INSTANCE);
+
+        // AutoMQ inject start
+        this.overloadCircuitBreaker = new OverloadCircuitBreaker(time);
+        // AutoMQ inject end
     }
 
     // VisibleForTesting
@@ -398,6 +412,9 @@ public class BrokerHeartbeatManager {
             if (!broker.shuttingDown()) {
                 active.add(broker);
             }
+            // AutoMQ inject start
+            overloadCircuitBreaker.success();
+            // AutoMQ inject end
         }
     }
 
@@ -434,7 +451,7 @@ public class BrokerHeartbeatManager {
      * Return the time in monotonic nanoseconds at which we should check if a broker
      * session needs to be expired.
      */
-    long nextCheckTimeNs() {
+    long nextCheckTimeNs0() {
         BrokerHeartbeatState broker = unfenced.first();
         if (broker == null) {
             return Long.MAX_VALUE;
@@ -449,7 +466,8 @@ public class BrokerHeartbeatManager {
      *
      * @return      An Optional broker node id.
      */
-    Optional<Integer> findOneStaleBroker() {
+    Optional<Integer> findOneStaleBroker0() {
+
         BrokerHeartbeatStateIterator iterator = unfenced.iterator();
         if (iterator.hasNext()) {
             BrokerHeartbeatState broker = iterator.next();
@@ -468,6 +486,44 @@ public class BrokerHeartbeatManager {
         return new UsableBrokerIterator(brokers.values().iterator(),
             idToRack);
     }
+
+    // AutoMQ inject start
+    long nextCheckTimeNs() {
+        if (overloadCircuitBreaker.isOverload()) {
+            return Long.MAX_VALUE;
+        } else {
+            return nextCheckTimeNs0();
+        }
+    }
+
+    Optional<Integer> findOneStaleBroker() {
+        // If the controller is in overload state, we should not fence any broker.
+        if (overloadCircuitBreaker.isOverload()) {
+            return Optional.empty();
+        }
+        Optional<Integer> staleBroker = findOneStaleBroker0();
+        if (staleBroker.isEmpty()) {
+            return staleBroker;
+        }
+        // Check whether the controller is in overload state.
+        if (checkOverload()) {
+            return Optional.empty();
+        } else {
+            return staleBroker;
+        }
+    }
+
+    boolean checkOverload() {
+        // If all unfenced brokers are stale, the controller is in overload state.
+        BrokerHeartbeatState last = unfenced.last();
+        if (last != null && !hasValidSession(last.id)) {
+            // all brokers are stale
+            overloadCircuitBreaker.overload();
+            return true;
+        }
+        return false;
+    }
+    // AutoMQ inject end
 
     static class UsableBrokerIterator implements Iterator<UsableBroker> {
         private final Iterator<BrokerHeartbeatState> iterator;
