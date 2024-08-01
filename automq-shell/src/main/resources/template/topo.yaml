@@ -1,8 +1,13 @@
 global:
   clusterId: ''
+  # bucket URI example:
+  # AWS : 0@s3://xxx_bucket?region=us-east-1
+  # AWS-CN: 0@s3://xxx_bucket?region=cn-northwest-1&endpoint=https://s3.amazonaws.com.cn
+  # ALIYUN: 0@s3://xxx_bucket?region=oss-cn-shanghai&endpoint=https://oss-cn-shanghai.aliyuncs.com
+  # TENCENT: 0@s3://xxx_bucket?region=ap-beijing&endpoint=https://cos.ap-beijing.myqcloud.com
   configs: |
-    s3.data.buckets=0@s3://$bucket?region=$region&endpoint=$endpoint
-    s3.ops.buckets=1@s3://$bucket?region=$region&endpoint=$endpoint
+    s3.data.buckets=0@s3://xxx_bucket?region=us-east-1
+    s3.ops.buckets=1@s3://xxx_bucket?region=us-east-1
   envs:
     - name: KAFKA_S3_ACCESS_KEY
       value: 'xxxxx'

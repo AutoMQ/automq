@@ -16,7 +16,8 @@ import com.automq.shell.model.Env;
 import com.automq.shell.model.Node;
 import com.automq.stream.s3.Constants;
 import com.automq.stream.s3.operator.BucketURI;
-import com.automq.stream.utils.PingS3Helper;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.File;
@@ -114,7 +115,11 @@ public class Deploy implements Callable<Integer> {
                     bucket.addExtension(BucketURI.ACCESS_KEY_KEY, globalAccessKey);
                     bucket.addExtension(BucketURI.SECRET_KEY_KEY, globalSecretKey);
                 }
-                PingS3Helper.builder().bucket(bucket).build().pingS3();
+                ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(bucket).build();
+                if (!objectStorage.readinessCheck()) {
+                    Exit.exit(-1);
+                }
+                objectStorage.close();
             }
         } catch (Throwable e) {
             throw new RuntimeException(e);
@@ -133,7 +138,7 @@ public class Deploy implements Callable<Integer> {
     private static String genBrokerStartupCmd(ClusterTopology topo, Node node) {
         StringBuilder sb = new StringBuilder();
         appendEnvs(sb, topo);
-        sb.append("./bin/kafka-server-start.sh config/kraft/broker.properties ");
+        sb.append("./bin/kafka-server-start.sh -daemon config/kraft/broker.properties ");
         appendCommonConfigsOverride(sb, topo, node);
         appendExtConfigsOverride(sb, topo.getGlobal().getConfigs());
         return sb.toString();
