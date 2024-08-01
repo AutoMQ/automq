@@ -388,6 +388,7 @@ public class S3Storage implements Storage {
             backgroundExecutor.shutdownNow();
             LOGGER.warn("await backgroundExecutor close fail", e);
         }
+        timeoutDetect.stop();
     }
 
     @Override
