@@ -16,7 +16,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.ObjectWriter;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -88,8 +87,8 @@ public class ElasticLogMeta {
         int size = segmentMetas.size();
         List<ElasticStreamSegmentMeta> lastNthSegmentMetas = segmentMetas.subList(Math.max(0, size - 5), size);
         return "ElasticLogMeta{" +
-                "streamMap=" + streamMap +
-                ", lastNthSegmentMetas=" + lastNthSegmentMetas +
-                '}';
+            "streamMap=" + streamMap +
+            ", lastNthSegmentMetas=" + lastNthSegmentMetas +
+            '}';
     }
 }

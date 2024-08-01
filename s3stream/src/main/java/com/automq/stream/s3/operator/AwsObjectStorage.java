@@ -15,6 +15,7 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.CollectionHelper;
+import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
@@ -23,6 +24,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -41,6 +43,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
@@ -56,6 +59,7 @@ import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
@@ -71,7 +75,7 @@ import static com.automq.stream.s3.metrics.operations.S3Operation.COMPLETE_MULTI
 import static com.automq.stream.s3.metrics.operations.S3Operation.GET_OBJECT;
 import static com.automq.stream.utils.FutureUtil.cause;
 
-@SuppressWarnings("this-escape")
+@SuppressWarnings({"this-escape", "NPathComplexity"})
 public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
     public static final String PATH_STYLE_KEY = "pathStyle";
@@ -98,7 +102,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, false), credentialsProviders, getMaxObjectStorageConcurrency());
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
-        readinessCheck();
     }
 
     // used for test only
@@ -338,17 +341,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return "bytes=" + start + "-" + (end - 1);
     }
 
-    private void readinessCheck() {
-        try {
-            String path = "__automq/readiness_check/%d" + System.nanoTime();
-            byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
-            doWrite(new WriteOptions(), path, Unpooled.wrappedBuffer(content)).get();
-            doDeleteObjects(List.of(path)).get();
-        } catch (Throwable e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     private S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders, int maxConcurrency) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
@@ -378,6 +370,82 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .reuseLastProviderEnabled(true)
             .credentialsProviders(providers)
             .build();
+    }
+
+    public boolean readinessCheck() {
+        return new ReadinessCheck().readinessCheck();
+    }
+
+    class ReadinessCheck {
+        public boolean readinessCheck() {
+            LOGGER.info("Start readiness check for {}", bucketURI);
+            String path = "__automq/readiness_check/normal_obj/%d" + System.nanoTime();
+            try {
+                writeS3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(path).build()).get();
+            } catch (Throwable e) {
+                // 权限 / endpoint / xxx
+                Throwable cause = FutureUtil.cause(e);
+                if (cause instanceof SdkClientException) {
+                    LOGGER.error("Cannot connect to s3, please check the s3 endpoint config", cause);
+                } else if (cause instanceof S3Exception) {
+                    int code = ((S3Exception) cause).statusCode();
+                    switch (code) {
+                        case HttpStatusCode.NOT_FOUND:
+                            break;
+                        case HttpStatusCode.FORBIDDEN:
+                            LOGGER.error("Please check whether config is correct", cause);
+                            return false;
+                        default:
+                            LOGGER.error("Please check config is correct", cause);
+                    }
+                }
+            }
+
+            try {
+                byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+                doWrite(new WriteOptions(), path, Unpooled.wrappedBuffer(content)).get();
+            } catch (Throwable e) {
+                Throwable cause = FutureUtil.cause(e);
+                if (cause instanceof S3Exception && ((S3Exception) cause).statusCode() == HttpStatusCode.NOT_FOUND) {
+                    LOGGER.error("Cannot find the bucket={}", bucket, cause);
+                } else {
+                    LOGGER.error("Please check the identity have the permission to do Write Object operation", cause);
+                }
+                return false;
+            }
+
+            try {
+                doDeleteObjects(List.of(path)).get();
+            } catch (Throwable e) {
+                LOGGER.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
+                return false;
+            }
+
+            String multiPartPath = "__automq/readiness_check/multi_obj/%d" + System.nanoTime();
+            try {
+                WriteOptions options = new WriteOptions();
+                String uploadId = doCreateMultipartUpload(options, multiPartPath).get();
+                byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+                ObjectStorageCompletedPart part = doUploadPart(options, multiPartPath, uploadId, 1, Unpooled.wrappedBuffer(content)).get();
+                doCompleteMultipartUpload(options, multiPartPath, uploadId, List.of(part)).get();
+
+                ByteBuf buf = doRangeRead(new ReadOptions(), multiPartPath, 0, -1L).get();
+                byte[] readContent = new byte[buf.readableBytes()];
+                buf.readBytes(readContent);
+                buf.release();
+                if (!Arrays.equals(content, readContent)) {
+                    LOGGER.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
+                }
+                doDeleteObjects(List.of(path)).get();
+            } catch (Throwable e) {
+                LOGGER.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
+                return false;
+            }
+
+            LOGGER.info("Readiness check pass!");
+            return true;
+        }
+
     }
 
     public static class Builder {
