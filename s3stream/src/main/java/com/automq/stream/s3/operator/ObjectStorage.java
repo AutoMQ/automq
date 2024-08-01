@@ -20,6 +20,12 @@ import java.util.concurrent.CompletableFuture;
 public interface ObjectStorage {
     long RANGE_READ_TO_END = -1L;
 
+    /**
+     * Check whether the object storage is available.
+     * @return available or not
+     */
+    boolean readinessCheck();
+
     void close();
 
     /**

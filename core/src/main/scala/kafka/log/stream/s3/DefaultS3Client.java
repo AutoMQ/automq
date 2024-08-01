@@ -39,7 +39,6 @@ import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.LogContext;
-import com.automq.stream.utils.PingS3Helper;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 import java.util.concurrent.CompletableFuture;
@@ -102,15 +101,11 @@ public class DefaultS3Client implements Client {
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
-        // check s3 availability
-        PingS3Helper pingS3Helper = PingS3Helper.builder()
-            .bucket(dataBucket)
-            .tagging(config.objectTagging())
-            .needPrintToConsole(false)
-            .build();
-        pingS3Helper.pingS3();
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).build();
+        if (!objectStorage.readinessCheck()) {
+            throw new IllegalArgumentException(String.format("%s is not ready", config.dataBuckets()));
+        }
         ObjectStorage compactionobjectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),

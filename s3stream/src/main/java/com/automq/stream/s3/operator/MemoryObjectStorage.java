@@ -87,6 +87,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    public boolean readinessCheck() {
+        return true;
+    }
+
+    @Override
     public Writer writer(WriteOptions writeOptions, String path) {
         ByteBuf buf = Unpooled.buffer();
         storage.put(path, buf);
