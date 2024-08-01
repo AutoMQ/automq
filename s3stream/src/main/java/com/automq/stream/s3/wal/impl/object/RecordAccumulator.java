@@ -335,7 +335,7 @@ public class RecordAccumulator implements Closeable {
 
     // Not thread safe, caller should hold lock.
     // Visible for testing.
-    protected void unsafeUpload(boolean force) {
+    public void unsafeUpload(boolean force) {
         if (!force) {
             checkWriteStatus();
         }
