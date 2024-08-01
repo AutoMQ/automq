@@ -340,6 +340,10 @@ public class RecordAccumulator implements Closeable {
             checkWriteStatus();
         }
 
+        if (bufferQueue.isEmpty()) {
+            return;
+        }
+
         int size = bufferQueue.size();
         PriorityQueue<Record> recordQueue = new PriorityQueue<>(size, Comparator.comparingLong(o -> o.offset));
 
