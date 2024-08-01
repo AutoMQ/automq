@@ -40,6 +40,6 @@ public class DefaultNodeRuntimeInfoGetter implements NodeRuntimeInfoGetter {
 
     @Override
     public boolean hasOpeningStreams(int nodeId) {
-        return !streamControlManager.getOpeningStreams(nodeId).isEmpty();
+        return streamControlManager.hasOpeningStreams(nodeId);
     }
 }

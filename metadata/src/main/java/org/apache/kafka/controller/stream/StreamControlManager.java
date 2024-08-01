@@ -37,6 +37,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.kafka.common.Uuid;
@@ -1075,6 +1077,29 @@ public class StreamControlManager {
             }
         }
         return streams;
+    }
+
+    public boolean hasOpeningStreams(int nodeId) {
+        DeltaList<Long> streamIdList = node2streams.get(nodeId);
+        if (streamIdList == null) {
+            return false;
+        }
+        AtomicBoolean hasOpeningStreams = new AtomicBoolean(false);
+        streamIdList.reverseForEachWithBreak(new Function<Long, Boolean>() {
+            @Override
+            public Boolean apply(Long streamId) {
+                StreamRuntimeMetadata streamRuntimeMetadata = streamsMetadata.get(streamId);
+                if (streamRuntimeMetadata == null) {
+                    return false;
+                }
+                if (streamRuntimeMetadata.currentState() == StreamState.OPENED) {
+                    hasOpeningStreams.set(true);
+                    return true;
+                }
+                return false;
+            }
+        });
+        return hasOpeningStreams.get();
     }
 
     /**
