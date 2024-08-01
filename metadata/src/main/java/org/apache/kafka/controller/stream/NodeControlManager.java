@@ -87,8 +87,8 @@ public class NodeControlManager {
             nodeMetadataList.stream().map(src -> {
                 AutomqGetNodesResponseData.NodeMetadata metadata = src.to();
                 int nodeId = src.getNodeId();
-                metadata.setState(nodeRuntimeInfoGetter.state(nodeId).name());
-                metadata.setHasOpeningStreams(nodeRuntimeInfoGetter.hasOpeningStreams(nodeId));
+                metadata.setState(state(nodeId).name());
+                metadata.setHasOpeningStreams(hasOpeningStreams(nodeId));
                 return metadata;
             }).collect(Collectors.toList())
         );
@@ -97,6 +97,17 @@ public class NodeControlManager {
 
     public Collection<NodeMetadata> getMetadata() {
         return nodeMetadataMap.values();
+    }
+
+    public NodeState state(int nodeId) {
+        return nodeRuntimeInfoGetter.state(nodeId);
+    }
+
+    /**
+     * Note: It is costly to check if a node has opening streams, so it is recommended to use this method only when necessary.
+     */
+    public boolean hasOpeningStreams(int nodeId) {
+        return nodeRuntimeInfoGetter.hasOpeningStreams(nodeId);
     }
 
     public void replay(KVRecord kvRecord) {
