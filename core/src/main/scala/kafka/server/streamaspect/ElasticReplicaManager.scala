@@ -536,7 +536,7 @@ class ElasticReplicaManager(
     def bytesNeed(): Int = {
       // sum the sizes of topics to fetch from fetchInfos
       val bytesNeed = readPartitionInfo.foldLeft(0) { case (sum, (_, partitionData)) => sum + partitionData.maxBytes }
-      math.min(bytesNeed, params.maxBytes)
+      if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
     }
 
     val handler: Handler = timeoutMs match {
