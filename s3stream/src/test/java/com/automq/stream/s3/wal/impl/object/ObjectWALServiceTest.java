@@ -16,6 +16,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +35,11 @@ public class ObjectWALServiceTest {
         wal = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withMaxBytesInBatch(110).withBatchInterval(Long.MAX_VALUE).build());
         wal.start();
         random = new Random();
+    }
+
+    @AfterEach
+    public void tearDown() {
+        wal.shutdownGracefully();
     }
 
     private ByteBuf generateByteBuf(int size) {
