@@ -9,7 +9,7 @@
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
-from kafkatest.automq.automq_e2e_util import (run_simple_load, TOPIC, append_info)
+from kafkatest.automq.automq_e2e_util import (FILE_WAL, S3_WAL, run_simple_load, TOPIC, append_info)
 from kafkatest.services.kafka import KafkaService
 
 # Configuration constants for the AutoBalancer
@@ -94,7 +94,7 @@ class AutoBalancerTest(Test):
         self.avg_deviation = 0.2
         self.maximum_broker_deviation_percentage = 0.15
 
-    def create_kafka(self, num_nodes=1, partition=1, exclude_broker=None, exclude_topic=None, replica_assignment=None):
+    def create_kafka(self, num_nodes=1, partition=1, exclude_broker=None, exclude_topic=None, replica_assignment=None, wal=FILE_WAL):
         """
         Create and configure a Kafka cluster for testing.
 
@@ -123,6 +123,7 @@ class AutoBalancerTest(Test):
             [REPORT_INTERVAL, str(4000)],
             [DETECT_INTERVAL, str(8000)],
             [METRIC_REPORTERS, 'kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter'],
+            ['s3.wal.path', wal],
         ]
 
         if exclude_broker:
@@ -153,8 +154,8 @@ class AutoBalancerTest(Test):
         self.start = True
 
     @cluster(num_nodes=5)
-    @parametrize(automq_num_nodes=2, partition=4, replica_assignment='1,1,1,2')
-    def test_action(self, automq_num_nodes, partition, replica_assignment):
+    @parametrize(automq_num_nodes=2, partition=4, replica_assignment='1,1,1,2', wal=[FILE_WAL, S3_WAL])
+    def test_action(self, automq_num_nodes, partition, replica_assignment, wal):
         """
         Test throughput distribution across brokers
         :param automq_num_nodes: Number of automq
@@ -162,7 +163,7 @@ class AutoBalancerTest(Test):
         :param replica_assignment: Replica assignment for partitions
         """
         success, msg = True, ''
-        self.create_kafka(num_nodes=automq_num_nodes, partition=partition, replica_assignment=replica_assignment)
+        self.create_kafka(num_nodes=automq_num_nodes, partition=partition, replica_assignment=replica_assignment, wal=wal)
         self.kafka.start()
 
         run_simple_load(test_context=self.context, kafka=self.kafka, logger=self.logger, topic=self.topic,

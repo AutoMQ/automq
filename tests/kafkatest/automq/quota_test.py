@@ -20,7 +20,7 @@ from kafkatest.services.console_consumer import ConsoleConsumer
 from kafkatest.services.kafka import KafkaService
 from kafkatest.services.performance import ProducerPerformanceService
 from kafkatest.version import DEV_BRANCH
-from kafkatest.automq.automq_e2e_util import publish_broker_configuration
+from kafkatest.automq.automq_e2e_util import FILE_WAL, S3_WAL, publish_broker_configuration
 
 
 class QuotaTest(Test):
@@ -46,7 +46,7 @@ class QuotaTest(Test):
         self.success = True
         self.msg = ''
 
-    def create_kafka(self, test_context, broker_quota_in, broker_quota_out):
+    def create_kafka(self, test_context, broker_quota_in, broker_quota_out, broker_wal):
         log_size = 256 * 1024 * 1024
         block_size = 256 * 1024 * 1024
         server_prop_overrides = [
@@ -57,6 +57,7 @@ class QuotaTest(Test):
             ['s3.wal.capacity', str(log_size)],
             ['s3.wal.upload.threshold', str(log_size // 4)],
             ['s3.block.cache.size', str(block_size)],
+            ['s3.wal.path', broker_wal],
         ]
         self.kafka = KafkaService(test_context, num_nodes=1, zk=None,
                                   kafka_heap_opts="-Xmx2048m -Xms2048m",
@@ -100,9 +101,9 @@ class QuotaTest(Test):
             assert len(messages) > 0, "consumer %d didn't consume any message before timeout" % idx
 
     @cluster(num_nodes=5)
-    @matrix(broker_in=[2500000], broker_out=[2000000])
-    def test_quota(self, broker_in, broker_out):
-        self.create_kafka(self.test_context, broker_in, broker_out)
+    @matrix(broker_in=[2500000], broker_out=[2000000], wal=[FILE_WAL, S3_WAL])
+    def test_quota(self, broker_in, broker_out, wal):
+        self.create_kafka(self.test_context, broker_in, broker_out, wal)
         self.kafka.start()
         records = 50000
         self.logger.info(f'update to {broker_in},{broker_out}')
