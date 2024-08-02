@@ -17,6 +17,7 @@ import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +34,8 @@ public interface WALChannel {
     Logger LOGGER = LoggerFactory.getLogger(WALChannel.class);
 
     long DEFAULT_RETRY_INTERVAL = 100L;
+
+    long MAX_RETRY_TIMEOUT = TimeUnit.MINUTES.toNanos(1);
 
     static WALChannelBuilder builder(String path) {
         return new WALChannelBuilder(path);
@@ -68,21 +71,27 @@ public interface WALChannel {
      */
     void write(ByteBuf src, long position) throws IOException;
 
-    default void retryWrite(ByteBuf src, long position) {
+    default void retryWrite(ByteBuf src, long position) throws IOException {
         retryWrite(src, position, DEFAULT_RETRY_INTERVAL);
     }
 
     /**
      * Retry {@link #write(ByteBuf, long)} with the given interval until success.
      */
-    default void retryWrite(ByteBuf src, long position, long retryIntervalMillis) {
+    default void retryWrite(ByteBuf src, long position, long retryIntervalMillis) throws IOException {
+        long start = System.nanoTime();
         while (true) {
             try {
                 write(src, position);
                 break;
             } catch (IOException e) {
-                LOGGER.error("Failed to write, retrying in {}ms", retryIntervalMillis, e);
-                Threads.sleep(retryIntervalMillis);
+                if (System.nanoTime() - start > MAX_RETRY_TIMEOUT) {
+                    LOGGER.error("Failed to write, retry timeout", e);
+                    throw e;
+                } else {
+                    LOGGER.error("Failed to write, retrying in {}ms", retryIntervalMillis, e);
+                    Threads.sleep(retryIntervalMillis);
+                }
             }
         }
     }
