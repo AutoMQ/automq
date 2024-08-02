@@ -15,6 +15,7 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.common.RecordHeader;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import com.automq.stream.utils.Threads;
@@ -271,9 +272,18 @@ public class RecordAccumulator implements Closeable {
     }
 
     public long append(long recordSize, Function<Long, ByteBuf> recordSupplier,
-        CompletableFuture<AppendResult.CallbackResult> future) {
+        CompletableFuture<AppendResult.CallbackResult> future) throws OverCapacityException {
         long startTime = time.nanoseconds();
         checkWriteStatus();
+
+        // Check if there is too much data in the S3 WAL.
+        if (nextOffset.get() - flushedOffset.get() > config.maxUnflushedBytes()) {
+            throw new OverCapacityException("Too many unflushed bytes.");
+        }
+
+        if (objectList().size() + config.maxInflightUploadCount() >= 1000) {
+            throw new OverCapacityException("Too many WAL objects.");
+        }
 
         if (shouldUpload() && lock.writeLock().tryLock()) {
             try {
