@@ -200,12 +200,17 @@ public class S3StreamClient implements StreamClient {
         }
 
         TimerUtil timerUtil = new TimerUtil();
+        closeStreams(false);
+        LOGGER.info("S3StreamClient shutdown, cost {}ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+    }
+
+    private void closeStreams(boolean force) {
         for (; ; ) {
             lock.lock();
             try {
                 openedStreams.forEach((streamId, stream) -> {
-                    LOGGER.info("trigger stream force close, streamId={}", streamId);
-                    stream.close();
+                    LOGGER.info("trigger stream close, streamId={}", streamId);
+                    stream.close(force);
                 });
                 if (openedStreams.isEmpty() && openingStreams.isEmpty() && closingStreams.isEmpty()) {
                     LOGGER.info("all streams are closed");
@@ -217,8 +222,14 @@ public class S3StreamClient implements StreamClient {
             }
             Threads.sleep(1000);
         }
-        LOGGER.info("S3StreamClient shutdown, cost {}ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
     }
+
+    public void forceClose() {
+        markClosed();
+        closeStreams(true);
+    }
+
+
 
     private void checkState() {
         if (closed) {
@@ -303,11 +314,15 @@ public class S3StreamClient implements StreamClient {
 
         @Override
         public CompletableFuture<Void> close() {
+            return close(false);
+        }
+
+        public CompletableFuture<Void> close(boolean force) {
             return runInLock(() -> {
                 CompletableFuture<Stream> cf = new CompletableFuture<>();
                 openedStreams.remove(streamId(), this);
                 closingStreams.put(streamId(), cf);
-                return stream.close().whenComplete((v, e) -> runInLock(() -> {
+                return stream.close(force).whenComplete((v, e) -> runInLock(() -> {
                     cf.complete(StreamWrapper.this);
                     closingStreams.remove(streamId(), cf);
                     for (StreamLifeCycleListener listener : streamLifeCycleListeners) {
