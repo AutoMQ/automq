@@ -189,10 +189,11 @@ public class S3Stream implements Stream {
             }
             // Wal should keep retry append until stream is fenced or wal is closed.
             status.markFenced();
-            if (ex instanceof StreamClientException && ((StreamClientException) ex).getCode() == ErrorCode.EXPIRED_STREAM_EPOCH) {
+            Throwable cause = FutureUtil.cause(ex);
+            if (cause instanceof StreamClientException && ((StreamClientException) cause).getCode() == ErrorCode.EXPIRED_STREAM_EPOCH) {
                 LOGGER.info("{} stream append, stream is fenced", logIdent);
             } else {
-                LOGGER.warn("{} stream append fail", logIdent, ex);
+                LOGGER.warn("{} stream append fail", logIdent, cause);
             }
         });
     }
