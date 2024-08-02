@@ -28,7 +28,7 @@ public class WalWriteRequest implements Comparable<WalWriteRequest> {
      *
      * @see S3Storage.WALCallbackSequencer
      */
-    boolean persisted;
+    private volatile boolean persisted;
 
     /**
      * Whether the record has been put to the {@link LogCache}
@@ -52,6 +52,14 @@ public class WalWriteRequest implements Comparable<WalWriteRequest> {
     @Override
     public int compareTo(WalWriteRequest o) {
         return record.compareTo(o.record);
+    }
+
+    public void persisted() {
+        this.persisted = true;
+    }
+
+    public boolean isPersisted() {
+        return this.persisted;
     }
 
     @Override

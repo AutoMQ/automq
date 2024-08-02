@@ -612,16 +612,23 @@ public class S3Storage implements Storage {
     }
 
     private void handleAppendCallback(WalWriteRequest request) {
-        suppress(() -> handleAppendCallback0(request), LOGGER);
+        suppress(() -> {
+            final long startTime = System.nanoTime();
+            handleAppendCallback0(request);
+            StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+        }, LOGGER);
     }
 
     private void handleAppendCallback0(WalWriteRequest request) {
-        final long startTime = System.nanoTime();
+        request.persisted();
         List<WalWriteRequest> waitingAckRequests;
         Lock lock = getStreamCallbackLock(request.record.getStreamId());
         lock.lock();
         try {
             waitingAckRequests = callbackSequencer.after(request);
+            if (waitingAckRequests.isEmpty()) {
+                return;
+            }
             waitingAckRequests.forEach(r -> r.record.retain());
             for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
                 boolean full = deltaWALCache.put(waitingAckRequest.record);
@@ -637,7 +644,6 @@ public class S3Storage implements Storage {
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
             waitingAckRequest.cf.complete(null);
         }
-        StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
     }
 
     private Lock getStreamCallbackLock(long streamId) {
@@ -970,7 +976,6 @@ public class S3Storage implements Storage {
          * @return popped sequence persisted request.
          */
         public List<WalWriteRequest> after(WalWriteRequest request) {
-            request.persisted = true;
 
             // Try to pop sequential persisted requests from the queue.
             long streamId = request.record.getStreamId();
@@ -987,7 +992,7 @@ public class S3Storage implements Storage {
 
             for (; ; ) {
                 peek = streamRequests.peek();
-                if (peek == null || !peek.persisted) {
+                if (peek == null || !peek.isPersisted()) {
                     break;
                 }
                 poll = streamRequests.poll();
