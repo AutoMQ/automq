@@ -620,7 +620,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
             Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, cause);
+                if (!(cause instanceof ObjectNotFoundException)) {
+                    LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, cause);
+                }
                 cf.completeExceptionally(cause);
             } else {
                 LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, cause);
