@@ -9,6 +9,7 @@
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
+from ducktape.mark import matrix
 from kafkatest.automq.automq_e2e_util import (FILE_WAL, S3_WAL, run_simple_load, TOPIC, append_info)
 from kafkatest.services.kafka import KafkaService
 
@@ -94,7 +95,7 @@ class AutoBalancerTest(Test):
         self.avg_deviation = 0.2
         self.maximum_broker_deviation_percentage = 0.15
 
-    def create_kafka(self, num_nodes=1, partition=1, exclude_broker=None, exclude_topic=None, replica_assignment=None, wal=FILE_WAL):
+    def create_kafka(self, num_nodes=1, partition=1, exclude_broker=None, exclude_topic=None, replica_assignment=None, wal='file'):
         """
         Create and configure a Kafka cluster for testing.
 
@@ -123,7 +124,7 @@ class AutoBalancerTest(Test):
             [REPORT_INTERVAL, str(4000)],
             [DETECT_INTERVAL, str(8000)],
             [METRIC_REPORTERS, 'kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter'],
-            ['s3.wal.path', wal],
+            ['s3.wal.path', FILE_WAL if wal == 'file' else S3_WAL],
         ]
 
         if exclude_broker:
@@ -154,7 +155,7 @@ class AutoBalancerTest(Test):
         self.start = True
 
     @cluster(num_nodes=5)
-    @parametrize(automq_num_nodes=2, partition=4, replica_assignment='1,1,1,2', wal=[FILE_WAL, S3_WAL])
+    @matrix(automq_num_nodes=[2], partition=[4], replica_assignment=['1,1,1,2'], wal=['file', 's3'])
     def test_action(self, automq_num_nodes, partition, replica_assignment, wal):
         """
         Test throughput distribution across brokers
@@ -177,8 +178,8 @@ class AutoBalancerTest(Test):
         assert success, msg
 
     @cluster(num_nodes=4)
-    @parametrize(automq_num_nodes=2, exclude_broker='2', partition=4, replica_assignment='1,1,1,2')
-    def test_broker_white_list(self, automq_num_nodes, exclude_broker, partition, replica_assignment):
+    @matrix(automq_num_nodes=[2], exclude_broker=['2'], partition=[4], replica_assignment=['1,1,1,2'], wal=['file', 's3'])
+    def test_broker_white_list(self, automq_num_nodes, exclude_broker, partition, replica_assignment, wal):
         """
         Test broker exclusion functionality
         :param automq_num_nodes: Number of automq
@@ -188,22 +189,23 @@ class AutoBalancerTest(Test):
         """
         success, msg = True, ''
         self.create_kafka(num_nodes=automq_num_nodes, exclude_broker=exclude_broker, partition=partition,
-                          replica_assignment=replica_assignment)
+                          replica_assignment=replica_assignment, wal=wal)
         self.kafka.start()
         before = self.kafka.parse_describe_topic(self.kafka.describe_topic(TOPIC))
         run_simple_load(test_context=self.context, kafka=self.kafka, logger=self.logger, topic=self.topic,
                         num_records=20000, throughput=1300)
         after = self.kafka.parse_describe_topic(self.kafka.describe_topic(TOPIC))
 
-        success_, msg_ = check_partition_eq(topic_info1=before, topic_info2=after)
+        success_, msg_ = check_partition_eq(topic_info1=before,
+         topic_info2=after)
         success = success and success_
         msg = append_info(msg, success_, msg_)
 
         assert success, msg
 
     @cluster(num_nodes=6)
-    @parametrize(automq_num_nodes=2)
-    def test_topic_white_list(self, automq_num_nodes):
+    @matrix(automq_num_nodes=[2], wal=['file', 's3'])
+    def test_topic_white_list(self, automq_num_nodes, wal):
         """
         Test topic exclusion functionality
         :param automq_num_nodes: Number of automq
@@ -225,7 +227,7 @@ class AutoBalancerTest(Test):
             "configs": {"min.insync.replicas": 1},
             "replica-assignment": '1,1,1,2',
         }
-        self.create_kafka(num_nodes=automq_num_nodes, exclude_topic=topic1, partition=1, replica_assignment='1')
+        self.create_kafka(num_nodes=automq_num_nodes, exclude_topic=topic1, partition=1, replica_assignment='1', wal=wal)
         self.kafka.start()
         self.kafka.create_topic(topic_cfg1)
         self.kafka.create_topic(topic_cfg2)

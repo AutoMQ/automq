@@ -57,7 +57,7 @@ class QuotaTest(Test):
             ['s3.wal.capacity', str(log_size)],
             ['s3.wal.upload.threshold', str(log_size // 4)],
             ['s3.block.cache.size', str(block_size)],
-            ['s3.wal.path', broker_wal],
+            ['s3.wal.path', FILE_WAL if broker_wal == 'file' else S3_WAL],
         ]
         self.kafka = KafkaService(test_context, num_nodes=1, zk=None,
                                   kafka_heap_opts="-Xmx2048m -Xms2048m",
@@ -101,7 +101,7 @@ class QuotaTest(Test):
             assert len(messages) > 0, "consumer %d didn't consume any message before timeout" % idx
 
     @cluster(num_nodes=5)
-    @matrix(broker_in=[2500000], broker_out=[2000000], wal=[FILE_WAL, S3_WAL])
+    @matrix(broker_in=[2500000], broker_out=[2000000], wal=['file', 's3'])
     def test_quota(self, broker_in, broker_out, wal):
         self.create_kafka(self.test_context, broker_in, broker_out, wal)
         self.kafka.start()
