@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.doAnswer;
@@ -58,7 +59,7 @@ public class S3StreamClientTest {
     @Test
     public void testShutdown_withOpeningStream() {
         S3Stream stream = mock(S3Stream.class);
-        when(stream.close()).thenReturn(CompletableFuture.completedFuture(null));
+        when(stream.close(anyBoolean())).thenReturn(CompletableFuture.completedFuture(null));
         when(stream.streamId()).thenReturn(1L);
 
         CompletableFuture<StreamMetadata> cf = new CompletableFuture<>();
@@ -73,7 +74,7 @@ public class S3StreamClientTest {
         client.openStream(1, OpenStreamOptions.builder().build());
         client.shutdown();
 
-        verify(stream, times(1)).close();
+        verify(stream, times(1)).close(anyBoolean());
         assertEquals(0, client.openingStreams.size());
         assertEquals(0, client.openedStreams.size());
         assertEquals(0, client.closingStreams.size());
