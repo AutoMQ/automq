@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class DeltaList<T> {
@@ -109,6 +110,29 @@ public class DeltaList<T> {
                 } else {
                     if (!isRemoved(operation, removedList)) {
                         consumer.accept(operation.t);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Reverse iterate the list
+     *
+     * @param func accept a list element, return break loop mark.
+     */
+    public void reverseForEachWithBreak(Function<T, Boolean> func) {
+        synchronized (operations) {
+            List<Operation<T>> removedList = new ArrayList<>();
+            for (int i = snapshotIndex - 1; i >= 0; i--) {
+                Operation<T> operation = operations.get(i);
+                if (operation.tombstoneMatcher != null) {
+                    removedList.add(operation);
+                } else {
+                    if (!isRemoved(operation, removedList)) {
+                        if (func.apply(operation.t)) {
+                            return;
+                        }
                     }
                 }
             }
