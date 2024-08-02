@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +55,7 @@ public class RecordAccumulator implements Closeable {
     protected final ObjectStorage objectStorage;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ConcurrentNavigableMap<Long /* inclusive first offset */, List<Record>> uploadMap = new ConcurrentSkipListMap<>();
+    private final ConcurrentNavigableMap<Pair<Long /* epoch */, Long /* exclusive end offset */>, WALObject> previousObjectMap = new ConcurrentSkipListMap<>();
     private final ConcurrentNavigableMap<Long /* exclusive end offset */, WALObject> objectMap = new ConcurrentSkipListMap<>();
     private final String nodePrefix;
     private final String objectPrefix;
@@ -93,9 +95,22 @@ public class RecordAccumulator implements Closeable {
                 String[] parts = path.split("/");
                 try {
                     long firstOffset = Long.parseLong(parts[parts.length - 1]);
+                    long epoch = Long.parseLong(parts[parts.length - 3]);
+
+                    // Skip the object if it belongs to a later epoch.
+                    if (epoch > config.epoch()) {
+                        return;
+                    }
+
                     long length = object.size();
                     long endOffset = firstOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
-                    objectMap.put(endOffset, new WALObject(object.bucketId(), path, firstOffset, length));
+
+                    if (epoch != config.epoch()) {
+                        previousObjectMap.put(Pair.of(epoch, endOffset), new WALObject(object.bucketId(), path, firstOffset, length));
+                    } else {
+                        objectMap.put(endOffset, new WALObject(object.bucketId(), path, firstOffset, length));
+                    }
+                    objectDataBytes.addAndGet(length);
                 } catch (NumberFormatException e) {
                     // Ignore invalid path
                     log.warn("Found invalid wal object: {}", path);
@@ -216,7 +231,10 @@ public class RecordAccumulator implements Closeable {
     }
 
     public List<WALObject> objectList() {
-        return new ArrayList<>(objectMap.values());
+        List<WALObject> list = new ArrayList<>(objectMap.size() + previousObjectMap.size());
+        list.addAll(previousObjectMap.values());
+        list.addAll(objectMap.values());
+        return list;
     }
 
     // Visible for testing
@@ -295,6 +313,40 @@ public class RecordAccumulator implements Closeable {
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    public CompletableFuture<Void> reset() {
+        checkStatus();
+
+        if (objectMap.isEmpty() && previousObjectMap.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        long startTime = time.nanoseconds();
+        AtomicLong deletedObjectSize = new AtomicLong();
+        List<ObjectStorage.ObjectPath> deleteObjectList = new ArrayList<>();
+
+        previousObjectMap.forEach((k, v) -> {
+            deleteObjectList.add(new ObjectStorage.ObjectPath(v.bucketId(), v.path()));
+            deletedObjectSize.addAndGet(v.length());
+            previousObjectMap.remove(k);
+        });
+        objectMap.forEach((k, v) -> {
+            deleteObjectList.add(new ObjectStorage.ObjectPath(v.bucketId(), v.path()));
+            deletedObjectSize.addAndGet(v.length());
+            objectMap.remove(k);
+        });
+
+        return objectStorage.delete(deleteObjectList)
+            .whenComplete((v, throwable) -> {
+                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "reset", throwable == null);
+                objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
+
+                // Never fail the delete task, the under layer storage will retry forever.
+                if (throwable != null) {
+                    log.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
+                }
+            });
     }
 
     // Trim objects where the last offset is less than or equal to the given offset.

@@ -94,7 +94,8 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public CompletableFuture<Void> reset() {
-        return trim(Long.MAX_VALUE);
+        log.info("Reset S3 WAL");
+        return accumulator.reset();
     }
 
     @Override
