@@ -18,7 +18,7 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Global {
     private String clusterId;
-    private String configs;
+    private String config;
     private List<Env> envs;
 
     public String getClusterId() {
@@ -29,12 +29,12 @@ public class Global {
         this.clusterId = clusterId;
     }
 
-    public String getConfigs() {
-        return configs;
+    public String getConfig() {
+        return config;
     }
 
-    public void setConfigs(String configs) {
-        this.configs = configs;
+    public void setConfig(String config) {
+        this.config = config;
     }
 
     public List<Env> getEnvs() {

@@ -88,7 +88,7 @@ public class Deploy implements Callable<Integer> {
     private static void bucketReadinessCheck(ClusterTopology topo) {
         try {
             Properties properties = new Properties();
-            properties.load(new StringReader(topo.getGlobal().getConfigs()));
+            properties.load(new StringReader(topo.getGlobal().getConfig()));
             String dataBuckets = properties.getProperty("s3.data.buckets");
             String opsBuckets = properties.getProperty("s3.ops.buckets");
             if (StringUtils.isBlank(dataBuckets) || StringUtils.isBlank(opsBuckets)) {
@@ -131,7 +131,7 @@ public class Deploy implements Callable<Integer> {
         appendEnvs(sb, topo);
         sb.append("./bin/kafka-server-start.sh config/kraft/server.properties ");
         appendCommonConfigsOverride(sb, topo, node);
-        appendExtConfigsOverride(sb, topo.getGlobal().getConfigs());
+        appendExtConfigsOverride(sb, topo.getGlobal().getConfig());
         return sb.toString();
     }
 
@@ -140,7 +140,7 @@ public class Deploy implements Callable<Integer> {
         appendEnvs(sb, topo);
         sb.append("./bin/kafka-server-start.sh -daemon config/kraft/broker.properties ");
         appendCommonConfigsOverride(sb, topo, node);
-        appendExtConfigsOverride(sb, topo.getGlobal().getConfigs());
+        appendExtConfigsOverride(sb, topo.getGlobal().getConfig());
         return sb.toString();
     }
 
