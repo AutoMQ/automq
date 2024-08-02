@@ -80,11 +80,18 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
-        final long recordSize = RECORD_HEADER_SIZE + data.readableBytes();
-        final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
-        long expectedWriteOffset = accumulator.append(recordSize, start -> WALUtil.generateRecord(data, crc, start), appendResultFuture);
+        try {
+            final long recordSize = RECORD_HEADER_SIZE + data.readableBytes();
+            final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
+            long expectedWriteOffset = accumulator.append(recordSize, start -> WALUtil.generateRecord(data, crc, start), appendResultFuture);
 
-        return new AppendResultImpl(expectedWriteOffset, appendResultFuture);
+            return new AppendResultImpl(expectedWriteOffset, appendResultFuture);
+        } catch (Exception e) {
+            // Make sure the data buffer is released.
+            data.release();
+            log.error("Append record to S3 WAL failed, due to accumulator is full.", e);
+            throw new OverCapacityException("Append record to S3 WAL failed, due to accumulator is full: " + e.getMessage());
+        }
     }
 
     @Override
