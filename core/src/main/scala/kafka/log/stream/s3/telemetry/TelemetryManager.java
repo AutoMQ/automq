@@ -76,14 +76,6 @@ public class TelemetryManager {
         SLF4JBridgeHandler.install();
     }
 
-    private String getNodeType() {
-        Set<ProcessRole> roles = kafkaConfig.processRoles();
-        if (roles.size() == 1) {
-            return roles.last().toString();
-        }
-        return "server";
-    }
-
     private String getHostName() {
         try {
             return InetAddress.getLocalHost().getHostName();
@@ -117,7 +109,6 @@ public class TelemetryManager {
                 .put(MetricsConstants.HOST_NAME, getHostName())
                 .put(MetricsConstants.JOB, clusterId) // for Prometheus HTTP server compatibility
                 .put(MetricsConstants.INSTANCE, String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
-                .put(MetricsConstants.NODE_TYPE, getNodeType())
                 .build())
             .build();
         SdkMeterProviderBuilder sdkMeterProviderBuilder = SdkMeterProvider.builder().setResource(resource);

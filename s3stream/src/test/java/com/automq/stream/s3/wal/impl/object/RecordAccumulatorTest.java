@@ -14,7 +14,6 @@ package com.automq.stream.s3.wal.impl.object;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
-import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
@@ -28,6 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +58,12 @@ public class RecordAccumulatorTest {
         random = new Random();
     }
 
+    @AfterEach
+    public void tearDown() {
+        recordAccumulatorExt.close();
+        objectStorage.close();
+    }
+
     private ByteBuf generateByteBuf(int size) {
         ByteBuf byteBuf = Unpooled.buffer(size);
         byte[] bytes = new byte[size];
@@ -67,7 +73,7 @@ public class RecordAccumulatorTest {
     }
 
     @Test
-    public void testOffset() throws OverCapacityException {
+    public void testOffset() {
         ByteBuf byteBuf1 = generateByteBuf(50);
         CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
         recordAccumulatorExt.append(byteBuf1.readableBytes(), offset -> byteBuf1.retainedSlice().asReadOnly(), future);
@@ -232,7 +238,7 @@ public class RecordAccumulatorTest {
     }
 
     @Test
-    public void testUploadPeriodically() throws OverCapacityException {
+    public void testUploadPeriodically() {
         recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build());
         recordAccumulatorExt.start();
 
@@ -247,7 +253,7 @@ public class RecordAccumulatorTest {
     }
 
     @Test
-    public void testShutdown() throws OverCapacityException, InterruptedException {
+    public void testShutdown() throws InterruptedException {
         ScheduledExecutorService executorService = recordAccumulatorExt.executorService();
         executorService.shutdown();
         executorService.awaitTermination(10, TimeUnit.SECONDS);
@@ -266,7 +272,7 @@ public class RecordAccumulatorTest {
     }
 
     @Test
-    public void testTrim() throws OverCapacityException {
+    public void testTrim() {
         ByteBuf byteBuf1 = generateByteBuf(50);
         CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
         recordAccumulatorExt.append(byteBuf1.readableBytes(), offset -> byteBuf1.retainedSlice().asReadOnly(), future);
@@ -285,6 +291,48 @@ public class RecordAccumulatorTest {
         assertEquals(2, recordAccumulatorExt.objectList().size());
 
         recordAccumulatorExt.trim(100).join();
+        assertEquals(0, recordAccumulatorExt.objectList().size());
+    }
+
+    @Test
+    public void testReset() {
+        ByteBuf byteBuf1 = generateByteBuf(50);
+        CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf1.readableBytes(), offset -> byteBuf1.retainedSlice().asReadOnly(), future);
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        ByteBuf byteBuf2 = generateByteBuf(50);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf2.readableBytes(), offset -> byteBuf2.retainedSlice().asReadOnly(), future);
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        // Close and restart with another node id.
+        recordAccumulatorExt.close();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withEpoch(System.currentTimeMillis()).build());
+        recordAccumulatorExt.start();
+        assertEquals(0, recordAccumulatorExt.objectList().size());
+
+        // Close and restart with the same node id and higher node epoch.
+        recordAccumulatorExt.close();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withNodeId(100).withEpoch(System.currentTimeMillis()).build());
+        recordAccumulatorExt.start();
+        assertEquals(2, recordAccumulatorExt.objectList().size());
+
+        ByteBuf byteBuf3 = generateByteBuf(50);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf3.readableBytes(), offset -> byteBuf3.retainedSlice().asReadOnly(), future);
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        List<RecordAccumulator.WALObject> objectList = recordAccumulatorExt.objectList();
+        assertEquals(3, objectList.size());
+        assertEquals(byteBuf1, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(0).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+        assertEquals(byteBuf2, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(1).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+        assertEquals(byteBuf3, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(2).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+
+        recordAccumulatorExt.reset().join();
         assertEquals(0, recordAccumulatorExt.objectList().size());
     }
 }

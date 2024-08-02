@@ -19,7 +19,7 @@ from ducktape.tests.test import Test
 from kafkatest.services.kafka import KafkaService
 from kafkatest.version import DEV_BRANCH, KafkaVersion
 from kafkatest.services.performance import ProducerPerformanceService, ConsumerPerformanceService
-from kafkatest.automq.automq_e2e_util import formatted_time, parse_log_entry, parse_producer_performance_stdout
+from kafkatest.automq.automq_e2e_util import FILE_WAL, S3_WAL, formatted_time, parse_log_entry, parse_producer_performance_stdout
 
 
 class TestJVMMemoryOccupancy(Test):
@@ -35,7 +35,7 @@ class TestJVMMemoryOccupancy(Test):
         self.consume_group = 'test_group'
         self.records_consumed = []
 
-    def create_kafka(self, num_nodes=1, partition=None, log_size=None, block_size=None, **kwargs):
+    def create_kafka(self, num_nodes=1, partition=None, log_size=None, block_size=None, wal='file', **kwargs):
         """
         Create and configure Kafka service.
 
@@ -52,7 +52,8 @@ class TestJVMMemoryOccupancy(Test):
             ['s3.wal.cache.size', str(log_size)],
             ['s3.wal.capacity', str(log_size)],
             ['s3.wal.upload.threshold', str(log_size // 4)],
-            ['s3.block.cache.size', str(block_size)]
+            ['s3.block.cache.size', str(block_size)],
+            ['s3.wal.path', FILE_WAL if wal == 'file' else S3_WAL],
         ]
 
         self.kafka = KafkaService(
@@ -105,8 +106,8 @@ class TestJVMMemoryOccupancy(Test):
         assert int(receive_num) == records, f"Receive count does not match the expected records count: expected {records}, but got {receive_num}"
 
     @cluster(num_nodes=3)
-    @matrix(partition=[128, 512], log_size=[256 * 1024 * 1024], block_size=[128 * 1024 * 1024, 256 * 1024 * 1024])
-    def test(self, partition, log_size, block_size):
+    @matrix(partition=[128, 512], log_size=[256 * 1024 * 1024], block_size=[128 * 1024 * 1024, 256 * 1024 * 1024], wal=['file', 's3'])
+    def test(self, partition, log_size, block_size, wal):
         """
         At any time, 1/writable record in Metric<=log cache size+100MB
         At any time, 11/block_cache in Metric<=block cache size
@@ -116,7 +117,7 @@ class TestJVMMemoryOccupancy(Test):
         :param block_size: Block size for Kafka configuration.
         """
         # Start Kafka
-        self.create_kafka(partition=partition, log_size=log_size, block_size=block_size)
+        self.create_kafka(partition=partition, log_size=log_size, block_size=block_size, wal=wal)
         self.kafka.start()
 
         # Check Kafka configuration

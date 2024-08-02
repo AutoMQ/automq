@@ -280,7 +280,7 @@ public class S3MetricsExporter implements MetricExporter {
 
         ObjectNode tags = objectMapper.createObjectNode();
         defaultTagMap.forEach(tags::put);
-        attributes.forEach((k, v) -> tags.put(k.getKey(), v.toString()));
+        attributes.forEach((k, v) -> tags.put(PrometheusUtils.mapLabelName(k.getKey()), v.toString()));
         root.set("tags", tags);
 
         return root.toString();
@@ -296,7 +296,7 @@ public class S3MetricsExporter implements MetricExporter {
 
         ObjectNode tags = objectMapper.createObjectNode();
         defaultTagMap.forEach(tags::put);
-        attributes.forEach((k, v) -> tags.put(k.getKey(), v.toString()));
+        attributes.forEach((k, v) -> tags.put(PrometheusUtils.mapLabelName(k.getKey()), v.toString()));
         root.set("tags", tags);
 
         return root.toString();
@@ -330,7 +330,7 @@ public class S3MetricsExporter implements MetricExporter {
 
         ObjectNode tags = objectMapper.createObjectNode();
         defaultTagMap.forEach(tags::put);
-        point.getAttributes().forEach((k, v) -> tags.put(k.getKey(), v.toString()));
+        point.getAttributes().forEach((k, v) -> tags.put(PrometheusUtils.mapLabelName(k.getKey()), v.toString()));
         root.set("tags", tags);
 
         return root.toString();

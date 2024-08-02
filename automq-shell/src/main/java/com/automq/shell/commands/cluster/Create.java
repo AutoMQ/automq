@@ -50,10 +50,4 @@ public class Create implements Callable<Integer> {
         System.out.printf("2. Run ./bin/automq-cli.sh cluster deploy --dry-run clusters/%s , to deploy the AutoMQ cluster\n", clusterName);
         return 0;
     }
-
-    public static void main(String... args) throws Exception {
-        Create create = new Create();
-        create.clusterName = "aaa";
-        create.call();
-    }
 }

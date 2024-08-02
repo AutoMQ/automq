@@ -13,7 +13,7 @@ package org.apache.kafka.controller.stream;
 
 public interface NodeRuntimeInfoGetter {
 
-    String state(int nodeId);
+    NodeState state(int nodeId);
 
     boolean hasOpeningStreams(int nodeId);
 

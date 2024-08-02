@@ -16,7 +16,8 @@ import com.automq.shell.model.Env;
 import com.automq.shell.model.Node;
 import com.automq.stream.s3.Constants;
 import com.automq.stream.s3.operator.BucketURI;
-import com.automq.stream.utils.PingS3Helper;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.File;
@@ -87,7 +88,7 @@ public class Deploy implements Callable<Integer> {
     private static void bucketReadinessCheck(ClusterTopology topo) {
         try {
             Properties properties = new Properties();
-            properties.load(new StringReader(topo.getGlobal().getConfigs()));
+            properties.load(new StringReader(topo.getGlobal().getConfig()));
             String dataBuckets = properties.getProperty("s3.data.buckets");
             String opsBuckets = properties.getProperty("s3.ops.buckets");
             if (StringUtils.isBlank(dataBuckets) || StringUtils.isBlank(opsBuckets)) {
@@ -114,7 +115,11 @@ public class Deploy implements Callable<Integer> {
                     bucket.addExtension(BucketURI.ACCESS_KEY_KEY, globalAccessKey);
                     bucket.addExtension(BucketURI.SECRET_KEY_KEY, globalSecretKey);
                 }
-                PingS3Helper.builder().bucket(bucket).build().pingS3();
+                ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(bucket).build();
+                if (!objectStorage.readinessCheck()) {
+                    Exit.exit(-1);
+                }
+                objectStorage.close();
             }
         } catch (Throwable e) {
             throw new RuntimeException(e);
@@ -126,16 +131,16 @@ public class Deploy implements Callable<Integer> {
         appendEnvs(sb, topo);
         sb.append("./bin/kafka-server-start.sh config/kraft/server.properties ");
         appendCommonConfigsOverride(sb, topo, node);
-        appendExtConfigsOverride(sb, topo.getGlobal().getConfigs());
+        appendExtConfigsOverride(sb, topo.getGlobal().getConfig());
         return sb.toString();
     }
 
     private static String genBrokerStartupCmd(ClusterTopology topo, Node node) {
         StringBuilder sb = new StringBuilder();
         appendEnvs(sb, topo);
-        sb.append("./bin/kafka-server-start.sh config/kraft/broker.properties ");
+        sb.append("./bin/kafka-server-start.sh -daemon config/kraft/broker.properties ");
         appendCommonConfigsOverride(sb, topo, node);
-        appendExtConfigsOverride(sb, topo.getGlobal().getConfigs());
+        appendExtConfigsOverride(sb, topo.getGlobal().getConfig());
         return sb.toString();
     }
 

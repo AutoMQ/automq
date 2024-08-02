@@ -110,4 +110,11 @@ public class PrometheusUtils {
         }
         return name;
     }
+
+    public static String mapLabelName(String name) {
+        if (StringUtils.isBlank(name)) {
+            return "";
+        }
+        return name.replaceAll("\\.", "_");
+    }
 }

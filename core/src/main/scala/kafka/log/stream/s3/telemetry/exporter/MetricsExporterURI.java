@@ -43,7 +43,7 @@ public class MetricsExporterURI {
             Map<String, List<String>> queries = URIUtils.splitQuery(uri);
             return parseExporter(clusterId, kafkaConfig, type, queries);
         } catch (Exception e) {
-            LOGGER.error("Invalid metrics exporter URI: {}", uriStr, e);
+            LOGGER.warn("Parse metrics exporter URI {} failed", uriStr, e);
             return null;
         }
     }
@@ -74,6 +74,9 @@ public class MetricsExporterURI {
         }
         List<MetricsExporter> exporters = new ArrayList<>();
         for (String uri : exporterUri) {
+            if (Utils.isBlank(uri)) {
+                continue;
+            }
             MetricsExporter exporter = parseExporter(clusterId, kafkaConfig, uri);
             if (exporter != null) {
                 exporters.add(exporter);
