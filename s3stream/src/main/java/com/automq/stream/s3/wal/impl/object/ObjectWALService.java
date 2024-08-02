@@ -86,11 +86,12 @@ public class ObjectWALService implements WriteAheadLog {
             long expectedWriteOffset = accumulator.append(recordSize, start -> WALUtil.generateRecord(data, crc, start), appendResultFuture);
 
             return new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        } catch (Exception e) {
-            // Make sure the data buffer is released.
-            data.release();
+        } catch (OverCapacityException e) {
             log.error("Append record to S3 WAL failed, due to accumulator is full.", e);
             throw new OverCapacityException("Append record to S3 WAL failed, due to accumulator is full: " + e.getMessage());
+        } finally {
+            // Make sure the data buffer is released.
+            data.release();
         }
     }
 
