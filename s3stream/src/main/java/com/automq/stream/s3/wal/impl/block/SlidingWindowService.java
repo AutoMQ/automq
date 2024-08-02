@@ -202,7 +202,7 @@ public class SlidingWindowService {
     /**
      * Try to acquire the write rate limit.
      */
-    synchronized private boolean tryAcquireWriteRateLimit() {
+    private synchronized boolean tryAcquireWriteRateLimit() {
         long now = System.nanoTime();
         if (now - lastWriteTimeNanos < minWriteIntervalNanos) {
             return false;
