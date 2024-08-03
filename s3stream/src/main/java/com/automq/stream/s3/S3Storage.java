@@ -419,9 +419,7 @@ public class S3Storage implements Storage {
      * @return backoff status.
      */
     public boolean append0(AppendContext context, WalWriteRequest request, boolean fromBackoff) {
-        if (shutdown) {
-            LOGGER.warn("S3Storage is shutdown");
-        }
+        checkStatus();
         if (!fromBackoff && !backoffRecords.isEmpty()) {
             backoffRecords.offer(request);
             return true;
@@ -575,6 +573,12 @@ public class S3Storage implements Storage {
                 streamId, startOffset, finalEndOffset, maxBytes);
         } else {
             timeout.cancel();
+        }
+    }
+
+    public void checkStatus() {
+        if (shutdown) {
+            new IOException("S3Storage is shutdown");
         }
     }
 
