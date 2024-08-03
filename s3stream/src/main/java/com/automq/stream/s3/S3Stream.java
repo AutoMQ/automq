@@ -88,7 +88,8 @@ public class S3Stream implements Stream {
     }
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager, AsyncNetworkBandwidthLimiter networkInboundLimiter, AsyncNetworkBandwidthLimiter networkOutboundLimiter) {
+        StreamManager streamManager, AsyncNetworkBandwidthLimiter networkInboundLimiter,
+        AsyncNetworkBandwidthLimiter networkOutboundLimiter) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -189,10 +190,11 @@ public class S3Stream implements Stream {
             }
             // Wal should keep retry append until stream is fenced or wal is closed.
             status.markFenced();
-            if (ex instanceof StreamClientException && ((StreamClientException) ex).getCode() == ErrorCode.EXPIRED_STREAM_EPOCH) {
+            Throwable cause = FutureUtil.cause(ex);
+            if (cause instanceof StreamClientException && ((StreamClientException) cause).getCode() == ErrorCode.EXPIRED_STREAM_EPOCH) {
                 LOGGER.info("{} stream append, stream is fenced", logIdent);
             } else {
-                LOGGER.warn("{} stream append fail", logIdent, ex);
+                LOGGER.warn("{} stream append fail", logIdent, cause);
             }
         });
     }
@@ -221,7 +223,7 @@ public class S3Stream implements Stream {
                         TimerUtil consumeTimer = new TimerUtil();
                         return networkOutboundLimiter.consume(ThrottleStrategy.CATCH_UP, totalSize).thenApply(nil -> {
                             NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, ThrottleStrategy.CATCH_UP)
-                                    .record(consumeTimer.elapsedAs(TimeUnit.NANOSECONDS));
+                                .record(consumeTimer.elapsedAs(TimeUnit.NANOSECONDS));
                             NetworkStats.getInstance().slowReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
                             return rs;
                         });
@@ -245,7 +247,7 @@ public class S3Stream implements Stream {
                         totalSize += recordBatch.rawPayload().remaining();
                     }
                     LOGGER.debug("[S3BlockCache] fetch data, stream={}, {}-{}, total bytes: {}, cost={}ms", streamId,
-                            startOffset, endOffset, totalSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                        startOffset, endOffset, totalSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 }
                 pendingFetches.remove(retCf);
                 pendingFetchTimestamps.pop();
@@ -329,6 +331,10 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<Void> close() {
+        return close(false);
+    }
+
+    public CompletableFuture<Void> close(boolean force) {
         TimerUtil timerUtil = new TimerUtil();
         writeLock.lock();
         try {
@@ -340,6 +346,9 @@ public class S3Stream implements Stream {
                 pendingRequests.addAll(pendingFetches);
             }
             pendingRequests.add(lastPendingTrim);
+            if (force) {
+                pendingRequests.forEach(cf -> cf.completeExceptionally(new StreamClientException(ErrorCode.UNEXPECTED, "FORCE_CLOSE")));
+            }
             CompletableFuture<Void> awaitPendingRequestsCf = CompletableFuture.allOf(pendingRequests.toArray(new CompletableFuture[0]));
             CompletableFuture<Void> closeCf = new CompletableFuture<>();
 
