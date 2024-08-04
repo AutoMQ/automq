@@ -56,6 +56,7 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -578,7 +579,7 @@ public class S3Storage implements Storage {
 
     public void checkStatus() {
         if (shutdown) {
-            new IOException("S3Storage is shutdown");
+            new CompletionException(new IOException("S3Storage is shutdown"));
         }
     }
 
