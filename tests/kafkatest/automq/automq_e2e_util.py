@@ -258,7 +258,7 @@ def capture_and_filter_logs(kafka, entry, log_path=None, start_time=None, end_ti
     if log_path is None:
         log_path = kafka.STDOUT_STDERR_CAPTURE
     if start_time and end_time:
-        command = f"awk '\\$2>\"{start_time}\" && \\$2<\"{end_time}\"' {log_path} | grep '{entry}'"
+        command = f"awk '$2>\"{start_time}\" && $2<\"{end_time}\"' {log_path} | grep '{entry}'"
     else:
         command = f"grep '{entry}' {log_path}"
 
