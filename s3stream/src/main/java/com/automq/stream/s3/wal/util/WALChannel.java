@@ -200,7 +200,7 @@ public interface WALChannel {
          * Get the capacity of the given channel.
          * It returns null if the channel has not been initialized before.
          */
-        Long capacity(WALChannel channel);
+        Long capacity(WALChannel channel) throws IOException;
     }
 
     class WALChannelBuilder {

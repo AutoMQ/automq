@@ -27,6 +27,7 @@ import com.automq.stream.s3.wal.common.RecoverResultImpl;
 import com.automq.stream.s3.wal.common.ShutdownType;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.RuntimeIOException;
 import com.automq.stream.s3.wal.exception.UnmarshalException;
 import com.automq.stream.s3.wal.util.WALCachedChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
@@ -184,7 +185,7 @@ public class BlockWALService implements WriteAheadLog {
      * @throws ReadRecordException if the record is not found or the record is corrupted
      */
     private ByteBuf readRecord(long recoverStartOffset,
-        Function<Long, Long> logicalToPhysical) throws ReadRecordException {
+        Function<Long, Long> logicalToPhysical) throws IOException, ReadRecordException {
         final ByteBuf recordHeader = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
         RecordHeader readRecordHeader;
         try {
@@ -197,7 +198,7 @@ public class BlockWALService implements WriteAheadLog {
         ByteBuf recordBody = ByteBufAlloc.byteBuffer(recordBodyLength);
         try {
             parseRecordBody(recoverStartOffset, readRecordHeader, recordBody, logicalToPhysical);
-        } catch (ReadRecordException e) {
+        } catch (Exception e) {
             recordBody.release();
             throw e;
         }
@@ -206,7 +207,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private RecordHeader parseRecordHeader(long recoverStartOffset, ByteBuf recordHeader,
-        Function<Long, Long> logicalToPhysical) throws ReadRecordException {
+        Function<Long, Long> logicalToPhysical) throws IOException, ReadRecordException {
         final long position = logicalToPhysical.apply(recoverStartOffset);
         int read = walChannel.retryRead(recordHeader, position);
         if (read != RECORD_HEADER_SIZE) {
@@ -252,7 +253,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private void parseRecordBody(long recoverStartOffset, RecordHeader readRecordHeader,
-        ByteBuf recordBody, Function<Long, Long> logicalToPhysical) throws ReadRecordException {
+        ByteBuf recordBody, Function<Long, Long> logicalToPhysical) throws IOException, ReadRecordException {
         long recordBodyOffset = readRecordHeader.getRecordBodyOffset();
         int recordBodyLength = readRecordHeader.getRecordBodyLength();
         long position = logicalToPhysical.apply(recordBodyOffset);
@@ -329,14 +330,14 @@ public class BlockWALService implements WriteAheadLog {
     /**
      * Protected method for testing purpose.
      */
-    protected BlockWALHeader tryReadWALHeader() {
+    protected BlockWALHeader tryReadWALHeader() throws IOException {
         return tryReadWALHeader(walChannel);
     }
 
     /**
      * Try to read the header from WAL, return the latest one.
      */
-    private BlockWALHeader tryReadWALHeader(WALChannel walChannel) {
+    private BlockWALHeader tryReadWALHeader(WALChannel walChannel) throws IOException {
         BlockWALHeader header = null;
         for (int i = 0; i < WAL_HEADER_COUNT; i++) {
             ByteBuf buf = ByteBufAlloc.byteBuffer(BlockWALHeader.WAL_HEADER_SIZE);
@@ -784,7 +785,7 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         @Override
-        public boolean hasNext() {
+        public boolean hasNext() throws RuntimeIOException {
             boolean hasNext = tryReadNextRecord();
             if (!hasNext) {
                 // recovery complete
@@ -794,7 +795,7 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         @Override
-        public RecoverResult next() {
+        public RecoverResult next() throws RuntimeIOException {
             if (!tryReadNextRecord()) {
                 throw new NoSuchElementException();
             }
@@ -809,7 +810,7 @@ public class BlockWALService implements WriteAheadLog {
          *
          * @return true if read success, false if no more record. {@link #next} will be null if and only if return false.
          */
-        private boolean tryReadNextRecord() {
+        private boolean tryReadNextRecord() throws RuntimeIOException {
             if (next != null) {
                 return true;
             }
@@ -857,6 +858,9 @@ public class BlockWALService implements WriteAheadLog {
                     if (reportError) {
                         return true;
                     }
+                } catch (IOException e) {
+                    LOGGER.error("failed to read record at offset {}", nextRecoverOffset, e);
+                    throw new RuntimeIOException(e);
                 }
             }
             return false;
