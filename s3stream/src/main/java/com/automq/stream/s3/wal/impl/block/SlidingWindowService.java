@@ -339,8 +339,6 @@ public class SlidingWindowService {
             pendingBlocks = new LinkedList<>();
         } else {
             blocks = new LinkedList<>();
-        }
-        if (!isCurrentBlockEmpty) {
             blocks.add(currentBlock);
             setCurrentBlockLocked(nextBlock(currentBlock));
         }
