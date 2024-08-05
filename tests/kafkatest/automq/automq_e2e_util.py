@@ -14,7 +14,7 @@ from kafkatest.services.performance import ProducerPerformanceService
 from kafkatest.version import DEV_BRANCH
 
 
-def formatted_time(msg):
+def formatted_time(msg=''):
     """
     formatted the current local time with milliseconds appended to the provided message.
     """
@@ -236,3 +236,30 @@ def append_info(msg, boolean, cur_msg):
     if not boolean:
         msg += '\n' + cur_msg
     return msg
+
+
+def capture_and_filter_logs(kafka, entry, log_path=None, start_time=None, end_time=None):
+    """
+    Capture and filter logs from a log file on a Kafka node.
+
+    :param kafka: The Kafka cluster object containing node information.
+    :type kafka: KafkaCluster
+    :param log_path: The path to the log file.
+    :type log_path: str
+    :param entry: The log entry to search for.
+    :type entry: str
+    :param start_time: The start time for log filtering. Format should be compatible with awk. (optional)
+    :type start_time: str, optional
+    :param end_time: The end time for log filtering. Format should be compatible with awk. (optional)
+    :type end_time: str, optional
+    :return: A generator that yields lines from the filtered logs.
+    :rtype: generator
+    """
+    if log_path is None:
+        log_path = kafka.STDOUT_STDERR_CAPTURE
+    if start_time and end_time:
+        command = f"awk '\\$2>\"{start_time}\" && \\$2<\"{end_time}\"' {log_path} | grep '{entry}'"
+    else:
+        command = f"grep '{entry}' {log_path}"
+
+    return kafka.nodes[0].account.ssh_capture(command)
