@@ -347,8 +347,7 @@ if [[ "$JAVA_MAJOR_VERSION" -ge "9" ]] ; then
   --add-opens=java.base/java.net=ALL-UNNAMED \
   --add-opens=java.base/java.util=ALL-UNNAMED \
   --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
-  --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
-  --add-opens=java.base/sun.reflect=ALL-UNNAMED"
+  --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
   # Following options are required for running AutoMQ on block devices with Direct I/O, see {@link DirectIOLib} for more details
   KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} \
   --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED \
