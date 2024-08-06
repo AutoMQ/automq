@@ -26,6 +26,7 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -1515,7 +1516,7 @@ public class StreamControlManagerTest {
         assertEquals(0L, rangeMetadata0.endOffset());
     }
 
-    private ObjectReader mockObjectReader(
+    private Optional<ObjectReader> mockObjectReader(
         List<StreamOffsetRange> ranges) throws ExecutionException, InterruptedException {
         MemoryObjectStorage objectStorage = new MemoryObjectStorage();
         ObjectWriter objectWriter = new ObjectWriter.DefaultObjectWriter(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
@@ -1528,6 +1529,6 @@ public class StreamControlManagerTest {
             )
         );
         objectWriter.close().get();
-        return new ObjectReader.DefaultObjectReader(new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.STREAM_SET), objectStorage);
+        return Optional.of(new ObjectReader.DefaultObjectReader(new S3ObjectMetadata(1, objectWriter.size(), S3ObjectType.STREAM_SET), objectStorage));
     }
 }
