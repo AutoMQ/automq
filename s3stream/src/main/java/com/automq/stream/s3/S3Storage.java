@@ -19,7 +19,7 @@ import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.Failover;
-import com.automq.stream.s3.failover.StorageFailureHandler;
+import com.automq.stream.s3.failover.StorageHandlerChain;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -112,7 +112,7 @@ public class S3Storage implements Storage {
     private final ObjectManager objectManager;
     private final ObjectStorage objectStorage;
     private final S3BlockCache blockCache;
-    private final StorageFailureHandler storageFailureHandler;
+    private final StorageHandlerChain storageHandlerChain;
     /**
      * Stream callback locks. Used to ensure the stream callbacks will not be called concurrently.
      *
@@ -128,7 +128,7 @@ public class S3Storage implements Storage {
 
     @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
-        S3BlockCache blockCache, ObjectStorage objectStorage, StorageFailureHandler storageFailureHandler) {
+        S3BlockCache blockCache, ObjectStorage objectStorage, StorageHandlerChain storageHandlerChain) {
         this.config = config;
         this.maxDeltaWALCacheSize = config.walCacheSize();
         this.deltaWAL = deltaWAL;
@@ -137,7 +137,7 @@ public class S3Storage implements Storage {
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
-        this.storageFailureHandler = storageFailureHandler;
+        this.storageHandlerChain = storageHandlerChain;
         this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
         S3StreamMetricsManager.registerDeltaWalPendingUploadBytesSupplier(this.pendingUploadBytes::get);
@@ -468,7 +468,7 @@ public class S3Storage implements Storage {
         appendResult.future().whenComplete((nil, ex) -> {
             if (ex != null) {
                 LOGGER.error("append WAL fail, request {}", request, ex);
-                storageFailureHandler.handle(ex);
+                storageHandlerChain.handle(ex);
                 return;
             }
             handleAppendCallback(request);

@@ -29,6 +29,7 @@ import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.s3.failover.ForceCloseStorageFailureHandler;
 import com.automq.stream.s3.failover.HaltStorageFailureHandler;
 import com.automq.stream.s3.failover.StorageFailureHandlerChain;
+import com.automq.stream.s3.failover.StorageHandlerChain;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -125,12 +126,12 @@ public class DefaultS3Client implements Client {
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
         this.writeAheadLog = buildWAL();
-        StorageFailureHandlerChain storageFailureHandler = new StorageFailureHandlerChain();
-        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage, storageFailureHandler);
+        StorageHandlerChain storageHandlerChain = new StorageFailureHandlerChain();
+        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage, storageHandlerChain);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
-        storageFailureHandler.addHandler(new ForceCloseStorageFailureHandler(streamClient));
-        storageFailureHandler.addHandler(new HaltStorageFailureHandler());
+        storageHandlerChain.addHandler(new ForceCloseStorageFailureHandler(streamClient));
+        storageHandlerChain.addHandler(new HaltStorageFailureHandler());
         this.streamClient.registerStreamLifeCycleListener(localIndexCache);
         this.kvClient = new ControllerKVClient(this.requestSender);
         this.failover = failover();
