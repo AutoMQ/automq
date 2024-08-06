@@ -37,6 +37,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
@@ -481,12 +482,12 @@ public class S3ObjectControlManager {
         return this.objectsMetadata.get(objectId);
     }
 
-    public ObjectReader objectReader(long objectId) {
+    public Optional<ObjectReader> objectReader(long objectId) {
         S3Object object = getObject(objectId);
         if (object == null) {
-            return null;
+            return Optional.empty();
         }
-        return ObjectReader.reader(new S3ObjectMetadata(objectId, object.getObjectSize(), object.getAttributes()), objectStorage);
+        return Optional.of(ObjectReader.reader(new S3ObjectMetadata(objectId, object.getObjectSize(), object.getAttributes()), objectStorage));
     }
 
     private Timeout newPreparedObjectTimeout(long objectId, long deadline) {

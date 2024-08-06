@@ -1486,7 +1486,14 @@ public class StreamControlManager {
             return;
         }
         S3StreamSetObject object = ctx.objects.get(ctx.index);
-        ObjectReader objectReader = s3ObjectControlManager.objectReader(object.objectId());
+
+        Optional<ObjectReader> objectReaderOpt = s3ObjectControlManager.objectReader(object.objectId());
+        if (objectReaderOpt.isEmpty()) {
+            ctx.cf.complete(null);
+            return;
+        }
+
+        ObjectReader objectReader = objectReaderOpt.get();
         objectReader.basicObjectInfo().thenAccept(info -> {
             List<StreamOffsetRange> streamOffsetRanges = info.indexBlock().streamOffsetRanges();
             quorumController.appendWriteEvent("checkStreamSetObjectExpired", OptionalLong.empty(), () -> {
