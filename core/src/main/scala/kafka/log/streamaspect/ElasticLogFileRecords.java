@@ -54,6 +54,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.automq.stream.utils.FutureUtil.suppress;
+
 public class ElasticLogFileRecords implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
     private static final int POOLED_MEMORY_RECORDS = 30;
@@ -243,6 +245,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
 
     public void close() {
         status = ElasticResourceStatus.CLOSED;
+        suppress(this::flush, LOGGER);
     }
 
     public void closeHandlers() {

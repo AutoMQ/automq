@@ -203,7 +203,7 @@ class ElasticReplicaManager(
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
                 val start = System.currentTimeMillis()
-                hostedPartition.partition.close().get()
+                hostedPartition.partition.close()
                 info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms")
                 if (!metadataCache.autoMQVersion().isReassignmentV1Supported) {
                   // TODO: https://github.com/AutoMQ/automq/issues/1153 add schedule check when leader isn't successfully set
