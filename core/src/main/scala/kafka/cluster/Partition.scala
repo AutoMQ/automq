@@ -717,7 +717,7 @@ class Partition(val topicPartition: TopicPartition,
    * 1) This broker(current leader) has closed the partition and the related streams.
    * 2) The next leader will then open the partition and the related streams.
    */
-  def close(): CompletableFuture[Void] = {
+  def close(): Unit = {
     info("Closing partition")
     logManager.removeFromCurrentLogs(topicPartition)
     ElasticLogManager.removeLog(topicPartition)
@@ -737,10 +737,6 @@ class Partition(val topicPartition: TopicPartition,
     }
     if (needCloseLog.isDefined) {
       needCloseLog.get.close()
-      // TODO remove next line
-      CompletableFuture.completedFuture(null)
-    } else {
-      CompletableFuture.completedFuture(null)
     }
   }
   // AutoMQ for Kafka inject end
