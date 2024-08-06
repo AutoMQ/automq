@@ -223,14 +223,11 @@ class LocalLog(@volatile protected var _dir: File,
   /**
    * Closes the segments of the log.
    */
-  private[log] def close(): CompletableFuture[Void] = {
+  private[log] def close(): Unit = {
     maybeHandleIOException(s"Error while renaming dir for $topicPartition in dir ${dir.getParent}") {
       checkIfMemoryMappedBufferClosed()
       segments.close()
     }
-    // AutoMQ inject start
-    CompletableFuture.completedFuture(null)
-    // AutoMQ inject end
   }
 
   /**

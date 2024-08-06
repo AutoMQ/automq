@@ -679,10 +679,6 @@ class LogManager(logDirs: Seq[File],
     val threadPools = ArrayBuffer.empty[ExecutorService]
     val jobs = mutable.Map.empty[File, Seq[Future[_]]]
 
-    // AutoMQ inject start
-    val closeStreamsFutures = ArrayBuffer.empty[CompletableFuture[Void]]
-    // AutoMQ inject end
-
     // stop the cleaner first
     if (cleaner != null) {
       CoreUtils.swallow(cleaner.shutdown(), this)
@@ -707,12 +703,7 @@ class LogManager(logDirs: Seq[File],
         val runnable: Runnable = () => {
           // flush the log to ensure latest possible recovery point
           log.flush(true)
-          log match {
-            case elasticLog: ElasticUnifiedLog =>
-              closeStreamsFutures.append(elasticLog.asyncClose())
-            case _ =>
-              log.close()
-          }
+          log.close()
         }
         runnable
       }
@@ -751,11 +742,6 @@ class LogManager(logDirs: Seq[File],
           // AutoMQ inject end
         }
       }
-      // AutoMQ inject start
-      // wait for all streams to be closed
-      CoreUtils.swallow(CompletableFuture.allOf(closeStreamsFutures.toArray: _*).get(), this)
-      // AutoMQ inject end
-
     } finally {
       threadPools.foreach(_.shutdown())
       // regardless of whether the close succeeded, we need to unlock the data directories

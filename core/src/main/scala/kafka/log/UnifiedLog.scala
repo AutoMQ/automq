@@ -650,10 +650,6 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * The memory mapped buffer for index files of this log will be left open until the log is deleted.
    */
   override def close(): Unit = {
-    asyncClose().get()
-  }
-
-  def asyncClose(): CompletableFuture[Void] = {
     debug("Closing log")
     lock synchronized {
       logOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER
@@ -666,7 +662,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
         // (the clean shutdown file is written after the logs are all closed).
         producerStateManager.takeSnapshot()
       }
-      localLog.asyncClose()
+      localLog.close()
     }
   }
 
