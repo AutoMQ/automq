@@ -234,4 +234,6 @@ class LeakTest(Test):
         """
         self.minor_v1_compaction_interval = 0.5
         self.major_v1_compaction_interval = 1000  # far greater than minor_v1_compaction_interval
-        self.run0(stream_object_compaction_type='MINOR_V1', wal=wal, env=[f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=419430400'])
+        self.run0(stream_object_compaction_type='MINOR_V1', wal=wal, env=[
+            f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=419430400' # ensure that multiple larger stream objects can be merged
+        ])
