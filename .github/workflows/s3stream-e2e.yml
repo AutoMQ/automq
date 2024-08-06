@@ -1,7 +1,5 @@
 name: E2E-TEST for AutoMQ S3Stream
 on:
-  pull_request:
-    types: [ opened, reopened, synchronize ]
   push:
     branches: [ "main" ]
   workflow_dispatch:
