@@ -56,7 +56,6 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -420,7 +419,7 @@ public class S3Storage implements Storage {
      * @return backoff status.
      */
     public boolean append0(AppendContext context, WalWriteRequest request, boolean fromBackoff) {
-        checkStatus();
+        checkStatus(request);
         if (!fromBackoff && !backoffRecords.isEmpty()) {
             backoffRecords.offer(request);
             return true;
@@ -577,9 +576,9 @@ public class S3Storage implements Storage {
         }
     }
 
-    public void checkStatus() {
+    public void checkStatus(WalWriteRequest request) {
         if (shutdown) {
-            new CompletionException(new IOException("S3Storage is shutdown"));
+            request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
         }
     }
 
