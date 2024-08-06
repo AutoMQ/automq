@@ -11,14 +11,18 @@
 
 package org.apache.kafka.clients.admin;
 
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 
 public class NodeMetadata {
+    public static final Pattern BLOCK_WAL_LIST_PATTERN = Pattern.compile("\\d+@block://(.+?)(?=\\?|,\\d+@|$)");
+
     private final int nodeId;
     private final long nodeEpoch;
-    private final String walConfig;
+    private final List<Disk> disks;
     private final String state;
     private final boolean hasOpeningStreams;
     private final Map<String, String> tags;
@@ -26,10 +30,17 @@ public class NodeMetadata {
     public NodeMetadata(AutomqGetNodesResponseData.NodeMetadata nodeMetadata) {
         this.nodeId = nodeMetadata.nodeId();
         this.nodeEpoch = nodeMetadata.nodeEpoch();
-        this.walConfig = nodeMetadata.walConfig();
+        this.disks = toDisks(nodeMetadata.walConfig());
         this.state = nodeMetadata.state();
         this.hasOpeningStreams = nodeMetadata.hasOpeningStreams();
         this.tags = nodeMetadata.tags().stream().collect(Collectors.toMap(AutomqGetNodesResponseData.Tag::key, AutomqGetNodesResponseData.Tag::value));
+    }
+
+    private static List<Disk> toDisks(String walConfig) {
+        return BLOCK_WAL_LIST_PATTERN.matcher(walConfig).results()
+            .map(m -> m.group(1))
+            .map(Disk::new)
+            .collect(Collectors.toList());
     }
 
     public int getNodeId() {
@@ -40,8 +51,8 @@ public class NodeMetadata {
         return nodeEpoch;
     }
 
-    public String getWalConfig() {
-        return walConfig;
+    public List<Disk> getDisks() {
+        return disks;
     }
 
     public String getState() {
@@ -61,10 +72,29 @@ public class NodeMetadata {
         return "NodeMetadata{" +
             "nodeId=" + nodeId +
             ", nodeEpoch=" + nodeEpoch +
-            ", walConfig='" + walConfig + '\'' +
+            ", disks=" + disks +
             ", state='" + state + '\'' +
             ", hasOpeningStreams=" + hasOpeningStreams +
             ", tags=" + tags +
             '}';
+    }
+
+    public static class Disk {
+        private final String id;
+
+        public Disk(String id) {
+            this.id = id;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        @Override
+        public String toString() {
+            return "Disk{" +
+                "id='" + id + '\'' +
+                '}';
+        }
     }
 }
