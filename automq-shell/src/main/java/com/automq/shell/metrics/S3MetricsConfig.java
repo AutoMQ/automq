@@ -12,6 +12,8 @@
 package com.automq.shell.metrics;
 
 import com.automq.stream.s3.operator.ObjectStorage;
+import java.util.List;
+import org.apache.commons.lang3.tuple.Pair;
 
 public interface S3MetricsConfig {
 
@@ -22,4 +24,6 @@ public interface S3MetricsConfig {
     int nodeId();
 
     ObjectStorage objectStorage();
+
+    List<Pair<String, String>> baseLabels();
 }
