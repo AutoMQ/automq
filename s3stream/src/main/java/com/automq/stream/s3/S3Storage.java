@@ -33,6 +33,7 @@ import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.RuntimeIOException;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
@@ -233,6 +234,18 @@ public class S3Storage implements Storage {
         return result;
     }
 
+    private static long recoverContinuousRecords(Iterator<RecoverResult> it, Map<Long, Long> openingStreamEndOffsets,
+        Map<Long, Long> streamNextOffsets, Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
+        LogCache.LogCacheBlock cacheBlock, Logger logger) {
+        try {
+            return recoverContinuousRecords0(it, openingStreamEndOffsets, streamNextOffsets, streamDiscontinuousRecords, cacheBlock, logger);
+        } catch (Throwable e) {
+            streamDiscontinuousRecords.values().forEach(queue -> queue.forEach(StreamRecordBatch::release));
+            cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
+            throw e;
+        }
+    }
+
     /**
      * Recover continuous records in each stream from the WAL, and put them into the returned {@link LogCache.LogCacheBlock}.
      *
@@ -242,13 +255,14 @@ public class S3Storage implements Storage {
      * @param streamDiscontinuousRecords the out-of-order records of each stream (to be filled)
      * @param cacheBlock                 the cache block (to be filled)
      * @return the end offset of the last record recovered
+     * @throws RuntimeIOException if any IO error occurs during recover from Block WAL
      */
-    private static long recoverContinuousRecords(Iterator<RecoverResult> it,
+    private static long recoverContinuousRecords0(Iterator<RecoverResult> it,
         Map<Long, Long> openingStreamEndOffsets,
         Map<Long, Long> streamNextOffsets,
         Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
         LogCache.LogCacheBlock cacheBlock,
-        Logger logger) {
+        Logger logger) throws RuntimeIOException {
         long logEndOffset = -1L;
         while (it.hasNext()) {
             RecoverResult recoverResult = it.next();
