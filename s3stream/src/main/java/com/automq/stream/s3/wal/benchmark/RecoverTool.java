@@ -50,7 +50,7 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
         }
     }
 
-    private void run(Config config) {
+    private void run(Config config) throws IOException {
         BlockWALHeader header = super.tryReadWALHeader();
         System.out.println(header);
 
