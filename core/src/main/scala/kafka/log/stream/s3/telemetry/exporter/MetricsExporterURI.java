@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import kafka.server.KafkaConfig;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,10 +55,10 @@ public class MetricsExporterURI {
             case OTLP:
                 return buildOTLPExporter(kafkaConfig.s3ExporterReportIntervalMs(), queries);
             case PROMETHEUS:
-                return buildPrometheusExporter(queries);
+                return buildPrometheusExporter(queries, kafkaConfig.automq().baseLabels());
             case OPS:
                 return buildOpsExporter(clusterId, kafkaConfig.nodeId(), kafkaConfig.s3ExporterReportIntervalMs(),
-                    kafkaConfig.automq().opsBuckets());
+                    kafkaConfig.automq().opsBuckets(), kafkaConfig.automq().baseLabels());
             default:
                 return null;
         }
@@ -92,14 +93,15 @@ public class MetricsExporterURI {
         return new OTLPMetricsExporter(intervalMs, endpoint, protocol, compression);
     }
 
-    public static MetricsExporter buildPrometheusExporter(Map<String, List<String>> queries) {
+    public static MetricsExporter buildPrometheusExporter(Map<String, List<String>> queries, List<Pair<String, String>> baseLabels) {
         String host = URIUtils.getString(queries, ExporterConstants.HOST, ExporterConstants.DEFAULT_PROM_HOST);
         int port = Integer.parseInt(URIUtils.getString(queries, ExporterConstants.PORT, String.valueOf(ExporterConstants.DEFAULT_PROM_PORT)));
-        return new PrometheusMetricsExporter(host, port);
+        return new PrometheusMetricsExporter(host, port, baseLabels);
     }
 
-    public static MetricsExporter buildOpsExporter(String clusterId, int nodeId, int intervalMs, List<BucketURI> opsBuckets) {
-        return new OpsMetricsExporter(clusterId, nodeId, intervalMs, opsBuckets);
+    public static MetricsExporter buildOpsExporter(String clusterId, int nodeId, int intervalMs, List<BucketURI> opsBuckets,
+        List<Pair<String, String>> baseLabels) {
+        return new OpsMetricsExporter(clusterId, nodeId, intervalMs, opsBuckets, baseLabels);
     }
 
     public List<MetricsExporter> metricsExporters() {
