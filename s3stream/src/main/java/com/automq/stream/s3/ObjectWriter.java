@@ -99,11 +99,11 @@ public interface ObjectWriter {
 
         public synchronized void write(long streamId, List<StreamRecordBatch> records) {
             List<List<StreamRecordBatch>> blocks = groupByBlock(records);
-            blocks.forEach(blockRecords -> {
+            for (List<StreamRecordBatch> blockRecords : blocks) {
                 DataBlock block = new DataBlock(streamId, blockRecords);
                 waitingUploadBlocks.add(block);
                 waitingUploadBlocksSize += block.size();
-            });
+            }
             if (waitingUploadBlocksSize >= partSizeThreshold) {
                 tryUploadPart();
             }
