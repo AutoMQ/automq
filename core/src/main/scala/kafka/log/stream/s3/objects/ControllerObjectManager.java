@@ -165,7 +165,8 @@ public class ControllerObjectManager implements ObjectManager {
                     return ResponseHandleResult.withSuccess(new CommitStreamSetObjectResponse());
                 case NODE_EPOCH_EXPIRED:
                 case NODE_EPOCH_NOT_EXIST:
-                    LOGGER.error("Node epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                case NODE_FENCED:
+                    LOGGER.error("Node epoch expired, fenced or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:
