@@ -17,8 +17,8 @@
 
 package org.apache.kafka.image;
 
-import com.automq.stream.s3.index.NodeRangeIndexCache;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
+import com.automq.stream.s3.index.NodeRangeIndexCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
@@ -51,8 +51,11 @@ import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.TimelineHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
+    private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamsMetadataImage.class);
 
     public static final S3StreamsMetadataImage EMPTY =
         new S3StreamsMetadataImage(
@@ -194,6 +197,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         List<S3StreamSetObject> streamSetObjects,
         NodeS3StreamSetObjectMetadataImage node
     ) {
+        ctx.record(objects.size(), lastRangeIndex, streamObjectIndex, streamSetObjectIndex);
         long nextStartOffset = ctx.nextStartOffset;
         for (; ; ) {
             int roundStartObjectSize = objects.size();
@@ -299,7 +303,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             sanityCheck(ctx, objects);
         } catch (Throwable t) {
             ctx.cf.completeExceptionally(new IllegalStateException(String.format("Get objects failed for streamId=%d," +
-                    " range=[%d, %d), limit=%d", ctx.streamId, ctx.startOffset, ctx.endOffset, ctx.limit), t));
+                " range=[%d, %d), limit=%d", ctx.streamId, ctx.startOffset, ctx.endOffset, ctx.limit), t));
             return;
         }
         ctx.cf.complete(new InRangeObjects(ctx.streamId, objects));
@@ -383,12 +387,12 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      * Possible results:
      * <p>
      * a. -1, not stream set object can be found, this can happen when index cache is not exist or is invalidated,
-     *    searching should be done from the beginning of the objects in this case.
+     * searching should be done from the beginning of the objects in this case.
      * <p>
      * b. non-negative value:
-     *    1. the object exists in stream set objects in node image, search should start from that object
-     *    2. the object does not exist in stream set objects in node image, that means the index cache is out of date and
-     *       should be invalidated, so we can refresh the index from object storage next time
+     * 1. the object exists in stream set objects in node image, search should start from that object
+     * 2. the object does not exist in stream set objects in node image, that means the index cache is out of date and
+     * should be invalidated, so we can refresh the index from object storage next time
      */
     private CompletableFuture<Long> getStartStreamSetObjectId(int nodeId, long startOffset, GetObjectsContext ctx) {
         if (ctx.indexCache != null && ctx.indexCache.nodeId() == nodeId) {
@@ -623,6 +627,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
         Map<Long, Optional<StreamOffsetRange>> object2range = new HashMap<>();
+        List<String> debugContext = new ArrayList<>();
 
         GetObjectsContext(long streamId, long startOffset, long endOffset, int limit,
             RangeGetter rangeGetter, LocalStreamRangeIndexCache indexCache) {
@@ -634,10 +639,21 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             this.rangeGetter = rangeGetter;
             this.indexCache = indexCache;
         }
+
+        public void record(int objectSize, int lastRangeIndex, int streamObjectIndex, int streamSetObjectIndex) {
+            debugContext.add(String.format("nextStartOffset=%d, objectSize=%d, lastRangeIndex=%d, streamObjectIndex=%d, streamSetObjectIndex=%d", nextStartOffset,
+                objectSize, lastRangeIndex, streamObjectIndex, streamSetObjectIndex));
+            if (debugContext.size() > 20) {
+                LOGGER.error("GetObjects may has endless loop: streamId={}, startOffset={}, endOffset={}, limit={}, debugContext={}",
+                    streamId, startOffset, endOffset, limit, debugContext);
+                Runtime.getRuntime().halt(1);
+            }
+        }
     }
 
     public interface RangeGetter {
         CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId);
+
         CompletableFuture<ByteBuf> readNodeRangeIndex(long nodeId);
     }
 
