@@ -97,7 +97,7 @@ public interface ObjectWriter {
             writer = objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, objectKey);
         }
 
-        public void write(long streamId, List<StreamRecordBatch> records) {
+        public synchronized void write(long streamId, List<StreamRecordBatch> records) {
             List<List<StreamRecordBatch>> blocks = groupByBlock(records);
             blocks.forEach(blockRecords -> {
                 DataBlock block = new DataBlock(streamId, blockRecords);
@@ -127,7 +127,7 @@ public interface ObjectWriter {
             return blocks;
         }
 
-        private synchronized void tryUploadPart() {
+        private void tryUploadPart() {
             for (; ; ) {
                 List<DataBlock> uploadBlocks = new ArrayList<>(waitingUploadBlocks.size());
                 boolean partFull = false;
