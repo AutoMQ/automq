@@ -11,7 +11,6 @@
 
 package com.automq.stream.s3.failover;
 
-public interface StorageHandlerChain extends StorageFailureHandler{
+public interface StorageHandlerChain extends StorageFailureHandler {
     void addHandler(StorageFailureHandler handler);
-
 }
