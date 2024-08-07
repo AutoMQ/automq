@@ -100,6 +100,8 @@ class ElasticLog(val metaStream: MetaStream,
 
     private val appendAckQueue = new LinkedBlockingQueue[Long]()
     private val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
+    @volatile private var lastAppendAckFuture: Future[?] = CompletableFuture.completedFuture(null)
+
     private val readAsyncThread = READ_ASYNC_EXECUTOR(math.abs(logIdent.hashCode % READ_ASYNC_EXECUTOR.length))
     var logStartOffset = _initStartOffset
 
@@ -216,7 +218,7 @@ class ElasticLog(val metaStream: MetaStream,
             }
             if (notify) {
                 appendAckQueue.offer(endOffset)
-                appendAckThread.submit(new Runnable {
+                lastAppendAckFuture = appendAckThread.submit(new Runnable {
                     override def run(): Unit = {
                         try {
                             appendCallback(startNanos)
@@ -465,6 +467,8 @@ class ElasticLog(val metaStream: MetaStream,
             CoreUtils.swallow(segments.close(), this)
             CoreUtils.swallow(persistPartitionMeta(), this)
             CoreUtils.swallow(closeStreams().get(), this)
+            // graceful await produce callback
+            lastAppendAckFuture.get()
         }
         info("log closed")
     }
