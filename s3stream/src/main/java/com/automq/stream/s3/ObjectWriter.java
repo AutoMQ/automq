@@ -97,13 +97,13 @@ public interface ObjectWriter {
             writer = objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, objectKey);
         }
 
-        public void write(long streamId, List<StreamRecordBatch> records) {
+        public synchronized void write(long streamId, List<StreamRecordBatch> records) {
             List<List<StreamRecordBatch>> blocks = groupByBlock(records);
-            blocks.forEach(blockRecords -> {
+            for (List<StreamRecordBatch> blockRecords : blocks) {
                 DataBlock block = new DataBlock(streamId, blockRecords);
                 waitingUploadBlocks.add(block);
                 waitingUploadBlocksSize += block.size();
-            });
+            }
             if (waitingUploadBlocksSize >= partSizeThreshold) {
                 tryUploadPart();
             }
@@ -127,7 +127,7 @@ public interface ObjectWriter {
             return blocks;
         }
 
-        private synchronized void tryUploadPart() {
+        private void tryUploadPart() {
             for (; ; ) {
                 List<DataBlock> uploadBlocks = new ArrayList<>(waitingUploadBlocks.size());
                 boolean partFull = false;
@@ -155,7 +155,7 @@ public interface ObjectWriter {
             }
         }
 
-        public CompletableFuture<Void> close() {
+        public synchronized CompletableFuture<Void> close() {
             CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
             for (DataBlock block : waitingUploadBlocks) {
                 buf.addComponent(true, block.buffer());
