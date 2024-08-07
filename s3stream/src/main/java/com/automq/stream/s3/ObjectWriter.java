@@ -155,7 +155,7 @@ public interface ObjectWriter {
             }
         }
 
-        public CompletableFuture<Void> close() {
+        public synchronized CompletableFuture<Void> close() {
             CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
             for (DataBlock block : waitingUploadBlocks) {
                 buf.addComponent(true, block.buffer());
