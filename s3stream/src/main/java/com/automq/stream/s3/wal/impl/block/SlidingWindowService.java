@@ -21,6 +21,7 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.Iterator;
@@ -202,7 +203,7 @@ public class SlidingWindowService {
     /**
      * Try to acquire the write rate limit.
      */
-    synchronized private boolean tryAcquireWriteRateLimit() {
+    private synchronized boolean tryAcquireWriteRateLimit() {
         long now = System.nanoTime();
         if (now - lastWriteTimeNanos < minWriteIntervalNanos) {
             return false;
@@ -375,7 +376,7 @@ public class SlidingWindowService {
         return writingBlocks.peek();
     }
 
-    private void writeBlockData(BlockBatch blocks) {
+    private void writeBlockData(BlockBatch blocks) throws IOException {
         final long start = System.nanoTime();
         for (Block block : blocks.blocks()) {
             long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
@@ -487,7 +488,7 @@ public class SlidingWindowService {
             }
         }
 
-        private void writeBlock(BlockBatch blocks) {
+        private void writeBlock(BlockBatch blocks) throws IOException {
             makeWriteOffsetMatchWindow(blocks.endOffset());
             writeBlockData(blocks);
 

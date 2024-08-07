@@ -336,10 +336,23 @@ if [ "x$GC_LOG_ENABLED" = "xtrue" ]; then
 fi
 
 KAFKA_JDK_COMPATIBILITY_OPTS=""
-# We need to override KAFKA_S3_ACCESS_KEY and KAFKA_S3_SECRET_KEY. There is no method called System.setEnv, so we set system environment variable by reflection. Add this --add-opens to enable reflection to set system env in class EnvUtil
-KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} --add-opens=java.base/java.util=ALL-UNNAMED "
+
 if [[ "$JAVA_MAJOR_VERSION" -ge "9" ]] ; then
-  KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED -Dio.netty.tryReflectionSetAccessible=true"
+  # Expose following packages to all modules for convenience, e.g., debugging with Arthas
+  KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} \
+  --add-opens=java.base/java.lang=ALL-UNNAMED \
+  --add-opens=java.base/java.lang.invoke=ALL-UNNAMED \
+  --add-opens=java.base/java.lang.reflect=ALL-UNNAMED \
+  --add-opens=java.base/java.io=ALL-UNNAMED \
+  --add-opens=java.base/java.net=ALL-UNNAMED \
+  --add-opens=java.base/java.util=ALL-UNNAMED \
+  --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+  --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+  # Following options are required for running AutoMQ on block devices with Direct I/O, see {@link DirectIOLib} for more details
+  KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} \
+  --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED \
+  --add-opens=java.base/java.nio=ALL-UNNAMED \
+  -Dio.netty.tryReflectionSetAccessible=true"
 fi
 if [[ "$JAVA_MAJOR_VERSION" -ge "16" ]]; then
   KAFKA_JDK_COMPATIBILITY_OPTS="${KAFKA_JDK_COMPATIBILITY_OPTS} --add-exports=java.security.jgss/sun.security.krb5=ALL-UNNAMED"

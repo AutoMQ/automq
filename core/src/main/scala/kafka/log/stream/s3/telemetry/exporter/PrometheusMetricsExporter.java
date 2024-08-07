@@ -13,7 +13,11 @@ package kafka.log.stream.s3.telemetry.exporter;
 
 import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import kafka.log.stream.s3.telemetry.MetricsConstants;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,8 +26,9 @@ public class PrometheusMetricsExporter implements MetricsExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(PrometheusMetricsExporter.class);
     private final String host;
     private final int port;
+    private final Set<String> baseLabelKeys;
 
-    public PrometheusMetricsExporter(String host, int port) {
+    public PrometheusMetricsExporter(String host, int port, List<Pair<String, String>> baseLabels) {
         if (Utils.isBlank(host)) {
             throw new IllegalArgumentException("Illegal Prometheus host");
         }
@@ -32,6 +37,7 @@ public class PrometheusMetricsExporter implements MetricsExporter {
         }
         this.host = host;
         this.port = port;
+        this.baseLabelKeys = baseLabels.stream().map(Pair::getKey).collect(Collectors.toSet());
         LOGGER.info("PrometheusMetricsExporter initialized with host: {}, port: {}", host, port);
     }
 
@@ -50,7 +56,9 @@ public class PrometheusMetricsExporter implements MetricsExporter {
             .setPort(port)
             .setAllowedResourceAttributesFilter(resourceAttributes ->
                 MetricsConstants.JOB.equals(resourceAttributes)
-                    || MetricsConstants.INSTANCE.equals(resourceAttributes))
+                    || MetricsConstants.INSTANCE.equals(resourceAttributes)
+                    || MetricsConstants.HOST_NAME.equals(resourceAttributes)
+                    || baseLabelKeys.contains(resourceAttributes))
             .build();
     }
 }

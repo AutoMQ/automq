@@ -22,6 +22,7 @@ import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import java.time.Duration;
 import java.util.List;
 import kafka.server.KafkaRaftServer;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,8 +32,9 @@ public class OpsMetricsExporter implements MetricsExporter {
     private final int nodeId;
     private final int intervalMs;
     private final List<BucketURI> opsBuckets;
+    private final List<Pair<String, String>> baseLabels;
 
-    public OpsMetricsExporter(String clusterId, int nodeId, int intervalMs, List<BucketURI> opsBuckets) {
+    public OpsMetricsExporter(String clusterId, int nodeId, int intervalMs, List<BucketURI> opsBuckets, List<Pair<String, String>> baseLabels) {
         if (opsBuckets == null || opsBuckets.isEmpty()) {
             throw new IllegalArgumentException("At least one bucket URI must be provided for ops metrics exporter");
         }
@@ -40,6 +42,7 @@ public class OpsMetricsExporter implements MetricsExporter {
         this.nodeId = nodeId;
         this.intervalMs = intervalMs;
         this.opsBuckets = opsBuckets;
+        this.baseLabels = baseLabels;
         LOGGER.info("OpsMetricsExporter initialized with clusterId: {}, nodeId: {}, intervalMs: {}, opsBuckets: {}",
             clusterId, nodeId, intervalMs, opsBuckets);
     }
@@ -85,6 +88,11 @@ public class OpsMetricsExporter implements MetricsExporter {
             @Override
             public ObjectStorage objectStorage() {
                 return objectStorage;
+            }
+
+            @Override
+            public List<Pair<String, String>> baseLabels() {
+                return baseLabels;
             }
         };
         S3MetricsExporter s3MetricsExporter = new S3MetricsExporter(metricsConfig);

@@ -19,6 +19,7 @@ import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.Failover;
+import com.automq.stream.s3.failover.StorageFailureHandler;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -32,6 +33,7 @@ import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.RuntimeIOException;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
@@ -111,6 +113,7 @@ public class S3Storage implements Storage {
     private final ObjectManager objectManager;
     private final ObjectStorage objectStorage;
     private final S3BlockCache blockCache;
+    private final StorageFailureHandler storageFailureHandler;
     /**
      * Stream callback locks. Used to ensure the stream callbacks will not be called concurrently.
      *
@@ -126,7 +129,7 @@ public class S3Storage implements Storage {
 
     @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
-        S3BlockCache blockCache, ObjectStorage objectStorage) {
+        S3BlockCache blockCache, ObjectStorage objectStorage, StorageFailureHandler storageFailureHandler) {
         this.config = config;
         this.maxDeltaWALCacheSize = config.walCacheSize();
         this.deltaWAL = deltaWAL;
@@ -135,6 +138,7 @@ public class S3Storage implements Storage {
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
+        this.storageFailureHandler = storageFailureHandler;
         this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
         S3StreamMetricsManager.registerDeltaWalPendingUploadBytesSupplier(this.pendingUploadBytes::get);
@@ -230,6 +234,18 @@ public class S3Storage implements Storage {
         return result;
     }
 
+    private static long recoverContinuousRecords(Iterator<RecoverResult> it, Map<Long, Long> openingStreamEndOffsets,
+        Map<Long, Long> streamNextOffsets, Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
+        LogCache.LogCacheBlock cacheBlock, Logger logger) {
+        try {
+            return recoverContinuousRecords0(it, openingStreamEndOffsets, streamNextOffsets, streamDiscontinuousRecords, cacheBlock, logger);
+        } catch (Throwable e) {
+            streamDiscontinuousRecords.values().forEach(queue -> queue.forEach(StreamRecordBatch::release));
+            cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
+            throw e;
+        }
+    }
+
     /**
      * Recover continuous records in each stream from the WAL, and put them into the returned {@link LogCache.LogCacheBlock}.
      *
@@ -239,13 +255,14 @@ public class S3Storage implements Storage {
      * @param streamDiscontinuousRecords the out-of-order records of each stream (to be filled)
      * @param cacheBlock                 the cache block (to be filled)
      * @return the end offset of the last record recovered
+     * @throws RuntimeIOException if any IO error occurs during recover from Block WAL
      */
-    private static long recoverContinuousRecords(Iterator<RecoverResult> it,
+    private static long recoverContinuousRecords0(Iterator<RecoverResult> it,
         Map<Long, Long> openingStreamEndOffsets,
         Map<Long, Long> streamNextOffsets,
         Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
         LogCache.LogCacheBlock cacheBlock,
-        Logger logger) {
+        Logger logger) throws RuntimeIOException {
         long logEndOffset = -1L;
         while (it.hasNext()) {
             RecoverResult recoverResult = it.next();
@@ -388,6 +405,7 @@ public class S3Storage implements Storage {
             backgroundExecutor.shutdownNow();
             LOGGER.warn("await backgroundExecutor close fail", e);
         }
+        timeoutDetect.stop();
     }
 
     @Override
@@ -463,8 +481,8 @@ public class S3Storage implements Storage {
         }
         appendResult.future().whenComplete((nil, ex) -> {
             if (ex != null) {
-                // no exception should be thrown from the WAL
-                LOGGER.error("[UNEXPECTED] append WAL fail, request {}", request, ex);
+                LOGGER.error("append WAL fail, request {}", request, ex);
+                storageFailureHandler.handle(ex);
                 return;
             }
             handleAppendCallback(request);
@@ -1024,19 +1042,6 @@ public class S3Storage implements Storage {
 
         public DeltaWALUploadTaskContext(LogCache.LogCacheBlock cache) {
             this.cache = cache;
-        }
-    }
-
-    class LogCacheEvictOOMHandler implements ByteBufAlloc.OOMHandler {
-        @Override
-        public int handle(int memoryRequired) {
-            try {
-                CompletableFuture<Integer> cf = new CompletableFuture<>();
-                FutureUtil.exec(() -> cf.complete(deltaWALCache.forceFree(memoryRequired)), cf, LOGGER, "handleOOM");
-                return cf.get();
-            } catch (Throwable e) {
-                return 0;
-            }
         }
     }
 

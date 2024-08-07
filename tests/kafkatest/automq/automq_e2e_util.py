@@ -123,6 +123,8 @@ JMX_BROKER_OUT = 'kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec'
 JMX_TOPIC_IN = f'kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic={TOPIC}'
 JMX_TOPIC_OUT = f'kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec,topic={TOPIC}'
 JMX_ONE_MIN = ':OneMinuteRate'
+FILE_WAL = '0@file:///mnt/kafka/kafka-data-logs-1/s3wal'
+S3_WAL = '0@s3://ko3?region=us-east-1&endpoint=http://10.5.0.2:4566&pathStyle=false&batchInterval=100&maxBytesInBatch=4194304&maxUnflushedBytes=1073741824&maxInflightUploadCount=50'
 
 
 def run_perf_producer(test_context, kafka, num_records=RECORD_NUM, throughput=DEFAULT_THROUGHPUT,

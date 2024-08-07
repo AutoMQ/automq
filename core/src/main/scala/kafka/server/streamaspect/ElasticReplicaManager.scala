@@ -203,7 +203,7 @@ class ElasticReplicaManager(
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
                 val start = System.currentTimeMillis()
-                hostedPartition.partition.close().get()
+                hostedPartition.partition.close()
                 info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms")
                 if (!metadataCache.autoMQVersion().isReassignmentV1Supported) {
                   // TODO: https://github.com/AutoMQ/automq/issues/1153 add schedule check when leader isn't successfully set
@@ -536,7 +536,7 @@ class ElasticReplicaManager(
     def bytesNeed(): Int = {
       // sum the sizes of topics to fetch from fetchInfos
       val bytesNeed = readPartitionInfo.foldLeft(0) { case (sum, (_, partitionData)) => sum + partitionData.maxBytes }
-      math.min(bytesNeed, params.maxBytes)
+      if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
     }
 
     val handler: Handler = timeoutMs match {

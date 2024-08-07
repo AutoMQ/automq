@@ -367,6 +367,8 @@ public class ClusterControlManager {
         int maxBrokerId = brokerRegistrations.keySet().stream().max(Integer::compareTo).orElse(0);
         int maxNodeId = Math.max(maxBrokerId, maxControllerId);
         int nextId = this.nextNodeId.accumulateAndGet(maxNodeId, (x, y) -> Math.max(x, y) + 1);
+        // Let the broker's nodeId start from 1000 to easily distinguish broker and controller.
+        nextId = Math.max(nextId, 1000);
         UpdateNextNodeIdRecord record = new UpdateNextNodeIdRecord().setNodeId(nextId);
 
         List<ApiMessageAndVersion> records = new ArrayList<>();

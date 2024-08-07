@@ -245,19 +245,20 @@ public class LogCache {
         if (currSize <= capacity * 0.9) {
             return;
         }
-        AtomicLong remainSize = new AtomicLong(currSize);
         List<LogCacheBlock> removed = new ArrayList<>();
+        long freeSize = 0L;
         writeLock.lock();
         try {
+            currSize = size.get();
             Iterator<LogCacheBlock> iter = blocks.iterator();
             while (iter.hasNext()) {
-                if (remainSize.get() <= capacity * 0.9) {
+                if (currSize - freeSize <= capacity * 0.9) {
                     break;
                 }
                 LogCacheBlock block = iter.next();
                 if (block.free) {
                     iter.remove();
-                    remainSize.addAndGet(-block.size());
+                    freeSize += block.size();
                     removed.add(block);
                 } else {
                     break;
@@ -267,7 +268,7 @@ public class LogCache {
         } finally {
             writeLock.unlock();
         }
-        size.addAndGet(remainSize.get() - currSize);
+        size.addAndGet(-freeSize);
         removed.forEach(b -> {
             blockFreeListener.accept(b);
             b.free();

@@ -75,10 +75,9 @@ public class S3MetricsExporter implements MetricExporter {
         this.objectStorage = config.objectStorage();
 
         defaultTagMap.put("host_name", getHostName());
-        defaultTagMap.put("service_name", config.clusterId());
         defaultTagMap.put("job", config.clusterId());
-        defaultTagMap.put("service_instance_id", String.valueOf(config.nodeId()));
         defaultTagMap.put("instance", String.valueOf(config.nodeId()));
+        config.baseLabels().forEach(pair -> defaultTagMap.put(PrometheusUtils.mapLabelName(pair.getKey()), pair.getValue()));
 
         uploadThread = new Thread(new UploadTask());
         uploadThread.setName("s3-metrics-exporter-upload-thread");
@@ -280,7 +279,7 @@ public class S3MetricsExporter implements MetricExporter {
 
         ObjectNode tags = objectMapper.createObjectNode();
         defaultTagMap.forEach(tags::put);
-        attributes.forEach((k, v) -> tags.put(k.getKey(), v.toString()));
+        attributes.forEach((k, v) -> tags.put(PrometheusUtils.mapLabelName(k.getKey()), v.toString()));
         root.set("tags", tags);
 
         return root.toString();
@@ -296,7 +295,7 @@ public class S3MetricsExporter implements MetricExporter {
 
         ObjectNode tags = objectMapper.createObjectNode();
         defaultTagMap.forEach(tags::put);
-        attributes.forEach((k, v) -> tags.put(k.getKey(), v.toString()));
+        attributes.forEach((k, v) -> tags.put(PrometheusUtils.mapLabelName(k.getKey()), v.toString()));
         root.set("tags", tags);
 
         return root.toString();
@@ -330,7 +329,7 @@ public class S3MetricsExporter implements MetricExporter {
 
         ObjectNode tags = objectMapper.createObjectNode();
         defaultTagMap.forEach(tags::put);
-        point.getAttributes().forEach((k, v) -> tags.put(k.getKey(), v.toString()));
+        point.getAttributes().forEach((k, v) -> tags.put(PrometheusUtils.mapLabelName(k.getKey()), v.toString()));
         root.set("tags", tags);
 
         return root.toString();

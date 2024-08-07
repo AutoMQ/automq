@@ -182,12 +182,8 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     }
 
     override def close(): Unit = {
-        asyncClose().get()
-    }
-
-    override def asyncClose(): CompletableFuture[Void] = {
         ElasticUnifiedLog.Logs.remove(elasticLog.topicPartition, this)
-        val closeFuture = lock synchronized {
+        lock synchronized {
             maybeFlushMetadataFile()
             elasticLog.checkIfMemoryMappedBufferClosed()
             producerExpireCheck.cancel(true)
@@ -199,13 +195,13 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             }
             // flush all inflight data/index
             flush(true)
-            elasticLog.asyncClose()
+            elasticLog.close()
         }
         elasticLog.segments.clear()
-        closeFuture.whenComplete((_, _) => {
-            elasticLog.isMemoryMappedBufferClosed = true
-            elasticLog.deleteEmptyDir()
-        })
+        // graceful await append ack
+        elasticLog.lastAppendAckFuture.get()
+        elasticLog.isMemoryMappedBufferClosed = true
+        elasticLog.deleteEmptyDir()
     }
 
     /**

@@ -100,6 +100,8 @@ class ElasticLog(val metaStream: MetaStream,
 
     private val appendAckQueue = new LinkedBlockingQueue[Long]()
     private val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
+    @volatile private[log] var lastAppendAckFuture: Future[?] = CompletableFuture.completedFuture(null)
+
     private val readAsyncThread = READ_ASYNC_EXECUTOR(math.abs(logIdent.hashCode % READ_ASYNC_EXECUTOR.length))
     var logStartOffset = _initStartOffset
 
@@ -216,7 +218,7 @@ class ElasticLog(val metaStream: MetaStream,
             }
             if (notify) {
                 appendAckQueue.offer(endOffset)
-                appendAckThread.submit(new Runnable {
+                lastAppendAckFuture = appendAckThread.submit(new Runnable {
                     override def run(): Unit = {
                         try {
                             appendCallback(startNanos)
@@ -453,7 +455,7 @@ class ElasticLog(val metaStream: MetaStream,
     /**
      * ref. LocalLog#close
      */
-    override private[log] def close(): CompletableFuture[Void] = {
+    override private[log] def close(): Unit = {
         // already flush in UnifiedLog#close, so it's safe to set cleaned shutdown.
         partitionMeta.setCleanedShutdown(true)
         partitionMeta.setStartOffset(logStartOffset)
@@ -464,16 +466,9 @@ class ElasticLog(val metaStream: MetaStream,
             CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
             CoreUtils.swallow(segments.close(), this)
             CoreUtils.swallow(persistPartitionMeta(), this)
+            CoreUtils.swallow(closeStreams().get(), this)
         }
-        info("log(except for streams) closed")
-        closeStreams()
-    }
-
-    /**
-     * ref. LocalLog#asyncClose
-     */
-    override private[log] def asyncClose(): CompletableFuture[Void] = {
-        CompletableFuture.runAsync(() => close())
+        info("log closed")
     }
 
     /**

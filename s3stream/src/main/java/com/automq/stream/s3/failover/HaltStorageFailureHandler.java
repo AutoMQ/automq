@@ -9,12 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.controller.stream;
+package com.automq.stream.s3.failover;
 
-public interface NodeRuntimeInfoGetter {
-
-    NodeState state(int nodeId);
-
-    boolean hasOpeningStreams(int nodeId);
-
+public class HaltStorageFailureHandler implements StorageFailureHandler {
+    @Override
+    public void handle(Throwable ex) {
+        Runtime.getRuntime().halt(1);
+    }
 }

@@ -24,9 +24,11 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.io.Closeable;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.PriorityQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -37,22 +39,24 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class RecordAccumulator implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(RecordAccumulator.class);
 
-    private static final long DEFAULT_LOCK_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(10);
-    private static final long DEFAULT_UPLOAD_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
+    private static final long DEFAULT_LOCK_WARNING_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(5);
+    private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
     protected final ObjectWALConfig config;
     protected final Time time;
     protected final ObjectStorage objectStorage;
-    private final ReentrantLock lock = new ReentrantLock();
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ConcurrentNavigableMap<Long /* inclusive first offset */, List<Record>> uploadMap = new ConcurrentSkipListMap<>();
+    private final ConcurrentNavigableMap<Pair<Long /* epoch */, Long /* exclusive end offset */>, WALObject> previousObjectMap = new ConcurrentSkipListMap<>();
     private final ConcurrentNavigableMap<Long /* exclusive end offset */, WALObject> objectMap = new ConcurrentSkipListMap<>();
     private final String nodePrefix;
     private final String objectPrefix;
@@ -64,10 +68,10 @@ public class RecordAccumulator implements Closeable {
     private final AtomicLong bufferedDataBytes = new AtomicLong();
     protected volatile boolean closed = true;
     protected volatile boolean fenced;
-    private ConcurrentLinkedDeque<Record> bufferQueue = new ConcurrentLinkedDeque<>();
+    private final ConcurrentLinkedDeque<Record> bufferQueue = new ConcurrentLinkedDeque<>();
     private volatile long lastUploadTimestamp = System.currentTimeMillis();
-    private long nextOffset = 0;
-    private long flushedOffset = 0;
+    private final AtomicLong nextOffset = new AtomicLong();
+    private final AtomicLong flushedOffset = new AtomicLong();
 
     public RecordAccumulator(Time time, ObjectStorage objectStorage,
         ObjectWALConfig config) {
@@ -92,9 +96,22 @@ public class RecordAccumulator implements Closeable {
                 String[] parts = path.split("/");
                 try {
                     long firstOffset = Long.parseLong(parts[parts.length - 1]);
+                    long epoch = Long.parseLong(parts[parts.length - 3]);
+
+                    // Skip the object if it belongs to a later epoch.
+                    if (epoch > config.epoch()) {
+                        return;
+                    }
+
                     long length = object.size();
                     long endOffset = firstOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
-                    objectMap.put(endOffset, new WALObject(object.bucketId(), path, firstOffset, length));
+
+                    if (epoch != config.epoch()) {
+                        previousObjectMap.put(Pair.of(epoch, endOffset), new WALObject(object.bucketId(), path, firstOffset, length));
+                    } else {
+                        objectMap.put(endOffset, new WALObject(object.bucketId(), path, firstOffset, length));
+                    }
+                    objectDataBytes.addAndGet(length);
                 } catch (NumberFormatException e) {
                     // Ignore invalid path
                     log.warn("Found invalid wal object: {}", path);
@@ -102,8 +119,8 @@ public class RecordAccumulator implements Closeable {
             }))
             .join();
 
-        flushedOffset = objectMap.isEmpty() ? 0 : objectMap.lastKey();
-        nextOffset = flushedOffset;
+        flushedOffset.set(objectMap.isEmpty() ? 0 : objectMap.lastKey());
+        nextOffset.set(flushedOffset.get());
 
         // Trigger upload periodically.
         executorService.scheduleWithFixedDelay(() -> {
@@ -114,16 +131,18 @@ public class RecordAccumulator implements Closeable {
                 return;
             }
 
-            lock.lock();
+            lock.writeLock().lock();
             try {
-                if (time.nanoseconds() - startTime > DEFAULT_LOCK_TIMEOUT) {
-                    log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: scheduled_upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
+                if (time.nanoseconds() - startTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
+                    log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: scheduled_upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
                 }
 
-                unsafeUpload(false);
+                if (System.currentTimeMillis() - lastUploadTimestamp >= config.batchInterval()) {
+                    unsafeUpload(false);
+                }
             } catch (Throwable ignore) {
             } finally {
-                lock.unlock();
+                lock.writeLock().unlock();
             }
         }, config.batchInterval(), config.batchInterval(), TimeUnit.MILLISECONDS);
 
@@ -131,7 +150,7 @@ public class RecordAccumulator implements Closeable {
             try {
                 long count = pendingFutureMap.values()
                     .stream()
-                    .filter(uploadTime -> time.nanoseconds() - uploadTime > DEFAULT_UPLOAD_TIMEOUT)
+                    .filter(uploadTime -> time.nanoseconds() - uploadTime > DEFAULT_UPLOAD_WARNING_TIMEOUT)
                     .count();
                 if (count > 0) {
                     log.warn("Found {} pending upload tasks exceed 5s.", count);
@@ -160,13 +179,13 @@ public class RecordAccumulator implements Closeable {
             }
         }
 
-        lock.lock();
+        lock.writeLock().lock();
         try {
             unsafeUpload(true);
         } catch (Throwable throwable) {
             log.error("Failed to flush records when close.", throwable);
         } finally {
-            lock.unlock();
+            lock.writeLock().unlock();
         }
 
         // Wait for all upload tasks to complete.
@@ -205,25 +224,18 @@ public class RecordAccumulator implements Closeable {
     }
 
     public long nextOffset() {
-        return nextOffset;
+        return nextOffset.get();
     }
 
     public long flushedOffset() {
-        return flushedOffset;
+        return flushedOffset.get();
     }
 
     public List<WALObject> objectList() {
-        long startTime = time.nanoseconds();
-        lock.lock();
-        try {
-            if (time.nanoseconds() - startTime > DEFAULT_LOCK_TIMEOUT) {
-                log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: list_objects", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
-            }
-
-            return new ArrayList<>(objectMap.values());
-        } finally {
-            lock.unlock();
-        }
+        List<WALObject> list = new ArrayList<>(objectMap.size() + previousObjectMap.size());
+        list.addAll(previousObjectMap.values());
+        list.addAll(objectMap.values());
+        return list;
     }
 
     // Visible for testing
@@ -249,58 +261,109 @@ public class RecordAccumulator implements Closeable {
         checkStatus();
     }
 
+    private boolean shouldUpload() {
+        Record firstRecord = bufferQueue.peekFirst();
+        if (firstRecord == null || uploadMap.size() >= config.maxInflightUploadCount()) {
+            return false;
+        }
+
+        return System.currentTimeMillis() - lastUploadTimestamp >= config.batchInterval()
+               || nextOffset.get() - firstRecord.offset > config.maxBytesInBatch();
+    }
+
     public long append(long recordSize, Function<Long, ByteBuf> recordSupplier,
         CompletableFuture<AppendResult.CallbackResult> future) throws OverCapacityException {
+        long startTime = time.nanoseconds();
         checkWriteStatus();
 
-        long startTime = time.nanoseconds();
-        lock.lock();
+        // Check if there is too much data in the S3 WAL.
+        if (nextOffset.get() - flushedOffset.get() > config.maxUnflushedBytes()) {
+            throw new OverCapacityException("Too many unflushed bytes.");
+        }
+
+        if (objectList().size() + config.maxInflightUploadCount() >= 1000) {
+            throw new OverCapacityException("Too many WAL objects.");
+        }
+
+        if (shouldUpload() && lock.writeLock().tryLock()) {
+            try {
+                if (time.nanoseconds() - startTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
+                    log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: append_upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
+                }
+
+                if (shouldUpload()) {
+                    unsafeUpload(false);
+                }
+            } finally {
+                lock.writeLock().unlock();
+            }
+        }
+
+        long acquireAppendLockTime = time.nanoseconds();
+        lock.readLock().lock();
         try {
-            if (time.nanoseconds() - startTime > DEFAULT_LOCK_TIMEOUT) {
-                log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: append", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - startTime));
+            if (time.nanoseconds() - acquireAppendLockTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
+                log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: append", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - acquireAppendLockTime));
             }
 
-            if (nextOffset - flushedOffset > config.maxUnflushedBytes()) {
-                throw new OverCapacityException("Too many unflushed bytes.");
-            }
-
-            if (objectList().size() + config.maxInflightUploadCount() >= 1000) {
-                throw new OverCapacityException("Too many objects.");
-            }
-
-            if (!bufferQueue.isEmpty()
-                && uploadMap.size() < config.maxInflightUploadCount()
-                && (System.currentTimeMillis() - lastUploadTimestamp >= config.batchInterval()
-                    || nextOffset - bufferQueue.getFirst().offset > config.maxBytesInBatch())) {
-                unsafeUpload(false);
-            }
-
-            long offset = nextOffset;
+            long offset = nextOffset.getAndAdd(recordSize);
             future.whenComplete((v, throwable) -> {
                 if (throwable != null) {
                     log.error("Failed to append record to S3 WAL: {}", offset, throwable);
                 } else {
                     ObjectWALMetricsManager.recordOperationDataSize(recordSize, "append");
                 }
-                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "append", throwable == null);
+                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - acquireAppendLockTime, "append", throwable == null);
             });
 
             bufferQueue.offer(new Record(offset, recordSupplier.apply(offset), future));
-
-            nextOffset += recordSize;
             bufferedDataBytes.addAndGet(recordSize);
 
             return offset;
         } finally {
-            lock.unlock();
+            lock.readLock().unlock();
         }
+    }
+
+    public CompletableFuture<Void> reset() {
+        checkStatus();
+
+        if (objectMap.isEmpty() && previousObjectMap.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        long startTime = time.nanoseconds();
+        AtomicLong deletedObjectSize = new AtomicLong();
+        List<ObjectStorage.ObjectPath> deleteObjectList = new ArrayList<>();
+
+        previousObjectMap.forEach((k, v) -> {
+            deleteObjectList.add(new ObjectStorage.ObjectPath(v.bucketId(), v.path()));
+            deletedObjectSize.addAndGet(v.length());
+            previousObjectMap.remove(k);
+        });
+        objectMap.forEach((k, v) -> {
+            deleteObjectList.add(new ObjectStorage.ObjectPath(v.bucketId(), v.path()));
+            deletedObjectSize.addAndGet(v.length());
+            objectMap.remove(k);
+        });
+
+        return objectStorage.delete(deleteObjectList)
+            .whenComplete((v, throwable) -> {
+                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "reset", throwable == null);
+                objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
+
+                // Never fail the delete task, the under layer storage will retry forever.
+                if (throwable != null) {
+                    log.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
+                }
+            });
     }
 
     // Trim objects where the last offset is less than or equal to the given offset.
     public CompletableFuture<Void> trim(long offset) {
         checkStatus();
 
-        if (objectMap.isEmpty() || offset < objectMap.firstKey() || offset > flushedOffset) {
+        if (objectMap.isEmpty() || offset < objectMap.firstKey() || offset > flushedOffset.get()) {
             return CompletableFuture.completedFuture(null);
         }
 
@@ -332,25 +395,35 @@ public class RecordAccumulator implements Closeable {
             });
     }
 
-    public void unsafeUpload(boolean force) throws OverCapacityException {
+    // Not thread safe, caller should hold lock.
+    // Visible for testing.
+    public void unsafeUpload(boolean force) {
         if (!force) {
             checkWriteStatus();
         }
 
-        // TODO: The number of uploads in progress should not be greater than the number of active S3 connections.
-        if (!force && uploadMap.size() > config.maxInflightUploadCount()) {
-            throw new OverCapacityException("Too many pending upload");
+        if (bufferQueue.isEmpty()) {
+            return;
+        }
+
+        int size = bufferQueue.size();
+        PriorityQueue<Record> recordQueue = new PriorityQueue<>(size, Comparator.comparingLong(o -> o.offset));
+
+        for (int i = 0; i < size; i++) {
+            Record record = bufferQueue.poll();
+            if (record != null) {
+                recordQueue.offer(record);
+            }
         }
 
         // Trigger upload until the buffer is empty.
-        while (!bufferQueue.isEmpty()) {
-            unsafeUpload();
+        while (!recordQueue.isEmpty()) {
+            unsafeUpload(recordQueue);
         }
     }
 
     // Not thread safe, caller should hold lock.
-    // Visible for testing.
-    public void unsafeUpload() {
+    private void unsafeUpload(PriorityQueue<Record> recordQueue) {
         long startTime = time.nanoseconds();
 
         // Build data buffer.
@@ -358,23 +431,24 @@ public class RecordAccumulator implements Closeable {
         List<Record> recordList = new LinkedList<>();
 
         long stickyRecordLength = 0;
-        if (!bufferQueue.isEmpty()) {
-            Record firstRecord = bufferQueue.getFirst();
+        if (!recordQueue.isEmpty()) {
+            Record firstRecord = recordQueue.peek();
             if (firstRecord.record.readerIndex() != 0) {
                 stickyRecordLength = firstRecord.record.readableBytes();
             }
         }
 
-        while (!bufferQueue.isEmpty()) {
+        while (!recordQueue.isEmpty()) {
             // The retained bytes in the batch must larger than record header size.
             long retainedBytesInBatch = config.maxBytesInBatch() - dataBuffer.readableBytes() - WALObjectHeader.WAL_HEADER_SIZE;
             if (retainedBytesInBatch <= RecordHeader.RECORD_HEADER_SIZE) {
                 break;
             }
 
-            Record record = bufferQueue.poll();
+            Record record = recordQueue.poll();
 
             // Records larger than the batch size will be uploaded immediately.
+            assert record != null;
             if (record.record.readableBytes() >= config.maxBytesInBatch() - WALObjectHeader.WAL_HEADER_SIZE) {
                 dataBuffer.addComponent(true, record.record);
                 recordList.add(record);
@@ -389,7 +463,7 @@ public class RecordAccumulator implements Closeable {
                 // Update the record buffer and offset.
                 record.record.skipBytes((int) retainedBytesInBatch);
                 record.offset += retainedBytesInBatch;
-                bufferQueue.offerFirst(record);
+                recordQueue.offer(record);
                 break;
             }
 
@@ -418,10 +492,10 @@ public class RecordAccumulator implements Closeable {
         CompletableFuture<Void> finalFuture = recordUploadMetrics(uploadFuture, startTime, objectLength)
             .thenAccept(result -> {
                 long lockStartTime = time.nanoseconds();
-                lock.lock();
+                lock.writeLock().lock();
                 try {
-                    if (time.nanoseconds() - lockStartTime > DEFAULT_LOCK_TIMEOUT) {
-                        log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - lockStartTime));
+                    if (time.nanoseconds() - lockStartTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
+                        log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - lockStartTime));
                     }
 
                     objectMap.put(endOffset, new WALObject(result.bucket(), path, firstOffset, objectLength));
@@ -431,21 +505,21 @@ public class RecordAccumulator implements Closeable {
 
                     // Update flushed offset
                     if (!uploadMap.isEmpty()) {
-                        flushedOffset = uploadMap.firstKey();
+                        flushedOffset.set(uploadMap.firstKey());
                     } else if (!bufferQueue.isEmpty()) {
-                        flushedOffset = bufferQueue.getFirst().offset;
+                        flushedOffset.set(bufferQueue.getFirst().offset);
                     } else {
-                        flushedOffset = nextOffset;
+                        flushedOffset.set(nextOffset.get());
                     }
 
                     // Release lock and complete future in callback thread.
-                    callbackService.submit(() -> uploadedRecords.forEach(record -> record.future.complete(() -> flushedOffset)));
+                    callbackService.submit(() -> uploadedRecords.forEach(record -> record.future.complete(flushedOffset::get)));
                 } finally {
-                    lock.unlock();
+                    lock.writeLock().unlock();
                 }
             })
             .whenComplete((v, throwable) -> {
-                bufferedDataBytes.addAndGet(-objectLength);
+                bufferedDataBytes.addAndGet(-dataLength);
                 if (throwable instanceof WALFencedException) {
                     List<Record> uploadedRecords = uploadMap.remove(firstOffset);
                     uploadedRecords.forEach(record -> record.future.completeExceptionally(throwable));

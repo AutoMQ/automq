@@ -14,11 +14,14 @@ package kafka.automq;
 import com.automq.stream.s3.ByteBufAllocPolicy;
 import com.automq.stream.s3.operator.BucketURI;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import kafka.log.stream.s3.telemetry.exporter.ExporterConstants;
 import kafka.server.KafkaConfig;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -151,9 +154,7 @@ public class AutoMQConfig {
         "URI format for type otlp: otlp://?endpoint=$endpoint&protocol=$protocol&compression=$compression" +
         " - endpoint: the endpoint to push metrics to, e.g. http://localhost:4317" +
         " - protocol: the protocol to use when exporting metrics to endpoint, valid values: grpc, http. Default: grpc" +
-        " - compression: compression type, value values: gzip, none. Default: none" +
-        "URI format for type ops: ops://?" +
-        " - when configured, metrics will be exported to S3 with bucket specified by s3.ops.buckets configuration";
+        " - compression: compression type, value values: gzip, none. Default: none";
 
     public static final String S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG = "s3.telemetry.exporter.report.interval.ms";
     public static final String S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC = "This configuration controls how often the metrics should be exported.";
@@ -162,6 +163,9 @@ public class AutoMQConfig {
     public static final String S3_TELEMETRY_METRICS_LEVEL_CONFIG = "s3.telemetry.metrics.level";
     public static final String S3_TELEMETRY_METRICS_LEVEL_DOC = "The metrics level that will be used on recording metrics. The \"INFO\" level includes most of the metrics that users should care about, for example throughput and latency of common stream operations. " +
         "The \"DEBUG\" level includes detailed metrics that would help with diagnosis, for example latency of different stages when writing to underlying block device.";
+
+    public static final String S3_TELEMETRY_METRICS_BASE_LABELS_CONFIG = "s3.telemetry.metrics.base.labels";
+    public static final String S3_TELEMETRY_METRICS_BASE_LABELS_DOC = "The base labels that will be added to all metrics. The format is key1=value1,key2=value2.";
 
     public static final String CLUSTER_ID_CONFIG = "cluster.id";
     public static final String CLUSTER_ID_DOC = "If the cluster.id is set, Kafka will auto format the storage.";
@@ -251,6 +255,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG, STRING, "INFO", MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG, INT, S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
@@ -274,12 +279,14 @@ public class AutoMQConfig {
     private List<BucketURI> opsBuckets;
     private String walConfig;
     private String metricsExporterURI;
+    private List<Pair<String, String>> baseLabels;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
         opsBuckets = genOpsBuckets(config);
         walConfig = genWALConfig(config);
         metricsExporterURI = genMetricsExporterURI(config);
+        baseLabels = parseBaseLabels(config);
         return this;
     }
 
@@ -297,6 +304,10 @@ public class AutoMQConfig {
 
     public String walConfig() {
         return walConfig;
+    }
+
+    public List<Pair<String, String>> baseLabels() {
+        return baseLabels;
     }
 
     private static List<BucketURI> genDataBuckets(KafkaConfig config) {
@@ -345,12 +356,15 @@ public class AutoMQConfig {
         if (uri == null) {
             uri = buildMetrixExporterURIWithOldConfigs(config);
         }
+        if (!uri.contains(ExporterConstants.OPS_TYPE)) {
+            uri += "," + buildOpsExporterURI();
+        }
         return uri;
     }
 
     private static String buildMetrixExporterURIWithOldConfigs(KafkaConfig kafkaConfig) {
         if (!kafkaConfig.getBoolean(S3_METRICS_ENABLE_CONFIG)) {
-            return null;
+            return "";
         }
         List<String> exportedUris = new ArrayList<>();
         String exporterTypes = kafkaConfig.getString(S3_TELEMETRY_METRICS_EXPORTER_TYPE_CONFIG);
@@ -400,5 +414,22 @@ public class AutoMQConfig {
 
     private static String buildOpsExporterURI() {
         return ExporterConstants.OPS_TYPE + ExporterConstants.URI_DELIMITER;
+    }
+
+    private static List<Pair<String, String>> parseBaseLabels(KafkaConfig config) {
+        String baseLabels = config.getString(S3_TELEMETRY_METRICS_BASE_LABELS_CONFIG);
+        if (Utils.isBlank(baseLabels)) {
+            return Collections.emptyList();
+        }
+        List<Pair<String, String>> labels = new ArrayList<>();
+        for (String label : baseLabels.split(",")) {
+            String[] kv = label.split("=");
+            if (kv.length != 2) {
+                LOGGER.error("Invalid base label: {}", label);
+                continue;
+            }
+            labels.add(Pair.of(kv[0], kv[1]));
+        }
+        return labels;
     }
 }

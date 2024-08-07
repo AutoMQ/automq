@@ -24,7 +24,7 @@ from kafkatest.version import LATEST_3_1, LATEST_3_2, LATEST_3_3, LATEST_3_4, LA
     LATEST_3_6, LATEST_3_7, DEV_BRANCH, KafkaVersion, LATEST_STABLE_METADATA_VERSION
 
 from ducktape.tests.test import Test
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -176,6 +176,7 @@ class TransactionsMixedVersionsTest(Test):
             }
         }
 
+    @ignore # AutoMQ does not support deployed with Apache Kafka version
     @cluster(num_nodes=8)
     @matrix(
         old_kafka_version=[str(LATEST_3_7), str(LATEST_3_6), str(LATEST_3_5), str(LATEST_3_4), str(LATEST_3_3), str(LATEST_3_2), str(LATEST_3_1)],

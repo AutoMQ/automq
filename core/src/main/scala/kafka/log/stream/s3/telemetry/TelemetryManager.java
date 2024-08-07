@@ -18,6 +18,7 @@ import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -47,6 +48,7 @@ import kafka.log.stream.s3.telemetry.otel.OTelHistogramReporter;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporter;
 import kafka.server.KafkaConfig;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
@@ -76,14 +78,6 @@ public class TelemetryManager {
         SLF4JBridgeHandler.install();
     }
 
-    private String getNodeType() {
-        Set<ProcessRole> roles = kafkaConfig.processRoles();
-        if (roles.size() == 1) {
-            return roles.last().toString();
-        }
-        return "server";
-    }
-
     private String getHostName() {
         try {
             return InetAddress.getLocalHost().getHostName();
@@ -110,15 +104,21 @@ public class TelemetryManager {
     }
 
     protected SdkMeterProvider buildMeterProvider(KafkaConfig kafkaConfig) {
+        AttributesBuilder baseAttributesBuilder = Attributes.builder()
+            .put(MetricsConstants.SERVICE_NAME, clusterId)
+            .put(MetricsConstants.SERVICE_INSTANCE, String.valueOf(kafkaConfig.nodeId()))
+            .put(MetricsConstants.HOST_NAME, getHostName())
+            .put(MetricsConstants.JOB, clusterId) // for Prometheus HTTP server compatibility
+            .put(MetricsConstants.INSTANCE, String.valueOf(kafkaConfig.nodeId())); // for Aliyun Prometheus compatibility
+        List<Pair<String, String>> extraAttributes = kafkaConfig.automq().baseLabels();
+        if (extraAttributes != null) {
+            for (Pair<String, String> pair : extraAttributes) {
+                baseAttributesBuilder.put(pair.getKey(), pair.getValue());
+            }
+        }
+
         Resource resource = Resource.empty().toBuilder()
-            .putAll(Attributes.builder()
-                .put(MetricsConstants.SERVICE_NAME, clusterId)
-                .put(MetricsConstants.SERVICE_INSTANCE, String.valueOf(kafkaConfig.nodeId()))
-                .put(MetricsConstants.HOST_NAME, getHostName())
-                .put(MetricsConstants.JOB, clusterId) // for Prometheus HTTP server compatibility
-                .put(MetricsConstants.INSTANCE, String.valueOf(kafkaConfig.nodeId())) // for Aliyun Prometheus compatibility
-                .put(MetricsConstants.NODE_TYPE, getNodeType())
-                .build())
+            .putAll(baseAttributesBuilder.build())
             .build();
         SdkMeterProviderBuilder sdkMeterProviderBuilder = SdkMeterProvider.builder().setResource(resource);
         MetricsExporterURI metricsExporterURI = buildMetricsExporterURI(clusterId, kafkaConfig);

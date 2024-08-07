@@ -26,6 +26,9 @@ import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.failover.FailoverFactory;
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
+import com.automq.stream.s3.failover.ForceCloseStorageFailureHandler;
+import com.automq.stream.s3.failover.HaltStorageFailureHandler;
+import com.automq.stream.s3.failover.StorageFailureHandlerChain;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -39,7 +42,6 @@ import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.LogContext;
-import com.automq.stream.utils.PingS3Helper;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 import java.util.concurrent.CompletableFuture;
@@ -102,15 +104,11 @@ public class DefaultS3Client implements Client {
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
-        // check s3 availability
-        PingS3Helper pingS3Helper = PingS3Helper.builder()
-            .bucket(dataBucket)
-            .tagging(config.objectTagging())
-            .needPrintToConsole(false)
-            .build();
-        pingS3Helper.pingS3();
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).build();
+        if (!objectStorage.readinessCheck()) {
+            throw new IllegalArgumentException(String.format("%s is not ready", config.dataBuckets()));
+        }
         ObjectStorage compactionobjectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
@@ -127,9 +125,12 @@ public class DefaultS3Client implements Client {
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
         this.writeAheadLog = buildWAL();
-        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage);
+        StorageFailureHandlerChain storageFailureHandler = new StorageFailureHandlerChain();
+        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage, storageFailureHandler);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
+        storageFailureHandler.addHandler(new ForceCloseStorageFailureHandler(streamClient));
+        storageFailureHandler.addHandler(new HaltStorageFailureHandler());
         this.streamClient.registerStreamLifeCycleListener(localIndexCache);
         this.kvClient = new ControllerKVClient(this.requestSender);
         this.failover = failover();

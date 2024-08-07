@@ -28,6 +28,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -56,6 +57,12 @@ public class RecordAccumulatorTest {
         recordAccumulatorExt.start();
         generatedByteBufMap = new ConcurrentSkipListMap<>();
         random = new Random();
+    }
+
+    @AfterEach
+    public void tearDown() {
+        recordAccumulatorExt.close();
+        objectStorage.close();
     }
 
     private ByteBuf generateByteBuf(int size) {
@@ -188,7 +195,6 @@ public class RecordAccumulatorTest {
 
                         Thread.sleep(15);
                     } catch (Exception e) {
-                        byteBuf.release();
                         throw new RuntimeException(e);
                     }
                 }
@@ -247,7 +253,7 @@ public class RecordAccumulatorTest {
     }
 
     @Test
-    public void testShutdown() throws OverCapacityException, InterruptedException {
+    public void testShutdown() throws InterruptedException, OverCapacityException {
         ScheduledExecutorService executorService = recordAccumulatorExt.executorService();
         executorService.shutdown();
         executorService.awaitTermination(10, TimeUnit.SECONDS);
@@ -285,6 +291,48 @@ public class RecordAccumulatorTest {
         assertEquals(2, recordAccumulatorExt.objectList().size());
 
         recordAccumulatorExt.trim(100).join();
+        assertEquals(0, recordAccumulatorExt.objectList().size());
+    }
+
+    @Test
+    public void testReset() throws OverCapacityException {
+        ByteBuf byteBuf1 = generateByteBuf(50);
+        CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf1.readableBytes(), offset -> byteBuf1.retainedSlice().asReadOnly(), future);
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        ByteBuf byteBuf2 = generateByteBuf(50);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf2.readableBytes(), offset -> byteBuf2.retainedSlice().asReadOnly(), future);
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        // Close and restart with another node id.
+        recordAccumulatorExt.close();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withEpoch(System.currentTimeMillis()).build());
+        recordAccumulatorExt.start();
+        assertEquals(0, recordAccumulatorExt.objectList().size());
+
+        // Close and restart with the same node id and higher node epoch.
+        recordAccumulatorExt.close();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withNodeId(100).withEpoch(System.currentTimeMillis()).build());
+        recordAccumulatorExt.start();
+        assertEquals(2, recordAccumulatorExt.objectList().size());
+
+        ByteBuf byteBuf3 = generateByteBuf(50);
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(byteBuf3.readableBytes(), offset -> byteBuf3.retainedSlice().asReadOnly(), future);
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        List<RecordAccumulator.WALObject> objectList = recordAccumulatorExt.objectList();
+        assertEquals(3, objectList.size());
+        assertEquals(byteBuf1, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(0).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+        assertEquals(byteBuf2, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(1).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+        assertEquals(byteBuf3, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(2).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+
+        recordAccumulatorExt.reset().join();
         assertEquals(0, recordAccumulatorExt.objectList().size());
     }
 }
