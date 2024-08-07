@@ -379,9 +379,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     class ReadinessCheck {
         public boolean readinessCheck() {
             LOGGER.info("Start readiness check for {}", bucketURI);
-            String path = "__automq/readiness_check/normal_obj/%d" + System.nanoTime();
+            String normalPath = String.format("__automq/readiness_check/normal_obj/%d", System.nanoTime());
             try {
-                writeS3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(path).build()).get();
+                writeS3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(normalPath).build()).get();
             } catch (Throwable e) {
                 // 权限 / endpoint / xxx
                 Throwable cause = FutureUtil.cause(e);
@@ -403,7 +403,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
             try {
                 byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
-                doWrite(new WriteOptions(), path, Unpooled.wrappedBuffer(content)).get();
+                doWrite(new WriteOptions(), normalPath, Unpooled.wrappedBuffer(content)).get();
             } catch (Throwable e) {
                 Throwable cause = FutureUtil.cause(e);
                 if (cause instanceof S3Exception && ((S3Exception) cause).statusCode() == HttpStatusCode.NOT_FOUND) {
@@ -415,13 +415,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             }
 
             try {
-                doDeleteObjects(List.of(path)).get();
+                doDeleteObjects(List.of(normalPath)).get();
             } catch (Throwable e) {
                 LOGGER.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
                 return false;
             }
 
-            String multiPartPath = "__automq/readiness_check/multi_obj/%d" + System.nanoTime();
+            String multiPartPath = String.format("__automq/readiness_check/multi_obj/%d", System.nanoTime());
             try {
                 WriteOptions options = new WriteOptions();
                 String uploadId = doCreateMultipartUpload(options, multiPartPath).get();
@@ -436,7 +436,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 if (!Arrays.equals(content, readContent)) {
                     LOGGER.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
                 }
-                doDeleteObjects(List.of(path)).get();
+                doDeleteObjects(List.of(multiPartPath)).get();
             } catch (Throwable e) {
                 LOGGER.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
                 return false;
