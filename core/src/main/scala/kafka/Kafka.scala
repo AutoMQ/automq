@@ -28,6 +28,8 @@ import kafka.utils.Implicits._
 import kafka.utils.{Exit, Logging}
 import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.common.utils._
+import org.apache.kafka.server.ProcessRole
+import org.apache.kafka.server.config.KRaftConfigs
 import org.apache.kafka.server.util.CommandLineUtils
 
 import java.util.Properties
@@ -103,14 +105,16 @@ object Kafka extends Logging {
   }
 
   private def addDefaultProps(properties: Properties): Unit = {
-    var metricsReporters = properties.getProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG)
-    if (metricsReporters == null) {
-      properties.setProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG, classOf[AutoBalancerMetricsReporter].getName)
-      return
-    }
-    if (!metricsReporters.contains(classOf[AutoBalancerMetricsReporter].getName)) {
-      metricsReporters = metricsReporters + "," + classOf[AutoBalancerMetricsReporter].getName
-      properties.setProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG, metricsReporters)
+    if (properties.getProperty(KRaftConfigs.PROCESS_ROLES_CONFIG).contains(ProcessRole.BrokerRole.toString)) {
+      var metricsReporters = properties.getProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG)
+      if (metricsReporters == null) {
+        properties.setProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG, classOf[AutoBalancerMetricsReporter].getName)
+        return
+      }
+      if (!metricsReporters.contains(classOf[AutoBalancerMetricsReporter].getName)) {
+        metricsReporters = metricsReporters + "," + classOf[AutoBalancerMetricsReporter].getName
+        properties.setProperty(CommonClientConfigs.METRIC_REPORTER_CLASSES_CONFIG, metricsReporters)
+      }
     }
   }
 
