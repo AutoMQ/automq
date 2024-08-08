@@ -886,9 +886,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private final List<String> failedKeys;
         private final List<String> errorsMessages;
 
-        public DeleteObjectsException(String message, List<String> successKeys, List<String> errorsMessage) {
+        public DeleteObjectsException(String message, List<String> failedKeys, List<String> errorsMessage) {
             super(message);
-            this.failedKeys = successKeys;
+            this.failedKeys = failedKeys;
             this.errorsMessages = errorsMessage;
         }
 
