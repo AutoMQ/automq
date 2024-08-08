@@ -13,9 +13,9 @@ package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.threads.EventLoop;
@@ -24,6 +24,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,10 +63,10 @@ public class StreamReaders implements S3BlockCache {
     }
 
     @Override
-    public CompletableFuture<ReadDataBlock> read(TraceContext context, long streamId, long startOffset, long endOffset,
+    public CompletableFuture<ReadDataBlock> read(FetchContext context, long streamId, long startOffset, long endOffset,
         int maxBytes) {
         Cache cache = caches[Math.abs((int) (streamId % caches.length))];
-        return cache.read(streamId, startOffset, endOffset, maxBytes);
+        return cache.read(context, streamId, startOffset, endOffset, maxBytes);
     }
 
     static class StreamReaderKey {
@@ -110,10 +111,12 @@ public class StreamReaders implements S3BlockCache {
             this.eventLoop = eventLoop;
         }
 
-        public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset,
-            long endOffset,
-            int maxBytes) {
-            CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
+        public CompletableFuture<ReadDataBlock> read(FetchContext context,
+                                                     long streamId,
+                                                     long startOffset,
+                                                     long endOffset,
+                                                     int maxBytes) {
+            CompletableFuture<ReadDataBlock> cf = context.recordReadBlockCacheCf(new CompletableFuture<>());
             eventLoop.execute(() -> {
                 cleanupExpiredStreamReader();
                 StreamReaderKey key = new StreamReaderKey(streamId, startOffset);
@@ -122,13 +125,21 @@ public class StreamReaders implements S3BlockCache {
                     streamReader = new StreamReader(streamId, startOffset, eventLoop, objectManager, objectReaderFactory, dataBlockCache);
                 }
                 StreamReader finalStreamReader = streamReader;
-                CompletableFuture<ReadDataBlock> streamReadCf = streamReader.read(startOffset, endOffset, maxBytes)
+                context.recordStreamReader(finalStreamReader);
+                CompletableFuture<ReadDataBlock> streamReadCf = streamReader.read(context, startOffset, endOffset, maxBytes)
                     .whenComplete((rst, ex) -> {
                         if (ex != null) {
                             LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail", streamId, startOffset, endOffset, maxBytes, ex);
                         } else {
                             // when two stream read progress is the same, only one stream reader can be retained
-                            streamReaders.put(new StreamReaderKey(streamId, finalStreamReader.nextReadOffset()), finalStreamReader);
+                            StreamReader previous = streamReaders.put(new StreamReaderKey(streamId, finalStreamReader.nextReadOffset()), finalStreamReader);
+                            if (previous != null) {
+                                ConcurrentHashMap<FetchContext, CompletableFuture<ReadDataBlock>> pendingReadCf = previous.getPendingReadCf();
+                                if (!pendingReadCf.isEmpty()) {
+                                    LOGGER.error("the same read progress removed previous streamReader but the streamReader have pending request {}", pendingReadCf);
+                                }
+                            }
+
                         }
                     });
                 FutureUtil.propagate(streamReadCf, cf);

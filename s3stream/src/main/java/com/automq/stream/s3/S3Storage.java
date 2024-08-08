@@ -533,7 +533,8 @@ public class S3Storage implements Storage {
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
-        List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
+        List<StreamRecordBatch> logCacheRecords = new ArrayList<>();
+//        = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
         if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords, CacheAccessType.DELTA_WAL_CACHE_HIT));
         }

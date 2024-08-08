@@ -23,9 +23,11 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -35,8 +37,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -132,6 +136,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         }
     }
 
+    @VisibleForTesting
     public CompletableFuture<InRangeObjects> getObjects(long streamId, long startOffset, long endOffset, int limit,
         RangeGetter rangeGetter) {
         return getObjects(streamId, startOffset, endOffset, limit, rangeGetter, null);
@@ -149,7 +154,12 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      */
     public CompletableFuture<InRangeObjects> getObjects(long streamId, long startOffset, long endOffset, int limit,
         RangeGetter rangeGetter, LocalStreamRangeIndexCache indexCache) {
+        long ioContext = MetaFetchIOContextThreadLocal.getIoContext();
         GetObjectsContext ctx = new GetObjectsContext(streamId, startOffset, endOffset, limit, rangeGetter, indexCache);
+        ctx.ioContext = ioContext;
+
+        PendingGetObjectsContext.getInstance().record(ioContext, ctx);
+
         try {
             getObjects0(ctx);
         } catch (Throwable e) {
@@ -242,6 +252,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                     streamSetObjects = Collections.emptyList();
                 }
                 CompletableFuture<Integer> startSearchIndexCf = getStartSearchIndex(node, nextStartOffset, ctx);
+                ctx.recordGetStartSearchIndex(startSearchIndexCf);
+
                 final int finalLastRangeIndex = lastRangeIndex;
                 final long finalNextStartOffset = nextStartOffset;
                 final int finalStreamObjectIndex = streamObjectIndex;
@@ -253,7 +265,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                     }
                     // load stream set object index
                     int finalIndex = index;
-                    loadStreamSetObjectInfo(ctx, finalStreamSetObjects, index).thenAccept(v -> {
+                    CompletableFuture<Void> loadStreamSetObjectInfoCf = loadStreamSetObjectInfo(ctx, finalStreamSetObjects, index);
+                    ctx.recordLoadStreamSetObjectInfo(loadStreamSetObjectInfoCf);
+                    loadStreamSetObjectInfoCf.thenAccept(v -> {
                         ctx.nextStartOffset = finalNextStartOffset;
                         fillObjects(ctx, stream, objects, finalLastRangeIndex, finalStreamObjectIndex, streamObjects,
                             finalIndex, finalStreamSetObjects, finalNode);
@@ -616,7 +630,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return this;
     }
 
-    static class GetObjectsContext {
+    public static class GetObjectsContext {
         final long streamId;
         long startOffset;
         long nextStartOffset;
@@ -624,6 +638,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         int limit;
         RangeGetter rangeGetter;
         LocalStreamRangeIndexCache indexCache;
+        long ioContext;
 
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
         Map<Long, Optional<StreamOffsetRange>> object2range = new HashMap<>();
@@ -649,6 +664,20 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 Runtime.getRuntime().halt(1);
             }
         }
+
+
+        public void recordGetStartSearchIndex(CompletableFuture<Integer> cf) {
+            getStartSearchIndex.add(cf);
+        }
+
+        public void recordLoadStreamSetObjectInfo(CompletableFuture<Void> cf) {
+            loadStreamSetObjectInfo.add(cf);
+        }
+
+        Queue<CompletableFuture<Integer>> getStartSearchIndex = new ConcurrentLinkedQueue<>();
+
+        Queue<CompletableFuture<Void>> loadStreamSetObjectInfo = new ConcurrentLinkedQueue<>();
+
     }
 
     public interface RangeGetter {

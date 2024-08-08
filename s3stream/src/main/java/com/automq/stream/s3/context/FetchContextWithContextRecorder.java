@@ -11,58 +11,53 @@
 
 package com.automq.stream.s3.context;
 
-import com.automq.stream.api.ReadOptions;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.blockcache.StreamReader;
-import com.automq.stream.s3.trace.context.TraceContext;
-import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.context.Context;
 
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
-public class FetchContext extends TraceContext implements FetchContextRecorder {
-    public static final FetchContext DEFAULT = new FetchContext();
-    private ReadOptions readOptions = ReadOptions.DEFAULT;
+public class FetchContextWithContextRecorder extends FetchContext {
+    long streamId;
+    long startOffset;
+    long endOffset;
+    long maxBytes;
 
-    public FetchContext() {
-        super(false, null, null);
+    public FetchContextWithContextRecorder(long streamId, long startOffset, long endOffset, long maxBytes) {
+        super();
+        this.streamId = streamId;
+        this.startOffset = startOffset;
+        this.endOffset = endOffset;
+        this.maxBytes = maxBytes;
     }
 
-    public FetchContext(TraceContext context) {
-        super(context);
-    }
-
-    public FetchContext(boolean isTraceEnabled, Tracer tracer, Context currentContext) {
-        super(isTraceEnabled, tracer, currentContext);
-    }
-
-    public ReadOptions readOptions() {
-        return readOptions;
-    }
-
-    public void setReadOptions(ReadOptions readOptions) {
-        this.readOptions = readOptions;
-    }
+    CompletableFuture<ReadDataBlock> readBlockCacheCf;
+    ConcurrentHashMap<Long, StreamReader.ReadContext> readContext = new ConcurrentHashMap<>();
+    StreamReader reader;
 
     @Override
     public CompletableFuture<ReadDataBlock> recordReadBlockCacheCf(CompletableFuture<ReadDataBlock> readBlockCacheCf) {
-        // noop
+        this.readBlockCacheCf = readBlockCacheCf;
         return readBlockCacheCf;
     }
 
     @Override
     public StreamReader.ReadContext recordBlockCacheReadContext(long leftRetries, StreamReader.ReadContext readContext) {
-        // noop
+        this.readContext.put(leftRetries, readContext);
         return readContext;
     }
 
     @Override
     public void recordStreamReader(StreamReader finalStreamReader) {
-        // noop
+        this.reader = finalStreamReader;
     }
+
+    Queue<StreamReader.GetBlocksContext> getBlocksContext = new ConcurrentLinkedQueue<>();
 
     @Override
     public void recordGetBlocksContext(StreamReader.GetBlocksContext context) {
-        // noop
+        this.getBlocksContext.add(context);
     }
 }

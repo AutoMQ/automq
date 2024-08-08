@@ -94,9 +94,9 @@ public class StorageOperationStats {
             .buildReadAheadStageTimeMetric(MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_PUT_BLOCK_CACHE);
 
     public final HistogramMetric getIndicesTimeGetObjectStats = S3StreamMetricsManager
-            .buildGetIndexTimeMetric(MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_GET_OBJECTS);
+            .buildGetIndexTimeMetric(MetricsLevel.INFO, S3StreamMetricsConstant.LABEL_STAGE_GET_OBJECTS);
     public final HistogramMetric getIndicesTimeFindIndexStats = S3StreamMetricsManager
-            .buildGetIndexTimeMetric(MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_FIND_INDEX);
+            .buildGetIndexTimeMetric(MetricsLevel.INFO, S3StreamMetricsConstant.LABEL_STAGE_FIND_INDEX);
     public final HistogramMetric getIndicesTimeComputeStats = S3StreamMetricsManager
             .buildGetIndexTimeMetric(MetricsLevel.DEBUG, S3StreamMetricsConstant.LABEL_STAGE_COMPUTE);
 

@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.s3.context.FetchContext;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -21,10 +21,10 @@ import java.util.concurrent.CompletableFuture;
  */
 public interface S3BlockCache {
 
-    CompletableFuture<ReadDataBlock> read(TraceContext context, long streamId, long startOffset, long endOffset,
-        int maxBytes);
+    CompletableFuture<ReadDataBlock> read(FetchContext context, long streamId, long startOffset, long endOffset,
+                                          int maxBytes);
 
     default CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        return read(TraceContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);
+        return read(FetchContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);
     }
 }

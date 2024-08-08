@@ -15,6 +15,7 @@ import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.ReadDataBlock;
+import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.exceptions.BlockNotContinuousException;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
@@ -36,6 +37,7 @@ import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -49,6 +51,10 @@ import static com.automq.stream.s3.cache.CacheAccessType.BLOCK_CACHE_MISS;
 import static com.automq.stream.utils.FutureUtil.exec;
 
 @EventLoopSafe public class StreamReader {
+    public static final AtomicLong readerId = new AtomicLong();
+
+    private final long id;
+
     public static final int GET_OBJECT_STEP = 4;
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReader.class);
     static final int READAHEAD_SIZE_UNIT = 1024 * 1024 / 2;
@@ -74,12 +80,21 @@ import static com.automq.stream.utils.FutureUtil.exec;
     private CompletableFuture<Void> inflightLoadIndexCf;
     private volatile CompletableFuture<Void> afterReadTryReadaheadCf;
     private long lastAccessTimestamp = System.currentTimeMillis();
+
+    private final AtomicLong ioCounter = new AtomicLong();
+    private final ConcurrentHashMap<FetchContext, CompletableFuture<ReadDataBlock>> pendingReadCf = new ConcurrentHashMap<>();
+
+    public ConcurrentHashMap<FetchContext, CompletableFuture<ReadDataBlock>> getPendingReadCf() {
+        return pendingReadCf;
+    }
+
     private boolean reading = false;
 
     private boolean closed = false;
 
     public StreamReader(long streamId, long nextReadOffset, EventLoop eventLoop, ObjectManager objectManager,
         ObjectReaderFactory objectReaderFactory, DataBlockCache dataBlockCache) {
+        this.id = readerId.getAndIncrement();
         this.streamId = streamId;
         this.nextReadOffset = nextReadOffset;
         this.readahead = new Readahead();
@@ -90,7 +105,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         this.dataBlockCache = dataBlockCache;
     }
 
-    public CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes) {
+    public CompletableFuture<ReadDataBlock> read(FetchContext context, long startOffset, long endOffset, int maxBytes) {
         if (startOffset != nextReadOffset) {
             return FutureUtil.failedFuture(new AutoMQException(String.format("[BUG] %s read offset not match, expect %d but %d", this, nextReadOffset, startOffset)));
         }
@@ -99,17 +114,20 @@ import static com.automq.stream.utils.FutureUtil.exec;
         }
         reading = true;
         try {
-            return read(startOffset, endOffset, maxBytes, 1).whenComplete((rst, ex) -> reading = false);
+            CompletableFuture<ReadDataBlock> readCf = read(context, startOffset, endOffset, maxBytes, 1).whenComplete((rst, ex) -> reading = false);
+            pendingReadCf.put(context, readCf);
+            readCf.whenComplete((res, e) -> pendingReadCf.remove(context, readCf));
+            return readCf;
         } catch (Throwable e) {
             reading = false;
             return FutureUtil.failedFuture(e);
         }
     }
 
-    CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes, int leftRetries) {
+    CompletableFuture<ReadDataBlock> read(FetchContext context, long startOffset, long endOffset, int maxBytes, int leftRetries) {
         lastAccessTimestamp = System.currentTimeMillis();
-        ReadContext readContext = new ReadContext();
-        read0(readContext, startOffset, endOffset, maxBytes);
+        ReadContext readContext = context.recordBlockCacheReadContext(leftRetries, new ReadContext(id, ioCounter.getAndIncrement()));
+        read0(context, readContext, startOffset, endOffset, maxBytes);
         CompletableFuture<ReadDataBlock> retCf = new CompletableFuture<>();
         readContext.cf.whenComplete((rst, ex) -> exec(() -> {
             Throwable cause = FutureUtil.cause(ex);
@@ -122,7 +140,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
                     // The cached blocks maybe invalid after object compaction, so we need to reset the blocks and retry read
                     resetBlocks();
                     // use async to prevent recursive call cause stack overflow
-                    eventLoop.execute(() -> FutureUtil.propagate(read(startOffset, endOffset, maxBytes, leftRetries - 1), retCf));
+                    eventLoop.execute(() -> FutureUtil.propagate(read(context, startOffset, endOffset, maxBytes, leftRetries - 1), retCf));
                 } else {
                     retCf.completeExceptionally(cause);
                 }
@@ -148,9 +166,9 @@ import static com.automq.stream.utils.FutureUtil.exec;
         blocksMap.forEach((k, v) -> v.markRead());
     }
 
-    void read0(ReadContext ctx, final long startOffset, final long endOffset, final int maxBytes) {
+    void read0(FetchContext context, ReadContext ctx, final long startOffset, final long endOffset, final int maxBytes) {
         // 1. get blocks
-        CompletableFuture<List<Block>> getBlocksCf = getBlocks(startOffset, endOffset, maxBytes, false);
+        CompletableFuture<List<Block>> getBlocksCf = getBlocks(context, ctx, startOffset, endOffset, maxBytes, false);
 
         // 2. wait block's data loaded
         List<Block> blocks = new ArrayList<>();
@@ -213,7 +231,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 long finalNextStartOffset = nextStartOffset;
                 int finalRemainingSize = remainingSize;
                 // use async to prevent recursive call cause stack overflow
-                eventLoop.execute(() -> read0(ctx, finalNextStartOffset, endOffset, finalRemainingSize));
+                eventLoop.execute(() -> read0(context, ctx, finalNextStartOffset, endOffset, finalRemainingSize));
             }
         }).whenComplete((nil, ex) -> {
             if (ex != null) {
@@ -278,9 +296,10 @@ import static com.automq.stream.utils.FutureUtil.exec;
         });
     }
 
-    private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes,
+    private CompletableFuture<List<Block>> getBlocks(FetchContext fetchContext, ReadContext ctx, long startOffset, long endOffset, int maxBytes,
         boolean readahead) {
-        GetBlocksContext context = new GetBlocksContext(readahead);
+        GetBlocksContext context = new GetBlocksContext(ctx.contextId, readahead);
+        fetchContext.recordGetBlocksContext(context);
         try {
             getBlocks0(context, startOffset, endOffset, maxBytes);
         } catch (Throwable ex) {
@@ -294,6 +313,8 @@ import static com.automq.stream.utils.FutureUtil.exec;
     }
 
     private void getBlocks0(GetBlocksContext ctx, long startOffset, long endOffset, int maxBytes) {
+        ctx.getBlocksTimes++;
+
         Long floorKey = blocksMap.floorKey(startOffset);
         if (floorKey == null && !blocksMap.isEmpty()) {
             if (ctx.readahead) {
@@ -308,7 +329,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         CompletableFuture<Boolean> loadMoreBlocksCf;
         int remainingSize = maxBytes;
         if (floorKey == null || startOffset >= loadedBlockIndexEndOffset) {
-            loadMoreBlocksCf = loadMoreBlocksWithoutData(endOffset);
+            loadMoreBlocksCf = loadMoreBlocksWithoutData(ctx, endOffset);
         } else {
             boolean firstBlock = true;
             boolean fulfill = false;
@@ -339,7 +360,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 ctx.cf.complete(ctx.blocks);
                 return;
             } else {
-                loadMoreBlocksCf = loadMoreBlocksWithoutData(endOffset);
+                loadMoreBlocksCf = loadMoreBlocksWithoutData(ctx, endOffset);
             }
         }
         int finalRemainingSize = remainingSize;
@@ -371,25 +392,33 @@ import static com.automq.stream.utils.FutureUtil.exec;
      *
      * @return whether load more blocks
      */
-    private CompletableFuture<Boolean> loadMoreBlocksWithoutData(long endOffset) {
+    private CompletableFuture<Boolean> loadMoreBlocksWithoutData(GetBlocksContext ctx, long endOffset) {
         long oldLoadedBlockIndexEndOffset = loadedBlockIndexEndOffset;
-        return loadMoreBlocksWithoutData0(endOffset).thenApply(nil -> loadedBlockIndexEndOffset != oldLoadedBlockIndexEndOffset);
+        return loadMoreBlocksWithoutData0(ctx, endOffset).thenApply(nil -> loadedBlockIndexEndOffset != oldLoadedBlockIndexEndOffset);
     }
 
-    private CompletableFuture<Void> loadMoreBlocksWithoutData0(long endOffset) {
+    private CompletableFuture<Void> loadMoreBlocksWithoutData0(GetBlocksContext ctx, long endOffset) {
         if (inflightLoadIndexCf != null) {
-            return inflightLoadIndexCf.thenCompose(rst -> loadMoreBlocksWithoutData0(endOffset));
+            return inflightLoadIndexCf.thenCompose(rst -> loadMoreBlocksWithoutData0(ctx, endOffset));
         }
         if (endOffset != -1L && endOffset <= loadedBlockIndexEndOffset) {
             return CompletableFuture.completedFuture(null);
         }
         long currentBlocksEpoch = blocksEpoch;
         inflightLoadIndexCf = new CompletableFuture<>();
+
+        ctx.loadMoreBlocksWithoutData0++;
+        ctx.inflightLoadIndexCf = inflightLoadIndexCf;
+
         long nextLoadingOffset = calWindowBlocksEndOffset();
         AtomicLong nextFindStartOffset = new AtomicLong(nextLoadingOffset);
         TimerUtil time = new TimerUtil();
+        FetchIOContextThreadLocal.setIoContext(ctx.contextId);
         // 1. get objects
         CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, nextLoadingOffset, endOffset, GET_OBJECT_STEP);
+
+        ctx.getObjectsCf = getObjectsCf;
+
         // 2. get block indexes from objects
         CompletableFuture<Void> findBlockIndexesCf = getObjectsCf.whenComplete((rst, ex) -> {
             StorageOperationStats.getInstance().getIndicesTimeGetObjectStats.record(time.elapsedAndResetAs(TimeUnit.NANOSECONDS));
@@ -424,6 +453,9 @@ import static com.automq.stream.utils.FutureUtil.exec;
             }
             return prevCf;
         }, eventLoop);
+
+        ctx.findBlockIndexesCf = findBlockIndexesCf;
+
         findBlockIndexesCf.whenCompleteAsync((nil, ex) -> {
             if (ex != null) {
                 inflightLoadIndexCf.completeExceptionally(ex);
@@ -434,6 +466,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             inflightLoadIndexCf = null;
             cf.complete(null);
         }, eventLoop);
+
         return inflightLoadIndexCf;
     }
 
@@ -497,17 +530,32 @@ import static com.automq.stream.utils.FutureUtil.exec;
         return cause instanceof ObjectNotExistException || cause instanceof NoSuchKeyException || cause instanceof BlockNotContinuousException;
     }
 
-    static class GetBlocksContext {
+    public static class GetBlocksContext {
+        long contextId;
+        long getBlocksTimes = 0;
+        long loadMoreBlocksWithoutData0 = 0;
+        CompletableFuture<Void> inflightLoadIndexCf;
+        CompletableFuture<List<S3ObjectMetadata>> getObjectsCf;
+        CompletableFuture<Void> findBlockIndexesCf;
         final List<Block> blocks = new ArrayList<>();
         final CompletableFuture<List<Block>> cf = new CompletableFuture<>();
         final boolean readahead;
 
-        public GetBlocksContext(boolean readahead) {
+        public GetBlocksContext(long contextId, boolean readahead) {
+            this.contextId = contextId;
             this.readahead = readahead;
         }
     }
 
-    static class ReadContext {
+    public static class ReadContext {
+        long readerId;
+        long contextId;
+
+        public ReadContext(long readerId, long contextId) {
+            this.readerId = readerId;
+            this.contextId = contextId;
+        }
+
         final List<StreamRecordBatch> records = new LinkedList<>();
         final List<Block> blocks = new ArrayList<>();
         final CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
@@ -617,7 +665,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 return;
             }
             readaheadMarkOffset = nextReadaheadOffset;
-            inflightReadaheadCf = getBlocks(nextReadaheadOffset, -1L, nextReadaheadSize, true).thenAccept(blocks -> {
+            inflightReadaheadCf = getBlocks(FetchContext.DEFAULT, new ReadContext(id, ioCounter.getAndIncrement()), nextReadaheadOffset, -1L, nextReadaheadSize, true).thenAccept(blocks -> {
                 nextReadaheadOffset = blocks.isEmpty() ? nextReadaheadOffset : blocks.get(blocks.size() - 1).index.endOffset();
                 blocks.forEach(Block::release);
             });

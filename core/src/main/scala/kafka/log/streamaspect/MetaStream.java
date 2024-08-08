@@ -19,6 +19,7 @@ import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.context.FetchContextWithContextRecorder;
 import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -204,7 +205,8 @@ public class MetaStream implements Stream {
 
         try {
             while (pos < endOffset) {
-                FetchResult fetchRst = fetch(pos, endOffset, 64 * 1024).get();
+                FetchContextWithContextRecorder replayFetchContext = new FetchContextWithContextRecorder(streamId(), pos, endOffset, 64 * 1024);
+                FetchResult fetchRst = fetch(replayFetchContext, pos, endOffset, 64 * 1024).get();
                 for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
                     try {
                         MetaKeyValue kv = MetaKeyValue.decode(Unpooled.copiedBuffer(context.rawPayload()).nioBuffer());

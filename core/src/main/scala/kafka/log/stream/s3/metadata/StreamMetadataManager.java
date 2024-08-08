@@ -12,6 +12,7 @@
 package kafka.log.stream.s3.metadata;
 
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.cache.blockcache.FetchIOContextThreadLocal;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
@@ -26,12 +27,17 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import kafka.server.BrokerServer;
+import org.apache.kafka.image.MetaFetchIOContextThreadLocal;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.S3ObjectsImage;
@@ -101,22 +107,63 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         }
     }
 
+    public static class MetadataFetchCtx {
+        long ioContext;
+        long streamId;
+        long startOffset;
+        long endOffset;
+        int limit;
+
+        long fetch0Time;
+
+        public MetadataFetchCtx(long ioContext, long streamId, long startOffset, long endOffset, int limit) {
+            this.ioContext = ioContext;
+            this.streamId = streamId;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.limit = limit;
+        }
+
+        Queue<CompletableFuture<InRangeObjects>> queue = new ConcurrentLinkedQueue<>();
+        public void linkGetObjectsCf(CompletableFuture<InRangeObjects> getObjectsCf) {
+            queue.add(getObjectsCf);
+        }
+    }
+
+    private final Map<MetadataFetchCtx, CompletableFuture<InRangeObjects>> pendingFetchRequest = new ConcurrentHashMap<>();
+
     @Override
     public CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit) {
+        long fetchCtxId = FetchIOContextThreadLocal.getIoContext();
+
+        MetadataFetchCtx ctx = new MetadataFetchCtx(fetchCtxId, streamId, startOffset, endOffset, limit);
+
         // TODO: cache the object list for next search
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
-        exec(() -> fetch0(cf, streamId, startOffset, endOffset, limit), cf, LOGGER, "fetchObjects");
+        cf.whenComplete((res, e) -> {
+            pendingFetchRequest.remove(ctx, cf);
+        });
+
+        pendingFetchRequest.put(ctx, cf);
+
+        exec(() -> fetch0(ctx, cf, streamId, startOffset, endOffset, limit), cf, LOGGER, "fetchObjects");
         return cf;
     }
 
-    private void fetch0(CompletableFuture<InRangeObjects> cf, long streamId,
+    private void fetch0(MetadataFetchCtx ctx, CompletableFuture<InRangeObjects> cf, long streamId,
         long startOffset, long endOffset, int limit) {
         Image image = getImage();
         try {
+            ctx.fetch0Time++;
+
             final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
             final S3ObjectsImage objectsImage = image.objectsMetadata();
+
+            MetaFetchIOContextThreadLocal.setIoContext(ctx.ioContext);
             CompletableFuture<InRangeObjects> getObjectsCf = streamsImage.getObjects(streamId, startOffset, endOffset, limit,
                 new DefaultRangeGetter(objectsImage, objectReaderFactory), indexCache);
+
+            ctx.linkGetObjectsCf(getObjectsCf);
             getObjectsCf.thenAccept(rst -> {
                 if (rst.objects().size() >= limit || rst.endOffset() >= endOffset || rst == InRangeObjects.INVALID) {
                     rst.objects().forEach(object -> {
@@ -146,7 +193,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     streamId, startOffset, endOffset, limit);
 
                 CompletableFuture<Void> pendingCf = pendingFetch();
-                pendingCf.thenAccept(nil -> fetch0(cf, streamId, startOffset, endOffset, limit));
+                pendingCf.thenAccept(nil -> fetch0(ctx, cf, streamId, startOffset, endOffset, limit));
                 cf.whenComplete((r, ex) ->
                     LOGGER.info("[FetchObjects],[COMPLETE_PENDING],streamId={} startOffset={} endOffset={} limit={}", streamId, startOffset, endOffset, limit));
             }).exceptionally(ex -> {
