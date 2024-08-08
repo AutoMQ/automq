@@ -204,6 +204,7 @@ object ElasticLogManager {
   }
 
   def shutdown(): Unit = {
+    INIT_FUTURE.completeExceptionally(new IllegalStateException("ElasticLogManager is shutting down"))
     INSTANCE.foreach(_.shutdownNow())
   }
 }
