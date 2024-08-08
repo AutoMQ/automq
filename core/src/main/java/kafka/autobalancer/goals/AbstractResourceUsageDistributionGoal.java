@@ -57,7 +57,7 @@ public abstract class AbstractResourceUsageDistributionGoal extends AbstractReso
     @Override
     public boolean isBrokerAcceptable(BrokerUpdater.Broker broker) {
         double load = broker.loadValue(resource());
-        if (load < this.usageDetectThreshold) {
+        if (usageAvg < this.usageDetectThreshold) {
             return true;
         }
         return load >= usageDistLowerBound && load <= usageDistUpperBound;
