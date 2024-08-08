@@ -67,6 +67,7 @@ public class S3StreamClient implements StreamClient {
      * Default value is 400000: 10w partitions ~= 30w streams ~= 40w object
      */
     private static final int MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD = Systems.getEnvInt("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_MAX_OBJECT_THRESHOLD", 400000);
+    private static final int STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY = Systems.getEnvInt("AUTOMQ_STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY", 20);
     private final ScheduledExecutorService streamObjectCompactionScheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-scheduler", true), LOGGER, true);
     final Map<Long, StreamWrapper> openedStreams;
@@ -144,7 +145,7 @@ public class S3StreamClient implements StreamClient {
      * Start stream objects compactions.
      */
     private void startStreamObjectsCompactions() {
-        long compactionJitterDelay = ThreadLocalRandom.current().nextInt(20);
+        long compactionJitterDelay = ThreadLocalRandom.current().nextInt(STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY);
 
         scheduledCompactionTaskFuture = streamObjectCompactionScheduler.scheduleWithFixedDelay(() -> {
             try {

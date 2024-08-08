@@ -12,3 +12,4 @@ core_test_suite:
     - ../kafkatest/automq/memory_occupancy_test.py
     - ../kafkatest/automq/quota_test.py
     - ../kafkatest/automq/autobalancer_test.py
+    - ../kafkatest/automq/s3_leakage_test.py
