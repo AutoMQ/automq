@@ -1891,4 +1891,45 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         if ret != 0:
             raise Exception("Failed to delete s3 bucket, output: %s" % val)
         self.have_cleaned_topic_data = True
+
+    def get_bucket_objects(self, timeout_sec=60):
+        """
+        Get the size of all objects stored in the S3 bucket.
+        """
+        # Check if the cluster is in a state where we should not perform this operation
+        if self.quorum_info.using_kraft and not self.quorum_info.has_brokers:
+            self.logger.info("skip getting objects size on KRaft controller-only cluster")
+            return
+
+        cmd = "aws s3 ls s3://%(bucket_name)s --recursive --summarize --endpoint=http://%(s3_ip)s:%(s3_port)d" % {
+            'bucket_name': self.default_s3_bucket_name,
+            's3_ip': self.default_s3_ip,
+            's3_port': self.default_s3_port
+        }
+
+        self.logger.info("Running command to get bucket objects size...\n%s" % cmd)
+        ret, val = subprocess.getstatusoutput(cmd)
+        self.logger.info(f'\n--------------objects[bucket:{self.default_s3_bucket_name}]--------------------\n:{val}\n--------------objects--------------------\n')
+        if ret != 0:
+            raise Exception("Failed to get bucket objects size, output: %s" % val)
+        objects = []
+        log_entry_pattern = re.compile(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(\d+)\s+(.+)')
+        for log_entry in val.strip().split('\n'):
+            match = log_entry_pattern.match(log_entry)
+            if match:
+                timestamp = match.group(1)
+                size = int(match.group(2))
+                path = match.group(3)
+                objects.append({
+                    "timestamp": timestamp,
+                    "size": size,
+                    "path": path
+                })
+        # Extract the size information from the command output
+        total_objects_size = 0
+        size_line = [line for line in val.split('\n') if 'Total Size:' in line]
+        if size_line:
+            total_size_str = size_line[0].split(': ')[1]
+            total_objects_size = int(total_size_str.replace(',', ''))
+        return objects, total_objects_size
     # AutoMQ inject end

@@ -195,9 +195,7 @@ public class StreamObjectCompactor {
             }
             request = requestOpt.get();
             objectManager.compactStreamObject(request).get();
-            if (s3ObjectLogger.isTraceEnabled()) {
-                s3ObjectLogger.trace("{} {} cost {}ms", compactionType, request, start.elapsedAs(TimeUnit.MILLISECONDS));
-            }
+            s3ObjectLogger.info("Compact stream finished, {} {} cost {}ms", compactionType, request, start.elapsedAs(TimeUnit.MILLISECONDS));
         }
     }
 
