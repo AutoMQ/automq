@@ -48,6 +48,10 @@ public class DeleteObjectsAccumulator implements Runnable {
         this(DEFAULT_DELETE_OBJECTS_MAX_BATCH_SIZE, DEFAULT_DELETE_OBJECTS_MAX_CONCURRENT_REQUEST_NUMBER, deleteObjectsFunction);
     }
 
+    public DeleteObjectsAccumulator(int maxBatchSize, Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction) {
+        this(maxBatchSize, DEFAULT_DELETE_OBJECTS_MAX_CONCURRENT_REQUEST_NUMBER, deleteObjectsFunction);
+    }
+
     public DeleteObjectsAccumulator(int maxBatchSize,
                                     int maxConcurrentRequestNumber,
                                     Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction) {
