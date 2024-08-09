@@ -74,6 +74,9 @@ public class NodeControlManager {
 
     public ControllerResult<AutomqGetNodesResponseData> getMetadata(AutomqGetNodesRequest req) {
         List<Integer> nodeIds = req.data().nodeIds();
+        if (nodeIds.isEmpty()) {
+            nodeIds = new ArrayList<>(nodeMetadataMap.keySet());
+        }
         List<NodeMetadata> nodeMetadataList = new ArrayList<>();
         for (Integer nodeId : nodeIds) {
             NodeMetadata nodeMetadata = nodeMetadataMap.get(nodeId);
