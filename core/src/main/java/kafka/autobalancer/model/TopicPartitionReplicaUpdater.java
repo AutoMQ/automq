@@ -54,13 +54,8 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected boolean isValidInstance() {
-        return true;
-    }
-
-    @Override
-    protected AbstractInstance createInstance() {
-        TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp, metricVersion);
+    protected AbstractInstance createInstance(boolean metricsOutOfDate) {
+        TopicPartitionReplica replica = new TopicPartitionReplica(tp, lastUpdateTimestamp, metricVersion, metricsOutOfDate);
         processRawMetrics(replica);
         return replica;
     }
@@ -88,8 +83,8 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     public static class TopicPartitionReplica extends AbstractInstance {
         private final TopicPartition tp;
 
-        public TopicPartitionReplica(TopicPartition tp, long timestamp, MetricVersion metricVersion) {
-            super(timestamp, metricVersion);
+        public TopicPartitionReplica(TopicPartition tp, long timestamp, MetricVersion metricVersion, boolean metricsOutOfDate) {
+            super(timestamp, metricVersion, metricsOutOfDate);
             this.tp = tp;
         }
 
@@ -120,7 +115,7 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
         @Override
         public AbstractInstance copy() {
-            TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp, metricVersion);
+            TopicPartitionReplica replica = new TopicPartitionReplica(tp, timestamp, metricVersion, metricsOutOfDate);
             replica.copyLoads(this);
             return replica;
         }
