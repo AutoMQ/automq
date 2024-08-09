@@ -57,7 +57,6 @@ public class NodeRangeIndexCache {
 
     public synchronized void invalidate(long nodeId) {
         this.nodeRangeIndexMap.remove(nodeId);
-        LOGGER.info("Invalidate stream range index for node {}", nodeId);
     }
 
     public synchronized CompletableFuture<Long> searchObjectId(long nodeId, long streamId, long startOffset,
