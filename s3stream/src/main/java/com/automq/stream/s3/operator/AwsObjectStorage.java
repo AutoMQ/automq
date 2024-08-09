@@ -341,7 +341,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return "bytes=" + start + "-" + (end - 1);
     }
 
-    private S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
+    protected S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
         List<AwsCredentialsProvider> credentialsProviders, int maxConcurrency) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
