@@ -17,8 +17,10 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.s3.operator.Writer;
+import com.automq.stream.utils.FutureUtil;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -96,6 +98,13 @@ public class CompositeObject {
                     ObjectAttributes.from(objectMetadata.attributes()).bucket(), objectMetadata.objectId(), linkedObjects)
             );
         }).thenAccept(rst -> {
+        }).exceptionally(ex -> {
+            Throwable cause = FutureUtil.cause(ex);
+            if (cause instanceof ObjectStorage.ObjectNotFoundException) {
+                // The composite object is already deleted.
+                return null;
+            }
+            throw new CompletionException(cause);
         });
     }
 
