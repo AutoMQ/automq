@@ -11,16 +11,14 @@
 
 package com.automq.shell.commands.cluster;
 
-import com.automq.shell.AutoMQCLI;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "cluster", description = "Cluster operation", mixinStandardHelpOptions = true,
     subcommands = {
         Create.class,
-        Deploy.class
+        Deploy.class,
+        Describe.class
     }
 )
 public class Cluster {
-    @CommandLine.ParentCommand
-    AutoMQCLI cli;
 }
