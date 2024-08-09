@@ -124,6 +124,7 @@ public class S3Storage implements Storage {
         ThreadUtils.createThreadFactory("storage-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
     private long lastLogTimestamp = 0L;
     private volatile double maxDataWriteRate = 0.0;
+    private volatile boolean shutdown;
 
     private final AtomicLong pendingUploadBytes = new AtomicLong(0L);
 
@@ -391,6 +392,7 @@ public class S3Storage implements Storage {
 
     @Override
     public void shutdown() {
+        shutdown = true;
         drainBackoffTask.cancel(false);
         for (WalWriteRequest request : backoffRecords) {
             request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
@@ -431,7 +433,7 @@ public class S3Storage implements Storage {
      * @return backoff status.
      */
     public boolean append0(AppendContext context, WalWriteRequest request, boolean fromBackoff) {
-        // TODO: storage status check, fast fail the request when storage closed.
+        checkStatus(request);
         if (!fromBackoff && !backoffRecords.isEmpty()) {
             backoffRecords.offer(request);
             return true;
@@ -585,6 +587,12 @@ public class S3Storage implements Storage {
                 streamId, startOffset, finalEndOffset, maxBytes);
         } else {
             timeout.cancel();
+        }
+    }
+
+    public void checkStatus(WalWriteRequest request) {
+        if (shutdown) {
+            request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
         }
     }
 
