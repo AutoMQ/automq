@@ -42,7 +42,12 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     }
 
     public boolean isActive() {
-        return this.active;
+        lock.lock();
+        try {
+            return this.active;
+        } finally {
+            lock.unlock();
+        }
     }
 
     public void setActive(boolean active) {
@@ -52,11 +57,6 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         } finally {
             lock.unlock();
         }
-    }
-
-    @Override
-    protected boolean isValidInstance() {
-        return active;
     }
 
     @Override
@@ -85,8 +85,11 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected AbstractInstance createInstance() {
-        return new Broker(brokerId, rack, timestamp, getMetricsSnapshot(), metricVersion);
+    protected AbstractInstance createInstance(boolean metricsOutOfDate) {
+        if (!active) {
+            return null;
+        }
+        return new Broker(brokerId, rack, lastUpdateTimestamp, getMetricsSnapshot(), metricVersion, metricsOutOfDate);
     }
 
     @Override
@@ -114,8 +117,9 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         private final Map<Byte, Snapshot> metricsSnapshot;
         private boolean isSlowBroker;
 
-        public Broker(int brokerId, String rack, long timestamp, Map<Byte, Snapshot> metricsSnapshot, MetricVersion metricVersion) {
-            super(timestamp, metricVersion);
+        public Broker(int brokerId, String rack, long timestamp, Map<Byte, Snapshot> metricsSnapshot,
+            MetricVersion metricVersion, boolean metricsOutOfDate) {
+            super(timestamp, metricVersion, metricsOutOfDate);
             this.brokerId = brokerId;
             this.rack = rack;
             this.metricsSnapshot = metricsSnapshot;
@@ -166,7 +170,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
         @Override
         public Broker copy() {
-            Broker broker = new Broker(brokerId, rack, timestamp, null, metricVersion);
+            Broker broker = new Broker(brokerId, rack, timestamp, null, metricVersion, metricsOutOfDate);
             broker.copyLoads(this);
             return broker;
         }

@@ -57,7 +57,7 @@ public interface Goal extends Configurable, Comparable<Goal> {
     }
 
     default boolean isEligibleBroker(BrokerUpdater.Broker broker) {
-        return broker.getMetricVersion().isGoalSupported(this);
+        return broker.getMetricVersion().isGoalSupported(this) && !broker.isMetricsOutOfDate();
     }
 
     void initialize(Collection<BrokerUpdater.Broker> brokers);

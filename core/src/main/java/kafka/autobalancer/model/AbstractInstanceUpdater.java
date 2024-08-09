@@ -29,14 +29,14 @@ public abstract class AbstractInstanceUpdater {
     protected static final Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
     protected final Lock lock = new ReentrantLock();
     protected Map<Byte, Samples> metricSampleMap = new HashMap<>();
-    protected long timestamp = 0L;
+    protected long lastUpdateTimestamp = 0L;
     protected MetricVersion metricVersion = defaultVersion();
 
     public boolean update(Iterable<Map.Entry<Byte, Double>> metricsMap, long time) {
         lock.lock();
         try {
-            if (time < timestamp) {
-                LOGGER.warn("Metrics for {} is outdated at {}, last updated time {}", name(), time, timestamp);
+            if (time < lastUpdateTimestamp) {
+                LOGGER.warn("Metrics for {} is outdated at {}, last updated time {}", name(), time, lastUpdateTimestamp);
                 return false;
             }
             update0(metricsMap, time);
@@ -63,18 +63,18 @@ public abstract class AbstractInstanceUpdater {
             }
             metricSampleMap.computeIfAbsent(metricType, k -> createSample(metricType)).append(value);
         }
-        this.timestamp = timestamp;
+        this.lastUpdateTimestamp = timestamp;
     }
 
     abstract boolean processMetric(byte metricType, double value);
 
     abstract Samples createSample(byte metricType);
 
-    public long getTimestamp() {
+    public long getLastUpdateTimestamp() {
         long timestamp;
         lock.lock();
         try {
-            timestamp = this.timestamp;
+            timestamp = this.lastUpdateTimestamp;
         } finally {
             lock.unlock();
         }
@@ -88,16 +88,7 @@ public abstract class AbstractInstanceUpdater {
     public AbstractInstance get(long timeSince) {
         lock.lock();
         try {
-            if (timestamp < timeSince || !isValidInstance()) {
-                return null;
-            }
-            Set<Byte> requiredMetrics = requiredMetrics();
-            if (!metricSampleMap.keySet().containsAll(requiredMetrics)) {
-                LOGGER.warn("Metrics for {} of version {} is incomplete, expected: {}, actual: {}", name(),
-                    metricVersion(), requiredMetrics, metricSampleMap.keySet());
-                return null;
-            }
-            return createInstance();
+            return createInstance(lastUpdateTimestamp < timeSince || !isMetricsComplete());
         } finally {
             lock.unlock();
         }
@@ -105,20 +96,38 @@ public abstract class AbstractInstanceUpdater {
 
     protected abstract Set<Byte> requiredMetrics();
 
+    protected boolean isMetricsComplete() {
+        Set<Byte> requiredMetrics = requiredMetrics();
+        if (!metricSampleMap.keySet().containsAll(requiredMetrics)) {
+            LOGGER.warn("Metrics for {} of version {} is incomplete, expected: {}, actual: {}", name(),
+                metricVersion(), requiredMetrics, metricSampleMap.keySet());
+            return false;
+        }
+        return true;
+    }
+
     protected abstract String name();
 
-    protected abstract AbstractInstance createInstance();
-
-    protected abstract boolean isValidInstance();
+    protected abstract AbstractInstance createInstance(boolean metricsOutOfDate);
 
     public static abstract class AbstractInstance {
         protected final Map<Byte, Load> loads = new HashMap<>();
         protected final long timestamp;
         protected final MetricVersion metricVersion;
+        protected boolean metricsOutOfDate;
 
-        public AbstractInstance(long timestamp, MetricVersion metricVersion) {
+        public AbstractInstance(long timestamp, MetricVersion metricVersion, boolean metricsOutOfDate) {
             this.timestamp = timestamp;
             this.metricVersion = metricVersion;
+            this.metricsOutOfDate = metricsOutOfDate;
+        }
+
+        public boolean isMetricsOutOfDate() {
+            return metricsOutOfDate;
+        }
+
+        public void setMetricsOutOfDate(boolean metricsOutOfDate) {
+            this.metricsOutOfDate = metricsOutOfDate;
         }
 
         public abstract AbstractInstance copy();

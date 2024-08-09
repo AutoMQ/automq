@@ -84,7 +84,7 @@ public class GoalTestBase {
     }
 
     protected Broker createBroker(ClusterModelSnapshot cluster, String rack, int brokerId, MetricVersion metricVersion) {
-        Broker broker = new Broker(brokerId, rack, System.currentTimeMillis(), null, metricVersion);
+        Broker broker = new Broker(brokerId, rack, System.currentTimeMillis(), null, metricVersion, false);
         cluster.addBroker(broker);
         return broker;
     }
@@ -102,7 +102,7 @@ public class GoalTestBase {
                                                          int partition,
                                                          MetricVersion metricVersion) {
         TopicPartition tp = new TopicPartition(topic, partition);
-        TopicPartitionReplica replica = new TopicPartitionReplica(tp, System.currentTimeMillis(), metricVersion);
+        TopicPartitionReplica replica = new TopicPartitionReplica(tp, System.currentTimeMillis(), metricVersion, false);
         cluster.addTopicPartition(brokerId, tp, replica);
         return replica;
     }

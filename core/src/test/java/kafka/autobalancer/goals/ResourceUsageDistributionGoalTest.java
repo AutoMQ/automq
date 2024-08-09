@@ -336,17 +336,41 @@ public class ResourceUsageDistributionGoalTest extends GoalTestBase {
         broker0.setLoad(resource, 0, false);
         actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
         Assertions.assertTrue(actions.isEmpty());
-
-        broker0.setLoad(resource, 0);
-        broker1.setLoad(resource, 80 * 1024 * 1024, false);
-        replica1.setLoad(resource, 40 * 1024 * 1024, false);
-        replica2.setLoad(resource, 40 * 1024 * 1024, false);
     }
 
     @Test
     public void testSkipUntrustedBroker() {
         testSkipUntrustedBroker(NW_IN);
         testSkipUntrustedBroker(NW_OUT);
+    }
+
+    @ParameterizedTest
+    @ValueSource(bytes = {NW_IN, NW_OUT})
+    public void testSkipOutDatedBroker(byte resource) {
+        ClusterModelSnapshot cluster = new ClusterModelSnapshot();
+        Broker broker0 = createBroker(cluster, RACK, 0);
+        Broker broker1 = createBroker(cluster, RACK, 1);
+
+        broker0.setLoad(resource, 0);
+        broker0.setMetricsOutOfDate(true);
+        broker1.setLoad(resource, 80 * 1024 * 1024);
+        broker1.setMetricsOutOfDate(false);
+
+        TopicPartitionReplica replica1 = createTopicPartition(cluster, 1, TOPIC_1, 0);
+        TopicPartitionReplica replica2 = createTopicPartition(cluster, 1, TOPIC_1, 1);
+        replica1.setLoad(resource, 35 * 1024 * 1024);
+        replica2.setLoad(resource, 45 * 1024 * 1024);
+
+        Goal goal = getGoalByResource(resource);
+        goal.initialize(Set.of(broker0, broker1));
+
+        List<Action> actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
+        Assertions.assertTrue(actions.isEmpty());
+
+        broker0.setMetricsOutOfDate(false);
+        actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
+        Assertions.assertEquals(1, actions.size());
+        Assertions.assertEquals(new Action(ActionType.MOVE, new TopicPartition(TOPIC_1, 1), 1, 0), actions.get(0));
     }
 
     private ClusterModelSnapshot buildClusterModelSnapshot() {
