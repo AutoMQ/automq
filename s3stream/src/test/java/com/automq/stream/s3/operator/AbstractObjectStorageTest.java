@@ -55,13 +55,13 @@ class AbstractObjectStorageTest {
     public void testMergeTask() {
         S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 3000, S3ObjectType.STREAM);
         AbstractObjectStorage.MergedReadTask mergedReadTask = new AbstractObjectStorage.MergedReadTask(
-            new AbstractObjectStorage.ReadTask(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0, 1024, new CompletableFuture<>()), 0);
-        boolean ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 1024, 2048, new CompletableFuture<>()));
+            new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, 1024, new CompletableFuture<>()), 0);
+        boolean ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 1024, 2048, new CompletableFuture<>()));
         assertTrue(ret);
         assertEquals(0, mergedReadTask.dataSparsityRate);
         assertEquals(0, mergedReadTask.start);
         assertEquals(2048, mergedReadTask.end);
-        ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 2049, 3000, new CompletableFuture<>()));
+        ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 2049, 3000, new CompletableFuture<>()));
         assertFalse(ret);
         assertEquals(0, mergedReadTask.dataSparsityRate);
         assertEquals(0, mergedReadTask.start);
@@ -72,13 +72,13 @@ class AbstractObjectStorageTest {
     public void testMergeTask2() {
         S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 4096, S3ObjectType.STREAM);
         AbstractObjectStorage.MergedReadTask mergedReadTask = new AbstractObjectStorage.MergedReadTask(
-            new AbstractObjectStorage.ReadTask(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0, 1024, new CompletableFuture<>()), 0.5f);
-        boolean ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 2048, 4096, new CompletableFuture<>()));
+            new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, 1024, new CompletableFuture<>()), 0.5f);
+        boolean ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 2048, 4096, new CompletableFuture<>()));
         assertTrue(ret);
         assertEquals(0.25, mergedReadTask.dataSparsityRate, 0.01);
         assertEquals(0, mergedReadTask.start);
         assertEquals(4096, mergedReadTask.end);
-        ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 1024, 1536, new CompletableFuture<>()));
+        ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 1024, 1536, new CompletableFuture<>()));
         assertTrue(ret);
         assertEquals(0.125, mergedReadTask.dataSparsityRate, 0.01);
         assertEquals(0, mergedReadTask.start);
@@ -95,11 +95,11 @@ class AbstractObjectStorageTest {
 
         objectStorage = spy(objectStorage);
         // obj0_0_1024 obj_1_1024_2048 obj_0_16776192_16777216 obj_0_2048_4096 obj_0_16777216_16778240
-        CompletableFuture<ByteBuf> cf1 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata1.key(), 0, 1024);
-        CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata2.key(), 1024, 3072);
-        CompletableFuture<ByteBuf> cf3 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata1.key(), 31457280, 31461376);
-        CompletableFuture<ByteBuf> cf4 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata1.key(), 2048, 4096);
-        CompletableFuture<ByteBuf> cf5 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata1.key(), 33554432, 33554944);
+        CompletableFuture<ByteBuf> cf1 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 0, 1024);
+        CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata2.key(), 1024, 3072);
+        CompletableFuture<ByteBuf> cf3 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 31457280, 31461376);
+        CompletableFuture<ByteBuf> cf4 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 2048, 4096);
+        CompletableFuture<ByteBuf> cf5 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 33554432, 33554944);
 
         objectStorage.tryMergeRead();
 
@@ -131,7 +131,7 @@ class AbstractObjectStorageTest {
         S3ObjectMetadata s3ObjectMetadata1 = new S3ObjectMetadata(1, 100, S3ObjectType.STREAM);
         objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata1.key(), TestUtils.random((int) s3ObjectMetadata1.objectSize())).get();
         objectStorage = spy(objectStorage);
-        objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata1.key(), 0, 100)
+        objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 0, 100)
             .thenCompose(buf -> {
                 assertEquals(1, buf.refCnt());
                 buf.release();
@@ -147,8 +147,8 @@ class AbstractObjectStorageTest {
         objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(4096));
         objectStorage = spy(objectStorage);
 
-        CompletableFuture<ByteBuf> cf1 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0L, 1024L);
-        CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 2048L, -1L);
+        CompletableFuture<ByteBuf> cf1 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0L, 1024L);
+        CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 2048L, -1L);
 
         objectStorage.tryMergeRead();
         verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(any(), eq(s3ObjectMetadata.key()), eq(0L), eq(1024L));
@@ -175,7 +175,7 @@ class AbstractObjectStorageTest {
         objectStorage = spy(objectStorage);
 
         // check read to end range read will increase the inboundWidthLimiter
-        CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0, -1L);
+        CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, -1L);
 
         cf2.join();
         Thread.sleep(100); // wait for async reacquire token
@@ -195,7 +195,7 @@ class AbstractObjectStorageTest {
         when(memoryObjectStorage.doRangeRead(any(), anyString(), anyLong(), anyLong()))
             .thenReturn(CompletableFuture.failedFuture(new IllegalArgumentException("mock exception")));
 
-        CompletableFuture<ByteBuf> cf4 = memoryObjectStorage.rangeRead(ReadOptions.DEFAULT, s3ObjectMetadata.key(), 0, -1L);
+        CompletableFuture<ByteBuf> cf4 = memoryObjectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, -1L);
         memoryObjectStorage.tryMergeRead();
 
         try {

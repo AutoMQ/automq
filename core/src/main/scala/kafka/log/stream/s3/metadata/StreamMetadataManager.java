@@ -19,7 +19,9 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.DefaultThreadFactory;
@@ -310,7 +312,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         @Override
         public CompletableFuture<ByteBuf> readNodeRangeIndex(long nodeId) {
             ObjectStorage storage = objectReaderFactory.getObjectStorage();
-            return storage.read(ObjectStorage.ReadOptions.DEFAULT, ObjectUtils.genIndexKey(0, nodeId));
+            return storage.read(new ReadOptions().bucket(ObjectAttributes.MATCH_ALL_BUCKET), ObjectUtils.genIndexKey(0, nodeId));
         }
     }
 }
