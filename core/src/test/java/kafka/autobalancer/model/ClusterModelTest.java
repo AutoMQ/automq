@@ -105,8 +105,8 @@ public class ClusterModelTest {
                 .setFenced(BrokerRegistrationFencingChange.FENCE.value());
         clusterModel.onBrokerRegistrationChanged(fencedRecord);
 
-        Assertions.assertTrue(clusterModel.brokerUpdater(1).isActive());
-        Assertions.assertFalse(clusterModel.brokerUpdater(2).isActive());
+        Assertions.assertNotNull(clusterModel.brokerUpdater(1).get());
+        Assertions.assertNull(clusterModel.brokerUpdater(2).get());
 
         clusterModel.updateBrokerMetrics(1, Map.of(
                 RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
@@ -393,6 +393,59 @@ public class ClusterModelTest {
         Map<Integer, Long> metricsTimeMap = clusterModel.calculateBrokerLatestMetricsTime();
         Assertions.assertEquals(1, metricsTimeMap.size());
         Assertions.assertEquals(now - 2000, metricsTimeMap.get(brokerId));
+    }
+
+    @Test
+    public void testOutDatedMetrics() {
+        RecordClusterModel clusterModel = new RecordClusterModel();
+        String topicName = "testTopic";
+        Uuid topicId = Uuid.randomUuid();
+        int partition = 0;
+        int brokerId = 1;
+
+        RegisterBrokerRecord registerBrokerRecord = new RegisterBrokerRecord()
+            .setFenced(false)
+            .setBrokerId(brokerId);
+        clusterModel.onBrokerRegister(registerBrokerRecord);
+        TopicRecord topicRecord = new TopicRecord()
+            .setName(topicName)
+            .setTopicId(topicId);
+        clusterModel.onTopicCreate(topicRecord);
+        PartitionRecord partitionRecord = new PartitionRecord()
+            .setLeader(brokerId)
+            .setTopicId(topicId)
+            .setPartitionId(partition);
+        clusterModel.onPartitionCreate(partitionRecord);
+
+        ClusterModelSnapshot snapshot = clusterModel.snapshot();
+        Assertions.assertNotNull(snapshot.broker(brokerId));
+        Assertions.assertTrue(snapshot.broker(brokerId).isMetricsOutOfDate());
+        Assertions.assertNotNull(snapshot.replica(brokerId, new TopicPartition(topicName, partition)));
+        Assertions.assertTrue(snapshot.replica(brokerId, new TopicPartition(topicName, partition)).isMetricsOutOfDate());
+
+        long now = System.currentTimeMillis();
+
+        Assertions.assertTrue(clusterModel.updateBrokerMetrics(brokerId, Map.of(
+            RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS, 0.0,
+            RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS, 0.0,
+            RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS, 0.0).entrySet(), now));
+        snapshot = clusterModel.snapshot();
+        Assertions.assertNotNull(snapshot.broker(brokerId));
+        Assertions.assertTrue(snapshot.broker(brokerId).isMetricsOutOfDate());
+        Assertions.assertNotNull(snapshot.replica(brokerId, new TopicPartition(topicName, partition)));
+        Assertions.assertTrue(snapshot.replica(brokerId, new TopicPartition(topicName, partition)).isMetricsOutOfDate());
+
+        TopicPartitionMetrics topicPartitionMetrics = new TopicPartitionMetrics(now, brokerId, "", topicName, partition);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_IN, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_BYTES_OUT, 10);
+        topicPartitionMetrics.put(RawMetricTypes.PARTITION_SIZE, 10);
+        Assertions.assertTrue(clusterModel.updateTopicPartitionMetrics(topicPartitionMetrics.brokerId(),
+            new TopicPartition(topicName, partition), topicPartitionMetrics.getMetricValueMap().entrySet(), topicPartitionMetrics.time()));
+        snapshot = clusterModel.snapshot();
+        Assertions.assertNotNull(snapshot.broker(brokerId));
+        Assertions.assertFalse(snapshot.broker(brokerId).isMetricsOutOfDate());
+        Assertions.assertNotNull(snapshot.replica(brokerId, new TopicPartition(topicName, partition)));
+        Assertions.assertFalse(snapshot.replica(brokerId, new TopicPartition(topicName, partition)).isMetricsOutOfDate());
     }
 
     @Test
