@@ -16,7 +16,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class StorageFailureHandlerChain implements StorageFailureHandler {
+public class StorageFailureHandlerChain implements StorageHandlerChain {
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageFailureHandlerChain.class);
     private final List<StorageFailureHandler> handlers = new ArrayList<>();
 
@@ -31,6 +31,7 @@ public class StorageFailureHandlerChain implements StorageFailureHandler {
         }
     }
 
+    @Override
     public void addHandler(StorageFailureHandler handler) {
         handlers.add(handler);
     }

@@ -15,7 +15,7 @@ import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
 import com.automq.stream.s3.cache.blockcache.StreamReaders;
-import com.automq.stream.s3.failover.StorageFailureHandler;
+import com.automq.stream.s3.failover.StorageHandlerChain;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -81,7 +81,7 @@ public class S3StorageTest {
         objectStorage = new MemoryObjectStorage();
         storage = new S3Storage(config, wal,
             streamManager, objectManager, new StreamReaders(config.blockCacheSize(), objectManager, objectStorage,
-            new DefaultObjectReaderFactory(objectStorage)), objectStorage, mock(StorageFailureHandler.class));
+            new DefaultObjectReaderFactory(objectStorage)), objectStorage, mock(StorageHandlerChain.class));
     }
 
     @Test
