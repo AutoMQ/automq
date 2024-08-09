@@ -97,6 +97,7 @@ import org.apache.kafka.controller.es.CreatePartitionPolicy;
 import org.apache.kafka.controller.es.ElasticCreatePartitionPolicy;
 import org.apache.kafka.controller.es.LoadAwarePartitionLeaderSelector;
 import org.apache.kafka.controller.es.PartitionLeaderSelector;
+import org.apache.kafka.controller.stream.NodeControlManager;
 import org.apache.kafka.controller.stream.TopicDeletion;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
@@ -158,7 +159,6 @@ import static org.apache.kafka.common.protocol.Errors.UNKNOWN_TOPIC_ID;
 import static org.apache.kafka.common.protocol.Errors.UNKNOWN_TOPIC_OR_PARTITION;
 import static org.apache.kafka.controller.PartitionReassignmentReplicas.isReassignmentInProgress;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
-import static org.apache.kafka.controller.stream.NodeControlManager.unregisterNodeKVRecord;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER_CHANGE;
 
@@ -388,6 +388,8 @@ public class ReplicationControlManager {
      * The quorum controller
      */
     private final Controller quorumController;
+
+    private NodeControlManager nodeControlManager;
     // AutoMQ for Kafka inject end
 
 
@@ -1481,9 +1483,18 @@ public class ReplicationControlManager {
             setBrokerId(brokerId).setBrokerEpoch(brokerEpoch),
             (short) 0));
         // AutoMQ for Kafka inject start
-        records.add(new ApiMessageAndVersion(unregisterNodeKVRecord(brokerId), (short) 0));
+        records.add(nodeControlManager.unregisterNodeRecord(brokerId));
         // AutoMQ for Kafka inject end
     }
+
+    // AutoMQ for Kafka inject start
+    /**
+     * Should only be used during initialization.
+     */
+    public void setNodeControlManager(NodeControlManager nodeControlManager) {
+        this.nodeControlManager = nodeControlManager;
+    }
+    // AutoMQ for Kafka inject end
 
     /**
      * Generate the appropriate records to handle a broker becoming unfenced.
