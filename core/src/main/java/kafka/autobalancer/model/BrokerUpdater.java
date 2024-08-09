@@ -42,7 +42,12 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     }
 
     public boolean isActive() {
-        return this.active;
+        lock.lock();
+        try {
+            return this.active;
+        } finally {
+            lock.unlock();
+        }
     }
 
     public Map<Byte, SnapshotSamples> metricSequenceMap() {
@@ -82,11 +87,6 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected boolean isValidInstance() {
-        return active;
-    }
-
-    @Override
     protected void update0(Map<Byte, Double> metricsMap, long timestamp) {
         super.update0(metricsMap, timestamp);
         for (Map.Entry<Byte, Double> entry : metricsMap.entrySet()) {
@@ -104,8 +104,11 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     }
 
     @Override
-    protected AbstractInstance createInstance() {
-        return new Broker(brokerId, rack, timestamp, getMetricsSnapshot(), metricVersion);
+    protected AbstractInstance createInstance(boolean metricsOutOfDate) {
+        if (!active) {
+            return null;
+        }
+        return new Broker(brokerId, rack, lastUpdateTimestamp, getMetricsSnapshot(), metricVersion, metricsOutOfDate);
     }
 
     protected Map<Byte, Snapshot> getMetricsSnapshot() {
@@ -122,8 +125,9 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         private final Map<Byte, Snapshot> metricsSnapshot;
         private boolean isSlowBroker;
 
-        public Broker(int brokerId, String rack, long timestamp, Map<Byte, Snapshot> metricsSnapshot, MetricVersion metricVersion) {
-            super(timestamp, metricVersion);
+        public Broker(int brokerId, String rack, long timestamp, Map<Byte, Snapshot> metricsSnapshot,
+            MetricVersion metricVersion, boolean metricsOutOfDate) {
+            super(timestamp, metricVersion, metricsOutOfDate);
             this.brokerId = brokerId;
             this.rack = rack;
             this.metricsSnapshot = metricsSnapshot;
@@ -174,7 +178,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
         @Override
         public Broker copy() {
-            Broker broker = new Broker(brokerId, rack, timestamp, null, metricVersion);
+            Broker broker = new Broker(brokerId, rack, timestamp, null, metricVersion, metricsOutOfDate);
             broker.copyLoads(this);
             return broker;
         }

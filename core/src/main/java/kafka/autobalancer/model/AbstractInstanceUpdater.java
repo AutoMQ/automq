@@ -31,14 +31,14 @@ public abstract class AbstractInstanceUpdater {
     protected static final LogSuppressor LOG_SUPPRESSOR = new LogSuppressor(LOGGER, 10000);
     protected final Lock lock = new ReentrantLock();
     protected Map<Byte, AbstractTimeWindowSamples> metricSampleMap = new HashMap<>();
-    protected long timestamp = 0L;
+    protected long lastUpdateTimestamp = 0L;
     protected MetricVersion metricVersion = defaultVersion();
 
     public boolean update(Map<Byte, Double> metricsMap, long time) {
         lock.lock();
         try {
-            if (time < timestamp) {
-                LOGGER.warn("Metrics for {} is outdated at {}, last updated time {}", name(), time, timestamp);
+            if (time < lastUpdateTimestamp) {
+                LOGGER.warn("Metrics for {} is outdated at {}, last updated time {}", name(), time, lastUpdateTimestamp);
                 return false;
             }
             if (!validateMetrics(metricsMap)) {
@@ -70,18 +70,18 @@ public abstract class AbstractInstanceUpdater {
             double value = entry.getValue();
             metricSampleMap.computeIfAbsent(metricType, k -> createSample(metricType)).append(value);
         }
-        this.timestamp = timestamp;
+        this.lastUpdateTimestamp = timestamp;
     }
 
     protected AbstractTimeWindowSamples createSample(byte metricType) {
         return new SimpleTimeWindowSamples(1, 1, 1);
     }
 
-    public long getTimestamp() {
+    public long getLastUpdateTimestamp() {
         long timestamp;
         lock.lock();
         try {
-            timestamp = this.timestamp;
+            timestamp = this.lastUpdateTimestamp;
         } finally {
             lock.unlock();
         }
@@ -95,10 +95,7 @@ public abstract class AbstractInstanceUpdater {
     public AbstractInstance get(long timeSince) {
         lock.lock();
         try {
-            if (timestamp < timeSince) {
-                return null;
-            }
-            return createInstance();
+            return createInstance(lastUpdateTimestamp < timeSince);
         } finally {
             lock.unlock();
         }
@@ -108,18 +105,26 @@ public abstract class AbstractInstanceUpdater {
 
     protected abstract boolean validateMetrics(Map<Byte, Double> metricsMap);
 
-    protected abstract AbstractInstance createInstance();
-
-    protected abstract boolean isValidInstance();
+    protected abstract AbstractInstance createInstance(boolean metricsOutOfDate);
 
     public static abstract class AbstractInstance {
         protected final Map<Byte, Load> loads = new HashMap<>();
         protected final long timestamp;
         protected final MetricVersion metricVersion;
+        protected boolean metricsOutOfDate;
 
-        public AbstractInstance(long timestamp, MetricVersion metricVersion) {
+        public AbstractInstance(long timestamp, MetricVersion metricVersion, boolean metricsOutOfDate) {
             this.timestamp = timestamp;
             this.metricVersion = metricVersion;
+            this.metricsOutOfDate = metricsOutOfDate;
+        }
+
+        public boolean isMetricsOutOfDate() {
+            return metricsOutOfDate;
+        }
+
+        public void setMetricsOutOfDate(boolean metricsOutOfDate) {
+            this.metricsOutOfDate = metricsOutOfDate;
         }
 
         public abstract AbstractInstance copy();

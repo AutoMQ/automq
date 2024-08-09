@@ -20,7 +20,6 @@ import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.config.ConfigException;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -49,15 +48,11 @@ public interface Goal extends Configurable, Comparable<Goal> {
     }
 
     default List<BrokerUpdater.Broker> getEligibleBrokers(ClusterModelSnapshot cluster) {
-        List<BrokerUpdater.Broker> brokers = new ArrayList<>();
-        for (BrokerUpdater.Broker broker : cluster.brokers()) {
-            if (broker.getMetricVersion().isGoalSupported(this)) {
-                brokers.add(broker);
-            } else {
-                LOGGER.warn("Goal {} is not supported in version {} for broker-{}", name(), broker.getMetricVersion(), broker.getBrokerId());
-            }
-        }
-        return brokers;
+        return cluster.brokers().stream().filter(this::isEligibleBroker).collect(Collectors.toList());
+    }
+
+    default boolean isEligibleBroker(BrokerUpdater.Broker broker) {
+        return broker.getMetricVersion().isGoalSupported(this) && !broker.isMetricsOutOfDate();
     }
 
     void initialize(Collection<BrokerUpdater.Broker> brokers);

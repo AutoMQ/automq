@@ -65,8 +65,8 @@ public class ClusterModel {
             for (Map.Entry<Integer, BrokerUpdater> entry : brokerMap.entrySet()) {
                 int brokerId = entry.getKey();
                 BrokerUpdater brokerUpdater = entry.getValue();
-                if (brokerUpdater.isValidInstance()) {
-                    metricsTimeMap.put(brokerId, brokerUpdater.getTimestamp());
+                if (brokerUpdater.isActive()) {
+                    metricsTimeMap.put(brokerId, brokerUpdater.getLastUpdateTimestamp());
                 }
             }
             // Record minimum latest topic partition metric time
@@ -78,9 +78,7 @@ public class ClusterModel {
                 Map<TopicPartition, TopicPartitionReplicaUpdater> replicaMap = entry.getValue();
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : replicaMap.entrySet()) {
                     TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
-                    if (replicaUpdater.isValidInstance()) {
-                        metricsTimeMap.put(brokerId, Math.min(metricsTimeMap.get(brokerId), replicaUpdater.getTimestamp()));
-                    }
+                    metricsTimeMap.put(brokerId, Math.min(metricsTimeMap.get(brokerId), replicaUpdater.getLastUpdateTimestamp()));
                 }
             }
             return metricsTimeMap;
@@ -104,12 +102,9 @@ public class ClusterModel {
                     continue;
                 }
                 BrokerUpdater brokerUpdater = entry.getValue();
-                if (!brokerUpdater.isValidInstance()) {
-                    continue;
-                }
                 BrokerUpdater.Broker broker = (BrokerUpdater.Broker) brokerUpdater.get(now - maxToleratedMetricsDelay);
                 if (broker == null) {
-                    logger.warn("Broker {} metrics is out of sync, will be ignored in this round", brokerId);
+                    // skip fenced broker
                     continue;
                 }
                 snapshot.addBroker(broker);
@@ -124,15 +119,10 @@ public class ClusterModel {
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
                     TopicPartition tp = tpEntry.getKey();
                     TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
-                    if (!replicaUpdater.isValidInstance()) {
-                        continue;
-                    }
                     TopicPartitionReplicaUpdater.TopicPartitionReplica replica =
                             (TopicPartitionReplicaUpdater.TopicPartitionReplica) replicaUpdater.get(now - maxToleratedMetricsDelay);
-                    if (replica == null) {
-                        logger.warn("Broker {} has out of sync topic-partition {}, will be ignored in this round", brokerId, tp);
-                        snapshot.removeBroker(brokerId);
-                        break;
+                    if (replica.isMetricsOutOfDate()) {
+                        broker.setMetricsOutOfDate(true);
                     }
                     accumulateLoads(totalLoads, replica);
                     if (!excludedTopics.contains(tp.topic())) {
@@ -162,12 +152,9 @@ public class ClusterModel {
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : entry.getValue().entrySet()) {
                     TopicPartition tp = tpEntry.getKey();
                     TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
-                    if (!replicaUpdater.isValidInstance()) {
-                        continue;
-                    }
                     TopicPartitionReplicaUpdater.TopicPartitionReplica replica =
                             (TopicPartitionReplicaUpdater.TopicPartitionReplica) replicaUpdater.get(now - maxToleratedMetricsDelay);
-                    if (replica == null) {
+                    if (replica == null || replica.isMetricsOutOfDate()) {
                         invalid = true;
                         brokerLoads = null;
                         tpLoads = null;
