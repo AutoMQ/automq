@@ -121,7 +121,7 @@ public class NodeControlManager {
         }
     }
 
-    private static KVRecord registerNodeKVRecord(int nodeId, NodeMetadata newNodeMetadata) {
+    static KVRecord registerNodeKVRecord(int nodeId, NodeMetadata newNodeMetadata) {
         return new KVRecord().setKeyValues(List.of(
             new KVRecord.KeyValue()
                 .setKey(KEY_PREFIX + nodeId)
