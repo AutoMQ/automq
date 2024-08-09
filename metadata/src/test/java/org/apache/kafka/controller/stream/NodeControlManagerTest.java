@@ -14,6 +14,7 @@ package org.apache.kafka.controller.stream;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.errors.s3.UnregisterNodeWithOpenStreamsException;
 import org.apache.kafka.common.message.AutomqGetNodesRequestData;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.AutomqRegisterNodeRequestData;
@@ -34,9 +35,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import static org.apache.kafka.controller.stream.NodeControlManager.registerNodeKVRecord;
-import static org.apache.kafka.controller.stream.NodeControlManager.unregisterNodeKVRecord;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -116,13 +116,29 @@ public class NodeControlManagerTest {
     @Test
     public void testUnregister() {
         // prepare: register node
-        KVRecord registerRecord = registerNodeKVRecord(0, new NodeMetadata(0, 0L, "wal1", Map.of("k1", "v1")));
-        replay(nodeControlManager, List.of(new ApiMessageAndVersion(registerRecord, (short) 0)));
+        ApiMessageAndVersion registerRecord = nodeControlManager.registerNodeRecord(0, new NodeMetadata(0, 0L, "wal1", Map.of("k1", "v1")));
+        replay(nodeControlManager, List.of(registerRecord));
         assertTrue(nodeControlManager.nodeMetadataMap.containsKey(0));
 
-        RemoveKVRecord unregisterRecord = unregisterNodeKVRecord(0);
-        replay(nodeControlManager, List.of(new ApiMessageAndVersion(unregisterRecord, (short) 0)));
+        // test: unregister node
+        ApiMessageAndVersion unregisterRecord = nodeControlManager.unregisterNodeRecord(0);
+        replay(nodeControlManager, List.of(unregisterRecord));
         assertTrue(nodeControlManager.nodeMetadataMap.isEmpty());
+    }
+
+    @Test
+    public void testUnregisterNodeWithOpenStreams() {
+        // prepare: register node
+        ApiMessageAndVersion registerRecord = nodeControlManager.registerNodeRecord(0, new NodeMetadata(0, 0L, "wal1", Map.of("k1", "v1")));
+        replay(nodeControlManager, List.of(registerRecord));
+        assertTrue(nodeControlManager.nodeMetadataMap.containsKey(0));
+
+        // prepare: node has opening streams
+        when(nodeRuntimeInfoGetter.hasOpeningStreams(eq(0))).thenReturn(true);
+
+        // test: unregister node with open streams
+        assertThrows(UnregisterNodeWithOpenStreamsException.class, () -> nodeControlManager.unregisterNodeRecord(0));
+        assertTrue(nodeControlManager.nodeMetadataMap.containsKey(0));
     }
 
     void replay(NodeControlManager manager, List<ApiMessageAndVersion> records) {

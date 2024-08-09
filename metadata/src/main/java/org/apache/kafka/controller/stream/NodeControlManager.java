@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.errors.s3.UnregisterNodeWithOpenStreamsException;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.AutomqRegisterNodeRequestData;
 import org.apache.kafka.common.message.AutomqRegisterNodeResponseData;
@@ -64,7 +65,7 @@ public class NodeControlManager {
         }
 
         NodeMetadata newNodeMetadata = new NodeMetadata(nodeId, nodeEpoch, walConfig, tags);
-        records.add(new ApiMessageAndVersion(registerNodeKVRecord(nodeId, newNodeMetadata), (short) 0));
+        records.add(registerNodeRecord(nodeId, newNodeMetadata));
         return ControllerResult.of(records, resp);
     }
 
@@ -124,12 +125,13 @@ public class NodeControlManager {
         }
     }
 
-    static KVRecord registerNodeKVRecord(int nodeId, NodeMetadata newNodeMetadata) {
-        return new KVRecord().setKeyValues(List.of(
+    ApiMessageAndVersion registerNodeRecord(int nodeId, NodeMetadata newNodeMetadata) {
+        KVRecord kvRecord = new KVRecord().setKeyValues(List.of(
             new KVRecord.KeyValue()
                 .setKey(KEY_PREFIX + nodeId)
                 .setValue(NodeMetadataCodec.encode(newNodeMetadata))
         ));
+        return new ApiMessageAndVersion(kvRecord, (short) 0);
     }
 
     public void replay(RemoveKVRecord kvRecord) {
@@ -146,7 +148,11 @@ public class NodeControlManager {
         }
     }
 
-    public static RemoveKVRecord unregisterNodeKVRecord(int nodeId) {
-        return new RemoveKVRecord().setKeys(List.of(KEY_PREFIX + nodeId));
+    public ApiMessageAndVersion unregisterNodeRecord(int nodeId) {
+        if (hasOpeningStreams(nodeId)) {
+            throw new UnregisterNodeWithOpenStreamsException(String.format("Node %d has opening streams", nodeId));
+        }
+        RemoveKVRecord removeKVRecord = new RemoveKVRecord().setKeys(List.of(KEY_PREFIX + nodeId));
+        return new ApiMessageAndVersion(removeKVRecord, (short) 0);
     }
 }

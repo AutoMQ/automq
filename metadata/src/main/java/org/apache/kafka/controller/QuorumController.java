@@ -2160,6 +2160,9 @@ public final class QuorumController implements Controller {
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager);
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoGetter(clusterControl, streamControlManager));
         this.extension = extension.apply(this);
+
+        // set the nodeControlManager here to avoid circular dependency
+        this.replicationControl.setNodeControlManager(nodeControlManager);
         // AutoMQ for Kafka inject end
 
         log.info("Creating new QuorumController with clusterId {}.{}{}",
