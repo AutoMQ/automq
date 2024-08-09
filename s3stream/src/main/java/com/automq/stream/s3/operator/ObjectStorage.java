@@ -187,10 +187,10 @@ public interface ObjectStorage {
     }
 
     class ReadOptions {
-        public static final ReadOptions DEFAULT = new ReadOptions();
+        public static final short UNSET_BUCKET = (short) -2;
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
-        private short bucket = (short) 0;
+        private short bucket = UNSET_BUCKET;
 
         public ReadOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
