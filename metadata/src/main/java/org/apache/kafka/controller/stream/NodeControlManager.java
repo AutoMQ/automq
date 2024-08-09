@@ -64,11 +64,7 @@ public class NodeControlManager {
         }
 
         NodeMetadata newNodeMetadata = new NodeMetadata(nodeId, nodeEpoch, walConfig, tags);
-        records.add(new ApiMessageAndVersion(new KVRecord().setKeyValues(List.of(
-            new KVRecord.KeyValue()
-                .setKey(KEY_PREFIX + nodeId)
-                .setValue(NodeMetadataCodec.encode(newNodeMetadata))
-        )), (short) 0));
+        records.add(new ApiMessageAndVersion(registerNodeKVRecord(nodeId, newNodeMetadata), (short) 0));
         return ControllerResult.of(records, resp);
     }
 
@@ -128,6 +124,14 @@ public class NodeControlManager {
         }
     }
 
+    static KVRecord registerNodeKVRecord(int nodeId, NodeMetadata newNodeMetadata) {
+        return new KVRecord().setKeyValues(List.of(
+            new KVRecord.KeyValue()
+                .setKey(KEY_PREFIX + nodeId)
+                .setValue(NodeMetadataCodec.encode(newNodeMetadata))
+        ));
+    }
+
     public void replay(RemoveKVRecord kvRecord) {
         for (String key : kvRecord.keys()) {
             if (!key.startsWith(KEY_PREFIX)) {
@@ -142,4 +146,7 @@ public class NodeControlManager {
         }
     }
 
+    public static RemoveKVRecord unregisterNodeKVRecord(int nodeId) {
+        return new RemoveKVRecord().setKeys(List.of(KEY_PREFIX + nodeId));
+    }
 }

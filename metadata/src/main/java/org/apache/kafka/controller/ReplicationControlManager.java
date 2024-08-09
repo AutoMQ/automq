@@ -158,6 +158,7 @@ import static org.apache.kafka.common.protocol.Errors.UNKNOWN_TOPIC_ID;
 import static org.apache.kafka.common.protocol.Errors.UNKNOWN_TOPIC_OR_PARTITION;
 import static org.apache.kafka.controller.PartitionReassignmentReplicas.isReassignmentInProgress;
 import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_OP;
+import static org.apache.kafka.controller.stream.NodeControlManager.unregisterNodeKVRecord;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER;
 import static org.apache.kafka.metadata.LeaderConstants.NO_LEADER_CHANGE;
 
@@ -1479,6 +1480,9 @@ public class ReplicationControlManager {
         records.add(new ApiMessageAndVersion(new UnregisterBrokerRecord().
             setBrokerId(brokerId).setBrokerEpoch(brokerEpoch),
             (short) 0));
+        // AutoMQ for Kafka inject start
+        records.add(new ApiMessageAndVersion(unregisterNodeKVRecord(brokerId), (short) 0));
+        // AutoMQ for Kafka inject end
     }
 
     /**

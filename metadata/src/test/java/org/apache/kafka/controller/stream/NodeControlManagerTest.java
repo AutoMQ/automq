@@ -34,6 +34,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.apache.kafka.controller.stream.NodeControlManager.registerNodeKVRecord;
+import static org.apache.kafka.controller.stream.NodeControlManager.unregisterNodeKVRecord;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
@@ -109,6 +111,18 @@ public class NodeControlManagerTest {
         AutomqRegisterNodeRequestData.TagCollection tagCollection = new TagCollection();
         tags.forEach((k, v) -> tagCollection.add(new AutomqRegisterNodeRequestData.Tag().setKey(k).setValue(v)));
         return tagCollection;
+    }
+
+    @Test
+    public void testUnregister() {
+        // prepare: register node
+        KVRecord registerRecord = registerNodeKVRecord(0, new NodeMetadata(0, 0L, "wal1", Map.of("k1", "v1")));
+        replay(nodeControlManager, List.of(new ApiMessageAndVersion(registerRecord, (short) 0)));
+        assertTrue(nodeControlManager.nodeMetadataMap.containsKey(0));
+
+        RemoveKVRecord unregisterRecord = unregisterNodeKVRecord(0);
+        replay(nodeControlManager, List.of(new ApiMessageAndVersion(unregisterRecord, (short) 0)));
+        assertTrue(nodeControlManager.nodeMetadataMap.isEmpty());
     }
 
     void replay(NodeControlManager manager, List<ApiMessageAndVersion> records) {
