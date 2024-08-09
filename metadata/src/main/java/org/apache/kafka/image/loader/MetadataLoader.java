@@ -333,6 +333,9 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
             "maybePublishMetadata(" + manifest.type().toString() + ")",
             manifest.provenance().lastContainedOffset())
         ) {
+            // AutoMQ inject start
+            tryReleaseOldImage(oldImage, image);
+            // AutoMQ inject end
             return;
         }
 
@@ -354,16 +357,22 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
             scheduleInitializeNewPublishers(0);
         }
         // AutoMQ inject start
-        // Expect the old image is already replaced by the new image.
-        // If there is any reference to the old image, it should invoke the #retain and release after used.
-        if (oldImage != null && image.objectsMetadata() != oldImage.objectsMetadata()) {
-            oldImage.objectsMetadata().release();
-        }
-        if (oldImage != null && image.streamsMetadata() != oldImage.streamsMetadata()) {
-            oldImage.streamsMetadata().release();
-        }
+        tryReleaseOldImage(oldImage, image);
         // AutoMQ inject end
     }
+
+    // AutoMQ inject start
+    private void tryReleaseOldImage(MetadataImage oldImage, MetadataImage newImage) {
+        // Expect the old image is already replaced by the new image.
+        // If there is any reference to the old image, it should invoke the #retain and release after used.
+        if (oldImage != null && newImage.objectsMetadata() != oldImage.objectsMetadata()) {
+            oldImage.objectsMetadata().release();
+        }
+        if (oldImage != null && newImage.streamsMetadata() != oldImage.streamsMetadata()) {
+            oldImage.streamsMetadata().release();
+        }
+    }
+    // AutoMQ inject end
 
     @Override
     public void handleCommit(BatchReader<ApiMessageAndVersion> reader) {
