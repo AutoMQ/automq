@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 import static com.automq.stream.s3.CompositeObject.FOOTER_MAGIC;
@@ -33,6 +35,7 @@ import static com.automq.stream.s3.ObjectWriter.Footer.FOOTER_SIZE;
 import static com.automq.stream.s3.operator.ObjectStorage.RANGE_READ_TO_END;
 
 public class CompositeObjectReader implements ObjectReader {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CompositeObjectReader.class);
     private final S3ObjectMetadata objectMetadata;
     private final RangeReader rangeReader;
     private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
@@ -57,6 +60,10 @@ public class CompositeObjectReader implements ObjectReader {
     public synchronized CompletableFuture<BasicObjectInfo> basicObjectInfo() {
         if (basicObjectInfoCf == null) {
             this.basicObjectInfoCf = new CompletableFuture<>();
+            this.basicObjectInfoCf.exceptionally(ex -> {
+                LOGGER.error("get {} composite object info failed", objectMetadata, ex);
+                return null;
+            });
             asyncGetBasicObjectInfo(this.basicObjectInfoCf);
         }
         return basicObjectInfoCf;
