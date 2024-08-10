@@ -23,7 +23,6 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
@@ -54,6 +53,8 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static com.automq.stream.utils.FutureUtil.exec;
 
 public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamsMetadataImage.class);
@@ -198,7 +199,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         List<S3StreamSetObject> streamSetObjects,
         NodeS3StreamSetObjectMetadataImage node
     ) {
-        FutureUtil.exec(() -> fillObjects0(ctx, stream, objects, lastRangeIndex, streamObjectIndex, streamObjects,
+        exec(() -> fillObjects0(ctx, stream, objects, lastRangeIndex, streamObjectIndex, streamObjects,
             streamSetObjectIndex, streamSetObjects, node), ctx.cf, LOGGER, "fillObjects");
     }
 
@@ -435,26 +436,28 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     private CompletableFuture<Void> loadStreamSetObjectInfo(GetObjectsContext ctx,
         List<S3StreamSetObject> streamSetObjects,
         int startSearchIndex) {
-        final int streamSetObjectsSize = streamSetObjects.size();
-        List<CompletableFuture<Void>> loadIndexCfList = new LinkedList<>();
-        for (int i = startSearchIndex; i < streamSetObjectsSize; i++) {
-            S3StreamSetObject streamSetObject = streamSetObjects.get(i);
-            if (streamSetObject.ranges().length != 0) {
-                continue;
+        return exec(() -> {
+            final int streamSetObjectsSize = streamSetObjects.size();
+            List<CompletableFuture<Void>> loadIndexCfList = new LinkedList<>();
+            for (int i = startSearchIndex; i < streamSetObjectsSize; i++) {
+                S3StreamSetObject streamSetObject = streamSetObjects.get(i);
+                if (streamSetObject.ranges().length != 0) {
+                    continue;
+                }
+                if (ctx.object2range.containsKey(streamSetObject.objectId())) {
+                    continue;
+                }
+                loadIndexCfList.add(
+                    ctx.rangeGetter
+                        .find(streamSetObject.objectId(), ctx.streamId)
+                        .thenAccept(range -> ctx.object2range.put(streamSetObject.objectId(), range))
+                );
             }
-            if (ctx.object2range.containsKey(streamSetObject.objectId())) {
-                continue;
+            if (loadIndexCfList.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
             }
-            loadIndexCfList.add(
-                ctx.rangeGetter
-                    .find(streamSetObject.objectId(), ctx.streamId)
-                    .thenAccept(range -> ctx.object2range.put(streamSetObject.objectId(), range))
-            );
-        }
-        if (loadIndexCfList.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
-        }
-        return CompletableFuture.allOf(loadIndexCfList.toArray(new CompletableFuture[0]));
+            return CompletableFuture.allOf(loadIndexCfList.toArray(new CompletableFuture[0]));
+        }, LOGGER, "loadStreamSetObjectInfo");
     }
 
     private Optional<StreamOffsetRange> findStreamInStreamSetObject(GetObjectsContext ctx, S3StreamSetObject object) {
