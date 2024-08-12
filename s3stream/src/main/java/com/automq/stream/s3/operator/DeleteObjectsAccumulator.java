@@ -13,7 +13,6 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3OperationStats;
-import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -41,15 +40,11 @@ public class DeleteObjectsAccumulator implements Runnable {
     private final BlockingQueue<PendingDeleteRequest> deleteBatchQueue = new LinkedBlockingQueue<>();
     private final AtomicBoolean running = new AtomicBoolean(true);
 
-    private int maxBatchSize;
+    private final int maxBatchSize;
     private final Semaphore concurrentRequestLimiter;
 
     public DeleteObjectsAccumulator(Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction) {
         this(DEFAULT_DELETE_OBJECTS_MAX_BATCH_SIZE, DEFAULT_DELETE_OBJECTS_MAX_CONCURRENT_REQUEST_NUMBER, deleteObjectsFunction);
-    }
-
-    public DeleteObjectsAccumulator(int maxBatchSize, Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction) {
-        this(maxBatchSize, DEFAULT_DELETE_OBJECTS_MAX_CONCURRENT_REQUEST_NUMBER, deleteObjectsFunction);
     }
 
     public DeleteObjectsAccumulator(int maxBatchSize,
@@ -75,7 +70,7 @@ public class DeleteObjectsAccumulator implements Runnable {
     }
 
     private void submitDeleteObjectsRequest(List<ObjectStorage.ObjectPath> objectPaths,
-                                            List<CompletableFuture<Void>> futures) throws InterruptedException {
+                                            CompletableFuture<Void> subBatchCf) throws InterruptedException {
         List<String> objectKeys = objectPaths.stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
 
         TimerUtil timerUtil = new TimerUtil();
@@ -86,7 +81,7 @@ public class DeleteObjectsAccumulator implements Runnable {
         }).thenAccept(nil -> {
             LOGGER.info("Delete objects finished, count: {}, cost: {}ms", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            FutureUtil.complete(futures.iterator(), null);
+            subBatchCf.complete(null);
         }).exceptionally(ex -> {
             if (ex instanceof AbstractObjectStorage.DeleteObjectsException) {
                 AbstractObjectStorage.DeleteObjectsException deleteObjectsException = (AbstractObjectStorage.DeleteObjectsException) ex;
@@ -99,40 +94,35 @@ public class DeleteObjectsAccumulator implements Runnable {
                 LOGGER.info("Delete objects failed, count: {}, cost: {}, ex: {}",
                     objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
             }
-            FutureUtil.completeExceptionally(futures.iterator(), ex);
+            subBatchCf.completeExceptionally(ex);
 
             return null;
         });
     }
 
     public void run() {
-        ArrayList<ObjectStorage.ObjectPath> deleteKeys = new ArrayList<>(1000);
-        ArrayList<CompletableFuture<Void>> futures = new ArrayList<>();
-
         while (running.get()) {
             PendingDeleteRequest item;
             try {
                 item = deleteBatchQueue.poll(500, TimeUnit.MICROSECONDS);
                 if (item == null) {
-                    if (!deleteKeys.isEmpty()) {
-                        submitDeleteObjectsRequest(deleteKeys, futures);
-                        deleteKeys = new ArrayList<>(1000);
-                        futures = new ArrayList<>();
-                    }
-
                     continue;
                 }
-
-                // enqueue batch
-                deleteKeys.addAll(item.deleteObjectPath);
-                futures.add(item.future);
-
-                // submit batch
-                if (deleteKeys.size() >= this.maxBatchSize) {
-                    submitDeleteObjectsRequest(deleteKeys, futures);
-                    deleteKeys = new ArrayList<>(1000);
-                    futures = new ArrayList<>();
+                ArrayList<CompletableFuture<Void>> subBatchCfList = new ArrayList<>();
+                int startIndex = 0;
+                while (startIndex < item.deleteObjectPath.size()) {
+                    int endIndex = Math.min(startIndex + this.maxBatchSize, item.deleteObjectPath.size());
+                    List<ObjectStorage.ObjectPath> subBatchList = item.deleteObjectPath.subList(startIndex, endIndex);
+                    CompletableFuture<Void> subBatchCf = new CompletableFuture<>();
+                    subBatchCfList.add(subBatchCf);
+                    submitDeleteObjectsRequest(subBatchList, subBatchCf);
+                    startIndex = endIndex;
                 }
+                CompletableFuture.allOf(subBatchCfList.toArray(new CompletableFuture[0]))
+                    .thenApply(nil -> {
+                        item.future.complete(null);
+                        return null;
+                    }).exceptionally(ex -> item.future.completeExceptionally(ex));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
