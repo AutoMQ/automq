@@ -9,8 +9,12 @@
 import re
 import time
 
+from ducktape.utils.util import wait_until
+
 from kafkatest.services.console_consumer import ConsoleConsumer
 from kafkatest.services.performance import ProducerPerformanceService
+from kafkatest.services.verifiable_producer import VerifiableProducer
+from kafkatest.utils import is_int_with_prefix, validate_delivery
 from kafkatest.version import DEV_BRANCH
 
 
@@ -125,6 +129,8 @@ JMX_TOPIC_OUT = f'kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec,topic
 JMX_ONE_MIN = ':OneMinuteRate'
 FILE_WAL = '0@file:///mnt/kafka/kafka-data-logs-1/s3wal'
 S3_WAL = '0@s3://ko3?region=us-east-1&endpoint=http://10.5.0.2:4566&pathStyle=false&batchInterval=100&maxBytesInBatch=4194304&maxUnflushedBytes=1073741824&maxInflightUploadCount=50'
+STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1 = 'MINOR_V1'
+STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1 = 'MAJOR_V1'
 
 
 def run_perf_producer(test_context, kafka, num_records=RECORD_NUM, throughput=DEFAULT_THROUGHPUT,
@@ -157,10 +163,12 @@ def run_perf_producer(test_context, kafka, num_records=RECORD_NUM, throughput=DE
     return producer
 
 
-def run_console_consumer(test_context, kafka, client_version=DEFAULT_CLIENT_VERSION, topic=TOPIC):
+def run_console_consumer(test_context, kafka, client_version=DEFAULT_CLIENT_VERSION, topic=TOPIC,
+                         consumer_timeout_ms=60000, message_validator=None):
     """
     Launches a console consumer to consume messages from a specified topic.
 
+    :param consumer_timeout_ms: timeout
     :param test_context: A test context object that provides configuration information for the test environment.
     :param kafka: A Kafka instance for connecting to and operating on a Kafka cluster.
     :param client_version: The version of the consumer client, defaulting to DEFAULT_CLIENT_VERSION.
@@ -169,10 +177,11 @@ def run_console_consumer(test_context, kafka, client_version=DEFAULT_CLIENT_VERS
     :return: The launched ConsoleConsumer instance.
     """
     consumer = ConsoleConsumer(test_context, 1, topic=topic, kafka=kafka,
-                               consumer_timeout_ms=60000, client_id=DEFAULT_CONSUMER_CLIENT_ID,
+                               consumer_timeout_ms=consumer_timeout_ms, client_id=DEFAULT_CONSUMER_CLIENT_ID,
                                jmx_object_names=[
                                    'kafka.consumer:type=consumer-fetch-manager-metrics,client-id=%s' % DEFAULT_CONSUMER_CLIENT_ID],
-                               jmx_attributes=['bytes-consumed-rate'], version=client_version)
+                               jmx_attributes=['bytes-consumed-rate'], version=client_version,
+                               message_validator=message_validator)
     consumer.run()
     for idx, messages in consumer.messages_consumed.items():
         assert len(messages) > 0, "consumer %d didn't consume any message before timeout" % idx
@@ -217,7 +226,8 @@ def run_simple_load(test_context, kafka, logger, topic=TOPIC, num_records=RECORD
     :param throughput: Target throughput for the producer, i.e., the number of messages per second.
     :return: None
     """
-    producer = run_perf_producer(test_context=test_context, kafka=kafka, topic=topic, num_records=num_records, throughput=throughput)
+    producer = run_perf_producer(test_context=test_context, kafka=kafka, topic=topic, num_records=num_records,
+                                 throughput=throughput)
     consumer = run_console_consumer(test_context=test_context, kafka=kafka, topic=topic)
     success, msg = validate_num(producer, consumer, logger)
     assert success, msg
@@ -263,3 +273,174 @@ def capture_and_filter_logs(kafka, entry, log_path=None, start_time=None, end_ti
         command = f"grep '{entry}' {log_path}"
 
     return kafka.nodes[0].account.ssh_capture(command)
+
+
+def ensure_stream_set_object_compaction(kafka, start_time, end_time):
+    """
+    Ensures that there is at least one stream set object that goes through compaction within the specified time range.
+
+    :param kafka: The Kafka instance to fetch logs from.
+    :type kafka: Kafka
+    :param start_time: The start of the time range to filter logs.
+    :type start_time: datetime
+    :param end_time: The end of the time range to filter logs.
+    :type end_time: datetime
+    :raises AssertionError: If no stream set object compaction is found within the given time range.
+    """
+    entry = 'stream set objects to compact after filter'
+    pattern = re.compile(r"(\d+) stream set objects to compact after filter")
+    stream_set_object_compaction_count = 0
+    for line in capture_and_filter_logs(kafka, start_time=start_time, end_time=end_time, entry=entry):
+        match = pattern.search(line)
+        if match:
+            stream_set_object_compaction_count += 1 if int(match.group().split()[0]) > 0 else 0
+    assert stream_set_object_compaction_count > 0, f'it must go through a stream set object comparison.'
+
+
+def ensure_stream_object_compaction(kafka, stream_object_compaction_type, start_time, end_time):
+    """
+    Ensures that the stream object compaction has been executed.
+
+    This function checks within a specified time range to confirm that the stream object compaction of a given type has occurred.
+
+    :param kafka: The Kafka cluster or client to interact with.
+    :param stream_object_compaction_type: The type of stream object compaction to look for.
+    :param start_time: The start time of the time range to check logs.
+    :param end_time: The end time of the time range to check logs.
+    :return: None
+    """
+    entry = f'Compact stream finished, {stream_object_compaction_type}'
+    stream_object_compaction_count = 0
+    for _ in capture_and_filter_logs(kafka, start_time=start_time, end_time=end_time, entry=entry):
+        stream_object_compaction_count += 1
+    assert stream_object_compaction_count > 0, f'it must go through a stream object comparison(type:{stream_object_compaction_type}).'
+
+
+def run_validation_producer(kafka, test_context, logger, topic=TOPIC, num_records=RECORD_NUM, throughput=-1, message_validator=None):
+    producer_start_timeout_sec = 10
+    producer = VerifiableProducer(context=test_context, num_nodes=1, kafka=kafka,
+                                  topic=topic, throughput=throughput,
+                                  message_validator=is_int_with_prefix)
+    producer.start()
+    wait_until(lambda: producer.num_acked > 5,
+               timeout_sec=producer_start_timeout_sec,
+               err_msg="Producer failed to produce messages for %ds." % \
+                       producer_start_timeout_sec)
+    logger.info(f"VerifiableProducer Start...")
+    wait_until(lambda: producer.each_produced_at_least(num_records) is True, timeout_sec=120, backoff_sec=1,
+               err_msg="Producer did not produce all messages in reasonable amount of time")
+    producer.stop()
+    return producer
+
+
+def correctness_verification(logger, producers, consumer):
+    '''
+    Function to verify the correctness of data consumption.
+
+    This function checks if all records produced by the producers are successfully consumed by the consumer. It logs relevant information and checks for successful record delivery.
+
+    :param logger: Instance for logging
+    :param producers: list of producer instances
+    :param consumer: consumer instance
+    :return: tuple (success, msg)
+        - success: Boolean, indicating whether all records were successfully consumed
+        - msg: String, containing relevant information or error messages
+    '''
+    success = True
+    msg = ''
+    total_acked = []
+
+    for producer in producers:
+        total_acked.extend(producer.acked)
+        logger.info("Number of acked records for producer %s: %d" % (producer, len(producer.acked)))
+
+    logger.info("Total number of acked records: %d" % len(total_acked))
+
+    messages_consumed = consumer.messages_consumed[1]
+    logger.info("Number of consumed records: %d" % len(messages_consumed))
+
+    success_, msg_ = validate_delivery(total_acked, messages_consumed, False, None, False)
+    success = success and success_
+    msg = append_info(msg, success_, msg_)
+
+    return success, msg
+
+
+def parse_upload_delta_wal_log_entry(log_entry):
+    """
+    Parses an upload delta WAL (Write-Ahead Log) log entry.
+
+    This function parses a CommitStreamSetObjectRequest log entry and extracts relevant information.
+    It uses regular expressions to match and extract the object ID, order ID, object size, stream ranges, stream objects, etc., from the log.
+    This information is organized into dictionaries for further processing and use.
+
+    :param log_entry: The log entry to be parsed
+    :return: A tuple containing two dictionaries - one with the main object's information and another with the stream objects' information
+    """
+    request_pattern = re.compile(
+        r"CommitStreamSetObjectRequest\{objectId=(\d+), orderId=(\d+), objectSize=(\d+), streamRanges=\[(.*?)\], streamObjects=\[(.*?)\], compactedObjectIds=(.*?), attributes=(\d+)\}"
+    )
+    stream_object_pattern = re.compile(
+        r"StreamObject\{objectId=(\d+), objectSize=(\d+), streamId=(\d+), startOffset=(\d+), endOffset=(\d+), attributes=(\d+)\}"
+    )
+    match = request_pattern.search(log_entry)
+    if match:
+        object_id = match.group(1)
+        order_id = match.group(2)
+        object_size = match.group(3)
+        stream_ranges = match.group(4)
+        stream_objects_str = match.group(5)
+        compacted_object_ids = match.group(6)
+        attributes = match.group(7)
+        main_object = {
+            "orderId": order_id,
+            "objectSize": object_size,
+            "streamRanges": stream_ranges,
+            # "(" + streamId + "-" + epoch + "," + startOffset + "-" + endOffset + "-" + size + ")"
+            "compactedObjectIds": compacted_object_ids,
+            "attributes": attributes
+        }
+        map1 = {object_id: main_object}
+        map2 = {}
+        stream_objects = stream_object_pattern.findall(stream_objects_str)
+        for stream_object in stream_objects:
+            stream_object_id, stream_object_size, stream_id, start_offset, end_offset, stream_attributes = stream_object
+            map2[stream_object_id] = {
+                "objectSize": stream_object_size,
+                "streamId": stream_id,
+                "startOffset": start_offset,
+                "endOffset": end_offset,
+                "attributes": stream_attributes
+            }
+        return map1, map2
+    else:
+        return {}, {}
+
+
+def parse_delta_wal_entry(kafka, logger):
+    """
+    Parses Delta WAL log entries.
+
+    This function extracts and parses all log entries related to the completion of Delta WAL uploads from the Kafka cluster's output.
+    It records relevant stream set and stream information and counts the number of log entries, ensuring at least two records are parsed.
+
+    :param kafka: A Kafka cluster object used to access cluster nodes and log information.
+    :param logger: A logger object used to record the parsing results.
+    :return: A tuple containing the parsed stream set information, stream information, and the count of Delta WAL log entries.
+    """
+    stream_set_object = {}
+    stream_object = {}
+    entry = 'INFO Upload delta WAL finished'
+    delta_wal_entry_count = 0
+    for line in kafka.nodes[0].account.ssh_capture(f'grep \'{entry}\' {kafka.STDOUT_STDERR_CAPTURE}'):
+        delta_wal_entry_count += 1
+        stream_set_object_, stream_object_ = parse_upload_delta_wal_log_entry(line)
+        stream_set_object.update(stream_set_object_)
+        stream_object.update(stream_object_)
+
+    assert delta_wal_entry_count > 1, (
+        f"delta_wal_entry_count ({delta_wal_entry_count}) must be greater than 1."
+    )
+    logger.info(f'{stream_set_object}')
+    logger.info(f'{stream_object}')
+    return stream_set_object, stream_object, delta_wal_entry_count
