@@ -13,6 +13,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3OperationStats;
+import com.automq.stream.utils.FutureUtil;
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,9 +21,10 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -31,7 +33,9 @@ public class DeleteObjectsAccumulator {
     public static final int DEFAULT_DELETE_OBJECTS_MAX_BATCH_SIZE = 1000;
     public static final int DEFAULT_DELETE_OBJECTS_MAX_CONCURRENT_REQUEST_NUMBER = 100;
     private final Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction;
-    private final ConcurrentLinkedQueue<PendingDeleteRequest> deleteRequestQueue = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedDeque<PendingDeleteRequest> deleteRequestQueue = new ConcurrentLinkedDeque<>();
+    private final ReentrantLock queueLock = new ReentrantLock();
+
 
     private final int maxBatchSize;
     private final Semaphore concurrentRequestLimiter;
@@ -58,24 +62,47 @@ public class DeleteObjectsAccumulator {
         }
     }
 
+    @VisibleForTesting
+    public int availablePermits() {
+        return this.concurrentRequestLimiter.availablePermits();
+    }
+
     /**
      * Batch delete objects, if the number of objects is greater than {@link #maxBatchSize}, they will be deleted in batches
      * The number of delete requests initiated at the same time will be limited by {@link #concurrentRequestLimiter}
      *
      * @param objectPaths list of object paths to delete
-     * @param cf CompletableFuture to complete when all objects are deleted, or an exception occurs
+     * @param cf          CompletableFuture to complete when all objects are deleted, or an exception occurs
      */
     public void batchDeleteObjects(List<ObjectStorage.ObjectPath> objectPaths, CompletableFuture<Void> cf) {
+
+        // batch delete objects
         ArrayList<CompletableFuture<Void>> subBatchCfList = new ArrayList<>();
+        ArrayList<List<ObjectStorage.ObjectPath>> subBatchKeyList = new ArrayList<>();
         int startIndex = 0;
         while (startIndex < objectPaths.size()) {
             int endIndex = Math.min(startIndex + this.maxBatchSize, objectPaths.size());
             List<ObjectStorage.ObjectPath> subBatchList = objectPaths.subList(startIndex, endIndex);
             CompletableFuture<Void> subBatchCf = new CompletableFuture<>();
             subBatchCfList.add(subBatchCf);
-            submitDeleteObjectsRequest(subBatchList, subBatchCf);
+            subBatchKeyList.add(subBatchList);
             startIndex = endIndex;
         }
+
+        // submit delete requests or add to queue
+        queueLock.lock();
+        try {
+            for (int i = 0; i < subBatchCfList.size(); i++) {
+                List<ObjectStorage.ObjectPath> subBatchList = subBatchKeyList.get(i);
+                CompletableFuture<Void> subBatchCf = subBatchCfList.get(i);
+                if (!submitDeleteObjectsRequest(subBatchList, List.of(subBatchCf))) {
+                    deleteRequestQueue.add(new PendingDeleteRequest(subBatchList, subBatchCf));
+                }
+            }
+        } finally {
+            queueLock.unlock();
+        }
+
         CompletableFuture.allOf(subBatchCfList.toArray(new CompletableFuture[0]))
             .thenApply(nil -> {
                 cf.complete(null);
@@ -83,19 +110,18 @@ public class DeleteObjectsAccumulator {
             }).exceptionally(cf::completeExceptionally);
     }
 
-    private void submitDeleteObjectsRequest(List<ObjectStorage.ObjectPath> objectPaths, CompletableFuture<Void> subBatchCf) {
+    private boolean submitDeleteObjectsRequest(List<ObjectStorage.ObjectPath> objectPaths, List<CompletableFuture<Void>> subBatchCf) {
         List<String> objectKeys = objectPaths.stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
         TimerUtil timerUtil = new TimerUtil();
         if (!concurrentRequestLimiter.tryAcquire()) {
-            deleteRequestQueue.add(new PendingDeleteRequest(objectPaths, subBatchCf));
-            return;
+            return false;
         }
         deleteObjectsFunction.apply(objectKeys)
             .whenComplete((res, e) -> concurrentRequestLimiter.release())
             .thenAccept(nil -> {
                 LOGGER.info("Delete objects finished, count: {}, cost: {}ms", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                subBatchCf.complete(null);
+                FutureUtil.complete(subBatchCf.iterator(), null);
                 handleDeleteRequestQueue();
             }).exceptionally(ex -> {
                 if (ex instanceof AbstractObjectStorage.DeleteObjectsException) {
@@ -109,28 +135,61 @@ public class DeleteObjectsAccumulator {
                     LOGGER.info("Delete objects failed, count: {}, cost: {}, ex: {}",
                         objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
                 }
-                subBatchCf.completeExceptionally(ex);
+                FutureUtil.completeExceptionally(subBatchCf.iterator(), ex);
                 handleDeleteRequestQueue();
                 return null;
             });
+        return true;
     }
 
     private void handleDeleteRequestQueue() {
-        while (true) {
-            if (concurrentRequestLimiter.availablePermits() > 0) {
-                PendingDeleteRequest pendingDeleteRequest = deleteRequestQueue.poll();
-                if (pendingDeleteRequest == null) {
+        List<PendingDeleteRequest> readyToSubmitReq = new ArrayList<>();
+        queueLock.lock();
+        try {
+            int accumulatedSize = 0;
+            while (true) {
+                if (concurrentRequestLimiter.availablePermits() > 0) {
+                    PendingDeleteRequest pendingDeleteRequest = deleteRequestQueue.peek();
+                    if (pendingDeleteRequest == null) {
+                        break;
+                    }
+                    if (accumulatedSize + pendingDeleteRequest.deleteObjectPath.size() > maxBatchSize) {
+                        break;
+                    } else {
+                        accumulatedSize += pendingDeleteRequest.deleteObjectPath.size();
+                        readyToSubmitReq.add(deleteRequestQueue.poll());
+                    }
+                } else {
                     break;
                 }
-                submitDeleteObjectsRequest(pendingDeleteRequest.deleteObjectPath, pendingDeleteRequest.future);
-            } else {
-                break;
+            }
+            if (!readyToSubmitReq.isEmpty()) {
+                submitPendingRequests(readyToSubmitReq);
+            }
+        } finally {
+            queueLock.unlock();
+        }
+    }
+
+    private void submitPendingRequests(List<PendingDeleteRequest> pendingRequests) {
+        // merge all delete requests
+        List<ObjectStorage.ObjectPath> combinedPaths = new ArrayList<>();
+        List<CompletableFuture<Void>> combinedFutures = new ArrayList<>();
+
+        for (PendingDeleteRequest request : pendingRequests) {
+            combinedPaths.addAll(request.deleteObjectPath);
+            combinedFutures.add(request.future);
+        }
+
+        // submit delete requests
+        boolean isSubmit = submitDeleteObjectsRequest(combinedPaths, combinedFutures);
+
+        // if not submitted, add back to queue
+        if (!isSubmit) {
+            for (PendingDeleteRequest pendingRequest : pendingRequests) {
+                deleteRequestQueue.addFirst(pendingRequest);
             }
         }
     }
 
-    @VisibleForTesting
-    public int availablePermits() {
-        return this.concurrentRequestLimiter.availablePermits();
-    }
 }

@@ -65,9 +65,7 @@ public class DeleteObjectsAccumulatorTest {
     void testBatchSmallBatchDelete() {
         int delayMs = ThreadLocalRandom.current().nextInt(100);
         AtomicInteger totalDeleteObjectNumber = new AtomicInteger();
-        AtomicInteger totalCallDeleteFunctionNumber = new AtomicInteger();
         Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
-            totalCallDeleteFunctionNumber.incrementAndGet();
             totalDeleteObjectNumber.addAndGet(path.size());
             return new CompletableFuture<Void>().completeOnTimeout(null, delayMs, TimeUnit.MILLISECONDS);
         };
@@ -93,18 +91,15 @@ public class DeleteObjectsAccumulatorTest {
         }
 
         assertEquals(ioSize * ioNumber, totalDeleteObjectNumber.get());
-        assertEquals(ioNumber, totalCallDeleteFunctionNumber.get());
     }
 
     @Test
     void testDeleteRequestExceededLimitCanRecoverWhenRequestReturned() throws InterruptedException {
         AtomicInteger totalDeleteObjectNumber = new AtomicInteger();
-        AtomicInteger totalCallDeleteFunctionNumber = new AtomicInteger();
         Set<String> allDeleteKeys = new ConcurrentSkipListSet<>();
         CompletableFuture<Void> waitForDone = new CompletableFuture<>();
         Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
             totalDeleteObjectNumber.addAndGet(path.size());
-            totalCallDeleteFunctionNumber.getAndIncrement();
             allDeleteKeys.addAll(path);
             CompletableFuture<Void> future = new CompletableFuture<>();
             FutureUtil.propagate(waitForDone, future);
@@ -150,7 +145,6 @@ public class DeleteObjectsAccumulatorTest {
         // all path deleted.
         assertEquals(ioSize * ioNumber, totalDeleteObjectNumber.get());
         assertEquals(allKeys, allDeleteKeys);
-        assertEquals(ioNumber, totalCallDeleteFunctionNumber.get());
     }
 
     @Test
@@ -226,10 +220,8 @@ public class DeleteObjectsAccumulatorTest {
     @Test
     void testHighTrafficBatchDelete() {
         AtomicInteger totalDeleteObjectNumber = new AtomicInteger();
-        AtomicInteger totalCallDeleteFunctionNUmber = new AtomicInteger();
         int delayMs = ThreadLocalRandom.current().nextInt(100);
         Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
-            totalCallDeleteFunctionNUmber.incrementAndGet();
             totalDeleteObjectNumber.addAndGet(path.size());
             return new CompletableFuture<Void>().completeOnTimeout(null, delayMs, TimeUnit.MILLISECONDS);
         };
@@ -277,7 +269,6 @@ public class DeleteObjectsAccumulatorTest {
             assertFalse(voidCompletableFuture.isCompletedExceptionally());
         }
         assertEquals(batchNumber * batchSize, totalDeleteObjectNumber.get());
-        assertEquals(batchSize / maxBathSize * batchNumber, totalCallDeleteFunctionNUmber.get());
         executorService.shutdown();
     }
 
