@@ -140,6 +140,7 @@ class CompactionTest(Test):
         success = True
         msg = ''
 
+        # Stream object source: 1 Split the stream set comparison into 2 Split when uploading to S3
         producer1 = run_validation_producer(self.kafka, self.test_context, self.logger, self.topic, 120000, 6000, message_validator=is_int_with_prefix)
         time.sleep(self.compaction_delay_sec)
         producer2 = run_validation_producer(self.kafka, self.test_context, self.logger, self.topic, 120000, 6000, message_validator=is_int_with_prefix)
