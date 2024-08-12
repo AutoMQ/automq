@@ -32,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -53,6 +55,7 @@ public class RecordAccumulatorTest {
             .withNodeId(100)
             .withEpoch(1000)
             .withBatchInterval(Long.MAX_VALUE)
+            .withStrictBatchLimit(true)
             .build();
         recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
         recordAccumulatorExt.start();
@@ -172,7 +175,60 @@ public class RecordAccumulatorTest {
     }
 
     @Test
-    public void testInMultiThread() throws InterruptedException {
+    public void testStrictBatchLimit() throws OverCapacityException {
+        CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), new CompletableFuture<>());
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), new CompletableFuture<>());
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), future);
+        assertEquals(150, recordAccumulatorExt.nextOffset());
+
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        assertEquals(2, recordAccumulatorExt.objectList().size());
+
+        // Reset the RecordAccumulator with strict batch limit disabled.
+        recordAccumulatorExt.close();
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withMaxBytesInBatch(115)
+            .withNodeId(100)
+            .withEpoch(1000)
+            .withBatchInterval(Long.MAX_VALUE)
+            .withStrictBatchLimit(false)
+            .build();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
+        recordAccumulatorExt.start();
+
+        assertEquals(2, recordAccumulatorExt.objectList().size());
+
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), new CompletableFuture<>());
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), new CompletableFuture<>());
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), future);
+        assertEquals(300, recordAccumulatorExt.nextOffset());
+
+
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        assertEquals(3, recordAccumulatorExt.objectList().size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testInMultiThread(boolean strictBathLimit) throws InterruptedException {
+        recordAccumulatorExt.close();
+
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withMaxBytesInBatch(115)
+            .withNodeId(100)
+            .withEpoch(1000)
+            .withBatchInterval(Long.MAX_VALUE)
+            .withStrictBatchLimit(strictBathLimit)
+            .build();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
+        recordAccumulatorExt.start();
+
         int threadCount = 10;
         CountDownLatch startBarrier = new CountDownLatch(threadCount);
         CountDownLatch stopCountDownLatch = new CountDownLatch(threadCount);
