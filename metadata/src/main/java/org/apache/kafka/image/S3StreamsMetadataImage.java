@@ -154,6 +154,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         try {
             getObjects0(ctx);
         } catch (Throwable e) {
+            LOGGER.error("error when get Objects {} {} {} {} ",streamId, startOffset, endOffset, limit, e);
             ctx.cf.completeExceptionally(e);
         }
         return ctx.cf;
@@ -199,112 +200,130 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         NodeS3StreamSetObjectMetadataImage node
     ) {
         try {
-            ctx.record(objects.size(), lastRangeIndex, streamObjectIndex, streamSetObjectIndex);
-            long nextStartOffset = ctx.nextStartOffset;
-            for (; ; ) {
-                int roundStartObjectSize = objects.size();
+            fillObjects0(ctx, stream, objects, lastRangeIndex, streamObjectIndex, streamObjects, streamSetObjectIndex, streamSetObjects, node);
+        } catch (Throwable e) {
+            LOGGER.error("error when fillObjects", e);
+            throw e;
+        }
+    }
 
-                // try to find consistent stream objects
-                for (; streamObjectIndex < streamObjects.size(); streamObjectIndex++) {
-                    S3StreamObject streamObject = streamObjects.get(streamObjectIndex);
-                    if (streamObject.startOffset() != nextStartOffset) {
-                        //noinspection StatementWithEmptyBody
-                        if (objects.isEmpty() && streamObject.startOffset() <= nextStartOffset && streamObject.endOffset() > nextStartOffset) {
-                            // it's the first object, we only need the stream object contains the nextStartOffset
-                        } else if (streamObject.endOffset() <= nextStartOffset) {
-                            // the stream object not match the requirement, move to the next stream object
-                            continue;
-                        } else {
-                            // the streamObject.startOffset() > nextStartOffset
-                            break;
-                        }
+    void fillObjects0(
+        GetObjectsContext ctx,
+        S3StreamMetadataImage stream,
+        List<S3ObjectMetadata> objects, // 最终结果metadata 保存最终结果的object
+        int lastRangeIndex,
+        int streamObjectIndex,
+        List<S3StreamObject> streamObjects,
+        int streamSetObjectIndex,
+        List<S3StreamSetObject> streamSetObjects,
+        NodeS3StreamSetObjectMetadataImage node
+    ) {
+        // 0, 0, 0, 693
+        ctx.record(objects.size(), lastRangeIndex, streamObjectIndex, streamSetObjectIndex);
+        long nextStartOffset = ctx.nextStartOffset;
+        for (; ; ) {
+            int roundStartObjectSize = objects.size();
+
+            // try to find consistent stream objects
+            for (; streamObjectIndex < streamObjects.size(); streamObjectIndex++) {
+                S3StreamObject streamObject = streamObjects.get(streamObjectIndex);
+                if (streamObject.startOffset() != nextStartOffset) {
+                    //noinspection StatementWithEmptyBody
+                    if (objects.isEmpty() && streamObject.startOffset() <= nextStartOffset && streamObject.endOffset() > nextStartOffset) {
+                        // it's the first object, we only need the stream object contains the nextStartOffset
+                    } else if (streamObject.endOffset() <= nextStartOffset) {
+                        // the stream object not match the requirement, move to the next stream object
+                        continue;
+                    } else {
+                        // the streamObject.startOffset() > nextStartOffset
+                        break;
                     }
-                    objects.add(streamObject.toMetadata());
-                    nextStartOffset = streamObject.endOffset();
+                }
+                objects.add(streamObject.toMetadata());
+                nextStartOffset = streamObject.endOffset();
+                if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
+                    completeWithSanityCheck(ctx, objects);
+                    return;
+                }
+            }
+
+            if (streamSetObjects == null) {
+                int rangeIndex = stream.getRangeContainsOffset(nextStartOffset);
+                // 1. can not find the range containing nextStartOffset, or
+                // 2. the range is the same as the last one, which means the nextStartOffset does not move on.
+                if (rangeIndex < 0 || lastRangeIndex == rangeIndex) {
+                    completeWithSanityCheck(ctx, objects);
+                    break;
+                }
+                lastRangeIndex = rangeIndex;
+                RangeMetadata range = stream.getRanges().get(rangeIndex);
+                node = getNodeMetadata(range.nodeId());
+                if (node != null) {
+                    streamSetObjects = node.orderList();
+                } else {
+                    streamSetObjects = Collections.emptyList();
+                }
+
+                CompletableFuture<Integer> startSearchIndexCf = getStartSearchIndex(node, nextStartOffset, ctx);
+                final int finalLastRangeIndex = lastRangeIndex;
+                final long finalNextStartOffset = nextStartOffset;
+                final int finalStreamObjectIndex = streamObjectIndex;
+                final List<S3StreamSetObject> finalStreamSetObjects = streamSetObjects;
+                final NodeS3StreamSetObjectMetadataImage finalNode = node;
+                startSearchIndexCf.whenComplete((index, ex) -> {
+                    if (ex != null) {
+                        index = 0;
+                    }
+                    // load stream set object index
+                    int finalIndex = index;
+
+                    // 从这个位置加载sso的相关信息，之后重新处理fillObjects
+                    loadStreamSetObjectInfo(ctx, finalStreamSetObjects, index).thenAccept(v -> {
+                        ctx.nextStartOffset = finalNextStartOffset;
+                        fillObjects(ctx, stream, objects, finalLastRangeIndex, finalStreamObjectIndex, streamObjects,
+                            finalIndex, finalStreamSetObjects, finalNode);
+                    }).exceptionally(e -> {
+                        LOGGER.error("loadStreamSetObjectInfo thenAccept", e);
+                        ctx.cf.completeExceptionally(e);
+                        return null;
+                    });
+                });
+                return;
+            }
+
+            final int streamSetObjectsSize = streamSetObjects.size();
+            for (; streamSetObjectIndex < streamSetObjectsSize; streamSetObjectIndex++) {
+                S3StreamSetObject streamSetObject = streamSetObjects.get(streamSetObjectIndex);
+                StreamOffsetRange streamOffsetRange = findStreamInStreamSetObject(ctx, streamSetObject).orElse(null);
+                // skip the stream set object not containing the stream or the range is before the nextStartOffset
+                if (streamOffsetRange == null || streamOffsetRange.endOffset() <= nextStartOffset) {
+                    continue;
+                }
+                if ((streamOffsetRange.startOffset() == nextStartOffset)
+                    || (objects.isEmpty() && streamOffsetRange.startOffset() < nextStartOffset)) {
+                    if (node != null) {
+                        node.recordStreamSetObjectIndex(ctx.streamId, nextStartOffset, streamSetObjectIndex);
+                    }
+                    objects.add(new S3ObjectMetadata(streamSetObject.objectId(), S3ObjectType.STREAM_SET, List.of(streamOffsetRange),
+                        streamSetObject.dataTimeInMs()));
+                    nextStartOffset = streamOffsetRange.endOffset();
                     if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
                         completeWithSanityCheck(ctx, objects);
                         return;
                     }
-                }
-
-                if (streamSetObjects == null) {
-                    int rangeIndex = stream.getRangeContainsOffset(nextStartOffset);
-                    // 1. can not find the range containing nextStartOffset, or
-                    // 2. the range is the same as the last one, which means the nextStartOffset does not move on.
-                    if (rangeIndex < 0 || lastRangeIndex == rangeIndex) {
-                        completeWithSanityCheck(ctx, objects);
-                        break;
-                    }
-                    lastRangeIndex = rangeIndex;
-                    RangeMetadata range = stream.getRanges().get(rangeIndex);
-                    node = getNodeMetadata(range.nodeId());
-                    if (node != null) {
-                        streamSetObjects = node.orderList();
-                    } else {
-                        streamSetObjects = Collections.emptyList();
-                    }
-                    CompletableFuture<Integer> startSearchIndexCf = getStartSearchIndex(node, nextStartOffset, ctx);
-                    final int finalLastRangeIndex = lastRangeIndex;
-                    final long finalNextStartOffset = nextStartOffset;
-                    final int finalStreamObjectIndex = streamObjectIndex;
-                    final List<S3StreamSetObject> finalStreamSetObjects = streamSetObjects;
-                    final NodeS3StreamSetObjectMetadataImage finalNode = node;
-                    startSearchIndexCf.whenComplete((index, ex) -> {
-                        if (ex != null) {
-                            index = 0;
-                        }
-                        // load stream set object index
-                        int finalIndex = index;
-                        loadStreamSetObjectInfo(ctx, finalStreamSetObjects, index).thenAccept(v -> {
-                            ctx.nextStartOffset = finalNextStartOffset;
-                            fillObjects(ctx, stream, objects, finalLastRangeIndex, finalStreamObjectIndex, streamObjects,
-                                finalIndex, finalStreamSetObjects, finalNode);
-                        }).exceptionally(e -> {
-                            LOGGER.error("loadStreamSetObjectInfo thenAccept", e);
-                            ctx.cf.completeExceptionally(e);
-                            return null;
-                        });
-                    });
-                    return;
-                }
-
-                final int streamSetObjectsSize = streamSetObjects.size();
-                for (; streamSetObjectIndex < streamSetObjectsSize; streamSetObjectIndex++) {
-                    S3StreamSetObject streamSetObject = streamSetObjects.get(streamSetObjectIndex);
-                    StreamOffsetRange streamOffsetRange = findStreamInStreamSetObject(ctx, streamSetObject).orElse(null);
-                    // skip the stream set object not containing the stream or the range is before the nextStartOffset
-                    if (streamOffsetRange == null || streamOffsetRange.endOffset() <= nextStartOffset) {
-                        continue;
-                    }
-                    if ((streamOffsetRange.startOffset() == nextStartOffset)
-                        || (objects.isEmpty() && streamOffsetRange.startOffset() < nextStartOffset)) {
-                        if (node != null) {
-                            node.recordStreamSetObjectIndex(ctx.streamId, nextStartOffset, streamSetObjectIndex);
-                        }
-                        objects.add(new S3ObjectMetadata(streamSetObject.objectId(), S3ObjectType.STREAM_SET, List.of(streamOffsetRange),
-                            streamSetObject.dataTimeInMs()));
-                        nextStartOffset = streamOffsetRange.endOffset();
-                        if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
-                            completeWithSanityCheck(ctx, objects);
-                            return;
-                        }
-                    } else {
-                        // We keep the corresponding object ( with a range startOffset > nextStartOffset) by not changing
-                        // the streamSetObjectIndex. This object may be picked up in the next round.
-                        break;
-                    }
-                }
-                // case 1. streamSetObjectIndex >= streamSetObjects.size(), which means we have reached the end of the stream set objects.
-                // case 2. objects.size() == roundStartObjectSize, which means we have not found any new object in this round.
-                if (streamSetObjectIndex >= streamSetObjects.size() || objects.size() == roundStartObjectSize) {
-                    // move to the next range
-                    // This can ensure that we can break the loop.
-                    streamSetObjects = null;
+                } else {
+                    // We keep the corresponding object ( with a range startOffset > nextStartOffset) by not changing
+                    // the streamSetObjectIndex. This object may be picked up in the next round.
+                    break;
                 }
             }
-        } catch (Throwable e) {
-            LOGGER.error("error when fillObjects", e);
-            throw e;
+            // case 1. streamSetObjectIndex >= streamSetObjects.size(), which means we have reached the end of the stream set objects.
+            // case 2. objects.size() == roundStartObjectSize, which means we have not found any new object in this round.
+            if (streamSetObjectIndex >= streamSetObjects.size() || objects.size() == roundStartObjectSize) {
+                // move to the next range
+                // This can ensure that we can break the loop.
+                streamSetObjects = null;
+            }
         }
     }
 
@@ -440,7 +459,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             loadIndexCfList.add(
                 ctx.rangeGetter
                     .find(streamSetObject.objectId(), ctx.streamId)
-                    .thenAccept(range -> range.ifPresent(r -> ctx.object2range.put(streamSetObject.objectId(), r)))
+                    .thenAccept(range -> ctx.object2range.put(streamSetObject.objectId(), range))
             );
         }
         if (loadIndexCfList.isEmpty()) {
@@ -455,7 +474,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     private Optional<StreamOffsetRange> findStreamInStreamSetObject(GetObjectsContext ctx, S3StreamSetObject object) {
         if (object.ranges().length == 0) {
-            return Optional.ofNullable(ctx.object2range.get(object.objectId()));
+            Optional<StreamOffsetRange> streamOffsetRangeOpt = ctx.object2range.get(object.objectId());
+            return streamOffsetRangeOpt != null ? streamOffsetRangeOpt: Optional.empty();
         } else {
             return object.find(ctx.streamId);
         }
@@ -636,7 +656,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         LocalStreamRangeIndexCache indexCache;
 
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
-        Map<Long, StreamOffsetRange> object2range = new ConcurrentHashMap<>();
+        Map<Long, Optional<StreamOffsetRange>> object2range = new ConcurrentHashMap<>();
         List<String> debugContext = new ArrayList<>();
 
         GetObjectsContext(long streamId, long startOffset, long endOffset, int limit,
@@ -651,6 +671,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         }
 
         public void record(int objectSize, int lastRangeIndex, int streamObjectIndex, int streamSetObjectIndex) {
+            // 15746,  0, 0, 0, 693
             debugContext.add(String.format("nextStartOffset=%d, objectSize=%d, lastRangeIndex=%d, streamObjectIndex=%d, streamSetObjectIndex=%d", nextStartOffset,
                 objectSize, lastRangeIndex, streamObjectIndex, streamSetObjectIndex));
             if (debugContext.size() > 20) {
