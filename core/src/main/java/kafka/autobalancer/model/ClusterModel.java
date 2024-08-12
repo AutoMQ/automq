@@ -238,15 +238,19 @@ public class ClusterModel {
     public void registerBroker(int brokerId, String rackId, boolean active) {
         clusterLock.lock();
         try {
-            if (brokerMap.containsKey(brokerId)) {
-                return;
-            }
             if (Utils.isBlank(rackId)) {
                 rackId = DEFAULT_RACK_ID;
             }
-            BrokerUpdater brokerUpdater = createBrokerUpdater(brokerId, rackId, active);
-            brokerMap.putIfAbsent(brokerId, brokerUpdater);
-            brokerReplicaMap.put(brokerId, new HashMap<>());
+            String finalRackId = rackId;
+            brokerMap.compute(brokerId, (id, brokerUpdater) -> {
+                if (brokerUpdater == null) {
+                    brokerReplicaMap.put(brokerId, new HashMap<>());
+                    return createBrokerUpdater(brokerId, finalRackId, active);
+                }
+                brokerUpdater.setRack(finalRackId);
+                brokerUpdater.setActive(active);
+                return brokerUpdater;
+            });
         } finally {
             clusterLock.unlock();
         }
