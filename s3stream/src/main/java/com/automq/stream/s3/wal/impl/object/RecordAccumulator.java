@@ -278,11 +278,11 @@ public class RecordAccumulator implements Closeable {
 
         // Check if there is too much data in the S3 WAL.
         if (nextOffset.get() - flushedOffset.get() > config.maxUnflushedBytes()) {
-            throw new OverCapacityException("Too many unflushed bytes.");
+            throw new OverCapacityException("Too many unflushed bytes.", true);
         }
 
-        if (objectList().size() + config.maxInflightUploadCount() >= 1000) {
-            throw new OverCapacityException("Too many WAL objects.");
+        if (objectMap.size() + config.maxInflightUploadCount() >= 3000) {
+            throw new OverCapacityException("Too many WAL objects.", false);
         }
 
         if (shouldUpload() && lock.writeLock().tryLock()) {
