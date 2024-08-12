@@ -12,7 +12,18 @@
 package com.automq.stream.s3.wal.exception;
 
 public class OverCapacityException extends Exception {
+    private final boolean error;
+
     public OverCapacityException(String message) {
+        this(message, false);
+    }
+
+    public OverCapacityException(String message, boolean error) {
         super(message);
+        this.error = error;
+    }
+
+    public boolean error() {
+        return error;
     }
 }
