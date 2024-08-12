@@ -24,6 +24,7 @@ import kafka.cluster.PartitionTest.MockPartitionListener
 import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.log._
 import kafka.log.remote.RemoteLogManager
+import kafka.log.streamaspect.ElasticProducerStateManager.AWAIT_SEQ_ZERO_TIMEOUT
 import kafka.server.QuotaFactory.{QuotaManagers, UnboundedQuota}
 import kafka.server.checkpoints.{LazyOffsetCheckpoints, OffsetCheckpointFile}
 import kafka.server.epoch.util.MockBlockingSender
@@ -682,7 +683,7 @@ class ReplicaManagerTest {
         }.head._2.asInstanceOf[Gauge[Int]].value
       }
 
-      time.sleep(10000)
+      time.sleep(AWAIT_SEQ_ZERO_TIMEOUT)
       // Initially all metrics are 0.
       assertEquals(0, replicaManagerMetricValue())
 
@@ -754,7 +755,7 @@ class ReplicaManagerTest {
       val sequence = 9
       val records = MemoryRecords.withTransactionalRecords(Compression.NONE, producerId, epoch, sequence,
         new SimpleRecord(time.milliseconds(), s"message $sequence".getBytes))
-      time.sleep(10000)
+      time.sleep(AWAIT_SEQ_ZERO_TIMEOUT)
       handleProduceAppend(replicaManager, new TopicPartition(topic, 0), records, transactionalId = transactionalId).onFire { response =>
         assertEquals(Errors.NONE, response.error)
       }
@@ -2308,7 +2309,7 @@ class ReplicaManagerTest {
       val transactionalRecords = MemoryRecords.withTransactionalRecords(Compression.NONE, producerId, producerEpoch, sequence,
         new SimpleRecord("message".getBytes))
 
-      time.sleep(10000)
+      time.sleep(AWAIT_SEQ_ZERO_TIMEOUT)
       // We should add these partitions to the manager to verify.
       val result = handleProduceAppend(replicaManager, tp0, transactionalRecords, origin = appendOrigin, transactionalId = transactionalId)
       val appendCallback = ArgumentCaptor.forClass(classOf[AddPartitionsToTxnManager.AppendCallback])
@@ -2577,7 +2578,7 @@ class ReplicaManagerTest {
       val transactionalRecords = MemoryRecords.withTransactionalRecords(Compression.NONE, producerId, producerEpoch, sequence,
         new SimpleRecord("message".getBytes))
 
-      time.sleep(10000)
+      time.sleep(AWAIT_SEQ_ZERO_TIMEOUT)
       // We should add these partitions to the manager to verify.
       val result = handleProduceAppend(replicaManager, tp0, transactionalRecords, transactionalId = transactionalId)
       val appendCallback = ArgumentCaptor.forClass(classOf[AddPartitionsToTxnManager.AppendCallback])
