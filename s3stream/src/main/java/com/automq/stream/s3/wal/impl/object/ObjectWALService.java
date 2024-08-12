@@ -90,6 +90,8 @@ public class ObjectWALService implements WriteAheadLog {
             // Make sure the data buffer is released.
             if (data.refCnt() > 0) {
                 data.release();
+            } else {
+                log.error("[Bug] The data buffer is already released.", e);
             }
 
             if (e instanceof OverCapacityException) {
