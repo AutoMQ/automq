@@ -36,6 +36,7 @@ import org.apache.kafka.storage.internals.log.SnapshotFile;
 import org.apache.kafka.storage.internals.log.VerificationStateEntry;
 
 public class ElasticProducerStateManager extends ProducerStateManager {
+    public static final long AWAIT_SEQ_ZERO_TIMEOUT = 40000L;
     private final PersistSnapshots persistSnapshots;
     private final long createTimestamp;
 
@@ -233,7 +234,10 @@ public class ElasticProducerStateManager extends ProducerStateManager {
 
         @Override
         protected void checkSequence(short producerEpoch, int appendFirstSeq, long offset) {
-            if (currentEntry.isEmpty() && updatedEntry.isEmpty() && appendFirstSeq != 0 && time.milliseconds() - createTimestamp < 10000) {
+            if (currentEntry.isEmpty() && updatedEntry.isEmpty() && appendFirstSeq != 0
+                // await sequence 0 message append timeout and retry
+                && time.milliseconds() - createTimestamp < AWAIT_SEQ_ZERO_TIMEOUT
+            ) {
                 throw new OutOfOrderSequenceException("Invalid sequence number for new created log, producer " + producerId() + " " +
                     "at offset " + offset + " in partition " + topicPartition + ": " + producerEpoch + " (request epoch), " + appendFirstSeq + " (seq. number), " +
                     updatedEntry.producerEpoch() + " (current producer epoch)");

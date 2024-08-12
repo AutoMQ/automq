@@ -25,6 +25,8 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.Mockito.{mock, when}
 
+import kafka.log.streamaspect.ElasticProducerStateManager.AWAIT_SEQ_ZERO_TIMEOUT
+
 import java.io.File
 import java.nio.ByteBuffer
 import java.util
@@ -658,7 +660,7 @@ class ElasticProducerStateManagerTest {
         // we should accept the append and add the pid back in
         assertThrows(classOf[OutOfOrderSequenceException], () => append(recoveredMapping, producerId, epoch, 2, 2L, 70001))
 
-        time.sleep(10000)
+        time.sleep(AWAIT_SEQ_ZERO_TIMEOUT)
         append(recoveredMapping, producerId, epoch, 2, 2L, 70001)
 
         assertEquals(1, recoveredMapping.activeProducers.size)
