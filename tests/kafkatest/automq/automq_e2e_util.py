@@ -14,7 +14,7 @@ from ducktape.utils.util import wait_until
 from kafkatest.services.console_consumer import ConsoleConsumer
 from kafkatest.services.performance import ProducerPerformanceService
 from kafkatest.services.verifiable_producer import VerifiableProducer
-from kafkatest.utils import is_int_with_prefix, validate_delivery
+from kafkatest.utils import validate_delivery
 from kafkatest.version import DEV_BRANCH
 
 
@@ -24,9 +24,9 @@ def formatted_time(msg=''):
     """
     current_time = time.time()
     local_time = time.localtime(current_time)
-    formatted_time = time.strftime('%Y-%m-%d %H:%M:%S', local_time)
+    formatted_time_ = time.strftime('%Y-%m-%d %H:%M:%S', local_time)
     milliseconds = int((current_time - int(current_time)) * 1000)
-    formatted_time_with_ms = f"{formatted_time},{milliseconds:03d}"
+    formatted_time_with_ms = f"{formatted_time_},{milliseconds:03d}"
     return msg + formatted_time_with_ms
 
 
@@ -168,6 +168,7 @@ def run_console_consumer(test_context, kafka, client_version=DEFAULT_CLIENT_VERS
     """
     Launches a console consumer to consume messages from a specified topic.
 
+    :param message_validator: message validator
     :param consumer_timeout_ms: timeout
     :param test_context: A test context object that provides configuration information for the test environment.
     :param kafka: A Kafka instance for connecting to and operating on a Kafka cluster.
@@ -320,7 +321,7 @@ def run_validation_producer(kafka, test_context, logger, topic=TOPIC, num_record
     producer_start_timeout_sec = 10
     producer = VerifiableProducer(context=test_context, num_nodes=1, kafka=kafka,
                                   topic=topic, throughput=throughput,
-                                  message_validator=is_int_with_prefix)
+                                  message_validator=message_validator)
     producer.start()
     wait_until(lambda: producer.num_acked > 5,
                timeout_sec=producer_start_timeout_sec,
@@ -334,7 +335,7 @@ def run_validation_producer(kafka, test_context, logger, topic=TOPIC, num_record
 
 
 def correctness_verification(logger, producers, consumer):
-    '''
+    """
     Function to verify the correctness of data consumption.
 
     This function checks if all records produced by the producers are successfully consumed by the consumer. It logs relevant information and checks for successful record delivery.
@@ -345,7 +346,7 @@ def correctness_verification(logger, producers, consumer):
     :return: tuple (success, msg)
         - success: Boolean, indicating whether all records were successfully consumed
         - msg: String, containing relevant information or error messages
-    '''
+    """
     success = True
     msg = ''
     total_acked = []
