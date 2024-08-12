@@ -110,7 +110,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
 
         this.deleteObjectsAccumulator = newDeleteObjectsAccumulator();
-        this.deleteObjectsAccumulator.start();
 
         s3LatencyCalculator = new S3LatencyCalculator(
             new long[] {
@@ -458,7 +457,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             }
         }
 
-        deleteObjectsAccumulator.batchOrSubmitDeleteRequests(objectPaths, cf);
+        deleteObjectsAccumulator.batchDeleteObjects(objectPaths, cf);
 
         return cf;
     }
@@ -491,7 +490,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         scheduler.shutdown();
         timeoutDetect.stop();
         fastRetryTimer.stop();
-        deleteObjectsAccumulator.stop();
         doClose();
     }
 
