@@ -19,6 +19,7 @@ package kafka.log
 
 import kafka.common.{OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.remote.RemoteLogManager
+import kafka.log.streamaspect.ElasticProducerStateManager.AWAIT_SEQ_ZERO_TIMEOUT
 import kafka.server.{BrokerTopicStats, KafkaConfig}
 import kafka.utils.TestUtils
 import org.apache.kafka.common.compress.Compression
@@ -3869,7 +3870,7 @@ class UnifiedLogTest {
     val verificationGuard = log.maybeStartTransactionVerification(producerId, sequence, producerEpoch)
     assertNotEquals(VerificationGuard.SENTINEL, verificationGuard)
 
-    mockTime.sleep(10000)
+    mockTime.sleep(AWAIT_SEQ_ZERO_TIMEOUT)
     log.appendAsLeader(idempotentRecords, origin = appendOrigin, leaderEpoch = 0)
     assertFalse(log.hasOngoingTransaction(producerId))
 
@@ -3978,7 +3979,7 @@ class UnifiedLogTest {
       new SimpleRecord("1".getBytes),
       new SimpleRecord("2".getBytes)
     )
-    mockTime.sleep(10000)
+    mockTime.sleep(AWAIT_SEQ_ZERO_TIMEOUT)
     assertThrows(classOf[InvalidTxnStateException], () => log.appendAsLeader(transactionalRecords, leaderEpoch = 0))
     assertFalse(log.hasOngoingTransaction(producerId))
     assertEquals(VerificationGuard.SENTINEL, log.verificationGuard(producerId))
@@ -4014,7 +4015,7 @@ class UnifiedLogTest {
     )
 
     val verificationGuard = log.maybeStartTransactionVerification(producerId, sequence, producerEpoch)
-    mockTime.sleep(10000)
+    mockTime.sleep(AWAIT_SEQ_ZERO_TIMEOUT)
     // Append should not throw error.
     log.appendAsLeader(transactionalRecords, leaderEpoch = 0, verificationGuard = verificationGuard)
   }
