@@ -42,6 +42,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -520,9 +521,11 @@ public class RecordAccumulator implements Closeable {
             })
             .whenComplete((v, throwable) -> {
                 bufferedDataBytes.addAndGet(-dataLength);
+                throwable = ExceptionUtils.getRootCause(throwable);
                 if (throwable instanceof WALFencedException) {
                     List<Record> uploadedRecords = uploadMap.remove(firstOffset);
-                    uploadedRecords.forEach(record -> record.future.completeExceptionally(throwable));
+                    Throwable finalThrowable = throwable;
+                    uploadedRecords.forEach(record -> record.future.completeExceptionally(finalThrowable));
                 } else if (throwable != null) {
                     // Never fail the write task, the under layer storage will retry forever.
                     log.error("[Bug] Failed to write records to S3: {}", firstOffset, throwable);
