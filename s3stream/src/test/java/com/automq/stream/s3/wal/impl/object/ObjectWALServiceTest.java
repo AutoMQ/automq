@@ -32,7 +32,12 @@ public class ObjectWALServiceTest {
     @BeforeEach
     public void setUp() throws IOException {
         objectStorage = new MemoryObjectStorage();
-        wal = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withMaxBytesInBatch(110).withBatchInterval(Long.MAX_VALUE).build());
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withMaxBytesInBatch(110)
+            .withBatchInterval(Long.MAX_VALUE)
+            .withStrictBatchLimit(true)
+            .build();
+        wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
         wal.start();
         random = new Random();
     }
