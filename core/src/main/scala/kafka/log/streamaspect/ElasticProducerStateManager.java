@@ -36,7 +36,7 @@ import org.apache.kafka.storage.internals.log.SnapshotFile;
 import org.apache.kafka.storage.internals.log.VerificationStateEntry;
 
 public class ElasticProducerStateManager extends ProducerStateManager {
-    public static final long AWAIT_SEQ_ZERO_TIMEOUT = 40000L;
+    public static final long AWAIT_SEQ_ZERO_TIMEOUT = 120000L;
     private final PersistSnapshots persistSnapshots;
     private final long createTimestamp;
 
