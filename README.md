@@ -1,4 +1,4 @@
-## AutoMQ: A cloud-first alternative of Kafka by decoupling durability to S3 and EBS
+# AutoMQ: A cloud-first alternative of Kafka by decoupling durability to S3 and EBS
 
 </div>
 
