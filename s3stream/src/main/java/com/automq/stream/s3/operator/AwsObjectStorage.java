@@ -14,12 +14,12 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.utils.CollectionHelper;
 import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
+
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -83,6 +84,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String STATIC_AUTH_TYPE = "static";
     public static final String INSTANCE_AUTH_TYPE = "instance";
 
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+    // The maximum number of keys that can be deleted in a single request is 1000.
     public static final int AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 1000;
 
     private final String bucket;
@@ -222,13 +225,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     public CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
-        return CompletableFuture.allOf(
-            CollectionHelper.groupListByBatchSizeAsStream(objectKeys, AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER)
-                .map(this::doDeleteObjects0).toArray(CompletableFuture[]::new)
-        );
-    }
-
-    private CompletableFuture<Void> doDeleteObjects0(List<String> objectKeys) {
         ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
             ObjectIdentifier.builder()
                 .key(key)
@@ -301,6 +297,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     .stream()
                     .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
                     .collect(Collectors.toList()));
+    }
+
+    @Override
+    protected DeleteObjectsAccumulator newDeleteObjectsAccumulator() {
+        return new DeleteObjectsAccumulator(AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER, getMaxObjectStorageConcurrency(), this::doDeleteObjects);
     }
 
     protected List<AwsCredentialsProvider> credentialsProviders() {

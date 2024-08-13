@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -54,14 +55,10 @@ public class DeleteObjectsAccumulatorTest {
     void testNormalSmallTrafficDeleteCanPass() {
         Function<List<String>, CompletableFuture<Void>> deleteFunction
             = path -> CompletableFuture.completedFuture(null);
-
         DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(deleteFunction);
-        accumulator.start();
-
         CompletableFuture<Void> completableFuture = new CompletableFuture<>();
         List<ObjectStorage.ObjectPath> objectPaths = mockObjectPath(100, (short) 0, "testNormalNoBatchDelete");
-        accumulator.batchOrSubmitDeleteRequests(objectPaths, completableFuture);
-
+        accumulator.batchDeleteObjects(objectPaths, completableFuture);
         completableFuture.join();
     }
 
@@ -73,11 +70,7 @@ public class DeleteObjectsAccumulatorTest {
             totalDeleteObjectNumber.addAndGet(path.size());
             return new CompletableFuture<Void>().completeOnTimeout(null, delayMs, TimeUnit.MILLISECONDS);
         };
-
-        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(deleteFunction);
-        accumulator.start();
-
-
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(1000, 100, deleteFunction);
         List<CompletableFuture<Void>> allIoCf = new ArrayList<>();
 
         int ioNumber = 2000;
@@ -89,7 +82,7 @@ public class DeleteObjectsAccumulatorTest {
 
             List<ObjectStorage.ObjectPath> objectPaths = mockObjectPath(ioSize, (short) 0, "testBatchSmallBatchDelete" + "_" + i);
 
-            accumulator.batchOrSubmitDeleteRequests(objectPaths, completableFuture);
+            accumulator.batchDeleteObjects(objectPaths, completableFuture);
         }
 
         try {
@@ -105,21 +98,16 @@ public class DeleteObjectsAccumulatorTest {
     void testDeleteRequestExceededLimitCanRecoverWhenRequestReturned() throws InterruptedException {
         AtomicInteger totalDeleteObjectNumber = new AtomicInteger();
         Set<String> allDeleteKeys = new ConcurrentSkipListSet<>();
-
         CompletableFuture<Void> waitForDone = new CompletableFuture<>();
-
         Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
             totalDeleteObjectNumber.addAndGet(path.size());
             allDeleteKeys.addAll(path);
-
             CompletableFuture<Void> future = new CompletableFuture<>();
             FutureUtil.propagate(waitForDone, future);
             return future;
         };
-
         DeleteObjectsAccumulator accumulator =
-            new DeleteObjectsAccumulator(1000, 10, deleteFunction);
-        accumulator.start();
+            new DeleteObjectsAccumulator(deleteFunction);
 
         List<CompletableFuture<Void>> allIoCf = new ArrayList<>();
 
@@ -136,7 +124,7 @@ public class DeleteObjectsAccumulatorTest {
             List<String> objectKeys = objectPaths.stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
             allKeys.addAll(objectKeys);
 
-            accumulator.batchOrSubmitDeleteRequests(objectPaths, completableFuture);
+            accumulator.batchDeleteObjects(objectPaths, completableFuture);
             TimeUnit.MICROSECONDS.sleep(1);
         }
 
@@ -183,7 +171,6 @@ public class DeleteObjectsAccumulatorTest {
         };
 
         DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(deleteFunction);
-        accumulator.start();
 
         Map<CompletableFuture<Void>, List<String>> taskAndCf = new HashMap<>();
 
@@ -197,10 +184,8 @@ public class DeleteObjectsAccumulatorTest {
             List<String> objectKeys = objectPaths.stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
 
             taskAndCf.put(completableFuture, objectKeys);
-
-            accumulator.batchOrSubmitDeleteRequests(objectPaths, completableFuture);
+            accumulator.batchDeleteObjects(objectPaths, completableFuture);
         }
-
 
         try {
             latch.await();
@@ -230,7 +215,6 @@ public class DeleteObjectsAccumulatorTest {
             }
         });
 
-
         assertEquals(ioSize * ioNumber, totalDeleteObjectNumber.get());
     }
 
@@ -243,34 +227,29 @@ public class DeleteObjectsAccumulatorTest {
             return new CompletableFuture<Void>().completeOnTimeout(null, delayMs, TimeUnit.MILLISECONDS);
         };
 
-        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(deleteFunction);
-        accumulator.start();
+        // max batch size is 100, max concurrent request number is 10
+        int maxBathSize = 100;
+        int maxConcurrentRequestNumber = 10;
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(maxBathSize, maxConcurrentRequestNumber, deleteFunction);
 
         Queue<CompletableFuture<Void>> allIoCf = new ConcurrentLinkedQueue<>();
 
-        int ioNumber = 10000;
-        int ioSize = 1;
-        int threadNumber = 5;
+        // submit 20 batch delete requests at the same time, each batch delete request contains 1000 objects
+        int batchSize = 1000;
+        int batchNumber = 20;
 
-        CountDownLatch latch = new CountDownLatch(threadNumber * ioSize * ioNumber);
+        CountDownLatch latch = new CountDownLatch(batchNumber);
 
-        ExecutorService executorService = Executors.newFixedThreadPool(threadNumber);
-        for (int j = 0; j < 5; j++) {
+        ExecutorService executorService = Executors.newFixedThreadPool(batchNumber);
+        for (int j = 0; j < batchNumber; j++) {
             int finalJ = j;
             executorService.submit(() -> {
-                for (int i = 0; i < ioNumber; i++) {
-                    CompletableFuture<Void> completableFuture = new CompletableFuture<>();
-
-                    // add timeout for check request can be done.
-                    completableFuture.orTimeout(2, TimeUnit.MINUTES);
-                    allIoCf.add(completableFuture);
-
-                    List<ObjectStorage.ObjectPath> objectPaths =
-                        mockObjectPath(ioSize, (short) 0, "testBatchSmallBatchDelete" + "_" + i + "_" + finalJ);
-
-                    accumulator.batchOrSubmitDeleteRequests(objectPaths, completableFuture);
-                    latch.countDown();
-                }
+                List<ObjectStorage.ObjectPath> objectPaths = mockObjectPath(batchSize, (short) 0, "testBatchSmallBatchDelete" + "_" + finalJ);
+                CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+                completableFuture.orTimeout(30, TimeUnit.SECONDS);
+                allIoCf.add(completableFuture);
+                accumulator.batchDeleteObjects(objectPaths, completableFuture);
+                latch.countDown();
             });
         }
 
@@ -290,10 +269,66 @@ public class DeleteObjectsAccumulatorTest {
             assertTrue(voidCompletableFuture.isDone());
             assertFalse(voidCompletableFuture.isCompletedExceptionally());
         }
-
-        assertEquals(threadNumber * ioSize * ioNumber, totalDeleteObjectNumber.get());
-
+        assertEquals(batchNumber * batchSize, totalDeleteObjectNumber.get());
         executorService.shutdown();
+    }
+
+    @Test
+    void testBatchDeleteOrderPreservation() throws InterruptedException {
+        int delayMs = ThreadLocalRandom.current().nextInt(10);
+        AtomicInteger totalDeleteObjectNumber = new AtomicInteger();
+        AtomicInteger totalCallDeleteFun = new AtomicInteger();
+        List<List<String>> capturedArguments = new CopyOnWriteArrayList<>();
+
+        Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
+            totalDeleteObjectNumber.addAndGet(path.size());
+            totalCallDeleteFun.getAndIncrement();
+            capturedArguments.add(new ArrayList<>(path));
+            return new CompletableFuture<Void>().completeOnTimeout(null, delayMs, TimeUnit.MILLISECONDS);
+        };
+
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(100, 10, deleteFunction);
+        List<CompletableFuture<Void>> allIoCf = new ArrayList<>();
+
+        int ioNumber = 2000;
+        int ioSize = 20;
+
+        for (int i = 0; i < ioNumber; i++) {
+            CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+            allIoCf.add(completableFuture);
+
+            List<ObjectStorage.ObjectPath> objectPaths = mockObjectPath(ioSize, (short) 0, "testBatchSmallBatchDelete" + "_" + i);
+            Thread.sleep(2);
+            accumulator.batchDeleteObjects(objectPaths, completableFuture);
+        }
+
+        try {
+            CompletableFuture.allOf(allIoCf.toArray(new CompletableFuture[0])).get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+
+        assertEquals(ioSize * ioNumber, totalDeleteObjectNumber.get());
+
+        // Verify the order within each batch
+        for (List<String> batch : capturedArguments) {
+            List<Integer> indices = batch.stream()
+                .map(key -> Integer.parseInt(key.split("_")[2]))
+                .collect(Collectors.toList());
+            for (int i = 0; i < ioSize; i++) {
+                assertEquals(i, indices.get(i));
+            }
+        }
+
+        // Verify the overall order of batches
+        List<Integer> allIndices = capturedArguments.stream()
+            .flatMap(List::stream)
+            .map(key -> Integer.parseInt(key.split("_")[1]))
+            .collect(Collectors.toList());
+        int index = 0;
+        for (int i = 0; i < ioNumber; i++, index += ioSize) {
+            assertEquals(i, allIndices.get(index));
+        }
     }
 
 }
