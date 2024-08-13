@@ -330,7 +330,6 @@ def run_validation_producer(kafka, test_context, logger, topic=TOPIC, num_record
                timeout_sec=producer_start_timeout_sec,
                err_msg="Producer failed to produce messages for %ds." % \
                        producer_start_timeout_sec)
-    logger.info(f"VerifiableProducer Start...")
     wait_until(lambda: producer.each_produced_at_least(num_records) is True, timeout_sec=120, backoff_sec=1,
                err_msg="Producer did not produce all messages in reasonable amount of time")
     producer.stop()

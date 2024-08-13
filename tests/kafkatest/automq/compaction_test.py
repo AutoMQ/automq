@@ -32,17 +32,16 @@ class CompactionTest(Test):
     Test Compaction
     """
     STREAM_OBJECT_COMPACTION_CHECK_INTERVAL_MIN = 1
-    INF_MIN = 1000
+    INT32_MAX = int(2**31 - 1)
 
     def __init__(self, test_context):
         super(CompactionTest, self).__init__(test_context)
         self.context = test_context
         self.topic = TOPIC
-        self.s3_delete_retention_min = 1
-        self.stream_set_compaction_min = 1
-        self.stream_compaction_min = 1
+        self.stream_set_compaction_minute = 1
+        self.stream_compaction_minute = 1
         self.s3_wal_upload_threshold = 50 * 1024
-        self.automq_stream_object_compaction_jitter_max_delay = 1
+        self.automq_stream_object_compaction_jitter_max_delay_minute = 1
 
     def create_kafka(self, num_nodes=1, partition=1, broker_wal='file', env=None):
         """
@@ -61,18 +60,16 @@ class CompactionTest(Test):
             ['s3.wal.capacity', str(log_size)],
             ['s3.wal.upload.threshold', str(log_size // 4)],
             ['s3.block.cache.size', str(block_size)],
-            ['s3.stream.set.object.compaction.interval.minutes', str(self.stream_set_compaction_min)],
+            ['s3.stream.set.object.compaction.interval.minutes', str(self.stream_set_compaction_minute)],
             ['autobalancer.controller.enable', 'false'],
             ['s3.wal.upload.threshold', str(int(self.s3_wal_upload_threshold))],
             ['s3.wal.path', FILE_WAL if broker_wal == 'file' else S3_WAL],
-            ['s3.stream.set.object.compaction.stream.split.size', '1'], # set s3.stream.set.object.compact.stream.split.size == 1 to ensure that there is no remaining stream set object
+            ['s3.stream.set.object.compaction.stream.split.size', str(self.automq_stream_object_compaction_jitter_max_delay_minute)], # set s3.stream.set.object.compact.stream.split.size == 1 to ensure that there is no remaining stream set object
             ['s3.stream.object.split.size', '1024'] # get enough stream objects when no stream set comparison occurs
 
         ]
 
         extra_env = [
-            f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL={str(int(self.minor_v1_compaction_interval * 60 * 1000))}',
-            f'AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL={str(int(self.major_v1_compaction_interval * 60 * 1000))}',
             f'AUTOMQ_STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY=1',  # reduce the delay of the first triggering task
         ]
         if env:
@@ -121,22 +118,21 @@ class CompactionTest(Test):
             return
 
         if stream_object_compaction_type == STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1:
-            self.minor_v1_compaction_interval = self.INF_MIN  # far greater than major_V1_compaction_interval
-            self.major_v1_compaction_interval = 0.5
-            env = [f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=0']
+            env = [f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=0',
+                   f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL={str(self.INT32_MAX)}',
+                   f'AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL={str(30 * 1000)}']
         elif stream_object_compaction_type == STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1:
-            self.minor_v1_compaction_interval = 0.5
-            self.major_v1_compaction_interval = self.INF_MIN  # far greater than minor_v1_compaction_interval
-            env = [f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=419430400']
+            env = [f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=419430400',
+                   f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL={str(30 * 1000)}',
+                   f'AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL={str(self.INT32_MAX)}']
         else:
-            self.minor_v1_compaction_interval = self.INF_MIN
-            self.major_v1_compaction_interval = self.INF_MIN
-            env = ['AUTOMQ_STREAM_COMPACTION_MAJOR_V1_MAX_OBJECT_THRESHOLD=400000']
+            env = [f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL={str(self.INT32_MAX)}',
+                   f'AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL={str(self.INT32_MAX)}']
 
         if not stream_set_object_compaction:
-            self.stream_set_compaction_min = self.INF_MIN
+            self.stream_set_compaction_minute = self.INT32_MAX
 
-        self.compaction_delay_sec = (self.automq_stream_object_compaction_jitter_max_delay +
+        self.compaction_delay_sec = (self.automq_stream_object_compaction_jitter_max_delay_minute +
                                      self.STREAM_OBJECT_COMPACTION_CHECK_INTERVAL_MIN) * 60
         self.create_kafka(broker_wal=wal, env=env)
         self.kafka.start()
