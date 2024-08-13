@@ -74,9 +74,7 @@ public interface ObjectReader extends AsyncMeasurable {
 
     void close();
 
-    default CompletableFuture<Integer> size() {
-        return basicObjectInfo().thenApply(BasicObjectInfo::size);
-    }
+    CompletableFuture<Integer> size();
 
     interface RangeReader {
         CompletableFuture<ByteBuf> rangeRead(S3ObjectMetadata metadata, long start, long end);
@@ -89,6 +87,7 @@ public interface ObjectReader extends AsyncMeasurable {
         private final String objectKey;
         private final ObjectStorage objectStorage;
         private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
+        private CompletableFuture<Integer> sizeCf;
         private final AtomicInteger refCount = new AtomicInteger(1);
 
         public DefaultObjectReader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
@@ -176,6 +175,14 @@ public interface ObjectReader extends AsyncMeasurable {
         @Override
         public void close() {
             release();
+        }
+
+        @Override
+        public synchronized CompletableFuture<Integer> size() {
+            if (sizeCf == null) {
+                sizeCf = basicObjectInfo().thenApply(BasicObjectInfo::size);
+            }
+            return sizeCf;
         }
 
         public synchronized void close0() {

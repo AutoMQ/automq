@@ -39,6 +39,7 @@ public class CompositeObjectReader implements ObjectReader {
     private final S3ObjectMetadata objectMetadata;
     private final RangeReader rangeReader;
     private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
+    private CompletableFuture<Integer> sizeCf;
     private final AtomicInteger refCount = new AtomicInteger(1);
 
     public CompositeObjectReader(S3ObjectMetadata objectMetadata, RangeReader rangeReader) {
@@ -89,6 +90,14 @@ public class CompositeObjectReader implements ObjectReader {
     @Override
     public void close() {
         release();
+    }
+
+    @Override
+    public synchronized CompletableFuture<Integer> size() {
+        if (sizeCf == null) {
+            sizeCf = basicObjectInfo().thenApply(BasicObjectInfo::size);
+        }
+        return sizeCf;
     }
 
     public synchronized void close0() {
