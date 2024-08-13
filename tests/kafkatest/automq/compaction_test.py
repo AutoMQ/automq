@@ -94,8 +94,8 @@ class CompactionTest(Test):
 
     @cluster(num_nodes=4)
     @matrix(stream_set_object_compaction=[True, False],
-            stream_object_compaction_type=[STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1], wal=['file'])
-    @matrix(stream_set_object_compaction=[True], stream_object_compaction_type=['None'], wal=['file'])
+            stream_object_compaction_type=[STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1], wal=['file', 's3'])
+    @matrix(stream_set_object_compaction=[True], stream_object_compaction_type=['None'], wal=['file', 's3'])
     def test_case(self, stream_set_object_compaction, stream_object_compaction_type, wal):
         '''
 
