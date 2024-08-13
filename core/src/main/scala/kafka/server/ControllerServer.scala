@@ -258,13 +258,7 @@ class ControllerServer(
         context.controllerServer = this
         val streamClient = StreamClientFactoryProxy.get(context)
 
-        var namespace = config.elasticStreamNamespace
-        namespace =  if (namespace == null || namespace.isEmpty) {
-          Constants.DEFAULT_NAMESPACE + clusterId
-        } else {
-          namespace
-        }
-        ObjectUtils.setNamespace(namespace)
+        ObjectUtils.setNamespace(Constants.DEFAULT_NAMESPACE + clusterId)
         // AutoMQ for Kafka inject end
 
         new QuorumController.Builder(config.nodeId, sharedServer.clusterId).

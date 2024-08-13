@@ -1144,7 +1144,6 @@ class KafkaConfig private(doLog: Boolean, val props: java.util.Map[_, _], dynami
 
   val elasticStreamEnabled = getBoolean(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG)
   val elasticStreamEndpoint = getString(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG)
-  val elasticStreamNamespace = getString(AutoMQConfig.ELASTIC_STREAM_NAMESPACE_CONFIG)
 
   val automq = new AutoMQConfig().setup(this)
 

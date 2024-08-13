@@ -121,13 +121,7 @@ object ElasticLogManager {
   private var isEnabled = false
 
   def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null) = {
-    val namespace = config.elasticStreamNamespace
-    NAMESPACE = if (namespace == null || namespace.isEmpty) {
-      Constants.DEFAULT_NAMESPACE + clusterId
-    } else {
-      namespace
-    }
-    ObjectUtils.setNamespace(NAMESPACE)
+    ObjectUtils.setNamespace(Constants.DEFAULT_NAMESPACE + clusterId)
 
     val endpoint = config.elasticStreamEndpoint
     if (endpoint == null) {
