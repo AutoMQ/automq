@@ -65,6 +65,8 @@ public class S3StreamKafkaMetricsManager {
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
     private static ObservableLongGauge slowBrokerMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<Integer, Boolean>> slowBrokerSupplier = Collections::emptyMap;
+    private static ObservableLongGauge topicPartitionCountMetrics = new NoopObservableLongGauge();
+    private static Supplier<PartitionCountDistribution> topicPartitionCountSupplier = () -> null;
 
     private static ObservableLongGauge partitionStatusStatisticsMetrics = new NoopObservableLongGauge();
     private static List<String> partitionStatusList = Collections.emptyList();
@@ -109,6 +111,25 @@ public class S3StreamKafkaMetricsManager {
                         Map<Integer, Boolean> slowBrokerMap = slowBrokerSupplier.get();
                         for (Map.Entry<Integer, Boolean> entry : slowBrokerMap.entrySet()) {
                             result.record(entry.getValue() ? 1 : 0, BROKER_ATTRIBUTES.get(String.valueOf(entry.getKey())));
+                        }
+                    }
+                });
+        topicPartitionCountMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.TOPIC_PARTITION_COUNT_METRIC_NAME)
+                .setDescription("The number of partitions for each topic on each broker")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get()) {
+                        PartitionCountDistribution partitionCountDistribution = topicPartitionCountSupplier.get();
+                        if (partitionCountDistribution == null) {
+                            return;
+                        }
+                        for (Map.Entry<String, Integer> entry : partitionCountDistribution.topicPartitionCount().entrySet()) {
+                            String topic = entry.getKey();
+                            result.record(entry.getValue(), Attributes.builder()
+                                    .put(S3StreamKafkaMetricsConstants.LABEL_TOPIC_NAME, topic)
+                                    .put(S3StreamKafkaMetricsConstants.LABEL_RACK_ID, partitionCountDistribution.rack())
+                                    .put(S3StreamKafkaMetricsConstants.LABEL_NODE_ID, String.valueOf(partitionCountDistribution.brokerId()))
+                                    .build());
                         }
                     }
                 });
@@ -233,5 +254,9 @@ public class S3StreamKafkaMetricsManager {
     public static void setPartitionStatusStatisticsSupplier(List<String> partitionStatusList, Function<String, Integer> partitionStatusStatisticsSupplier) {
         S3StreamKafkaMetricsManager.partitionStatusList = partitionStatusList;
         S3StreamKafkaMetricsManager.partitionStatusStatisticsSupplier = partitionStatusStatisticsSupplier;
+    }
+
+    public static void setTopicPartitionCountMetricsSupplier(Supplier<PartitionCountDistribution> topicPartitionCountSupplier) {
+        S3StreamKafkaMetricsManager.topicPartitionCountSupplier = topicPartitionCountSupplier;
     }
 }
