@@ -1925,12 +1925,10 @@ object TestUtils extends Logging {
   // AutoMQ inject start
   def createSimpleEsBrokerConfig(nodeId: Int = 1,
       endpoint: String = "memory://",
-      kvEndpoint: String = "",
-      namespace: String = "__esk_test__"): Properties = {
+      kvEndpoint: String = ""): Properties = {
     val props = createBrokerConfig(nodeId, "")
     props.put(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, true)
     props.put(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG, endpoint)
-    props.put(AutoMQConfig.ELASTIC_STREAM_NAMESPACE_CONFIG, namespace)
     props
   }
   // AutoMQ inject end

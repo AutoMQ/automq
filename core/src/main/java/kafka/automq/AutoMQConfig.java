@@ -43,9 +43,6 @@ public class AutoMQConfig {
     public static final String ELASTIC_STREAM_ENDPOINT_DOC = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
         "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>";
 
-    public static final String ELASTIC_STREAM_NAMESPACE_CONFIG = "elasticstream.namespace";
-    public static final String ELASTIC_STREAM_NAMESPACE_DOC = "The kafka cluster in which elastic stream namespace which should conflict with other kafka cluster sharing the same elastic stream.";
-
     public static final String S3_DATA_BUCKETS_CONFIG = "s3.data.buckets";
     public static final String S3_DATA_BUCKETS_DOC = "The data buckets url with format 0@s3://$bucket?region=$region. \n" +
         "the full url format for s3 is 0@s3://$bucket?region=$region[&endpoint=$endpoint][&pathStyle=$enablePathStyle][&authType=$authType][&accessKey=$accessKey][&secretKey=$secretKey]" +
@@ -225,7 +222,6 @@ public class AutoMQConfig {
     public static void define(ConfigDef configDef) {
         configDef.define(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, BOOLEAN, false, HIGH, AutoMQConfig.ELASTIC_STREAM_ENABLE_DOC)
             .define(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG, STRING, "s3://", HIGH, AutoMQConfig.ELASTIC_STREAM_ENDPOINT_DOC)
-            .define(AutoMQConfig.ELASTIC_STREAM_NAMESPACE_CONFIG, STRING, null, MEDIUM, AutoMQConfig.ELASTIC_STREAM_NAMESPACE_DOC)
             .define(AutoMQConfig.S3_DATA_BUCKETS_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_DATA_BUCKETS_DOC)
             .define(AutoMQConfig.S3_OPS_BUCKETS_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_OPS_BUCKETS_DOC)
             .define(AutoMQConfig.S3_WAL_PATH_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_WAL_PATH_DOC)

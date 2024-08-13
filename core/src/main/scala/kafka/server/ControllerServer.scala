@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import com.automq.stream.s3.Constants
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
@@ -257,13 +258,7 @@ class ControllerServer(
         context.controllerServer = this
         val streamClient = StreamClientFactoryProxy.get(context)
 
-        var namespace = config.elasticStreamNamespace
-        namespace =  if (namespace == null || namespace.isEmpty) {
-          "_kafka_" + clusterId
-        } else {
-          namespace
-        }
-        ObjectUtils.setNamespace(namespace)
+        ObjectUtils.setNamespace(Constants.DEFAULT_NAMESPACE + clusterId)
         // AutoMQ for Kafka inject end
 
         new QuorumController.Builder(config.nodeId, sharedServer.clusterId).
