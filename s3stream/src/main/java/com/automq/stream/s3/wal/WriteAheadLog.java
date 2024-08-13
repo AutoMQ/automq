@@ -14,6 +14,7 @@ package com.automq.stream.s3.wal;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.RuntimeIOException;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.util.Iterator;
@@ -53,6 +54,12 @@ public interface WriteAheadLog {
         return append(TraceContext.DEFAULT, data, 0);
     }
 
+    /**
+     * Recover log from the beginning. The iterator will return the recovered result in order.
+     * It may throw a {@link RuntimeIOException} if the recovery fails.
+     *
+     * @return iterator of recover result.
+     */
     Iterator<RecoverResult> recover();
 
     /**

@@ -11,7 +11,9 @@
 
 package com.automq.stream.s3.wal.exception;
 
-public class WALFencedException extends RuntimeException {
+import java.io.IOException;
+
+public class WALFencedException extends IOException {
     public WALFencedException(String message) {
         super(message);
     }

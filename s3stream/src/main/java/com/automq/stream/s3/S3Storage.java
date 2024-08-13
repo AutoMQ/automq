@@ -430,6 +430,7 @@ public class S3Storage implements Storage {
      *
      * @return backoff status.
      */
+    @SuppressWarnings("NPathComplexity")
     public boolean append0(AppendContext context, WalWriteRequest request, boolean fromBackoff) {
         // TODO: storage status check, fast fail the request when storage closed.
         if (!fromBackoff && !backoffRecords.isEmpty()) {
@@ -472,8 +473,11 @@ public class S3Storage implements Storage {
                 }
                 return true;
             }
-            request.offset = appendResult.recordOffset();
-            confirmOffsetCalculator.add(request);
+            long recordOffset = appendResult.recordOffset();
+            if (recordOffset >= 0) {
+                request.offset = recordOffset;
+                confirmOffsetCalculator.add(request);
+            }
         } catch (Throwable e) {
             LOGGER.error("[UNEXPECTED] append WAL fail", e);
             request.cf.completeExceptionally(e);
