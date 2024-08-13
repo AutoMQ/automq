@@ -11,8 +11,10 @@
 
 package org.apache.kafka.controller.es;
 
+import java.util.stream.Collectors;
 import java.util.Random;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.common.WeightedRandomList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,38 +25,38 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Predicate;
 
 public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector {
     private static final Logger LOGGER = LoggerFactory.getLogger(LoadAwarePartitionLeaderSelector.class);
     private final WeightedRandomList<Integer> brokerLoads;
     private final RandomPartitionLeaderSelector randomSelector;
 
-    public LoadAwarePartitionLeaderSelector(List<Integer> aliveBrokers, Predicate<Integer> brokerPredicate) {
-        this(new Random(), aliveBrokers, brokerPredicate);
+    public LoadAwarePartitionLeaderSelector(List<BrokerRegistration> aliveBrokers, BrokerRegistration brokerToRemove) {
+        this(new Random(), aliveBrokers, brokerToRemove);
     }
 
-    public LoadAwarePartitionLeaderSelector(Random r, List<Integer> aliveBrokers, Predicate<Integer> brokerPredicate) {
+    public LoadAwarePartitionLeaderSelector(Random r, List<BrokerRegistration> aliveBrokers, BrokerRegistration brokerToRemove) {
         Map<Integer, Double> brokerLoadMap = ClusterStats.getInstance().brokerLoads();
         if (brokerLoadMap == null) {
             this.brokerLoads = null;
             LOGGER.warn("No broker loads available, using random partition leader selector");
-            this.randomSelector = new RandomPartitionLeaderSelector(aliveBrokers, brokerPredicate);
+            this.randomSelector = new RandomPartitionLeaderSelector(aliveBrokers.stream().map(BrokerRegistration::id).collect(Collectors.toList()), brokerId -> brokerId != brokerToRemove.id());
             return;
         }
         Set<Integer> excludedBrokers = ClusterStats.getInstance().excludedBrokers();
         if (excludedBrokers == null) {
             excludedBrokers = new HashSet<>();
         }
-        List<Integer> availableBrokers = new ArrayList<>();
-        for (int broker : aliveBrokers) {
-            if (!excludedBrokers.contains(broker)) {
+        List<BrokerRegistration> availableBrokers = new ArrayList<>();
+        for (BrokerRegistration broker : aliveBrokers) {
+            if (!excludedBrokers.contains(broker.id()) && broker.id() != brokerToRemove.id()) {
                 availableBrokers.add(broker);
             }
         }
         brokerLoads = new WeightedRandomList<>(r);
-        for (int brokerId : availableBrokers) {
-            if (!brokerPredicate.test(brokerId) || !brokerLoadMap.containsKey(brokerId)) {
+        for (BrokerRegistration broker : availableBrokers) {
+            int brokerId = broker.id();
+            if (!broker.rack().equals(brokerToRemove.rack()) || !brokerLoadMap.containsKey(brokerId)) {
                 continue;
             }
             double load = Math.max(1, brokerLoadMap.get(brokerId));
@@ -62,7 +64,7 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
             brokerLoads.add(new WeightedRandomList.Entity<>(brokerId, 1 / load));
         }
         brokerLoads.update();
-        this.randomSelector = new RandomPartitionLeaderSelector(availableBrokers, brokerPredicate);
+        this.randomSelector = new RandomPartitionLeaderSelector(availableBrokers.stream().map(BrokerRegistration::id).collect(Collectors.toList()), id -> true);
     }
 
     @Override

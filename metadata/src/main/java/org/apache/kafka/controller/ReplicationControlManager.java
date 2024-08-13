@@ -2115,6 +2115,7 @@ public class ReplicationControlManager {
         IntPredicate isAcceptableLeader = fencing ? r -> false :
             r -> (r != brokerToRemove) && (r == brokerToAdd || clusterControl.isActive(r));
 
+        BrokerRegistration brokerRegistrationToRemove = clusterControl.brokerRegistrations().get(brokerToRemove);
         PartitionLeaderSelector partitionLeaderSelector = null;
         // AutoMQ for Kafka inject end
 
@@ -2157,8 +2158,7 @@ public class ReplicationControlManager {
                     builder.setTargetNode(brokerToAdd);
                 } else {
                     if (partitionLeaderSelector == null) {
-                        partitionLeaderSelector = new LoadAwarePartitionLeaderSelector(clusterControl.getActiveBrokers(),
-                                brokerId -> brokerId != brokerToRemove);
+                        partitionLeaderSelector = new LoadAwarePartitionLeaderSelector(clusterControl.getActiveBrokers(), brokerRegistrationToRemove);
                     }
                     partitionLeaderSelector
                         .select(new TopicPartition(topic.name(), topicIdPart.partitionId()))
