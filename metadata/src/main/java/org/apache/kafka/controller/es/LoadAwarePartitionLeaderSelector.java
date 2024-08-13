@@ -11,7 +11,9 @@
 
 package org.apache.kafka.controller.es;
 
+import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.metadata.BrokerRegistration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,7 +24,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
-import java.util.function.Predicate;
 
 public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector {
     private static final Logger LOGGER = LoggerFactory.getLogger(LoadAwarePartitionLeaderSelector.class);
@@ -30,14 +31,14 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
     private final RandomPartitionLeaderSelector randomSelector;
     private final Map<Integer, Double> brokerLoadMap;
 
-    public LoadAwarePartitionLeaderSelector(List<Integer> aliveBrokers, Predicate<Integer> brokerPredicate) {
+    public LoadAwarePartitionLeaderSelector(List<BrokerRegistration> aliveBrokers, BrokerRegistration brokerToRemove) {
         Set<Integer> excludedBrokers = ClusterLoads.getInstance().excludedBrokers();
         if (excludedBrokers == null) {
             excludedBrokers = new HashSet<>();
         }
-        List<Integer> availableBrokers = new ArrayList<>();
-        for (int broker : aliveBrokers) {
-            if (!excludedBrokers.contains(broker)) {
+        List<BrokerRegistration> availableBrokers = new ArrayList<>();
+        for (BrokerRegistration broker : aliveBrokers) {
+            if (!excludedBrokers.contains(broker.id()) && broker.id() != brokerToRemove.id()) {
                 availableBrokers.add(broker);
             }
         }
@@ -47,14 +48,14 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
             LOGGER.warn("No broker loads available, using random partition leader selector");
         } else {
             this.brokerLoads = new PriorityQueue<>();
-            for (int brokerId : availableBrokers) {
-                if (!brokerPredicate.test(brokerId)) {
+            for (BrokerRegistration broker : availableBrokers) {
+                if (!broker.rack().equals(brokerToRemove.rack())) {
                     continue;
                 }
-                brokerLoads.offer(new BrokerLoad(brokerId, brokerLoadMap.getOrDefault(brokerId, 0.0)));
+                brokerLoads.offer(new BrokerLoad(broker.id(), brokerLoadMap.getOrDefault(broker.id(), 0.0)));
             }
         }
-        this.randomSelector = new RandomPartitionLeaderSelector(availableBrokers, brokerPredicate);
+        this.randomSelector = new RandomPartitionLeaderSelector(availableBrokers.stream().map(BrokerRegistration::id).collect(Collectors.toList()), id -> true);
     }
 
     @Override
