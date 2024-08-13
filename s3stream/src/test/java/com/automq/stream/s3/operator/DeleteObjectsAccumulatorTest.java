@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -270,6 +271,64 @@ public class DeleteObjectsAccumulatorTest {
         }
         assertEquals(batchNumber * batchSize, totalDeleteObjectNumber.get());
         executorService.shutdown();
+    }
+
+    @Test
+    void testBatchDeleteOrderPreservation() throws InterruptedException {
+        int delayMs = ThreadLocalRandom.current().nextInt(10);
+        AtomicInteger totalDeleteObjectNumber = new AtomicInteger();
+        AtomicInteger totalCallDeleteFun = new AtomicInteger();
+        List<List<String>> capturedArguments = new CopyOnWriteArrayList<>();
+
+        Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
+            totalDeleteObjectNumber.addAndGet(path.size());
+            totalCallDeleteFun.getAndIncrement();
+            capturedArguments.add(new ArrayList<>(path));
+            return new CompletableFuture<Void>().completeOnTimeout(null, delayMs, TimeUnit.MILLISECONDS);
+        };
+
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(100, 10, deleteFunction);
+        List<CompletableFuture<Void>> allIoCf = new ArrayList<>();
+
+        int ioNumber = 2000;
+        int ioSize = 20;
+
+        for (int i = 0; i < ioNumber; i++) {
+            CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+            allIoCf.add(completableFuture);
+
+            List<ObjectStorage.ObjectPath> objectPaths = mockObjectPath(ioSize, (short) 0, "testBatchSmallBatchDelete" + "_" + i);
+            Thread.sleep(2);
+            accumulator.batchDeleteObjects(objectPaths, completableFuture);
+        }
+
+        try {
+            CompletableFuture.allOf(allIoCf.toArray(new CompletableFuture[0])).get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+
+        assertEquals(ioSize * ioNumber, totalDeleteObjectNumber.get());
+
+        // Verify the order within each batch
+        for (List<String> batch : capturedArguments) {
+            List<Integer> indices = batch.stream()
+                .map(key -> Integer.parseInt(key.split("_")[2]))
+                .collect(Collectors.toList());
+            for (int i = 0; i < ioSize; i++) {
+                assertEquals(i, indices.get(i));
+            }
+        }
+
+        // Verify the overall order of batches
+        List<Integer> allIndices = capturedArguments.stream()
+            .flatMap(List::stream)
+            .map(key -> Integer.parseInt(key.split("_")[1]))
+            .collect(Collectors.toList());
+        int index = 0;
+        for (int i = 0; i < ioNumber; i++, index += ioSize) {
+            assertEquals(i, allIndices.get(index));
+        }
     }
 
 }

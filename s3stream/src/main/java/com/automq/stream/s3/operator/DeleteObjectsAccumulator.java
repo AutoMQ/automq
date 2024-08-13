@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Semaphore;
@@ -95,7 +96,12 @@ public class DeleteObjectsAccumulator {
             for (int i = 0; i < subBatchCfList.size(); i++) {
                 List<ObjectStorage.ObjectPath> subBatchList = subBatchKeyList.get(i);
                 CompletableFuture<Void> subBatchCf = subBatchCfList.get(i);
-                if (!submitDeleteObjectsRequest(subBatchList, List.of(subBatchCf))) {
+                // if there are pending requests, add to queue
+                if (!deleteRequestQueue.isEmpty()) {
+                    deleteRequestQueue.add(new PendingDeleteRequest(subBatchList, subBatchCf));
+                    // try to submit pending requests
+                } else if (!submitDeleteObjectsRequest(subBatchList, List.of(subBatchCf))) {
+                    // if not submitted, add to queue
                     deleteRequestQueue.add(new PendingDeleteRequest(subBatchList, subBatchCf));
                 }
             }
@@ -186,7 +192,9 @@ public class DeleteObjectsAccumulator {
 
         // if not submitted, add back to queue
         if (!isSubmit) {
-            for (PendingDeleteRequest pendingRequest : pendingRequests) {
+            ListIterator<PendingDeleteRequest> iterator = pendingRequests.listIterator(pendingRequests.size());
+            while (iterator.hasPrevious()) {
+                PendingDeleteRequest pendingRequest = iterator.previous();
                 deleteRequestQueue.addFirst(pendingRequest);
             }
         }
