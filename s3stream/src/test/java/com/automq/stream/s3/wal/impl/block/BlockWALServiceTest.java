@@ -19,6 +19,7 @@ import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
+import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.exception.WALNotInitializedException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService.RecoverIterator;
 import com.automq.stream.s3.wal.benchmark.WriteBench;
@@ -622,7 +623,7 @@ class BlockWALServiceTest {
     /**
      * Call {@link WriteAheadLog#recover()} and set to strict mode.
      */
-    private static Iterator<RecoverResult> recover(WriteAheadLog wal) {
+    private static Iterator<RecoverResult> recover(WriteAheadLog wal) throws WALFencedException {
         Iterator<RecoverResult> iterator = wal.recover();
         assertNotNull(iterator);
         if (iterator instanceof RecoverIterator) {
@@ -634,7 +635,7 @@ class BlockWALServiceTest {
     /**
      * Call {@link WriteAheadLog#recover()} {@link WriteAheadLog#reset()} and drop all records.
      */
-    private static void recoverAndReset(WriteAheadLog wal) {
+    private static void recoverAndReset(WriteAheadLog wal) throws WALFencedException {
         for (Iterator<RecoverResult> it = recover(wal); it.hasNext(); ) {
             it.next().record().release();
         }

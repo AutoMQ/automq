@@ -23,6 +23,7 @@ import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.common.RecoverResultImpl;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
@@ -34,6 +35,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -94,36 +97,47 @@ public class ObjectWALService implements WriteAheadLog {
                 log.error("[Bug] The data buffer is already released.", e);
             }
 
-            if (e instanceof OverCapacityException) {
-                if (((OverCapacityException) e).error()) {
+            Throwable cause = ExceptionUtils.getRootCause(e);
+            if (cause instanceof OverCapacityException) {
+                if (((OverCapacityException) cause).error()) {
                     log.warn("Append record to S3 WAL failed, due to accumulator is full.", e);
                 } else {
                     log.warn("S3 WAL accumulator is full, try to trigger an upload and trim the WAL", e);
                 }
 
-                throw new OverCapacityException("Append record to S3 WAL failed, due to accumulator is full: " + e.getMessage());
+                throw new OverCapacityException("Append record to S3 WAL failed, due to accumulator is full: " + cause.getMessage());
             } else {
-                log.error("[Bug] Append record to S3 WAL failed, due unknown exception.", e);
-                throw e;
+                log.error("Append record to S3 WAL failed, due to unrecoverable exception.", e);
+                return new AppendResultImpl(-1, CompletableFuture.failedFuture(e));
             }
         }
     }
 
     @Override
-    public Iterator<RecoverResult> recover() {
+    public Iterator<RecoverResult> recover() throws WALFencedException {
         return new RecoverIterator(accumulator.objectList(), objectStorage, config.readAheadObjectCount());
     }
 
     @Override
     public CompletableFuture<Void> reset() {
         log.info("Reset S3 WAL");
-        return accumulator.reset();
+        try {
+            return accumulator.reset();
+        } catch (Throwable e) {
+            log.error("Reset S3 WAL failed, due to unrecoverable exception.", e);
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     @Override
     public CompletableFuture<Void> trim(long offset) {
         log.info("Trim S3 WAL to offset: {}", offset);
-        return accumulator.trim(offset);
+        try {
+            return accumulator.trim(offset);
+        } catch (Throwable e) {
+            log.error("Trim S3 WAL failed, due to unrecoverable exception.", e);
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     public static class RecoverIterator implements Iterator<RecoverResult> {

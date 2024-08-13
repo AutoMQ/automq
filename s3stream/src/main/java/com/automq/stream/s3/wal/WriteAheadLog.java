@@ -14,6 +14,7 @@ package com.automq.stream.s3.wal;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.WALFencedException;
 import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.util.Iterator;
@@ -53,7 +54,14 @@ public interface WriteAheadLog {
         return append(TraceContext.DEFAULT, data, 0);
     }
 
-    Iterator<RecoverResult> recover();
+    /**
+     * Recover log from the beginning.
+     *
+     * @return iterator of recover result.
+     *
+     * @throws WALFencedException If the log is fenced, it cannot be recovered and the process should exit.
+     */
+    Iterator<RecoverResult> recover() throws WALFencedException;
 
     /**
      * Reset all data in log.

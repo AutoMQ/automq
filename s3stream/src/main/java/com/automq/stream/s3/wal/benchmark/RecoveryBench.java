@@ -14,6 +14,7 @@ package com.automq.stream.s3.wal.benchmark;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import io.netty.buffer.ByteBuf;
@@ -43,7 +44,7 @@ public class RecoveryBench implements AutoCloseable {
         recoverAndReset(log);
     }
 
-    private static int recoverAndReset(WriteAheadLog wal) {
+    private static int recoverAndReset(WriteAheadLog wal) throws WALFencedException {
         int recovered = 0;
         for (Iterator<RecoverResult> it = wal.recover(); it.hasNext(); ) {
             it.next().record().release();
