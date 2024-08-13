@@ -419,7 +419,6 @@ public class S3Storage implements Storage {
         handleAppendRequest(writeRequest);
         append0(context, writeRequest, false);
         cf.whenComplete((nil, ex) -> {
-            streamRecord.release();
             StorageOperationStats.getInstance().appendStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
         });
         return cf;

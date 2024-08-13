@@ -185,6 +185,7 @@ public class S3Stream implements Stream {
             return new DefaultAppendResult(offset);
         });
         return cf.whenComplete((rst, ex) -> {
+            streamRecordBatch.release();
             if (ex == null) {
                 return;
             }
