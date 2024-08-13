@@ -13,7 +13,7 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.ObjectReader;
 
-public class ObjectReaderLRUCache extends AsyncObjectLRUCache<Long, ObjectReader> {
+public class ObjectReaderLRUCache extends AsyncLRUCache<Long, ObjectReader> {
 
     public ObjectReaderLRUCache(int maxObjectSize) {
         super(maxObjectSize);
