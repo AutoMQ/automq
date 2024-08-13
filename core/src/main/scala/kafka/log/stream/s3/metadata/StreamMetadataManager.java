@@ -144,8 +144,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     return;
                 }
 
-                LOGGER.info("[FetchObjects],[PENDING],streamId={} startOffset={} endOffset={} limit={}",
-                    streamId, startOffset, endOffset, limit);
+                LOGGER.info("[FetchObjects],[PENDING],streamId={} startOffset={} endOffset={} limit={} resultSize={} resultEndOffset={}",
+                    streamId, startOffset, endOffset, limit, rst.objects().size(), rst.endOffset());
 
                 CompletableFuture<Void> pendingCf = pendingFetch();
                 pendingCf.thenAccept(nil -> fetch0(cf, streamId, startOffset, endOffset, limit));
