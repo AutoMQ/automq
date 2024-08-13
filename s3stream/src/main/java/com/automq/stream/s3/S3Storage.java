@@ -430,6 +430,7 @@ public class S3Storage implements Storage {
      *
      * @return backoff status.
      */
+    @SuppressWarnings("NPathComplexity")
     public boolean append0(AppendContext context, WalWriteRequest request, boolean fromBackoff) {
         // TODO: storage status check, fast fail the request when storage closed.
         if (!fromBackoff && !backoffRecords.isEmpty()) {
