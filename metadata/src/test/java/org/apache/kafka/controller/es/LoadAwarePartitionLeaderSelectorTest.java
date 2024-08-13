@@ -11,12 +11,14 @@
 
 package org.apache.kafka.controller.es;
 
+import java.util.Optional;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.metadata.BrokerRegistration;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,21 +27,30 @@ public class LoadAwarePartitionLeaderSelectorTest {
 
     @Test
     public void testLoadAwarePartitionLeaderSelector() {
-        List<Integer> aliveBrokers = List.of(0, 1, 2, 3, 4, 5);
-        Set<Integer> brokerSet = new HashSet<>(aliveBrokers);
-        int brokerToRemove = 5;
-        LoadAwarePartitionLeaderSelector loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, broker -> broker != brokerToRemove);
+        List<BrokerRegistration> aliveBrokers = List.of(
+            new BrokerRegistration.Builder().setId(0).build(),
+            new BrokerRegistration.Builder().setId(1).build(),
+            new BrokerRegistration.Builder().setId(2).build(),
+            new BrokerRegistration.Builder().setId(3).build(),
+            new BrokerRegistration.Builder().setId(4).build(),
+            new BrokerRegistration.Builder().setId(5).build());
+
+        Set<Integer> brokerSet = aliveBrokers.stream().map(BrokerRegistration::id).collect(Collectors.toSet());
+        BrokerRegistration brokerToRemove = aliveBrokers.get(aliveBrokers.size() - 1);
+        LoadAwarePartitionLeaderSelector loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, brokerToRemove);
 
         // fallback to random selector
-        int brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
-        Assertions.assertTrue(brokerSet.contains(brokerId));
-        Assertions.assertTrue(brokerId != brokerToRemove);
+        for (int i = 0; i < 100; i++) {
+            int brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
+            Assertions.assertTrue(brokerSet.contains(brokerId));
+            Assertions.assertTrue(brokerId != brokerToRemove.id());
+        }
 
         // load aware selector
         Map<Integer, Double> brokerLoads = setUpCluster();
-        loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, broker -> broker != brokerToRemove);
+        loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, brokerToRemove);
 
-        brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
+        int brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
         Assertions.assertTrue(brokerSet.contains(brokerId));
         Assertions.assertEquals(0, brokerId);
         brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 1)).orElse(-1);
@@ -62,7 +73,7 @@ public class LoadAwarePartitionLeaderSelectorTest {
         // tests exclude broker
         brokerLoads = setUpCluster();
         ClusterLoads.getInstance().updateExcludedBrokers(Set.of(1));
-        loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, broker -> broker != brokerToRemove);
+        loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, brokerToRemove);
 
         brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
         Assertions.assertTrue(brokerSet.contains(brokerId));
@@ -81,6 +92,55 @@ public class LoadAwarePartitionLeaderSelectorTest {
         Assertions.assertEquals(10.0, brokerLoads.get(1));
         Assertions.assertEquals(40.0, brokerLoads.get(2));
         Assertions.assertEquals(30.0, brokerLoads.get(3));
+        Assertions.assertEquals(40.0, brokerLoads.get(4));
+        Assertions.assertEquals(50.0, brokerLoads.get(5));
+    }
+
+    @Test
+    public void testLoadAwarePartitionLeaderSelectorWithRack() {
+        String rackA = "rack-a";
+        String rackB = "rack-b";
+        List<BrokerRegistration> aliveBrokers = List.of(
+            new BrokerRegistration.Builder().setId(0).setRack(Optional.of(rackA)).build(),
+            new BrokerRegistration.Builder().setId(1).setRack(Optional.of(rackB)).build(),
+            new BrokerRegistration.Builder().setId(2).setRack(Optional.of(rackB)).build(),
+            new BrokerRegistration.Builder().setId(3).setRack(Optional.of(rackB)).build(),
+            new BrokerRegistration.Builder().setId(4).setRack(Optional.of(rackB)).build());
+
+        Set<Integer> brokerSet = aliveBrokers.stream().map(BrokerRegistration::id).collect(Collectors.toSet());
+        setUpCluster();
+        BrokerRegistration brokerToRemove = aliveBrokers.get(0);
+        LoadAwarePartitionLeaderSelector loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, brokerToRemove);
+
+        // fallback to random selector
+        for (int i = 0; i < 100; i++) {
+            int brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
+            Assertions.assertTrue(brokerSet.contains(brokerId));
+            Assertions.assertTrue(brokerId != brokerToRemove.id());
+        }
+
+        // load aware selector
+        Map<Integer, Double> brokerLoads = setUpCluster();
+        BrokerRegistration brokerToRemove1 = aliveBrokers.get(1);
+        loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(aliveBrokers, brokerToRemove1);
+
+        int brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
+        Assertions.assertTrue(brokerSet.contains(brokerId));
+        Assertions.assertEquals(2, brokerId);
+        brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 1)).orElse(-1);
+        Assertions.assertTrue(brokerSet.contains(brokerId));
+        Assertions.assertEquals(2, brokerId);
+        brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 2)).orElse(-1);
+        Assertions.assertTrue(brokerSet.contains(brokerId));
+        Assertions.assertEquals(3, brokerId);
+        brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 3)).orElse(-1);
+        Assertions.assertTrue(brokerSet.contains(brokerId));
+        Assertions.assertEquals(2, brokerId);
+
+        Assertions.assertNull(brokerLoads.get(0));
+        Assertions.assertEquals(10.0, brokerLoads.get(1));
+        Assertions.assertEquals(55.0, brokerLoads.get(2));
+        Assertions.assertEquals(45.0, brokerLoads.get(3));
         Assertions.assertEquals(40.0, brokerLoads.get(4));
         Assertions.assertEquals(50.0, brokerLoads.get(5));
     }
