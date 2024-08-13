@@ -57,6 +57,7 @@ import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.server.common
 import org.apache.kafka.server.common.DirectoryEventHandler
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
+import org.apache.kafka.server.metrics.s3stream.{PartitionCountDistribution, S3StreamKafkaMetricsManager}
 import org.apache.kafka.server.util.{Scheduler, ShutdownableThread}
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, FetchParams, FetchPartitionData, LeaderHwChange, LogAppendInfo, LogConfig, LogDirFailureChannel, LogOffsetMetadata, LogReadInfo, RecordValidationException, RemoteLogReadResult, RemoteStorageFetchInfo, VerificationGuard}
 
@@ -338,6 +339,13 @@ class ReplicaManager(val config: KafkaConfig,
   metricsGroup.newGauge(ReassigningPartitionsMetricName, () => reassigningPartitionsCount)
   metricsGroup.newGauge(PartitionsWithLateTransactionsCountMetricName, () => lateTransactionsCount)
   metricsGroup.newGauge(ProducerIdCountMetricName, () => producerIdCount)
+
+  S3StreamKafkaMetricsManager.setTopicPartitionCountMetricsSupplier(() => new PartitionCountDistribution(config.nodeId,
+    config.rack.getOrElse(""), partitionDistribution().asJava))
+
+  def partitionDistribution(): Map[String, Integer] = {
+    allPartitions.keys.groupBy(_.topic).map(kv => kv._1 -> kv._2.size)
+  }
 
   def reassigningPartitionsCount: Int = leaderPartitionsIterator.count(_.isReassigning)
 
