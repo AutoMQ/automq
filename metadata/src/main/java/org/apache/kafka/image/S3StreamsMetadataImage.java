@@ -464,8 +464,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     private Optional<StreamOffsetRange> findStreamInStreamSetObject(GetObjectsContext ctx, S3StreamSetObject object) {
         if (object.ranges().length == 0) {
-            Optional<StreamOffsetRange> streamOffsetRangeOpt = ctx.object2range.get(object.objectId());
-            return streamOffsetRangeOpt != null ? streamOffsetRangeOpt : Optional.empty();
+            return ctx.object2range.get(object.objectId());
         } else {
             return object.find(ctx.streamId);
         }
