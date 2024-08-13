@@ -37,6 +37,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
@@ -258,6 +259,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 } else {
                     streamSetObjects = Collections.emptyList();
                 }
+
                 CompletableFuture<Integer> startSearchIndexCf = getStartSearchIndex(node, nextStartOffset, ctx);
                 final int finalLastRangeIndex = lastRangeIndex;
                 final long finalNextStartOffset = nextStartOffset;
@@ -643,7 +645,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         LocalStreamRangeIndexCache indexCache;
 
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
-        Map<Long, Optional<StreamOffsetRange>> object2range = new HashMap<>();
+        Map<Long, Optional<StreamOffsetRange>> object2range = new ConcurrentHashMap<>();
         List<String> debugContext = new ArrayList<>();
 
         GetObjectsContext(long streamId, long startOffset, long endOffset, int limit,
