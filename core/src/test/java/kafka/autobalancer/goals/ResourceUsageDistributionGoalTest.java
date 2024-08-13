@@ -336,17 +336,41 @@ public class ResourceUsageDistributionGoalTest extends GoalTestBase {
         broker0.setLoad(resource, 0, false);
         actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
         Assertions.assertTrue(actions.isEmpty());
-
-        broker0.setLoad(resource, 0);
-        broker1.setLoad(resource, 80 * 1024 * 1024, false);
-        replica1.setLoad(resource, 40 * 1024 * 1024, false);
-        replica2.setLoad(resource, 40 * 1024 * 1024, false);
     }
 
     @Test
     public void testSkipUntrustedBroker() {
         testSkipUntrustedBroker(NW_IN);
         testSkipUntrustedBroker(NW_OUT);
+    }
+
+    @ParameterizedTest
+    @ValueSource(bytes = {NW_IN, NW_OUT})
+    public void testSkipOutDatedBroker(byte resource) {
+        ClusterModelSnapshot cluster = new ClusterModelSnapshot();
+        Broker broker0 = createBroker(cluster, RACK, 0);
+        Broker broker1 = createBroker(cluster, RACK, 1);
+
+        broker0.setLoad(resource, 0);
+        broker0.setMetricsOutOfDate(true);
+        broker1.setLoad(resource, 80 * 1024 * 1024);
+        broker1.setMetricsOutOfDate(false);
+
+        TopicPartitionReplica replica1 = createTopicPartition(cluster, 1, TOPIC_1, 0);
+        TopicPartitionReplica replica2 = createTopicPartition(cluster, 1, TOPIC_1, 1);
+        replica1.setLoad(resource, 35 * 1024 * 1024);
+        replica2.setLoad(resource, 45 * 1024 * 1024);
+
+        Goal goal = getGoalByResource(resource);
+        goal.initialize(Set.of(broker0, broker1));
+
+        List<Action> actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
+        Assertions.assertTrue(actions.isEmpty());
+
+        broker0.setMetricsOutOfDate(false);
+        actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
+        Assertions.assertEquals(1, actions.size());
+        Assertions.assertEquals(new Action(ActionType.MOVE, new TopicPartition(TOPIC_1, 1), 1, 0), actions.get(0));
     }
 
     private ClusterModelSnapshot buildClusterModelSnapshot() {
@@ -556,5 +580,54 @@ public class ResourceUsageDistributionGoalTest extends GoalTestBase {
         Assertions.assertEquals(new Action(ActionType.MOVE, new TopicPartition(TOPIC_0, 1), 1, 0), actions.get(1));
         Assertions.assertEquals(broker0.loadValue(resource), 33 * 1024 * 1024);
         Assertions.assertEquals(broker1.loadValue(resource), 67 * 1024 * 1024);
+    }
+
+    @ParameterizedTest
+    @ValueSource(bytes = {NW_IN, NW_OUT})
+    public void testLoadBelowThresholdCluster(byte resource) {
+        ClusterModelSnapshot cluster = new ClusterModelSnapshot();
+        Broker broker0 = createBroker(cluster, RACK, 0);
+        Broker broker1 = createBroker(cluster, RACK, 1);
+
+        broker0.setLoad(resource, 0);
+        broker1.setLoad(resource, 1024);
+
+        TopicPartitionReplica replica0 = createTopicPartition(cluster, 1, TOPIC_0, 0);
+        TopicPartitionReplica replica1 = createTopicPartition(cluster, 1, TOPIC_0, 1);
+        TopicPartitionReplica replica2 = createTopicPartition(cluster, 1, TOPIC_0, 2);
+        TopicPartitionReplica replica3 = createTopicPartition(cluster, 1, TOPIC_0, 3);
+        replica0.setLoad(resource, 256);
+        replica1.setLoad(resource, 256);
+        replica2.setLoad(resource, 256);
+        replica3.setLoad(resource, 256);
+        Assertions.assertEquals(0, cluster.replicasFor(0).stream().mapToDouble(e -> e.loadValue(resource)).sum());
+        Assertions.assertEquals(1024, cluster.replicasFor(1).stream().mapToDouble(e -> e.loadValue(resource)).sum());
+
+        AbstractResourceUsageDistributionGoal goal;
+        if (resource == NW_IN) {
+            goal = new NetworkInUsageDistributionGoal();
+        } else {
+            goal = new NetworkOutUsageDistributionGoal();
+        }
+        goal.configure(Map.of(
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 1024 * 1024,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 1024 * 1024
+        ));
+        goal.initialize(Set.of(broker0, broker1));
+        Assertions.assertTrue(goal.isBrokerAcceptable(broker0));
+        Assertions.assertTrue(goal.isBrokerAcceptable(broker1));
+        List<Action> actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
+        Assertions.assertTrue(actions.isEmpty());
+
+        goal.configure(Map.of(
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 0,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_USAGE_DISTRIBUTION_DETECT_THRESHOLD, 0
+        ));
+        Assertions.assertFalse(goal.isBrokerAcceptable(broker0));
+        Assertions.assertFalse(goal.isBrokerAcceptable(broker1));
+        actions = goal.optimize(cluster, List.of(goal), Collections.emptyList());
+        Assertions.assertEquals(2, actions.size());
+        Assertions.assertEquals(512, cluster.replicasFor(0).stream().mapToDouble(e -> e.loadValue(resource)).sum());
+        Assertions.assertEquals(512, cluster.replicasFor(1).stream().mapToDouble(e -> e.loadValue(resource)).sum());
     }
 }

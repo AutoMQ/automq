@@ -15,8 +15,10 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.S3StreamClient;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import io.netty.buffer.ByteBuf;
@@ -144,7 +146,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         try {
             this.nodeId = nodeId;
             this.objectStorage = objectStorage;
-            this.objectStorage.read(ObjectStorage.ReadOptions.DEFAULT.bucket(this.objectStorage.bucketId()),
+            this.objectStorage.read(new ReadOptions().bucket(ObjectAttributes.MATCH_ALL_BUCKET),
                     ObjectUtils.genIndexKey(0, nodeId))
                 .whenComplete((data, ex) -> {
                     if (ex != null) {

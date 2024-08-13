@@ -109,7 +109,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
 
-        this.deleteObjectsAccumulator = new DeleteObjectsAccumulator(this::doDeleteObjects);
+        this.deleteObjectsAccumulator = newDeleteObjectsAccumulator();
         this.deleteObjectsAccumulator.start();
 
         s3LatencyCalculator = new S3LatencyCalculator(
@@ -719,6 +719,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return true;
     }
 
+    protected DeleteObjectsAccumulator newDeleteObjectsAccumulator() {
+        return new DeleteObjectsAccumulator(this::doDeleteObjects);
+    }
+
     static class MergedReadTask {
         static final int MAX_MERGE_READ_SIZE = 4 * 1024 * 1024;
         final String objectPath;
@@ -886,9 +890,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private final List<String> failedKeys;
         private final List<String> errorsMessages;
 
-        public DeleteObjectsException(String message, List<String> successKeys, List<String> errorsMessage) {
+        public DeleteObjectsException(String message, List<String> failedKeys, List<String> errorsMessage) {
             super(message);
-            this.failedKeys = successKeys;
+            this.failedKeys = failedKeys;
             this.errorsMessages = errorsMessage;
         }
 

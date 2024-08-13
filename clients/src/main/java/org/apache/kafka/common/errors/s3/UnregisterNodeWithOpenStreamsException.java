@@ -9,21 +9,16 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.wal.exception;
+package org.apache.kafka.common.errors.s3;
 
-public class OverCapacityException extends Exception {
-    private final boolean error;
+import org.apache.kafka.common.errors.ApiException;
 
-    public OverCapacityException(String message) {
-        this(message, false);
-    }
+/**
+ * Thrown when a node is unregistered while it still has opening streams.
+ */
+public class UnregisterNodeWithOpenStreamsException extends ApiException {
 
-    public OverCapacityException(String message, boolean error) {
+    public UnregisterNodeWithOpenStreamsException(String message) {
         super(message);
-        this.error = error;
-    }
-
-    public boolean error() {
-        return error;
     }
 }

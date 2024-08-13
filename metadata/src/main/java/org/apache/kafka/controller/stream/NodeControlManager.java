@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.errors.s3.UnregisterNodeWithOpenStreamsException;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.AutomqRegisterNodeRequestData;
 import org.apache.kafka.common.message.AutomqRegisterNodeResponseData;
@@ -64,16 +65,15 @@ public class NodeControlManager {
         }
 
         NodeMetadata newNodeMetadata = new NodeMetadata(nodeId, nodeEpoch, walConfig, tags);
-        records.add(new ApiMessageAndVersion(new KVRecord().setKeyValues(List.of(
-            new KVRecord.KeyValue()
-                .setKey(KEY_PREFIX + nodeId)
-                .setValue(NodeMetadataCodec.encode(newNodeMetadata))
-        )), (short) 0));
+        records.add(registerNodeRecord(nodeId, newNodeMetadata));
         return ControllerResult.of(records, resp);
     }
 
     public ControllerResult<AutomqGetNodesResponseData> getMetadata(AutomqGetNodesRequest req) {
         List<Integer> nodeIds = req.data().nodeIds();
+        if (nodeIds.isEmpty()) {
+            nodeIds = new ArrayList<>(nodeMetadataMap.keySet());
+        }
         List<NodeMetadata> nodeMetadataList = new ArrayList<>();
         for (Integer nodeId : nodeIds) {
             NodeMetadata nodeMetadata = nodeMetadataMap.get(nodeId);
@@ -125,6 +125,15 @@ public class NodeControlManager {
         }
     }
 
+    ApiMessageAndVersion registerNodeRecord(int nodeId, NodeMetadata newNodeMetadata) {
+        KVRecord kvRecord = new KVRecord().setKeyValues(List.of(
+            new KVRecord.KeyValue()
+                .setKey(KEY_PREFIX + nodeId)
+                .setValue(NodeMetadataCodec.encode(newNodeMetadata))
+        ));
+        return new ApiMessageAndVersion(kvRecord, (short) 0);
+    }
+
     public void replay(RemoveKVRecord kvRecord) {
         for (String key : kvRecord.keys()) {
             if (!key.startsWith(KEY_PREFIX)) {
@@ -139,4 +148,11 @@ public class NodeControlManager {
         }
     }
 
+    public ApiMessageAndVersion unregisterNodeRecord(int nodeId) {
+        if (hasOpeningStreams(nodeId)) {
+            throw new UnregisterNodeWithOpenStreamsException(String.format("Node %d has opening streams", nodeId));
+        }
+        RemoveKVRecord removeKVRecord = new RemoveKVRecord().setKeys(List.of(KEY_PREFIX + nodeId));
+        return new ApiMessageAndVersion(removeKVRecord, (short) 0);
+    }
 }

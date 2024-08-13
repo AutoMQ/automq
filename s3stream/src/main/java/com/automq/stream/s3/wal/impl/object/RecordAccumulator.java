@@ -278,11 +278,11 @@ public class RecordAccumulator implements Closeable {
 
         // Check if there is too much data in the S3 WAL.
         if (nextOffset.get() - flushedOffset.get() > config.maxUnflushedBytes()) {
-            throw new OverCapacityException("Too many unflushed bytes.");
+            throw new OverCapacityException("Too many unflushed bytes.", true);
         }
 
-        if (objectList().size() + config.maxInflightUploadCount() >= 1000) {
-            throw new OverCapacityException("Too many WAL objects.");
+        if (objectMap.size() + config.maxInflightUploadCount() >= 3000) {
+            throw new OverCapacityException("Too many WAL objects.", false);
         }
 
         if (shouldUpload() && lock.writeLock().tryLock()) {
@@ -441,7 +441,7 @@ public class RecordAccumulator implements Closeable {
         while (!recordQueue.isEmpty()) {
             // The retained bytes in the batch must larger than record header size.
             long retainedBytesInBatch = config.maxBytesInBatch() - dataBuffer.readableBytes() - WALObjectHeader.WAL_HEADER_SIZE;
-            if (retainedBytesInBatch <= RecordHeader.RECORD_HEADER_SIZE) {
+            if (config.strictBatchLimit() && retainedBytesInBatch <= RecordHeader.RECORD_HEADER_SIZE) {
                 break;
             }
 
@@ -449,13 +449,13 @@ public class RecordAccumulator implements Closeable {
 
             // Records larger than the batch size will be uploaded immediately.
             assert record != null;
-            if (record.record.readableBytes() >= config.maxBytesInBatch() - WALObjectHeader.WAL_HEADER_SIZE) {
+            if (config.strictBatchLimit() && record.record.readableBytes() >= config.maxBytesInBatch() - WALObjectHeader.WAL_HEADER_SIZE) {
                 dataBuffer.addComponent(true, record.record);
                 recordList.add(record);
                 break;
             }
 
-            if (record.record.readableBytes() > retainedBytesInBatch) {
+            if (config.strictBatchLimit() && record.record.readableBytes() > retainedBytesInBatch) {
                 // The records will be split into multiple objects.
                 ByteBuf slice = record.record.retainedSlice(0, (int) retainedBytesInBatch).asReadOnly();
                 dataBuffer.addComponent(true, slice);

@@ -13,6 +13,7 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.Time;
@@ -31,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -52,6 +55,7 @@ public class RecordAccumulatorTest {
             .withNodeId(100)
             .withEpoch(1000)
             .withBatchInterval(Long.MAX_VALUE)
+            .withStrictBatchLimit(true)
             .build();
         recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
         recordAccumulatorExt.start();
@@ -90,7 +94,7 @@ public class RecordAccumulatorTest {
 
         RecordAccumulator.WALObject object = objectList.get(0);
         assertEquals(WALObjectHeader.WAL_HEADER_SIZE + 50, object.length());
-        ByteBuf result = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
+        ByteBuf result = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
         ByteBuf headerBuf = result.readBytes(WALObjectHeader.WAL_HEADER_SIZE);
         WALObjectHeader objectHeader = WALObjectHeader.unmarshal(headerBuf);
         headerBuf.release();
@@ -126,7 +130,7 @@ public class RecordAccumulatorTest {
 
         object = objectList.get(1);
         assertEquals(WALObjectHeader.WAL_HEADER_SIZE + 50 + 75, object.length());
-        result = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
+        result = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
         result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
         CompositeByteBuf compositeBuffer = Unpooled.compositeBuffer();
         compositeBuffer.addComponents(true, byteBuf2);
@@ -155,14 +159,14 @@ public class RecordAccumulatorTest {
 
         object = objectList.get(2);
         assertEquals(115, object.length());
-        result = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
+        result = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
         result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
         assertEquals(byteBuf4, result.readBytes(50));
 
         object = objectList.get(3);
         compositeBuffer = Unpooled.compositeBuffer();
         compositeBuffer.addComponents(true, result);
-        result = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
+        result = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
         result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
         compositeBuffer.addComponents(true, result);
         assertEquals(compositeBuffer, byteBuf5);
@@ -171,7 +175,60 @@ public class RecordAccumulatorTest {
     }
 
     @Test
-    public void testInMultiThread() throws InterruptedException {
+    public void testStrictBatchLimit() throws OverCapacityException {
+        CompletableFuture<AppendResult.CallbackResult> future = new CompletableFuture<>();
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), new CompletableFuture<>());
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), new CompletableFuture<>());
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), future);
+        assertEquals(150, recordAccumulatorExt.nextOffset());
+
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        assertEquals(2, recordAccumulatorExt.objectList().size());
+
+        // Reset the RecordAccumulator with strict batch limit disabled.
+        recordAccumulatorExt.close();
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withMaxBytesInBatch(115)
+            .withNodeId(100)
+            .withEpoch(1000)
+            .withBatchInterval(Long.MAX_VALUE)
+            .withStrictBatchLimit(false)
+            .build();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
+        recordAccumulatorExt.start();
+
+        assertEquals(2, recordAccumulatorExt.objectList().size());
+
+        future = new CompletableFuture<>();
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), new CompletableFuture<>());
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), new CompletableFuture<>());
+        recordAccumulatorExt.append(50, offset -> generateByteBuf(50), future);
+        assertEquals(300, recordAccumulatorExt.nextOffset());
+
+
+        recordAccumulatorExt.unsafeUpload(true);
+        future.join();
+
+        assertEquals(3, recordAccumulatorExt.objectList().size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testInMultiThread(boolean strictBathLimit) throws InterruptedException {
+        recordAccumulatorExt.close();
+
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withMaxBytesInBatch(115)
+            .withNodeId(100)
+            .withEpoch(1000)
+            .withBatchInterval(Long.MAX_VALUE)
+            .withStrictBatchLimit(strictBathLimit)
+            .build();
+        recordAccumulatorExt = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
+        recordAccumulatorExt.start();
+
         int threadCount = 10;
         CountDownLatch startBarrier = new CountDownLatch(threadCount);
         CountDownLatch stopCountDownLatch = new CountDownLatch(threadCount);
@@ -227,7 +284,7 @@ public class RecordAccumulatorTest {
 
         CompositeByteBuf result = Unpooled.compositeBuffer();
         for (RecordAccumulator.WALObject object : recordAccumulatorExt.objectList()) {
-            ByteBuf buf = objectStorage.rangeRead(ObjectStorage.ReadOptions.DEFAULT, object.path(), 0, object.length()).join();
+            ByteBuf buf = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
             buf.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
             result.addComponent(true, buf);
         }
@@ -328,9 +385,9 @@ public class RecordAccumulatorTest {
 
         List<RecordAccumulator.WALObject> objectList = recordAccumulatorExt.objectList();
         assertEquals(3, objectList.size());
-        assertEquals(byteBuf1, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(0).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
-        assertEquals(byteBuf2, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(1).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
-        assertEquals(byteBuf3, objectStorage.read(ObjectStorage.ReadOptions.DEFAULT, objectList.get(2).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+        assertEquals(byteBuf1, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(0).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+        assertEquals(byteBuf2, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(1).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
+        assertEquals(byteBuf3, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(2).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE));
 
         recordAccumulatorExt.reset().join();
         assertEquals(0, recordAccumulatorExt.objectList().size());
