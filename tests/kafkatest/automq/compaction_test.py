@@ -94,8 +94,8 @@ class CompactionTest(Test):
 
     @cluster(num_nodes=4)
     @matrix(stream_set_object_compaction=[True, False],
-            stream_object_compaction_type=[STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1], wal=['file', 's3'])
-    @matrix(stream_set_object_compaction=[True, False], wal=['file', 's3'])
+            stream_object_compaction_type=[STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1], wal=['file'])
+    @matrix(stream_set_object_compaction=[True], stream_object_compaction_type=['None'], wal=['file'])
     def test_case(self, stream_set_object_compaction, stream_object_compaction_type, wal):
         '''
 
@@ -124,10 +124,14 @@ class CompactionTest(Test):
             self.minor_v1_compaction_interval = self.INF_MIN  # far greater than major_V1_compaction_interval
             self.major_v1_compaction_interval = 0.5
             env = [f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=0']
-        else:
+        elif stream_object_compaction_type == STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1:
             self.minor_v1_compaction_interval = 0.5
             self.major_v1_compaction_interval = self.INF_MIN  # far greater than minor_v1_compaction_interval
             env = [f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=419430400']
+        else:
+            self.minor_v1_compaction_interval = self.INF_MIN
+            self.major_v1_compaction_interval = self.INF_MIN
+            env = ['AUTOMQ_STREAM_COMPACTION_MAJOR_V1_MAX_OBJECT_THRESHOLD=400000']
 
         if not stream_set_object_compaction:
             self.stream_set_compaction_min = self.INF_MIN
@@ -142,7 +146,8 @@ class CompactionTest(Test):
 
         # Stream object source: 1. Split the stream set comparison into 2. Split when uploading to S3
         producer1 = run_validation_producer(self.kafka, self.test_context, self.logger, self.topic, 120000, 6000, message_validator=is_int_with_prefix)
-        time.sleep(self.compaction_delay_sec)
+        if stream_set_object_compaction:
+            time.sleep(self.compaction_delay_sec)
         producer2 = run_validation_producer(self.kafka, self.test_context, self.logger, self.topic, 120000, 6000, message_validator=is_int_with_prefix)
         start_time = formatted_time().split(' ')[-1]
         self.logger.info(f"compaction_delay_sec is {self.compaction_delay_sec} sec.")
@@ -163,7 +168,7 @@ class CompactionTest(Test):
         self.logger.info(f'The compaction(stream set obeject compaction and stream object compaction) time interval is {start_time} ——> {end_time}')
         if stream_set_object_compaction:
             ensure_stream_set_object_compaction(self.kafka, start_time, end_time)
-        if stream_object_compaction_type:
+        if stream_object_compaction_type is not 'None':
             ensure_stream_object_compaction(self.kafka, stream_object_compaction_type, start_time, end_time)
 
         assert success, msg

@@ -298,7 +298,7 @@ def ensure_stream_set_object_compaction(kafka, start_time, end_time):
         match = pattern.search(line)
         if match:
             stream_set_object_compaction_count += 1 if int(match.group().split()[0]) > 0 else 0
-    assert stream_set_object_compaction_count > 0, f'it must go through a stream set object comparison.'
+    assert stream_set_object_compaction_count > 0, f'it must go through a stream set object compaction.'
 
 
 def ensure_stream_object_compaction(kafka, stream_object_compaction_type, start_time, end_time):
@@ -317,7 +317,7 @@ def ensure_stream_object_compaction(kafka, stream_object_compaction_type, start_
     stream_object_compaction_count = 0
     for _ in capture_and_filter_logs(kafka, start_time=start_time, end_time=end_time, entry=entry):
         stream_object_compaction_count += 1
-    assert stream_object_compaction_count > 0, f'it must go through a stream object comparison(type:{stream_object_compaction_type}).'
+    assert stream_object_compaction_count > 0, f'it must go through a stream object compaction(type:{stream_object_compaction_type}).'
 
 
 def run_validation_producer(kafka, test_context, logger, topic=TOPIC, num_records=RECORD_NUM, throughput=-1, message_validator=None):
