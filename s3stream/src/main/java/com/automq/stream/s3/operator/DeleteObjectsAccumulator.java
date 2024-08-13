@@ -117,11 +117,11 @@ public class DeleteObjectsAccumulator {
     }
 
     private boolean submitDeleteObjectsRequest(List<ObjectStorage.ObjectPath> objectPaths, List<CompletableFuture<Void>> subBatchCf) {
-        List<String> objectKeys = objectPaths.stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
-        TimerUtil timerUtil = new TimerUtil();
         if (!concurrentRequestLimiter.tryAcquire()) {
             return false;
         }
+        List<String> objectKeys = objectPaths.stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
+        TimerUtil timerUtil = new TimerUtil();
         deleteObjectsFunction.apply(objectKeys)
             .whenComplete((res, e) -> concurrentRequestLimiter.release())
             .thenAccept(nil -> {
