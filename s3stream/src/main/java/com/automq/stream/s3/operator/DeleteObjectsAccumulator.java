@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.concurrent.CompletableFuture;
@@ -33,8 +34,10 @@ public class DeleteObjectsAccumulator {
     static final Logger LOGGER = LoggerFactory.getLogger(DeleteObjectsAccumulator.class);
     public static final int DEFAULT_DELETE_OBJECTS_MAX_BATCH_SIZE = 1000;
     public static final int DEFAULT_DELETE_OBJECTS_MAX_CONCURRENT_REQUEST_NUMBER = 100;
+    private static final long DELETE_OPERATION_LOG_INTERVAL = 60 * 1000;
     private final Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction;
     private final ConcurrentLinkedDeque<PendingDeleteRequest> deleteRequestQueue = new ConcurrentLinkedDeque<>();
+    private final DeleteOperationSummary deleteOperationSummary = new DeleteOperationSummary();
     private final ReentrantLock queueLock = new ReentrantLock();
 
 
@@ -122,24 +125,20 @@ public class DeleteObjectsAccumulator {
         }
         List<String> objectKeys = objectPaths.stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
         TimerUtil timerUtil = new TimerUtil();
-        deleteObjectsFunction.apply(objectKeys)
-            .whenComplete((res, e) -> concurrentRequestLimiter.release())
+        deleteObjectsFunction.apply(objectKeys).whenComplete((res, e) -> concurrentRequestLimiter.release())
             .thenAccept(nil -> {
-                LOGGER.info("Delete objects finished, count: {}, cost: {}ms", objectKeys.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), true, Collections.emptyList());
                 S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 FutureUtil.complete(subBatchCf.iterator(), null);
                 handleDeleteRequestQueue();
             }).exceptionally(ex -> {
-                if (ex instanceof AbstractObjectStorage.DeleteObjectsException) {
-                    AbstractObjectStorage.DeleteObjectsException deleteObjectsException = (AbstractObjectStorage.DeleteObjectsException) ex;
-                    LOGGER.warn("Delete objects failed, count: {}, cost: {}, failedKeys: {}",
-                        deleteObjectsException.getFailedKeys().size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS),
-                        deleteObjectsException.getFailedKeys());
+                Throwable cause = ex.getCause();
+                if (cause instanceof AbstractObjectStorage.DeleteObjectsException) {
+                    AbstractObjectStorage.DeleteObjectsException deleteObjectsException = (AbstractObjectStorage.DeleteObjectsException) cause;
+                    deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), false, deleteObjectsException.getFailedKeys());
                 } else {
-                    S3OperationStats.getInstance().deleteObjectsStats(false)
-                        .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                    LOGGER.info("Delete objects failed, count: {}, cost: {}, ex: {}",
-                        objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
+                    S3OperationStats.getInstance().deleteObjectsStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), false, Collections.emptyList());
                 }
                 FutureUtil.completeExceptionally(subBatchCf.iterator(), ex);
                 handleDeleteRequestQueue();
@@ -200,4 +199,36 @@ public class DeleteObjectsAccumulator {
         }
     }
 
+    private static class DeleteOperationSummary {
+        int totalCount;
+        int failureCount;
+        long totalCost;
+        long lastLogTime = System.currentTimeMillis();
+
+        public synchronized void recordDeleteOperation(int count, long cost, boolean success, List<String> failedKeys) {
+            totalCount += count;
+            totalCost += cost;
+            if (!success) {
+                failureCount += failedKeys.size();
+            }
+            long currentTime = System.currentTimeMillis();
+            long realDeleteOperationLogInterval = currentTime - lastLogTime;
+            if (realDeleteOperationLogInterval > DELETE_OPERATION_LOG_INTERVAL) {
+                logDeleteOperationSummary(realDeleteOperationLogInterval);
+                clearDeleteOperationSummary(currentTime);
+            }
+        }
+
+        private void logDeleteOperationSummary(long realDeleteOperationLogInterval) {
+            LOGGER.info("Summary of delete operations in the past {}ms: Total count {}, Failure: {}, Total cost: {}ns",
+                realDeleteOperationLogInterval, totalCount, failureCount, totalCost);
+        }
+
+        private void clearDeleteOperationSummary(long currentTime) {
+            totalCount = 0;
+            totalCost = 0;
+            failureCount = 0;
+            lastLogTime = currentTime;
+        }
+    }
 }
