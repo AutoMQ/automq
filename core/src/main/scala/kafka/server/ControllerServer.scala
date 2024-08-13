@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import com.automq.stream.s3.Constants
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
@@ -259,7 +260,7 @@ class ControllerServer(
 
         var namespace = config.elasticStreamNamespace
         namespace =  if (namespace == null || namespace.isEmpty) {
-          "_kafka_" + clusterId
+          Constants.DEFAULT_NAMESPACE + clusterId
         } else {
           namespace
         }

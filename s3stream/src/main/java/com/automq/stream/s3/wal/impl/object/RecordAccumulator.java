@@ -12,6 +12,7 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.Constants;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.common.RecordHeader;
@@ -78,7 +79,7 @@ public class RecordAccumulator implements Closeable {
         this.time = time;
         this.objectStorage = objectStorage;
         this.config = config;
-        this.nodePrefix = DigestUtils.md5Hex(String.valueOf(config.nodeId())).toUpperCase(Locale.ROOT) + "/" + config.clusterId() + "/" + config.nodeId() + "/";
+        this.nodePrefix = DigestUtils.md5Hex(String.valueOf(config.nodeId())).toUpperCase(Locale.ROOT) + "/" + Constants.DEFAULT_NAMESPACE + config.clusterId() + "/" + config.nodeId() + "/";
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
         this.executorService = Threads.newSingleThreadScheduledExecutor("s3-wal-schedule", true, log);
         this.monitorService = Threads.newSingleThreadScheduledExecutor("s3-wal-monitor", true, log);

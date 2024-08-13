@@ -12,6 +12,7 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
+import com.automq.stream.s3.Constants
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.automq.AutoMQConfig
 import kafka.log.UnifiedLog
@@ -122,7 +123,7 @@ object ElasticLogManager {
   def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null) = {
     val namespace = config.elasticStreamNamespace
     NAMESPACE = if (namespace == null || namespace.isEmpty) {
-      "_kafka_" + clusterId
+      Constants.DEFAULT_NAMESPACE + clusterId
     } else {
       namespace
     }

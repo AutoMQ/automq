@@ -11,6 +11,7 @@
 package com.automq.stream.s3;
 
 public class Constants {
+    public static final String DEFAULT_NAMESPACE = "_kafka_";
     public static final int CAPACITY_NOT_SET = -1;
     public static final int NOOP_NODE_ID = -1;
     public static final long NOOP_EPOCH = -1L;
