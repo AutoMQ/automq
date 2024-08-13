@@ -15,10 +15,12 @@ import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("S3Unit")
 public class LogCacheTest {
 
     @Test

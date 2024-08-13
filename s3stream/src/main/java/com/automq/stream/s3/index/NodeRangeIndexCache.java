@@ -12,7 +12,7 @@
 package com.automq.stream.s3.index;
 
 import com.automq.stream.s3.cache.AsyncMeasurable;
-import com.automq.stream.s3.cache.AsyncObjectLRUCache;
+import com.automq.stream.s3.cache.AsyncLRUCache;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -72,6 +72,7 @@ public class NodeRangeIndexCache {
 
     static class StreamRangeIndexCache implements AsyncMeasurable {
         private final CompletableFuture<Map<Long, List<RangeIndex>>> streamRangeIndexMapCf;
+        private CompletableFuture<Integer> sizeCf;
 
         public StreamRangeIndexCache(CompletableFuture<Map<Long, List<RangeIndex>>> streamRangeIndexMapCf) {
             this.streamRangeIndexMapCf = streamRangeIndexMapCf;
@@ -82,9 +83,12 @@ public class NodeRangeIndexCache {
         }
 
         @Override
-        public CompletableFuture<Integer> size() {
-            return this.streamRangeIndexMapCf.thenApply(v -> v.values().stream()
-                .mapToInt(rangeIndices -> Long.BYTES + rangeIndices.size() * RangeIndex.SIZE).sum());
+        public synchronized CompletableFuture<Integer> size() {
+            if (sizeCf == null) {
+                sizeCf = this.streamRangeIndexMapCf.thenApply(v -> v.values().stream()
+                    .mapToInt(rangeIndices -> Long.BYTES + rangeIndices.size() * RangeIndex.SIZE).sum());
+            }
+            return sizeCf;
         }
 
         @Override
@@ -93,7 +97,7 @@ public class NodeRangeIndexCache {
         }
     }
 
-    static class LRUCache extends AsyncObjectLRUCache<Long, StreamRangeIndexCache> {
+    static class LRUCache extends AsyncLRUCache<Long, StreamRangeIndexCache> {
         public LRUCache(int maxSize) {
             super(maxSize);
         }
