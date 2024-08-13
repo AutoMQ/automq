@@ -24,7 +24,7 @@ import java.util.Objects;
 
 public class BrokerUpdater extends AbstractInstanceUpdater {
     private final int brokerId;
-    private final String rack;
+    private String rack;
     private boolean active;
 
     public BrokerUpdater(int brokerId, String rack, boolean active) {
@@ -39,6 +39,10 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
     public String rack() {
         return this.rack;
+    }
+
+    public void setRack(String rack) {
+        this.rack = rack;
     }
 
     public boolean isActive() {
