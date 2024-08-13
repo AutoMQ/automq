@@ -12,6 +12,7 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
+import com.automq.stream.s3.Constants
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.automq.AutoMQConfig
 import kafka.log.UnifiedLog
@@ -120,13 +121,7 @@ object ElasticLogManager {
   private var isEnabled = false
 
   def init(config: KafkaConfig, clusterId: String, broker: BrokerServer = null) = {
-    val namespace = config.elasticStreamNamespace
-    NAMESPACE = if (namespace == null || namespace.isEmpty) {
-      "_kafka_" + clusterId
-    } else {
-      namespace
-    }
-    ObjectUtils.setNamespace(NAMESPACE)
+    ObjectUtils.setNamespace(Constants.DEFAULT_NAMESPACE + clusterId)
 
     val endpoint = config.elasticStreamEndpoint
     if (endpoint == null) {
