@@ -23,6 +23,8 @@ import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.common.RecoverResultImpl;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.RuntimeIOException;
+import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
@@ -116,17 +118,17 @@ public class ObjectWALService implements WriteAheadLog {
     public Iterator<RecoverResult> recover() {
         try {
             return new RecoverIterator(accumulator.objectList(), objectStorage, config.readAheadObjectCount());
-        } catch (Throwable e) {
+        } catch (WALFencedException e) {
             log.error("Recover S3 WAL failed, due to unrecoverable exception.", e);
             return new Iterator<>() {
                 @Override
                 public boolean hasNext() {
-                    throw new RuntimeException(e);
+                    throw new RuntimeIOException(e);
                 }
 
                 @Override
                 public RecoverResult next() {
-                    throw new RuntimeException(e);
+                    throw new RuntimeIOException(e);
                 }
             };
         }
