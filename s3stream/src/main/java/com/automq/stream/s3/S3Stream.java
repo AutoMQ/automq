@@ -180,13 +180,11 @@ public class S3Stream implements Stream {
         }
         long offset = nextOffset.getAndAdd(recordBatch.count());
         StreamRecordBatch streamRecordBatch = new StreamRecordBatch(streamId, epoch, offset, recordBatch.count(), Unpooled.wrappedBuffer(recordBatch.rawPayload()));
-        streamRecordBatch.encoded();
         CompletableFuture<AppendResult> cf = storage.append(context, streamRecordBatch).thenApply(nil -> {
             updateConfirmOffset(offset + recordBatch.count());
             return new DefaultAppendResult(offset);
         });
         return cf.whenComplete((rst, ex) -> {
-            streamRecordBatch.release();
             if (ex == null) {
                 return;
             }

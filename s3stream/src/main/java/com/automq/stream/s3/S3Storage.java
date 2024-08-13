@@ -413,13 +413,15 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> append(AppendContext context, StreamRecordBatch streamRecord) {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        // encoded before append to free heap ByteBuf.
+        streamRecord.encoded();
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, -1L, cf, context);
         handleAppendRequest(writeRequest);
         append0(context, writeRequest, false);
-        cf.whenComplete((nil, ex) -> {
+        return cf.whenComplete((nil, ex) -> {
+            streamRecord.release();
             StorageOperationStats.getInstance().appendStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
         });
-        return cf;
     }
 
     /**
