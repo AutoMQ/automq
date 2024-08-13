@@ -58,10 +58,8 @@ public interface WriteAheadLog {
      * Recover log from the beginning.
      *
      * @return iterator of recover result.
-     *
-     * @throws WALFencedException If the log is fenced, it cannot be recovered and the process should exit.
      */
-    Iterator<RecoverResult> recover() throws WALFencedException;
+    Iterator<RecoverResult> recover();
 
     /**
      * Reset all data in log.

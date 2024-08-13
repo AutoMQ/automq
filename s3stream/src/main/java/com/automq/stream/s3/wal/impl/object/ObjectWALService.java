@@ -114,8 +114,23 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     @Override
-    public Iterator<RecoverResult> recover() throws WALFencedException {
-        return new RecoverIterator(accumulator.objectList(), objectStorage, config.readAheadObjectCount());
+    public Iterator<RecoverResult> recover() {
+        try {
+            return new RecoverIterator(accumulator.objectList(), objectStorage, config.readAheadObjectCount());
+        } catch (Throwable e) {
+            log.error("Recover S3 WAL failed, due to unrecoverable exception.", e);
+            return new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    throw new RuntimeException(e);
+                }
+
+                @Override
+                public RecoverResult next() {
+                    throw new RuntimeException(e);
+                }
+            };
+        }
     }
 
     @Override
