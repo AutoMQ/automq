@@ -15,58 +15,13 @@ import re
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 from kafkatest.automq.automq_e2e_util import (TOPIC, FILE_WAL, S3_WAL, run_perf_producer, formatted_time,
-                                              capture_and_filter_logs)
+                                              capture_and_filter_logs, ensure_stream_object_compaction,
+                                              ensure_stream_set_object_compaction,
+                                              STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1,
+                                              STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, parse_delta_wal_entry
+                                              )
 from kafkatest.services.kafka import KafkaService
 from ducktape.mark import matrix
-
-
-def parse_upload_delta_wal_log_entry(log_entry):
-    """
-    Parses a WAL log entry to extract relevant data.
-
-    Args:
-        log_entry (str): WAL log entry string.
-
-    Returns:
-        tuple: Two dictionaries containing parsed data.
-    """
-    request_pattern = re.compile(
-        r"CommitStreamSetObjectRequest\{objectId=(\d+), orderId=(\d+), objectSize=(\d+), streamRanges=\[(.*?)\], streamObjects=\[(.*?)\], compactedObjectIds=(.*?), attributes=(\d+)\}"
-    )
-    stream_object_pattern = re.compile(
-        r"StreamObject\{objectId=(\d+), objectSize=(\d+), streamId=(\d+), startOffset=(\d+), endOffset=(\d+), attributes=(\d+)\}"
-    )
-    match = request_pattern.search(log_entry)
-    if match:
-        object_id = match.group(1)
-        order_id = match.group(2)
-        object_size = match.group(3)
-        stream_ranges = match.group(4)
-        stream_objects_str = match.group(5)
-        compacted_object_ids = match.group(6)
-        attributes = match.group(7)
-        main_object = {
-            "orderId": order_id,
-            "objectSize": object_size,
-            "streamRanges": stream_ranges,
-            "compactedObjectIds": compacted_object_ids,
-            "attributes": attributes
-        }
-        map1 = {object_id: main_object}
-        map2 = {}
-        stream_objects = stream_object_pattern.findall(stream_objects_str)
-        for stream_object in stream_objects:
-            stream_object_id, stream_object_size, stream_id, start_offset, end_offset, stream_attributes = stream_object
-            map2[stream_object_id] = {
-                "objectSize": stream_object_size,
-                "streamId": stream_id,
-                "startOffset": start_offset,
-                "endOffset": end_offset,
-                "attributes": stream_attributes
-            }
-        return map1, map2
-    else:
-        return {}, {}
 
 
 class LeakTest(Test):
@@ -161,20 +116,9 @@ class LeakTest(Test):
         time.sleep(self.compaction_delay_sec)
         end_time = formatted_time().split(' ')[-1]
         # ensure that the stream set objects comparison is executed
-        entry = 'stream set objects to compact after filter'
-        pattern = re.compile(r"(\d+) stream set objects to compact after filter")
-        stream_set_object_compaction_count = 0
-        for line in capture_and_filter_logs(self.kafka, start_time=start_time, end_time=end_time, entry=entry):
-            match = pattern.search(line)
-            if match:
-                stream_set_object_compaction_count += 1 if int(match.group().split()[0]) > 0 else 0
-        assert stream_set_object_compaction_count > 0, f'before deleting a topic, it must go through a stream set object comparison.'
+        ensure_stream_set_object_compaction(self.kafka, start_time, end_time)
         # ensure that the stream objects comparison is executed
-        entry = f'Compact stream finished, {stream_object_compaction_type}'
-        stream_object_compaction_count = 0
-        for _ in capture_and_filter_logs(self.kafka, start_time=start_time, end_time=end_time, entry=entry):
-            stream_object_compaction_count += 1
-        assert stream_object_compaction_count > 0, f'before deleting a topic, it must go through a stream object comparison(type:{stream_object_compaction_type}).'
+        ensure_stream_object_compaction(self.kafka, stream_object_compaction_type, start_time, end_time)
 
         self.kafka.delete_topic(self.topic)
         time_of_delete_topic = formatted_time()
@@ -184,21 +128,10 @@ class LeakTest(Test):
         time_of_after_wait = formatted_time()
         self.logger.info(f'[AFTER_WAIT][{time_of_after_wait}], after {objects}')
 
-        stream_set_object = {}
-        stream_object = {}
-        entry = 'INFO Upload delta WAL finished'
-        delta_wal_entry_count = 0
-        for line in self.kafka.nodes[0].account.ssh_capture(f'grep \'{entry}\' {self.kafka.STDOUT_STDERR_CAPTURE}'):
-            delta_wal_entry_count += 1
-            stream_set_object_, stream_object_ = parse_upload_delta_wal_log_entry(line)
-            stream_set_object.update(stream_set_object_)
-            stream_object.update(stream_object_)
-
+        stream_set_object, stream_object, delta_wal_entry_count = parse_delta_wal_entry(self.kafka, self.logger)
         assert delta_wal_entry_count > 0, (
             f"delta_wal_entry_count ({delta_wal_entry_count}) must be greater than 0."
         )
-        self.logger.info(f'{stream_set_object}')
-        self.logger.info(f'{stream_object}')
 
         stream_set_object_count = 0
         stream_object_count = 0
@@ -224,7 +157,7 @@ class LeakTest(Test):
         """
         self.minor_v1_compaction_interval = 1000  # far greater than major_V1_compaction_interval
         self.major_v1_compaction_interval = 0.5
-        self.run0(stream_object_compaction_type='MAJOR_V1', wal=wal, env=[f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=0'])
+        self.run0(stream_object_compaction_type=STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1, wal=wal, env=[f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=0'])
 
     @cluster(num_nodes=2)
     @matrix(wal=['file', 's3'])
@@ -234,6 +167,6 @@ class LeakTest(Test):
         """
         self.minor_v1_compaction_interval = 0.5
         self.major_v1_compaction_interval = 1000  # far greater than minor_v1_compaction_interval
-        self.run0(stream_object_compaction_type='MINOR_V1', wal=wal, env=[
+        self.run0(stream_object_compaction_type=STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, wal=wal, env=[
             f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=419430400' # ensure that multiple larger stream objects can be merged
         ])
