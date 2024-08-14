@@ -17,12 +17,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.slf4j.Logger;
 
 public class EventLoop extends Thread implements Executor {
     private final Logger logger;
     private BlockingQueue<Runnable> tasks;
-    private volatile boolean shutdown = false;
+    private final AtomicBoolean shutdown = new AtomicBoolean();
     private CompletableFuture<Void> shutdownCf = new CompletableFuture<>();
 
     static final Runnable WAKEUP_TASK = new Runnable() {
@@ -48,7 +50,7 @@ public class EventLoop extends Thread implements Executor {
                     task = null;
                 }
                 if (task == null) {
-                    if (shutdown) {
+                    if (shutdown.get()) {
                         shutdownCf.complete(null);
                         break;
                     } else {
@@ -88,15 +90,16 @@ public class EventLoop extends Thread implements Executor {
     }
 
     public CompletableFuture<Void> shutdownGracefully() {
-        shutdown = true;
-        if (!shutdownCf.isDone()) {
-            tasks.add(WAKEUP_TASK);
+        if (shutdown.compareAndSet(false, true)) {
+            if (!shutdownCf.isDone()) {
+                tasks.add(WAKEUP_TASK);
+            }
         }
         return shutdownCf;
     }
 
     private void check() {
-        if (shutdown) {
+        if (shutdown.get()) {
             throw new IllegalStateException("EventLoop is shutdown");
         }
     }
