@@ -60,6 +60,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private static final int MIN_CONCURRENCY = 50;
     private static final int MAX_CONCURRENCY = 1000;
     private static final long DEFAULT_UPLOAD_PART_COPY_TIMEOUT = TimeUnit.MINUTES.toMillis(2);
+    private final String threadPrefix;
     private final float maxMergeReadSparsityRate;
     private final int currentIndex;
     private final Semaphore inflightReadLimiter;
@@ -67,18 +68,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
     protected final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
     protected final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
-    protected final ExecutorService writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-        "s3-write-limiter-cb-executor", true, LOGGER);
-    private final ExecutorService readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-        "s3-read-cb-executor", true, LOGGER);
-    private final ExecutorService writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
-        "s3-write-cb-executor", true, LOGGER);
-    private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
-        ThreadUtils.createThreadFactory("s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
-    final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("objectStorage", true), LOGGER);
-    private final HashedWheelTimer fastRetryTimer = new HashedWheelTimer(
-        ThreadUtils.createThreadFactory("s3-fast-retry-timer", true), 10, TimeUnit.MILLISECONDS, 1000);
+    protected final ExecutorService writeLimiterCallbackExecutor;
+    private final ExecutorService readCallbackExecutor;
+    private final ExecutorService writeCallbackExecutor;
+    private final HashedWheelTimer timeoutDetect;
+    final ScheduledExecutorService scheduler;
+    private final HashedWheelTimer fastRetryTimer;
 
     private final DeleteObjectsAccumulator deleteObjectsAccumulator;
     final boolean checkS3ApiMode;
@@ -93,7 +88,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         int currentIndex,
         boolean readWriteIsolate,
         boolean checkS3ApiMode,
-        boolean manualMergeRead) {
+        boolean manualMergeRead,
+        String threadPrefix) {
+        this.threadPrefix = threadPrefix;
         this.bucketURI = bucketURI;
         this.currentIndex = currentIndex;
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
@@ -102,6 +99,21 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter != null ? networkInboundBandwidthLimiter : NetworkBandwidthLimiter.NOOP;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter != null ? networkOutboundBandwidthLimiter : NetworkBandwidthLimiter.NOOP;
         this.checkS3ApiMode = checkS3ApiMode;
+
+        String prefix = threadPrefix + "-" + currentIndex + "-";
+        writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+            prefix + "s3-write-limiter-cb-executor", true, LOGGER);
+        readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+            prefix + "s3-read-cb-executor", true, LOGGER);
+        writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+            prefix + "s3-write-cb-executor", true, LOGGER);
+        timeoutDetect = new HashedWheelTimer(
+            ThreadUtils.createThreadFactory(prefix + "s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
+        scheduler = Threads.newSingleThreadScheduledExecutor(
+            ThreadUtils.createThreadFactory(prefix + "s3-scheduler", true), LOGGER);
+        fastRetryTimer = new HashedWheelTimer(
+            ThreadUtils.createThreadFactory(prefix + "s3-fast-retry-timer", true), 10, TimeUnit.MILLISECONDS, 1000);
+
         if (!manualMergeRead) {
             scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
         }
@@ -123,9 +135,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         NetworkBandwidthLimiter networkInboundBandwidthLimiter,
         NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate,
-        boolean checkS3ApiMode) {
+        boolean checkS3ApiMode,
+        String threadPrefix) {
         this(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, getMaxObjectStorageConcurrency(),
-            INDEX.incrementAndGet(), readWriteIsolate, checkS3ApiMode, false);
+            INDEX.incrementAndGet(), readWriteIsolate, checkS3ApiMode, false, threadPrefix);
     }
 
     @Override
