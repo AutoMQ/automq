@@ -131,12 +131,13 @@ public abstract class BufferSupplier implements AutoCloseable {
 
     public static class NettyBufferSupplier extends BufferSupplier {
         // We currently use a single block size, so optimise for that case
-        private final Map<ByteBuffer, ByteBuf> bufferMap = new IdentityHashMap<>(1);
+        // visible for testing
+        final Map<ByteBuffer, ByteBuf> bufferMap = new IdentityHashMap<>(1);
 
         @Override
         public ByteBuffer get(int capacity) {
             ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.heapBuffer(capacity);
-            ByteBuffer byteBuffer = byteBuf.nioBuffer();
+            ByteBuffer byteBuffer = byteBuf.nioBuffer(0, capacity);
             bufferMap.put(byteBuffer, byteBuf);
             return byteBuffer;
         }
