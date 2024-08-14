@@ -156,7 +156,7 @@ public abstract class BufferSupplier implements AutoCloseable {
         @Override
         public void release(ByteBuffer buffer) {
             buffer.clear();
-            buffers.addLast(buffer);
+            buffers.addFirst(buffer);
         }
 
         @Override

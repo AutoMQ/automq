@@ -62,8 +62,8 @@ class GrowableMultiBufferSupplierTest {
         bufferSupplier.release(buffer1);
         bufferSupplier.release(buffer2);
 
-        ByteBuffer result1 = bufferSupplier.get(5);
-        ByteBuffer result2 = bufferSupplier.get(10);
+        ByteBuffer result2 = bufferSupplier.get(5);
+        ByteBuffer result1 = bufferSupplier.get(10);
         assertSame(buffer1, result1);
         assertSame(buffer2, result2);
         assertEquals(0, result1.position());
