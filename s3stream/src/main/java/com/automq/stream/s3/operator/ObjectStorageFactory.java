@@ -131,6 +131,10 @@ public class ObjectStorageFactory {
             return this;
         }
 
+        public String threadPrefix() {
+            return threadPrefix;
+        }
+
         public ObjectStorage build() {
             if (StringUtils.isEmpty(this.threadPrefix)) {
                 this.threadPrefix = Long.toString(defaultThreadPrefixCounter.getAndIncrement());
