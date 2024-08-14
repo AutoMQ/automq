@@ -121,4 +121,49 @@ public abstract class BufferSupplier implements AutoCloseable {
         }
     }
 
+    // AutoMQ for Kafka inject start
+    /**
+     * Different from {@link GrowableBufferSupplier}, this buffer supplier caches multiple buffers.
+     * So it is suitable for scenarios where multiple buffers are needed. For example:
+     * <pre>
+     * {@code
+     *     BufferSupplier supplier = new GrowableMultiBufferSupplier();
+     *
+     *     ByteBuffer buffer1 = supplier.get(1024);
+     *     ByteBuffer buffer2 = supplier.get(2048);
+     *
+     *     supplier.release(buffer1);
+     *     supplier.release(buffer2);
+     *
+     *     supplier.close();
+     * }
+     * </pre>
+     */
+    public static class GrowableMultiBufferSupplier extends BufferSupplier {
+        private final Deque<ByteBuffer> buffers = new ArrayDeque<>(1);
+
+        @Override
+        public ByteBuffer get(int minCapacity) {
+            if (!buffers.isEmpty()) {
+                ByteBuffer buffer = buffers.pollFirst();
+                if (buffer.capacity() >= minCapacity) {
+                    return buffer;
+                }
+            }
+            return ByteBuffer.allocate(minCapacity);
+        }
+
+        @Override
+        public void release(ByteBuffer buffer) {
+            buffer.clear();
+            buffers.addLast(buffer);
+        }
+
+        @Override
+        public void close() {
+            buffers.clear();
+        }
+    }
+    // AutoMQ for Kafka inject end
+
 }
