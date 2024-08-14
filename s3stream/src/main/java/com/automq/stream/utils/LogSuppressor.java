@@ -26,6 +26,22 @@ public class LogSuppressor {
         this.intervalMills = intervalMills;
     }
 
+    public void error(String message, Object... args) {
+        long now = System.currentTimeMillis();
+        for (; ; ) {
+            long last = lastLogTime.get();
+            if (now - last > intervalMills) {
+                if (lastLogTime.compareAndSet(last, now)) {
+                    logger.error("[SUPPRESSED_TIME=" + suppressedCount.getAndSet(0) + "] " + message, args);
+                    break;
+                }
+            } else {
+                suppressedCount.incrementAndGet();
+                break;
+            }
+        }
+    }
+
     public void warn(String message, Object... args) {
         long now = System.currentTimeMillis();
         for (; ; ) {
