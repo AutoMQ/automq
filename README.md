@@ -10,7 +10,11 @@
   📑&nbsp <a
     href="https://docs.automq.com/docs/automq-opensource/HSiEwHVfdiO7rWk34vKcVvcvn2Z?utm_source=github"
     target="_blank"
-  ><b>Documentation</b></a>
+  ><b>Documentation</b></a>&nbsp&nbsp&nbsp
+  📃&nbsp <a
+    href="https://www.automq.com/blog/introducing-automq-cloud-native-replacement-of-apache-kafka?utm_source=github"
+    target="_blank"
+  ><b>AutoMQ Introduction</b></a>
 
 
 </p>
