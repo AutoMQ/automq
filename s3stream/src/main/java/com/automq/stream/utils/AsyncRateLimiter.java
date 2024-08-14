@@ -36,6 +36,9 @@ public class AsyncRateLimiter {
         tickTask = SCHEDULER.scheduleAtFixedRate(this::tick, 1, 1, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Async acquire permit. The returned future will be orderly completed when the permit is acquired.
+     */
     public synchronized CompletableFuture<Void> acquire(int size) {
         if (acquireQueue.isEmpty() && rateLimiter.tryAcquire(size)) {
             return CompletableFuture.completedFuture(null);

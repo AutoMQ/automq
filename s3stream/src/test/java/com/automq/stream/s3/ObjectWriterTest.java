@@ -21,6 +21,7 @@ import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -101,6 +102,28 @@ public class ObjectWriterTest {
             assertFalse(it.hasNext());
             r.release();
         }
+    }
+
+    @Test
+    public void testWrite_check() {
+        S3ObjectMetadata metadata = new S3ObjectMetadata(1, 0, S3ObjectType.STREAM_SET);
+
+        ObjectStorage objectStorage = new MemoryObjectStorage();
+        ObjectWriter objectWriter = ObjectWriter.writer(1, objectStorage, 1024, 1024);
+        objectWriter.write(233, List.of(
+            newRecord(233, 10, 5, 512),
+            newRecord(233, 15, 5, 512)
+        ));
+
+        // write smaller stream
+        Assertions.assertThrowsExactly(IllegalArgumentException.class, () -> objectWriter.write(231, List.of(newRecord(231, 10, 5, 512))));
+
+        objectWriter.write(233, List.of(newRecord(233, 20, 5, 512)));
+
+        // write smaller offset
+        Assertions.assertThrowsExactly(IllegalArgumentException.class, () -> objectWriter.write(233, List.of(newRecord(233, 10, 5, 512))));
+
+        objectWriter.write(234, List.of(newRecord(234, 0, 5, 512)));
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
