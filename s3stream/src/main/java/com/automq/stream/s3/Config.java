@@ -43,7 +43,6 @@ public class Config {
     private int maxStreamNumPerStreamSetObject = 100000;
     private int maxStreamObjectNumPerCommit = 10000;
     private boolean mockEnable = false;
-    private boolean objectLogEnable = false;
     // 100MB/s
     private long networkBaselineBandwidth = 100 * 1024 * 1024;
     private int refillPeriodMs = 10;
@@ -147,10 +146,6 @@ public class Config {
 
     public boolean mockEnable() {
         return mockEnable;
-    }
-
-    public boolean objectLogEnable() {
-        return objectLogEnable;
     }
 
     public long networkBaselineBandwidth() {
@@ -278,11 +273,6 @@ public class Config {
 
     public Config mockEnable(boolean s3MockEnable) {
         this.mockEnable = s3MockEnable;
-        return this;
-    }
-
-    public Config objectLogEnable(boolean s3ObjectLogEnable) {
-        this.objectLogEnable = s3ObjectLogEnable;
         return this;
     }
 

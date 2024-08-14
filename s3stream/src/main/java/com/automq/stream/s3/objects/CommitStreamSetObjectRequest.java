@@ -136,14 +136,23 @@ public class CommitStreamSetObjectRequest {
 
     @Override
     public String toString() {
-        return "CommitStreamSetObjectRequest{" +
-            "objectId=" + objectId +
-            ", orderId=" + orderId +
-            ", objectSize=" + objectSize +
-            ", streamRanges=" + streamRanges +
-            ", streamObjects=" + streamObjects +
-            ", compactedObjectIds=" + compactedObjectIds +
-            ", attributes=" + attributes +
-            '}';
+        StringBuilder sb = new StringBuilder();
+        sb.append("[CommitStreamSetObjectRequest]:");
+        sb.append("streamSetObjectId=").append(objectId).append(", attr=").append(attributes).append(", compactedObjects=").append(compactedObjectIds);
+        sb.append(", \n\tstreamRanges=");
+        getStreamRanges().forEach(range -> {
+            sb.append("(si=").append(range.getStreamId()).append(", so=").append(range.getStartOffset()).append(", eo=")
+                .append(range.getEndOffset()).append("), ");
+        });
+        sb.append(", \n\tstreamObjects=");
+        getStreamObjects().forEach(obj ->
+            sb.append("(si=").append(obj.getStreamId())
+                .append(", so=").append(obj.getStartOffset())
+                .append(", eo=").append(obj.getEndOffset())
+                .append(", oi=").append(obj.getObjectId())
+                .append(", size=").append(obj.getObjectSize())
+                .append(", attr=").append(obj.getAttributes())
+                .append("), "));
+        return sb.toString();
     }
 }

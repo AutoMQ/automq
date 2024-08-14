@@ -70,13 +70,13 @@ public class StreamObject {
 
     @Override
     public String toString() {
-        return "StreamObject{" +
-            "objectId=" + objectId +
-            ", objectSize=" + objectSize +
-            ", streamId=" + streamId +
-            ", startOffset=" + startOffset +
-            ", endOffset=" + endOffset +
-            ", attributes=" + attributes +
+        return "so{" +
+            "oi=" + objectId +
+            ", size=" + objectSize +
+            ", si=" + streamId +
+            ", so=" + startOffset +
+            ", eo=" + endOffset +
+            ", attr=" + attributes +
             '}';
     }
 }
