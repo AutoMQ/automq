@@ -105,12 +105,14 @@ public class DefaultS3Client implements Client {
         networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
-            .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true).build();
+            .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true)
+            .threadPrefix("dataflow").build();
         if (!objectStorage.readinessCheck()) {
             throw new IllegalArgumentException(String.format("%s is not ready", config.dataBuckets()));
         }
         ObjectStorage compactionobjectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
-            .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).build();
+            .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter)
+            .threadPrefix("compaction").build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
             config.controllerRequestRetryBaseDelayMs());
         localIndexCache = new LocalStreamRangeIndexCache();
@@ -177,6 +179,7 @@ public class DefaultS3Client implements Client {
             case "s3":
                 ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(config.walConfig()))
                     .tagging(config.objectTagging())
+                    .threadPrefix("s3-wal")
                     .build();
 
                 ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)

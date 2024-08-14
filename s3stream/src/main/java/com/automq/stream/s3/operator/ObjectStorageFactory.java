@@ -12,8 +12,11 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import org.apache.commons.lang3.StringUtils;
+
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 public class ObjectStorageFactory {
@@ -30,6 +33,7 @@ public class ObjectStorageFactory {
                     .outboundLimiter(builder.outboundLimiter)
                     .readWriteIsolate(builder.readWriteIsolate)
                     .checkS3ApiModel(builder.checkS3ApiModel)
+                    .threadPrefix(builder.threadPrefix)
                     .build())
             .registerProtocolHandler("mem", builder -> new MemoryObjectStorage(builder.bucketURI.bucketId()));
     }
@@ -59,12 +63,14 @@ public class ObjectStorageFactory {
     }
 
     public class Builder {
+        private final AtomicLong DEFAULT_THREAD_PREFIX_COUNTER = new AtomicLong();
         private BucketURI bucketURI;
         private Map<String, String> tagging;
         private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
         private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
         private boolean readWriteIsolate;
         private boolean checkS3ApiModel = false;
+        private String threadPrefix = "";
 
         Builder bucket(BucketURI bucketURI) {
             this.bucketURI = bucketURI;
@@ -120,7 +126,15 @@ public class ObjectStorageFactory {
             return checkS3ApiModel;
         }
 
+        public Builder threadPrefix(String prefix) {
+            this.threadPrefix = prefix;
+            return this;
+        }
+
         public ObjectStorage build() {
+            if (StringUtils.isEmpty(this.threadPrefix)) {
+                this.threadPrefix = Long.toString(DEFAULT_THREAD_PREFIX_COUNTER.getAndIncrement());
+            }
             return protocolHandlers.get(bucketURI.protocol()).apply(this);
         }
     }
