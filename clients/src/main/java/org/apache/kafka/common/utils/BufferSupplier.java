@@ -17,13 +17,10 @@
 
 package org.apache.kafka.common.utils;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
@@ -123,37 +120,5 @@ public abstract class BufferSupplier implements AutoCloseable {
             cachedBuffer = null;
         }
     }
-
-    // AutoMQ for Kafka inject start
-    public static class NettyBufferSupplier extends BufferSupplier {
-        // We currently use a single block size, so optimise for that case
-        // visible for testing
-        final Map<ByteBuffer, ByteBuf> bufferMap = new IdentityHashMap<>(1);
-
-        @Override
-        public ByteBuffer get(int capacity) {
-            ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.heapBuffer(capacity);
-            ByteBuffer byteBuffer = byteBuf.nioBuffer(0, capacity);
-            bufferMap.put(byteBuffer, byteBuf);
-            return byteBuffer;
-        }
-
-        @Override
-        public void release(ByteBuffer buffer) {
-            ByteBuf byteBuf = bufferMap.remove(buffer);
-            if (byteBuf != null) {
-                byteBuf.release();
-            }
-        }
-
-        @Override
-        public void close() {
-            for (ByteBuf byteBuf : bufferMap.values()) {
-                byteBuf.release();
-            }
-            bufferMap.clear();
-        }
-    }
-    // AutoMQ for Kafka inject end
 
 }
