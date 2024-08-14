@@ -149,6 +149,7 @@ public class S3Stream implements Stream {
         long startTimeNanos = System.nanoTime();
         readLock.lock();
         try {
+            CompletableFuture<AppendResult> result = new CompletableFuture<>();
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
                     networkInboundLimiter.consume(ThrottleStrategy.BYPASS, recordBatch.rawPayload().remaining());
@@ -166,8 +167,14 @@ public class S3Stream implements Stream {
                 StreamOperationStats.getInstance().appendStreamLatency.record(TimerUtil.durationElapsedAs(startTimeNanos, TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
                 pendingAppendTimestamps.pop();
+
+                if (ex != null) {
+                    result.completeExceptionally(ex);
+                } else {
+                    result.complete(nil);
+                }
             });
-            return cf;
+            return result;
         } finally {
             readLock.unlock();
         }
