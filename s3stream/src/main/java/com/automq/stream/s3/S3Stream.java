@@ -163,7 +163,7 @@ public class S3Stream implements Stream {
             }, LOGGER, "append");
             pendingAppends.add(cf);
             pendingAppendTimestamps.push(startTimeNanos);
-            cf.whenComplete((nil, ex) -> {
+            cf.whenComplete((res, ex) -> {
                 StreamOperationStats.getInstance().appendStreamLatency.record(TimerUtil.durationElapsedAs(startTimeNanos, TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
                 pendingAppendTimestamps.pop();
@@ -171,7 +171,7 @@ public class S3Stream implements Stream {
                 if (ex != null) {
                     result.completeExceptionally(ex);
                 } else {
-                    result.complete(nil);
+                    result.complete(res);
                 }
             });
             return result;
