@@ -386,7 +386,10 @@ final public class KafkaRaftClient<T> implements RaftClient<T> {
             Optional.of(VoterSet.fromInetSocketAddresses(listenerName, voterAddresses)),
             log,
             serde,
-            BufferSupplier.create(),
+            // AutoMQ for Kafka inject start
+            // BufferSupplier.create(),
+            new BufferSupplier.NettyBufferSupplier(),
+            // AutoMQ for Kafka inject end
             MAX_BATCH_SIZE_BYTES,
             logContext
         );

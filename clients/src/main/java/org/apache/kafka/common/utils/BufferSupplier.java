@@ -48,11 +48,6 @@ public abstract class BufferSupplier implements AutoCloseable {
     };
 
     public static BufferSupplier create() {
-        // AutoMQ for Kafka inject start
-        if (1 == 1) {
-            return new NettyBufferSupplier();
-        }
-        // AutoMQ for Kafka inject end
         return new DefaultSupplier();
     }
 
