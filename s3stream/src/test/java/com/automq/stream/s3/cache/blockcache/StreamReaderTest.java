@@ -22,6 +22,7 @@ import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.threads.EventLoop;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -220,6 +222,11 @@ public class StreamReaderTest {
         }).when(objectManager).isObjectExist(anyLong());
         eventLoops[0].submit(() -> readCf.set(streamReader.read(14L, 15L, Integer.MAX_VALUE))).get();
 
+        // verify blocks free listener
+        List<StreamReader.Block> blocks = new ArrayList<>(streamReader.blocksMap.values());
+        blocks.forEach(b -> Assertions.assertFalse(b.data.freeListeners.isEmpty()));
+        eventLoops[0].submit(() -> streamReader.close());
+        blocks.forEach(b -> Assertions.assertTrue(b.data.freeListeners.isEmpty()));
     }
 
     public void waitForStreamReaderUpdate() throws ExecutionException, InterruptedException {

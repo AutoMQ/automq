@@ -126,9 +126,13 @@ public class StreamReaders implements S3BlockCache {
                     .whenComplete((rst, ex) -> {
                         if (ex != null) {
                             LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache fail", streamId, startOffset, endOffset, maxBytes, ex);
+                            finalStreamReader.close();
                         } else {
                             // when two stream read progress is the same, only one stream reader can be retained
-                            streamReaders.put(new StreamReaderKey(streamId, finalStreamReader.nextReadOffset()), finalStreamReader);
+                            StreamReader oldStreamReader = streamReaders.put(new StreamReaderKey(streamId, finalStreamReader.nextReadOffset()), finalStreamReader);
+                            if (oldStreamReader != null) {
+                                oldStreamReader.close();
+                            }
                         }
                     });
                 FutureUtil.propagate(streamReadCf, cf);

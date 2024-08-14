@@ -23,21 +23,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @EventLoopSafe public class DataBlock extends AbstractReferenceCounted {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataBlock.class);
     private static final int UNREAD_INIT = -1;
     private final long objectId;
     private final DataBlockIndex dataBlockIndex;
     private final CompletableFuture<DataBlock> loadCf = new CompletableFuture<>();
-    private final CompletableFuture<DataBlock> freeCf = new CompletableFuture<>();
     private final AtomicInteger unreadCnt = new AtomicInteger(UNREAD_INIT);
     private ObjectReader.DataBlockGroup dataBlockGroup;
     private long lastAccessTimestamp;
 
     private final ReadStatusChangeListener listener;
+
+    private final CompletableFuture<DataBlock> freeCf = new CompletableFuture<>();
+    final List<FreeListener> freeListeners = new ArrayList<>();
+
     private final Time time;
 
-    public DataBlock(long objectId, DataBlockIndex dataBlockIndex, ReadStatusChangeListener observeListener, Time time) {
+    public DataBlock(long objectId, DataBlockIndex dataBlockIndex, ReadStatusChangeListener observeListener,
+        Time time) {
         this.objectId = objectId;
         this.dataBlockIndex = dataBlockIndex;
         this.listener = observeListener;
@@ -58,7 +65,7 @@ import java.util.concurrent.atomic.AtomicInteger;
      */
     public void completeExceptionally(Throwable ex) {
         loadCf.completeExceptionally(ex);
-        freeCf.complete(null);
+        free0();
     }
 
     public CompletableFuture<DataBlock> dataFuture() {
@@ -67,11 +74,34 @@ import java.util.concurrent.atomic.AtomicInteger;
 
     public void free() {
         release();
+        free0();
+    }
+
+    private void free0() {
         freeCf.complete(this);
+        for (FreeListener listener : freeListeners) {
+            try {
+                listener.onFree(this);
+            } catch (Throwable e) {
+                LOGGER.error("invoke onFree fail", e);
+            }
+        }
+        freeListeners.clear();
     }
 
     public CompletableFuture<DataBlock> freeFuture() {
         return freeCf;
+    }
+
+    public FreeListenerHandle registerFreeListener(FreeListener listener) {
+        if (freeCf.isDone()) {
+            listener.onFree(this);
+            return () -> {
+            };
+        } else {
+            freeListeners.add(listener);
+            return () -> freeListeners.remove(listener);
+        }
     }
 
     public long objectId() {
@@ -158,4 +188,13 @@ import java.util.concurrent.atomic.AtomicInteger;
     public String toString() {
         return "DataBlock{" + "objectId=" + objectId + ", index=" + dataBlockIndex + '}';
     }
+
+    public interface FreeListener {
+        void onFree(DataBlock dataBlock);
+    }
+
+    public interface FreeListenerHandle {
+        void close();
+    }
+
 }
