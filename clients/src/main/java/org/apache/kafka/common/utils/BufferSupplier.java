@@ -124,6 +124,7 @@ public abstract class BufferSupplier implements AutoCloseable {
         }
     }
 
+    // AutoMQ for Kafka inject start
     public static class NettyBufferSupplier extends BufferSupplier {
         // We currently use a single block size, so optimise for that case
         // visible for testing
@@ -153,5 +154,6 @@ public abstract class BufferSupplier implements AutoCloseable {
             bufferMap.clear();
         }
     }
+    // AutoMQ for Kafka inject end
 
 }
