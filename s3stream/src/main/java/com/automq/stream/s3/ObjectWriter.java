@@ -38,7 +38,8 @@ public interface ObjectWriter {
     // TODO: first n bit is the compressed flag
     byte DATA_BLOCK_DEFAULT_FLAG = 0x02;
 
-    static ObjectWriter writer(long objectId, ObjectStorage objectStorage, int blockSizeThreshold, int partSizeThreshold) {
+    static ObjectWriter writer(long objectId, ObjectStorage objectStorage, int blockSizeThreshold,
+        int partSizeThreshold) {
         return new DefaultObjectWriter(objectId, objectStorage, blockSizeThreshold, partSizeThreshold);
     }
 
@@ -79,11 +80,14 @@ public interface ObjectWriter {
         private IndexBlock indexBlock;
         private long size;
 
+        private long lastStreamId = Constants.NOOP_STREAM_ID;
+        private long lastEndOffset = Constants.NOOP_OFFSET;
+
         /**
          * Create a new object writer.
          *
          * @param objectId           object id
-         * @param objectStorage         S3 operator
+         * @param objectStorage      S3 operator
          * @param blockSizeThreshold the max size of a block
          * @param partSizeThreshold  the max size of a part. If it is smaller than {@link Writer#MIN_PART_SIZE}, it will be set to {@link Writer#MIN_PART_SIZE}.
          */
@@ -98,6 +102,7 @@ public interface ObjectWriter {
         }
 
         public synchronized void write(long streamId, List<StreamRecordBatch> records) {
+            check(streamId, records);
             List<List<StreamRecordBatch>> blocks = groupByBlock(records);
             for (List<StreamRecordBatch> blockRecords : blocks) {
                 DataBlock block = new DataBlock(streamId, blockRecords);
@@ -106,6 +111,32 @@ public interface ObjectWriter {
             }
             if (waitingUploadBlocksSize >= partSizeThreshold) {
                 tryUploadPart();
+            }
+        }
+
+        private void check(long streamId, List<StreamRecordBatch> records) {
+            if (records.isEmpty()) {
+                return;
+            }
+            long recordsEndOffset = records.get(records.size() - 1).getLastOffset();
+            if (lastStreamId == Constants.NOOP_STREAM_ID) {
+                lastStreamId = streamId;
+                lastEndOffset = recordsEndOffset;
+                return;
+            }
+            if (lastStreamId > streamId) {
+                throw new IllegalArgumentException(String.format("The incoming streamId=%s is less than last streamId=%s", streamId, lastStreamId));
+            } else if (lastStreamId == streamId) {
+                long recordsStartOffset = records.get(0).getBaseOffset();
+                if (recordsStartOffset < lastEndOffset) {
+                    throw new IllegalArgumentException(String.format("The incoming streamId=%s startOffset=%s is less than lastEndOffset=%s",
+                        streamId, recordsStartOffset, lastEndOffset));
+                } else {
+                    lastEndOffset = recordsEndOffset;
+                }
+            } else {
+                lastStreamId = streamId;
+                lastEndOffset = recordsEndOffset;
             }
         }
 

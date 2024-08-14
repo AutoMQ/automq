@@ -111,10 +111,6 @@ public class DeltaWALUploadTask {
     }
 
     private CompletableFuture<Void> acquireLimiter(int size) {
-        if (this.burst) {
-            return CompletableFuture.completedFuture(null);
-        }
-
         return limiter.acquire(size);
     }
 
