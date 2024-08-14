@@ -97,8 +97,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
-        boolean readWriteIsolate, boolean checkMode) {
-        super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode);
+        boolean readWriteIsolate, boolean checkMode, String threadPrefix) {
+        super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode, threadPrefix);
         this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
         List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
@@ -109,7 +109,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     // used for test only
     public AwsObjectStorage(S3AsyncClient s3Client, String bucket) {
-        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false);
+        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, "test");
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
@@ -456,6 +456,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
         private boolean readWriteIsolate;
         private boolean checkS3ApiModel = false;
+        private String threadPrefix = "";
 
         public Builder bucket(BucketURI bucketURI) {
             this.bucketURI = bucketURI;
@@ -487,8 +488,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return this;
         }
 
+        public Builder threadPrefix(String threadPrefix) {
+            this.threadPrefix = threadPrefix;
+            return this;
+        }
+
         public AwsObjectStorage build() {
-            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel);
+            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel, threadPrefix);
         }
     }
 }

@@ -24,7 +24,7 @@ class KafkaS3LogConfig(
   private val _objectStorage = if (config.automq.opsBuckets().isEmpty) {
     null
   } else {
-    ObjectStorageFactory.instance().builder(config.automq.opsBuckets().get(0)).build()
+    ObjectStorageFactory.instance().builder(config.automq.opsBuckets().get(0)).threadPrefix("s3-log").build()
   }
 
   override def isEnabled: Boolean = config.s3OpsTelemetryEnabled
