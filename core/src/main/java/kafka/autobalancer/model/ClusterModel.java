@@ -42,6 +42,7 @@ public class ClusterModel {
     protected final Map<Integer, BrokerUpdater> brokerMap = new HashMap<>();
     protected final Map<Integer, Map<TopicPartition, TopicPartitionReplicaUpdater>> brokerReplicaMap = new HashMap<>();
     protected final Map<Uuid, String> idToTopicNameMap = new HashMap<>();
+    // <topicName, <partitionId, brokerId>>
     protected final Map<String, Map<Integer, Integer>> topicPartitionReplicaMap = new HashMap<>();
 
     public ClusterModel() {

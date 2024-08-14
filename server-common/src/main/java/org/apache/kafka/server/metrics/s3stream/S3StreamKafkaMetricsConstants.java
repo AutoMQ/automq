@@ -22,8 +22,11 @@ public class S3StreamKafkaMetricsConstants {
     public static final String FETCH_LIMITER_PERMIT_NUM = "fetch_limiter_permit_num";
     public static final String FETCH_PENDING_TASK_NUM = "fetch_pending_task_num";
     public static final String SLOW_BROKER_METRIC_NAME = "slow_broker_count";
+    public static final String TOPIC_PARTITION_COUNT_METRIC_NAME = "topic_partition_count";
 
     public static final AttributeKey<String> LABEL_NODE_ID = AttributeKey.stringKey("node_id");
+    public static final AttributeKey<String> LABEL_TOPIC_NAME = AttributeKey.stringKey("topic");
+    public static final AttributeKey<String> LABEL_RACK_ID = AttributeKey.stringKey("rack");
 
     public static final AttributeKey<String> LABEL_OBJECT_STATE = AttributeKey.stringKey("state");
     public static final String S3_OBJECT_PREPARED_STATE = "prepared";
