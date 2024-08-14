@@ -58,6 +58,55 @@ public class AsyncLRUCacheTest {
     }
 
     @Test
+    public void testPut_repeat() throws Exception {
+        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>(10);
+        MockValue v1 = spy(new MockValue());
+        cache.put("v1", v1);
+        v1.cf.complete(10);
+
+        MockValue v1b = spy(new MockValue());
+        cache.put("v1", v1b);
+        v1b.cf.complete(12);
+
+        verify(v1, times(1)).close();
+        verify(v1b, times(0)).close();
+        assertEquals(12, cache.totalSize.get());
+    }
+
+    @Test
+    public void testRemove() throws Exception {
+        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>(10);
+        MockValue v1 = spy(new MockValue());
+        cache.put("v1", v1);
+        v1.cf.complete(10);
+
+
+        cache.remove("v1");
+        verify(v1, times(1)).close();
+        assertEquals(0, cache.totalSize.get());
+        assertEquals(0, cache.removedSet.size());
+
+        MockValue v2 = spy(new MockValue());
+        cache.put("v2", v2);
+        v2.cf.complete(5);
+        assertEquals(5, cache.totalSize.get());
+        assertEquals(1, cache.completedSet.size());
+
+        MockValue v3 = spy(new MockValue());
+        cache.put("v3", v3);
+        cache.remove("v3");
+        assertEquals(5, cache.totalSize.get());
+        assertEquals(1, cache.removedSet.size());
+        verify(v3, times(0)).close();
+        v3.cf.complete(5);
+        assertEquals(5, cache.totalSize.get());
+        assertEquals(0, cache.removedSet.size());
+        assertEquals(1, cache.completedSet.size());
+        verify(v3, times(1)).close();
+    }
+
+
+    @Test
     public void test_asyncFail() {
         AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>(10);
         MockValue v1 = new MockValue();
