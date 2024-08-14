@@ -21,7 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class NodeRangeIndexCache {
-    private static final Integer MAX_CACHE_SIZE = 100 * 1024 * 1024;
+    private static final int MAX_CACHE_SIZE = 100 * 1024 * 1024;
+    public static final int ZGC_OBJECT_HEADER_SIZE_BYTES = 16;
     private static final Logger LOGGER = LoggerFactory.getLogger(NodeRangeIndexCache.class);
     private volatile static NodeRangeIndexCache instance = null;
     private final LRUCache nodeRangeIndexMap = new LRUCache(MAX_CACHE_SIZE);
@@ -86,7 +87,7 @@ public class NodeRangeIndexCache {
         public synchronized CompletableFuture<Integer> size() {
             if (sizeCf == null) {
                 sizeCf = this.streamRangeIndexMapCf.thenApply(v -> v.values().stream()
-                    .mapToInt(rangeIndices -> Long.BYTES + rangeIndices.size() * RangeIndex.SIZE).sum());
+                    .mapToInt(rangeIndices -> Long.BYTES + ZGC_OBJECT_HEADER_SIZE_BYTES + rangeIndices.size() * RangeIndex.SIZE).sum());
             }
             return sizeCf;
         }
