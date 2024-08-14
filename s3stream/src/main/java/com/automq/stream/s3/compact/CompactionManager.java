@@ -87,7 +87,6 @@ public class CompactionManager {
     private final int maxStreamNumPerStreamSetObject;
     private final int maxStreamObjectNumPerCommit;
     private final long networkBandwidth;
-    private final boolean s3ObjectLogEnable;
     private final long compactionCacheSize;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile CompletableFuture<Void> forceSplitCf = null;
@@ -109,7 +108,6 @@ public class CompactionManager {
         this.compactionInterval = config.streamSetObjectCompactionInterval();
         this.forceSplitObjectPeriod = config.streamSetObjectCompactionForceSplitPeriod();
         this.maxObjectNumToCompact = config.streamSetObjectCompactionMaxObjectNum();
-        this.s3ObjectLogEnable = config.objectLogEnable();
         this.networkBandwidth = config.networkBaselineBandwidth();
         this.uploader = new CompactionUploader(objectManager, objectStorage, config);
         this.compactionCacheSize = config.streamSetObjectCompactionCacheSize();
@@ -334,9 +332,7 @@ public class CompactionManager {
             objectManager.commitStreamSetObject(request)
                 .thenAccept(resp -> {
                     logger.info("Commit force split request succeed, time cost: {} ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-                    if (s3ObjectLogEnable) {
-                        s3ObjectLogger.trace("[Compact] {}", request);
-                    }
+                    s3ObjectLogger.info("[COMPACT] {}", request);
                 })
                 .exceptionally(ex -> {
                     logger.error("Commit force split request failed, ex: ", ex);
@@ -383,9 +379,7 @@ public class CompactionManager {
         objectManager.commitStreamSetObject(request)
             .thenAccept(resp -> {
                 logger.info("Commit compact request succeed, time cost: {} ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-                if (s3ObjectLogEnable) {
-                    s3ObjectLogger.trace("[Compact] {}", request);
-                }
+                s3ObjectLogger.info("[COMPACT] {}", request);
             })
             .exceptionally(ex -> {
                 logger.error("Commit compact request failed, ex: ", ex);

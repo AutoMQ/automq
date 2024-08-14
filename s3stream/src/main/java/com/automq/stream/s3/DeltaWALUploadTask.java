@@ -45,7 +45,6 @@ public class DeltaWALUploadTask {
     private final int streamSplitSizeThreshold;
     private final ObjectManager objectManager;
     private final ObjectStorage objectStorage;
-    private final boolean s3ObjectLogEnable;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
     private final CompletableFuture<CommitStreamSetObjectRequest> uploadCf = new CompletableFuture<>();
     private final ExecutorService executor;
@@ -65,7 +64,6 @@ public class DeltaWALUploadTask {
         this.objectBlockSize = config.objectBlockSize();
         this.objectPartSize = config.objectPartSize();
         this.streamSplitSizeThreshold = config.streamSplitSize();
-        this.s3ObjectLogEnable = config.objectLogEnable();
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
         this.forceSplit = forceSplit;
@@ -175,13 +173,13 @@ public class DeltaWALUploadTask {
             commitTimestamp = System.currentTimeMillis();
             return objectManager.commitStreamSetObject(request).thenAccept(resp -> {
                 long now = System.currentTimeMillis();
-                LOGGER.info("Upload delta WAL finished, cost {}ms, prepare {}ms, upload {}ms, commit {}ms, rate limiter {}bytes/s, request: {}",
+                LOGGER.info("Upload delta WAL finished, cost {}ms, prepare {}ms, upload {}ms, commit {}ms, rate limiter {}bytes/s",
                     now - startTimestamp,
                     uploadTimestamp - startTimestamp,
                     commitTimestamp - uploadTimestamp,
                     now - commitTimestamp,
-                    rate,
-                    commitStreamSetObjectRequest);
+                    rate);
+                s3ObjectLogger.info("[UPLOAD_WAL] {}", request);
             }).whenComplete((nil, ex) -> limiter.close());
         });
     }

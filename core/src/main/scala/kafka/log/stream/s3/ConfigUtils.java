@@ -41,7 +41,6 @@ public class ConfigUtils {
             .streamSetObjectCompactionForceSplitPeriod(s.s3StreamSetObjectCompactionForceSplitMinutes())
             .streamSetObjectCompactionMaxObjectNum(s.s3StreamSetObjectCompactionMaxObjectNum())
             .mockEnable(s.s3MockEnable())
-            .objectLogEnable(s.s3ObjectLogEnable())
             .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
             .refillPeriodMs(s.s3RefillPeriodMsProp())
             .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond());
