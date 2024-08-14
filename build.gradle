@@ -1507,6 +1507,9 @@ project(':clients') {
     implementation libs.snappy
     implementation libs.slf4jApi
     implementation libs.opentelemetryProto
+    // AutoMQ for Kafka inject start
+    implementation libs.nettyBuffer
+    // AutoMQ for Kafka inject end
 
     // libraries which should be added as runtime dependencies in generated pom.xml should be defined here:
     shadowed libs.zstd
