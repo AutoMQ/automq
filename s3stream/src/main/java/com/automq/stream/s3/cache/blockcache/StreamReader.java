@@ -27,6 +27,7 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
 import com.automq.stream.utils.threads.EventLoop;
+import com.google.common.annotations.VisibleForTesting;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -38,8 +39,6 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -145,7 +144,10 @@ import static com.automq.stream.utils.FutureUtil.exec;
 
     public void close() {
         closed = true;
-        blocksMap.forEach((k, v) -> v.markRead());
+        List<Block> blocks = new ArrayList<>(blocksMap.values());
+        // The Block#markRead will immediately invoke after the Block is removed.
+        blocksMap.clear();
+        blocks.forEach(Block::markReadCompleted);
     }
 
     void read0(ReadContext ctx, final long startOffset, final long endOffset, final int maxBytes) {
@@ -226,7 +228,8 @@ import static com.automq.stream.utils.FutureUtil.exec;
      * This method is only for unit testing.
      * AfterReadTryReadaheadCf is empty, the task has been completed
      * AfterReadTryReadaheadCf is not empty, the task may be completed
-     * @return  afterReadTryReadaheadCf
+     *
+     * @return afterReadTryReadaheadCf
      */
     @VisibleForTesting
     CompletableFuture<Void> getAfterReadTryReadaheadCf() {
@@ -237,7 +240,8 @@ import static com.automq.stream.utils.FutureUtil.exec;
      * This method is only for unit testing.
      * inflightReadaheadCf is empty, the task has been completed
      * inflightReadaheadCf is not empty, the task may be completed
-     * @return  readahead.inflightReadaheadCf
+     *
+     * @return readahead.inflightReadaheadCf
      */
     @VisibleForTesting
     CompletableFuture<Void> getReadaheadInflightReadaheadCf() {
@@ -255,16 +259,13 @@ import static com.automq.stream.utils.FutureUtil.exec;
             Block block = it.next().getValue();
             if (block.index.endOffset() <= nextReadOffset) {
                 it.remove();
+                block.markReadCompleted();
             } else {
                 break;
             }
         }
-        // #getDataBlock will invoke DataBlock#markUnread
         for (Block block : ctx.blocks) {
             block.release();
-            if (block.index.endOffset() <= nextReadOffset) {
-                block.markRead();
-            }
         }
         // try readahead to speed up the next read
         afterReadTryReadaheadCf = eventLoop.submit(() -> readahead.tryReadahead(readDataBlock.getCacheAccessType() == BLOCK_CACHE_MISS));
@@ -458,8 +459,10 @@ import static com.automq.stream.utils.FutureUtil.exec;
     }
 
     private void resetBlocks() {
-        blocksMap.forEach((k, v) -> v.markRead());
+        List<Block> blocks = new ArrayList<>(blocksMap.values());
+        // The Block#markRead will immediately invoke after the Block is removed.
         blocksMap.clear();
+        blocks.forEach(Block::markReadCompleted);
         lastBlock = null;
         loadedBlockIndexEndOffset = 0L;
         blocksEpoch++;
@@ -519,28 +522,35 @@ import static com.automq.stream.utils.FutureUtil.exec;
         final S3ObjectMetadata metadata;
         final DataBlockIndex index;
         DataBlock data;
+        DataBlock.FreeListenerHandle freeListenerHandle;
+
         CompletableFuture<Void> loadCf;
         Throwable exception;
         boolean released = false;
+        boolean readCompleted = false;
 
         public Block(S3ObjectMetadata metadata, DataBlockIndex index) {
             this.metadata = metadata;
             this.index = index;
         }
 
+        // TODO: use different Block type, cause of the returned Block shouldn't have markReadCompleted method
         public Block newBlockWithData(boolean readahead) {
             // We need to create a new block with consistent data to avoid duplicated release or leak,
             // cause of the loaded data maybe evicted and reloaded.
             Block newBlock = new Block(metadata, index);
             ObjectReader objectReader = objectReaderFactory.get(metadata);
             DataBlockCache.GetOptions getOptions = DataBlockCache.GetOptions.builder().readahead(readahead).build();
-            loadCf = dataBlockCache.getBlock(getOptions, objectReader, index).thenAccept(db -> {
-                newBlock.data = db;
-                if (data != db) {
+            loadCf = dataBlockCache.getBlock(getOptions, objectReader, index).thenAccept(newData -> {
+                newBlock.data = newData;
+                if (!readCompleted && data != newData) {
                     // the data block is first loaded or evict & reload
-                    data = db;
-                    db.markUnread();
-                    data.freeFuture().whenComplete((nil, ex) -> handleBlockFree(this));
+                    if (data != null) {
+                        freeListenerHandle.close();
+                    }
+                    data = newData;
+                    newData.markUnread();
+                    freeListenerHandle = data.registerFreeListener(b -> handleBlockFree(this));
                 }
             }).exceptionally(ex -> {
                 exception = ex;
@@ -563,9 +573,14 @@ import static com.automq.stream.utils.FutureUtil.exec;
             });
         }
 
-        public void markRead() {
+        /**
+         * The <code>Block#markReadCompleted</code> should be invoked after the Block was removed from <code>blocksMap</code>.
+         */
+        public void markReadCompleted() {
+            readCompleted = true;
             if (data != null) {
                 data.markRead();
+                freeListenerHandle.close();
             }
         }
 
