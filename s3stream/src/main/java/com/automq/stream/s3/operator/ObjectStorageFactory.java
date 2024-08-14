@@ -63,7 +63,7 @@ public class ObjectStorageFactory {
     }
 
     public class Builder {
-        private final AtomicLong DEFAULT_THREAD_PREFIX_COUNTER = new AtomicLong();
+        private final AtomicLong defaultThreadPrefixCounter = new AtomicLong();
         private BucketURI bucketURI;
         private Map<String, String> tagging;
         private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
@@ -133,7 +133,7 @@ public class ObjectStorageFactory {
 
         public ObjectStorage build() {
             if (StringUtils.isEmpty(this.threadPrefix)) {
-                this.threadPrefix = Long.toString(DEFAULT_THREAD_PREFIX_COUNTER.getAndIncrement());
+                this.threadPrefix = Long.toString(defaultThreadPrefixCounter.getAndIncrement());
             }
             return protocolHandlers.get(bucketURI.protocol()).apply(this);
         }
