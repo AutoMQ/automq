@@ -347,7 +347,10 @@ final public class KafkaRaftClient<T> implements RaftClient<T> {
         return log.latestSnapshot().map(reader ->
             RecordsSnapshotReader.of(reader,
                 serde,
-                BufferSupplier.create(),
+                // AutoMQ for Kafka inject start
+                // BufferSupplier.create(),
+                new BufferSupplier.NettyBufferSupplier(),
+                // AutoMQ for Kafka inject end
                 MAX_BATCH_SIZE_BYTES,
                 true /* Validate batch CRC*/
             )
@@ -386,7 +389,10 @@ final public class KafkaRaftClient<T> implements RaftClient<T> {
             Optional.of(VoterSet.fromInetSocketAddresses(listenerName, voterAddresses)),
             log,
             serde,
-            BufferSupplier.create(),
+            // AutoMQ for Kafka inject start
+            // BufferSupplier.create(),
+            new BufferSupplier.NettyBufferSupplier(),
+            // AutoMQ for Kafka inject end
             MAX_BATCH_SIZE_BYTES,
             logContext
         );
@@ -2700,7 +2706,10 @@ final public class KafkaRaftClient<T> implements RaftClient<T> {
                     baseOffset,
                     records,
                     serde,
-                    BufferSupplier.create(),
+                    // AutoMQ for Kafka inject start
+                    // BufferSupplier.create(),
+                    new BufferSupplier.NettyBufferSupplier(),
+                    // AutoMQ for Kafka inject end
                     MAX_BATCH_SIZE_BYTES,
                     this,
                     true /* Validate batch CRC*/
