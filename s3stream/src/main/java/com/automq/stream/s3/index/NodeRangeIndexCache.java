@@ -64,7 +64,14 @@ public class NodeRangeIndexCache {
         Supplier<CompletableFuture<Map<Long, List<RangeIndex>>>> cacheSupplier) {
         StreamRangeIndexCache indexCache = this.nodeRangeIndexMap.get(nodeId);
         if (indexCache == null) {
-            indexCache = new StreamRangeIndexCache(cacheSupplier.get());
+            CompletableFuture<Map<Long, List<RangeIndex>>> streamRangeIndexMapCf = cacheSupplier.get();
+            streamRangeIndexMapCf.whenComplete((v, e) -> {
+                if (e != null) {
+                    LOGGER.error("Failed to get sparse range index for node {}", nodeId, e);
+                    invalidate(nodeId);
+                }
+            });
+            indexCache = new StreamRangeIndexCache(streamRangeIndexMapCf);
             this.nodeRangeIndexMap.put(nodeId, indexCache);
             LOGGER.info("Update stream range index for node {}", nodeId);
         }
