@@ -162,12 +162,11 @@ public class S3Stream implements Stream {
             }, LOGGER, "append");
             pendingAppends.add(cf);
             pendingAppendTimestamps.push(startTimeNanos);
-            cf.whenComplete((nil, ex) -> {
+            return cf.whenComplete((nil, ex) -> {
                 StreamOperationStats.getInstance().appendStreamLatency.record(TimerUtil.durationElapsedAs(startTimeNanos, TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
                 pendingAppendTimestamps.pop();
             });
-            return cf;
         } finally {
             readLock.unlock();
         }
