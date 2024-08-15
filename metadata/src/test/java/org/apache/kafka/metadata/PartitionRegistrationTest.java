@@ -153,7 +153,8 @@ public class PartitionRegistrationTest {
         PartitionRegistration partition1 = partition0.merge(new PartitionChangeRecord().
             setRemovingReplicas(Collections.singletonList(3)).
             setAddingReplicas(Collections.singletonList(4)).
-            setReplicas(Arrays.asList(1, 2, 3, 4)));
+            setReplicas(Arrays.asList(1, 2, 3, 4)).
+            setDirectories(Arrays.asList(dir1, dir2, dir3, DirectoryId.UNASSIGNED)));
         assertEquals(new PartitionRegistration.Builder().setReplicas(new int[] {1, 2, 3, 4}).
             setDirectories(new Uuid[]{dir1, dir2, dir3, DirectoryId.UNASSIGNED}).
             setIsr(new int[] {1, 2, 3}).setRemovingReplicas(new int[] {3}).setAddingReplicas(new int[] {4}).setLeader(1).setLeaderRecoveryState(LeaderRecoveryState.RECOVERED).setLeaderEpoch(100).setPartitionEpoch(201).build(), partition1);
@@ -161,7 +162,8 @@ public class PartitionRegistrationTest {
             setIsr(Arrays.asList(1, 2, 4)).
             setRemovingReplicas(Collections.emptyList()).
             setAddingReplicas(Collections.emptyList()).
-            setReplicas(Arrays.asList(1, 2, 4)));
+            setReplicas(Arrays.asList(1, 2, 4)).
+            setDirectories(Arrays.asList(dir1, dir2, DirectoryId.UNASSIGNED)));
         assertEquals(new PartitionRegistration.Builder().setReplicas(new int[] {1, 2, 4}).
             setDirectories(new Uuid[]{dir1, dir2, DirectoryId.UNASSIGNED}).
             setIsr(new int[] {1, 2, 4}).setLeader(1).setLeaderRecoveryState(LeaderRecoveryState.RECOVERED).setLeaderEpoch(100).setPartitionEpoch(202).build(), partition2);
@@ -283,7 +285,7 @@ public class PartitionRegistrationTest {
         return Stream.of(
             MetadataVersion.IBP_3_7_IV1,
             MetadataVersion.IBP_3_7_IV2,
-            MetadataVersion.IBP_3_8_IV0
+            MetadataVersion.IBP_3_9_IV0
         ).map(mv -> Arguments.of(mv));
     }
 
@@ -369,7 +371,7 @@ public class PartitionRegistrationTest {
             setPartitionEpoch(0);
         List<UnwritableMetadataException> exceptions = new ArrayList<>();
         ImageWriterOptions options = new ImageWriterOptions.Builder().
-            setMetadataVersion(MetadataVersion.IBP_3_8_IV0).
+            setMetadataVersion(MetadataVersion.IBP_3_9_IV0).
             setLossHandler(exceptions::add).
             build();
         assertEquals(new ApiMessageAndVersion(expectRecord, (short) 2), partitionRegistration.toRecord(topicID, 0, options));

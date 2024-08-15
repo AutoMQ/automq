@@ -91,7 +91,7 @@ class OffsetCheckpointFile(val file: File, logDirFailureChannel: LogDirFailureCh
     if (checkpoint == null) {
       elasticCheckpoint.write(offsets)
     } else {
-      checkpoint.write(list, true)
+      checkpoint.write(list)
     }
   }
 

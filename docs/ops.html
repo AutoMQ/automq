@@ -3094,15 +3094,26 @@ active-process-ratio metrics which have a recording level of <code>info</code>:
         <td>The fraction of time the stream thread spent on processing this task among all assigned active tasks.</td>
         <td>kafka.streams:type=stream-task-metrics,thread-id=([-.\w]+),task-id=([-.\w]+)</td>
       </tr>
+      <tr>
+        <td>input-buffer-bytes-total</td>
+        <td>The total number of bytes accumulated by this task,</td>
+        <td>kafka.streams:type=stream-task-metrics,thread-id=([-.\w]+),task-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>cache-size-bytes-total</td>
+        <td>The cache size in bytes accumulated by this task.</td>
+        <td>kafka.streams:type=stream-task-metrics,thread-id=([-.\w]+),task-id=([-.\w]+)</td>
+      </tr>
  </tbody>
 </table>
 
  <h5 class="anchor-heading"><a id="kafka_streams_node_monitoring" class="anchor-link"></a><a href="#kafka_streams_node_monitoring">Processor Node Metrics</a></h5>
  The following metrics are only available on certain types of nodes, i.e., the process-* metrics are only available for
- source processor nodes, the suppression-emit-* metrics are only available for suppression operation nodes, and the
- record-e2e-latency-* metrics are only available for source processor nodes and terminal nodes (nodes without successor
+ source processor nodes, the <code>suppression-emit-*</code> metrics are only available for suppression operation nodes,
+ <code>emit-final-*</code> metrics are only available for windowed aggregations nodes, and the
+ <code>record-e2e-latency-*</code> metrics are only available for source processor nodes and terminal nodes (nodes without successor
  nodes).
- All of the metrics have a recording level of <code>debug</code>, except for the record-e2e-latency-* metrics which have
+ All of the metrics have a recording level of <code>debug</code>, except for the <code>record-e2e-latency-*</code> metrics which have
  a recording level of <code>info</code>:
  <table class="data-table">
       <tbody>
@@ -3142,6 +3153,26 @@ active-process-ratio metrics which have a recording level of <code>info</code>:
         <td>kafka.streams:type=stream-processor-node-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),processor-node-id=([-.\w]+)</td>
       </tr>
       <tr>
+        <td>emit-final-latency-max</td>
+        <td>The max latency to emit final records when a record could be emitted.</td>
+        <td>kafka.streams:type=stream-processor-node-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),processor-node-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>emit-final-latency-avg</td>
+        <td>The avg latency to emit final records when a record could be emitted.</td>
+        <td>kafka.streams:type=stream-processor-node-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),processor-node-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>emit-final-records-rate</td>
+        <td>The rate of records emitted when records could be emitted.</td>
+        <td>kafka.streams:type=stream-processor-node-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),processor-node-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>emit-final-records-total</td>
+        <td>The total number of records emitted.</td>
+        <td>kafka.streams:type=stream-processor-node-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),processor-node-id=([-.\w]+)</td>
+      </tr>
+      <tr>
         <td>record-e2e-latency-avg</td>
         <td>The average end-to-end latency of a record, measured by comparing the record timestamp with the system time when it has been fully processed by the node.</td>
         <td>kafka.streams:type=stream-processor-node-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),processor-node-id=([-.\w]+)</td>
@@ -3170,9 +3201,11 @@ active-process-ratio metrics which have a recording level of <code>info</code>:
  </table>
 
  <h5 class="anchor-heading"><a id="kafka_streams_store_monitoring" class="anchor-link"></a><a href="#kafka_streams_store_monitoring">State Store Metrics</a></h5>
-All of the following metrics have a recording level of <code>debug</code>, except for the record-e2e-latency-* metrics which have a recording level <code>trace</code>.
-Note that the <code>store-scope</code> value is specified in <code>StoreSupplier#metricsScope()</code> for user's customized state stores;
-for built-in state stores, currently we have:
+All the following metrics have a recording level of <code>debug</code>, except for the <code>record-e2e-latency-*</code>
+metrics which have a recording level <code>trace</code> and <code>num-open-iterators</code> which has recording level
+<code>info</code>.
+Note that the <code>store-scope</code> value is specified in <code>StoreSupplier#metricsScope()</code> for user's
+customized state stores; for built-in state stores, currently we have:
   <ul>
     <li><code>in-memory-state</code></li>
     <li><code>in-memory-lru-state</code></li>
@@ -3248,18 +3281,28 @@ for built-in state stores, currently we have:
         <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
       </tr>
       <tr>
-        <td>all-latency-max</td>
+        <td>all-latency-max, from iterator create to close time.</td>
         <td>The maximum all operation execution time in ns.</td>
         <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
       </tr>
       <tr>
-        <td>range-latency-avg</td>
-        <td>The average range execution time in ns.</td>
+        <td>range-latency-avg, from iterator create to close time.</td>
+        <td>The average range execution time in ns, from iterator create to close time.</td>
         <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
       </tr>
       <tr>
-        <td>range-latency-max</td>
+        <td>range-latency-max, from iterator create to close time.</td>
         <td>The maximum range execution time in ns.</td>
+        <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>prefix-scan-latency-avg</td>
+        <td>The average prefix-scan execution time in ns, from iterator create to close time.</td>
+        <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>prefix-scan-latency-max</td>
+        <td>The maximum prefix-scan execution time in ns, from iterator create to close time.</td>
         <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
       </tr>
        <tr>
@@ -3318,6 +3361,11 @@ for built-in state stores, currently we have:
         <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
       </tr>
       <tr>
+        <td>prefix-scan-rate</td>
+        <td>The average prefix-scan rate for this store.</td>
+        <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
+      </tr>
+      <tr>
         <td>flush-rate</td>
         <td>The average flush rate for this store.</td>
         <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
@@ -3360,6 +3408,26 @@ for built-in state stores, currently we have:
       <tr>
         <td>record-e2e-latency-min</td>
         <td>The minimum end-to-end latency of a record, measured by comparing the record timestamp with the system time when it has been fully processed by the node.</td>
+        <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>num-open-iterators</td>
+        <td>The current number of iterators on the store that have been created, but not yet closed.</td>
+        <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>iterator-duration-avg</td>
+        <td>The average time spent between creating an iterator and closing it, in nanoseconds.</td>
+        <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>iterator-duration-max</td>
+        <td>The maximum time spent between creating an iterator and closing it, in nanoseconds.</td>
+        <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
+      </tr>
+      <tr>
+        <td>oldest-iterator-open-since-ms</td>
+        <td>The UNIX timestamp the oldest still open iterator was created, in milliseconds.</td>
         <td>kafka.streams:type=stream-state-metrics,thread-id=([-.\w]+),task-id=([-.\w]+),[store-scope]-id=([-.\w]+)</td>
       </tr>
     </tbody>
