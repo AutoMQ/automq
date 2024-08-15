@@ -545,8 +545,6 @@ public class StreamControlManager {
         if (resp.errorCode() != Errors.NONE.code()) {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
-        log.info("[TrimStream] successfully trim the stream. streamId={}, streamEpoch={}, trimOffset={}, nodeId={}, nodeEpoch={}",
-            streamId, epoch, newStartOffset, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
     }
 
