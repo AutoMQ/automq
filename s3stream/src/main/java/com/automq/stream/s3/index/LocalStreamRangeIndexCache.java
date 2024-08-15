@@ -274,7 +274,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
             + Integer.BYTES // stream num
             + streamRangeIndexMap.values().stream().mapToInt(index -> Long.BYTES // stream id
             + Integer.BYTES // range index num
-            + index.getRangeIndexList().size() * RangeIndex.SIZE).sum();
+            + index.getRangeIndexList().size() * (3 * Long.BYTES)).sum();
         ByteBuf buffer = ByteBufAlloc.byteBuffer(capacity);
         try {
             buffer.writeShort(VERSION);

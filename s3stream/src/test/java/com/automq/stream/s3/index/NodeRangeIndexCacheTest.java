@@ -111,7 +111,7 @@ public class NodeRangeIndexCacheTest {
         int curr = 0;
         while (curr < size) {
             index.add(new RangeIndex(0, 0, 0));
-            curr += RangeIndex.SIZE;
+            curr += RangeIndex.OBJECT_SIZE;
         }
         return index;
     }
