@@ -65,7 +65,7 @@ class CompactionTest(Test):
             ['s3.wal.upload.threshold', str(int(self.s3_wal_upload_threshold))],
             ['s3.wal.path', FILE_WAL if broker_wal == 'file' else S3_WAL],
             ['s3.stream.set.object.compaction.stream.split.size', str(self.automq_stream_object_compaction_jitter_max_delay_minute)], # set s3.stream.set.object.compact.stream.split.size == 1 to ensure that there is no remaining stream set object
-            ['s3.stream.object.split.size', '1024'] # get enough stream objects when no stream set comparison occurs
+            ['s3.stream.object.split.size', '1024'] # get enough stream objects when no stream set compaction occurs
 
         ]
 
@@ -140,7 +140,7 @@ class CompactionTest(Test):
         success = True
         msg = ''
 
-        # Stream object source: 1. Split the stream set comparison into 2. Split when uploading to S3
+        # Stream object source: 1. Split the stream set compaction into 2. Split when uploading to S3
         producer1 = run_validation_producer(self.kafka, self.test_context, self.logger, self.topic, 120000, 6000, message_validator=is_int_with_prefix)
         if stream_set_object_compaction:
             time.sleep(self.compaction_delay_sec)
@@ -164,7 +164,7 @@ class CompactionTest(Test):
         self.logger.info(f'The compaction(stream set obeject compaction and stream object compaction) time interval is {start_time} ——> {end_time}')
         if stream_set_object_compaction:
             ensure_stream_set_object_compaction(self.kafka, start_time, end_time)
-        if stream_object_compaction_type is not 'None':
+        if stream_object_compaction_type != 'None':
             ensure_stream_object_compaction(self.kafka, stream_object_compaction_type, start_time, end_time)
 
         assert success, msg
