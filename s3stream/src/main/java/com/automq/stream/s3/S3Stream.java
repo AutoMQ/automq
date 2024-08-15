@@ -149,7 +149,6 @@ public class S3Stream implements Stream {
         long startTimeNanos = System.nanoTime();
         readLock.lock();
         try {
-            CompletableFuture<AppendResult> result = new CompletableFuture<>();
             CompletableFuture<AppendResult> cf = exec(() -> {
                 if (networkInboundLimiter != null) {
                     networkInboundLimiter.consume(ThrottleStrategy.BYPASS, recordBatch.rawPayload().remaining());
