@@ -51,6 +51,7 @@ import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
@@ -174,7 +175,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (null != tagging) {
             builder.tagging(tagging);
         }
-        PutObjectRequest request = builder.build();
+        PutObjectRequest request = builder
+            .checksumAlgorithm(ChecksumAlgorithm.CRC32_C)
+            .build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         return writeS3Client.putObject(request, body).thenApply(rst -> null);
     }
@@ -185,7 +188,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (null != tagging) {
             builder.tagging(tagging);
         }
-        CreateMultipartUploadRequest request = builder.build();
+        CreateMultipartUploadRequest request = builder.checksumAlgorithm(ChecksumAlgorithm.CRC32_C).build();
         return writeS3Client.createMultipartUpload(request).thenApply(CreateMultipartUploadResponse::uploadId);
     }
 
@@ -193,10 +196,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
         int partNumber, ByteBuf part) {
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
-        UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
-            .partNumber(partNumber).build();
+        UploadPartRequest request = UploadPartRequest.builder()
+            .bucket(bucket)
+            .key(path)
+            .uploadId(uploadId)
+            .partNumber(partNumber)
+            .checksumAlgorithm(ChecksumAlgorithm.CRC32_C)
+            .build();
         return writeS3Client.uploadPart(request, body)
-            .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag()));
+            .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag(), resp.checksumCRC32C()));
     }
 
     @Override
@@ -210,14 +218,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     .apiCallTimeout(Duration.ofMillis(options.apiCallAttemptTimeout())).build()
             )
             .build();
-        return writeS3Client.uploadPartCopy(request).thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag()));
+        return writeS3Client.uploadPartCopy(request).thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag(), resp.copyPartResult().checksumCRC32C()));
     }
 
     @Override
     public CompletableFuture<Void> doCompleteMultipartUpload(WriteOptions options, String path, String uploadId,
         List<ObjectStorageCompletedPart> parts) {
         List<CompletedPart> completedParts = parts.stream()
-            .map(part -> CompletedPart.builder().partNumber(part.getPartNumber()).eTag(part.getPartId()).build())
+            .map(part -> CompletedPart.builder().partNumber(part.getPartNumber()).eTag(part.getPartId()).checksumCRC32C(part.getCheckSum()).build())
             .collect(Collectors.toList());
         CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(completedParts).build();
         CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
