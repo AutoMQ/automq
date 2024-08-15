@@ -14,7 +14,7 @@ package com.automq.stream.s3.index;
 import com.google.common.base.Objects;
 
 public class RangeIndex implements Comparable<RangeIndex> {
-    public static final int SIZE = 3 * Long.BYTES + NodeRangeIndexCache.ZGC_OBJECT_HEADER_SIZE_BYTES;
+    public static final int OBJECT_SIZE = 3 * Long.BYTES + NodeRangeIndexCache.ZGC_OBJECT_HEADER_SIZE_BYTES;
     private final long startOffset;
     private final long endOffset;
     private final long objectId;
