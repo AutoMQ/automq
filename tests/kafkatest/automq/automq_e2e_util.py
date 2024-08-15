@@ -369,81 +369,90 @@ def correctness_verification(logger, producers, consumer):
     return success, msg
 
 
-def parse_upload_delta_wal_log_entry(log_entry):
+def parse_upload_delta_wal_log_entry(line1, line2, line3):
     """
-    Parses an upload delta WAL (Write-Ahead Log) log entry.
+    Parses three log lines to extract DELTA WAL entry details.
 
-    This function parses a CommitStreamSetObjectRequest log entry and extracts relevant information.
-    It uses regular expressions to match and extract the object ID, order ID, object size, stream ranges, stream objects, etc., from the log.
-    This information is organized into dictionaries for further processing and use.
+    This function takes three log lines as input and parses them to extract
+    the stream set object ID, stream ranges, and stream objects information.
 
-    :param log_entry: The log entry to be parsed
-    :return: A tuple containing two dictionaries - one with the main object's information and another with the stream objects' information
+    :param line1: A string representing the first log line containing the stream set object ID and attributes.
+    :param line2: A string representing the second log line containing stream ranges.
+    :param line3: A string representing the third log line containing stream objects.
+
+    :return: A tuple containing:
+             - stream_set_object: A dictionary containing parsed stream set object information.
+             - stream_object: A dictionary containing parsed stream object information.
     """
-    request_pattern = re.compile(
-        r"CommitStreamSetObjectRequest\{objectId=(\d+), orderId=(\d+), objectSize=(\d+), streamRanges=\[(.*?)\], streamObjects=\[(.*?)\], compactedObjectIds=(.*?), attributes=(\d+)\}"
-    )
-    stream_object_pattern = re.compile(
-        r"StreamObject\{objectId=(\d+), objectSize=(\d+), streamId=(\d+), startOffset=(\d+), endOffset=(\d+), attributes=(\d+)\}"
-    )
-    match = request_pattern.search(log_entry)
-    if match:
-        object_id = match.group(1)
-        order_id = match.group(2)
-        object_size = match.group(3)
-        stream_ranges = match.group(4)
-        stream_objects_str = match.group(5)
-        compacted_object_ids = match.group(6)
-        attributes = match.group(7)
-        main_object = {
-            "orderId": order_id,
-            "objectSize": object_size,
-            "streamRanges": stream_ranges,
-            # "(" + streamId + "-" + epoch + "," + startOffset + "-" + endOffset + "-" + size + ")"
-            "compactedObjectIds": compacted_object_ids,
-            "attributes": attributes
+    line1_dict = dict(item.split("=") for item in line1.split(", "))
+    stream_set_object_id = int(line1_dict["streamSetObjectId"])
+    stream_ranges = line2.split("streamRanges=")[1]
+    stream_ranges_list = [item.strip("()") for item in stream_ranges.split("), (")]
+    stream_objects = line3.split("streamObjects=")[1]
+    stream_objects_list = [item.strip("()") for item in stream_objects.split("), (")]
+
+    stream_set_object = {
+        stream_set_object_id: {
+            "streamSetObjectId": stream_set_object_id,
+            "attr": int(line1_dict["attr"]),
+            "compactedObjects": line1_dict["compactedObjects"],
+            "streamRanges": [dict(item.split("=") for item in sr.split(", ")) for sr in stream_ranges_list]
         }
-        map1 = {object_id: main_object}
-        map2 = {}
-        stream_objects = stream_object_pattern.findall(stream_objects_str)
-        for stream_object in stream_objects:
-            stream_object_id, stream_object_size, stream_id, start_offset, end_offset, stream_attributes = stream_object
-            map2[stream_object_id] = {
-                "objectSize": stream_object_size,
-                "streamId": stream_id,
-                "startOffset": start_offset,
-                "endOffset": end_offset,
-                "attributes": stream_attributes
-            }
-        return map1, map2
-    else:
-        return {}, {}
+    }
+
+    stream_object = {}
+    for so in stream_objects_list:
+        so_dict = dict(item.split("=") for item in so.split(", "))
+        oi = int(so_dict["oi"])
+        stream_object[oi] = {
+            "si": int(so_dict["si"]),
+            "so": int(so_dict["so"]),
+            "eo": int(so_dict["eo"]),
+            "oi": oi,
+            "size": int(so_dict["size"]),
+            "attr": int(so_dict["attr"])
+        }
+
+    return stream_set_object, stream_object
 
 
 def parse_delta_wal_entry(kafka, logger):
     """
-    Parses Delta WAL log entries.
+    Parses DELTA WAL entries from Kafka logs.
 
-    This function extracts and parses all log entries related to the completion of Delta WAL uploads from the Kafka cluster's output.
-    It records relevant stream set and stream information and counts the number of log entries, ensuring at least two records are parsed.
+    This function searches the Kafka logs for DELTA WAL entries and extracts relevant information.
+    It focuses on CommitStreamSetObjectRequest records to extract streamSetObjectId,
+    streamRanges, and streamObjects information.
 
-    :param kafka: A Kafka cluster object used to access cluster nodes and log information.
-    :param logger: A logger object used to record the parsing results.
-    :return: A tuple containing the parsed stream set information, stream information, and the count of Delta WAL log entries.
+    :param kafka: A Kafka instance to access Kafka cluster information.
+    :param logger: A logger instance to log parsing information and results.
+
+    :return: A tuple containing:
+             - stream_set_object: A dictionary containing parsed streamSetObjectId related information.
+             - stream_object: A dictionary containing parsed streamObjects related information.
+             - delta_wal_entry_count: The count of parsed DELTA WAL entries.
     """
     stream_set_object = {}
     stream_object = {}
-    entry = 'INFO Upload delta WAL finished'
+    entry = 'UPLOAD_WAL'
     delta_wal_entry_count = 0
-    for line in kafka.nodes[0].account.ssh_capture(f'grep \'{entry}\' {kafka.STDOUT_STDERR_CAPTURE}'):
-        delta_wal_entry_count += 1
-        stream_set_object_, stream_object_ = parse_upload_delta_wal_log_entry(line)
-        stream_set_object.update(stream_set_object_)
-        stream_object.update(stream_object_)
+    buffer = []
 
-    assert delta_wal_entry_count > 1, (
-        f"delta_wal_entry_count ({delta_wal_entry_count}) must be greater than 1."
-    )
-    logger.info(f'{stream_set_object}')
-    logger.info(f'{stream_object}')
+    for line in kafka.nodes[0].account.ssh_capture(f'grep -A 2 \'{entry}\' {kafka.STDOUT_STDERR_CAPTURE}'):
+        line = line.replace('\n', '')
+        if '[CommitStreamSetObjectRequest]:streamSetObjectId=' in line or 'streamRanges=(si=' in line or 'streamObjects=(si=' in line:
+            buffer.append(line)
+
+        if len(buffer) == 3:
+            delta_wal_entry_count += 1
+            buffer[0] = buffer[0][buffer[0].find("streamSetObjectId"):].rstrip(', ')
+            buffer[1] = buffer[1].lstrip().rstrip(', , ')
+            buffer[2] = buffer[2].lstrip().rstrip(', (s3.object.logger)')
+            stream_set_object_, stream_object_ = parse_upload_delta_wal_log_entry(*buffer)
+            stream_set_object.update(stream_set_object_)
+            stream_object.update(stream_object_)
+            buffer.clear()
+
+    logger.info(f'stream_set_object:\n{stream_set_object}')
+    logger.info(f'stream_object:\n{stream_object}')
     return stream_set_object, stream_object, delta_wal_entry_count
