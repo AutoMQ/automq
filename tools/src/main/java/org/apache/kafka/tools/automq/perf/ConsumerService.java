@@ -63,6 +63,7 @@ public class ConsumerService implements AutoCloseable {
         Properties properties = new Properties();
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
         properties.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) TimeUnit.SECONDS.toMillis(300));
+        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         this.admin = Admin.create(properties);
         this.groupSuffix = new SimpleDateFormat("HHmmss").format(System.currentTimeMillis());
     }
