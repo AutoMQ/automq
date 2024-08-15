@@ -94,7 +94,7 @@ public final class Utils {
 
     // This matches URIs of formats: host:port and protocol://host:port
     // IPv6 is supported with [ip] pattern
-    private static final Pattern HOST_PORT_PATTERN = Pattern.compile("^(?:[a-zA-Z][a-zA-Z\\d+-.]*://)?\\[?([0-9a-zA-Z\\-._%:]+)\\]?:([0-9]+)$");
+    private static final Pattern HOST_PORT_PATTERN = Pattern.compile("^(?:[0-9a-zA-Z\\-%._]*://)?\\[?([0-9a-zA-Z\\-%._:]*)]?:([0-9]+)");
 
     private static final Pattern VALID_HOST_CHARACTERS = Pattern.compile("([0-9a-zA-Z\\-%._:]*)");
 
@@ -451,7 +451,14 @@ public final class Utils {
      * @return the new class
      */
     public static <T> Class<? extends T> loadClass(String klass, Class<T> base) throws ClassNotFoundException {
-        return Class.forName(klass, true, Utils.getContextOrKafkaClassLoader()).asSubclass(base);
+        ClassLoader contextOrKafkaClassLoader = Utils.getContextOrKafkaClassLoader();
+        // Use loadClass here instead of Class.forName because the name we use here may be an alias
+        // and not match the name of the class that gets loaded. If that happens, Class.forName can
+        // throw an exception.
+        Class<?> loadedClass = contextOrKafkaClassLoader.loadClass(klass);
+        // Invoke forName here with the true name of the requested class to cause class
+        // initialization to take place.
+        return Class.forName(loadedClass.getName(), true, contextOrKafkaClassLoader).asSubclass(base);
     }
 
     /**
@@ -480,7 +487,7 @@ public final class Utils {
         Class<?>[] argTypes = new Class<?>[params.length / 2];
         Object[] args = new Object[params.length / 2];
         try {
-            Class<?> c = Class.forName(className, true, Utils.getContextOrKafkaClassLoader());
+            Class<?> c = Utils.loadClass(className, Object.class);
             for (int i = 0; i < params.length / 2; i++) {
                 argTypes[i] = (Class<?>) params[2 * i];
                 args[i] = params[(2 * i) + 1];

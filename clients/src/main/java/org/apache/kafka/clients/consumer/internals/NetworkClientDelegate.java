@@ -81,6 +81,10 @@ public class NetworkClientDelegate implements AutoCloseable {
         return unsentRequests;
     }
 
+    public int inflightRequestCount() {
+        return client.inFlightRequestCount();
+    }
+
     /**
      * Check if the node is disconnected and unavailable for immediate reconnection (i.e. if it is in
      * reconnect backoff window following the disconnect).
@@ -131,6 +135,13 @@ public class NetworkClientDelegate implements AutoCloseable {
     }
 
     /**
+     * Return true if there is at least one in-flight request or unsent request.
+     */
+    public boolean hasAnyPendingRequests() {
+        return client.hasInFlightRequests() || !unsentRequests.isEmpty();
+    }
+
+    /**
      * Tries to send the requests in the unsentRequest queue. If the request doesn't have an assigned node, it will
      * find the leastLoadedOne, and will be retried in the next {@code poll()}. If the request is expired, a
      * {@link TimeoutException} will be thrown.
@@ -156,7 +167,7 @@ public class NetworkClientDelegate implements AutoCloseable {
     }
 
     boolean doSend(final UnsentRequest r, final long currentTimeMs) {
-        Node node = r.node.orElse(client.leastLoadedNode(currentTimeMs));
+        Node node = r.node.orElse(client.leastLoadedNode(currentTimeMs).node());
         if (node == null || nodeUnavailable(node)) {
             log.debug("No broker available to send the request: {}. Retrying.", r);
             return false;
@@ -201,7 +212,7 @@ public class NetworkClientDelegate implements AutoCloseable {
     }
 
     public Node leastLoadedNode() {
-        return this.client.leastLoadedNode(time.milliseconds());
+        return this.client.leastLoadedNode(time.milliseconds()).node();
     }
 
     public void wakeup() {
@@ -309,11 +320,20 @@ public class NetworkClientDelegate implements AutoCloseable {
 
         @Override
         public String toString() {
+            String remainingMs;
+
+            if (timer != null) {
+                timer.update();
+                remainingMs = String.valueOf(timer.remainingMs());
+            } else {
+                remainingMs = "<not set>";
+            }
+
             return "UnsentRequest{" +
                     "requestBuilder=" + requestBuilder +
                     ", handler=" + handler +
                     ", node=" + node +
-                    ", timer=" + timer +
+                    ", remainingMs=" + remainingMs +
                     '}';
         }
     }

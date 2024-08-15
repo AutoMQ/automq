@@ -573,10 +573,6 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
             assertNull(readInfo)
     }
 
-    override def testFetchLatestTieredTimestampWithRemoteStorage(): Unit = {
-        // AutoMQ embedded tiered storage in S3Stream
-    }
-
     override def testIncrementLocalLogStartOffsetAfterLocalLogDeletion(): Unit = {
         // AutoMQ embedded tiered storage in S3Stream
     }
