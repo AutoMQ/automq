@@ -118,7 +118,7 @@ public class S3StreamKafkaMetricsManager {
                 .setDescription("The number of partitions for each topic on each broker")
                 .ofLongs()
                 .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && isActiveSupplier.get()) {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                         PartitionCountDistribution partitionCountDistribution = topicPartitionCountSupplier.get();
                         if (partitionCountDistribution == null) {
                             return;
