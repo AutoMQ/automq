@@ -1,12 +1,6 @@
 name: E2E-TEST for AutoMQ S3Stream
 on:
-  pull_request_target:
-    types:
-      - opened
-      - reopened
-      - synchronize
-    paths:
-      - 's3stream/**'
+  workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
