@@ -87,7 +87,7 @@ public class NodeRangeIndexCache {
         public synchronized CompletableFuture<Integer> size() {
             if (sizeCf == null) {
                 sizeCf = this.streamRangeIndexMapCf.thenApply(v -> v.values().stream()
-                    .mapToInt(rangeIndices -> Long.BYTES + ZGC_OBJECT_HEADER_SIZE_BYTES + rangeIndices.size() * RangeIndex.SIZE).sum());
+                    .mapToInt(rangeIndices -> Long.BYTES + ZGC_OBJECT_HEADER_SIZE_BYTES + rangeIndices.size() * RangeIndex.OBJECT_SIZE).sum());
             }
             return sizeCf;
         }
