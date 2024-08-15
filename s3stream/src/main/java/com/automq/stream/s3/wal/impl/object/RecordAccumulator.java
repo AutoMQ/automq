@@ -155,7 +155,7 @@ public class RecordAccumulator implements Closeable {
                     .filter(uploadTime -> time.nanoseconds() - uploadTime > DEFAULT_UPLOAD_WARNING_TIMEOUT)
                     .count();
                 if (count > 0) {
-                    log.warn("Found {} pending upload tasks exceed 5s.", count);
+                    log.error("Found {} pending upload tasks exceed 5s.", count);
                 }
             } catch (Throwable ignore) {
             }
@@ -528,7 +528,8 @@ public class RecordAccumulator implements Closeable {
                 if (throwable instanceof WALFencedException) {
                     List<Record> uploadedRecords = uploadMap.remove(firstOffset);
                     Throwable finalThrowable = throwable;
-                    uploadedRecords.forEach(record -> record.future.completeExceptionally(finalThrowable));
+                    // Release lock and complete future in callback thread.
+                    callbackService.submit(() -> uploadedRecords.forEach(record -> record.future.completeExceptionally(finalThrowable)));
                 } else if (throwable != null) {
                     // Never fail the write task, the under layer storage will retry forever.
                     log.error("[Bug] Failed to write records to S3: {}", firstOffset, throwable);
