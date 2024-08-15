@@ -164,7 +164,7 @@ class CompactionTest(Test):
         self.logger.info(f'The compaction(stream set obeject compaction and stream object compaction) time interval is {start_time} ——> {end_time}')
         if stream_set_object_compaction:
             ensure_stream_set_object_compaction(self.kafka, start_time, end_time)
-        if stream_object_compaction_type == 'None':
+        if stream_object_compaction_type != 'None':
             ensure_stream_object_compaction(self.kafka, stream_object_compaction_type, start_time, end_time)
 
         assert success, msg
