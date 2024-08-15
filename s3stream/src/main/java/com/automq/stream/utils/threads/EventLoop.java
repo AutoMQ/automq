@@ -87,6 +87,11 @@ public class EventLoop extends Thread implements Executor {
     public void execute(Runnable task) {
         check();
         tasks.add(task);
+        if (shutdown.get()) {
+            if (tasks.remove(task)) {
+                throw new IllegalStateException("EventLoop is shutdown");
+            }
+        }
     }
 
     public CompletableFuture<Void> shutdownGracefully() {
