@@ -17,6 +17,8 @@ import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -51,7 +53,7 @@ public class LocalStreamRangeIndexCacheTest {
     }
 
     @Test
-    public void testAppend() {
+    public void testAppendAndStreamRemoveLogic() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
         LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
         cache.start();
@@ -85,6 +87,12 @@ public class LocalStreamRangeIndexCacheTest {
         Assertions.assertEquals(93, cache.searchObjectId(STREAM_0, 600).join());
         Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 950).join());
         Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 1500).join());
+
+        // test stream destroyed logic.
+        cache.setAllStreamIdsSupplier(() -> Set.of(1L));
+        cache.cleanUpDeleteStreams().join();
+
+        Assertions.assertFalse(cache.getStreamRangeIndexMap().containsKey(STREAM_0));
     }
 
     @Test

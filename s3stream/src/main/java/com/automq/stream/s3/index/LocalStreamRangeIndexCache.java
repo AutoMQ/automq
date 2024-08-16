@@ -21,6 +21,7 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,6 +41,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,9 +62,21 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private ObjectStorage objectStorage;
     private CompletableFuture<Void> initCf = new CompletableFuture<>();
 
+    private Supplier<Set<Long>> allStreamIdsSupplier = null;
+
+    public void setAllStreamIdsSupplier(Supplier<Set<Long>> allStreamIdSupplier) {
+        writeLock.lock();
+        try {
+            allStreamIdsSupplier = allStreamIdSupplier;
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
     public void start() {
         executorService.scheduleAtFixedRate(this::batchUpload, 0, 10, TimeUnit.MILLISECONDS);
         executorService.scheduleAtFixedRate(this::flush, 1, 1, TimeUnit.MINUTES);
+        executorService.scheduleAtFixedRate(this::cleanUpDeleteStreams, 10, 10, TimeUnit.MINUTES);
     }
 
     // for test
@@ -182,6 +197,16 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         });
     }
 
+    private <T> CompletableFuture<T> execCompose(Function<Void, CompletableFuture<T>> r) {
+        return initCf.thenCompose(v -> {
+            try {
+                return r.apply(v);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
     public void clear() {
         writeLock.lock();
         try {
@@ -214,6 +239,29 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
                 writeLock.unlock();
             }
             return null;
+        });
+    }
+
+
+    @VisibleForTesting
+    public CompletableFuture<Void> cleanUpDeleteStreams() {
+        return execCompose(v -> {
+            writeLock.lock();
+            try {
+                if (allStreamIdsSupplier == null) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                Set<Long> allStreamIds = allStreamIdsSupplier.get();
+
+                boolean removed = streamRangeIndexMap.entrySet().removeIf(entry -> !allStreamIds.contains(entry.getKey()));
+                if (removed) {
+                    return upload();
+                }
+
+                return CompletableFuture.completedFuture(null);
+            } finally {
+                writeLock.unlock();
+            }
         });
     }
 

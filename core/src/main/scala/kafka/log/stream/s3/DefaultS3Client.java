@@ -120,6 +120,7 @@ public class DefaultS3Client implements Client {
         localIndexCache.init(config.nodeId(), objectStorage);
         this.objectReaderFactory = new DefaultObjectReaderFactory(objectStorage);
         this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
+        localIndexCache.setAllStreamIdsSupplier(() -> this.metadataManager.getAllStreamIds());
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
         this.streamManager = newStreamManager(config.nodeId(), config.nodeEpoch(), false);
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);

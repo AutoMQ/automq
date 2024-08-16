@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -182,6 +183,15 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                 "[GetStreamObjects]: stream: {}, startOffset: {}, endOffset: {}, limit: {}, and search in metadataCache failed with exception: {}",
                 streamId, startOffset, endOffset, limit, e.getMessage());
             return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    public Set<Long> getAllStreamIds() {
+        try (Image image = getImage()) {
+            S3StreamsMetadataImage streamsImage = image.streamsMetadata();
+
+            // copy because the TimelineHashMap.keySet() reference the epoch.
+            return Set.copyOf(streamsImage.timelineStreamMetadata().keySet());
         }
     }
 
