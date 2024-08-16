@@ -63,7 +63,7 @@ public class QuorumConfig {
     public static final String QUORUM_FETCH_TIMEOUT_MS_DOC = "Maximum time without a successful fetch from " +
         "the current leader before becoming a candidate and triggering an election for voters; Maximum time " +
         "a leader can go without receiving valid fetch or fetchSnapshot request from a majority of the quorum before resigning.";
-    public static final int DEFAULT_QUORUM_FETCH_TIMEOUT_MS = 2_000;
+    public static final int DEFAULT_QUORUM_FETCH_TIMEOUT_MS = 5_000;
 
     public static final String QUORUM_ELECTION_BACKOFF_MAX_MS_CONFIG = QUORUM_PREFIX + "election.backoff.max.ms";
     public static final String QUORUM_ELECTION_BACKOFF_MAX_MS_DOC = "Maximum time in milliseconds before starting new elections. " +
@@ -78,7 +78,7 @@ public class QuorumConfig {
     public static final String QUORUM_REQUEST_TIMEOUT_MS_CONFIG = QUORUM_PREFIX +
         CommonClientConfigs.REQUEST_TIMEOUT_MS_CONFIG;
     public static final String QUORUM_REQUEST_TIMEOUT_MS_DOC = CommonClientConfigs.REQUEST_TIMEOUT_MS_DOC;
-    public static final int DEFAULT_QUORUM_REQUEST_TIMEOUT_MS = 2_000;
+    public static final int DEFAULT_QUORUM_REQUEST_TIMEOUT_MS = 5_000;
 
     public static final String QUORUM_RETRY_BACKOFF_MS_CONFIG = QUORUM_PREFIX +
         CommonClientConfigs.RETRY_BACKOFF_MS_CONFIG;
