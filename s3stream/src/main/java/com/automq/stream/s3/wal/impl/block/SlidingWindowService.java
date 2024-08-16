@@ -386,7 +386,7 @@ public class SlidingWindowService {
         StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.durationElapsedAs(start, TimeUnit.NANOSECONDS));
     }
 
-    private void makeWriteOffsetMatchWindow(long newWindowEndOffset) {
+    private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException {
         // align to block size
         newWindowEndOffset = WALUtil.alignLargeByBlockSize(newWindowEndOffset);
         long windowStartOffset = windowCoreData.getStartOffset();
@@ -400,7 +400,7 @@ public class SlidingWindowService {
     }
 
     public interface WALHeaderFlusher {
-        void flush();
+        void flush() throws IOException;
     }
 
     public static class WindowCoreData {
@@ -442,7 +442,7 @@ public class SlidingWindowService {
             this.startOffset.accumulateAndGet(offset, Math::max);
         }
 
-        public void scaleOutWindow(WALHeaderFlusher flusher, long newMaxLength) {
+        public void scaleOutWindow(WALHeaderFlusher flusher, long newMaxLength) throws IOException {
             boolean scaleWindowHappened = false;
             scaleOutLock.lock();
             try {
