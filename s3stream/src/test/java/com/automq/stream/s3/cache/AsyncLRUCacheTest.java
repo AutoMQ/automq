@@ -26,7 +26,7 @@ public class AsyncLRUCacheTest {
 
     @Test
     public void test_evictUncompleted() throws Exception {
-        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>(10);
+        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>("test_evictUncompleted", 10);
         MockValue v1 = spy(new MockValue());
         cache.put("v1", v1);
         assertEquals(0, cache.completedSet.size());
@@ -59,7 +59,7 @@ public class AsyncLRUCacheTest {
 
     @Test
     public void testPut_repeat() throws Exception {
-        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>(10);
+        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>("testPut_repeat", 10);
         MockValue v1 = spy(new MockValue());
         cache.put("v1", v1);
         v1.cf.complete(10);
@@ -75,7 +75,7 @@ public class AsyncLRUCacheTest {
 
     @Test
     public void testRemove() throws Exception {
-        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>(10);
+        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>("testRemove", 10);
         MockValue v1 = spy(new MockValue());
         cache.put("v1", v1);
         v1.cf.complete(10);
@@ -108,7 +108,7 @@ public class AsyncLRUCacheTest {
 
     @Test
     public void test_asyncFail() {
-        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>(10);
+        AsyncLRUCache<String, MockValue> cache = new AsyncLRUCache<>("test_asyncFail", 10);
         MockValue v1 = new MockValue();
         cache.put("v1", v1);
         Assertions.assertEquals(1, cache.size());
