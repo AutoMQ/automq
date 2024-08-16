@@ -34,10 +34,7 @@ import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.RuntimeIOException;
-import com.automq.stream.utils.FutureTicker;
-import com.automq.stream.utils.FutureUtil;
-import com.automq.stream.utils.ThreadUtils;
-import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.*;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
@@ -80,6 +77,7 @@ import static com.automq.stream.utils.FutureUtil.suppress;
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
     private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
+    private static final boolean AUTOMQ_SKIP_READ_DELTA_LOG_CACHE = Systems.getEnvInt("AUTOMQ_SKIP_READ_DELTA_CACHE", 0) == 1;
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
     private final long maxDeltaWALCacheSize;
@@ -536,7 +534,13 @@ public class S3Storage implements Storage {
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
-        List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
+        List<StreamRecordBatch> logCacheRecords;
+        if (AUTOMQ_SKIP_READ_DELTA_LOG_CACHE) {
+            logCacheRecords = new ArrayList<>();
+        } else {
+            logCacheRecords = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
+        }
+
         if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords, CacheAccessType.DELTA_WAL_CACHE_HIT));
         }
