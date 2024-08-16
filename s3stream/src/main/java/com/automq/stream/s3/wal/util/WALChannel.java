@@ -135,21 +135,28 @@ public interface WALChannel {
         flush();
     }
 
-    default void retryWriteAndFlush(ByteBuf src, long position) {
-        retryWriteAndFlush(src, position, DEFAULT_RETRY_INTERVAL);
+    default void retryWriteAndFlush(ByteBuf src, long position) throws IOException {
+        retryWriteAndFlush(src, position, DEFAULT_RETRY_INTERVAL, DEFAULT_RETRY_TIMEOUT);
     }
 
     /**
-     * Retry {@link #writeAndFlush(ByteBuf, long)} with the given interval until success.
+     * Retry {@link #writeAndFlush(ByteBuf, long)} with the given interval until success or timeout.
      */
-    default void retryWriteAndFlush(ByteBuf src, long position, long retryIntervalMillis) {
+    default void retryWriteAndFlush(ByteBuf src, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
+        long start = System.nanoTime();
+        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
         while (true) {
             try {
                 writeAndFlush(src, position);
                 break;
             } catch (IOException e) {
-                LOGGER.error("Failed to write and flush, retrying in {}ms", retryIntervalMillis, e);
-                Threads.sleep(retryIntervalMillis);
+                if (System.nanoTime() - start > retryTimeoutNanos) {
+                    LOGGER.error("Failed to write and flush, retry timeout", e);
+                    throw e;
+                } else {
+                    LOGGER.error("Failed to write and flush, retrying in {}ms", retryIntervalMillis, e);
+                    Threads.sleep(retryIntervalMillis);
+                }
             }
         }
     }
