@@ -1,6 +1,15 @@
 name: Nightly Main E2E tests
 on:
   workflow_dispatch:
+    inputs:
+      runs_on:
+        description: 'Runs on'
+        required: false
+        default: main-release
+        type: choice
+        options:
+          - main
+          - main-release
   schedule:
     - cron: '0 16 * * *'
 
@@ -13,7 +22,7 @@ jobs:
       suite-id: "main1"
       test-yaml: "tests/suites/main_kos_test_suite1.yml"
       storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_2:
     name: "Run Main E2E Tests 2"
     uses: ./.github/workflows/e2e-run.yml
@@ -22,7 +31,7 @@ jobs:
       suite-id: "main2"
       test-yaml: "tests/suites/main_kos_test_suite2.yml"
       storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_3:
     name: "Run Main E2E Tests 3"
     uses: ./.github/workflows/e2e-run.yml
@@ -31,7 +40,7 @@ jobs:
       suite-id: "main3"
       test-yaml: "tests/suites/main_kos_test_suite3.yml"
       storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_4:
     name: "Run Main E2E Tests 4"
     uses: ./.github/workflows/e2e-run.yml
@@ -40,7 +49,7 @@ jobs:
       suite-id: "main4"
       test-yaml: "tests/suites/main_kos_test_suite4.yml"
       storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_5:
     name: "Run Main E2E Tests 5"
     uses: ./.github/workflows/e2e-run.yml
@@ -49,7 +58,7 @@ jobs:
       suite-id: "main5"
       test-yaml: "tests/suites/main_kos_test_suite5.yml"
       storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_6:
     name: "Run Main E2E Tests 6"
     uses: ./.github/workflows/e2e-run.yml
@@ -58,10 +67,10 @@ jobs:
       suite-id: "main6"
       test-yaml: "tests/suites/main_kos_test_suite6.yml"
       storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: ${{ inputs.runs_on || 'main' }}
   e2e_summary:
+    runs-on: ${{ inputs.runs_on || 'main' }}
     name: "E2E Tests Summary"
-    runs-on: [ self-hosted, main ]
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5, main_e2e_6 ]
     steps:
