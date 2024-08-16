@@ -63,7 +63,7 @@ public class ObjectReaderLRUCacheTest {
         Assertions.assertEquals(72000, objectReader2.basicObjectInfo().get().size());
         Assertions.assertEquals(108000, objectReader3.basicObjectInfo().get().size());
 
-        ObjectReaderLRUCache cache = new ObjectReaderLRUCache(100000);
+        ObjectReaderLRUCache cache = new ObjectReaderLRUCache("", 100000);
         cache.put(235L, objectReader3);
         cache.put(234L, objectReader2);
         cache.put(233L, objectReader);
@@ -75,7 +75,7 @@ public class ObjectReaderLRUCacheTest {
 
     @Test
     public void testConcurrentGetPut() throws InterruptedException {
-        ObjectReaderLRUCache cache = new ObjectReaderLRUCache(5000);
+        ObjectReaderLRUCache cache = new ObjectReaderLRUCache("", 5000);
         List<CompletableFuture<Integer>> cfs = new ArrayList<>();
         Random r = new Random();
         for (int i = 0; i < 100; i++) {

@@ -23,7 +23,7 @@ public class DefaultObjectReaderFactory implements ObjectReaderFactory {
     private final ObjectStorage objectStorage;
 
     public DefaultObjectReaderFactory(ObjectStorage objectStorage) {
-        this.objectReaders = new ObjectReaderLRUCache(MAX_OBJECT_READER_SIZE);
+        this.objectReaders = new ObjectReaderLRUCache("ObjectReader", MAX_OBJECT_READER_SIZE);
         this.objectStorage = objectStorage;
     }
 

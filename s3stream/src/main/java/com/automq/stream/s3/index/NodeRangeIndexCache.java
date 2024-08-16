@@ -100,7 +100,7 @@ public class NodeRangeIndexCache {
 
     static class LRUCache extends AsyncLRUCache<Long, StreamRangeIndexCache> {
         public LRUCache(int maxSize) {
-            super(maxSize);
+            super("NodeRangeIndex", maxSize);
         }
     }
 }
