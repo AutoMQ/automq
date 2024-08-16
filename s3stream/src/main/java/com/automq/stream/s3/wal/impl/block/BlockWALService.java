@@ -162,12 +162,12 @@ public class BlockWALService implements WriteAheadLog {
         return new BlockWALServiceBuilder(path).recoveryMode(true);
     }
 
-    private void flushWALHeader(ShutdownType shutdownType) {
+    private void flushWALHeader(ShutdownType shutdownType) throws IOException {
         walHeader.setShutdownType(shutdownType);
         flushWALHeader();
     }
 
-    private synchronized void flushWALHeader() {
+    private synchronized void flushWALHeader() throws IOException {
         long position = writeHeaderRoundTimes.getAndIncrement() % WAL_HEADER_COUNT * WAL_HEADER_CAPACITY;
         walHeader.setLastWriteTimestamp(System.nanoTime());
         long trimOffset = walHeader.getTrimOffset();
@@ -363,7 +363,7 @@ public class BlockWALService implements WriteAheadLog {
         return new BlockWALHeader(walChannel.capacity(), initialWindowSize);
     }
 
-    private void walHeaderReady(BlockWALHeader header) {
+    private void walHeaderReady(BlockWALHeader header) throws IOException {
         if (nodeId != NOOP_NODE_ID) {
             header.setNodeId(nodeId);
             header.setEpoch(epoch);
@@ -392,7 +392,11 @@ public class BlockWALService implements WriteAheadLog {
         boolean gracefulShutdown = Optional.ofNullable(slidingWindowService)
             .map(s -> s.shutdown(1, TimeUnit.DAYS))
             .orElse(true);
-        flushWALHeader(gracefulShutdown ? ShutdownType.GRACEFULLY : ShutdownType.UNGRACEFULLY);
+        try {
+            flushWALHeader(gracefulShutdown ? ShutdownType.GRACEFULLY : ShutdownType.UNGRACEFULLY);
+        } catch (IOException ignored) {
+            // shutdown anyway
+        }
 
         walChannel.close();
 
@@ -506,7 +510,13 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         walHeader.updateTrimOffset(offset);
-        return CompletableFuture.runAsync(this::flushWALHeader, walHeaderFlusher);
+        return CompletableFuture.runAsync(() -> {
+            try {
+                flushWALHeader();
+            } catch (IOException e) {
+                throw new RuntimeIOException(e);
+            }
+        }, walHeaderFlusher);
     }
 
     private void checkStarted() {
