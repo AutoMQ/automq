@@ -19,7 +19,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
-
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -32,7 +31,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -52,6 +50,7 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
@@ -145,7 +144,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
-        GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
+        GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).checksumMode(ChecksumMode.ENABLED).build();
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
@@ -363,7 +362,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .maxConcurrency(maxConcurrency)
             .build();
         builder.httpClient(httpClient);
-        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
+        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle).checksumValidationEnabled(true));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(2))
             .apiCallAttemptTimeout(Duration.ofSeconds(60)));
