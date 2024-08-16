@@ -15,7 +15,7 @@ import com.automq.stream.s3.ObjectReader;
 
 public class ObjectReaderLRUCache extends AsyncLRUCache<Long, ObjectReader> {
 
-    public ObjectReaderLRUCache(int maxObjectSize) {
-        super(maxObjectSize);
+    public ObjectReaderLRUCache(String cacheName, int maxObjectSize) {
+        super(cacheName, maxObjectSize);
     }
 }
