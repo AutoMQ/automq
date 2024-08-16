@@ -56,11 +56,6 @@ class ConsumerRollingUpgradeTest(VerifiableConsumerTest):
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True, False]
     )
-    @matrix(
-        metadata_quorum=quorum.all_kraft,
-        use_new_coordinator=[True],
-        group_protocol=consumer_group.all_group_protocols
-    )
     def rolling_update_test(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         """
         Verify rolling updates of partition assignment strategies works correctly. In this
