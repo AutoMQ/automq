@@ -48,6 +48,7 @@ jobs:
       - name: Move results
         run: |
           results_path="$(pwd)/results/$(readlink results/latest | cut -d'/' -f5)"
+          mkdir -p "${{ inputs.storage-path }}/${{ inputs.suite-id }}"
           mv "${results_path}" "${{ inputs.storage-path }}/${{ inputs.suite-id }}"
         if: ${{ always() }}
         shell: bash
