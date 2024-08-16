@@ -183,13 +183,13 @@ public class S3StreamsMetadataImageTest {
                 Map<Long, SparseRangeIndex> streamRangeIndexMap;
                 if (nodeId == BROKER0) {
                     streamRangeIndexMap = Map.of(
-                        STREAM0, new SparseRangeIndex(2, 1, List.of(
+                        STREAM0, new SparseRangeIndex(2, List.of(
                             new RangeIndex(100, 120, 0),
                             new RangeIndex(180, 200, 2),
                             new RangeIndex(520, 600, 4))));
                 } else {
                     streamRangeIndexMap = Map.of(
-                        STREAM0, new SparseRangeIndex(2, 1, List.of(
+                        STREAM0, new SparseRangeIndex(2, List.of(
                             new RangeIndex(140, 160, 5),
                             new RangeIndex(420, 520, 7),
                             // objectId 8 is not exist (compacted)
