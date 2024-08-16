@@ -11,24 +11,30 @@
 
 package com.automq.stream.s3.failover;
 
+import com.automq.stream.utils.Threads;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class StorageFailureHandlerChain implements StorageFailureHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageFailureHandlerChain.class);
     private final List<StorageFailureHandler> handlers = new ArrayList<>();
+    private final ExecutorService executorService = Threads.newFixedThreadPoolWithMonitor(1, "storage-failure-handler", true, LOGGER);
 
     @Override
     public void handle(Throwable ex) {
-        for (StorageFailureHandler handler : handlers) {
-            try {
-                handler.handle(ex);
-            } catch (Throwable e) {
-                LOGGER.error("{} Handle storage failure error", handler, e);
+        // async handle storage failure to prevent blocking the WAL callback thread which may cause deadlock
+        executorService.submit(() -> {
+            for (StorageFailureHandler handler : handlers) {
+                try {
+                    handler.handle(ex);
+                } catch (Throwable e) {
+                    LOGGER.error("{} Handle storage failure error", handler, e);
+                }
             }
-        }
+        });
     }
 
     public void addHandler(StorageFailureHandler handler) {
