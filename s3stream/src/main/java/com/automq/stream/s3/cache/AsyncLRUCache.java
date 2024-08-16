@@ -16,35 +16,49 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.AsyncLRUCacheStats;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     private static final Logger LOGGER = LoggerFactory.getLogger(AsyncLRUCache.class);
+    private final AsyncLRUCacheStats stats = AsyncLRUCacheStats.getInstance();
+    private final String cacheName;
     private final long maxSize;
     final AtomicLong totalSize = new AtomicLong(0);
     final LRUCache<K, V> cache = new LRUCache<>();
     final Set<V> completedSet = new HashSet<>();
     final Set<V> removedSet = new HashSet<>();
 
-    public AsyncLRUCache(long maxSize) {
-        super();
+    public AsyncLRUCache(String cacheName, long maxSize) {
+        this.cacheName = cacheName;
         if (maxSize <= 0) {
             throw new IllegalArgumentException("maxSize must be positive");
         }
         this.maxSize = maxSize;
+
+        S3StreamMetricsManager.registerAsyncCacheSizeSupplier(this::totalSize, cacheName);
+        S3StreamMetricsManager.registerAsyncCacheMaxSizeSupplier(() -> maxSize, cacheName);
+        S3StreamMetricsManager.registerAsyncCacheItemNumberSupplier(this::size, cacheName);
     }
 
     public synchronized void put(K key, V value) {
         V oldValue = cache.get(key);
         if (oldValue != null && oldValue != value) {
+            stats.markOverWrite(cacheName);
             cache.remove(key);
             afterRemoveValue(oldValue);
+        } else {
+            stats.markPut(cacheName);
         }
+
         cache.put(key, value);
         value.size().whenComplete((v, ex) -> {
             synchronized (AsyncLRUCache.this) {
                 if (ex != null) {
+                    stats.markItemCompleteExceptionally(cacheName);
                     cache.remove(key);
                 } else if (!removedSet.contains(value)) {
                     completedSet.add(value);
@@ -64,12 +78,18 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     }
 
     public synchronized V get(K key) {
-        return cache.get(key);
+        V val = cache.get(key);
+        if (val == null) {
+            stats.markMiss(cacheName);
+        } else {
+            stats.markHit(cacheName);
+        }
+        return val;
     }
 
 
     public synchronized boolean remove(K key) {
-        V value =  cache.get(key);
+        V value = cache.get(key);
         if (value == null) {
             return false;
         }
@@ -82,9 +102,11 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
         try {
             boolean completed = completedSet.remove(value);
             if (completed) {
+                stats.markRemoveCompleted(cacheName);
                 totalSize.addAndGet(-value.size().get());
                 value.close();
             } else {
+                stats.markRemoveNotCompleted(cacheName);
                 removedSet.add(value);
             }
         } catch (Throwable e) {
@@ -97,6 +119,9 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
         if (entry != null) {
             afterRemoveValue(entry.getValue());
         }
+
+        stats.markPop(cacheName);
+
         return entry;
     }
 
@@ -123,5 +148,7 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
                 afterRemoveValue(value);
             });
         }
+
+        stats.markEvict(cacheName);
     }
 }
