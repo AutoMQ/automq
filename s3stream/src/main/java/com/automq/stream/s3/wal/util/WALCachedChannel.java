@@ -43,14 +43,25 @@ public class WALCachedChannel implements WALChannel {
         return new WALCachedChannel(channel, cacheSize);
     }
 
+    @Override
+    public int read(ByteBuf dst, long position, int length) throws IOException {
+        return read(channel::read, dst, position, length);
+    }
+
+    @Override
+    public int retryRead(ByteBuf dst, long position, int length, long retryIntervalMillis,
+        long retryTimeoutMillis) throws IOException {
+        Reader reader = (buf, pos, len) -> channel.retryRead(buf, pos, len, retryIntervalMillis, retryTimeoutMillis);
+        return read(reader, dst, position, length);
+    }
+
     /**
      * As we use a common cache for all threads, we need to synchronize the read.
      */
-    @Override
-    public synchronized int read(ByteBuf dst, long position, int length) throws IOException {
+    private synchronized int read(Reader reader, ByteBuf dst, long position, int length) throws IOException {
         if (CAPACITY_NOT_SET == channel.capacity()) {
             // If we don't know the capacity now, we can't cache.
-            return channel.read(dst, position, length);
+            return reader.read(dst, position, length);
         }
 
         long start = position;
@@ -60,7 +71,7 @@ public class WALCachedChannel implements WALChannel {
         ByteBuf cache = getCache();
         if (length > cache.capacity()) {
             // If the length is larger than the cache capacity, we can't cache.
-            return channel.read(dst, position, length);
+            return reader.read(dst, position, length);
         }
 
         boolean fallWithinCache = cachePosition >= 0 && cachePosition <= start && end <= cachePosition + cache.readableBytes();
@@ -69,7 +80,7 @@ public class WALCachedChannel implements WALChannel {
             cachePosition = start;
             // Make sure the cache is not larger than the channel capacity.
             int cacheLength = (int) Math.min(cache.writableBytes(), channel.capacity() - cachePosition);
-            channel.read(cache, cachePosition, cacheLength);
+            reader.read(cache, cachePosition, cacheLength);
         }
 
         // Now the cache is ready.
@@ -107,6 +118,10 @@ public class WALCachedChannel implements WALChannel {
         return this.cache;
     }
 
+    private interface Reader {
+        int read(ByteBuf dst, long position, int length) throws IOException;
+    }
+
     @Override
     public void open(CapacityReader reader) throws IOException {
         this.channel.open(reader);
@@ -128,8 +143,19 @@ public class WALCachedChannel implements WALChannel {
     }
 
     @Override
+    public void retryWrite(ByteBuf src, long position, long retryIntervalMillis,
+        long retryTimeoutMillis) throws IOException {
+        channel.retryWrite(src, position, retryIntervalMillis, retryTimeoutMillis);
+    }
+
+    @Override
     public void flush() throws IOException {
         this.channel.flush();
+    }
+
+    @Override
+    public void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
+        channel.retryFlush(retryIntervalMillis, retryTimeoutMillis);
     }
 
     @Override

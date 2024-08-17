@@ -16,12 +16,12 @@ import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.benchmark.WriteBench;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.exception.WALNotInitializedException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService.RecoverIterator;
-import com.automq.stream.s3.wal.benchmark.WriteBench;
 import com.automq.stream.s3.wal.util.WALBlockDeviceChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
@@ -914,14 +914,14 @@ class BlockWALServiceTest {
         record.addComponents(true, recordHeader, recordBody);
 
         long position = WALUtil.recordOffsetToPosition(logicOffset, walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
-        walChannel.writeAndFlush(record, position);
+        writeAndFlush(walChannel, record, position);
     }
 
     private void writeWALHeader(WALChannel walChannel, long trimOffset, long maxLength) throws IOException {
         ByteBuf header = new BlockWALHeader(walChannel.capacity(), maxLength)
             .updateTrimOffset(trimOffset)
             .marshal();
-        walChannel.writeAndFlush(header, 0);
+        writeAndFlush(walChannel, header, 0);
     }
 
     @ParameterizedTest(name = "Test {index} {0}")
@@ -1214,7 +1214,7 @@ class BlockWALServiceTest {
             .direct(directIO)
             .build();
         walChannel.open();
-        walChannel.writeAndFlush(new BlockWALHeader(capacity2, 42).marshal(), 0);
+        writeAndFlush(walChannel, new BlockWALHeader(capacity2, 42).marshal(), 0);
         walChannel.close();
 
         // try to open it with capacity1
@@ -1278,7 +1278,7 @@ class BlockWALServiceTest {
             .direct(directIO)
             .build();
         walChannel.open();
-        walChannel.writeAndFlush(Unpooled.buffer(WAL_HEADER_TOTAL_CAPACITY).writeZero(WAL_HEADER_TOTAL_CAPACITY), 0);
+        writeAndFlush(walChannel, Unpooled.buffer(WAL_HEADER_TOTAL_CAPACITY).writeZero(WAL_HEADER_TOTAL_CAPACITY), 0);
         walChannel.close();
 
         // try to open it in recovery mode
@@ -1342,6 +1342,11 @@ class BlockWALServiceTest {
         } finally {
             wal3.shutdownGracefully();
         }
+    }
+
+    private void writeAndFlush(WALChannel channel, ByteBuf src, long position) throws IOException {
+        channel.write(src, position);
+        channel.flush();
     }
 
     private static class RecoverFromDisasterParam {
