@@ -78,22 +78,7 @@ public interface WALChannel {
      * Retry {@link #write(ByteBuf, long)} with the given interval until success or timeout.
      */
     default void retryWrite(ByteBuf src, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        long start = System.nanoTime();
-        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
-        while (true) {
-            try {
-                write(src, position);
-                break;
-            } catch (IOException e) {
-                if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to write, retry timeout", e);
-                    throw e;
-                } else {
-                    LOGGER.error("Failed to write, retrying in {}ms", retryIntervalMillis, e);
-                    Threads.sleep(retryIntervalMillis);
-                }
-            }
-        }
+        retry(() -> write(src, position), retryIntervalMillis, retryTimeoutMillis);
     }
 
     /**
@@ -109,22 +94,7 @@ public interface WALChannel {
      * Retry {@link #flush()} with the given interval until success or timeout.
      */
     default void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        long start = System.nanoTime();
-        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
-        while (true) {
-            try {
-                flush();
-                break;
-            } catch (IOException e) {
-                if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to flush, retry timeout", e);
-                    throw e;
-                } else {
-                    LOGGER.error("Failed to flush, retrying in {}ms", retryIntervalMillis, e);
-                    Threads.sleep(retryIntervalMillis);
-                }
-            }
-        }
+        retry(this::flush, retryIntervalMillis, retryTimeoutMillis);
     }
 
     /**
@@ -149,17 +119,25 @@ public interface WALChannel {
      * Retry {@link #read(ByteBuf, long)} with the given interval until success or timeout.
      */
     default int retryRead(ByteBuf dst, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
+        return retry(() -> read(dst, position), retryIntervalMillis, retryTimeoutMillis);
+    }
+
+    default void retry(IORunnable runnable, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
+        retry(IOSupplier.from(runnable), retryIntervalMillis, retryTimeoutMillis);
+    }
+
+    default <T> T retry(IOSupplier<T> supplier, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
         long start = System.nanoTime();
         long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
         while (true) {
             try {
-                return read(dst, position);
+                return supplier.get();
             } catch (IOException e) {
                 if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to read, retry timeout", e);
+                    LOGGER.error("Failed to execute IO operation, retry timeout", e);
                     throw e;
                 } else {
-                    LOGGER.error("Failed to read, retrying in {}ms", retryIntervalMillis, e);
+                    LOGGER.warn("Failed to execute IO operation, retrying in {}ms, error: {}", retryIntervalMillis, e.getMessage());
                     Threads.sleep(retryIntervalMillis);
                 }
             }
@@ -174,6 +152,21 @@ public interface WALChannel {
          * It returns null if the channel has not been initialized before.
          */
         Long capacity(WALChannel channel) throws IOException;
+    }
+
+    interface IOSupplier<T> {
+        T get() throws IOException;
+
+        static IOSupplier<Void> from(IORunnable runnable) {
+            return () -> {
+                runnable.run();
+                return null;
+            };
+        }
+    }
+
+    interface IORunnable {
+        void run() throws IOException;
     }
 
     class WALChannelBuilder {
