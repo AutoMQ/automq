@@ -20,7 +20,7 @@ import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 /**
  * A wrapper of {@link WALChannel} that caches for read to reduce I/O.
  */
-public class WALCachedChannel extends AbstractWALChannel {
+public class WALCachedChannel implements WALChannel {
 
     private static final int DEFAULT_CACHE_SIZE = 1 << 20;
 
@@ -43,14 +43,25 @@ public class WALCachedChannel extends AbstractWALChannel {
         return new WALCachedChannel(channel, cacheSize);
     }
 
+    @Override
+    public int read(ByteBuf dst, long position, int length) throws IOException {
+        return read(channel::read, dst, position, length);
+    }
+
+    @Override
+    public int retryRead(ByteBuf dst, long position, int length, long retryIntervalMillis,
+        long retryTimeoutMillis) throws IOException {
+        Reader reader = (buf, pos, len) -> channel.retryRead(buf, pos, len, retryIntervalMillis, retryTimeoutMillis);
+        return read(reader, dst, position, length);
+    }
+
     /**
      * As we use a common cache for all threads, we need to synchronize the read.
      */
-    @Override
-    public synchronized int read(ByteBuf dst, long position, int length) throws IOException {
+    private synchronized int read(Reader reader, ByteBuf dst, long position, int length) throws IOException {
         if (CAPACITY_NOT_SET == channel.capacity()) {
             // If we don't know the capacity now, we can't cache.
-            return channel.read(dst, position, length);
+            return reader.read(dst, position, length);
         }
 
         long start = position;
@@ -60,7 +71,7 @@ public class WALCachedChannel extends AbstractWALChannel {
         ByteBuf cache = getCache();
         if (length > cache.capacity()) {
             // If the length is larger than the cache capacity, we can't cache.
-            return channel.read(dst, position, length);
+            return reader.read(dst, position, length);
         }
 
         boolean fallWithinCache = cachePosition >= 0 && cachePosition <= start && end <= cachePosition + cache.readableBytes();
@@ -69,7 +80,7 @@ public class WALCachedChannel extends AbstractWALChannel {
             cachePosition = start;
             // Make sure the cache is not larger than the channel capacity.
             int cacheLength = (int) Math.min(cache.writableBytes(), channel.capacity() - cachePosition);
-            channel.read(cache, cachePosition, cacheLength);
+            reader.read(cache, cachePosition, cacheLength);
         }
 
         // Now the cache is ready.
@@ -105,6 +116,10 @@ public class WALCachedChannel extends AbstractWALChannel {
             this.cache = ByteBufAlloc.byteBuffer(cacheSize);
         }
         return this.cache;
+    }
+
+    private interface Reader {
+        int read(ByteBuf dst, long position, int length) throws IOException;
     }
 
     @Override

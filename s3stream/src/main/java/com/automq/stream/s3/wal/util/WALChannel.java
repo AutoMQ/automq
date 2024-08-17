@@ -90,6 +90,10 @@ public interface WALChannel {
      */
     void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
 
+    default int read(ByteBuf dst, long position) throws IOException {
+        return read(dst, position, dst.writableBytes());
+    }
+
     /**
      * Read bytes from the given position of the channel to the given buffer from the current writer index
      * until reaching the given length or the end of the channel.
@@ -100,18 +104,14 @@ public interface WALChannel {
      */
     int read(ByteBuf dst, long position, int length) throws IOException;
 
-    default int read(ByteBuf dst, long position) throws IOException {
-        return read(dst, position, dst.writableBytes());
-    }
-
     default int retryRead(ByteBuf dst, long position) throws IOException {
-        return retryRead(dst, position, DEFAULT_RETRY_INTERVAL, DEFAULT_RETRY_TIMEOUT);
+        return retryRead(dst, position, dst.writableBytes(), DEFAULT_RETRY_INTERVAL, DEFAULT_RETRY_TIMEOUT);
     }
 
     /**
-     * Retry {@link #read(ByteBuf, long)} with the given interval until success or timeout.
+     * Retry {@link #read(ByteBuf, long, int)} with the given interval until success or timeout.
      */
-    int retryRead(ByteBuf dst, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
+    int retryRead(ByteBuf dst, long position, int length, long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
 
     boolean useDirectIO();
 

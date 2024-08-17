@@ -237,7 +237,7 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
     }
 
     @Override
-    public void write(ByteBuf src, long position) throws IOException {
+    public void doWrite(ByteBuf src, long position) throws IOException {
         if (unalignedWrite) {
             // unaligned write, just used for testing
             unalignedWrite(src, position);
@@ -295,11 +295,11 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
     }
 
     @Override
-    public void flush() {
+    public void doFlush() {
     }
 
     @Override
-    public int read(ByteBuf dst, long position, int length) throws IOException {
+    public int doRead(ByteBuf dst, long position, int length) throws IOException {
         long start = position;
         length = Math.min(length, dst.writableBytes());
         long end = position + length;

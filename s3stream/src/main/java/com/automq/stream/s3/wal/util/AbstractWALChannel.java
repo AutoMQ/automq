@@ -22,10 +22,29 @@ public abstract class AbstractWALChannel implements WALChannel {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractWALChannel.class);
 
+    /**
+     * Flag to indicate if the WAL has failed.
+     * It will be set to true if an IO operation fails continuously, and it will never be reset.
+     * Any IO operation will fail immediately if this flag is true.
+     */
+    private volatile boolean failed = false;
+
+    @Override
+    public void write(ByteBuf src, long position) throws IOException {
+        checkFailed();
+        doWrite(src, position);
+    }
+
     @Override
     public void retryWrite(ByteBuf src, long position, long retryIntervalMillis,
         long retryTimeoutMillis) throws IOException {
         retry(() -> write(src, position), retryIntervalMillis, retryTimeoutMillis);
+    }
+
+    @Override
+    public void flush() throws IOException {
+        checkFailed();
+        doFlush();
     }
 
     @Override
@@ -34,9 +53,15 @@ public abstract class AbstractWALChannel implements WALChannel {
     }
 
     @Override
-    public int retryRead(ByteBuf dst, long position, long retryIntervalMillis,
+    public int read(ByteBuf dst, long position, int length) throws IOException {
+        checkFailed();
+        return doRead(dst, position, length);
+    }
+
+    @Override
+    public int retryRead(ByteBuf dst, long position, int length, long retryIntervalMillis,
         long retryTimeoutMillis) throws IOException {
-        return retry(() -> read(dst, position), retryIntervalMillis, retryTimeoutMillis);
+        return retry(() -> read(dst, position, length), retryIntervalMillis, retryTimeoutMillis);
     }
 
     private void retry(IORunnable runnable, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
@@ -44,6 +69,7 @@ public abstract class AbstractWALChannel implements WALChannel {
     }
 
     private <T> T retry(IOSupplier<T> supplier, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
+        checkFailed();
         long start = System.nanoTime();
         long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
         while (true) {
@@ -51,15 +77,30 @@ public abstract class AbstractWALChannel implements WALChannel {
                 return supplier.get();
             } catch (IOException e) {
                 if (System.nanoTime() - start > retryTimeoutNanos) {
+                    failed = true;
                     LOGGER.error("Failed to execute IO operation, retry timeout", e);
                     throw e;
-                } else {
-                    LOGGER.warn("Failed to execute IO operation, retrying in {}ms, error: {}", retryIntervalMillis, e.getMessage());
-                    Threads.sleep(retryIntervalMillis);
                 }
+                checkFailed();
+                LOGGER.warn("Failed to execute IO operation, retrying in {}ms, error: {}", retryIntervalMillis, e.getMessage());
+                Threads.sleep(retryIntervalMillis);
             }
         }
     }
+
+    private void checkFailed() throws IOException {
+        if (failed) {
+            IOException e = new IOException("Failed to execute IO operation, WAL failed");
+            LOGGER.error("Failed to execute IO operation, WAL failed", e);
+            throw e;
+        }
+    }
+
+    protected abstract void doWrite(ByteBuf src, long position) throws IOException;
+
+    protected abstract void doFlush() throws IOException;
+
+    protected abstract int doRead(ByteBuf dst, long position, int length) throws IOException;
 
     private interface IOSupplier<T> {
         T get() throws IOException;
