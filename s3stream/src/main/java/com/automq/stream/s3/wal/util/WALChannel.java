@@ -13,7 +13,6 @@ package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.exception.WALNotInitializedException;
-import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import java.io.File;
 import java.io.IOException;
@@ -30,8 +29,6 @@ import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
  * 2. WALBlockDeviceChannel based on block device, which uses O_DIRECT to bypass page cache.
  */
 public interface WALChannel {
-
-    Logger LOGGER = LoggerFactory.getLogger(WALChannel.class);
 
     long DEFAULT_RETRY_INTERVAL = TimeUnit.MILLISECONDS.toMillis(100);
     long DEFAULT_RETRY_TIMEOUT = TimeUnit.MINUTES.toMillis(1);
@@ -77,24 +74,7 @@ public interface WALChannel {
     /**
      * Retry {@link #write(ByteBuf, long)} with the given interval until success or timeout.
      */
-    default void retryWrite(ByteBuf src, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        long start = System.nanoTime();
-        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
-        while (true) {
-            try {
-                write(src, position);
-                break;
-            } catch (IOException e) {
-                if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to write, retry timeout", e);
-                    throw e;
-                } else {
-                    LOGGER.error("Failed to write, retrying in {}ms", retryIntervalMillis, e);
-                    Threads.sleep(retryIntervalMillis);
-                }
-            }
-        }
-    }
+    void retryWrite(ByteBuf src, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
 
     /**
      * Flush to disk.
@@ -108,57 +88,10 @@ public interface WALChannel {
     /**
      * Retry {@link #flush()} with the given interval until success or timeout.
      */
-    default void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        long start = System.nanoTime();
-        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
-        while (true) {
-            try {
-                flush();
-                break;
-            } catch (IOException e) {
-                if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to flush, retry timeout", e);
-                    throw e;
-                } else {
-                    LOGGER.error("Failed to flush, retrying in {}ms", retryIntervalMillis, e);
-                    Threads.sleep(retryIntervalMillis);
-                }
-            }
-        }
-    }
+    void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
 
-    /**
-     * Call {@link #write(ByteBuf, long)} and {@link #flush()}.
-     */
-    default void writeAndFlush(ByteBuf src, long position) throws IOException {
-        write(src, position);
-        flush();
-    }
-
-    default void retryWriteAndFlush(ByteBuf src, long position) throws IOException {
-        retryWriteAndFlush(src, position, DEFAULT_RETRY_INTERVAL, DEFAULT_RETRY_TIMEOUT);
-    }
-
-    /**
-     * Retry {@link #writeAndFlush(ByteBuf, long)} with the given interval until success or timeout.
-     */
-    default void retryWriteAndFlush(ByteBuf src, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        long start = System.nanoTime();
-        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
-        while (true) {
-            try {
-                writeAndFlush(src, position);
-                break;
-            } catch (IOException e) {
-                if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to write and flush, retry timeout", e);
-                    throw e;
-                } else {
-                    LOGGER.error("Failed to write and flush, retrying in {}ms", retryIntervalMillis, e);
-                    Threads.sleep(retryIntervalMillis);
-                }
-            }
-        }
+    default int read(ByteBuf dst, long position) throws IOException {
+        return read(dst, position, dst.writableBytes());
     }
 
     /**
@@ -171,34 +104,14 @@ public interface WALChannel {
      */
     int read(ByteBuf dst, long position, int length) throws IOException;
 
-    default int read(ByteBuf dst, long position) throws IOException {
-        return read(dst, position, dst.writableBytes());
-    }
-
     default int retryRead(ByteBuf dst, long position) throws IOException {
-        return retryRead(dst, position, DEFAULT_RETRY_INTERVAL, DEFAULT_RETRY_TIMEOUT);
+        return retryRead(dst, position, dst.writableBytes(), DEFAULT_RETRY_INTERVAL, DEFAULT_RETRY_TIMEOUT);
     }
 
     /**
-     * Retry {@link #read(ByteBuf, long)} with the given interval until success or timeout.
+     * Retry {@link #read(ByteBuf, long, int)} with the given interval until success or timeout.
      */
-    default int retryRead(ByteBuf dst, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        long start = System.nanoTime();
-        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
-        while (true) {
-            try {
-                return read(dst, position);
-            } catch (IOException e) {
-                if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to read, retry timeout", e);
-                    throw e;
-                } else {
-                    LOGGER.error("Failed to read, retrying in {}ms", retryIntervalMillis, e);
-                    Threads.sleep(retryIntervalMillis);
-                }
-            }
-        }
-    }
+    int retryRead(ByteBuf dst, long position, int length, long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
 
     boolean useDirectIO();
 
