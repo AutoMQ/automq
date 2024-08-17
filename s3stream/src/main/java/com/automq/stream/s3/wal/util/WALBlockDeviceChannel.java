@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 
-public class WALBlockDeviceChannel implements WALChannel {
+public class WALBlockDeviceChannel extends AbstractWALChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
     private static final String CHECK_DIRECT_IO_AVAILABLE_FORMAT = "%s.check_direct_io_available";
     final String path;
@@ -237,7 +237,7 @@ public class WALBlockDeviceChannel implements WALChannel {
     }
 
     @Override
-    public void write(ByteBuf src, long position) throws IOException {
+    public void doWrite(ByteBuf src, long position) throws IOException {
         if (unalignedWrite) {
             // unaligned write, just used for testing
             unalignedWrite(src, position);
@@ -295,11 +295,11 @@ public class WALBlockDeviceChannel implements WALChannel {
     }
 
     @Override
-    public void flush() {
+    public void doFlush() {
     }
 
     @Override
-    public int read(ByteBuf dst, long position, int length) throws IOException {
+    public int doRead(ByteBuf dst, long position, int length) throws IOException {
         long start = position;
         length = Math.min(length, dst.writableBytes());
         long end = position + length;

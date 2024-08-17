@@ -22,7 +22,7 @@ import java.nio.channels.FileChannel;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 
-public class WALFileChannel implements WALChannel {
+public class WALFileChannel extends AbstractWALChannel {
     final String filePath;
     final long fileCapacityWant;
     /**
@@ -107,7 +107,7 @@ public class WALFileChannel implements WALChannel {
     }
 
     @Override
-    public void write(ByteBuf src, long position) throws IOException {
+    public void doWrite(ByteBuf src, long position) throws IOException {
         assert src.readableBytes() + position <= capacity();
         ByteBuffer[] nioBuffers = src.nioBuffers();
         for (ByteBuffer nioBuffer : nioBuffers) {
@@ -117,12 +117,12 @@ public class WALFileChannel implements WALChannel {
     }
 
     @Override
-    public void flush() throws IOException {
+    public void doFlush() throws IOException {
         fileChannel.force(false);
     }
 
     @Override
-    public int read(ByteBuf dst, long position, int length) throws IOException {
+    public int doRead(ByteBuf dst, long position, int length) throws IOException {
         length = Math.min(length, dst.writableBytes());
         assert position + length <= capacity();
         int bytesRead = 0;
