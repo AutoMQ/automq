@@ -38,6 +38,7 @@ public abstract class AbstractWALChannel implements WALChannel {
     @Override
     public void retryWrite(ByteBuf src, long position, long retryIntervalMillis,
         long retryTimeoutMillis) throws IOException {
+        checkFailed();
         retry(() -> write(src, position), retryIntervalMillis, retryTimeoutMillis);
     }
 
@@ -49,6 +50,7 @@ public abstract class AbstractWALChannel implements WALChannel {
 
     @Override
     public void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
+        checkFailed();
         retry(this::flush, retryIntervalMillis, retryTimeoutMillis);
     }
 
@@ -61,6 +63,7 @@ public abstract class AbstractWALChannel implements WALChannel {
     @Override
     public int retryRead(ByteBuf dst, long position, int length, long retryIntervalMillis,
         long retryTimeoutMillis) throws IOException {
+        checkFailed();
         return retry(() -> read(dst, position, length), retryIntervalMillis, retryTimeoutMillis);
     }
 
@@ -69,7 +72,6 @@ public abstract class AbstractWALChannel implements WALChannel {
     }
 
     private <T> T retry(IOSupplier<T> supplier, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        checkFailed();
         long start = System.nanoTime();
         long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
         while (true) {
