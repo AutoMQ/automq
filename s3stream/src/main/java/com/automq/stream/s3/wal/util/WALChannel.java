@@ -13,7 +13,6 @@ package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.exception.WALNotInitializedException;
-import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
 import java.io.File;
 import java.io.IOException;
@@ -30,8 +29,6 @@ import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
  * 2. WALBlockDeviceChannel based on block device, which uses O_DIRECT to bypass page cache.
  */
 public interface WALChannel {
-
-    Logger LOGGER = LoggerFactory.getLogger(WALChannel.class);
 
     long DEFAULT_RETRY_INTERVAL = TimeUnit.MILLISECONDS.toMillis(100);
     long DEFAULT_RETRY_TIMEOUT = TimeUnit.MINUTES.toMillis(1);
@@ -77,9 +74,7 @@ public interface WALChannel {
     /**
      * Retry {@link #write(ByteBuf, long)} with the given interval until success or timeout.
      */
-    default void retryWrite(ByteBuf src, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        retry(() -> write(src, position), retryIntervalMillis, retryTimeoutMillis);
-    }
+    void retryWrite(ByteBuf src, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
 
     /**
      * Flush to disk.
@@ -93,9 +88,7 @@ public interface WALChannel {
     /**
      * Retry {@link #flush()} with the given interval until success or timeout.
      */
-    default void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        retry(this::flush, retryIntervalMillis, retryTimeoutMillis);
-    }
+    void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
 
     /**
      * Read bytes from the given position of the channel to the given buffer from the current writer index
@@ -118,31 +111,7 @@ public interface WALChannel {
     /**
      * Retry {@link #read(ByteBuf, long)} with the given interval until success or timeout.
      */
-    default int retryRead(ByteBuf dst, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        return retry(() -> read(dst, position), retryIntervalMillis, retryTimeoutMillis);
-    }
-
-    default void retry(IORunnable runnable, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        retry(IOSupplier.from(runnable), retryIntervalMillis, retryTimeoutMillis);
-    }
-
-    default <T> T retry(IOSupplier<T> supplier, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        long start = System.nanoTime();
-        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
-        while (true) {
-            try {
-                return supplier.get();
-            } catch (IOException e) {
-                if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to execute IO operation, retry timeout", e);
-                    throw e;
-                } else {
-                    LOGGER.warn("Failed to execute IO operation, retrying in {}ms, error: {}", retryIntervalMillis, e.getMessage());
-                    Threads.sleep(retryIntervalMillis);
-                }
-            }
-        }
-    }
+    int retryRead(ByteBuf dst, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException;
 
     boolean useDirectIO();
 
@@ -152,21 +121,6 @@ public interface WALChannel {
          * It returns null if the channel has not been initialized before.
          */
         Long capacity(WALChannel channel) throws IOException;
-    }
-
-    interface IOSupplier<T> {
-        T get() throws IOException;
-
-        static IOSupplier<Void> from(IORunnable runnable) {
-            return () -> {
-                runnable.run();
-                return null;
-            };
-        }
-    }
-
-    interface IORunnable {
-        void run() throws IOException;
     }
 
     class WALChannelBuilder {

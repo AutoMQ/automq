@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 
-public class WALBlockDeviceChannel implements WALChannel {
+public class WALBlockDeviceChannel extends AbstractWALChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
     private static final String CHECK_DIRECT_IO_AVAILABLE_FORMAT = "%s.check_direct_io_available";
     final String path;

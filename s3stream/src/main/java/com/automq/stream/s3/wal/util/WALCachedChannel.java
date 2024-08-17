@@ -20,7 +20,7 @@ import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 /**
  * A wrapper of {@link WALChannel} that caches for read to reduce I/O.
  */
-public class WALCachedChannel implements WALChannel {
+public class WALCachedChannel extends AbstractWALChannel {
 
     private static final int DEFAULT_CACHE_SIZE = 1 << 20;
 
@@ -128,8 +128,19 @@ public class WALCachedChannel implements WALChannel {
     }
 
     @Override
+    public void retryWrite(ByteBuf src, long position, long retryIntervalMillis,
+        long retryTimeoutMillis) throws IOException {
+        channel.retryWrite(src, position, retryIntervalMillis, retryTimeoutMillis);
+    }
+
+    @Override
     public void flush() throws IOException {
         this.channel.flush();
+    }
+
+    @Override
+    public void retryFlush(long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
+        channel.retryFlush(retryIntervalMillis, retryTimeoutMillis);
     }
 
     @Override

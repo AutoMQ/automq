@@ -22,7 +22,7 @@ import java.nio.channels.FileChannel;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 
-public class WALFileChannel implements WALChannel {
+public class WALFileChannel extends AbstractWALChannel {
     final String filePath;
     final long fileCapacityWant;
     /**
