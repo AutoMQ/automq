@@ -128,40 +128,6 @@ public interface WALChannel {
     }
 
     /**
-     * Call {@link #write(ByteBuf, long)} and {@link #flush()}.
-     */
-    default void writeAndFlush(ByteBuf src, long position) throws IOException {
-        write(src, position);
-        flush();
-    }
-
-    default void retryWriteAndFlush(ByteBuf src, long position) throws IOException {
-        retryWriteAndFlush(src, position, DEFAULT_RETRY_INTERVAL, DEFAULT_RETRY_TIMEOUT);
-    }
-
-    /**
-     * Retry {@link #writeAndFlush(ByteBuf, long)} with the given interval until success or timeout.
-     */
-    default void retryWriteAndFlush(ByteBuf src, long position, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
-        long start = System.nanoTime();
-        long retryTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(retryTimeoutMillis);
-        while (true) {
-            try {
-                writeAndFlush(src, position);
-                break;
-            } catch (IOException e) {
-                if (System.nanoTime() - start > retryTimeoutNanos) {
-                    LOGGER.error("Failed to write and flush, retry timeout", e);
-                    throw e;
-                } else {
-                    LOGGER.error("Failed to write and flush, retrying in {}ms", retryIntervalMillis, e);
-                    Threads.sleep(retryIntervalMillis);
-                }
-            }
-        }
-    }
-
-    /**
      * Read bytes from the given position of the channel to the given buffer from the current writer index
      * until reaching the given length or the end of the channel.
      * This method will change the writer index of the given buffer to the end of the read bytes.

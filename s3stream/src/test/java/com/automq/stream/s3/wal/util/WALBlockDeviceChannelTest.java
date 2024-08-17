@@ -54,7 +54,7 @@ public class WALBlockDeviceChannelTest {
         for (int i = 0; i < count; i++) {
             ByteBuf data = TestUtils.random(size);
             long pos = WALUtil.alignLargeByBlockSize(size) * i;
-            channel.writeAndFlush(data, pos);
+            writeAndFlush(channel, data, pos);
         }
 
         channel.close();
@@ -77,7 +77,7 @@ public class WALBlockDeviceChannelTest {
                 data.addComponent(true, TestUtils.random(size));
             }
             long pos = WALUtil.alignLargeByBlockSize(maxSize) * i;
-            channel.writeAndFlush(data, pos);
+            writeAndFlush(channel, data, pos);
         }
 
         channel.close();
@@ -101,7 +101,7 @@ public class WALBlockDeviceChannelTest {
                 ByteBuf data = TestUtils.random(size);
                 long pos = WALUtil.alignLargeByBlockSize(size) * index;
                 try {
-                    channel.writeAndFlush(data, pos);
+                    writeAndFlush(channel, data, pos);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -120,7 +120,7 @@ public class WALBlockDeviceChannelTest {
 
         ByteBuf data = TestUtils.random(42);
         // It's ok to do this
-        assertDoesNotThrow(() -> channel.writeAndFlush(data, 0));
+        assertDoesNotThrow(() -> writeAndFlush(channel, data, 0));
 
         channel.close();
     }
@@ -131,7 +131,7 @@ public class WALBlockDeviceChannelTest {
         channel.open();
 
         ByteBuf data = TestUtils.random(4096);
-        assertThrows(AssertionError.class, () -> channel.writeAndFlush(data, 42));
+        assertThrows(AssertionError.class, () -> writeAndFlush(channel, data, 42));
 
         channel.close();
     }
@@ -142,7 +142,7 @@ public class WALBlockDeviceChannelTest {
         channel.open();
 
         ByteBuf data = TestUtils.random(4096);
-        assertThrows(AssertionError.class, () -> channel.writeAndFlush(data, 8192));
+        assertThrows(AssertionError.class, () -> writeAndFlush(channel, data, 8192));
 
         channel.close();
     }
@@ -163,7 +163,7 @@ public class WALBlockDeviceChannelTest {
             ByteBuf data = TestUtils.random(size);
             long pos = ThreadLocalRandom.current().nextLong(0, capacity - size);
             pos = WALUtil.alignSmallByBlockSize(pos);
-            wChannel.writeAndFlush(data, pos);
+            writeAndFlush(wChannel, data, pos);
 
             ByteBuf buf = Unpooled.buffer(size);
             int read = rChannel.read(buf, pos);
@@ -191,7 +191,7 @@ public class WALBlockDeviceChannelTest {
             ByteBuf data = TestUtils.random(size);
             long pos = ThreadLocalRandom.current().nextLong(0, capacity - size);
             pos = WALUtil.alignSmallByBlockSize(pos);
-            wChannel.writeAndFlush(data, pos);
+            writeAndFlush(wChannel, data, pos);
 
             int start = ThreadLocalRandom.current().nextInt(0, size - 1);
             int end = ThreadLocalRandom.current().nextInt(start + 1, size);
@@ -227,5 +227,10 @@ public class WALBlockDeviceChannelTest {
         assertDoesNotThrow(() -> channel.read(data, 42));
 
         channel.close();
+    }
+
+    private void writeAndFlush(WALChannel channel, ByteBuf src, long position) throws IOException {
+        channel.write(src, position);
+        channel.flush();
     }
 }
