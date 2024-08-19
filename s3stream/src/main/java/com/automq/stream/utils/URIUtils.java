@@ -13,6 +13,7 @@ package com.automq.stream.utils;
 
 import java.net.URI;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -73,7 +74,7 @@ public class URIUtils {
             if (!queryPairs.containsKey(key)) {
                 queryPairs.put(key, new LinkedList<>());
             }
-            final String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8) : null;
+            final String value = idx > 0 && pair.length() > idx + 1 ? URLDecoder.decode(URLEncoder.encode(pair.substring(idx + 1), StandardCharsets.UTF_8), StandardCharsets.UTF_8) : null;
             queryPairs.get(key).add(value);
         }
         return queryPairs;

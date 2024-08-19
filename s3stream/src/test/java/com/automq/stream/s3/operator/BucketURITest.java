@@ -26,7 +26,7 @@ public class BucketURITest {
     public void testParse_valid() {
         String bucketStr = "0@s3://bucket1?region=region1&k1=v1&k2=v2&k2=v22&endpoint=https://aws.amazon.com:444," +
                            "1@gs://bucket2?region=region2&endpoint=https://gcp," +
-                           "2@azblob://bucket3";
+                           "2@azblob://bucket3?k1=test+test";
         List<BucketURI> buckets = BucketURI.parseBuckets(bucketStr);
         assertEquals((short) 0, buckets.get(0).bucketId());
         assertEquals("bucket1", buckets.get(0).bucket());
@@ -48,6 +48,7 @@ public class BucketURITest {
         assertEquals("bucket3", buckets.get(2).bucket());
         assertEquals("", buckets.get(2).region());
         assertEquals("", buckets.get(2).endpoint());
+        assertEquals("test+test", buckets.get(2).extensionString("k1", null));
         assertEquals("azblob", buckets.get(2).protocol());
 
         bucketStr = "0@file:///path/to/wal?type=raw&size=1G";
