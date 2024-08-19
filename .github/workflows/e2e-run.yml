@@ -45,6 +45,11 @@ jobs:
       - name: Clean last running results
         run: |
           rm -rf results
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
       - name: Run E2E tests with yaml
