@@ -83,11 +83,12 @@ public class S3StreamClient implements StreamClient {
     private final ReentrantLock lock = new ReentrantLock();
 
     final Map<Long, CompletableFuture<Stream>> openingStreams = new ConcurrentHashMap<>();
-    final Map<Long, CompletableFuture<Stream>> closingStreams = new ConcurrentHashMap<>();
+    final Map<Long, StreamWrapper> closingStreams = new ConcurrentHashMap<>();
 
     private final List<StreamLifeCycleListener> streamLifeCycleListeners = new CopyOnWriteArrayList<>();
 
     private boolean closed;
+    private boolean forceCloseMark;
 
     @SuppressWarnings("unused")
     public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
@@ -201,17 +202,23 @@ public class S3StreamClient implements StreamClient {
         }
 
         TimerUtil timerUtil = new TimerUtil();
-        closeStreams(false);
+        closeStreams();
         LOGGER.info("S3StreamClient shutdown, cost {}ms", timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
     }
 
-    private void closeStreams(boolean force) {
+    private void closeStreams() {
+        if (forceCloseMark) {
+            runInLock(() -> closingStreams.forEach((streamId, stream) -> {
+                LOGGER.info("force close closing stream, streamId={}", streamId);
+                stream.close(true);
+            }));
+        }
         for (; ; ) {
             lock.lock();
             try {
                 openedStreams.forEach((streamId, stream) -> {
                     LOGGER.info("trigger stream close, streamId={}", streamId);
-                    stream.close(force);
+                    stream.close(forceCloseMark);
                 });
                 if (openedStreams.isEmpty() && openingStreams.isEmpty() && closingStreams.isEmpty()) {
                     LOGGER.info("all streams are closed");
@@ -227,10 +234,9 @@ public class S3StreamClient implements StreamClient {
 
     public void forceClose() {
         markClosed();
-        closeStreams(true);
+        runInLock(() -> forceCloseMark = true);
+        closeStreams();
     }
-
-
 
     private void checkState() {
         if (closed) {
@@ -321,15 +327,19 @@ public class S3StreamClient implements StreamClient {
         public CompletableFuture<Void> close(boolean force) {
             return runInLock(() -> {
                 CompletableFuture<Stream> cf = new CompletableFuture<>();
-                openedStreams.remove(streamId(), this);
-                closingStreams.put(streamId(), cf);
-                return stream.close(force).whenComplete((v, e) -> runInLock(() -> {
-                    cf.complete(StreamWrapper.this);
-                    closingStreams.remove(streamId(), cf);
-                    for (StreamLifeCycleListener listener : streamLifeCycleListeners) {
-                        listener.onStreamClose(streamId());
-                    }
-                }));
+                long streamId = streamId();
+                if (openedStreams.remove(streamId, this)) {
+                    closingStreams.put(streamId, this);
+                    return stream.close(force).whenComplete((v, e) -> runInLock(() -> {
+                        cf.complete(StreamWrapper.this);
+                        closingStreams.remove(streamId, this);
+                        for (StreamLifeCycleListener listener : streamLifeCycleListeners) {
+                            listener.onStreamClose(streamId);
+                        }
+                    }));
+                } else {
+                    return stream.close(force);
+                }
             });
         }
 
@@ -338,10 +348,10 @@ public class S3StreamClient implements StreamClient {
             return runInLock(() -> {
                 CompletableFuture<Stream> cf = new CompletableFuture<>();
                 openedStreams.remove(streamId(), this);
-                closingStreams.put(streamId(), cf);
+                closingStreams.put(streamId(), this);
                 return stream.destroy().whenComplete((v, e) -> runInLock(() -> {
                     cf.complete(StreamWrapper.this);
-                    closingStreams.remove(streamId(), cf);
+                    closingStreams.remove(streamId(), this);
                 }));
             });
         }
