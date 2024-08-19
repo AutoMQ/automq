@@ -89,6 +89,7 @@ public class EventLoop extends Thread implements Executor {
     }
 
     public synchronized CompletableFuture<Void> shutdownGracefully() {
+        shutdown = true;
         if (!shutdownCf.isDone() && tasks.isEmpty()) {
             tasks.add(WAKEUP_TASK);
         }
