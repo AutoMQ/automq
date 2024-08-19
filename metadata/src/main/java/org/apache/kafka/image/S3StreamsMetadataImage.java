@@ -394,9 +394,11 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         // search in sparse index
         return getStartStreamSetObjectId(node.getNodeId(), startOffset, ctx)
             .thenApply(objectId -> {
-                int startIndex = findStartSearchIndex(objectId, node.orderList());
+                int startIndex = -1;
+                if (objectId >= 0) {
+                    startIndex = findStartSearchIndex(objectId, node.orderList());
+                }
                 if (startIndex < 0 && ctx.indexCache.nodeId() != node.getNodeId()) {
-                    LOGGER.info("Stream set object {} not found in node {}, invalidate index cache", objectId, node.getNodeId());
                     NodeRangeIndexCache.getInstance().invalidate(node.getNodeId());
                 }
                 return Math.max(0, startIndex);
@@ -407,7 +409,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      * Get the object id of the first stream set object to start search from.
      * Possible results:
      * <p>
-     * a. -1, not stream set object can be found, this can happen when index cache is not exist or is invalidated,
+     * a. -1, no stream set object can be found, this can happen when index cache is not exist or is invalidated,
      * searching should be done from the beginning of the objects in this case.
      * <p>
      * b. non-negative value:

@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.index;
 
+import com.automq.stream.utils.MockTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -52,43 +53,47 @@ public class NodeRangeIndexCacheTest {
                 new RangeIndex(50, 100, object0),
                 new RangeIndex(150, 250, object1),
                 new RangeIndex(300, 400, object2)));
+
+        MockTime time = new MockTime();
         // refresh cache
-        NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 50, () -> CompletableFuture.completedFuture(streamRangeMap0));
+        NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 50,
+            () -> CompletableFuture.completedFuture(streamRangeMap0), time);
 
         Assertions.assertTrue(NodeRangeIndexCache.getInstance().isValid(node0));
         Assertions.assertFalse(NodeRangeIndexCache.getInstance().isValid(node1));
         Assertions.assertEquals(-1, NodeRangeIndexCache.getInstance().searchObjectId(node1, stream0, 50,
-            () -> CompletableFuture.completedFuture(Collections.emptyMap())).join());
+            () -> CompletableFuture.completedFuture(Collections.emptyMap()), time).join());
         Assertions.assertEquals(-1, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream1, 50,
-            () -> CompletableFuture.completedFuture(streamRangeMap0)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap0), time).join());
         Assertions.assertEquals(-1, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 0,
-            () -> CompletableFuture.completedFuture(streamRangeMap0)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap0), time).join());
         Assertions.assertEquals(object0, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 50,
-            () -> CompletableFuture.completedFuture(streamRangeMap0)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap0), time).join());
         Assertions.assertEquals(object0, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 100,
-            () -> CompletableFuture.completedFuture(streamRangeMap0)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap0), time).join());
         Assertions.assertEquals(object1, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 200,
-            () -> CompletableFuture.completedFuture(streamRangeMap0)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap0), time).join());
         Assertions.assertEquals(object2, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 300,
-            () -> CompletableFuture.completedFuture(streamRangeMap0)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap0), time).join());
         Assertions.assertEquals(object2, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 500,
-            () -> CompletableFuture.completedFuture(streamRangeMap0)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap0), time).join());
 
         NodeRangeIndexCache.getInstance().invalidate(node0);
+        time.setCurrentTimeMs(time.milliseconds() + NodeRangeIndexCache.MIN_CACHE_UPDATE_INTERVAL_MS);
         Map<Long, List<RangeIndex>> streamRangeMap1 = Map.of(stream0, List.of(
             new RangeIndex(50, 300, object3),
             new RangeIndex(500, 600, object4)));
         Assertions.assertFalse(NodeRangeIndexCache.getInstance().isValid(node0));
         Assertions.assertEquals(-1, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 0,
-            () -> CompletableFuture.completedFuture(streamRangeMap1)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap1), time).join());
         Assertions.assertEquals(object3, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 50,
-            () -> CompletableFuture.completedFuture(streamRangeMap1)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap1), time).join());
         Assertions.assertEquals(object3, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 400,
-            () -> CompletableFuture.completedFuture(streamRangeMap1)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap1), time).join());
         Assertions.assertEquals(object4, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 500,
-            () -> CompletableFuture.completedFuture(streamRangeMap1)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap1), time).join());
         Assertions.assertEquals(object4, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 1000,
-            () -> CompletableFuture.completedFuture(streamRangeMap1)).join());
+            () -> CompletableFuture.completedFuture(streamRangeMap1), time).join());
     }
 
     @Test
@@ -104,6 +109,32 @@ public class NodeRangeIndexCacheTest {
         CompletableFuture.allOf(cfs.toArray(new CompletableFuture[0])).join();
         Thread.sleep(1000);
         Assertions.assertTrue(NodeRangeIndexCache.getInstance().cache().totalSize() - 100 * 1024 * 1024 <= 1000 * Long.BYTES);
+    }
+
+    @Test
+    public void testUpdateCacheFrequency() {
+        int node0 = 32;
+        long stream0 = 0;
+        int object0 = 99;
+        Map<Long, List<RangeIndex>> streamRangeMap0 = Map.of(stream0, List.of(
+            new RangeIndex(50, 100, object0)));
+
+        MockTime mockTime = new MockTime();
+        // refresh cache
+        Assertions.assertEquals(object0, NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 50,
+            () -> CompletableFuture.completedFuture(streamRangeMap0), mockTime).join());
+        NodeRangeIndexCache.getInstance().invalidate(node0);
+
+        CompletableFuture<Long> cf = NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 50,
+            () -> CompletableFuture.completedFuture(streamRangeMap0), mockTime);
+        Assertions.assertTrue(cf.isDone());
+        Assertions.assertEquals(-1L, cf.join());
+
+        mockTime.setCurrentTimeMs(mockTime.milliseconds() + NodeRangeIndexCache.MIN_CACHE_UPDATE_INTERVAL_MS);
+        cf = NodeRangeIndexCache.getInstance().searchObjectId(node0, stream0, 50,
+            () -> CompletableFuture.completedFuture(streamRangeMap0), mockTime);
+        Assertions.assertTrue(cf.isDone());
+        Assertions.assertEquals(object0, cf.join());
     }
 
     private List<RangeIndex> createRangeIndex(int size) {
