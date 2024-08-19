@@ -223,17 +223,22 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         }
         boolean evicted = false;
         boolean hasSufficientIndex = true;
-        List<SparseRangeIndex> streamRangeIndexList = new ArrayList<>(streamRangeIndexMap.values());
+        List<Map.Entry<Long, SparseRangeIndex>> streamRangeIndexList = new ArrayList<>(streamRangeIndexMap.entrySet());
         Collections.shuffle(streamRangeIndexList);
         while (totalSize > MAX_INDEX_SIZE) {
             // try to evict from each stream in round-robin manner
-            for (SparseRangeIndex sparseRangeIndex : streamRangeIndexList) {
+            for (Map.Entry<Long, SparseRangeIndex> entry : streamRangeIndexList) {
+                long streamId = entry.getKey();
+                SparseRangeIndex sparseRangeIndex = entry.getValue();
                 if (sparseRangeIndex.length() <= 1 + COMPACT_NUM && hasSufficientIndex) {
                     // skip evict if there is still sufficient stream to be evicted
                     continue;
                 }
                 totalSize -= sparseRangeIndex.evictOnce();
                 evicted = true;
+                if (sparseRangeIndex.length() == 0) {
+                    streamRangeIndexMap.remove(streamId);
+                }
                 if (totalSize <= MAX_INDEX_SIZE) {
                     break;
                 }
@@ -303,6 +308,9 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
             buffer.writeShort(VERSION);
             buffer.writeInt(streamRangeIndexMap.size());
             streamRangeIndexMap.forEach((streamId, sparseRangeIndex) -> {
+                if (sparseRangeIndex == null || sparseRangeIndex.length() == 0) {
+                    return;
+                }
                 buffer.writeLong(streamId);
                 buffer.writeInt(sparseRangeIndex.getRangeIndexList().size());
                 sparseRangeIndex.getRangeIndexList().forEach(rangeIndex -> {
@@ -321,9 +329,14 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private static int bufferSize(Map<Long, SparseRangeIndex> streamRangeIndexMap) {
         return Short.BYTES // version
             + Integer.BYTES // stream num
-            + streamRangeIndexMap.values().stream().mapToInt(index -> Long.BYTES // stream id
-            + Integer.BYTES // range index num
-            + index.getRangeIndexList().size() * (3 * Long.BYTES)).sum();
+            + streamRangeIndexMap.values().stream().mapToInt(index -> {
+                if (index == null || index.length() == 0) {
+                    return 0;
+                }
+                return Long.BYTES // stream id
+                    + Integer.BYTES // range index num
+                    + index.getRangeIndexList().size() * (3 * Long.BYTES);
+            }).sum();
     }
 
     public static Map<Long, List<RangeIndex>> fromBuffer(ByteBuf data) {
