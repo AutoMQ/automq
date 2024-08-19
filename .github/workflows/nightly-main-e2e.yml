@@ -21,7 +21,6 @@ jobs:
     with:
       suite-id: "main1"
       test-yaml: "tests/suites/main_kos_test_suite1.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_2:
     name: "Run Main E2E Tests 2"
@@ -30,7 +29,6 @@ jobs:
     with:
       suite-id: "main2"
       test-yaml: "tests/suites/main_kos_test_suite2.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_3:
     name: "Run Main E2E Tests 3"
@@ -39,7 +37,6 @@ jobs:
     with:
       suite-id: "main3"
       test-yaml: "tests/suites/main_kos_test_suite3.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_4:
     name: "Run Main E2E Tests 4"
@@ -48,7 +45,6 @@ jobs:
     with:
       suite-id: "main4"
       test-yaml: "tests/suites/main_kos_test_suite4.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_5:
     name: "Run Main E2E Tests 5"
@@ -57,7 +53,6 @@ jobs:
     with:
       suite-id: "main5"
       test-yaml: "tests/suites/main_kos_test_suite5.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_6:
     name: "Run Main E2E Tests 6"
@@ -66,7 +61,6 @@ jobs:
     with:
       suite-id: "main6"
       test-yaml: "tests/suites/main_kos_test_suite6.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   e2e_summary:
     runs-on: ${{ inputs.runs_on || 'main' }}
@@ -77,7 +71,8 @@ jobs:
       - name: Report results
         run: python3 tests/report_e2e_results.py
         env:
+          CURRENT_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL }}
-          STORAGE_PATH: "/data/github-actions/reports"
+          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}, \"main_e2e_6\": ${{ toJSON(needs.main_e2e_6.outputs) }}"
           REPORT_TITLE_PREFIX: "Main"
