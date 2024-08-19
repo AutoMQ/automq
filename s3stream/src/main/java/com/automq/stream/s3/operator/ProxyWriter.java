@@ -120,7 +120,7 @@ class ProxyWriter implements Writer {
     }
 
     class ObjectWriter implements Writer {
-        // max upload size, when object data size is larger MAX_UPLOAD_SIZE, we should use multi-part upload to upload it.
+        // max upload size, when object data size is larger than MAX_UPLOAD_SIZE, we should use multi-part upload to upload it.
         static final long MAX_UPLOAD_SIZE = 32L * 1024 * 1024;
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompositeByteBuf data = ByteBufAlloc.compositeByteBuffer();
