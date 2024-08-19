@@ -17,6 +17,8 @@ import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -74,6 +76,68 @@ public class LocalStreamRangeIndexCacheTest {
         Assertions.assertEquals(93, cache.searchObjectId(STREAM_0, 600).join());
         Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 950).join());
         Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 1500).join());
+    }
+
+    @Test
+    public void testPrune() {
+        ObjectStorage objectStorage = new MemoryObjectStorage();
+        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        cache.start();
+        cache.init(NODE_0, objectStorage);
+        CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
+        long startOffset = 50;
+        for (int i = 0; i < 10; i++) {
+            request.setObjectId(88 + i);
+            request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100, 100)));
+            cache.updateIndexFromRequest(request).join();
+            startOffset += 100;
+        }
+        Assertions.assertEquals(10, cache.getStreamRangeIndexMap().get(STREAM_0).length());
+        Assertions.assertEquals(400, cache.totalSize());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 0).join());
+        Assertions.assertEquals(88, cache.searchObjectId(STREAM_0, 50).join());
+        Assertions.assertEquals(88, cache.searchObjectId(STREAM_0, 100).join());
+        Assertions.assertEquals(89, cache.searchObjectId(STREAM_0, 150).join());
+        Assertions.assertEquals(93, cache.searchObjectId(STREAM_0, 600).join());
+        Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 950).join());
+        Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 1500).join());
+
+        CompletableFuture<Void> cf = cache.asyncPrune(() -> Set.of(94L, 95L, 96L, 97L));
+        Assertions.assertDoesNotThrow(cf::join);
+        Assertions.assertEquals(4, cache.getStreamRangeIndexMap().get(STREAM_0).length());
+        Assertions.assertEquals(160, cache.totalSize());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 0).join());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 50).join());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 100).join());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 150).join());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 600).join());
+        Assertions.assertEquals(94, cache.searchObjectId(STREAM_0, 700).join());
+        Assertions.assertEquals(95, cache.searchObjectId(STREAM_0, 800).join());
+        Assertions.assertEquals(96, cache.searchObjectId(STREAM_0, 900).join());
+        Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 950).join());
+        Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 1500).join());
+
+        // test load from object storage
+        cache = new LocalStreamRangeIndexCache();
+        cache.start();
+        cache.init(NODE_0, objectStorage);
+        cache.initCf().join();
+        Assertions.assertEquals(4, cache.getStreamRangeIndexMap().get(STREAM_0).length());
+        Assertions.assertEquals(160, cache.totalSize());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 0).join());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 50).join());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 100).join());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 150).join());
+        Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 600).join());
+        Assertions.assertEquals(94, cache.searchObjectId(STREAM_0, 700).join());
+        Assertions.assertEquals(95, cache.searchObjectId(STREAM_0, 800).join());
+        Assertions.assertEquals(96, cache.searchObjectId(STREAM_0, 900).join());
+        Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 950).join());
+        Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 1500).join());
+
+        cache.asyncPrune(Collections::emptySet).join();
+        Assertions.assertEquals(0, cache.getStreamRangeIndexMap().size());
+        Assertions.assertEquals(0, cache.totalSize());
     }
 
     @Test
