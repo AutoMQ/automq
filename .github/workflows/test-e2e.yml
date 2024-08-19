@@ -5,7 +5,7 @@ on:
       runs_on:
         description: 'Runs on'
         required: false
-        default: main
+        default: main-release
         type: choice
         options:
           - main

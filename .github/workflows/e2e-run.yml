@@ -73,6 +73,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.suite-id }}
+          retention-days: 3
+          compression-level: 1
           path: |
             results
       - name: Bring down docker containers
