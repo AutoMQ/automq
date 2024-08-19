@@ -81,7 +81,7 @@ jobs:
           retention-days: 3
           compression-level: 1
           path: |
-            results/**/report*
+            results/*/report*
       - name: Bring down docker containers
         run: ./tests/docker/ducker-ak down
         shell: bash
