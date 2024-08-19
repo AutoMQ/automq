@@ -14,9 +14,6 @@ on:
       test-path:
         required: false
         type: string
-      storage-path:
-        required: true
-        type: string
     outputs:
       artifact-id: 
         description: "Artifact ID of the test results"
@@ -48,7 +45,6 @@ jobs:
       - name: Clean last running results
         run: |
           rm -rf results
-          rm -rf "${{ inputs.storage-path }}/${{ inputs.suite-id }}"
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
       - name: Run E2E tests with yaml

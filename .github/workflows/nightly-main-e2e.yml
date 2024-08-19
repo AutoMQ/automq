@@ -5,11 +5,11 @@ on:
       runs_on:
         description: 'Runs on'
         required: false
-        default: main-release
+        default: release
         type: choice
         options:
-          - main
-          - main-release
+          - daily
+          - release
   schedule:
     - cron: '0 16 * * *'
 
@@ -21,7 +21,6 @@ jobs:
     with:
       suite-id: "main1"
       test-yaml: "tests/suites/main_kos_test_suite1.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   main_e2e_2:
     name: "Run Main E2E Tests 2"

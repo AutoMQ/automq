@@ -21,7 +21,6 @@ jobs:
     with:
       suite-id: "e2e1"
       test-path: "tests/kafkatest/tests/core/get_offset_shell_test.py::GetOffsetShellTest.test_get_offset_shell_topic_pattern"
-      storage-path: "/mnt/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   e2e2:
     name: "Run E2E Tests-2"
@@ -30,7 +29,6 @@ jobs:
     with:
       suite-id: "e2e2"
       test-path: "tests/kafkatest/tests/core/get_offset_shell_test.py::GetOffsetShellTest.test_get_offset_shell_topic_name"
-      storage-path: "/mnt/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   e2e_summary:
     runs-on: ${{ inputs.runs_on || 'main' }}
@@ -39,9 +37,6 @@ jobs:
     # if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ e2e1, e2e2 ]
     steps:
-      - name: echo DATA_MAP
-        run: |
-          echo "{'e2e1': {'success': ${{ needs.e2e1.outputs.success-num }}, 'failure': ${{ needs.e2e1.outputs.failure-num }}, 'time': ${{ needs.e2e1.outputs.run-time-secs }}, 'artifact-id': '${{ needs.e2e1.outputs.artifact-id }}'}, 'e2e2': {'success': ${{ needs.e2e2.outputs.success-num }}, failure: ${{ needs.e2e2.outputs.failure-num }}, 'time': ${{ needs.e2e2.outputs.run-time-secs }}, 'artifact-id': '${{ needs.e2e2.outputs.artifact-id }}'}}"
       - name: Report results
         run: python3 tests/report_e2e_results.py
         env:
