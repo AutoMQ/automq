@@ -59,7 +59,6 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private final Queue<CompletableFuture<Void>> uploadQueue = new LinkedList<>();
     private final CompletableFuture<Void> initCf = new CompletableFuture<>();
     private final AtomicBoolean pruned = new AtomicBoolean(false);
-    private Supplier<Set<Long>> initStreamSetObjectIdsSupplier;
     private long nodeId = -1;
     private ObjectStorage objectStorage;
     private int totalSize = 0;
@@ -69,7 +68,8 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         executorService.scheduleAtFixedRate(this::flush, 1, 1, TimeUnit.MINUTES);
     }
 
-    public int totalSize() {
+    // test only
+    int totalSize() {
         return totalSize;
     }
 
@@ -199,6 +199,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         writeLock.lock();
         try {
             streamRangeIndexMap.clear();
+            totalSize = 0;
         } finally {
             writeLock.unlock();
         }
@@ -395,9 +396,8 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
 
     public CompletableFuture<Void> asyncPrune(Supplier<Set<Long>> initStreamSetObjectIdsSupplier) {
         if (pruned.compareAndSet(false, true)) {
-            this.initStreamSetObjectIdsSupplier = initStreamSetObjectIdsSupplier;
             CompletableFuture<Void> cf = new CompletableFuture<>();
-            executorService.execute(() -> prune().whenComplete((v, ex) -> {
+            executorService.execute(() -> prune(initStreamSetObjectIdsSupplier).whenComplete((v, ex) -> {
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                 } else {
@@ -409,15 +409,16 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         return CompletableFuture.completedFuture(null);
     }
 
-    CompletableFuture<Void> prune() {
+    CompletableFuture<Void> prune(Supplier<Set<Long>> initStreamSetObjectIdsSupplier) {
         if (initStreamSetObjectIdsSupplier == null) {
-            return CompletableFuture.failedFuture(new IllegalStateException("initStreamSetObjectIdsSupplier is not set"));
+            return CompletableFuture.failedFuture(new IllegalStateException("initStreamSetObjectIdsSupplier cannot be null"));
         }
         return execCompose(() -> {
-            readLock.lock();
+            writeLock.lock();
             try {
                 Set<Long> streamSetObjectIds = initStreamSetObjectIdsSupplier.get();
                 Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
+                boolean pruned = false;
                 while (iterator.hasNext()) {
                     Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
                     SparseRangeIndex sparseRangeIndex = entry.getValue();
@@ -427,18 +428,22 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
                             invalidateObjectIds.add(rangeIndex.getObjectId());
                         }
                     }
+                    if (invalidateObjectIds.isEmpty()) {
+                        continue;
+                    }
                     totalSize += sparseRangeIndex.compact(null, invalidateObjectIds);
                     if (sparseRangeIndex.length() == 0) {
                         iterator.remove();
                     }
+                    pruned = true;
                 }
-                return upload();
+                return pruned ? upload() : CompletableFuture.completedFuture(null);
             } catch (Throwable t) {
-                LOGGER.error("Failed to prune local sparse index", t);
-                pruned.set(false);
+                LOGGER.error("Failed to prune local sparse index, clear all", t);
+                clear();
                 return CompletableFuture.failedFuture(t);
             } finally {
-                readLock.unlock();
+                writeLock.unlock();
             }
         });
     }
