@@ -48,5 +48,5 @@ jobs:
           CURRENT_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          DATA_MAP: "{'e2e1': {'success': ${{ needs.e2e1.outputs.success-num }}, 'failure': ${{ needs.e2e1.outputs.failure-num }}, 'time': ${{ needs.e2e1.outputs.run-time-secs }}, 'artifact-id': '${{ needs.e2e1.outputs.artifact-id }}'}, 'e2e2': {'success': ${{ needs.e2e2.outputs.success-num }}, failure: ${{ needs.e2e2.outputs.failure-num }}, 'time': ${{ needs.e2e2.outputs.run-time-secs }}, 'artifact-id': '${{ needs.e2e2.outputs.artifact-id }}'}}"
+          DATA_MAP: "{\"e2e1\": ${{ toJSON(needs.e2e1.outputs) }}, \"e2e2\": ${{ toJSON(needs.e2e2.outputs) }}}"
           REPORT_TITLE_PREFIX: "Main"

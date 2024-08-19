@@ -25,7 +25,7 @@ if __name__ == '__main__':
     title_prefix = os.getenv('REPORT_TITLE_PREFIX')
     title_prefix = title_prefix if title_prefix else ""
 
-    data_map = eval(os.getenv('DATA_MAP'))
+    data_map = json.loads(os.getenv('DATA_MAP'))
     artifact_url_prefix = "https://github.com/%s/actions/runs/%s/artifacts/" % (os.getenv('CURRENT_REPO'), os.getenv('RUN_ID'))
 
     total_passed = 0
@@ -35,10 +35,9 @@ if __name__ == '__main__':
     for key, value in data_map.items():
         if not value:
             continue
-        total_failed += value['failure']
-        total_passed += value['success']
-        reports_dict[key] = {'num_passed': value['success'], 'num_failed': value['failure'],
-                                      'run_time_seconds': value['time'], 'artifact-id': value['artifact-id']}
+        total_failed += int(value['failure-num'])
+        total_passed += int(value['success-num'])
+        reports_dict[key] = {'num_passed': int(value['success-num']), 'num_failed': int(value['failure-num']), 'run_time_seconds': float(value['run-time-secs']), 'artifact-id': value['artifact-id']}
 
     if not reports_dict:
         print("No reports found.")
