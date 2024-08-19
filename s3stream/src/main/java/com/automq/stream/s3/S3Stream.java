@@ -81,6 +81,7 @@ public class S3Stream implements Stream {
     private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
     private long startOffset;
     private CompletableFuture<Void> lastPendingTrim = CompletableFuture.completedFuture(null);
+    private CompletableFuture<Void> closeCf;
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
         StreamManager streamManager) {
@@ -348,6 +349,15 @@ public class S3Stream implements Stream {
             if (force) {
                 pendingRequests.forEach(cf -> cf.completeExceptionally(new StreamClientException(ErrorCode.UNEXPECTED, "FORCE_CLOSE")));
             }
+            // Supported repeated call #close.
+            // And it supports the following scenario:
+            // 1. #close(false): try gracefully close the stream. (await the pending request complete, upload data to object storage and close stream)
+            // 2. #close(true): try force close the stream. (complete the pending request with exception, upload data to object storage and close stream)
+            // Even #close(false) is called, we still could use #close(true) to force close the stream.
+            if (closeCf != null) {
+                return closeCf;
+            }
+
             CompletableFuture<Void> awaitPendingRequestsCf = CompletableFuture.allOf(pendingRequests.toArray(new CompletableFuture[0]));
             CompletableFuture<Void> closeCf = new CompletableFuture<>();
 
@@ -366,6 +376,7 @@ public class S3Stream implements Stream {
                 S3StreamMetricsManager.removePendingStreamFetchLatencySupplier(streamId);
             });
 
+            this.closeCf = closeCf;
             return closeCf;
         } finally {
             writeLock.unlock();
