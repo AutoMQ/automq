@@ -17,11 +17,31 @@ on:
       storage-path:
         required: true
         type: string
+    outputs:
+      artifact-id: 
+        description: "Artifact ID of the test results"
+        value: ${{ jobs.run_e2e.outputs.artifact-id }}
+      success-num:
+        description: "Number of successful tests"
+        value: ${{ jobs.run_e2e.outputs.success-num }}
+      failure-num:
+        description: "Number of failed tests"
+        value: ${{ jobs.run_e2e.outputs.failure-num }}
+      run-time-secs:
+        description: "Total run time in seconds"
+        value: ${{ jobs.run_e2e.outputs.run-time-secs }}
+
 
 jobs:
   run_e2e:
     name: "Run E2E tests"
     runs-on: ${{ inputs.runner }}
+    # Map the job outputs to step outputs
+    outputs:
+      artifact-id: ${{ steps.archive-artifacts.outputs.artifact-id }}
+      success-num: ${{ steps.extract-results.outputs.success-num }}
+      failure-num: ${{ steps.extract-results.outputs.failure-num }}
+      run-time-secs: ${{ steps.extract-results.outputs.run-time-secs }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,11 +63,13 @@ jobs:
         env:
           TC_PATHS: ${{ inputs.test-path }}
         shell: bash
-      - name: Move results
+      - name: Extract results
+        id: extract-results
         run: |
           results_path="$(pwd)/results/$(readlink results/latest | cut -d'/' -f5)"
-          mkdir -p "${{ inputs.storage-path }}/${{ inputs.suite-id }}"
-          cp -r "${results_path}/*" "${{ inputs.storage-path }}/${{ inputs.suite-id }}/"
+          echo "success-num=$(jq .num_passed $results_path/report.json)" >> $GITHUB_OUTPUT
+          echo "failure-num=$(jq .num_failed $results_path/report.json)" >> $GITHUB_OUTPUT
+          echo "run-time-secs=$(jq .total_time $results_path/report.json)" >> $GITHUB_OUTPUT
         if: ${{ always() }}
         shell: bash
       - name: Bring down docker containers
@@ -55,6 +77,7 @@ jobs:
         shell: bash
         if: ${{ always() }}
       - name: Archive result artifacts
+        id: archive-artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.suite-id }}
