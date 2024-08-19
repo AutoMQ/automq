@@ -22,8 +22,6 @@ jobs:
   run_e2e:
     name: "Run E2E tests"
     runs-on: ${{ inputs.runner }}
-    env:
-      TC_GENERAL_MIRROR_URL: "mirrors.ustc.edu.cn"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,8 +29,14 @@ jobs:
         run: |
           rm -rf results
           rm -rf "${{ inputs.storage-path }}/${{ inputs.suite-id }}"
+      - uses: docker-practice/actions-setup-docker@master
+        timeout-minutes: 12
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2.12.0
+        uses: gradle/actions/setup-gradle@v3
       - name: Run E2E tests with yaml
         if: ${{ inputs.test-path == '' }}
         run: ./tests/docker/run_tests.sh
