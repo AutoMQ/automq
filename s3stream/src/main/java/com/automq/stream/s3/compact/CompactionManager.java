@@ -373,7 +373,7 @@ public class CompactionManager {
             logger.info("No stream set objects to compact");
             return;
         }
-        logger.info("Build compact request for {} stream set objects complete, stream set object id: {}, stresam set object size: {}, stream object num: {}, time cost: {}, start committing objects",
+        logger.info("Build compact request for {} stream set objects complete, stream set object id: {}, stream set object size: {}, stream object num: {}, time cost: {}, start committing objects",
             request.getCompactedObjectIds().size(), request.getObjectId(), request.getObjectSize(), request.getStreamObjects().size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         timerUtil.reset();
         objectManager.commitStreamSetObject(request)
