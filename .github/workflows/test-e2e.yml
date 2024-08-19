@@ -19,7 +19,7 @@ jobs:
     uses: ./.github/workflows/e2e-run.yml
     # if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
-      suite-id: "benchmarks"
+      suite-id: "e2e1"
       test-path: "tests/kafkatest/tests/client/consumer_test.py::AssignmentValidationTest.test_valid_assignment"
       storage-path: "/mnt/reports"
       runner: ${{ inputs.runs_on || 'main' }}
@@ -28,8 +28,8 @@ jobs:
     uses: ./.github/workflows/e2e-run.yml
     # if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
-      suite-id: "benchmarks"
-      test-path: "tests/kafkatest/tests/core/elastic_log_reopen_test.py::ElasticLogReOpenTest.test_elastic_log_reassign"
+      suite-id: "e2e2"
+      test-path: "tests/kafkatest/tests/client/quota_test.py::QuotaTest.test_quota"
       storage-path: "/mnt/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   e2e_summary:
