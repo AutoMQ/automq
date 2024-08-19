@@ -177,12 +177,16 @@ public class DefaultS3Client implements Client {
             case "file":
                 return BlockWALService.builder(uri).config(config).build();
             case "s3":
-                ObjectStorage walObjectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(config.walConfig()))
+                ObjectStorage walObjectStorage = ObjectStorageFactory.instance()
+                    .builder(BucketURI.parse(config.walConfig()))
+                    .inboundLimiter(networkInboundLimiter)
+                    .outboundLimiter(networkOutboundLimiter)
                     .tagging(config.objectTagging())
                     .threadPrefix("s3-wal")
                     .build();
 
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder()
+                    .withURI(uri)
                     .withClusterId(brokerServer.clusterId())
                     .withNodeId(config.nodeId())
                     .withEpoch(config.nodeEpoch());
