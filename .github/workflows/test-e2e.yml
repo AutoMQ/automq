@@ -54,5 +54,5 @@ jobs:
         env:
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
           SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL }}
-          STORAGE_PATH: "/data/github-actions/reports"
+          STORAGE_PATH: "/mnt/reports"
           REPORT_TITLE_PREFIX: "Main"
