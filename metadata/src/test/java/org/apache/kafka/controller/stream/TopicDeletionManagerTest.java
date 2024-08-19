@@ -11,7 +11,9 @@
 
 package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.StreamState;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,8 +53,13 @@ public class TopicDeletionManagerTest {
     final Uuid topicId = new Uuid(1, 2);
     SnapshotRegistry registry;
     Controller quorumController;
+
     TimelineHashMap<Long, StreamRuntimeMetadata> streams;
     StreamControlManager streamControlManager;
+
+    TimelineHashMap<String, ByteBuffer> kvs;
+    KVControlManager kvControlManager;
+
     TopicDeletionManager topicDeletionManager;
 
     @BeforeEach
@@ -63,7 +70,12 @@ public class TopicDeletionManagerTest {
         streams = new TimelineHashMap<>(registry, 0);
         streamControlManager = mock(StreamControlManager.class);
         when(streamControlManager.streamsMetadata()).thenReturn(streams);
-        topicDeletionManager = new TopicDeletionManager(registry, quorumController, streamControlManager);
+
+        kvs = new TimelineHashMap<>(registry, 0);
+        kvControlManager = mock(KVControlManager.class);
+        when(kvControlManager.kv()).thenReturn(kvs);
+
+        topicDeletionManager = new TopicDeletionManager(registry, quorumController, streamControlManager, kvControlManager);
     }
 
     @Test
@@ -74,6 +86,13 @@ public class TopicDeletionManagerTest {
         when(quorumController.deleteStreams(any(), any())).thenReturn(CompletableFuture.completedFuture(deleteStreamsResp));
         when(quorumController.isActive()).thenReturn(true);
         when(quorumController.appendWriteEvent(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        List<String> metadataKvList = List.of(
+            ObjectUtils.genMetaStreamKvPrefix(topicId.toString()) + 1,
+            ObjectUtils.genMetaStreamKvPrefix(topicId.toString()) + 2
+        );
+        metadataKvList.forEach(str -> kvs.put(str, ByteBuffer.wrap(new byte[0])));
+        kvs.put(ObjectUtils.genMetaStreamKvPrefix(topicId + "others") + 1, ByteBuffer.wrap(new byte[0]));
 
         streams.put(1L, new StreamRuntimeMetadata(1L, 0, 0, 0,
             StreamState.CLOSED, Collections.emptyMap(), registry));
@@ -122,7 +141,11 @@ public class TopicDeletionManagerTest {
         registry.getOrCreateSnapshot(4L);
         when(quorumController.lastStableOffset()).thenReturn(4L);
 
-        replay(topicDeletionManager.cleanupDeletedTopics0(), topicDeletionManager);
+        ControllerResult<Void> rst = topicDeletionManager.cleanupDeletedTopics0();
+        assertEquals(2, rst.records().size());
+        assertEquals(metadataKvList.stream().sorted().collect(Collectors.toList()), ((RemoveKVRecord) rst.records().get(0).message()).keys().stream().sorted().collect(Collectors.toList()));
+        assertEquals(List.of(TopicDeletion.TOPIC_DELETION_PREFIX + topicId), ((RemoveKVRecord) rst.records().get(1).message()).keys());
+        replay(rst, topicDeletionManager);
         verify(quorumController, times(2)).deleteStreams(any(), any());
         assertEquals(0, topicDeletionManager.waitingCleanupTopics.size());
     }
