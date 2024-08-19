@@ -13,9 +13,11 @@ package com.automq.stream.s3.index;
 
 import com.automq.stream.s3.cache.AsyncMeasurable;
 import com.automq.stream.s3.cache.AsyncLRUCache;
+import com.automq.stream.utils.Time;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,9 +25,11 @@ import org.slf4j.LoggerFactory;
 public class NodeRangeIndexCache {
     private static final int MAX_CACHE_SIZE = 100 * 1024 * 1024;
     public static final int ZGC_OBJECT_HEADER_SIZE_BYTES = 16;
+    public static final int MIN_CACHE_UPDATE_INTERVAL_MS = 1000; // 1s
     private static final Logger LOGGER = LoggerFactory.getLogger(NodeRangeIndexCache.class);
     private volatile static NodeRangeIndexCache instance = null;
     private final LRUCache nodeRangeIndexMap = new LRUCache(MAX_CACHE_SIZE);
+    private final Map<Long, Long> nodeCacheUpdateTimestamp = new ConcurrentHashMap<>();
 
     private NodeRangeIndexCache() {
 
@@ -44,6 +48,7 @@ public class NodeRangeIndexCache {
 
     void clear() {
         this.nodeRangeIndexMap.clear();
+        this.nodeCacheUpdateTimestamp.clear();
     }
 
     // fot test only
@@ -62,8 +67,21 @@ public class NodeRangeIndexCache {
 
     public synchronized CompletableFuture<Long> searchObjectId(long nodeId, long streamId, long startOffset,
         Supplier<CompletableFuture<Map<Long, List<RangeIndex>>>> cacheSupplier) {
+        return searchObjectId(nodeId, streamId, startOffset, cacheSupplier, Time.SYSTEM);
+    }
+
+    public synchronized CompletableFuture<Long> searchObjectId(long nodeId, long streamId, long startOffset,
+        Supplier<CompletableFuture<Map<Long, List<RangeIndex>>>> cacheSupplier, Time time) {
         StreamRangeIndexCache indexCache = this.nodeRangeIndexMap.get(nodeId);
         if (indexCache == null) {
+            long now = time.milliseconds();
+            long expect = this.nodeCacheUpdateTimestamp.getOrDefault(nodeId, 0L) + MIN_CACHE_UPDATE_INTERVAL_MS;
+            if (expect <= now) {
+                this.nodeCacheUpdateTimestamp.put(nodeId, now);
+            } else {
+                // Skip updating from remote
+                return CompletableFuture.completedFuture(-1L);
+            }
             indexCache = new StreamRangeIndexCache(cacheSupplier.get());
             this.nodeRangeIndexMap.put(nodeId, indexCache);
             LOGGER.info("Update stream range index for node {}", nodeId);
