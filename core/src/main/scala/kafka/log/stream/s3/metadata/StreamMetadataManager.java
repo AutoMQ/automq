@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -45,6 +46,7 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,6 +86,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         }
         // retry all pending tasks
         retryPendingTasks();
+        this.indexCache.asyncPrune(this::getStreamSetObjectIds);
     }
 
     public CompletableFuture<List<S3ObjectMetadata>> getStreamSetObjects() {
@@ -100,6 +103,13 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                 })
                 .collect(Collectors.toList());
             return CompletableFuture.completedFuture(s3ObjectMetadataList);
+        }
+    }
+
+    public Set<Long> getStreamSetObjectIds() {
+        try (Image image = getImage()) {
+            return image.streamsMetadata().getStreamSetObjects(nodeId).stream()
+                .map(S3StreamSetObject::objectId).collect(Collectors.toSet());
         }
     }
 

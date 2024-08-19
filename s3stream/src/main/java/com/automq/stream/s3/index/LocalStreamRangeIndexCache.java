@@ -37,9 +37,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,6 +58,8 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         ThreadUtils.createThreadFactory("upload-index", true));
     private final Queue<CompletableFuture<Void>> uploadQueue = new LinkedList<>();
     private final CompletableFuture<Void> initCf = new CompletableFuture<>();
+    private final AtomicBoolean pruned = new AtomicBoolean(false);
+    private Supplier<Set<Long>> initStreamSetObjectIdsSupplier;
     private long nodeId = -1;
     private ObjectStorage objectStorage;
     private int totalSize = 0;
@@ -173,6 +177,16 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
 
     private <T> CompletableFuture<T> exec(Callable<T> r) {
         return initCf.thenApply(v -> {
+            try {
+                return r.call();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private <T> CompletableFuture<T> execCompose(Callable<CompletableFuture<T>> r) {
+        return initCf.thenCompose(v -> {
             try {
                 return r.call();
             } catch (Exception e) {
@@ -373,6 +387,56 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
                     return -1L;
                 }
                 return LocalStreamRangeIndexCache.binarySearchObjectId(startOffset, sparseRangeIndex.getRangeIndexList());
+            } finally {
+                readLock.unlock();
+            }
+        });
+    }
+
+    public CompletableFuture<Void> asyncPrune(Supplier<Set<Long>> initStreamSetObjectIdsSupplier) {
+        if (pruned.compareAndSet(false, true)) {
+            this.initStreamSetObjectIdsSupplier = initStreamSetObjectIdsSupplier;
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            executorService.execute(() -> prune().whenComplete((v, ex) -> {
+                if (ex != null) {
+                    cf.completeExceptionally(ex);
+                } else {
+                    cf.complete(null);
+                }
+            }));
+            return cf;
+        }
+        return CompletableFuture.completedFuture(null);
+    }
+
+    CompletableFuture<Void> prune() {
+        if (initStreamSetObjectIdsSupplier == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("initStreamSetObjectIdsSupplier is not set"));
+        }
+        return execCompose(() -> {
+            readLock.lock();
+            try {
+                Set<Long> streamSetObjectIds = initStreamSetObjectIdsSupplier.get();
+                Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
+                    SparseRangeIndex sparseRangeIndex = entry.getValue();
+                    Set<Long> invalidateObjectIds = new HashSet<>();
+                    for (RangeIndex rangeIndex : sparseRangeIndex.getRangeIndexList()) {
+                        if (!streamSetObjectIds.contains(rangeIndex.getObjectId())) {
+                            invalidateObjectIds.add(rangeIndex.getObjectId());
+                        }
+                    }
+                    totalSize += sparseRangeIndex.compact(null, invalidateObjectIds);
+                    if (sparseRangeIndex.length() == 0) {
+                        iterator.remove();
+                    }
+                }
+                return upload();
+            } catch (Throwable t) {
+                LOGGER.error("Failed to prune local sparse index", t);
+                pruned.set(false);
+                return CompletableFuture.failedFuture(t);
             } finally {
                 readLock.unlock();
             }
