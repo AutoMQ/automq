@@ -57,6 +57,6 @@ jobs:
       - name: Archive result artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: my-artifact
+          name: ${{ inputs.suite-id }}
           path: |
             results

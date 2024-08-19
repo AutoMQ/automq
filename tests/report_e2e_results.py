@@ -22,10 +22,12 @@ from pathlib import Path
 
 if __name__ == '__main__':
     web_hook_url = os.getenv('WEB_HOOK_URL')
-    show_results_url = os.getenv('SHOW_RESULTS_URL')
     storage_path = os.getenv('STORAGE_PATH')
     title_prefix = os.getenv('REPORT_TITLE_PREFIX')
     title_prefix = title_prefix if title_prefix else ""
+
+    artifact_id_map = eval(os.getenv('ARTIFACT_ID_MAP'))
+    artifact_url_prefix = "https://github.com/%s/actions/runs/%s/artifacts/" % (os.getenv('CURRENT_REPO'), os.getenv('RUN_ID'))
 
     # iterate all the folders in the storage path
     base_path = Path(storage_path)
@@ -85,7 +87,7 @@ if __name__ == '__main__':
                         "content": "See more details for %s" % key,
                         "tag": "lark_md"
                     },
-                    "url": "http://%s/kafka/%s" % (show_results_url, key),
+                    "url": artifact_url_prefix + artifact_id_map[key],
                     "type": "default",
                     "value": {}
                 }],

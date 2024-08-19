@@ -32,7 +32,7 @@ jobs:
       test-path: "tests/kafkatest/tests/core/get_offset_shell_test.py::GetOffsetShellTest.test_get_offset_shell_topic_name"
       storage-path: "/mnt/reports"
       runner: ${{ inputs.runs_on || 'main' }}
-  job2:
+  show-artifacts:
     runs-on: ${{ inputs.runs_on || 'main' }}
     needs: [ e2e1, e2e2 ]
     steps:
@@ -52,7 +52,10 @@ jobs:
       - name: Report results
         run: python3 tests/report_e2e_results.py
         env:
+          CURRENT_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL }}
+          # map of suite id to artifact id
+          ARTIFACT_ID_MAP: "{'e2e1': '${{needs.e2e1.outputs.output1}}', 'e2e2': '${{needs.e2e2.outputs.output1}}'}"
           STORAGE_PATH: "/mnt/reports"
           REPORT_TITLE_PREFIX: "Main"
