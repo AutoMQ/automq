@@ -20,7 +20,7 @@ jobs:
     # if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "e2e1"
-      test-path: "tests/kafkatest/tests/client/consumer_test.py::AssignmentValidationTest.test_valid_assignment"
+      test-path: "tests/kafkatest/core/get_offset_shell_test.py::GetOffsetShellTest.test_get_offset_shell_topic_pattern"
       storage-path: "/mnt/reports"
       runner: ${{ inputs.runs_on || 'main' }}
   e2e2:
@@ -29,9 +29,19 @@ jobs:
     # if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "e2e2"
-      test-path: "tests/kafkatest/tests/client/quota_test.py::QuotaTest.test_quota"
+      test-path: "tests/kafkatest/core/get_offset_shell_test.py::GetOffsetShellTest.test_get_offset_shell_topic_name"
       storage-path: "/mnt/reports"
       runner: ${{ inputs.runs_on || 'main' }}
+  job2:
+    runs-on: ${{ inputs.runs_on || 'main' }}
+    needs: [ e2e1, e2e2 ]
+    steps:
+      - env:
+          OUTPUT1: ${{needs.e2e1.outputs.output1}}
+          OUTPUT2: ${{needs.e2e2.outputs.output1}}
+        run: |
+          echo "Artifact ID from e2e1 job is $OUTPUT1"
+          echo "Artifact ID from e2e2 job is $OUTPUT2"
   e2e_summary:
     runs-on: ${{ inputs.runs_on || 'main' }}
     name: "E2E Tests Summary"
