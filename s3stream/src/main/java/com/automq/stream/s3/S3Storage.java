@@ -486,7 +486,6 @@ public class S3Storage implements Storage {
             if (ex != null) {
                 LOGGER.error("append WAL fail, request {}", request, ex);
                 storageFailureHandler.handle(ex);
-                return;
             }
             handleAppendCallback(request);
         });
