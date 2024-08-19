@@ -1,4 +1,4 @@
-name: Nightly Main E2E tests
+name: Testing E2E actions
 on:
   workflow_dispatch:
     inputs:

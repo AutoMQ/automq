@@ -29,6 +29,10 @@ jobs:
         run: |
           rm -rf results
           rm -rf "${{ inputs.storage-path }}/${{ inputs.suite-id }}"
+      - name: prepare docker daemon json
+        if: ${{ hashFiles('/etc/docker/daemon.json') != '' }}
+        run: |
+          echo "{}" > /etc/docker/daemon.json
       - uses: docker-practice/actions-setup-docker@master
         timeout-minutes: 12
       - uses: actions/setup-java@v4
