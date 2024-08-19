@@ -39,12 +39,14 @@ jobs:
     # if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ e2e1, e2e2 ]
     steps:
+      - name: echo DATA_MAP
+        run: |
+          echo "{'e2e1': {'success': ${{ needs.e2e1.outputs.success-num }}, 'failure': ${{ needs.e2e1.outputs.failure-num }}, 'time': ${{ needs.e2e1.outputs.run-time-secs }}, 'artifact-id': '${{ needs.e2e1.outputs.artifact-id }}'}, 'e2e2': {'success': ${{ needs.e2e2.outputs.success-num }}, failure: ${{ needs.e2e2.outputs.failure-num }}, 'time': ${{ needs.e2e2.outputs.run-time-secs }}, 'artifact-id': '${{ needs.e2e2.outputs.artifact-id }}'}}"
       - name: Report results
         run: python3 tests/report_e2e_results.py
         env:
           CURRENT_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          # map of suite id to artifact id
-          DATA_MAP: "{'e2e1': {'success': ${{needs.e2e1.outputs.success-num}}, 'failure': ${{needs.e2e1.outputs.failure-num}}, 'time': ${{needs.e2e1.outputs.run-time-secs}}, 'artifact-id': '${{needs.e2e1.outputs.artifact-id}}'}, 'e2e2': {'success': ${{needs.e2e2.outputs.success-num}}, failure: ${{needs.e2e2.outputs.failure-num}}, 'time': ${{needs.e2e2.outputs.run-time-secs}}, 'artifact-id': '${{needs.e2e2.outputs.artifact-id}}'}}"
+          DATA_MAP: "{'e2e1': {'success': ${{ needs.e2e1.outputs.success-num }}, 'failure': ${{ needs.e2e1.outputs.failure-num }}, 'time': ${{ needs.e2e1.outputs.run-time-secs }}, 'artifact-id': '${{ needs.e2e1.outputs.artifact-id }}'}, 'e2e2': {'success': ${{ needs.e2e2.outputs.success-num }}, failure: ${{ needs.e2e2.outputs.failure-num }}, 'time': ${{ needs.e2e2.outputs.run-time-secs }}, 'artifact-id': '${{ needs.e2e2.outputs.artifact-id }}'}}"
           REPORT_TITLE_PREFIX: "Main"

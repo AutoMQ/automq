@@ -72,14 +72,14 @@ jobs:
           echo "run-time-secs=$(jq .total_time $results_path/report.json)" >> $GITHUB_OUTPUT
         if: ${{ always() }}
         shell: bash
-      - name: Bring down docker containers
-        run: ./tests/docker/ducker-ak down
-        shell: bash
-        if: ${{ always() }}
       - name: Archive result artifacts
         id: archive-artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.suite-id }}
           path: |
-            results/$(readlink results/latest | cut -d'/' -f5)
+            results
+      - name: Bring down docker containers
+        run: ./tests/docker/ducker-ak down
+        shell: bash
+        if: ${{ always() }}
