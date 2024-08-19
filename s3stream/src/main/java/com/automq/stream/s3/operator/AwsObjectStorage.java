@@ -231,7 +231,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
         return writeS3Client.uploadPart(builder.build(), body)
             .thenApply(resp -> {
-                String checksum = null;
+                String checksum;
                 switch (checksumAlgorithm) {
                     case CRC32_C:
                         checksum = resp.checksumCRC32C();
@@ -245,6 +245,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     case SHA256:
                         checksum = resp.checksumSHA256();
                         break;
+                    default:
+                        checksum = null;
                 }
                 return new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksum);
             });
