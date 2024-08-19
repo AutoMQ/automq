@@ -276,6 +276,4 @@ LATEST_3_7 = V_3_7_0
 # AutoMQ
 # TODO add new version
 AUTOMQ_V_1_1_0 = KafkaVersion("1.1.0")
-AUTOMQ_V_1_1_1 = KafkaVersion("1.1.1")
-AUTOMQ_V_1_1_2 = KafkaVersion("1.1.2")
 AUTOMQ_LATEST_1_1 = AUTOMQ_V_1_1_0
