@@ -12,6 +12,7 @@
 package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
@@ -35,16 +36,27 @@ public class WALUtil {
         "4096"
     ));
 
-    public static ByteBuf generateRecord(ByteBuf body, int crc, long start) {
-        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
+    public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start) {
         crc = 0 == crc ? WALUtil.crc32(body) : crc;
-
         ByteBuf header = new RecordHeader()
             .setMagicCode(RECORD_HEADER_MAGIC_CODE)
             .setRecordBodyLength(body.readableBytes())
             .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
             .setRecordBodyCRC(crc)
-            .marshal();
+            .marshal(emptyHeader);
+        return new Record(header, body);
+    }
+
+    public static ByteBuf generateRecord(ByteBuf body, int crc, long start) {
+        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
+
+        crc = 0 == crc ? WALUtil.crc32(body) : crc;
+        ByteBuf header = new RecordHeader()
+            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
+            .setRecordBodyLength(body.readableBytes())
+            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
+            .setRecordBodyCRC(crc)
+            .marshal(ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE));
         record.addComponents(true, header, body);
         return record;
     }
