@@ -1306,8 +1306,11 @@ class UnifiedLogTest {
     records = TestUtils.records(
       List(new SimpleRecord(mockTime.milliseconds, s"key-1".getBytes, s"value-1".getBytes)),
       producerId = pid, producerEpoch = epoch, sequence = 1)
-    assertThrows(classOf[OutOfOrderSequenceException], () => log.appendAsLeader(records, leaderEpoch = 0),
-      () => "Should have received an OutOfOrderSequenceException since we attempted to append a duplicate of a batch which is older than the last 5 appended batches.")
+    // AutoMQ for Kafka inject start
+    // We expect a DuplicateSequenceException since we attempted to append a duplicate of a batch which is older than the last 5 appended batches.
+    assertThrows(classOf[DuplicateSequenceException], () => log.appendAsLeader(records, leaderEpoch = 0),
+      () => "Should have received an DuplicateSequenceException since we attempted to append a duplicate of a batch which is older than the last 5 appended batches.")
+    // AutoMQ for Kafka inject end
 
     // Append a duplicate entry with a single records at the tail of the log. This should return the appendInfo of the original entry.
     def createRecordsWithDuplicate = TestUtils.records(List(new SimpleRecord(mockTime.milliseconds, "key".getBytes, "value".getBytes)),
