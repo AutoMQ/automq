@@ -31,7 +31,7 @@ class FixedSizeByteBufPoolTest {
 
     @BeforeEach
     void setUp() {
-        pool = new FixedSizeByteBufPool(BUFFER_SIZE);
+        pool = new FixedSizeByteBufPool(BUFFER_SIZE, 2);
     }
 
     @Test
@@ -78,5 +78,24 @@ class FixedSizeByteBufPoolTest {
         assertTrue(buffer3 == buffer1 || buffer3 == buffer2, "Buffer3 should be one of the released buffers");
         assertTrue(buffer4 == buffer1 || buffer4 == buffer2, "Buffer4 should be one of the released buffers");
         assertNotSame(buffer3, buffer4, "Buffer3 and Buffer4 should not be the same after release");
+    }
+
+    @Test
+    void testOverCapacity() {
+        ByteBuf buffer1 = pool.get();
+        ByteBuf buffer2 = pool.get();
+        ByteBuf buffer3 = pool.get();
+
+        pool.release(buffer1);
+        pool.release(buffer2);
+        pool.release(buffer3);
+
+        ByteBuf buffer4 = pool.get();
+        ByteBuf buffer5 = pool.get();
+        ByteBuf buffer6 = pool.get();
+
+        assertSame(buffer4, buffer1, "Buffer4 should be reused from the pool");
+        assertSame(buffer5, buffer2, "Buffer5 should be reused from the pool");
+        assertNotSame(buffer6, buffer3, "Buffer6 should not be reused from the pool");
     }
 }

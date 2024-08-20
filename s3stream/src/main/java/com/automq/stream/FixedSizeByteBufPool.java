@@ -15,6 +15,7 @@ import com.automq.stream.s3.ByteBufAlloc;
 import io.netty.buffer.ByteBuf;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A pool of fixed-size {@link ByteBuf}.
@@ -31,6 +32,11 @@ public class FixedSizeByteBufPool {
      */
     private final int maxPoolSize;
     private final Queue<ByteBuf> pool = new ConcurrentLinkedQueue<>();
+    /**
+     * The current size of the pool.
+     * We use an {@link AtomicInteger} rather than {@link Queue#size()} to avoid the cost of traversing the queue.
+     */
+    private final AtomicInteger poolSize = new AtomicInteger(0);
 
     public FixedSizeByteBufPool(int bufferSize, int maxPoolSize) {
         this.bufferSize = bufferSize;
@@ -43,7 +49,11 @@ public class FixedSizeByteBufPool {
      */
     public ByteBuf get() {
         ByteBuf buffer = pool.poll();
-        return buffer == null ? allocate() : buffer;
+        if (buffer == null) {
+            return allocate();
+        }
+        poolSize.decrementAndGet();
+        return buffer;
     }
 
     private ByteBuf allocate() {
@@ -57,12 +67,13 @@ public class FixedSizeByteBufPool {
     public void release(ByteBuf buffer) {
         assert buffer.capacity() == bufferSize;
 
-        if (pool.size() >= maxPoolSize) {
+        if (poolSize.get() >= maxPoolSize) {
             buffer.release();
             return;
         }
 
         buffer.clear();
         pool.offer(buffer);
+        poolSize.incrementAndGet();
     }
 }
