@@ -17,6 +17,7 @@
 
 package org.apache.kafka.image;
 
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.index.NodeRangeIndexCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
@@ -268,7 +269,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 final NodeS3StreamSetObjectMetadataImage finalNode = node;
                 startSearchIndexCf.whenComplete((index, ex) -> {
                     if (ex != null) {
-                        LOGGER.error("Failed to get start search index", ex);
+                        if (!(ex instanceof ObjectNotExistException)) {
+                            LOGGER.error("Failed to get start search index", ex);
+                        }
                         index = 0;
                     }
                     // load stream set object index
