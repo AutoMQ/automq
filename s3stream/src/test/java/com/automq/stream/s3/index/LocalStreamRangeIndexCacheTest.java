@@ -20,11 +20,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-@Timeout(10)
+@Timeout(30)
 public class LocalStreamRangeIndexCacheTest {
     private static final int NODE_0 = 10;
     private static final long STREAM_0 = 0;
@@ -142,7 +141,6 @@ public class LocalStreamRangeIndexCacheTest {
     }
 
     @Test
-    @Disabled("FIXME: This test is not stable")
     public void testEvict() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
         LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
