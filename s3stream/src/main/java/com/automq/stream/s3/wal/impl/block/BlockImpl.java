@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.wal.impl.block;
 
+import com.automq.stream.FixedSizeByteBufPool;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
@@ -29,6 +30,11 @@ import java.util.stream.Collectors;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 
 public class BlockImpl implements Block {
+
+    /**
+     * The pool for record headers.
+     */
+    private static final FixedSizeByteBufPool HEADER_POOL = new FixedSizeByteBufPool(RECORD_HEADER_SIZE, 1024);
 
     private final long startOffset;
     /**
@@ -86,8 +92,7 @@ public class BlockImpl implements Block {
 
         long recordOffset = startOffset + nextOffset;
         recordSuppliers.add(() -> {
-            // TODO: reuse the header buffer
-            ByteBuf header = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
+            ByteBuf header = HEADER_POOL.get();
             return recordSupplier.get(recordOffset, header);
         });
         nextOffset += recordSize;
@@ -132,8 +137,7 @@ public class BlockImpl implements Block {
             return;
         }
         records.forEach(record -> {
-            // TODO: reuse the header buffer
-            record.header().release();
+            HEADER_POOL.release(record.header());
             record.body().release();
         });
     }
