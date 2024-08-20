@@ -15,7 +15,7 @@ on:
         required: false
         type: string
     outputs:
-      artifact-id: 
+      artifact-id:
         description: "Artifact ID of the test results"
         value: ${{ jobs.run_e2e.outputs.artifact-id }}
       success-num:
@@ -76,6 +76,7 @@ jobs:
       - name: Archive result artifacts
         id: archive-artifacts
         uses: actions/upload-artifact@v4
+        if: ${{ always() }}
         with:
           name: ${{ inputs.suite-id }}
           retention-days: 3
