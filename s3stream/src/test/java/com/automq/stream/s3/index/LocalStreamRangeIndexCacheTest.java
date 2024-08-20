@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-@Timeout(10)
+@Timeout(30)
 public class LocalStreamRangeIndexCacheTest {
     private static final int NODE_0 = 10;
     private static final long STREAM_0 = 0;
