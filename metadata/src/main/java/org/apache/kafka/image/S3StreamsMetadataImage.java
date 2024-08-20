@@ -24,6 +24,7 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
@@ -269,7 +270,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 final NodeS3StreamSetObjectMetadataImage finalNode = node;
                 startSearchIndexCf.whenComplete((index, ex) -> {
                     if (ex != null) {
-                        if (!(ex instanceof ObjectNotExistException)) {
+                        if (!(FutureUtil.cause(ex) instanceof ObjectNotExistException)) {
                             LOGGER.error("Failed to get start search index", ex);
                         }
                         index = 0;
