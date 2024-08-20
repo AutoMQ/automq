@@ -28,8 +28,8 @@ public class ObjectUtils {
         ObjectUtils.namespace = namespace;
     }
 
-    public static void main(String[] args) {
-        System.out.printf("%s%n", genKey(0, 11154));
+    public static String genMetaStreamKvPrefix(String topic) {
+        return namespace + "/" + topic + "/";
     }
 
     public static String genIndexKey(int version, long nodeId) {

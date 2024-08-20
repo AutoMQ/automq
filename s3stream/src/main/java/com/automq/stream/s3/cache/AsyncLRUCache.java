@@ -134,7 +134,9 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     }
 
     public synchronized void clear() {
-        cache.clear();
+        while (cache.size() > 0) {
+            pop();
+        }
     }
 
     public long totalSize() {

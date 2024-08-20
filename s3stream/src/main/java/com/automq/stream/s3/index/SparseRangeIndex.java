@@ -22,44 +22,64 @@ import org.slf4j.LoggerFactory;
 public class SparseRangeIndex {
     private static final Logger LOGGER = LoggerFactory.getLogger(SparseRangeIndex.class);
     private final int compactNum;
-    private final int sparsePadding;
     // sorted by startOffset in descending order
     private List<RangeIndex> sortedRangeIndexList;
-    private long evictIndex = 0;
+    private int size = 0;
+    private int evictIndex = 0;
 
-    public SparseRangeIndex(int compactNum, int sparsePadding) {
-        this(compactNum, sparsePadding, new ArrayList<>());
+    public SparseRangeIndex(int compactNum) {
+        this(compactNum, new ArrayList<>());
     }
 
-    public SparseRangeIndex(int compactNum, int sparsePadding, List<RangeIndex> sortedRangeIndexList) {
+    public SparseRangeIndex(int compactNum, List<RangeIndex> sortedRangeIndexList) {
         this.compactNum = compactNum;
-        this.sparsePadding = sparsePadding;
-        this.sortedRangeIndexList = sortedRangeIndexList;
+        init(sortedRangeIndexList);
     }
 
-    public void append(RangeIndex newRangeIndex) {
+    private void init(List<RangeIndex> sortedRangeIndexList) {
+        if (sortedRangeIndexList == null) {
+            sortedRangeIndexList = new ArrayList<>();
+        }
+        this.sortedRangeIndexList = sortedRangeIndexList;
+        this.size = sortedRangeIndexList.size() * RangeIndex.OBJECT_SIZE;
+    }
+
+    /**
+     * Append new range index to the list.
+     * @param newRangeIndex the range index to append
+     * @return the change of size after appending
+     */
+    public int append(RangeIndex newRangeIndex) {
+        int delta = 0;
         if (newRangeIndex == null) {
-            return;
+            return delta;
         }
         if (!this.sortedRangeIndexList.isEmpty()
             && newRangeIndex.compareTo(this.sortedRangeIndexList.get(this.sortedRangeIndexList.size() - 1)) <= 0) {
             LOGGER.error("Unexpected new range index {}, last: {}, maybe initialized with outdated index file, " +
                     "reset local cache", newRangeIndex, this.sortedRangeIndexList.get(this.sortedRangeIndexList.size() - 1));
+            delta -= size;
             reset();
         }
         this.sortedRangeIndexList.add(newRangeIndex);
-        evict();
+        size += RangeIndex.OBJECT_SIZE;
+        return delta + RangeIndex.OBJECT_SIZE;
     }
 
     public void reset() {
-        this.sortedRangeIndexList.clear();
-        evictIndex = 0;
+        init(new ArrayList<>());
     }
 
-    public void compact(RangeIndex newRangeIndex, Set<Long> compactedObjectIds) {
+    /**
+     * Compact the list by removing the compacted object ids and add the new range index if not null.
+     *
+     * @param newRangeIndex the new range index to add
+     * @param compactedObjectIds the object ids to compact
+     * @return the change of size after compacting
+     */
+    public int compact(RangeIndex newRangeIndex, Set<Long> compactedObjectIds) {
         if (compactedObjectIds.isEmpty()) {
-            append(newRangeIndex);
-            return;
+            return append(newRangeIndex);
         }
         List<RangeIndex> newRangeIndexList = new ArrayList<>();
         boolean found = false;
@@ -68,27 +88,68 @@ public class SparseRangeIndex {
                 continue;
             }
             if (newRangeIndex != null && !found && rangeIndex.compareTo(newRangeIndex) > 0) {
+                // insert new range index into the list
                 newRangeIndexList.add(newRangeIndex);
                 found = true;
             }
             newRangeIndexList.add(rangeIndex);
         }
         if (newRangeIndex != null && !found) {
+            // insert new range index into the end of the list
             newRangeIndexList.add(newRangeIndex);
         }
-        this.sortedRangeIndexList = newRangeIndexList;
+        int oldSize = size;
+        init(newRangeIndexList);
+        return size - oldSize;
     }
 
-    private void evict() {
-        if (this.sortedRangeIndexList.size() > this.compactNum) {
-            if (evictIndex++ % (sparsePadding + 1) == 0) {
-                this.sortedRangeIndexList.remove(this.sortedRangeIndexList.size() - this.compactNum - 1);
-            }
+    /**
+     * Try to evict one range index from the list, the eviction priority for each element is:
+     * 1. any element that's not the first and last N compacted elements
+     * 2. the last N compacted elements
+     * 3. the first element
+     * <p>
+     * For example for a list of [0, 1, 2, 3, 4, 5], compact number is 2, the eviction result will be:
+     * <ul>
+     * <li><code>1rst: [0, 2, 3, 4, 5]</code></li>
+     * <li><code>2nd:  [0, 2, 4, 5]</code></li>
+     * <li><code>3rd:  [0, 4, 5]</code></li>
+     * <li><code>4th:  [0, 5]</code></li>
+     * <li><code>5th:  [0]</code></li>
+     * <li><code>6th:  []</code></li>
+     * </ul>
+     *
+     * @return evicted size
+     */
+    public int evictOnce() {
+        int indexToEvict = -1;
+        if (this.sortedRangeIndexList.isEmpty()) {
+            return 0;
+        } else if (this.sortedRangeIndexList.size() == 1) {
+            // evict the only element
+            indexToEvict = 0;
+        } else if (this.sortedRangeIndexList.size() <= (1 + compactNum)) {
+            indexToEvict = 1;
         }
+
+        if (indexToEvict == -1) {
+            if (evictIndex % this.sortedRangeIndexList.size() == 0
+                || this.evictIndex >= this.sortedRangeIndexList.size() - compactNum) {
+                this.evictIndex = 1;
+            }
+            indexToEvict = evictIndex++;
+        }
+        this.sortedRangeIndexList.remove(indexToEvict);
+        size -= RangeIndex.OBJECT_SIZE;
+        return RangeIndex.OBJECT_SIZE;
+    }
+
+    public int length() {
+        return this.sortedRangeIndexList.size();
     }
 
     public int size() {
-        return this.sortedRangeIndexList.size();
+        return size;
     }
 
     List<RangeIndex> getRangeIndexList() {

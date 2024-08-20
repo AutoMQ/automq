@@ -19,7 +19,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
-
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -32,7 +31,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -51,6 +49,8 @@ import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
@@ -83,6 +83,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String AUTH_TYPE_KEY = "authType";
     public static final String STATIC_AUTH_TYPE = "static";
     public static final String INSTANCE_AUTH_TYPE = "instance";
+    public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
 
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
     // The maximum number of keys that can be deleted in a single request is 1000.
@@ -93,6 +94,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
 
+    private final ChecksumAlgorithm checksumAlgorithm;
+
     private volatile static InstanceProfileCredentialsProvider instanceProfileCredentialsProvider;
 
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
@@ -102,6 +105,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
         List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
+
+        ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(bucketURI.extensionString(CHECKSUM_ALGORITHM_KEY));
+        if (checksumAlgorithm == null) {
+            checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+        }
+        this.checksumAlgorithm = checksumAlgorithm;
+
         Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, false), credentialsProviders, getMaxObjectStorageConcurrency());
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
@@ -114,6 +124,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
         this.tagging = null;
+        this.checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
     }
 
     public static Builder builder() {
@@ -144,9 +155,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
-        GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end)).build();
+        GetObjectRequest.Builder builder = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end));
+
+        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
+            builder.checksumMode(ChecksumMode.ENABLED);
+        }
+
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        readS3Client.getObject(request, AsyncResponseTransformer.toPublisher())
+        readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
                 CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
                 responsePublisher.subscribe(bytes -> {
@@ -174,6 +190,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (null != tagging) {
             builder.tagging(tagging);
         }
+
+        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
+            builder.checksumAlgorithm(checksumAlgorithm);
+        }
+
         PutObjectRequest request = builder.build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         return writeS3Client.putObject(request, body).thenApply(rst -> null);
@@ -185,6 +206,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (null != tagging) {
             builder.tagging(tagging);
         }
+
+        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
+            builder.checksumAlgorithm(checksumAlgorithm);
+        }
+
         CreateMultipartUploadRequest request = builder.build();
         return writeS3Client.createMultipartUpload(request).thenApply(CreateMultipartUploadResponse::uploadId);
     }
@@ -193,10 +219,37 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
         int partNumber, ByteBuf part) {
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
-        UploadPartRequest request = UploadPartRequest.builder().bucket(bucket).key(path).uploadId(uploadId)
-            .partNumber(partNumber).build();
-        return writeS3Client.uploadPart(request, body)
-            .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag()));
+        UploadPartRequest.Builder builder = UploadPartRequest.builder()
+            .bucket(bucket)
+            .key(path)
+            .uploadId(uploadId)
+            .partNumber(partNumber);
+
+        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
+            builder.checksumAlgorithm(checksumAlgorithm);
+        }
+
+        return writeS3Client.uploadPart(builder.build(), body)
+            .thenApply(resp -> {
+                String checksum;
+                switch (checksumAlgorithm) {
+                    case CRC32_C:
+                        checksum = resp.checksumCRC32C();
+                        break;
+                    case CRC32:
+                        checksum = resp.checksumCRC32();
+                        break;
+                    case SHA1:
+                        checksum = resp.checksumSHA1();
+                        break;
+                    case SHA256:
+                        checksum = resp.checksumSHA256();
+                        break;
+                    default:
+                        checksum = null;
+                }
+                return new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksum);
+            });
     }
 
     @Override
@@ -210,14 +263,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     .apiCallTimeout(Duration.ofMillis(options.apiCallAttemptTimeout())).build()
             )
             .build();
-        return writeS3Client.uploadPartCopy(request).thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag()));
+        return writeS3Client.uploadPartCopy(request).thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag(), resp.copyPartResult().checksumCRC32C()));
     }
 
     @Override
     public CompletableFuture<Void> doCompleteMultipartUpload(WriteOptions options, String path, String uploadId,
         List<ObjectStorageCompletedPart> parts) {
         List<CompletedPart> completedParts = parts.stream()
-            .map(part -> CompletedPart.builder().partNumber(part.getPartNumber()).eTag(part.getPartId()).build())
+            .map(part -> CompletedPart.builder().partNumber(part.getPartNumber()).eTag(part.getPartId()).checksumCRC32C(part.getCheckSum()).build())
             .collect(Collectors.toList());
         CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(completedParts).build();
         CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();

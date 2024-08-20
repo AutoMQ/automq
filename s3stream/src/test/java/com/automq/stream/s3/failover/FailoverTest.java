@@ -61,7 +61,8 @@ public class FailoverTest {
         request.setDevice(path);
         request.setVolumeId("test_volume_id");
 
-        when(failoverFactory.getWal(any())).thenReturn(BlockWALService.builder(path, 1024 * 1024).nodeId(233).epoch(100).build());
+        when(failoverFactory.getWal(any())).thenAnswer(s ->
+            BlockWALService.builder(path, 1024 * 1024).nodeId(233).epoch(100).build());
 
         boolean exceptionThrown = false;
         try {
