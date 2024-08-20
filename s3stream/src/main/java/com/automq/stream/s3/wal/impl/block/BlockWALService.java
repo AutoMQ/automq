@@ -176,7 +176,9 @@ public class BlockWALService implements WriteAheadLog {
         this.walChannel.retryFlush();
         buf.release();
         walHeader.updateFlushedTrimOffset(trimOffset);
-        LOGGER.debug("WAL header flushed, position: {}, header: {}", position, walHeader);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("WAL header flushed, position: {}, header: {}", position, walHeader);
+        }
     }
 
     /**
