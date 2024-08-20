@@ -26,6 +26,8 @@ import java.util.stream.Stream;
 import org.apache.kafka.common.errors.DuplicateSequenceException;
 import org.apache.kafka.common.record.RecordBatch;
 
+import static org.apache.kafka.common.record.DefaultRecordBatch.decrementSequence;
+
 /**
  * This class represents the state of a specific producer-id.
  * It contains batchMetadata queue which is ordered such that the batch with the lowest sequence is at the head of the
@@ -142,8 +144,24 @@ public class ProducerStateEntry {
         }
         BatchMetadata front = batchMetadata.peek();
         if (front != null && front.recovered) {
-            // the batch metadata is recovered from snapshot
-            if (front.firstSeq() <= batch.baseSequence() && front.lastSeq >= batch.lastSequence()) {
+            // the batch metadata (`front`) is recovered from snapshot
+            boolean batchFallInFront = contains(front.firstSeq(), front.lastSeq, batch.baseSequence())
+                && contains(front.firstSeq(), front.lastSeq, batch.lastSequence());
+            if (batchFallInFront) {
+                throw new DuplicateSequenceException(
+                    String.format("The batch is duplicated (recover from snapshot), broker cached metadata is %s, the record batch is [%s, %s]",
+                        this, batch.baseSequence(), batch.lastSequence())
+                );
+            }
+        }
+        if (front != null) {
+            // regard the batch as duplicated if it is before the first cached batch
+            boolean batchBeforeFront = contains(
+                decrementSequence(front.firstSeq(), 65536),
+                decrementSequence(front.firstSeq(), 1),
+                batch.lastSequence()
+            );
+            if (batchBeforeFront) {
                 throw new DuplicateSequenceException(
                     String.format("The batch is duplicated, broker cached metadata is %s, the record batch is [%s, %s]",
                         this, batch.baseSequence(), batch.lastSequence())
@@ -153,6 +171,21 @@ public class ProducerStateEntry {
         return metadata;
         // AutoMQ inject end
     }
+
+    // AutoMQ inject start
+    /**
+     * Check if the sequence number is in the range [start, end] (inclusive).
+     * The range may wrap around the sequence space.
+     */
+    private static boolean contains(int start, int end, int seq) {
+        if (start <= end) {
+            return seq >= start && seq <= end;
+        } else {
+            // wrap around
+            return seq >= start || seq <= end;
+        }
+    }
+    // AutoMQ inject end
 
     // Return the batch metadata of the cached batch having the exact sequence range, if any.
     Optional<BatchMetadata> batchWithSequenceRange(int firstSeq, int lastSeq) {

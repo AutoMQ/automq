@@ -17,12 +17,14 @@
 
 package org.apache.kafka.image;
 
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.index.NodeRangeIndexCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.utils.FutureUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
@@ -268,7 +270,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 final NodeS3StreamSetObjectMetadataImage finalNode = node;
                 startSearchIndexCf.whenComplete((index, ex) -> {
                     if (ex != null) {
-                        LOGGER.error("Failed to get start search index", ex);
+                        if (!(FutureUtil.cause(ex) instanceof ObjectNotExistException)) {
+                            LOGGER.error("Failed to get start search index", ex);
+                        }
                         index = 0;
                     }
                     // load stream set object index
@@ -394,9 +398,11 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         // search in sparse index
         return getStartStreamSetObjectId(node.getNodeId(), startOffset, ctx)
             .thenApply(objectId -> {
-                int startIndex = findStartSearchIndex(objectId, node.orderList());
+                int startIndex = -1;
+                if (objectId >= 0) {
+                    startIndex = findStartSearchIndex(objectId, node.orderList());
+                }
                 if (startIndex < 0 && ctx.indexCache.nodeId() != node.getNodeId()) {
-                    LOGGER.info("Stream set object {} not found in node {}, invalidate index cache", objectId, node.getNodeId());
                     NodeRangeIndexCache.getInstance().invalidate(node.getNodeId());
                 }
                 return Math.max(0, startIndex);
@@ -407,7 +413,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      * Get the object id of the first stream set object to start search from.
      * Possible results:
      * <p>
-     * a. -1, not stream set object can be found, this can happen when index cache is not exist or is invalidated,
+     * a. -1, no stream set object can be found, this can happen when index cache is not exist or is invalidated,
      * searching should be done from the beginning of the objects in this case.
      * <p>
      * b. non-negative value:

@@ -22,32 +22,25 @@ from pathlib import Path
 
 if __name__ == '__main__':
     web_hook_url = os.getenv('WEB_HOOK_URL')
-    show_results_url = os.getenv('SHOW_RESULTS_URL')
-    storage_path = os.getenv('STORAGE_PATH')
     title_prefix = os.getenv('REPORT_TITLE_PREFIX')
     title_prefix = title_prefix if title_prefix else ""
 
-    # iterate all the folders in the storage path
-    base_path = Path(storage_path)
-    all_tests_folder = sorted(base_path.iterdir(), key=os.path.getmtime)
+    data_map = json.loads(os.getenv('DATA_MAP'))
+    artifact_url_prefix = "https://github.com/%s/actions/runs/%s/artifacts/" % (os.getenv('CURRENT_REPO'), os.getenv('RUN_ID'))
 
     total_passed = 0
     total_failed = 0
     reports_dict = {}
 
-    for path in all_tests_folder:
-        if not path.is_dir():
+    for key, value in data_map.items():
+        if not value:
             continue
-        suite_id = path.name
-        with open(os.path.join(path, "report.json")) as f:
-            data = json.load(f)
-            total_failed += data['num_failed']
-            total_passed += data['num_passed']
-            reports_dict[suite_id] = {'num_passed': data['num_passed'], 'num_failed': data['num_failed'],
-                                      'run_time_seconds': data['run_time_seconds']}
+        total_failed += int(value['failure-num'])
+        total_passed += int(value['success-num'])
+        reports_dict[key] = {'num_passed': int(value['success-num']), 'num_failed': int(value['failure-num']), 'run_time_seconds': float(value['run-time-secs']), 'artifact-id': value['artifact-id']}
 
     if not reports_dict:
-        print("No reports found in %s" % storage_path)
+        print("No reports found.")
         exit(0)
 
     post_data = {"msg_type": "interactive", "card": {
@@ -85,7 +78,7 @@ if __name__ == '__main__':
                         "content": "See more details for %s" % key,
                         "tag": "lark_md"
                     },
-                    "url": "http://%s/kafka/%s" % (show_results_url, key),
+                    "url": artifact_url_prefix + value['artifact-id'],
                     "type": "default",
                     "value": {}
                 }],

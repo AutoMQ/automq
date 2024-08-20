@@ -11,9 +11,11 @@
 
 package org.apache.kafka.controller.stream;
 
+import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.utils.Threads;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -50,17 +52,20 @@ public class TopicDeletionManager {
 
     private final Controller quorumController;
     private final StreamControlManager streamControlManager;
+    private final KVControlManager kvControlManager;
 
     private CompletableFuture<Void> lastDeletion = CompletableFuture.completedFuture(null);
 
     public TopicDeletionManager(
         SnapshotRegistry registry,
         Controller quorumController,
-        StreamControlManager streamControlManager
+        StreamControlManager streamControlManager,
+        KVControlManager kvControlManager
     ) {
         this.waitingCleanupTopics = new TimelineHashMap<>(registry, 0);
         this.quorumController = quorumController;
         this.streamControlManager = streamControlManager;
+        this.kvControlManager = kvControlManager;
         Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::cleanupDeletedTopics, 5, 5, TimeUnit.SECONDS);
     }
 
@@ -98,7 +103,16 @@ public class TopicDeletionManager {
             }
         }
         if (streamsToDelete.isEmpty()) {
-            List<ApiMessageAndVersion> records = List.of(new ApiMessageAndVersion(new RemoveKVRecord().setKeys(List.of(TopicDeletion.TOPIC_DELETION_PREFIX + topicId)), (short) 0));
+            List<ApiMessageAndVersion> records = new ArrayList<>();
+            List<String> metaStreamKvList = new ArrayList<>();
+            String metaStreamKvPrefix = ObjectUtils.genMetaStreamKvPrefix(topicId);
+            kvControlManager.kv().forEach((k, v) -> {
+                if (k.startsWith(metaStreamKvPrefix)) {
+                    metaStreamKvList.add(k);
+                }
+            });
+            records.add(new ApiMessageAndVersion(new RemoveKVRecord().setKeys(metaStreamKvList), (short) 0));
+            records.add(new ApiMessageAndVersion(new RemoveKVRecord().setKeys(List.of(TopicDeletion.TOPIC_DELETION_PREFIX + topicId)), (short) 0));
             LOGGER.info("Topic clean up completed for topic {}", topicId);
             if (waitingCleanupTopics.size(lastStableOffset) > 1) {
                 // there are more topics to clean up, fast trigger next round cleanup

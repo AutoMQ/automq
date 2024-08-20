@@ -21,7 +21,6 @@ jobs:
     with:
       suite-id: "benchmarks"
       test-path: "tests/kafkatest/benchmarks"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'extra' }}
   connect_e2e_1:
     name: "Run connect E2E Tests 1"
@@ -30,7 +29,6 @@ jobs:
     with:
       suite-id: "connect1"
       test-yaml: "tests/suites/connect_test_suite1.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'extra' }}
   connect_e2e_2:
     name: "Run connect E2E Tests 2"
@@ -39,7 +37,6 @@ jobs:
     with:
       suite-id: "connect2"
       test-yaml: "tests/suites/connect_test_suite2.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'extra' }}
   connect_e2e_3:
     name: "Run connect E2E Tests 3"
@@ -48,7 +45,6 @@ jobs:
     with:
       suite-id: "connect3"
       test-yaml: "tests/suites/connect_test_suite3.yml"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'extra' }}
   streams_e2e:
     name: "Run streams E2E Tests"
@@ -57,7 +53,6 @@ jobs:
     with:
       suite-id: "streams"
       test-path: "tests/kafkatest/tests/streams"
-      storage-path: "/data/github-actions/reports"
       runner: ${{ inputs.runs_on || 'extra' }}
   e2e_summary:
     name: "E2E Tests Summary"
@@ -68,7 +63,8 @@ jobs:
       - name: Report results
         run: python3 tests/report_e2e_results.py
         env:
+          CURRENT_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL2 }}
-          STORAGE_PATH: "/data/github-actions/reports"
+          DATA_MAP: "{\"benchmarks_e2e\": ${{ toJSON(needs.benchmarks_e2e.outputs) }}, \"connect_e2e_1\": ${{ toJSON(needs.connect_e2e_1.outputs) }}}, \"connect_e2e_2\": ${{ toJSON(needs.connect_e2e_2.outputs) }}, \"connect_e2e_3\": ${{ toJSON(needs.connect_e2e_3.outputs) }}, \"streams_e2e\": ${{ toJSON(needs.streams_e2e.outputs) }}"
           REPORT_TITLE_PREFIX: "Extra"
