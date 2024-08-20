@@ -18,7 +18,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * A pool of fixed-size {@link ByteBuf}.
- * Note: For performance reasons, there is no size limit for this pool. Callers should ensure the pool size is reasonable.
  */
 public class FixedSizeByteBufPool {
 
@@ -26,10 +25,16 @@ public class FixedSizeByteBufPool {
      * The size of the {@link ByteBuf} in this pool.
      */
     private final int bufferSize;
+    /**
+     * The max size of the pool.
+     * It is possible that the pool size exceeds this limit in some rare cases.
+     */
+    private final int maxPoolSize;
     private final Queue<ByteBuf> pool = new ConcurrentLinkedQueue<>();
 
-    public FixedSizeByteBufPool(int bufferSize) {
+    public FixedSizeByteBufPool(int bufferSize, int maxPoolSize) {
         this.bufferSize = bufferSize;
+        this.maxPoolSize = maxPoolSize;
     }
 
     /**
@@ -51,6 +56,12 @@ public class FixedSizeByteBufPool {
      */
     public void release(ByteBuf buffer) {
         assert buffer.capacity() == bufferSize;
+
+        if (pool.size() >= maxPoolSize) {
+            buffer.release();
+            return;
+        }
+
         buffer.clear();
         pool.offer(buffer);
     }
