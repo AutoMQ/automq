@@ -34,7 +34,7 @@ public class BlockImpl implements Block {
     /**
      * The pool for record headers.
      */
-    private static final FixedSizeByteBufPool HEADER_POOL = new FixedSizeByteBufPool(RECORD_HEADER_SIZE, 1024);
+    private static final FixedSizeByteBufPool HEADER_POOL = new FixedSizeByteBufPool(RECORD_HEADER_SIZE);
 
     private final long startOffset;
     /**
