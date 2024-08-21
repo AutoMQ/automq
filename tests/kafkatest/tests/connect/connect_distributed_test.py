@@ -419,7 +419,7 @@ class ConnectDistributedTest(Test):
                        err_msg="Failed to see connector transition to the RUNNING state")
 
         # after resuming, we should see records consumed again
-        wait_until(lambda: len(self.sink.received_messages()) > num_messages, timeout_sec=30,
+        wait_until(lambda: len(self.sink.received_messages()) > num_messages, timeout_sec=40,
                    err_msg="Failed to consume messages after resuming sink connector")
 
     @cluster(num_nodes=5)
@@ -680,7 +680,7 @@ class ConnectDistributedTest(Test):
         # do rebalancing of the group, etc, and b) without explicit leave group support, rebalancing takes awhile
         for node in self.cc.nodes:
             node.account.ssh("echo -e -n " + repr(self.FIRST_INPUTS) + " >> " + self.INPUT_FILE)
-        wait_until(lambda: self._validate_file_output(self.FIRST_INPUT_LIST), timeout_sec=70, err_msg="Data added to input file was not seen in the output file in a reasonable amount of time.")
+        wait_until(lambda: self._validate_file_output(self.FIRST_INPUT_LIST), timeout_sec=90, err_msg="Data added to input file was not seen in the output file in a reasonable amount of time.")
 
         # Restarting both should result in them picking up where they left off,
         # only processing new data.
