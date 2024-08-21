@@ -60,6 +60,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private final CompletableFuture<Void> initCf = new CompletableFuture<>();
     private final AtomicBoolean pruned = new AtomicBoolean(false);
     private long nodeId = -1;
+    private CompletableFuture<Void> flushCompletableFuture = CompletableFuture.completedFuture(null);
     private ObjectStorage objectStorage;
     private int totalSize = 0;
 
@@ -93,13 +94,19 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private void batchUpload() {
         List<CompletableFuture<Void>> candidates;
         synchronized (uploadQueue) {
+            if (!flushCompletableFuture.isDone()) {
+                return;
+            }
+
+            flushCompletableFuture = new CompletableFuture<>();
+
             if (uploadQueue.isEmpty()) {
                 return;
             }
             candidates = new ArrayList<>(uploadQueue);
             uploadQueue.clear();
         }
-        flush().whenComplete((v, ex) -> {
+        flush0(flushCompletableFuture).whenComplete((v, ex) -> {
             for (CompletableFuture<Void> cf : candidates) {
                 if (ex != null) {
                     cf.completeExceptionally(ex);
@@ -110,8 +117,19 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         });
     }
 
-    private CompletableFuture<Void> flush() {
-        CompletableFuture<Void> cf = new CompletableFuture<>();
+    private void flush() {
+        synchronized (uploadQueue) {
+            if (!flushCompletableFuture.isDone()) {
+                return;
+            }
+
+            flushCompletableFuture = new CompletableFuture<>();
+        }
+
+        flush0(flushCompletableFuture);
+    }
+
+    private CompletableFuture<Void> flush0(CompletableFuture<Void> cf) {
         ByteBuf buf = null;
         readLock.lock();
         try {
