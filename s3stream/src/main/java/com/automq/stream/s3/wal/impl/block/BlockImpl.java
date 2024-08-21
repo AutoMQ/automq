@@ -18,6 +18,7 @@ import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.util.WALUtil;
+import com.automq.stream.utils.Systems;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.LinkedList;
@@ -34,7 +35,7 @@ public class BlockImpl implements Block {
     /**
      * The pool for record headers.
      */
-    private static final FixedSizeByteBufPool HEADER_POOL = new FixedSizeByteBufPool(RECORD_HEADER_SIZE, 1024);
+    private static final FixedSizeByteBufPool HEADER_POOL = new FixedSizeByteBufPool(RECORD_HEADER_SIZE, 1024 * Systems.CPU_CORES);
 
     private final long startOffset;
     /**
