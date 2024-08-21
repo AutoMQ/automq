@@ -386,10 +386,18 @@ def parse_upload_delta_wal_log_entry(line1, line2, line3):
     """
     line1_dict = dict(item.split("=") for item in line1.split(", "))
     stream_set_object_id = int(line1_dict["streamSetObjectId"])
-    stream_ranges = line2.split("streamRanges=")[1]
-    stream_ranges_list = [item.strip("()") for item in stream_ranges.split("), (")]
-    stream_objects = line3.split("streamObjects=")[1]
-    stream_objects_list = [item.strip("()") for item in stream_objects.split("), (")]
+
+    if "streamRanges=" in line2:
+        stream_ranges = line2.split("streamRanges=")[1]
+        stream_ranges_list = [item.strip("()") for item in stream_ranges.split("), (")]
+    else:
+        stream_ranges_list = []
+
+    if "streamObjects=" in line3:
+        stream_objects = line3.split("streamObjects=")[1]
+        stream_objects_list = [item.strip("()") for item in stream_objects.split("), (")]
+    else:
+        stream_objects_list = []
 
     stream_set_object = {
         stream_set_object_id: {
