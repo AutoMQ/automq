@@ -11,13 +11,11 @@
 
 package com.automq.stream.s3.wal.util;
 
-import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;

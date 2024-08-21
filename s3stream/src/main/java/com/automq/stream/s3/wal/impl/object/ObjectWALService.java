@@ -44,7 +44,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
 public class ObjectWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
