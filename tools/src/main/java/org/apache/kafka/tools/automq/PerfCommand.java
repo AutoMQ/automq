@@ -98,9 +98,9 @@ public class PerfCommand implements AutoCloseable {
         if (config.warmupDurationMinutes > 0) {
             LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
             long warmupStart = System.nanoTime();
-            long warmupEnd = warmupStart + TimeUnit.MINUTES.toNanos(config.warmupDurationMinutes);
+            long warmupMiddle = warmupStart + TimeUnit.MINUTES.toNanos(config.warmupDurationMinutes) / 2;
             producerService.adjustRate(warmupStart, ProducerService.MIN_RATE);
-            producerService.adjustRate(warmupEnd, config.sendRate);
+            producerService.adjustRate(warmupMiddle, config.sendRate);
             collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
         }
 
