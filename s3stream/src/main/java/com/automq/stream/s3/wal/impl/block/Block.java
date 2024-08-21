@@ -12,11 +12,12 @@
 package com.automq.stream.s3.wal.impl.block;
 
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.common.Record;
+import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 
 /**
  * A Block contains multiple records, and will be written to the WAL in one batch.
@@ -33,11 +34,11 @@ public interface Block {
      * Cannot be called after {@link #data()} is called.
      *
      * @param recordSize     The size of this record.
-     * @param recordSupplier The supplier of this record which receives the start offset of this record as the parameter.
+     * @param recordSupplier The supplier of this record.
      * @param future         The future of this record, which will be completed when the record is written to the WAL.
      * @return The start offset of this record. If the size of this block exceeds the limit, return -1.
      */
-    long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier,
+    long addRecord(long recordSize, RecordSupplier recordSupplier,
         CompletableFuture<AppendResult.CallbackResult> future);
 
     /**
@@ -52,7 +53,6 @@ public interface Block {
     /**
      * The content of this block, which contains multiple records.
      * The first call of this method will marshal all records in this block to a ByteBuf. It will be cached for later calls.
-     * It returns null if this block is empty.
      */
     ByteBuf data();
 
@@ -61,16 +61,23 @@ public interface Block {
      */
     long size();
 
-    default void release() {
-        ByteBuf data = data();
-        if (null != data) {
-            data.release();
-        }
-    }
+    void release();
 
     /**
      * Called when this block is polled and sent to the writer.
      * Used for metrics.
      */
     void polled();
+
+    @FunctionalInterface
+    interface RecordSupplier {
+        /**
+         * Generate a record.
+         *
+         * @param recordStartOffset The start offset of this record.
+         * @param emptyHeader       An empty {@link ByteBuf} with the size of {@link RecordHeader#RECORD_HEADER_SIZE}. It will be used to marshal the header.
+         * @return The record.
+         */
+        Record get(long recordStartOffset, ByteBuf emptyHeader);
+    }
 }

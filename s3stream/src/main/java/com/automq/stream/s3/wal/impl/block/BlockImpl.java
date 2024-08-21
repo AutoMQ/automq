@@ -11,21 +11,31 @@
 
 package com.automq.stream.s3.wal.impl.block;
 
+import com.automq.stream.FixedSizeByteBufPool;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.util.WALUtil;
+import com.automq.stream.utils.Systems;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 
 public class BlockImpl implements Block {
+
+    /**
+     * The pool for record headers.
+     */
+    private static final FixedSizeByteBufPool HEADER_POOL = new FixedSizeByteBufPool(RECORD_HEADER_SIZE, 1024 * Systems.CPU_CORES);
 
     private final long startOffset;
     /**
@@ -40,14 +50,14 @@ public class BlockImpl implements Block {
      */
     private final long softLimit;
     private final List<CompletableFuture<AppendResult.CallbackResult>> futures = new LinkedList<>();
-    private final List<Supplier<ByteBuf>> records = new LinkedList<>();
+    private final List<Supplier<Record>> recordSuppliers = new LinkedList<>();
     private final long startTime;
     /**
      * The next offset to write in this block.
      * Align to {@link WALUtil#BLOCK_SIZE}
      */
     private long nextOffset = 0;
-    private CompositeByteBuf data = null;
+    private List<Record> records = null;
 
     /**
      * Create a block.
@@ -69,9 +79,9 @@ public class BlockImpl implements Block {
      * Note: this method is NOT thread safe.
      */
     @Override
-    public long addRecord(long recordSize, Function<Long, ByteBuf> recordSupplier,
+    public long addRecord(long recordSize, RecordSupplier recordSupplier,
         CompletableFuture<AppendResult.CallbackResult> future) {
-        assert data == null;
+        assert records == null;
         long requiredCapacity = nextOffset + recordSize;
         if (requiredCapacity > maxSize) {
             return -1;
@@ -82,7 +92,10 @@ public class BlockImpl implements Block {
         }
 
         long recordOffset = startOffset + nextOffset;
-        records.add(() -> recordSupplier.apply(recordOffset));
+        recordSuppliers.add(() -> {
+            ByteBuf header = HEADER_POOL.get();
+            return recordSupplier.get(recordOffset, header);
+        });
         nextOffset += recordSize;
         futures.add(future);
 
@@ -96,24 +109,38 @@ public class BlockImpl implements Block {
 
     @Override
     public ByteBuf data() {
-        if (null != data) {
-            return data;
-        }
-        if (records.isEmpty()) {
-            return null;
-        }
+        maybeGenerateRecords();
 
-        data = ByteBufAlloc.compositeByteBuffer();
-        for (Supplier<ByteBuf> supplier : records) {
-            ByteBuf record = supplier.get();
-            data.addComponent(true, record);
+        CompositeByteBuf data = ByteBufAlloc.compositeByteBuffer();
+        for (Record record : records) {
+            data.addComponents(true, record.header(), record.body());
         }
         return data;
+    }
+
+    private void maybeGenerateRecords() {
+        if (null != records) {
+            return;
+        }
+        records = recordSuppliers.stream()
+            .map(Supplier::get)
+            .collect(Collectors.toUnmodifiableList());
     }
 
     @Override
     public long size() {
         return nextOffset;
+    }
+
+    @Override
+    public void release() {
+        if (null == records) {
+            return;
+        }
+        records.forEach(record -> {
+            HEADER_POOL.release(record.header());
+            record.body().release();
+        });
     }
 
     @Override
