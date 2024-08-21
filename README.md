@@ -205,5 +205,9 @@ To allow users to experience the capabilities of the AutoMQ business edition wit
 
 No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh?utm_source=github_poc). We will further support your official POC.
 
+## 👥 AutoMQ Use Cases
+> Here are some of the users who have deployed AutoMQ in their production environments.
+
+[![Click on the link to learn more about AutoMQ user cases.](./docs/images/customer.jpeg "AutoMQ Uses Case")](https://www.automq.com/customer)
 ## 🙋 Contact Us
 Want to learn more, [Talk with our product experts](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh).
