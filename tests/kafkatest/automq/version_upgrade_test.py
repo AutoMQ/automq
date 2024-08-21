@@ -21,7 +21,7 @@ from kafkatest.services.verifiable_producer import VerifiableProducer
 from kafkatest.tests.produce_consume_validate import ProduceConsumeValidateTest
 from kafkatest.utils import is_int
 from kafkatest.version import AUTOMQ_LATEST_1_1, DEV_BRANCH, KafkaVersion, LATEST_STABLE_METADATA_VERSION, \
-    LATEST_STABLE_FEATURE_VERSION
+    LATEST_STABLE_AUTOMQ_VERSION
 
 
 class TestUpgrade(ProduceConsumeValidateTest):
@@ -53,8 +53,8 @@ class TestUpgrade(ProduceConsumeValidateTest):
             :param partition: Number of partitions.
             :param broker_wal: wal
         """
-        log_size = 128 * 1024 * 1024
-        block_size = 128 * 1024 * 1024
+        log_size = 256 * 1024 * 1024
+        block_size = 256 * 1024 * 1024
         server_prop_overrides = [
             ['s3.wal.cache.size', str(log_size)],
             ['s3.wal.capacity', str(log_size)],
@@ -74,7 +74,7 @@ class TestUpgrade(ProduceConsumeValidateTest):
                                           'partitions': self.partitions,
                                           'replication-factor': self.replication_factor,
                                           'configs': {
-                                              'min.insync.replicas': 2
+                                              'min.insync.replicas': 1
                                           }
                                       }
                                   },
@@ -93,7 +93,7 @@ class TestUpgrade(ProduceConsumeValidateTest):
             self.kafka.start_node(node)
             time.sleep(5)
         self.kafka.run_features_command(op='upgrade', key='metadata', new_version=LATEST_STABLE_METADATA_VERSION)
-        self.kafka.run_features_command(op='upgrade', key='feature', new_version=f'automq.version={LATEST_STABLE_FEATURE_VERSION}')
+        self.kafka.run_features_command(op='upgrade', key='feature', new_version=f'automq.version={LATEST_STABLE_AUTOMQ_VERSION}')
 
     @cluster(num_nodes=5)
     @parametrize(from_kafka_version=str(AUTOMQ_LATEST_1_1))
