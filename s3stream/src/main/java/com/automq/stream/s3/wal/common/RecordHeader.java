@@ -96,10 +96,16 @@ public class RecordHeader {
         return buf;
     }
 
-    public ByteBuf marshal(ByteBuf emptyBuf) {
+    public ByteBuf marshal(ByteBuf emptyBuf, boolean calculateCRC) {
         assert emptyBuf.writableBytes() == RECORD_HEADER_SIZE;
         ByteBuf buf = marshalHeaderExceptCRC(emptyBuf);
-        buf.writeInt(WALUtil.crc32(buf, RECORD_HEADER_WITHOUT_CRC_SIZE));
+
+        if (calculateCRC) {
+            buf.writeInt(WALUtil.crc32(buf, RECORD_HEADER_WITHOUT_CRC_SIZE));
+        } else {
+            buf.writeInt(-1);
+        }
+
         return buf;
     }
 }
