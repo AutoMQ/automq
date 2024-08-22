@@ -236,12 +236,13 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         if (totalSize <= MAX_INDEX_SIZE) {
             return;
         }
-        boolean evicted = false;
+        boolean evicted;
         boolean hasSufficientIndex = true;
         List<Map.Entry<Long, SparseRangeIndex>> streamRangeIndexList = new ArrayList<>(streamRangeIndexMap.entrySet());
         Collections.shuffle(streamRangeIndexList);
         while (totalSize > MAX_INDEX_SIZE) {
             // try to evict from each stream in round-robin manner
+            evicted = false;
             for (Map.Entry<Long, SparseRangeIndex> entry : streamRangeIndexList) {
                 long streamId = entry.getKey();
                 SparseRangeIndex sparseRangeIndex = entry.getValue();
