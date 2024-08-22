@@ -14,6 +14,7 @@ package com.automq.stream.s3.index;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.S3StreamClient;
 import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectStreamRange;
@@ -65,14 +66,30 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private ObjectStorage objectStorage;
     private int totalSize = 0;
 
+    public LocalStreamRangeIndexCache() {
+        S3StreamMetricsManager.registerLocalStreamRangeIndexCacheSizeSupplier(this::totalSize);
+        S3StreamMetricsManager.registerLocalStreamRangeIndexCacheStreamNumSupplier(() -> {
+            readLock.lock();
+            try {
+                return streamRangeIndexMap.size();
+            } finally {
+                readLock.unlock();
+            }
+        });
+    }
+
     public void start() {
         executorService.scheduleAtFixedRate(this::batchUpload, 0, 10, TimeUnit.MILLISECONDS);
         executorService.scheduleAtFixedRate(this::flush, 1, 1, TimeUnit.MINUTES);
     }
 
-    // test only
-    int totalSize() {
-        return totalSize;
+    public int totalSize() {
+        readLock.lock();
+        try {
+            return totalSize;
+        } finally {
+            readLock.unlock();
+        }
     }
 
     CompletableFuture<Void> initCf() {

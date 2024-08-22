@@ -47,6 +47,8 @@ public class S3StreamMetricsManager {
     public static final List<HistogramMetric> WRITE_S3_METRICS = new CopyOnWriteArrayList<>();
     public static final List<HistogramMetric> GET_INDEX_METRICS = new CopyOnWriteArrayList<>();
     public static final List<HistogramMetric> READ_BLOCK_CACHE_TIME_METRICS = new CopyOnWriteArrayList<>();
+    public static final List<HistogramMetric> GET_OBJECTS_TIME_METRICS = new CopyOnWriteArrayList<>();
+    public static final List<HistogramMetric> OBJECTS_TO_SEARCH_COUNT_METRICS = new CopyOnWriteArrayList<>();
     private static LongCounter s3DownloadSizeInTotal = new NoopLongCounter();
     private static LongCounter s3UploadSizeInTotal = new NoopLongCounter();
     private static HistogramInstrument operationLatency;
@@ -54,6 +56,7 @@ public class S3StreamMetricsManager {
     private static HistogramInstrument objectStageCost;
     private static LongCounter networkInboundUsageInTotal = new NoopLongCounter();
     private static LongCounter networkOutboundUsageInTotal = new NoopLongCounter();
+    private static LongCounter nodeRangeIndexCacheOperationCountTotal = new NoopLongCounter();
     private static ObservableLongGauge networkInboundAvailableBandwidth = new NoopObservableLongGauge();
     private static ObservableLongGauge networkOutboundAvailableBandwidth = new NoopObservableLongGauge();
     private static ObservableLongGauge networkInboundLimiterQueueSize = new NoopObservableLongGauge();
@@ -66,6 +69,8 @@ public class S3StreamMetricsManager {
     private static HistogramInstrument writeS3LimiterTime;
     private static HistogramInstrument getIndexTime;
     private static HistogramInstrument readBlockCacheTime;
+    private static HistogramInstrument getObjectsTime;
+    private static HistogramInstrument objectsToSearchCount;
     private static ObservableLongGauge deltaWalStartOffset = new NoopObservableLongGauge();
     private static ObservableLongGauge pendUploadWalBytes = new NoopObservableLongGauge();
     private static ObservableLongGauge deltaWalTrimmedOffset = new NoopObservableLongGauge();
@@ -85,6 +90,8 @@ public class S3StreamMetricsManager {
     private static ObservableLongGauge pendingStreamAppendLatencyMetrics = new NoopObservableLongGauge();
     private static ObservableLongGauge pendingStreamFetchLatencyMetrics = new NoopObservableLongGauge();
     private static ObservableLongGauge compactionDelayTimeMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge localStreamRangeIndexCacheSizeMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge localStreamRangeIndexCacheStreamNumMetrics = new NoopObservableLongGauge();
 
     private static LongCounter asyncCacheEvictCount;
     private static LongCounter asyncCacheHitCount;
@@ -109,6 +116,8 @@ public class S3StreamMetricsManager {
     private static Supplier<Long> deltaWALCacheSizeSupplier = () -> 0L;
     private static Supplier<Long> blockCacheSizeSupplier = () -> 0L;
     private static Supplier<Long> compactionDelayTimeSupplier = () -> 0L;
+    private static Supplier<Integer> localStreamRangeIndexCacheSize = () -> 0;
+    private static Supplier<Integer> localStreamRangeIndexCacheStreamNum = () -> 0;
     private static LongCounter blockCacheOpsThroughput = new NoopLongCounter();
 
     private static Map<Integer, Supplier<Integer>> availableInflightS3ReadQuotaSupplier = new ConcurrentHashMap<>();
@@ -170,6 +179,9 @@ public class S3StreamMetricsManager {
             .setDescription("Network outbound usage")
             .setUnit("bytes")
             .build();
+        nodeRangeIndexCacheOperationCountTotal = meter.counterBuilder(prefix + S3StreamMetricsConstant.NODE_RANGE_INDEX_CACHE_OPERATION_COUNT_METRIC_NAME)
+            .setDescription("Range index cache operation count")
+            .build();
         networkInboundAvailableBandwidth = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.NETWORK_INBOUND_AVAILABLE_BANDWIDTH_METRIC_NAME)
             .setDescription("Network inbound available bandwidth")
             .setUnit("bytes")
@@ -220,6 +232,10 @@ public class S3StreamMetricsManager {
                 "Get index time", "nanoseconds", () -> GET_INDEX_METRICS);
         readBlockCacheTime = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.READ_BLOCK_CACHE_METRIC_NAME,
                 "Read block cache time", "nanoseconds", () -> READ_BLOCK_CACHE_TIME_METRICS);
+        getObjectsTime = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.GET_OBJECTS_TIME_METRIC_NAME,
+                "Get objects time", "nanoseconds", () -> GET_OBJECTS_TIME_METRICS);
+        objectsToSearchCount = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.OBJECTS_SEARCH_COUNT_METRIC_NAME,
+                "Number of SSO object to search when get objects", "count", () -> OBJECTS_TO_SEARCH_COUNT_METRICS);
         deltaWalStartOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_START_OFFSET)
             .setDescription("Delta WAL start offset")
             .ofLongs()
@@ -308,6 +324,82 @@ public class S3StreamMetricsManager {
             .setUnit("bytes")
             .build();
 
+        allocatedMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BUFFER_ALLOCATED_MEMORY_SIZE_METRIC_NAME)
+            .setDescription("Buffer allocated memory size")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.byteBufAllocMetric != null) {
+                    Map<String, Long> allocateSizeMap = ByteBufAlloc.byteBufAllocMetric.getDetailedMap();
+                    for (Map.Entry<String, Long> entry : allocateSizeMap.entrySet()) {
+                        result.record(entry.getValue(), ALLOC_TYPE_ATTRIBUTES.get(entry.getKey()));
+                    }
+                }
+            });
+        usedMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BUFFER_USED_MEMORY_SIZE_METRIC_NAME)
+            .setDescription("Buffer used memory size")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.byteBufAllocMetric != null) {
+                    result.record(ByteBufAlloc.byteBufAllocMetric.getUsedMemory(), metricsConfig.getBaseAttributes());
+                }
+            });
+        pendingStreamAppendLatencyMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_APPEND_LATENCY_METRIC_NAME)
+                .setDescription("The maximum latency of pending stream append requests. NOTE: the minimum measurable " +
+                        "latency depends on the reporting interval of this metrics.")
+                .ofLongs()
+                .setUnit("nanoseconds")
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        result.record(maxPendingStreamAppendLatency(), metricsConfig.getBaseAttributes());
+                    }
+                });
+        pendingStreamFetchLatencyMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_FETCH_LATENCY_METRIC_NAME)
+                .setDescription("The maximum latency of pending stream append requests. NOTE: the minimum measurable " +
+                        "latency depends on the reporting interval of this metrics.")
+                .ofLongs()
+                .setUnit("nanoseconds")
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        result.record(maxPendingStreamFetchLatency(), metricsConfig.getBaseAttributes());
+                    }
+                });
+        blockCacheOpsThroughput = meter.counterBuilder(prefix + S3StreamMetricsConstant.READ_BLOCK_CACHE_THROUGHPUT_METRIC_NAME)
+            .setDescription("Block cache operation throughput")
+            .setUnit("bytes")
+            .build();
+        compactionDelayTimeMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.COMPACTION_DELAY_TIME_METRIC_NAME)
+            .setDescription("Compaction delay time")
+            .setUnit("milliseconds")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(compactionDelayTimeSupplier.get(), metricsConfig.getBaseAttributes());
+                }
+            });
+        localStreamRangeIndexCacheSizeMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.LOCAL_STREAM_RANGE_INDEX_CACHE_SIZE_METRIC_NAME)
+            .setDescription("Local stream range index cache size")
+            .setUnit("bytes")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(localStreamRangeIndexCacheSize.get(), metricsConfig.getBaseAttributes());
+                }
+            });
+        localStreamRangeIndexCacheStreamNumMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.LOCAL_STREAM_RANGE_INDEX_CACHE_STREAM_NUM_METRIC_NAME)
+            .setDescription("Local stream range index cache stream number")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    result.record(localStreamRangeIndexCacheStreamNum.get(), metricsConfig.getBaseAttributes());
+                }
+            });
+
+        initAsyncCacheMetrics(meter, prefix);
+    }
+
+    private static void initAsyncCacheMetrics(Meter meter, String prefix) {
         asyncCacheEvictCount = meter.counterBuilder(prefix + S3StreamMetricsConstant.ASYNC_CACHE_EVICT_COUNT_METRIC_NAME)
             .setDescription("AsyncLRU cache evict count")
             .setUnit("count")
@@ -376,61 +468,6 @@ public class S3StreamMetricsManager {
                     for (Map.Entry<String, LongSupplier> entry : asyncCacheMaxSizeSupplier.entrySet()) {
                         result.record(entry.getValue().getAsLong(), Attributes.of(LABEL_CACHE_NAME, entry.getKey()));
                     }
-                }
-            });
-
-        allocatedMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BUFFER_ALLOCATED_MEMORY_SIZE_METRIC_NAME)
-            .setDescription("Buffer allocated memory size")
-            .setUnit("bytes")
-            .ofLongs()
-            .buildWithCallback(result -> {
-                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.byteBufAllocMetric != null) {
-                    Map<String, Long> allocateSizeMap = ByteBufAlloc.byteBufAllocMetric.getDetailedMap();
-                    for (Map.Entry<String, Long> entry : allocateSizeMap.entrySet()) {
-                        result.record(entry.getValue(), ALLOC_TYPE_ATTRIBUTES.get(entry.getKey()));
-                    }
-                }
-            });
-        usedMemorySize = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BUFFER_USED_MEMORY_SIZE_METRIC_NAME)
-            .setDescription("Buffer used memory size")
-            .setUnit("bytes")
-            .ofLongs()
-            .buildWithCallback(result -> {
-                if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel()) && ByteBufAlloc.byteBufAllocMetric != null) {
-                    result.record(ByteBufAlloc.byteBufAllocMetric.getUsedMemory(), metricsConfig.getBaseAttributes());
-                }
-            });
-        pendingStreamAppendLatencyMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_APPEND_LATENCY_METRIC_NAME)
-                .setDescription("The maximum latency of pending stream append requests. NOTE: the minimum measurable " +
-                        "latency depends on the reporting interval of this metrics.")
-                .ofLongs()
-                .setUnit("nanoseconds")
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
-                        result.record(maxPendingStreamAppendLatency(), metricsConfig.getBaseAttributes());
-                    }
-                });
-        pendingStreamFetchLatencyMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_FETCH_LATENCY_METRIC_NAME)
-                .setDescription("The maximum latency of pending stream append requests. NOTE: the minimum measurable " +
-                        "latency depends on the reporting interval of this metrics.")
-                .ofLongs()
-                .setUnit("nanoseconds")
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
-                        result.record(maxPendingStreamFetchLatency(), metricsConfig.getBaseAttributes());
-                    }
-                });
-        blockCacheOpsThroughput = meter.counterBuilder(prefix + S3StreamMetricsConstant.READ_BLOCK_CACHE_THROUGHPUT_METRIC_NAME)
-            .setDescription("Block cache operation throughput")
-            .setUnit("bytes")
-            .build();
-        compactionDelayTimeMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.COMPACTION_DELAY_TIME_METRIC_NAME)
-            .setDescription("Compaction delay time")
-            .setUnit("milliseconds")
-            .ofLongs()
-            .buildWithCallback(result -> {
-                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
-                    result.record(compactionDelayTimeSupplier.get(), metricsConfig.getBaseAttributes());
                 }
             });
     }
@@ -797,6 +834,33 @@ public class S3StreamMetricsManager {
         }
     }
 
+    public static HistogramMetric buildGetObjectsTimeMetric(MetricsLevel metricsLevel, String status) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsLevel, metricsConfig, AttributesUtils.buildAttributes(status));
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            GET_OBJECTS_TIME_METRICS.add(metric);
+            return metric;
+        }
+    }
+
+    public static CounterMetric buildRangeIndexCacheOperationMetric(String type) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, Attributes.builder()
+                .put(S3StreamMetricsConstant.LABEL_TYPE, type).build(), () -> nodeRangeIndexCacheOperationCountTotal);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
+        }
+    }
+
+    public static HistogramMetric buildObjectsToSearchMetric(MetricsLevel metricsLevel) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsLevel, metricsConfig);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            OBJECTS_TO_SEARCH_COUNT_METRICS.add(metric);
+            return metric;
+        }
+    }
+
     public static void registerPendingStreamAppendLatencySupplier(long streamId, Supplier<Long> pendingStreamAppendLatencySupplier) {
         S3StreamMetricsManager.pendingStreamAppendLatencySupplier.put(streamId, pendingStreamAppendLatencySupplier);
     }
@@ -823,5 +887,13 @@ public class S3StreamMetricsManager {
 
     public static void registerCompactionDelayTimeSuppler(Supplier<Long> compactionDelayTimeSupplier) {
         S3StreamMetricsManager.compactionDelayTimeSupplier = compactionDelayTimeSupplier;
+    }
+
+    public static void registerLocalStreamRangeIndexCacheSizeSupplier(Supplier<Integer> localStreamRangeIndexCacheSize) {
+        S3StreamMetricsManager.localStreamRangeIndexCacheSize = localStreamRangeIndexCacheSize;
+    }
+
+    public static void registerLocalStreamRangeIndexCacheStreamNumSupplier(Supplier<Integer> localStreamRangeIndexCacheStreamNum) {
+        S3StreamMetricsManager.localStreamRangeIndexCacheStreamNum = localStreamRangeIndexCacheStreamNum;
     }
 }

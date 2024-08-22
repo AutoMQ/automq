@@ -13,6 +13,8 @@ package com.automq.stream.s3.index;
 
 import com.automq.stream.s3.cache.AsyncMeasurable;
 import com.automq.stream.s3.cache.AsyncLRUCache;
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.stats.MetadataStats;
 import com.automq.stream.utils.Time;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +86,7 @@ public class NodeRangeIndexCache {
             }
             indexCache = new StreamRangeIndexCache(cacheSupplier.get());
             this.nodeRangeIndexMap.put(nodeId, indexCache);
+            MetadataStats.getInstance().getRangeIndexUpdateCountStats().add(MetricsLevel.INFO, 1);
             LOGGER.info("Update stream range index for node {}", nodeId);
         }
         return indexCache.searchObjectId(streamId, startOffset);
