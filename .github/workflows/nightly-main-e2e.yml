@@ -74,5 +74,5 @@ jobs:
           CURRENT_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}, \"main_e2e_6\": ${{ toJSON(needs.main_e2e_6.outputs) }}"
+          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}, \"main_e2e_6\": ${{ toJSON(needs.main_e2e_6.outputs) }}}"
           REPORT_TITLE_PREFIX: "Main"
