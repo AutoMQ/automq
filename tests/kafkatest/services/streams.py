@@ -216,7 +216,7 @@ class StreamsTestBaseService(KafkaPathResolverMixin, JmxMixin, Service):
                      'user_test_args2': user_test_args2,
                      'user_test_args3': user_test_args3,
                      'user_test_args4': user_test_args4}
-        self.log_level = "DEBUG"
+        self.log_level = "INFO"
 
     @property
     def node(self):
