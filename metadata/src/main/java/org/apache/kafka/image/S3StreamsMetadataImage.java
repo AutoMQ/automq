@@ -277,6 +277,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                     streamSetObjects = Collections.emptyList();
                 }
 
+                ctx.isFromSparseIndex = false;
                 CompletableFuture<Integer> startSearchIndexCf = getStartSearchIndex(node, nextStartOffset, ctx);
                 final int finalLastRangeIndex = lastRangeIndex;
                 final long finalNextStartOffset = nextStartOffset;
@@ -320,7 +321,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                     objects.add(new S3ObjectMetadata(streamSetObject.objectId(), S3ObjectType.STREAM_SET, List.of(streamOffsetRange),
                         streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
-                    if (firstTimeSearchInSSO) {
+                    if (firstTimeSearchInSSO && ctx.isFromSparseIndex) {
                         MetadataStats.getInstance().getRangeIndexSkippedObjectNumStats().record(streamSetObjectIndex - finalStartSearchIndex);
                         firstTimeSearchInSSO = false;
                     }
@@ -415,6 +416,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             return CompletableFuture.completedFuture(index);
         }
         // search in sparse index
+        ctx.isFromSparseIndex = true;
         return getStartStreamSetObjectId(node.getNodeId(), startOffset, ctx)
             .thenApply(objectId -> {
                 int startIndex = -1;
@@ -670,6 +672,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         long nextStartOffset;
         long endOffset;
         int limit;
+        boolean isFromSparseIndex;
         RangeGetter rangeGetter;
         LocalStreamRangeIndexCache indexCache;
 
@@ -686,6 +689,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             this.limit = limit;
             this.rangeGetter = rangeGetter;
             this.indexCache = indexCache;
+            this.isFromSparseIndex = false;
         }
 
         public void record(int objectSize, int lastRangeIndex, int streamObjectIndex, int streamSetObjectIndex) {
