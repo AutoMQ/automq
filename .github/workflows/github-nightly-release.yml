@@ -1,0 +1,48 @@
+name: Nightly Release AutoMQ
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every day at 20:00 UTC, which is 04:00 in Beijing time
+    - cron: '0 20 * * *'
+
+jobs:
+  github-release:
+    name: GitHub Release with tgz
+    strategy:
+      matrix:
+        platform: [ "ubuntu-22.04" ]
+        jdk: ["17"]
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+
+      - name: Push Tag
+        uses: cardinalby/git-tag-action@master
+        env:
+          TAG: nightly
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2.12.0
+
+      - name: Build TarGz
+        run: ./gradlew -Pprefix=automq-nightly_ --build-cache --refresh-dependencies clean releaseTarGz
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          name: nightly
+          generate_release_notes: true
+          files: |
+            ./core/build/distributions/automq-*.tgz
