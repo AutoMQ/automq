@@ -164,7 +164,7 @@ public class S3Stream implements Stream {
             pendingAppends.add(cf);
             pendingAppendTimestamps.push(startTimeNanos);
             return cf.whenComplete((nil, ex) -> {
-                StreamOperationStats.getInstance().appendStreamLatency.record(TimerUtil.durationElapsedAs(startTimeNanos, TimeUnit.NANOSECONDS));
+                StreamOperationStats.getInstance().appendStreamLatency.record(TimerUtil.timeElapsedSince(startTimeNanos, TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
                 pendingAppendTimestamps.pop();
             });

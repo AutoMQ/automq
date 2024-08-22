@@ -420,7 +420,7 @@ public class S3Storage implements Storage {
         append0(context, writeRequest, false);
         return cf.whenComplete((nil, ex) -> {
             streamRecord.release();
-            StorageOperationStats.getInstance().appendStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         });
     }
 
@@ -526,7 +526,7 @@ public class S3Storage implements Storage {
         final long startTime = System.nanoTime();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         FutureUtil.propagate(read0(context, streamId, startOffset, endOffset, maxBytes), cf);
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().readStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().readStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -613,7 +613,7 @@ public class S3Storage implements Storage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // Wait for a while to group force upload tasks.
         forceUploadTicker.tick().whenComplete((nil, ex) -> {
-            StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.stream()
@@ -624,7 +624,7 @@ public class S3Storage implements Storage {
             }
         });
         cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(
-            TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+            TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -658,7 +658,7 @@ public class S3Storage implements Storage {
         for (WalWriteRequest waitingAckRequest : waitingAckRequests) {
             waitingAckRequest.cf.complete(null);
         }
-        StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+        StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
     }
 
     private Lock getStreamCallbackLock(long streamId) {

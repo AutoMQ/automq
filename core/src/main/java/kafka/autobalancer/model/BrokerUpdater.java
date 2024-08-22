@@ -166,6 +166,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         public String shortString() {
             return "Broker{" +
                     "brokerId=" + brokerId +
+                    "outOfDate=" + metricsOutOfDate +
                     ", slow=" + isSlowBroker +
                     ", " + timeString() +
                     ", " + loadString() +
@@ -183,6 +184,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         public String toString() {
             return "Broker{" +
                     "brokerId=" + brokerId +
+                    "outOfDate=" + metricsOutOfDate +
                     ", slow=" + isSlowBroker +
                     ", " + super.toString() +
                     "}";
