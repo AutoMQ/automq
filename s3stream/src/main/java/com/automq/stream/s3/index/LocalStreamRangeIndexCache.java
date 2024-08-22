@@ -82,7 +82,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
 
     public void start() {
         exec(() -> {
-            this.batchUpload().whenComplete((v, ex) -> executorService.schedule(this::batchUpload, 10, TimeUnit.MILLISECONDS));
+            this.batchUpload();
             executorService.scheduleAtFixedRate(() -> {
                 if (isCacheUpdated.compareAndSet(true, false)) {
                     upload();
@@ -118,7 +118,13 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         }
     }
 
-    private CompletableFuture<Void> batchUpload() {
+    private void batchUpload() {
+        batchUpload0().whenComplete((v, ex) -> {
+            executorService.schedule(this::batchUpload, 10, TimeUnit.MILLISECONDS);
+        });
+    }
+
+    private CompletableFuture<Void> batchUpload0() {
         List<CompletableFuture<Void>> candidates;
         synchronized (uploadQueue) {
             if (uploadQueue.isEmpty()) {
