@@ -66,6 +66,7 @@ public class FixedSizeByteBufPool {
      */
     public void release(ByteBuf buffer) {
         assert buffer.capacity() == bufferSize;
+        assert buffer.refCnt() == 1;
 
         if (poolSize.get() >= maxPoolSize) {
             buffer.release();
