@@ -77,7 +77,9 @@ public class ServerLogConfigs {
     public static final String LOG_INDEX_SIZE_MAX_BYTES_DOC = "The maximum size in bytes of the offset index";
 
     public static final String LOG_INDEX_INTERVAL_BYTES_CONFIG = ServerTopicConfigSynonyms.serverSynonym(TopicConfig.INDEX_INTERVAL_BYTES_CONFIG);
-    public static final int LOG_INDEX_INTERVAL_BYTES_DEFAULT = 4096;
+    // AutoMQ for Kafka inject start
+    public static final int LOG_INDEX_INTERVAL_BYTES_DEFAULT = 1024 * 1024;
+    // AutoMQ for Kafka inject end
     public static final String LOG_INDEX_INTERVAL_BYTES_DOC = "The interval with which we add an entry to the offset index.";
 
     public static final String LOG_FLUSH_INTERVAL_MESSAGES_CONFIG = ServerTopicConfigSynonyms.serverSynonym(TopicConfig.FLUSH_MESSAGES_INTERVAL_CONFIG);
