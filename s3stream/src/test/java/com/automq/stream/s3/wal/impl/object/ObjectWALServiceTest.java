@@ -45,6 +45,7 @@ public class ObjectWALServiceTest {
     @AfterEach
     public void tearDown() {
         wal.shutdownGracefully();
+        objectStorage.close();
     }
 
     private ByteBuf generateByteBuf(int size) {
@@ -97,6 +98,7 @@ public class ObjectWALServiceTest {
 
             ByteBuf recoveredByteBuf = iterator.next().record();
             assertEquals(byteBuf, recoveredByteBuf);
+            recoveredByteBuf.release();
         }
         assertFalse(iterator.hasNext());
 
@@ -108,7 +110,8 @@ public class ObjectWALServiceTest {
         iterator = wal.recover();
         long count = 0;
         while (iterator.hasNext()) {
-            iterator.next();
+            ByteBuf record = iterator.next().record();
+            record.release();
             count++;
         }
         assertEquals(98, count);
@@ -120,7 +123,8 @@ public class ObjectWALServiceTest {
         iterator = wal.recover();
         count = 0;
         while (iterator.hasNext()) {
-            iterator.next();
+            ByteBuf record = iterator.next().record();
+            record.release();
             count++;
         }
         assertEquals(97, count);

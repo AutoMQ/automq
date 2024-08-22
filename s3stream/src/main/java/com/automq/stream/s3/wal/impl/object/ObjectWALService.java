@@ -86,10 +86,13 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
-        ByteBuf header = byteBufPool.get().retainedDuplicate();
+        ByteBuf header = byteBufPool.get();
+        assert header.refCnt() == 1;
+
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
         appendResultFuture.whenComplete((result, cause) -> {
             // Return the header buffer to the buffer pool.
+            assert header.refCnt() == 1;
             byteBufPool.release(header);
         });
 
@@ -100,7 +103,7 @@ public class ObjectWALService implements WriteAheadLog {
                 CompositeByteBuf recordByteBuf = ByteBufAlloc.compositeByteBuffer();
 
                 // To prevent duplication with the s3 client, disable the checksum.
-                Record record = WALUtil.generateRecord(data, header, -1, start, false);
+                Record record = WALUtil.generateRecord(data, header.retainedDuplicate(), -1, start, false);
                 recordByteBuf.addComponents(true, record.header(), record.body());
                 return recordByteBuf;
             }, appendResultFuture);
