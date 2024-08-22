@@ -41,6 +41,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -240,8 +241,8 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
                 for (Map.Entry<Long, Optional<RangeIndex>> entry : rangeIndexMap.entrySet()) {
                     long streamId = entry.getKey();
                     Optional<RangeIndex> rangeIndex = entry.getValue();
-                    totalSize += streamRangeIndexMap.computeIfAbsent(streamId,
-                        k -> new SparseRangeIndex(COMPACT_NUM)).append(rangeIndex.orElse(null));
+                    rangeIndex.ifPresent(index -> totalSize += streamRangeIndexMap.computeIfAbsent(streamId,
+                        k -> new SparseRangeIndex(COMPACT_NUM)).append(index));
                 }
                 evictIfNecessary();
             } finally {
@@ -345,18 +346,21 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
             }
             rangeIndexMap.put(range.getStreamId(), Optional.ofNullable(newRangeIndex));
         }
-        for (StreamObject streamObject : request.getStreamObjects()) {
-            rangeIndexMap.putIfAbsent(streamObject.getStreamId(), Optional.empty());
+        if (!request.getCompactedObjectIds().isEmpty()) {
+            for (StreamObject streamObject : request.getStreamObjects()) {
+                rangeIndexMap.putIfAbsent(streamObject.getStreamId(), Optional.empty());
+            }
         }
         return rangeIndexMap;
     }
 
     public static ByteBuf toBuffer(Map<Long, SparseRangeIndex> streamRangeIndexMap) {
-        int capacity = bufferSize(streamRangeIndexMap);
+        AtomicInteger streamNumToWrite = new AtomicInteger(0);
+        int capacity = bufferSize(streamRangeIndexMap, streamNumToWrite);
         ByteBuf buffer = ByteBufAlloc.byteBuffer(capacity);
         try {
             buffer.writeShort(VERSION);
-            buffer.writeInt(streamRangeIndexMap.size());
+            buffer.writeInt(streamNumToWrite.get());
             streamRangeIndexMap.forEach((streamId, sparseRangeIndex) -> {
                 if (sparseRangeIndex == null || sparseRangeIndex.length() == 0) {
                     return;
@@ -376,13 +380,14 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         return buffer;
     }
 
-    private static int bufferSize(Map<Long, SparseRangeIndex> streamRangeIndexMap) {
+    private static int bufferSize(Map<Long, SparseRangeIndex> streamRangeIndexMap, AtomicInteger streamNumToWrite) {
         return Short.BYTES // version
             + Integer.BYTES // stream num
             + streamRangeIndexMap.values().stream().mapToInt(index -> {
                 if (index == null || index.length() == 0) {
                     return 0;
                 }
+                streamNumToWrite.incrementAndGet();
                 return Long.BYTES // stream id
                     + Integer.BYTES // range index num
                     + index.getRangeIndexList().size() * (3 * Long.BYTES);
