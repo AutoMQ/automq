@@ -57,7 +57,11 @@ public class BlockImpl implements Block {
      * Align to {@link WALUtil#BLOCK_SIZE}
      */
     private long nextOffset = 0;
+    /**
+     * Lazily generated records and data.
+     */
     private List<Record> records = null;
+    private CompositeByteBuf data = null;
 
     /**
      * Create a block.
@@ -93,7 +97,7 @@ public class BlockImpl implements Block {
 
         long recordOffset = startOffset + nextOffset;
         recordSuppliers.add(() -> {
-            ByteBuf header = HEADER_POOL.get();
+            ByteBuf header = HEADER_POOL.get().retain();
             return recordSupplier.get(recordOffset, header);
         });
         nextOffset += recordSize;
@@ -110,11 +114,7 @@ public class BlockImpl implements Block {
     @Override
     public ByteBuf data() {
         maybeGenerateRecords();
-
-        CompositeByteBuf data = ByteBufAlloc.compositeByteBuffer();
-        for (Record record : records) {
-            data.addComponents(true, record.header(), record.body());
-        }
+        maybeGenerateData();
         return data;
     }
 
@@ -127,6 +127,16 @@ public class BlockImpl implements Block {
             .collect(Collectors.toUnmodifiableList());
     }
 
+    private void maybeGenerateData() {
+        if (null != data) {
+            return;
+        }
+        data = ByteBufAlloc.compositeByteBuffer();
+        for (Record record : records) {
+            data.addComponents(true, record.header(), record.body());
+        }
+    }
+
     @Override
     public long size() {
         return nextOffset;
@@ -134,13 +144,14 @@ public class BlockImpl implements Block {
 
     @Override
     public void release() {
-        if (null == records) {
-            return;
+        if (null != data) {
+            data.release();
         }
-        records.forEach(record -> {
-            HEADER_POOL.release(record.header());
-            record.body().release();
-        });
+        if (null != records) {
+            records.stream()
+                .map(Record::header)
+                .forEach(HEADER_POOL::release);
+        }
     }
 
     @Override
