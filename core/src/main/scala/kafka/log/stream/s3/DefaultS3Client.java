@@ -116,8 +116,8 @@ public class DefaultS3Client implements Client {
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
             config.controllerRequestRetryBaseDelayMs());
         localIndexCache = new LocalStreamRangeIndexCache();
-        localIndexCache.start();
         localIndexCache.init(config.nodeId(), objectStorage);
+        localIndexCache.start();
         this.objectReaderFactory = new DefaultObjectReaderFactory(objectStorage);
         this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
         this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);

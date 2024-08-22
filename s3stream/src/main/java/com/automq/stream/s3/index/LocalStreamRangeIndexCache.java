@@ -65,6 +65,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private long nodeId = -1;
     private ObjectStorage objectStorage;
     private int totalSize = 0;
+    private final AtomicBoolean isCacheUpdated = new AtomicBoolean(false);
 
     public LocalStreamRangeIndexCache() {
         S3StreamMetricsManager.registerLocalStreamRangeIndexCacheSizeSupplier(this::totalSize);
@@ -79,8 +80,15 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     }
 
     public void start() {
-        executorService.scheduleAtFixedRate(this::batchUpload, 0, 10, TimeUnit.MILLISECONDS);
-        executorService.scheduleAtFixedRate(this::flush, 1, 1, TimeUnit.MINUTES);
+        exec(() -> {
+            this.batchUpload().whenComplete((v, ex) -> executorService.schedule(this::batchUpload, 10, TimeUnit.MILLISECONDS));
+            executorService.scheduleAtFixedRate(() -> {
+                if (isCacheUpdated.compareAndSet(true, false)) {
+                    upload();
+                }
+            }, 1, 1, TimeUnit.MINUTES);
+            return null;
+        });
     }
 
     public int totalSize() {
@@ -109,16 +117,16 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         }
     }
 
-    private void batchUpload() {
+    private CompletableFuture<Void> batchUpload() {
         List<CompletableFuture<Void>> candidates;
         synchronized (uploadQueue) {
             if (uploadQueue.isEmpty()) {
-                return;
+                return CompletableFuture.completedFuture(null);
             }
             candidates = new ArrayList<>(uploadQueue);
             uploadQueue.clear();
         }
-        flush().whenComplete((v, ex) -> {
+        return flush().whenComplete((v, ex) -> {
             for (CompletableFuture<Void> cf : candidates) {
                 if (ex != null) {
                     cf.completeExceptionally(ex);
@@ -322,6 +330,10 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     }
 
     public CompletableFuture<Void> updateIndexFromRequest(CommitStreamSetObjectRequest request) {
+        return updateIndexFromRequest0(request).whenComplete((v, ex) -> this.isCacheUpdated.set(true));
+    }
+
+    private CompletableFuture<Void> updateIndexFromRequest0(CommitStreamSetObjectRequest request) {
         Map<Long, Optional<RangeIndex>> rangeIndexMap = getRangeIndexMapFromRequest(request);
         if (request.getCompactedObjectIds().isEmpty()) {
             return append(rangeIndexMap);
