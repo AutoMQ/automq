@@ -48,7 +48,7 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 public class ObjectWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
 
-    protected FixedSizeByteBufPool byteBufPool = new FixedSizeByteBufPool(RECORD_HEADER_SIZE, 1024);
+    protected FixedSizeByteBufPool byteBufPool = new FixedSizeByteBufPool(RECORD_HEADER_SIZE, 1024 * Runtime.getRuntime().availableProcessors());
     protected ObjectStorage objectStorage;
     protected ObjectWALConfig config;
 
@@ -89,17 +89,8 @@ public class ObjectWALService implements WriteAheadLog {
         ByteBuf header = byteBufPool.get().retainedDuplicate();
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
         appendResultFuture.whenComplete((result, cause) -> {
-            // Release the header buffer if it is not write to object storage.
-            if (header.refCnt() > 1) {
-                header.release();
-            }
-
             // Return the header buffer to the buffer pool.
-            if (header.refCnt() == 1) {
-                byteBufPool.release(header);
-            } else {
-                log.error("[Bug] The header buffer is already released.");
-            }
+            byteBufPool.release(header);
         });
 
         try {
@@ -116,7 +107,13 @@ public class ObjectWALService implements WriteAheadLog {
 
             return new AppendResultImpl(expectedWriteOffset, appendResultFuture);
         } catch (Exception e) {
-            // Make sure the data buffer is released.
+            // Make sure the header buffer and data buffer is released.
+            if (header.refCnt() > 1) {
+                header.release();
+            } else {
+                log.error("[Bug] The header buffer is already released.", e);
+            }
+
             if (data.refCnt() > 0) {
                 data.release();
             } else {

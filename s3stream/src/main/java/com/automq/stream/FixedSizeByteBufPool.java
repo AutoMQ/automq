@@ -67,10 +67,6 @@ public class FixedSizeByteBufPool {
     public void release(ByteBuf buffer) {
         assert buffer.capacity() == bufferSize;
 
-        if (buffer.refCnt() != 1) {
-            throw new IllegalArgumentException("The buffer is not exclusive");
-        }
-
         if (poolSize.get() >= maxPoolSize) {
             buffer.release();
             return;
