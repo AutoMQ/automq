@@ -170,7 +170,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     .whenComplete((v, ex) ->
                         NetworkStats.getInstance()
                             .networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, throttleStrategy)
-                            .record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+                            .record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
 
             };
 

@@ -423,7 +423,7 @@ public class BlockWALService implements WriteAheadLog {
             return result;
         } catch (OverCapacityException ex) {
             buf.release();
-            StorageOperationStats.getInstance().appendWALFullStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALFullStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             TraceUtils.endSpan(scope, ex);
             throw ex;
         }
@@ -456,8 +456,8 @@ public class BlockWALService implements WriteAheadLog {
         slidingWindowService.tryWriteBlock();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
-        StorageOperationStats.getInstance().appendWALBeforeStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
+        StorageOperationStats.getInstance().appendWALBeforeStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         return appendResult;
     }
 

@@ -109,6 +109,7 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         public String shortString() {
             return "TopicPartitionReplica{" +
                     "tp=" + tp +
+                    "outOfDate=" + metricsOutOfDate +
                     ", " + timeString() +
                     ", " + loadString() +
                     "}";
@@ -123,7 +124,9 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
         @Override
         public String toString() {
-            return "{TopicPartition=" + tp +
+            return "TopicPartitionReplica{" +
+                    "tp=" + tp +
+                    "outOfDate=" + metricsOutOfDate +
                     ", " + super.toString() +
                     "}";
         }

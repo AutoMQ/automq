@@ -383,7 +383,7 @@ public class SlidingWindowService {
             walChannel.retryWrite(block.data(), position);
         }
         walChannel.retryFlush();
-        StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.durationElapsedAs(start, TimeUnit.NANOSECONDS));
+        StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.timeElapsedSince(start, TimeUnit.NANOSECONDS));
     }
 
     private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException {
@@ -476,7 +476,7 @@ public class SlidingWindowService {
 
         @Override
         public void run() {
-            StorageOperationStats.getInstance().appendWALAwaitStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALAwaitStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             try {
                 writeBlock(this.blocks);
             } catch (Exception e) {
@@ -507,7 +507,7 @@ public class SlidingWindowService {
                     return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                 }
             });
-            StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+            StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         }
     }
 }
