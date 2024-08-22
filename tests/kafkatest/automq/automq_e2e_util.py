@@ -448,7 +448,7 @@ def parse_delta_wal_entry(kafka, logger):
 
     for line in kafka.nodes[0].account.ssh_capture(f'grep -A 2 \'{entry}\' {kafka.STDOUT_STDERR_CAPTURE}'):
         line = line.replace('\n', '')
-        if '[CommitStreamSetObjectRequest]:streamSetObjectId=' in line or 'streamRanges=(si=' in line or 'streamObjects=(si=' in line:
+        if '[CommitStreamSetObjectRequest]:streamSetObjectId=' in line or 'streamRanges=' in line or 'streamObjects=' in line:
             buffer.append(line)
 
         if len(buffer) == 3:
