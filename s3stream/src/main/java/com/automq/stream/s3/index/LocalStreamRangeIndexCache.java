@@ -17,6 +17,7 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectStreamRange;
+import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.Systems;
@@ -30,6 +31,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -214,15 +216,15 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         }
     }
 
-    public CompletableFuture<Void> append(Map<Long, RangeIndex> rangeIndexMap) {
+    public CompletableFuture<Void> append(Map<Long, Optional<RangeIndex>> rangeIndexMap) {
         return exec(() -> {
             writeLock.lock();
             try {
-                for (Map.Entry<Long, RangeIndex> entry : rangeIndexMap.entrySet()) {
+                for (Map.Entry<Long, Optional<RangeIndex>> entry : rangeIndexMap.entrySet()) {
                     long streamId = entry.getKey();
-                    RangeIndex rangeIndex = entry.getValue();
+                    Optional<RangeIndex> rangeIndex = entry.getValue();
                     totalSize += streamRangeIndexMap.computeIfAbsent(streamId,
-                        k -> new SparseRangeIndex(COMPACT_NUM)).append(rangeIndex);
+                        k -> new SparseRangeIndex(COMPACT_NUM)).append(rangeIndex.orElse(null));
                 }
                 evictIfNecessary();
             } finally {
@@ -264,7 +266,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         }
     }
 
-    public CompletableFuture<Void> compact(Map<Long, RangeIndex> rangeIndexMap, Set<Long> compactedObjectIds) {
+    public CompletableFuture<Void> compact(Map<Long, Optional<RangeIndex>> rangeIndexMap, Set<Long> compactedObjectIds) {
         return exec(() -> {
             writeLock.lock();
             try {
@@ -279,14 +281,14 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
                     }
                     return null;
                 }
-                for (Map.Entry<Long, RangeIndex> entry : rangeIndexMap.entrySet()) {
+                for (Map.Entry<Long, Optional<RangeIndex>> entry : rangeIndexMap.entrySet()) {
                     long streamId = entry.getKey();
-                    RangeIndex rangeIndex = entry.getValue();
+                    Optional<RangeIndex> rangeIndex = entry.getValue();
                     streamRangeIndexMap.compute(streamId, (k, v) -> {
                         if (v == null) {
                             v = new SparseRangeIndex(COMPACT_NUM);
                         }
-                        totalSize += v.compact(rangeIndex, compactedObjectIds);
+                        totalSize += v.compact(rangeIndex.orElse(null), compactedObjectIds);
                         if (v.length() == 0) {
                             // remove stream with empty index
                             return null;
@@ -302,18 +304,33 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     }
 
     public CompletableFuture<Void> updateIndexFromRequest(CommitStreamSetObjectRequest request) {
-        Map<Long, RangeIndex> rangeIndexMap = new HashMap<>();
+        Map<Long, Optional<RangeIndex>> rangeIndexMap = getRangeIndexMapFromRequest(request);
+        if (request.getCompactedObjectIds().isEmpty()) {
+            return append(rangeIndexMap);
+        }
+        return compact(rangeIndexMap, new HashSet<>(request.getCompactedObjectIds())).thenCompose(v -> upload());
+    }
+
+    /**
+     * Create a map from stream id to the new range index from the request. An empty range index option indicates that the
+     * stream set object the stream belongs to is split into stream objects and should be simply be removed from cache.
+     *
+     * @param request the commit stream set object request
+     * @return the map from stream id to the new range index
+     */
+    private Map<Long, Optional<RangeIndex>> getRangeIndexMapFromRequest(CommitStreamSetObjectRequest request) {
+        Map<Long, Optional<RangeIndex>> rangeIndexMap = new HashMap<>();
         for (ObjectStreamRange range : request.getStreamRanges()) {
             RangeIndex newRangeIndex = null;
             if (request.getObjectId() != ObjectUtils.NOOP_OBJECT_ID) {
                 newRangeIndex = new RangeIndex(range.getStartOffset(), range.getEndOffset(), request.getObjectId());
             }
-            rangeIndexMap.put(range.getStreamId(), newRangeIndex);
+            rangeIndexMap.put(range.getStreamId(), Optional.ofNullable(newRangeIndex));
         }
-        if (request.getCompactedObjectIds().isEmpty()) {
-            return append(rangeIndexMap);
+        for (StreamObject streamObject : request.getStreamObjects()) {
+            rangeIndexMap.putIfAbsent(streamObject.getStreamId(), Optional.empty());
         }
-        return compact(rangeIndexMap, new HashSet<>(request.getCompactedObjectIds())).thenCompose(v -> upload());
+        return rangeIndexMap;
     }
 
     public static ByteBuf toBuffer(Map<Long, SparseRangeIndex> streamRangeIndexMap) {
