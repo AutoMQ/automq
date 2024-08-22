@@ -66,5 +66,5 @@ jobs:
           CURRENT_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          DATA_MAP: "{\"benchmarks_e2e\": ${{ toJSON(needs.benchmarks_e2e.outputs) }}, \"connect_e2e_1\": ${{ toJSON(needs.connect_e2e_1.outputs) }}}, \"connect_e2e_2\": ${{ toJSON(needs.connect_e2e_2.outputs) }}, \"connect_e2e_3\": ${{ toJSON(needs.connect_e2e_3.outputs) }}, \"streams_e2e\": ${{ toJSON(needs.streams_e2e.outputs) }}"
+          DATA_MAP: "{\"benchmarks_e2e\": ${{ toJSON(needs.benchmarks_e2e.outputs) }}, \"connect_e2e_1\": ${{ toJSON(needs.connect_e2e_1.outputs) }}, \"connect_e2e_2\": ${{ toJSON(needs.connect_e2e_2.outputs) }}, \"connect_e2e_3\": ${{ toJSON(needs.connect_e2e_3.outputs) }}, \"streams_e2e\": ${{ toJSON(needs.streams_e2e.outputs) }}}"
           REPORT_TITLE_PREFIX: "Extra"
