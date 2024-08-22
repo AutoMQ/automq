@@ -53,13 +53,7 @@ class TestUpgrade(ProduceConsumeValidateTest):
             :param partition: Number of partitions.
             :param broker_wal: wal
         """
-        log_size = 256 * 1024 * 1024
-        block_size = 256 * 1024 * 1024
         server_prop_overrides = [
-            ['s3.wal.cache.size', str(log_size)],
-            ['s3.wal.capacity', str(log_size)],
-            ['s3.wal.upload.threshold', str(log_size // 4)],
-            ['s3.block.cache.size', str(block_size)],
             ['autobalancer.controller.enable', 'false'],
             ['s3.wal.path', FILE_WAL if broker_wal == 'file' else S3_WAL],
         ]
