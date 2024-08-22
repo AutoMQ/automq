@@ -211,6 +211,8 @@ public class AnomalyDetector extends AbstractResumableService {
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS)) {
                 reconfigureGoals(configs);
             }
+            logger.info("Reconfigured anomaly detector with detectInterval: {}ms, executionConcurrency: {}, executionIntervalMs: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
+                    this.detectInterval, this.executionConcurrency, this.executionIntervalMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
         } finally {
             configChangeLock.unlock();
         }
