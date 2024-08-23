@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
@@ -100,7 +101,7 @@ public class CompositeObject {
         }).thenAccept(rst -> {
         }).exceptionally(ex -> {
             Throwable cause = FutureUtil.cause(ex);
-            if (cause instanceof ObjectStorage.ObjectNotFoundException) {
+            if (cause instanceof ObjectNotExistException) {
                 // The composite object is already deleted.
                 return null;
             }
