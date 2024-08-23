@@ -46,6 +46,7 @@ import java.util.stream.Collectors;
 
 public class AnomalyDetector extends AbstractResumableService {
     private static final double MAX_PARTITION_REASSIGNMENT_RATIO = 0.5;
+    private static final int MAX_REASSIGNMENT_SOURCE_NODE_COUNT = 10;
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
     private final ActionExecutorService actionExecutor;
@@ -310,7 +311,8 @@ public class AnomalyDetector extends AbstractResumableService {
         }
 
         int totalActionSize = totalActions.size();
-        List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency, getTopicPartitionCount(snapshot));
+        List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency,
+            MAX_PARTITION_REASSIGNMENT_RATIO, MAX_REASSIGNMENT_SOURCE_NODE_COUNT, getTopicPartitionCount(snapshot));
         logger.info("Total actions num: {}, split to {} batches", totalActionSize, actionsToExecute.size());
 
         for (int i = 0; i < actionsToExecute.size(); i++) {
@@ -334,33 +336,44 @@ public class AnomalyDetector extends AbstractResumableService {
         return topicPartitionNumMap;
     }
 
-    List<List<Action>> checkAndGroupActions(List<Action> actions, int maxExecutionConcurrency, Map<String, Integer> topicPartitionNumMap) {
+    List<List<Action>> checkAndGroupActions(List<Action> actions, int maxExecutionConcurrency, double maxPartitionReassignmentRatio,
+        int maxNodeReassignmentConcurrency, Map<String, Integer> topicPartitionNumMap) {
         List<Action> mergedActions = checkAndMergeActions(actions);
         List<List<Action>> groupedActions = new ArrayList<>();
         List<Action> batch = new ArrayList<>();
 
+        // topic -> number of partitions to be reassigned for this topic
         Map<String, Integer> topicPartitionCountMap = new HashMap<>();
+        // broker -> number of partitions to be reassigned to or from this broker
         Map<Integer, Integer> brokerActionConcurrencyMap = new HashMap<>();
+        // broker -> broker ids of nodes that have partitions to be reassigned to this broker
+        Map<Integer, Set<Integer>> brokerNodeConcurrencyMap = new HashMap<>();
         for (Action action : mergedActions) {
-            int expectedPartitionCount = topicPartitionCountMap.getOrDefault(action.getSrcTopicPartition().topic(), 0) + 1;
-            int expectedSrcBrokerConcurrency = brokerActionConcurrencyMap.getOrDefault(action.getSrcBrokerId(), 0) + 1;
-            int expectedDestBrokerConcurrency = brokerActionConcurrencyMap.getOrDefault(action.getDestBrokerId(), 0) + 1;
+            int currPartitionCount = topicPartitionCountMap.getOrDefault(action.getSrcTopicPartition().topic(), 0);
+            int currSrcBrokerConcurrency = brokerActionConcurrencyMap.getOrDefault(action.getSrcBrokerId(), 0);
+            int currDestBrokerConcurrency = brokerActionConcurrencyMap.getOrDefault(action.getDestBrokerId(), 0);
+            Set<Integer> currNodeIds = brokerNodeConcurrencyMap.getOrDefault(action.getDestBrokerId(), new HashSet<>());
             int partitionLimit = (int) Math.ceil(topicPartitionNumMap
-                    .getOrDefault(action.getSrcTopicPartition().topic(), 0) * MAX_PARTITION_REASSIGNMENT_RATIO);
-            if (expectedPartitionCount > partitionLimit || expectedSrcBrokerConcurrency > maxExecutionConcurrency
-                    || expectedDestBrokerConcurrency > maxExecutionConcurrency) {
+                    .getOrDefault(action.getSrcTopicPartition().topic(), 0) * maxPartitionReassignmentRatio);
+            if (currPartitionCount >= partitionLimit // exceeds the maximum number of partitions that can be reassigned concurrently for one topic
+                || currSrcBrokerConcurrency >= maxExecutionConcurrency // exceeds the maximum number of partitions that can be reassigned concurrently to one broker
+                || currDestBrokerConcurrency >= maxExecutionConcurrency // exceeds the maximum number of partitions that can be reassigned concurrently from one broker
+                || currNodeIds.size() >= maxNodeReassignmentConcurrency) { // exceeds the maximum number of different nodes that have partitions to be reassigned to this broker
                 groupedActions.add(batch);
                 batch = new ArrayList<>();
                 topicPartitionCountMap.clear();
                 brokerActionConcurrencyMap.clear();
-                expectedPartitionCount = 1;
-                expectedSrcBrokerConcurrency = 1;
-                expectedDestBrokerConcurrency = 1;
+                currPartitionCount = 0;
+                currSrcBrokerConcurrency = 0;
+                currDestBrokerConcurrency = 0;
+                currNodeIds = new HashSet<>();
             }
             batch.add(action);
-            topicPartitionCountMap.put(action.getSrcTopicPartition().topic(), expectedPartitionCount);
-            brokerActionConcurrencyMap.put(action.getSrcBrokerId(), expectedSrcBrokerConcurrency);
-            brokerActionConcurrencyMap.put(action.getDestBrokerId(), expectedDestBrokerConcurrency);
+            topicPartitionCountMap.put(action.getSrcTopicPartition().topic(), currPartitionCount + 1);
+            brokerActionConcurrencyMap.put(action.getSrcBrokerId(), currSrcBrokerConcurrency + 1);
+            brokerActionConcurrencyMap.put(action.getDestBrokerId(), currDestBrokerConcurrency + 1);
+            currNodeIds.add(action.getSrcBrokerId());
+            brokerNodeConcurrencyMap.put(action.getDestBrokerId(), currNodeIds);
         }
         if (!batch.isEmpty()) {
             groupedActions.add(batch);
