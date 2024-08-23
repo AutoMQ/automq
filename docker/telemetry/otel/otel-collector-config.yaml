@@ -3,6 +3,10 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 10943040
+        read_buffer_size: 10943040
+        max_concurrent_streams: 200
+        write_buffer_size: 10943040
       http:
         endpoint: 0.0.0.0:4318
   zipkin:
