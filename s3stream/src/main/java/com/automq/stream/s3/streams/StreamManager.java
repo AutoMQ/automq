@@ -86,5 +86,7 @@ public interface StreamManager {
      * @param epoch    stream epoch.
      */
     CompletableFuture<Void> deleteStream(long streamId, long epoch);
+
+    void setStreamCloseHook(StreamCloseHook hook);
 }
 
