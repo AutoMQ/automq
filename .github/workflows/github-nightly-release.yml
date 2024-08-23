@@ -41,8 +41,10 @@ jobs:
       - name: GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          draft: true
           name: nightly
-          generate_release_notes: true
+          generate_release_notes: false
+          draft: false
+          make_latest: "false"
+          body: "Automated nightly release, will be updated every day at 20:00 UTC"
           files: |
             ./core/build/distributions/automq-*.tgz
