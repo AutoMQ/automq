@@ -54,6 +54,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private static final Logger LOGGER = LoggerFactory.getLogger(LocalStreamRangeIndexCache.class);
     private static final int COMPACT_NUM = Systems.getEnvInt("AUTOMQ_STREAM_RANGE_INDEX_COMPACT_NUM", 3);
     public static final int MAX_INDEX_SIZE = Systems.getEnvInt("AUTOMQ_STREAM_RANGE_INDEX_MAX_SIZE", 1024 * 1024);
+    private static final int DEFAULT_UPLOAD_CACHE_ON_STREAM_CLOSE_INTERVAL_MS = 5000;
     private final Map<Long, SparseRangeIndex> streamRangeIndexMap = new HashMap<>();
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     private final Lock readLock = lock.readLock();
@@ -66,7 +67,8 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private long nodeId = -1;
     private ObjectStorage objectStorage;
     private int totalSize = 0;
-    private final AtomicBoolean isCacheUpdated = new AtomicBoolean(false);
+    private CompletableFuture<Void> uploadCf = CompletableFuture.completedFuture(null);
+    private long lastUploadTime = 0L;
 
     public LocalStreamRangeIndexCache() {
         S3StreamMetricsManager.registerLocalStreamRangeIndexCacheSizeSupplier(this::totalSize);
@@ -83,11 +85,6 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     public void start() {
         exec(() -> {
             this.batchUpload();
-            executorService.scheduleAtFixedRate(() -> {
-                if (isCacheUpdated.compareAndSet(true, false)) {
-                    upload();
-                }
-            }, 1, 1, TimeUnit.MINUTES);
             return null;
         });
     }
@@ -99,6 +96,16 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         } finally {
             readLock.unlock();
         }
+    }
+
+    public synchronized CompletableFuture<Void> uploadOnStreamClose() {
+        long now = System.currentTimeMillis();
+        if (now - lastUploadTime > DEFAULT_UPLOAD_CACHE_ON_STREAM_CLOSE_INTERVAL_MS) {
+            uploadCf = upload();
+            lastUploadTime = now;
+            LOGGER.info("Upload local index cache on stream close");
+        }
+        return uploadCf;
     }
 
     CompletableFuture<Void> initCf() {
@@ -145,6 +152,10 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     }
 
     private CompletableFuture<Void> flush() {
+        return execCompose(this::flush0);
+    }
+
+    private CompletableFuture<Void> flush0() {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         ByteBuf buf = null;
         readLock.lock();
@@ -337,10 +348,6 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     }
 
     public CompletableFuture<Void> updateIndexFromRequest(CommitStreamSetObjectRequest request) {
-        return updateIndexFromRequest0(request).whenComplete((v, ex) -> this.isCacheUpdated.set(true));
-    }
-
-    private CompletableFuture<Void> updateIndexFromRequest0(CommitStreamSetObjectRequest request) {
         Map<Long, Optional<RangeIndex>> rangeIndexMap = getRangeIndexMapFromRequest(request);
         if (request.getCompactedObjectIds().isEmpty()) {
             return append(rangeIndexMap);
