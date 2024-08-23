@@ -13,7 +13,9 @@ package kafka.log.stream.s3.streams;
 
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.streams.StreamCloseHook;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +68,7 @@ public class ControllerStreamManager implements StreamManager {
     private final ControllerRequestSender requestSender;
     private final Supplier<AutoMQVersion> version;
     private final boolean failoverMode;
+    private StreamCloseHook streamCloseHook;
 
     public ControllerStreamManager(StreamMetadataManager streamMetadataManager, ControllerRequestSender requestSender,
         int nodeId, long nodeEpoch, Supplier<AutoMQVersion> version, boolean failoverMode) {
@@ -76,6 +79,7 @@ public class ControllerStreamManager implements StreamManager {
         this.requestSender = requestSender;
         this.version = version;
         this.failoverMode = failoverMode;
+        this.streamCloseHook = id -> CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -320,6 +324,17 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     public CompletableFuture<Void> closeStream(long streamId, long epoch, int nodeId, long nodeEpoch) {
+        try {
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            this.streamCloseHook.beforeStreamClose(streamId)
+                .whenComplete((nil, ex) -> FutureUtil.propagate(closeStream0(streamId, epoch, nodeId, nodeEpoch), cf));
+            return cf;
+        } catch (Throwable ex) {
+            return closeStream0(streamId, epoch, nodeId, nodeEpoch);
+        }
+    }
+
+    public CompletableFuture<Void> closeStream0(long streamId, long epoch, int nodeId, long nodeEpoch) {
         CloseStreamRequest request = new CloseStreamRequest()
             .setStreamId(streamId)
             .setStreamEpoch(epoch);
@@ -424,5 +439,10 @@ public class ControllerStreamManager implements StreamManager {
         });
         this.requestSender.send(task);
         return future;
+    }
+
+    @Override
+    public void setStreamCloseHook(StreamCloseHook hook) {
+        this.streamCloseHook = hook;
     }
 }
