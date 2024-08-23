@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -631,7 +632,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
             Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                if (!(cause instanceof ObjectNotFoundException)) {
+                if (!(cause instanceof ObjectNotExistException)) {
                     LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, cause);
                 }
                 cf.completeExceptionally(cause);
