@@ -399,6 +399,9 @@ def parse_upload_delta_wal_log_entry(line1, line2, line3):
     else:
         stream_objects_list = []
 
+    stream_objects_list = [item for item in stream_objects_list if item.strip()]
+    stream_ranges_list = [item for item in stream_ranges_list if item.strip()]
+
     stream_set_object = {
         stream_set_object_id: {
             "streamSetObjectId": stream_set_object_id,
