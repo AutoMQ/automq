@@ -46,7 +46,7 @@ import java.util.stream.Collectors;
 
 public class AnomalyDetector extends AbstractResumableService {
     private static final double MAX_PARTITION_REASSIGNMENT_RATIO = 0.5;
-    private static final int MAX_NODE_REASSIGNMENT_CONCURRENCY = 10;
+    private static final int MAX_REASSIGNMENT_SOURCE_NODE_COUNT = 10;
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
     private final ActionExecutorService actionExecutor;
@@ -312,7 +312,7 @@ public class AnomalyDetector extends AbstractResumableService {
 
         int totalActionSize = totalActions.size();
         List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency,
-            MAX_PARTITION_REASSIGNMENT_RATIO, MAX_NODE_REASSIGNMENT_CONCURRENCY, getTopicPartitionCount(snapshot));
+            MAX_PARTITION_REASSIGNMENT_RATIO, MAX_REASSIGNMENT_SOURCE_NODE_COUNT, getTopicPartitionCount(snapshot));
         logger.info("Total actions num: {}, split to {} batches", totalActionSize, actionsToExecute.size());
 
         for (int i = 0; i < actionsToExecute.size(); i++) {
