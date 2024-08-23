@@ -402,10 +402,15 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return -1;
     }
 
+    private CompletableFuture<Integer> getStartSearchIndex(NodeS3StreamSetObjectMetadataImage node, long startOffset,
+        GetObjectsContext ctx) {
+        return exec(() -> getStartSearchIndex0(node, startOffset, ctx), LOGGER, "getStartSearchIndex");
+    }
+
     /**
      * Get the index where to start search stream set object from.
      */
-    private CompletableFuture<Integer> getStartSearchIndex(NodeS3StreamSetObjectMetadataImage node, long startOffset,
+    private CompletableFuture<Integer> getStartSearchIndex0(NodeS3StreamSetObjectMetadataImage node, long startOffset,
         GetObjectsContext ctx) {
         if (node == null) {
             return CompletableFuture.completedFuture(0);
