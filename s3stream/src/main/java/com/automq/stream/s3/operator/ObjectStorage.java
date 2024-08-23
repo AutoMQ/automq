@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import io.netty.buffer.ByteBuf;
 import java.util.List;
@@ -35,7 +36,7 @@ public interface ObjectStorage {
 
     /**
      * Read object from the object storage.
-     * It will throw {@link ObjectNotFoundException} if the object not found.
+     * It will throw {@link ObjectNotExistException} if the object not found.
      */
     default CompletableFuture<ByteBuf> read(ReadOptions options, String objectPath) {
         return rangeRead(options, objectPath, 0, RANGE_READ_TO_END);
@@ -43,7 +44,7 @@ public interface ObjectStorage {
 
     /**
      * Range read object from the object storage.
-     * It will throw {@link ObjectNotFoundException} if the object not found.
+     * It will throw {@link ObjectNotExistException} if the object not found.
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
@@ -220,12 +221,6 @@ public interface ObjectStorage {
 
         public short bucket() {
             return bucket;
-        }
-    }
-
-    class ObjectNotFoundException extends Exception {
-        public ObjectNotFoundException(Throwable cause) {
-            super(cause);
         }
     }
 }
