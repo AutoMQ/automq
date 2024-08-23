@@ -12,8 +12,7 @@ jobs:
     with:
       suite-id: "benchmarks"
       test-path: "tests/kafkatest/benchmarks"
-      storage-path: "/data/github-actions/reports"
-      runner: "extra"
+      runner: "e2e"
   connect_e2e:
     name: "Run connect E2E Tests"
     uses: ./.github/workflows/e2e-run.yml
@@ -21,8 +20,7 @@ jobs:
     with:
       suite-id: "connect"
       test-path: "tests/kafkatest/tests/connect"
-      storage-path: "/data/github-actions/reports"
-      runner: "extra"
+      runner: "e2e"
   streams_e2e:
     name: "Run streams E2E Tests"
     uses: ./.github/workflows/e2e-run.yml
@@ -30,18 +28,18 @@ jobs:
     with:
       suite-id: "streams"
       test-path: "tests/kafkatest/tests/streams"
-      storage-path: "/data/github-actions/reports"
-      runner: "extra"
+      runner: "e2e"
   e2e_summary:
     name: "E2E Tests Summary"
-    runs-on: [ self-hosted, extra ]
+    runs-on: "e2e"
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ benchmarks_e2e, connect_e2e, streams_e2e ]
     steps:
       - name: Report results
         run: python3 tests/report_e2e_results.py
         env:
+          CURRENT_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL2 }}
-          STORAGE_PATH: "/data/github-actions/reports"
+          DATA_MAP: "{\"benchmarks_e2e\": ${{ toJSON(needs.benchmarks_e2e.outputs) }}, \"connect_e2e\": ${{ toJSON(needs.connect_e2e.outputs) }}, \"streams_e2e\": ${{ toJSON(needs.streams_e2e.outputs) }}}"
           REPORT_TITLE_PREFIX: "Extra"
