@@ -17,13 +17,20 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 
 public class EventLoop extends Thread implements Executor {
     private final Logger logger;
     private BlockingQueue<Runnable> tasks;
-    private boolean shutdown = false;
+    private volatile boolean shutdown;
     private CompletableFuture<Void> shutdownCf = new CompletableFuture<>();
+
+    static final Runnable WAKEUP_TASK = new Runnable() {
+        @Override
+        public void run() {
+        }
+    };
 
     @SuppressWarnings("this-escape")
     public EventLoop(String name) {
@@ -33,10 +40,14 @@ public class EventLoop extends Thread implements Executor {
         start();
     }
 
+    @Override
     public void run() {
         while (true) {
             try {
                 Runnable task = tasks.poll(100, TimeUnit.MILLISECONDS);
+                if (task == WAKEUP_TASK) {
+                    task = null;
+                }
                 if (task == null) {
                     if (shutdown) {
                         shutdownCf.complete(null);
@@ -57,7 +68,7 @@ public class EventLoop extends Thread implements Executor {
         }
     }
 
-    public CompletableFuture<Void> submit(Runnable task) {
+    public synchronized CompletableFuture<Void> submit(Runnable task) {
         check();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         tasks.add(() -> {
@@ -72,13 +83,16 @@ public class EventLoop extends Thread implements Executor {
     }
 
     @Override
-    public void execute(Runnable task) {
+    public synchronized void execute(Runnable task) {
         check();
         tasks.add(task);
     }
 
-    public CompletableFuture<Void> shutdownGracefully() {
+    public synchronized CompletableFuture<Void> shutdownGracefully() {
         shutdown = true;
+        if (!shutdownCf.isDone() && tasks.isEmpty()) {
+            tasks.add(WAKEUP_TASK);
+        }
         return shutdownCf;
     }
 
