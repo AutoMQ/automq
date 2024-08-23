@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
@@ -333,7 +334,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             }
             if (GET_OBJECT == operation) {
                 if (cause instanceof NoSuchKeyException) {
-                    cause = new ObjectNotFoundException(cause);
+                    cause = new ObjectNotExistException(cause);
                 }
             }
         }
