@@ -12,6 +12,7 @@
 package com.automq.stream.s3.index;
 
 import com.automq.stream.utils.MockTime;
+import com.google.common.base.Ticker;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -20,6 +21,7 @@ import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -129,6 +131,23 @@ public class NodeRangeIndexCacheTest {
             () -> CompletableFuture.completedFuture(streamRangeMap0), mockTime);
         Assertions.assertTrue(cf.isDone());
         Assertions.assertEquals(object0, cf.join());
+    }
+
+    @Test
+    public void testExpireCache() {
+        AtomicLong time = new AtomicLong(System.nanoTime());
+        Ticker mockTicker = new Ticker() {
+            @Override
+            public long read() {
+                return time.get();
+            }
+        };
+        NodeRangeIndexCache.ExpireLRUCache cache = new NodeRangeIndexCache.ExpireLRUCache(1024, 1000, mockTicker);
+        Assertions.assertNull(cache.get(0L));
+        cache.put(0L, new NodeRangeIndexCache.StreamRangeIndexCache(CompletableFuture.completedFuture(Collections.emptyMap())));
+        Assertions.assertNotNull(cache.get(0L));
+        time.addAndGet(TimeUnit.MILLISECONDS.toNanos(1001));
+        Assertions.assertNull(cache.get(0L));
     }
 
     private List<RangeIndex> createRangeIndex(int size) {
