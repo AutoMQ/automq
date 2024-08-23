@@ -162,7 +162,7 @@ public class AnomalyDetectorTest {
                 new Action(ActionType.MOVE, new TopicPartition("topic-3", 1), 22, 10),
                 new Action(ActionType.MOVE, new TopicPartition("topic-3", 2), 33, 10),
                 new Action(ActionType.MOVE, new TopicPartition("topic-3", 3), 44, 10));
-        List<List<Action>> groupedActions = anomalyDetector.checkAndGroupActions(actions, 2, Map.of(
+        List<List<Action>> groupedActions = anomalyDetector.checkAndGroupActions(actions, 2, 0.5, 10, Map.of(
                 "topic-1", 10,
                 "topic-2", 5,
                 "topic-3", 5
@@ -189,6 +189,46 @@ public class AnomalyDetectorTest {
                         new Action(ActionType.MOVE, new TopicPartition("topic-3", 2), 33, 10),
                         new Action(ActionType.MOVE, new TopicPartition("topic-3", 3), 44, 10)
                 )
+        );
+
+        Assertions.assertEquals(expectedActions, groupedActions);
+
+        // test node concurrency
+        actions = List.of(
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 1), 2, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 2), 3, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 3), 4, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 4), 5, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 5), 6, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 6), 7, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 7), 8, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 8), 9, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 9), 10, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 10), 11, 0),
+            new Action(ActionType.MOVE, new TopicPartition("topic-1", 11), 12, 0));
+
+        groupedActions = anomalyDetector.checkAndGroupActions(actions, 100, 1.0, 10, Map.of(
+            "topic-1", 12
+        ));
+        Assertions.assertEquals(2, groupedActions.size());
+        expectedActions = List.of(
+            List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 1), 2, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 2), 3, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 3), 4, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 4), 5, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 5), 6, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 6), 7, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 7), 8, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 8), 9, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 9), 10, 0)
+            ),
+            List.of(
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 10), 11, 0),
+                new Action(ActionType.MOVE, new TopicPartition("topic-1", 11), 12, 0)
+            )
         );
 
         Assertions.assertEquals(expectedActions, groupedActions);
