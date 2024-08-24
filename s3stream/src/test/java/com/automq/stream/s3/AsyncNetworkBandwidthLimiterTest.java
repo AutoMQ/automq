@@ -121,9 +121,9 @@ public class AsyncNetworkBandwidthLimiterTest {
         AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
         bucket.consume(ThrottleStrategy.BYPASS, 1000);
         Assertions.assertEquals(-100, bucket.getAvailableTokens());
-        bucket.consume(ThrottleStrategy.CATCH_UP, 10);
-        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.COMPACTION, 80);
-        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.CATCH_UP, 100);
+        bucket.consume(ThrottleStrategy.COMPACTION, 10);
+        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 80);
+        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.COMPACTION, 100);
         CompletableFuture<Void> result = cf2.whenComplete((v, e) -> {
             Assertions.assertNull(e);
             Assertions.assertEquals(-30, bucket.getAvailableTokens());
