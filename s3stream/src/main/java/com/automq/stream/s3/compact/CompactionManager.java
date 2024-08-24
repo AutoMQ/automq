@@ -277,7 +277,7 @@ public class CompactionManager {
         long totalSize = objectsToForceSplit.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
         totalSize += objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
         // throttle compaction read to half of compaction interval because of write overhead
-        int expectCompleteTime = compactionInterval / 2;
+        int expectCompleteTime = compactionInterval - 1 /* ahead 1min*/;
         long expectReadBytesPerSec;
         if (expectCompleteTime > 0) {
             expectReadBytesPerSec = totalSize / expectCompleteTime / 60;

@@ -13,8 +13,8 @@ package com.automq.stream.s3.network;
 
 public enum ThrottleStrategy {
     BYPASS(0, "bypass"),
-    CATCH_UP(1, "catchup"),
-    COMPACTION(2, "compaction");
+    COMPACTION(1, "compaction"),
+    CATCH_UP(2, "catchup");
 
     private final int priority;
     private final String name;

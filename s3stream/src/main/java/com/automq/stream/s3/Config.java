@@ -34,7 +34,7 @@ public class Config {
     private int controllerRequestRetryMaxCount = Integer.MAX_VALUE;
     private long controllerRequestRetryBaseDelayMs = 500;
     private long nodeEpoch = 0L;
-    private int streamSetObjectCompactionInterval = 20;
+    private int streamSetObjectCompactionInterval = 10;
     private long streamSetObjectCompactionCacheSize = 200 * 1024 * 1024;
     private int streamSetObjectCompactionUploadConcurrency = 8;
     private long streamSetObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
