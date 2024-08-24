@@ -1,7 +1,7 @@
 # AutoMQ: A cloud-first alternative of Kafka by decoupling durability to S3 and EBS
 
-</div>
 
+<div align="center">
 <p align="center">
   🔥&nbsp <a
     href="https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud"
@@ -15,9 +15,8 @@
     href="https://www.automq.com/blog/introducing-automq-cloud-native-replacement-of-apache-kafka?utm_source=github"
     target="_blank"
   ><b>AutoMQ Introduction</b></a>
-
-
 </p>
+
 
 [![Linkedin Badge](https://img.shields.io/badge/-LinkedIn-blue?style=flat-square&logo=Linkedin&logoColor=white&link=https://www.linkedin.com/company/automq)](https://www.linkedin.com/company/automq)
 [![Twitter URL](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)
@@ -26,6 +25,7 @@
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison)
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd)
 
+<a href="https://trendshift.io/repositories/9782" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9782" alt="AutoMQ%2Fautomq | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
 ---
 
@@ -36,6 +36,7 @@
 ![](https://img.shields.io/badge/Huawei-%E2%9C%85-lightgray?logo=huawei)
 ![](https://img.shields.io/badge/Baidu-%E2%9C%85-lightgray?logo=baidu)
 ![](https://img.shields.io/badge/Tencent-%E2%9C%85-lightgray?logo=tencentqq)
+</div>
 
 ## 🍵 AutoMQ vs Other Streaming Platforms
 
