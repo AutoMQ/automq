@@ -37,6 +37,7 @@
 ![](https://img.shields.io/badge/Baidu-%E2%9C%85-lightgray?logo=baidu)
 ![](https://img.shields.io/badge/Tencent-%E2%9C%85-lightgray?logo=tencentqq)
 </div>
+
 ## 🍵 AutoMQ vs Other Streaming Platforms
 
 <table>
