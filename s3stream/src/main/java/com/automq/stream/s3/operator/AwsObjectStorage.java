@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
@@ -27,6 +28,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -106,7 +108,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.tagging = tagging(tagging);
         List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
 
-        ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(bucketURI.extensionString(CHECKSUM_ALGORITHM_KEY));
+        String checksumAlgorithmStr = bucketURI.extensionString(CHECKSUM_ALGORITHM_KEY);
+        if (checksumAlgorithmStr != null) {
+            checksumAlgorithmStr = checksumAlgorithmStr.toUpperCase(Locale.ROOT);
+        }
+
+        ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(checksumAlgorithmStr);
         if (checksumAlgorithm == null) {
             checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
         }
@@ -327,7 +334,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             }
             if (GET_OBJECT == operation) {
                 if (cause instanceof NoSuchKeyException) {
-                    cause = new ObjectNotFoundException(cause);
+                    cause = new ObjectNotExistException(cause);
                 }
             }
         }

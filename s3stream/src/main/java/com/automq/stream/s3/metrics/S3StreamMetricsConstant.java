@@ -118,6 +118,11 @@ public class S3StreamMetricsConstant {
     public static final String READ_BLOCK_CACHE_METRIC_NAME = "read_block_cache_stage_time";
     public static final String READ_BLOCK_CACHE_THROUGHPUT_METRIC_NAME = "block_cache_ops_throughput";
     public static final String COMPACTION_DELAY_TIME_METRIC_NAME = "compaction_delay_time";
+    public static final String GET_OBJECTS_TIME_METRIC_NAME = "get_objects_time";
+    public static final String OBJECTS_SEARCH_COUNT_METRIC_NAME = "objects_search_count";
+    public static final String LOCAL_STREAM_RANGE_INDEX_CACHE_SIZE_METRIC_NAME = "local_stream_range_index_cache_size";
+    public static final String LOCAL_STREAM_RANGE_INDEX_CACHE_STREAM_NUM_METRIC_NAME = "local_stream_range_index_cache_stream_num";
+    public static final String NODE_RANGE_INDEX_CACHE_OPERATION_COUNT_METRIC_NAME = "node_range_index_cache_operation_count";
     public static final AttributeKey<String> LABEL_OPERATION_TYPE = AttributeKey.stringKey("operation_type");
     public static final AttributeKey<String> LABEL_OPERATION_NAME = AttributeKey.stringKey("operation_name");
     public static final AttributeKey<String> LABEL_SIZE_NAME = AttributeKey.stringKey("size");
@@ -130,6 +135,8 @@ public class S3StreamMetricsConstant {
     public static final String LABEL_STATUS_FAILED = "failed";
     public static final String LABEL_STATUS_HIT = "hit";
     public static final String LABEL_STATUS_MISS = "miss";
+    public static final String LABEL_STATUS_UPDATE = "update";
+    public static final String LABEL_STATUS_INVALIDATE = "invalidate";
     public static final String LABEL_STATUS_SYNC = "sync";
     public static final String LABEL_STATUS_ASYNC = "async";
 

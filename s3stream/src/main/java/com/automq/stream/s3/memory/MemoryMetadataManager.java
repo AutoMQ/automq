@@ -24,6 +24,7 @@ import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
+import com.automq.stream.s3.streams.StreamCloseHook;
 import com.automq.stream.s3.streams.StreamManager;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -50,7 +51,8 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private final AtomicLong objectIdAlloc = new AtomicLong();
     private final ConcurrentMap<Long, List<S3ObjectMetadata>> streamObjects = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, Pair<Long, S3ObjectMetadata>> streamSetObjects = new ConcurrentHashMap<>();
-    private CommitStreamSetObjectHook hook = req -> CompletableFuture.completedFuture(null);
+    private CommitStreamSetObjectHook commitStreamSetObjectHook = req -> CompletableFuture.completedFuture(null);
+    private StreamCloseHook streamCloseHook = streamId -> CompletableFuture.completedFuture(null);
 
     public static void advanceNodeId() {
         NODE_ID_ALLOC.getAndIncrement();
@@ -132,7 +134,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
             );
         }
         request.getCompactedObjectIds().forEach(streamSetObjects::remove);
-        return hook.onCommitSuccess(request).thenApply(v -> new CommitStreamSetObjectResponse());
+        return commitStreamSetObjectHook.onCommitSuccess(request).thenApply(v -> new CommitStreamSetObjectResponse());
     }
 
     @Override
@@ -228,7 +230,12 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
 
     @Override
     public synchronized void setCommitStreamSetObjectHook(CommitStreamSetObjectHook hook) {
-        this.hook = hook;
+        this.commitStreamSetObjectHook = hook;
+    }
+
+    @Override
+    public void setStreamCloseHook(StreamCloseHook hook) {
+        this.streamCloseHook = hook;
     }
 
     @Override

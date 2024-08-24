@@ -45,7 +45,7 @@ public class AutoMQConfig {
 
     public static final String S3_DATA_BUCKETS_CONFIG = "s3.data.buckets";
     public static final String S3_DATA_BUCKETS_DOC = "The data buckets url with format 0@s3://$bucket?region=$region. \n" +
-        "the full url format for s3 is 0@s3://$bucket?region=$region[&endpoint=$endpoint][&pathStyle=$enablePathStyle][&authType=$authType][&accessKey=$accessKey][&secretKey=$secretKey]" +
+        "the full url format for s3 is 0@s3://$bucket?region=$region[&endpoint=$endpoint][&pathStyle=$enablePathStyle][&authType=$authType][&accessKey=$accessKey][&secretKey=$secretKey][&checksumAlgorithm=$checksumAlgorithm]" +
         "- pathStyle: true|false. The object storage access path style. When using MinIO, it should be set to true.\n" +
         "- authType: instance|static. When set to instance, it will use instance profile to auth. When set to static, it will get accessKey and secretKey from the url or from system environment KAFKA_S3_ACCESS_KEY/KAFKA_S3_SECRET_KEY.";
 

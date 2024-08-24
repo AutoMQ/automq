@@ -1,15 +1,6 @@
 name: Nightly Main E2E tests
 on:
   workflow_dispatch:
-    inputs:
-      runs_on:
-        description: 'Runs on'
-        required: false
-        default: main-release
-        type: choice
-        options:
-          - main
-          - main-release
   schedule:
     - cron: '0 16 * * *'
 
@@ -21,7 +12,7 @@ jobs:
     with:
       suite-id: "main1"
       test-yaml: "tests/suites/main_kos_test_suite1.yml"
-      runner: ${{ inputs.runs_on || 'main' }}
+      runner: "e2e"
   main_e2e_2:
     name: "Run Main E2E Tests 2"
     uses: ./.github/workflows/e2e-run.yml
@@ -29,7 +20,7 @@ jobs:
     with:
       suite-id: "main2"
       test-yaml: "tests/suites/main_kos_test_suite2.yml"
-      runner: ${{ inputs.runs_on || 'main' }}
+      runner: "e2e"
   main_e2e_3:
     name: "Run Main E2E Tests 3"
     uses: ./.github/workflows/e2e-run.yml
@@ -37,7 +28,7 @@ jobs:
     with:
       suite-id: "main3"
       test-yaml: "tests/suites/main_kos_test_suite3.yml"
-      runner: ${{ inputs.runs_on || 'main' }}
+      runner: "e2e"
   main_e2e_4:
     name: "Run Main E2E Tests 4"
     uses: ./.github/workflows/e2e-run.yml
@@ -45,28 +36,20 @@ jobs:
     with:
       suite-id: "main4"
       test-yaml: "tests/suites/main_kos_test_suite4.yml"
-      runner: ${{ inputs.runs_on || 'main' }}
+      runner: "e2e"
   main_e2e_5:
     name: "Run Main E2E Tests 5"
     uses: ./.github/workflows/e2e-run.yml
     if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "main5"
-      test-yaml: "tests/suites/main_kos_test_suite5.yml"
-      runner: ${{ inputs.runs_on || 'main' }}
-  main_e2e_6:
-    name: "Run Main E2E Tests 6"
-    uses: ./.github/workflows/e2e-run.yml
-    if: ${{ github.repository_owner == 'AutoMQ' }}
-    with:
-      suite-id: "main6"
-      test-yaml: "tests/suites/main_kos_test_suite6.yml"
-      runner: ${{ inputs.runs_on || 'main' }}
+      test-path: "tests/kafkatest/automq"
+      runner: "e2e"
   e2e_summary:
-    runs-on: ${{ inputs.runs_on || 'main' }}
+    runs-on: "e2e"
     name: "E2E Tests Summary"
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
-    needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5, main_e2e_6 ]
+    needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5 ]
     steps:
       - name: Report results
         run: python3 tests/report_e2e_results.py
@@ -74,5 +57,5 @@ jobs:
           CURRENT_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}, \"main_e2e_6\": ${{ toJSON(needs.main_e2e_6.outputs) }}"
+          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}}"
           REPORT_TITLE_PREFIX: "Main"

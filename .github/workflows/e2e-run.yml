@@ -83,6 +83,13 @@ jobs:
           compression-level: 1
           path: |
             results/*/report*
+      - name: show results
+        run: |
+          echo "success-num=${{ steps.extract-results.outputs.success-num }}"
+          echo "failure-num=${{ steps.extract-results.outputs.failure-num }}"
+          echo "run-time-secs=${{ steps.extract-results.outputs.run-time-secs }}"
+          echo "artifact-id=${{ steps.archive-artifacts.outputs.artifact-id }}"
+        if: ${{ always() }}
       - name: Bring down docker containers
         run: ./tests/docker/ducker-ak down
         shell: bash
