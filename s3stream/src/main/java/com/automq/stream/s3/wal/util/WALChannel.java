@@ -131,6 +131,7 @@ public interface WALChannel {
         private int initBufferSize;
         private int maxBufferSize;
         private boolean recoveryMode;
+        private int writeBandwidthLimit;
 
         private WALChannelBuilder(String path) {
             this.path = path;
@@ -162,6 +163,12 @@ public interface WALChannel {
             return this;
         }
 
+
+        public WALChannelBuilder writeBandWidthLimit(int writeBandwidthLimit) {
+            this.writeBandwidthLimit = writeBandwidthLimit;
+            return this;
+        }
+
         public WALChannel build() {
             String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable(path);
             boolean isBlockDevice = isBlockDevice(path);
@@ -186,7 +193,7 @@ public interface WALChannel {
             }
 
             if (useDirect) {
-                return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode);
+                return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode, writeBandwidthLimit);
             } else {
                 LOGGER.warn("Direct IO not used for WAL, which may cause performance degradation. path: {}, isBlockDevice: {}, reason: {}",
                     new File(path).getAbsolutePath(), isBlockDevice, directNotAvailableMsg);

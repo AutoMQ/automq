@@ -16,10 +16,13 @@ import com.automq.stream.s3.wal.exception.WALNotInitializedException;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOLib;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOUtils;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectRandomAccessFile;
+import io.github.bucket4j.BlockingBucket;
+import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
@@ -31,6 +34,7 @@ import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 public class WALBlockDeviceChannel extends AbstractWALChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
     private static final String CHECK_DIRECT_IO_AVAILABLE_FORMAT = "%s.check_direct_io_available";
+    public static final int DISABLE_WRITE_BAND_WIDTH_LIMIT = 0;
     final String path;
     final long capacityWant;
     final boolean recoveryMode;
@@ -59,12 +63,15 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
         }
     };
 
+    private final int writeBandwidthLimit;
+    private final BlockingBucket bucket;
+
     public WALBlockDeviceChannel(String path, long capacityWant) {
-        this(path, capacityWant, 0, 0, false);
+        this(path, capacityWant, 0, 0, false, 0);
     }
 
     public WALBlockDeviceChannel(String path, long capacityWant, int initTempBufferSize, int maxTempBufferSize,
-        boolean recoveryMode) {
+        boolean recoveryMode, int writeBandwidthLimit) {
         this.path = path;
         this.recoveryMode = recoveryMode;
         if (recoveryMode) {
@@ -89,6 +96,13 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
                 WALUtil.BLOCK_SIZE, blockSize, WALUtil.BLOCK_SIZE_PROPERTY, blockSize));
         }
         this.directIOLib = lib;
+
+        this.writeBandwidthLimit = writeBandwidthLimit;
+        int refillPerMs = writeBandwidthLimit / 1000;
+        this.bucket = Bucket.builder()
+            .addLimit(limit -> limit.capacity(writeBandwidthLimit).refillIntervally(refillPerMs, Duration.ofMillis(1)))
+            .build()
+            .asBlocking();
     }
 
     /**
@@ -284,6 +298,15 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
 
     private int write(ByteBuffer src, long position) throws IOException {
         assert WALUtil.isAligned(src.remaining());
+
+        int permits = src.remaining();
+        if (writeBandwidthLimit != DISABLE_WRITE_BAND_WIDTH_LIMIT && permits > 0) {
+            try {
+                bucket.consume(permits);
+            } catch (InterruptedException e) {
+                throw new IOException("rate limit consume interrupted", e);
+            }
+        }
 
         int bytesWritten = 0;
         while (src.hasRemaining()) {

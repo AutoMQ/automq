@@ -53,7 +53,7 @@ public class AutoMQConfig {
     public static final String S3_OPS_BUCKETS_DOC = "With the same format as s3.data.buckets";
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
-    public static final String S3_WAL_PATH_DOC = "The local WAL path for AutoMQ can be set to a block device path such as 0@file:///dev/xxx?iops=3000&iodepth=8 or a filesystem file path." +
+    public static final String S3_WAL_PATH_DOC = "The local WAL path for AutoMQ can be set to a block device path such as 0@file:///dev/xxx?iops=3000&iodepth=8&iobandwidth=157286400 or a filesystem file path." +
         "It is recommended to use a block device for better write performance.";
 
     public static final String S3_WAL_CACHE_SIZE_CONFIG = "s3.wal.cache.size";
