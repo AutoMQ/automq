@@ -12,8 +12,7 @@ jobs:
     with:
       suite-id: "main1"
       test-yaml: "tests/suites/main_kos_test_suite1.yml"
-      storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: "e2e"
   main_e2e_2:
     name: "Run Main E2E Tests 2"
     uses: ./.github/workflows/e2e-run.yml
@@ -21,8 +20,7 @@ jobs:
     with:
       suite-id: "main2"
       test-yaml: "tests/suites/main_kos_test_suite2.yml"
-      storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: "e2e"
   main_e2e_3:
     name: "Run Main E2E Tests 3"
     uses: ./.github/workflows/e2e-run.yml
@@ -30,8 +28,7 @@ jobs:
     with:
       suite-id: "main3"
       test-yaml: "tests/suites/main_kos_test_suite3.yml"
-      storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: "e2e"
   main_e2e_4:
     name: "Run Main E2E Tests 4"
     uses: ./.github/workflows/e2e-run.yml
@@ -39,18 +36,18 @@ jobs:
     with:
       suite-id: "main4"
       test-yaml: "tests/suites/main_kos_test_suite4.yml"
-      storage-path: "/data/github-actions/reports"
-      runner: "main"
+      runner: "e2e"
   e2e_summary:
+    runs-on: "e2e"
     name: "E2E Tests Summary"
-    runs-on: [ self-hosted, main ]
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4 ]
     steps:
       - name: Report results
         run: python3 tests/report_e2e_results.py
         env:
+          CURRENT_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          SHOW_RESULTS_URL: ${{ secrets.E2E_REPORT_SHOW_RESULTS_URL }}
-          STORAGE_PATH: "/data/github-actions/reports"
+          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}}"
           REPORT_TITLE_PREFIX: "Main"
