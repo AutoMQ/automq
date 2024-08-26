@@ -13,6 +13,8 @@ package com.automq.stream;
 
 public enum Version {
     V0((short) 1),
+    // Support StreamObjectCompactV1 (based on composite object)
+    // Support wal registration
     V1((short) 2);
 
     public static final Version LATEST = V1;
@@ -38,6 +40,10 @@ public enum Version {
     }
 
     public boolean isStreamObjectCompactV1Supported() {
+        return isAtLeast(V1);
+    }
+
+    public boolean isWalRegistrationSupported() {
         return isAtLeast(V1);
     }
 
