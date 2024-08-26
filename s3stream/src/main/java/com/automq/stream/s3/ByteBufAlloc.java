@@ -51,6 +51,7 @@ public class ByteBufAlloc {
     public static final int STREAM_SET_OBJECT_COMPACTION_READ = 9;
     public static final int STREAM_SET_OBJECT_COMPACTION_WRITE = 10;
     public static final int BLOCK_CACHE = 11;
+    public static final int S3_WAL = 12;
     public static ByteBufAllocMetric byteBufAllocMetric = null;
 
     /**
