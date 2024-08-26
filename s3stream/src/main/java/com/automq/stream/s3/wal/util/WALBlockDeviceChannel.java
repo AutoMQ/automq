@@ -34,7 +34,7 @@ import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 public class WALBlockDeviceChannel extends AbstractWALChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
     private static final String CHECK_DIRECT_IO_AVAILABLE_FORMAT = "%s.check_direct_io_available";
-    public static final int DISABLE_WRITE_BAND_WIDTH_LIMIT = 0;
+    public static final long MAX_RATE_LIMIT_BYTES_PER_NS = 1_000_000_000L;
     final String path;
     final long capacityWant;
     final boolean recoveryMode;
@@ -63,15 +63,15 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
         }
     };
 
-    private final int writeBandwidthLimit;
+    private final long writeBandwidthLimit;
     private final BlockingBucket bucket;
 
     public WALBlockDeviceChannel(String path, long capacityWant) {
-        this(path, capacityWant, 0, 0, false, 0);
+        this(path, capacityWant, 0, 0, false, Long.MAX_VALUE);
     }
 
     public WALBlockDeviceChannel(String path, long capacityWant, int initTempBufferSize, int maxTempBufferSize,
-        boolean recoveryMode, int writeBandwidthLimit) {
+        boolean recoveryMode, long writeBandwidthLimit) {
         this.path = path;
         this.recoveryMode = recoveryMode;
         if (recoveryMode) {
@@ -98,7 +98,10 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
         this.directIOLib = lib;
 
         this.writeBandwidthLimit = writeBandwidthLimit;
-        int refillPerMs = writeBandwidthLimit / 1000;
+
+        // max 1 token/nanosecond = 953.67MB/s
+        long refillPerMs = Math.min(writeBandwidthLimit / 1000, MAX_RATE_LIMIT_BYTES_PER_NS);
+
         this.bucket = Bucket.builder()
             .addLimit(limit -> limit.capacity(writeBandwidthLimit).refillIntervally(refillPerMs, Duration.ofMillis(1)))
             .build()
@@ -297,14 +300,14 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
     }
 
     private int write(ByteBuffer src, long position) throws IOException {
-        assert WALUtil.isAligned(src.remaining());
+        int size = src.remaining();
+        assert WALUtil.isAligned(size);
 
-        int permits = src.remaining();
-        if (writeBandwidthLimit != DISABLE_WRITE_BAND_WIDTH_LIMIT && permits > 0) {
+        if (size > 0) {
             try {
-                bucket.consume(permits);
+                bucket.consume(size);
             } catch (InterruptedException e) {
-                throw new IOException("rate limit consume interrupted", e);
+                throw new IOException("write rate limit consume interrupted", e);
             }
         }
 
