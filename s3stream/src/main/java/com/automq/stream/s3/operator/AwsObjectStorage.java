@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
+
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -44,6 +46,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
@@ -417,9 +420,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         builder.httpClient(httpClient);
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
-        builder.overrideConfiguration(b -> b.apiCallTimeout(Duration.ofMinutes(2))
-            .apiCallAttemptTimeout(Duration.ofSeconds(60)));
+        builder.overrideConfiguration(clientOverrideConfiguration());
         return builder.build();
+    }
+
+    protected ClientOverrideConfiguration clientOverrideConfiguration() {
+        return ClientOverrideConfiguration.builder()
+            .apiCallTimeout(Duration.ofMinutes(2))
+            .apiCallAttemptTimeout(Duration.ofSeconds(60))
+            .build();
     }
 
     private AwsCredentialsProvider newCredentialsProviderChain(List<AwsCredentialsProvider> credentialsProviders) {
