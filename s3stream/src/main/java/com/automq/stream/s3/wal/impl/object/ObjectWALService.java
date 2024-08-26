@@ -49,8 +49,8 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT
 
 public class ObjectWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
+    private static final ByteBufSeqAlloc BYTE_BUF_ALLOC = new ByteBufSeqAlloc(S3_WAL, 8);
 
-    protected ByteBufSeqAlloc byteBufAlloc = new ByteBufSeqAlloc(S3_WAL, 8);
     protected ObjectStorage objectStorage;
     protected ObjectWALConfig config;
 
@@ -88,7 +88,7 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
-        ByteBuf header = byteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
+        ByteBuf header = BYTE_BUF_ALLOC.byteBuffer(RECORD_HEADER_SIZE);
         assert header.refCnt() == 1;
 
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
