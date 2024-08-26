@@ -34,7 +34,7 @@ import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 public class WALBlockDeviceChannel extends AbstractWALChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
     private static final String CHECK_DIRECT_IO_AVAILABLE_FORMAT = "%s.check_direct_io_available";
-    public static final long MAX_RATE_LIMIT_BYTES_PER_NS = 1_000_000_000L;
+    public static final long MAX_RATE_LIMIT_BYTES_PER_MS = 1_000_000L;
     final String path;
     final long capacityWant;
     final boolean recoveryMode;
@@ -71,7 +71,7 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
     }
 
     public WALBlockDeviceChannel(String path, long capacityWant, int initTempBufferSize, int maxTempBufferSize,
-        boolean recoveryMode, long writeBandwidthLimit) {
+        boolean recoveryMode, long writeBandwidthBytePerSecondLimit) {
         this.path = path;
         this.recoveryMode = recoveryMode;
         if (recoveryMode) {
@@ -97,13 +97,13 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
         }
         this.directIOLib = lib;
 
-        this.writeBandwidthLimit = writeBandwidthLimit;
+        this.writeBandwidthLimit = writeBandwidthBytePerSecondLimit;
 
         // max 1 token/nanosecond = 953.67MB/s
-        long refillPerMs = Math.min(writeBandwidthLimit / 1000, MAX_RATE_LIMIT_BYTES_PER_NS);
+        long refillPerMs = Math.min(writeBandwidthBytePerSecondLimit / 1000, MAX_RATE_LIMIT_BYTES_PER_MS);
 
         this.bucket = Bucket.builder()
-            .addLimit(limit -> limit.capacity(writeBandwidthLimit).refillIntervally(refillPerMs, Duration.ofMillis(1)))
+            .addLimit(limit -> limit.capacity(writeBandwidthBytePerSecondLimit).refillIntervally(refillPerMs, Duration.ofMillis(1)))
             .build()
             .asBlocking();
     }
