@@ -717,6 +717,7 @@ public class BlockWALService implements WriteAheadLog {
                 + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
                 + ", blockSoftLimit=" + blockSoftLimit
                 + ", writeRateLimit=" + writeRateLimit
+                + ", writeBandwidthLimit=" + writeBandwidthLimit
                 + ", nodeId=" + nodeId
                 + ", epoch=" + epoch
                 + ", recoveryMode=" + recoveryMode
