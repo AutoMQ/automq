@@ -11,7 +11,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.FixedSizeByteBufPool;
+import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -43,13 +43,14 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
 public class ObjectWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
 
-    protected FixedSizeByteBufPool byteBufPool = new FixedSizeByteBufPool(RECORD_HEADER_SIZE, 1024 * Runtime.getRuntime().availableProcessors());
+    protected ByteBufSeqAlloc byteBufAlloc = new ByteBufSeqAlloc(S3_WAL, 8);
     protected ObjectStorage objectStorage;
     protected ObjectWALConfig config;
 
@@ -87,22 +88,16 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
-        ByteBuf header = byteBufPool.get();
+        ByteBuf header = byteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
         assert header.refCnt() == 1;
 
         final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
-        appendResultFuture.whenComplete((result, cause) -> {
-            // Return the header buffer to the buffer pool.
-            assert header.refCnt() == 1;
-            byteBufPool.release(header);
-        });
-
         try {
             final long recordSize = RECORD_HEADER_SIZE + data.readableBytes();
 
             long expectedWriteOffset = accumulator.append(recordSize, start -> {
                 CompositeByteBuf recordByteBuf = ByteBufAlloc.compositeByteBuffer();
-                Record record = WALUtil.generateRecord(data, header.retainedDuplicate(), 0, start, true);
+                Record record = WALUtil.generateRecord(data, header, 0, start, true);
                 recordByteBuf.addComponents(true, record.header(), record.body());
                 return recordByteBuf;
             }, appendResultFuture);
@@ -110,7 +105,7 @@ public class ObjectWALService implements WriteAheadLog {
             return new AppendResultImpl(expectedWriteOffset, appendResultFuture);
         } catch (Exception e) {
             // Make sure the header buffer and data buffer is released.
-            if (header.refCnt() > 1) {
+            if (header.refCnt() > 0) {
                 header.release();
             } else {
                 log.error("[Bug] The header buffer is already released.", e);
