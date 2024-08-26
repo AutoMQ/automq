@@ -135,6 +135,9 @@ public interface ObjectStorage {
             return this;
         }
 
+        // If enable the fast retry, the data buffer may be released after the write future is completed.
+        // Be careful to use this option, ensure that you reuse the data buffer only after
+        // it has been released by the writer.
         public WriteOptions enableFastRetry(boolean enableFastRetry) {
             this.enableFastRetry = enableFastRetry;
             return this;
