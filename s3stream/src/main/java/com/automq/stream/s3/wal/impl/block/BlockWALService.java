@@ -155,7 +155,7 @@ public class BlockWALService implements WriteAheadLog {
         BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(uri.path(), uri.extensionLong("capacity", 2147483648L));
         Optional.ofNullable(uri.extensionString("iops")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeRateLimit(Integer.parseInt(v)));
         Optional.ofNullable(uri.extensionString("iodepth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.ioThreadNums(Integer.parseInt(v)));
-        Optional.ofNullable(uri.extensionString("iobandwidth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeBandwidthLimit(Integer.parseInt(v)));
+        Optional.ofNullable(uri.extensionString("iobandwidth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeBandwidthLimit(Long.parseLong(v)));
         return builder;
     }
 
@@ -557,7 +557,7 @@ public class BlockWALService implements WriteAheadLog {
         // wal io request limit
         private int writeRateLimit = 3000;
         // wal io bandwidth limit
-        private int writeBandwidthLimit = 500 * 1024 * 1024; // 500MB/s
+        private long writeBandwidthLimit = 500 * 1024 * 1024; // 500MB/s
         private int nodeId = NOOP_NODE_ID;
         private long epoch = NOOP_EPOCH;
         private boolean recoveryMode = false;
@@ -632,7 +632,7 @@ public class BlockWALService implements WriteAheadLog {
             return this;
         }
 
-        public BlockWALServiceBuilder writeBandwidthLimit(int writeBandwidthLimit) {
+        public BlockWALServiceBuilder writeBandwidthLimit(long writeBandwidthLimit) {
             this.writeBandwidthLimit = writeBandwidthLimit;
             return this;
         }

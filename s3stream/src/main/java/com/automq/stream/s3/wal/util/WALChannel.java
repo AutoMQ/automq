@@ -131,7 +131,7 @@ public interface WALChannel {
         private int initBufferSize;
         private int maxBufferSize;
         private boolean recoveryMode;
-        private int writeBandwidthLimit;
+        private long writeBandwidthLimit = Long.MAX_VALUE;
 
         private WALChannelBuilder(String path) {
             this.path = path;
@@ -164,7 +164,7 @@ public interface WALChannel {
         }
 
 
-        public WALChannelBuilder writeBandWidthLimit(int writeBandwidthLimit) {
+        public WALChannelBuilder writeBandWidthLimit(long writeBandwidthLimit) {
             this.writeBandwidthLimit = writeBandwidthLimit;
             return this;
         }
