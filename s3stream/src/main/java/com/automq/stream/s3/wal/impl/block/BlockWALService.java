@@ -419,11 +419,13 @@ public class BlockWALService implements WriteAheadLog {
             AppendResult result = append0(buf, crc);
             result.future().whenComplete((nil, ex) -> TraceUtils.endSpan(scope, ex));
             return result;
-        } catch (OverCapacityException ex) {
+        } catch (Throwable t) {
             buf.release();
-            StorageOperationStats.getInstance().appendWALFullStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
-            TraceUtils.endSpan(scope, ex);
-            throw ex;
+            if (t instanceof OverCapacityException) {
+                StorageOperationStats.getInstance().appendWALFullStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+            }
+            TraceUtils.endSpan(scope, t);
+            throw t;
         }
     }
 
