@@ -903,7 +903,7 @@ class BlockWALServiceTest {
             .setRecordBodyLength(body.readableBytes())
             .setRecordBodyOffset(offset + RECORD_HEADER_SIZE)
             .setRecordBodyCRC(WALUtil.crc32(body))
-            .marshal();
+            .marshal(ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE), true);
     }
 
     private void write(WALChannel walChannel, long logicOffset, int recordSize) throws IOException {

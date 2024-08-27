@@ -38,7 +38,7 @@ public final class TimerUtil {
         return timeUnit.convert(now - last.getAndSet(now), TimeUnit.NANOSECONDS);
     }
 
-    public static long durationElapsedAs(long statNanoTime, TimeUnit timeUnit) {
+    public static long timeElapsedSince(long statNanoTime, TimeUnit timeUnit) {
         return timeUnit.convert(System.nanoTime() - statNanoTime, TimeUnit.NANOSECONDS);
     }
 

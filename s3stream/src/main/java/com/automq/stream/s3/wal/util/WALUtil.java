@@ -11,12 +11,11 @@
 
 package com.automq.stream.s3.wal.util;
 
-import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -35,18 +34,19 @@ public class WALUtil {
         "4096"
     ));
 
-    public static ByteBuf generateRecord(ByteBuf body, int crc, long start) {
-        CompositeByteBuf record = ByteBufAlloc.compositeByteBuffer();
-        crc = 0 == crc ? WALUtil.crc32(body) : crc;
+    public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start) {
+        return generateRecord(body, emptyHeader, crc, start, true);
+    }
 
+    public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start, boolean calculateCRC) {
+        crc = 0 == crc ? WALUtil.crc32(body) : crc;
         ByteBuf header = new RecordHeader()
             .setMagicCode(RECORD_HEADER_MAGIC_CODE)
             .setRecordBodyLength(body.readableBytes())
             .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
             .setRecordBodyCRC(crc)
-            .marshal();
-        record.addComponents(true, header, body);
-        return record;
+            .marshal(emptyHeader, calculateCRC);
+        return new Record(header, body);
     }
 
     /**

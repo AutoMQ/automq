@@ -176,7 +176,9 @@ public class BlockWALService implements WriteAheadLog {
         this.walChannel.retryFlush();
         buf.release();
         walHeader.updateFlushedTrimOffset(trimOffset);
-        LOGGER.debug("WAL header flushed, position: {}, header: {}", position, walHeader);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("WAL header flushed, position: {}, header: {}", position, walHeader);
+        }
     }
 
     /**
@@ -422,7 +424,7 @@ public class BlockWALService implements WriteAheadLog {
         } catch (Throwable t) {
             buf.release();
             if (t instanceof OverCapacityException) {
-                StorageOperationStats.getInstance().appendWALFullStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+                StorageOperationStats.getInstance().appendWALFullStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             }
             TraceUtils.endSpan(scope, t);
             throw t;
@@ -443,11 +445,12 @@ public class BlockWALService implements WriteAheadLog {
         lock.lock();
         try {
             Block block = slidingWindowService.getCurrentBlockLocked();
-            expectedWriteOffset = block.addRecord(recordSize, offset -> WALUtil.generateRecord(body, crc, offset), appendResultFuture);
+            Block.RecordSupplier recordSupplier = (offset, header) -> WALUtil.generateRecord(body, header, crc, offset);
+            expectedWriteOffset = block.addRecord(recordSize, recordSupplier, appendResultFuture);
             if (expectedWriteOffset < 0) {
                 // this block is full, create a new one
                 block = slidingWindowService.sealAndNewBlockLocked(block, recordSize, walHeader.getFlushedTrimOffset(), walHeader.getCapacity() - WAL_HEADER_TOTAL_CAPACITY);
-                expectedWriteOffset = block.addRecord(recordSize, offset -> WALUtil.generateRecord(body, crc, offset), appendResultFuture);
+                expectedWriteOffset = block.addRecord(recordSize, recordSupplier, appendResultFuture);
             }
         } finally {
             lock.unlock();
@@ -455,8 +458,8 @@ public class BlockWALService implements WriteAheadLog {
         slidingWindowService.tryWriteBlock();
 
         final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
-        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
-        StorageOperationStats.getInstance().appendWALBeforeStats.record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS));
+        appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
+        StorageOperationStats.getInstance().appendWALBeforeStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         return appendResult;
     }
 

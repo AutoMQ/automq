@@ -26,7 +26,7 @@ from ducktape.utils.util import wait_until
 from ducktape.cluster.remoteaccount import RemoteCommandError
 
 from .config import KafkaConfig
-from kafkatest.directory_layout.kafka_path import KafkaPathResolverMixin
+from kafkatest.directory_layout.kafka_path import KafkaPathResolverMixin, create_path_resolver
 from kafkatest.services.kafka import config_property, quorum
 from kafkatest.services.monitor.jmx import JmxMixin
 from kafkatest.services.security.minikdc import MiniKdc
@@ -207,7 +207,8 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                  extra_env=None, # AutoMQ inject
                  kafka_heap_opts="-Xmx1024m -Xms1024m", # AutoMQ inject
                  quorum_info_provider=None,
-                 use_new_coordinator=None
+                 use_new_coordinator=None,
+                 project_name=None,# AutoMQ inject
                  ):
         """
         :param context: test context
@@ -456,6 +457,8 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.nodes_to_start = self.nodes
 
         # AutoMQ inject start
+        if project_name:
+            setattr(self, "_path", create_path_resolver(self.context, project_name))
         self.have_cleaned_topic_data = False
         # ip is static and referenced from docker/s3/docker-compose.yaml
         self.default_s3_ip = "10.5.0.2"
@@ -950,10 +953,10 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     def downgrade_metadata_version(self, new_version):
         self.run_features_command("downgrade", new_version)
 
-    def run_features_command(self, op, new_version):
+    def run_features_command(self, op, new_version, key='metadata'):
         cmd = self.path.script("kafka-features.sh ")
         cmd += "--bootstrap-server %s " % self.bootstrap_servers()
-        cmd += "%s --metadata %s" % (op, new_version)
+        cmd += "%s --%s %s" % (op, key, new_version)
         self.logger.info("Running %s command...\n%s" % (op, cmd))
         self.nodes[0].account.ssh(cmd)
 

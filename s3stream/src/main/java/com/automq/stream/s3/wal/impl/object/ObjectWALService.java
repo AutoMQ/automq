@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -19,6 +20,7 @@ import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.AppendResultImpl;
+import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.common.RecoverResultImpl;
 import com.automq.stream.s3.wal.common.WALMetadata;
@@ -28,6 +30,7 @@ import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -36,16 +39,17 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
 public class ObjectWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
+    private static final ByteBufSeqAlloc BYTE_BUF_ALLOC = new ByteBufSeqAlloc(S3_WAL, 8);
 
     protected ObjectStorage objectStorage;
     protected ObjectWALConfig config;
@@ -84,20 +88,37 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
+        ByteBuf header = BYTE_BUF_ALLOC.byteBuffer(RECORD_HEADER_SIZE);
+        assert header.refCnt() == 1;
+
+        final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
         try {
             final long recordSize = RECORD_HEADER_SIZE + data.readableBytes();
-            final CompletableFuture<AppendResult.CallbackResult> appendResultFuture = new CompletableFuture<>();
-            long expectedWriteOffset = accumulator.append(recordSize, start -> WALUtil.generateRecord(data, crc, start), appendResultFuture);
+
+            long expectedWriteOffset = accumulator.append(recordSize, start -> {
+                CompositeByteBuf recordByteBuf = ByteBufAlloc.compositeByteBuffer();
+                Record record = WALUtil.generateRecord(data, header, 0, start, true);
+                recordByteBuf.addComponents(true, record.header(), record.body());
+                return recordByteBuf;
+            }, appendResultFuture);
 
             return new AppendResultImpl(expectedWriteOffset, appendResultFuture);
         } catch (Exception e) {
-            // Make sure the data buffer is released.
+            // Make sure the header buffer and data buffer is released.
+            if (header.refCnt() > 0) {
+                header.release();
+            } else {
+                log.error("[Bug] The header buffer is already released.", e);
+            }
+
             if (data.refCnt() > 0) {
                 data.release();
             } else {
                 log.error("[Bug] The data buffer is already released.", e);
             }
 
+            // Complete the future with exception, ensure the whenComplete method is executed.
+            appendResultFuture.completeExceptionally(e);
             Throwable cause = ExceptionUtils.getRootCause(e);
             if (cause instanceof OverCapacityException) {
                 if (((OverCapacityException) cause).error()) {
@@ -109,7 +130,7 @@ public class ObjectWALService implements WriteAheadLog {
                 throw new OverCapacityException("Append record to S3 WAL failed, due to accumulator is full: " + cause.getMessage());
             } else {
                 log.error("Append record to S3 WAL failed, due to unrecoverable exception.", e);
-                return new AppendResultImpl(-1, CompletableFuture.failedFuture(e));
+                return new AppendResultImpl(-1, appendResultFuture);
             }
         }
     }

@@ -114,8 +114,9 @@ public class ControllerObjectManager implements ObjectManager {
     public CompletableFuture<CommitStreamSetObjectResponse> commitStreamSetObject(
         CommitStreamSetObjectRequest commitStreamSetObjectRequest) {
         try {
-            return commitStreamSetObject0(commitStreamSetObjectRequest).thenCompose(resp ->
-                commitStreamSetObjectHook.onCommitSuccess(commitStreamSetObjectRequest).thenApply(v -> resp));
+            CompletableFuture<CommitStreamSetObjectResponse> cf = commitStreamSetObject0(commitStreamSetObjectRequest);
+            cf.thenAccept(resp -> commitStreamSetObjectHook.onCommitSuccess(commitStreamSetObjectRequest));
+            return cf;
         } catch (Throwable e) {
             return FutureUtil.failedFuture(e);
         }

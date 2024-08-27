@@ -11,7 +11,6 @@
 
 package com.automq.stream.s3.wal.common;
 
-import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.util.WALUtil;
 import io.netty.buffer.ByteBuf;
 
@@ -81,16 +80,15 @@ public class RecordHeader {
     @Override
     public String toString() {
         return "RecordHeaderCoreData{" +
-               "magicCode=" + magicCode0 +
-               ", recordBodyLength=" + recordBodyLength1 +
-               ", recordBodyOffset=" + recordBodyOffset2 +
-               ", recordBodyCRC=" + recordBodyCRC3 +
-               ", recordHeaderCRC=" + recordHeaderCRC4 +
-               '}';
+            "magicCode=" + magicCode0 +
+            ", recordBodyLength=" + recordBodyLength1 +
+            ", recordBodyOffset=" + recordBodyOffset2 +
+            ", recordBodyCRC=" + recordBodyCRC3 +
+            ", recordHeaderCRC=" + recordHeaderCRC4 +
+            '}';
     }
 
-    private ByteBuf marshalHeaderExceptCRC() {
-        ByteBuf buf = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
+    private ByteBuf marshalHeaderExceptCRC(ByteBuf buf) {
         buf.writeInt(magicCode0);
         buf.writeInt(recordBodyLength1);
         buf.writeLong(recordBodyOffset2);
@@ -98,9 +96,16 @@ public class RecordHeader {
         return buf;
     }
 
-    public ByteBuf marshal() {
-        ByteBuf buf = marshalHeaderExceptCRC();
-        buf.writeInt(WALUtil.crc32(buf, RECORD_HEADER_WITHOUT_CRC_SIZE));
+    public ByteBuf marshal(ByteBuf emptyBuf, boolean calculateCRC) {
+        assert emptyBuf.writableBytes() == RECORD_HEADER_SIZE;
+        ByteBuf buf = marshalHeaderExceptCRC(emptyBuf);
+
+        if (calculateCRC) {
+            buf.writeInt(WALUtil.crc32(buf, RECORD_HEADER_WITHOUT_CRC_SIZE));
+        } else {
+            buf.writeInt(-1);
+        }
+
         return buf;
     }
 }

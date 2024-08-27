@@ -13,23 +13,35 @@ package com.automq.stream.s3.index;
 
 import com.automq.stream.s3.cache.AsyncMeasurable;
 import com.automq.stream.s3.cache.AsyncLRUCache;
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.stats.MetadataStats;
+import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Time;
+import com.google.common.base.Ticker;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class NodeRangeIndexCache {
     private static final int MAX_CACHE_SIZE = 100 * 1024 * 1024;
+    private static final int DEFAULT_EXPIRE_TIME_MS = 60000;
     public static final int ZGC_OBJECT_HEADER_SIZE_BYTES = 16;
     public static final int MIN_CACHE_UPDATE_INTERVAL_MS = 1000; // 1s
+    private static final int DEFAULT_UPDATE_CONCURRENCY_LIMIT = 10;
     private static final Logger LOGGER = LoggerFactory.getLogger(NodeRangeIndexCache.class);
     private volatile static NodeRangeIndexCache instance = null;
-    private final LRUCache nodeRangeIndexMap = new LRUCache(MAX_CACHE_SIZE);
+    private final ExpireLRUCache nodeRangeIndexMap = new ExpireLRUCache(MAX_CACHE_SIZE, DEFAULT_EXPIRE_TIME_MS);
     private final Map<Long, Long> nodeCacheUpdateTimestamp = new ConcurrentHashMap<>();
+    private final Semaphore updateLimiter = new Semaphore(DEFAULT_UPDATE_CONCURRENCY_LIMIT * Systems.CPU_CORES);
 
     private NodeRangeIndexCache() {
 
@@ -57,7 +69,7 @@ public class NodeRangeIndexCache {
     }
 
     // for test only
-    LRUCache cache() {
+    ExpireLRUCache cache() {
         return this.nodeRangeIndexMap;
     }
 
@@ -76,15 +88,21 @@ public class NodeRangeIndexCache {
         if (indexCache == null) {
             long now = time.milliseconds();
             long expect = this.nodeCacheUpdateTimestamp.getOrDefault(nodeId, 0L) + MIN_CACHE_UPDATE_INTERVAL_MS;
-            if (expect <= now) {
-                this.nodeCacheUpdateTimestamp.put(nodeId, now);
-            } else {
+            if (expect > now) {
                 // Skip updating from remote
                 return CompletableFuture.completedFuture(-1L);
             }
-            indexCache = new StreamRangeIndexCache(cacheSupplier.get());
+            if (!updateLimiter.tryAcquire()) {
+                return CompletableFuture.completedFuture(-1L);
+            }
+
+            this.nodeCacheUpdateTimestamp.put(nodeId, now);
+            CompletableFuture<Map<Long, List<RangeIndex>>> cf = cacheSupplier.get();
+            cf.whenComplete((v, e) -> updateLimiter.release());
+            indexCache = new StreamRangeIndexCache(cf);
             this.nodeRangeIndexMap.put(nodeId, indexCache);
-            LOGGER.info("Update stream range index for node {}", nodeId);
+            MetadataStats.getInstance().getRangeIndexUpdateCountStats().add(MetricsLevel.INFO, 1);
+            LOGGER.info("Update stream range index for node {}, concurrency limiter left: {}", nodeId, updateLimiter.availablePermits());
         }
         return indexCache.searchObjectId(streamId, startOffset);
     }
@@ -116,9 +134,41 @@ public class NodeRangeIndexCache {
         }
     }
 
-    static class LRUCache extends AsyncLRUCache<Long, StreamRangeIndexCache> {
-        public LRUCache(int maxSize) {
+    static class ExpireLRUCache extends AsyncLRUCache<Long, StreamRangeIndexCache> {
+        private static final Object DUMMY_OBJECT = new Object();
+        private final Cache<Long, Object> expireCache;
+
+        public ExpireLRUCache(int maxSize, int expireTimeMs) {
+            this(maxSize, expireTimeMs, Ticker.systemTicker());
+        }
+
+        public ExpireLRUCache(int maxSize, int expireTimeMs, Ticker ticker) {
             super("NodeRangeIndex", maxSize);
+            expireCache = CacheBuilder.newBuilder()
+                .ticker(ticker)
+                .expireAfterWrite(Duration.ofMillis(expireTimeMs))
+                .removalListener((RemovalListener<Long, Object>) notification -> remove(notification.getKey()))
+                .build();
+        }
+
+        @Override
+        public synchronized void put(Long key, StreamRangeIndexCache value) {
+            super.put(key, value);
+            touch(key);
+        }
+
+        @Override
+        public synchronized StreamRangeIndexCache get(Long key) {
+            touch(key);
+            return super.get(key);
+        }
+
+        private void touch(long key) {
+            try {
+                expireCache.get(key, () -> DUMMY_OBJECT);
+            } catch (Exception ignored) {
+
+            }
         }
     }
 }

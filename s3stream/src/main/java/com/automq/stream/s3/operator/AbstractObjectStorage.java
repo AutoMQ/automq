@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -54,6 +55,8 @@ import org.slf4j.LoggerFactory;
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
     static final Logger LOGGER = LoggerFactory.getLogger(AbstractObjectStorage.class);
+    private static final int MAX_INFLIGHT_FAST_RETRY_COUNT = 5;
+
     private static final int DEFAULT_RETRY_DELAY = 100;
     private static final AtomicInteger INDEX = new AtomicInteger(-1);
     private static final int DEFAULT_CONCURRENCY_PER_CORE = 25;
@@ -78,7 +81,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final DeleteObjectsAccumulator deleteObjectsAccumulator;
     final boolean checkS3ApiMode;
     protected final BucketURI bucketURI;
+
     private final S3LatencyCalculator s3LatencyCalculator;
+    private final Semaphore fastRetryPermit = new Semaphore(MAX_INFLIGHT_FAST_RETRY_COUNT);
 
     protected AbstractObjectStorage(
         BucketURI bucketURI,
@@ -170,7 +175,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     .whenComplete((v, ex) ->
                         NetworkStats.getInstance()
                             .networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.INBOUND, throttleStrategy)
-                            .record(TimerUtil.durationElapsedAs(startTime, TimeUnit.NANOSECONDS)));
+                            .record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
 
             };
 
@@ -249,11 +254,15 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         if (options.enableFastRetry() && delayMillis > 0 && !options.retry()) {
             data.retain();
             fastRetryTimer.newTimeout(timeout -> {
-                if (writeCf != null && !writeCf.isDone()) {
+                if (writeCf != null && !writeCf.isDone() && fastRetryPermit.tryAcquire()) {
                     TimerUtil retryTimerUtil = new TimerUtil();
+
                     doWrite(retryOptions, path, data).thenAccept(nil -> {
                         recordWriteStats(path, objectSize, retryTimerUtil);
+
                         data.release();
+                        fastRetryPermit.release();
+
                         if (completedFlag.compareAndSet(false, true)) {
                             cf.complete(null);
                             LOGGER.info("Fast retry: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
@@ -262,6 +271,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         }
                     }).exceptionally(ignore -> {
                         data.release();
+                        fastRetryPermit.release();
+
                         // The fast retry request will not retry again.
                         S3OperationStats.getInstance().putObjectStats(objectSize, false).record(retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                         return null;
@@ -631,7 +642,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
             Throwable cause = strategyAndCause.getRight();
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
-                if (!(cause instanceof ObjectNotFoundException)) {
+                if (!(cause instanceof ObjectNotExistException)) {
                     LOGGER.error("GetObject for object {} [{}, {}) fail", path, start, end, cause);
                 }
                 cf.completeExceptionally(cause);

@@ -47,7 +47,7 @@ public class PerfConfig {
     public final double randomRatio;
     public final int randomPoolSize;
     public final int sendRate;
-    public final int catchupRate;
+    public final int sendRateDuringCatchup;
     public final int backlogDurationSeconds;
     public final int groupStartDelaySeconds;
     public final int warmupDurationMinutes;
@@ -84,7 +84,7 @@ public class PerfConfig {
         randomRatio = ns.getDouble("randomRatio");
         randomPoolSize = ns.getInt("randomPoolSize");
         sendRate = ns.getInt("sendRate");
-        catchupRate = ns.getInt("catchupRate") == null ? sendRate : ns.getInt("catchupRate");
+        sendRateDuringCatchup = ns.getInt("sendRateDuringCatchup") == null ? sendRate : ns.getInt("sendRateDuringCatchup");
         backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
         groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
         warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
@@ -194,11 +194,11 @@ public class PerfConfig {
             .dest("sendRate")
             .metavar("SEND_RATE")
             .help("The send rate in messages per second.");
-        parser.addArgument("-a", "--catchup-rate")
+        parser.addArgument("-a", "--send-rate-during-catchup")
             .type(positiveInteger())
-            .dest("catchupRate")
-            .metavar("CATCHUP_RATE")
-            .help("The catchup rate in messages per second. If not set, the send rate will be used.");
+            .dest("sendRateDuringCatchup")
+            .metavar("SEND_RATE_DURING_CATCHUP")
+            .help("The send rate in messages per second during catchup. If not set, the send rate will be used.");
         parser.addArgument("-b", "--backlog-duration")
             .setDefault(0)
             .type(nonNegativeInteger())

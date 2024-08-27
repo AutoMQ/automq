@@ -9,16 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.exceptions;
+package com.automq.stream.s3.streams;
 
-public class ObjectNotExistException extends AutoMQException {
+import java.util.concurrent.CompletableFuture;
 
-    public ObjectNotExistException(long objectId) {
-        super("Object not exist: " + objectId);
-    }
-
-    public ObjectNotExistException(Throwable cause) {
-        super(cause);
-    }
-
+public interface StreamCloseHook {
+    CompletableFuture<Void> beforeStreamClose(long streamId);
 }

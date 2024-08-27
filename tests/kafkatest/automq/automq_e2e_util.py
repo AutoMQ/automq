@@ -386,10 +386,21 @@ def parse_upload_delta_wal_log_entry(line1, line2, line3):
     """
     line1_dict = dict(item.split("=") for item in line1.split(", "))
     stream_set_object_id = int(line1_dict["streamSetObjectId"])
-    stream_ranges = line2.split("streamRanges=")[1]
-    stream_ranges_list = [item.strip("()") for item in stream_ranges.split("), (")]
-    stream_objects = line3.split("streamObjects=")[1]
-    stream_objects_list = [item.strip("()") for item in stream_objects.split("), (")]
+
+    if "streamRanges=" in line2:
+        stream_ranges = line2.split("streamRanges=")[1]
+        stream_ranges_list = [item.strip("()") for item in stream_ranges.split("), (")]
+    else:
+        stream_ranges_list = []
+
+    if "streamObjects=" in line3:
+        stream_objects = line3.split("streamObjects=")[1]
+        stream_objects_list = [item.strip("()") for item in stream_objects.split("), (")]
+    else:
+        stream_objects_list = []
+
+    stream_objects_list = [item for item in stream_objects_list if item.strip()]
+    stream_ranges_list = [item for item in stream_ranges_list if item.strip()]
 
     stream_set_object = {
         stream_set_object_id: {
@@ -440,7 +451,7 @@ def parse_delta_wal_entry(kafka, logger):
 
     for line in kafka.nodes[0].account.ssh_capture(f'grep -A 2 \'{entry}\' {kafka.STDOUT_STDERR_CAPTURE}'):
         line = line.replace('\n', '')
-        if '[CommitStreamSetObjectRequest]:streamSetObjectId=' in line or 'streamRanges=(si=' in line or 'streamObjects=(si=' in line:
+        if '[CommitStreamSetObjectRequest]:streamSetObjectId=' in line or 'streamRanges=' in line or 'streamObjects=' in line:
             buffer.append(line)
 
         if len(buffer) == 3:
