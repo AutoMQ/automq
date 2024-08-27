@@ -1190,8 +1190,10 @@ class Partition(val topicPartition: TopicPartition,
       case Some(leaderLog) =>
         // keep the current immutable replica list reference
         val curMaximalIsr = partitionState.maximalIsr
-
-        if (isTraceEnabled) {
+        // AutoMQ inject start
+        // disable trace because when high load the isTraceEnabled burn cpu
+        if (RequestTraceLogControl.ENABLE_TRACE_LOG && isTraceEnabled) {
+        // AutoMQ inject end
           def logEndOffsetString: ((Int, Long)) => String = {
             case (brokerId, logEndOffset) => s"broker $brokerId: $logEndOffset"
           }
