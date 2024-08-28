@@ -63,6 +63,7 @@ class DelayedProduce(delayMs: Long,
   extends DelayedOperation(delayMs, lockOpt) {
 
   override lazy val logger: Logger = DelayedProduce.logger
+  private val enableTraceLog = logger.underlying.isTraceEnabled
 
   // first update the acks pending variable according to the error code
   produceMetadata.produceStatus.forKeyValue { (topicPartition, status) =>
@@ -74,7 +75,11 @@ class DelayedProduce(delayMs: Long,
       status.acksPending = false
     }
 
-    trace(s"Initial partition status for $topicPartition is $status")
+    // AutoMQ inject start
+    if (enableTraceLog) {
+      trace(s"Initial partition status for $topicPartition is $status")
+    }
+    // AutoMQ inject end
   }
 
   /**
@@ -91,7 +96,12 @@ class DelayedProduce(delayMs: Long,
   override def tryComplete(): Boolean = {
     // check for each partition if it still has pending acks
     produceMetadata.produceStatus.forKeyValue { (topicPartition, status) =>
-      trace(s"Checking produce satisfaction for $topicPartition, current status $status")
+      // AutoMQ inject start
+      // disable trace because when high load the isTraceEnabled burn cpu
+      if (enableTraceLog)
+        trace(s"Checking produce satisfaction for $topicPartition, current status $status")
+      // AutoMQ inject end
+
       // skip those partitions that have already been satisfied
       if (status.acksPending) {
         val (hasEnough, error) = replicaManager.getPartitionOrError(topicPartition) match {

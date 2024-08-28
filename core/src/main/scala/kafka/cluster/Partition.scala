@@ -365,6 +365,7 @@ class Partition(val topicPartition: TopicPartition,
   metricsGroup.newGauge("LastStableOffsetLag", () => log.map(_.lastStableOffsetLag).getOrElse(0), tags)
 
   // AutoMQ for Kafka inject start
+  private val enableTraceLog = isTraceEnabled
   private var closed: Boolean = false
   /**
    * Same with the `_confirmOffset` in `ElasticLog`
@@ -1190,8 +1191,10 @@ class Partition(val topicPartition: TopicPartition,
       case Some(leaderLog) =>
         // keep the current immutable replica list reference
         val curMaximalIsr = partitionState.maximalIsr
-
-        if (isTraceEnabled) {
+        // AutoMQ inject start
+        // disable trace because when high load the isTraceEnabled burn cpu
+        if (enableTraceLog) {
+        // AutoMQ inject end
           def logEndOffsetString: ((Int, Long)) => String = {
             case (brokerId, logEndOffset) => s"broker $brokerId: $logEndOffset"
           }
@@ -1293,7 +1296,9 @@ class Partition(val topicPartition: TopicPartition,
           case (brokerId, logEndOffsetMetadata) => s"replica $brokerId: $logEndOffsetMetadata"
         }
 
-        if (isTraceEnabled) {
+        // AutoMQ for Kafka inject start
+        if (enableTraceLog) {
+        // AutoMQ for Kafka inject end
           val replicaInfo = remoteReplicas.map(replica => (replica.brokerId, replica.stateSnapshot.logEndOffsetMetadata)).toSet
           val localLogInfo = (localBrokerId, localLogOrException.logEndOffsetMetadata)
           trace(s"Skipping update high watermark since new hw $newHighWatermark is not larger than old value. " +
