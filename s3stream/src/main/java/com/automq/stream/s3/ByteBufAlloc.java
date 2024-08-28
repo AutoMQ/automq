@@ -59,7 +59,7 @@ public class ByteBufAlloc {
     private static final LongAdder UNKNOWN_USAGE_STATS = new LongAdder();
 
     private static long lastMetricLogTime = System.currentTimeMillis();
-    private static Map<Integer, String> ALLOC_TYPE = new HashMap<>();
+    private static final Map<Integer, String> ALLOC_TYPE = new HashMap<>();
 
     public static ByteBufAllocMetric byteBufAllocMetric = null;
 
@@ -96,7 +96,6 @@ public class ByteBufAlloc {
         registerAllocType(S3_WAL, "s3_wal");
         registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
 
-        ALLOC_TYPE = Collections.unmodifiableMap(ALLOC_TYPE);
     }
 
     /**
@@ -176,7 +175,7 @@ public class ByteBufAlloc {
 
         if (type > MAX_TYPE_NUMBER) {
             throw new IllegalArgumentException("type: " + type + ", name: " + name + "." +
-                "exceed MAX_TYPE_NUMBER please change the relate code" );
+                "exceed MAX_TYPE_NUMBER please change the relate code");
         }
 
         ALLOC_TYPE.put(type, name);
