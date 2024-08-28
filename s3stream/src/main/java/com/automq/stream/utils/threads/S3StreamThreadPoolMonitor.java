@@ -94,7 +94,7 @@ public class S3StreamThreadPoolMonitor {
             unit,
             new LinkedBlockingQueue<>(queueCapacity),
             threadFactory,
-            new ThreadPoolExecutor.DiscardOldestPolicy()) {
+            new ThreadPoolExecutor.CallerRunsPolicy()) {
             @Override
             protected void afterExecute(Runnable r, Throwable t) {
                 super.afterExecute(r, t);
