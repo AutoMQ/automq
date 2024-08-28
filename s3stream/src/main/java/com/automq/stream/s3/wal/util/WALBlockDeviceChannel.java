@@ -71,7 +71,8 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
     private final BlockingBucket bucket;
 
     public WALBlockDeviceChannel(String path, long capacityWant) {
-        this(path, capacityWant, 0, 0, false, Long.MAX_VALUE);
+        this(path, capacityWant, 0, 0, false,
+            MAX_RATE_LIMIT_BYTES_PER_MS * 1000L);
     }
 
     public WALBlockDeviceChannel(String path, long capacityWant, int initTempBufferSize, int maxTempBufferSize,
