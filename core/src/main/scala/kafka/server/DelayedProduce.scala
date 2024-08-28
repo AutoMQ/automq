@@ -63,6 +63,7 @@ class DelayedProduce(delayMs: Long,
   extends DelayedOperation(delayMs, lockOpt) {
 
   override lazy val logger: Logger = DelayedProduce.logger
+  private val enableTraceLog = logger.underlying.isTraceEnabled
 
   // first update the acks pending variable according to the error code
   produceMetadata.produceStatus.forKeyValue { (topicPartition, status) =>
@@ -75,7 +76,7 @@ class DelayedProduce(delayMs: Long,
     }
 
     // AutoMQ inject start
-    if (RequestTraceLogControl.ENABLE_TRACE_LOG) {
+    if (enableTraceLog) {
       trace(s"Initial partition status for $topicPartition is $status")
     }
     // AutoMQ inject end
@@ -97,7 +98,7 @@ class DelayedProduce(delayMs: Long,
     produceMetadata.produceStatus.forKeyValue { (topicPartition, status) =>
       // AutoMQ inject start
       // disable trace because when high load the isTraceEnabled burn cpu
-      if (RequestTraceLogControl.ENABLE_TRACE_LOG)
+      if (enableTraceLog)
         trace(s"Checking produce satisfaction for $topicPartition, current status $status")
       // AutoMQ inject end
 
