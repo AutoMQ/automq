@@ -155,6 +155,7 @@ public class BlockWALService implements WriteAheadLog {
         BlockWALService.BlockWALServiceBuilder builder = BlockWALService.builder(uri.path(), uri.extensionLong("capacity", 2147483648L));
         Optional.ofNullable(uri.extensionString("iops")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeRateLimit(Integer.parseInt(v)));
         Optional.ofNullable(uri.extensionString("iodepth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.ioThreadNums(Integer.parseInt(v)));
+        Optional.ofNullable(uri.extensionString("iobandwidth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeBandwidthLimit(Long.parseLong(v)));
         return builder;
     }
 
@@ -556,7 +557,10 @@ public class BlockWALService implements WriteAheadLog {
         private long slidingWindowUpperLimit = 1 << 29; // 512MiB
         private long slidingWindowScaleUnit = 1 << 22; // 4MiB
         private long blockSoftLimit = 1 << 18; // 256KiB
+        // wal io request limit
         private int writeRateLimit = 3000;
+        // wal io bandwidth limit
+        private long writeBandwidthLimit = 1024 * 1024 * 1024; // 1GB/s
         private int nodeId = NOOP_NODE_ID;
         private long epoch = NOOP_EPOCH;
         private boolean recoveryMode = false;
@@ -631,6 +635,11 @@ public class BlockWALService implements WriteAheadLog {
             return this;
         }
 
+        public BlockWALServiceBuilder writeBandwidthLimit(long writeBandwidthLimit) {
+            this.writeBandwidthLimit = writeBandwidthLimit;
+            return this;
+        }
+
         public BlockWALServiceBuilder nodeId(int nodeId) {
             this.nodeId = nodeId;
             return this;
@@ -654,6 +663,7 @@ public class BlockWALService implements WriteAheadLog {
             BlockWALService blockWALService = new BlockWALService();
 
             WALChannel.WALChannelBuilder walChannelBuilder = WALChannel.builder(blockDevicePath)
+                .writeBandWidthLimit(writeBandwidthLimit)
                 .capacity(blockDeviceCapacityWant)
                 .initBufferSize(initBufferSize)
                 .maxBufferSize(maxBufferSize)
@@ -710,6 +720,7 @@ public class BlockWALService implements WriteAheadLog {
                 + ", slidingWindowScaleUnit=" + slidingWindowScaleUnit
                 + ", blockSoftLimit=" + blockSoftLimit
                 + ", writeRateLimit=" + writeRateLimit
+                + ", writeBandwidthLimit=" + writeBandwidthLimit
                 + ", nodeId=" + nodeId
                 + ", epoch=" + epoch
                 + ", recoveryMode=" + recoveryMode

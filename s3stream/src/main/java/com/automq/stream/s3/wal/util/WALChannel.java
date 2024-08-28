@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
+import static com.automq.stream.s3.wal.util.WALBlockDeviceChannel.MAX_RATE_LIMIT_BYTES_PER_MS;
 import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 
 /**
@@ -131,6 +132,7 @@ public interface WALChannel {
         private int initBufferSize;
         private int maxBufferSize;
         private boolean recoveryMode;
+        private long writeBandwidthLimit = MAX_RATE_LIMIT_BYTES_PER_MS * 1000L;
 
         private WALChannelBuilder(String path) {
             this.path = path;
@@ -162,6 +164,12 @@ public interface WALChannel {
             return this;
         }
 
+
+        public WALChannelBuilder writeBandWidthLimit(long writeBandwidthLimit) {
+            this.writeBandwidthLimit = writeBandwidthLimit;
+            return this;
+        }
+
         public WALChannel build() {
             String directNotAvailableMsg = WALBlockDeviceChannel.checkAvailable(path);
             boolean isBlockDevice = isBlockDevice(path);
@@ -186,7 +194,7 @@ public interface WALChannel {
             }
 
             if (useDirect) {
-                return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode);
+                return new WALBlockDeviceChannel(path, capacity, initBufferSize, maxBufferSize, recoveryMode, writeBandwidthLimit);
             } else {
                 LOGGER.warn("Direct IO not used for WAL, which may cause performance degradation. path: {}, isBlockDevice: {}, reason: {}",
                     new File(path).getAbsolutePath(), isBlockDevice, directNotAvailableMsg);
