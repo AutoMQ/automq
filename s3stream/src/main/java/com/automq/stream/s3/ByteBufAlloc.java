@@ -21,10 +21,11 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.PooledByteBufAllocatorMetric;
 import io.netty.buffer.UnpooledByteBufAllocator;
+
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,9 +36,6 @@ public class ByteBufAlloc {
     public static final int MEMORY_USAGE_DETECT_INTERVAL = Systems.getEnvInt("AUTOMQ_MEMORY_USAGE_DETECT_TIME_INTERVAL", 60000);
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ByteBufAlloc.class);
-    private static final Map<Integer, LongAdder> USAGE_STATS = new ConcurrentHashMap<>();
-    private static long lastMetricLogTime = System.currentTimeMillis();
-    private static final Map<Integer, String> ALLOC_TYPE = new HashMap<>();
 
     public static final int DEFAULT = 0;
     public static final int ENCODE_RECORD = 1;
@@ -52,6 +50,17 @@ public class ByteBufAlloc {
     public static final int STREAM_SET_OBJECT_COMPACTION_WRITE = 10;
     public static final int BLOCK_CACHE = 11;
     public static final int S3_WAL = 12;
+    public static final int POOLED_MEMORY_RECORDS = 13;
+
+    // the MAX_TYPE_NUMBER may change when new type added.
+    public static final int MAX_TYPE_NUMBER = 20;
+
+    private static final LongAdder[] USAGE_STATS = new LongAdder[MAX_TYPE_NUMBER];
+    private static final LongAdder UNKNOWN_USAGE_STATS = new LongAdder();
+
+    private static long lastMetricLogTime = System.currentTimeMillis();
+    private static Map<Integer, String> ALLOC_TYPE = new HashMap<>();
+
     public static ByteBufAllocMetric byteBufAllocMetric = null;
 
     /**
@@ -68,6 +77,10 @@ public class ByteBufAlloc {
     private static ByteBufAllocatorMetric metric = getMetricByAllocator(allocator);
 
     static {
+        for (int i = 0; i < MAX_TYPE_NUMBER; i++) {
+            USAGE_STATS[i] = new LongAdder();
+        }
+
         registerAllocType(DEFAULT, "default");
         registerAllocType(ENCODE_RECORD, "write_record");
         registerAllocType(DECODE_RECORD, "read_record");
@@ -80,6 +93,10 @@ public class ByteBufAlloc {
         registerAllocType(STREAM_SET_OBJECT_COMPACTION_READ, "stream_set_object_compaction_read");
         registerAllocType(STREAM_SET_OBJECT_COMPACTION_WRITE, "stream_set_object_compaction_write");
         registerAllocType(BLOCK_CACHE, "block_cache");
+        registerAllocType(S3_WAL, "s3_wal");
+        registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
+
+        ALLOC_TYPE = Collections.unmodifiableMap(ALLOC_TYPE);
     }
 
     /**
@@ -118,13 +135,16 @@ public class ByteBufAlloc {
     public static ByteBuf byteBuffer(int initCapacity, int type) {
         try {
             if (MEMORY_USAGE_DETECT) {
-                LongAdder usage = USAGE_STATS.compute(type, (k, v) -> {
-                    if (v == null) {
-                        v = new LongAdder();
-                    }
-                    v.add(initCapacity);
-                    return v;
-                });
+                LongAdder counter;
+
+                if (type > MAX_TYPE_NUMBER) {
+                    counter = UNKNOWN_USAGE_STATS;
+                } else {
+                    counter = USAGE_STATS[type];
+                }
+
+                counter.add(initCapacity);
+
                 long now = System.currentTimeMillis();
                 if (now - lastMetricLogTime > MEMORY_USAGE_DETECT_INTERVAL) {
                     // it's ok to be not thread safe
@@ -132,7 +152,7 @@ public class ByteBufAlloc {
                     ByteBufAlloc.byteBufAllocMetric = new ByteBufAllocMetric();
                     LOGGER.info("Buffer usage: {}", ByteBufAlloc.byteBufAllocMetric);
                 }
-                return new WrappedByteBuf(policy.isDirect() ? allocator.directBuffer(initCapacity) : allocator.heapBuffer(initCapacity), () -> usage.add(-initCapacity));
+                return new WrappedByteBuf(policy.isDirect() ? allocator.directBuffer(initCapacity) : allocator.heapBuffer(initCapacity), () -> counter.add(-initCapacity));
             } else {
                 return policy.isDirect() ? allocator.directBuffer(initCapacity) : allocator.heapBuffer(initCapacity);
             }
@@ -149,10 +169,16 @@ public class ByteBufAlloc {
         }
     }
 
-    public static void registerAllocType(int type, String name) {
+    private static void registerAllocType(int type, String name) {
         if (ALLOC_TYPE.containsKey(type)) {
             throw new IllegalArgumentException("type already registered: " + type + "=" + ALLOC_TYPE.get(type));
         }
+
+        if (type > MAX_TYPE_NUMBER) {
+            throw new IllegalArgumentException("type: " + type + ", name: " + name + "." +
+                "exceed MAX_TYPE_NUMBER please change the relate code" );
+        }
+
         ALLOC_TYPE.put(type, name);
     }
 
@@ -176,9 +202,11 @@ public class ByteBufAlloc {
         private final Map<String, Long> detail = new HashMap<>();
 
         public ByteBufAllocMetric() {
-            USAGE_STATS.forEach((k, v) -> {
-                detail.put(k + "/" + ALLOC_TYPE.get(k), v.longValue());
+            ALLOC_TYPE.forEach((type, name) -> {
+                detail.put(type + "/" + name, USAGE_STATS[type].longValue());
             });
+
+            detail.put("-1/unknown", UNKNOWN_USAGE_STATS.longValue());
             this.usedMemory = policy.isDirect() ? metric.usedDirectMemory() : metric.usedHeapMemory();
             this.allocatedMemory = this.detail.values().stream().mapToLong(Long::longValue).sum();
         }
