@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
+import static com.automq.stream.s3.wal.util.WALBlockDeviceChannel.MAX_RATE_LIMIT_BYTES_PER_MS;
 import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 
 /**
@@ -131,7 +132,7 @@ public interface WALChannel {
         private int initBufferSize;
         private int maxBufferSize;
         private boolean recoveryMode;
-        private long writeBandwidthLimit = Long.MAX_VALUE;
+        private long writeBandwidthLimit = MAX_RATE_LIMIT_BYTES_PER_MS * 1000L;
 
         private WALChannelBuilder(String path) {
             this.path = path;
