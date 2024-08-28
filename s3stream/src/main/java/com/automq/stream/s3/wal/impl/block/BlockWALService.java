@@ -557,7 +557,7 @@ public class BlockWALService implements WriteAheadLog {
         // wal io request limit
         private int writeRateLimit = 3000;
         // wal io bandwidth limit
-        private long writeBandwidthLimit = 500 * 1024 * 1024; // 500MB/s
+        private long writeBandwidthLimit = 1024 * 1024 * 1024; // 1GB/s
         private int nodeId = NOOP_NODE_ID;
         private long epoch = NOOP_EPOCH;
         private boolean recoveryMode = false;
