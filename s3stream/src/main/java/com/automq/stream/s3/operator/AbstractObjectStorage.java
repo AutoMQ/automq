@@ -599,7 +599,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             mergedReadTask -> {
                 String path = mergedReadTask.objectPath;
                 if (LOGGER.isDebugEnabled()) {
-                    LOGGER.debug("[S3BlockCache] merge read: {}, {}-{}, size: {}, sparsityRate: {}",
+                    LOGGER.debug("merge read: {}, {}-{}, size: {}, sparsityRate: {}",
                         path, mergedReadTask.start, mergedReadTask.end,
                         mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
                 }
@@ -631,7 +631,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             // the end may be RANGE_READ_TO_END (-1) for read all object
             long dataSize = buf.readableBytes();
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("[S3BlockCache] getObject from path: {}, {}-{}, size: {}, cost: {} ms",
+                LOGGER.debug("GetObject for object {} [{}, {}), size: {}, cost: {} ms",
                     path, start, end, dataSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             }
             S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, dataSize);
