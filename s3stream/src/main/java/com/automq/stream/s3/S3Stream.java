@@ -216,18 +216,18 @@ public class S3Stream implements Stream {
                         totalSize += recordBatch.rawPayload().remaining();
                     }
                     final long finalSize = totalSize;
-                    if (context.readOptions().fastRead()) {
-                        networkOutboundLimiter.consume(ThrottleStrategy.BYPASS, totalSize);
-                        NetworkStats.getInstance().fastReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
-                    } else {
-                        TimerUtil consumeTimer = new TimerUtil();
-                        return networkOutboundLimiter.consume(ThrottleStrategy.CATCH_UP, totalSize).thenApply(nil -> {
-                            NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, ThrottleStrategy.CATCH_UP)
-                                .record(consumeTimer.elapsedAs(TimeUnit.NANOSECONDS));
+                    long start = System.nanoTime();
+                    ThrottleStrategy throttleStrategy = context.readOptions().fastRead() ? ThrottleStrategy.TAIL : ThrottleStrategy.CATCH_UP;
+                    return networkOutboundLimiter.consume(throttleStrategy, totalSize).thenApply(nil -> {
+                        NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, throttleStrategy)
+                            .record(TimerUtil.timeElapsedSince(start, TimeUnit.NANOSECONDS));
+                        if (context.readOptions().fastRead()) {
+                            NetworkStats.getInstance().fastReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
+                        } else {
                             NetworkStats.getInstance().slowReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
-                            return rs;
-                        });
-                    }
+                        }
+                        return rs;
+                    });
                 }
                 return CompletableFuture.completedFuture(rs);
             });
@@ -246,7 +246,7 @@ public class S3Stream implements Stream {
                     for (RecordBatch recordBatch : rs.recordBatchList()) {
                         totalSize += recordBatch.rawPayload().remaining();
                     }
-                    LOGGER.debug("[S3BlockCache] fetch data, stream={}, {}-{}, total bytes: {}, cost={}ms", streamId,
+                    LOGGER.debug("fetch data, stream={}, {}-{}, total bytes: {}, cost={}ms", streamId,
                         startOffset, endOffset, totalSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                 }
                 pendingFetches.remove(retCf);
