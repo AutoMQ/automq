@@ -138,13 +138,18 @@ public class ControllerObjectManager implements ObjectManager {
                 .map(s -> Convertor.toStreamObjectInRequest(s, version.get())).collect(Collectors.toList()))
             .setCompactedObjectIds(commitStreamSetObjectRequest.getCompactedObjectIds())
             .setFailoverMode(failoverMode);
-        if (commitStreamSetObjectRequest.getObjectId() != NOOP_OBJECT_ID && commitStreamSetObjectRequest.getAttributes() == ObjectAttributes.UNSET.attributes()) {
-            FutureUtil.failedFuture(new IllegalArgumentException("[BUG]attributes must be set"));
+
+        int attribute = commitStreamSetObjectRequest.getAttributes();
+        if (commitStreamSetObjectRequest.getObjectId() != NOOP_OBJECT_ID) {
+            if (attribute == ObjectAttributes.UNSET.attributes()) {
+                return FutureUtil.failedFuture(new IllegalArgumentException("[BUG]attributes must be set"));
+            }
+            if (!version.get().isObjectAttributesSupported() && attribute != 0) {
+                return FutureUtil.failedFuture(new UnsupportedOperationException("The attribute is set to " + commitStreamSetObjectRequest.getAttributes()));
+            }
         }
         if (version.get().isObjectAttributesSupported()) {
-            request.setAttributes(commitStreamSetObjectRequest.getAttributes());
-        } else if (commitStreamSetObjectRequest.getAttributes() != 0) {
-            return FutureUtil.failedFuture(new UnsupportedOperationException("The attribute is set to " + commitStreamSetObjectRequest.getAttributes()));
+            request.setAttributes(attribute);
         }
         WrapRequest req = new WrapRequest() {
             @Override
