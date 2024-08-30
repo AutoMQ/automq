@@ -69,9 +69,10 @@ public class CompositeObject {
     public static CompositeObjectReader reader(S3ObjectMetadata objectMetadata, ObjectStorage objectStorage) {
         return new CompositeObjectReader(
             objectMetadata,
-            (metadata, startOffset, endOffset) ->
+            (readOptions, metadata, startOffset, endOffset) ->
                 objectStorage.rangeRead(
-                    new ObjectStorage.ReadOptions().bucket(metadata.bucket()), metadata.key(), startOffset, endOffset)
+                    new ObjectStorage.ReadOptions().bucket(metadata.bucket()).throttleStrategy(readOptions.throttleStrategy()),
+                    metadata.key(), startOffset, endOffset)
         );
     }
 

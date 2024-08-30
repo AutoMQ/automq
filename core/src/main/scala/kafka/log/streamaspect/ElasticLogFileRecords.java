@@ -300,11 +300,19 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     public Iterable<RecordBatch> batchesFrom(final long startOffset) {
-        return () -> batchIterator(startOffset, Long.MAX_VALUE, Integer.MAX_VALUE);
+        return batchesFrom(FetchContext.DEFAULT, startOffset);
+    }
+
+    public Iterable<RecordBatch> batchesFrom(FetchContext fetchContext, final long startOffset) {
+        return () -> batchIterator(fetchContext, startOffset, Long.MAX_VALUE, Integer.MAX_VALUE);
     }
 
     protected RecordBatchIterator<RecordBatch> batchIterator(long startOffset, long maxOffset, int fetchSize) {
-        LogInputStream<RecordBatch> inputStream = new StreamSegmentInputStream(this, startOffset, maxOffset, fetchSize);
+        return batchIterator(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize);
+    }
+
+    protected RecordBatchIterator<RecordBatch> batchIterator(FetchContext fetchContext, long startOffset, long maxOffset, int fetchSize) {
+        LogInputStream<RecordBatch> inputStream = new StreamSegmentInputStream(fetchContext, this, startOffset, maxOffset, fetchSize);
         return new RecordBatchIterator<>(inputStream);
     }
 
@@ -394,11 +402,12 @@ public class ElasticLogFileRecords implements AutoCloseable {
         private final Queue<RecordBatch> remaining = new LinkedList<>();
         private final int maxSize;
         private final long endOffset;
+        private final FetchContext fetchContext;
         private long nextFetchOffset;
         private int readSize;
 
-
-        public StreamSegmentInputStream(ElasticLogFileRecords elasticLogFileRecords, long startOffset, long maxOffset, int maxSize) {
+        public StreamSegmentInputStream(FetchContext fetchContext, ElasticLogFileRecords elasticLogFileRecords, long startOffset, long maxOffset, int maxSize) {
+            this.fetchContext = fetchContext;
             this.elasticLogFileRecords = elasticLogFileRecords;
             this.maxSize = maxSize;
             this.nextFetchOffset = startOffset - elasticLogFileRecords.baseOffset;
@@ -417,7 +426,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
                     return null;
                 }
                 try {
-                    FetchResult rst = elasticLogFileRecords.streamSlice.fetch(nextFetchOffset, endOffset, Math.min(maxSize - readSize, FETCH_BATCH_SIZE)).get();
+                    FetchResult rst = elasticLogFileRecords.streamSlice.fetch(fetchContext, nextFetchOffset, endOffset, Math.min(maxSize - readSize, FETCH_BATCH_SIZE)).get();
                     rst.recordBatchList().forEach(streamRecord -> {
                         try {
                             ByteBuffer buf = streamRecord.rawPayload();

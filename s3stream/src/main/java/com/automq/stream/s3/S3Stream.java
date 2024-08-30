@@ -217,7 +217,8 @@ public class S3Stream implements Stream {
                     }
                     final long finalSize = totalSize;
                     long start = System.nanoTime();
-                    ThrottleStrategy throttleStrategy = context.readOptions().fastRead() ? ThrottleStrategy.TAIL : ThrottleStrategy.CATCH_UP;
+                    ThrottleStrategy throttleStrategy = context.readOptions().prioritizedRead() ? ThrottleStrategy.BYPASS
+                        : (context.readOptions().fastRead() ? ThrottleStrategy.TAIL : ThrottleStrategy.CATCH_UP);
                     return networkOutboundLimiter.consume(throttleStrategy, totalSize).thenApply(nil -> {
                         NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, throttleStrategy)
                             .record(TimerUtil.timeElapsedSince(start, TimeUnit.NANOSECONDS));
