@@ -38,6 +38,13 @@
 ![](https://img.shields.io/badge/Tencent-%E2%9C%85-lightgray?logo=tencentqq)
 </div>
 
+## 📺 Youtube Video Introduction
+<b>Watch this video to learn what is AutoMQ. ⬇️ ⬇️ ⬇️ </b>
+
+[![What is AutoMQ?](https://img.youtube.com/vi/3JQrclZlie4/0.jpg)](https://www.youtube.com/watch?v=3JQrclZlie4)
+
+
+
 ## 🍵 AutoMQ vs Other Streaming Platforms
 
 <table>
@@ -199,7 +206,14 @@ The business edition of AutoMQ provides a powerful and easy-to-use control plane
 
 > You can check the difference between the community and business editions [here](https://www.automq.com/product).
 
-![](docs/images/automq_dashboard.gif)
+
+<b>Watch the following video and refer to our [docs](https://docs.automq.com/automq-cloud/getting-started/install-byoc-environment/aws/install-env-via-terraform-module) to see how to deploy AutoMQ Business Edition with 2 weeks free license for PoC.</b>
+
+<b> ⬇️ ⬇️ ⬇️ </b>
+
+[![Deploy AutoMQ Business Edition with Terraform](https://img.youtube.com/vi/O40zp81x97w/0.jpg)](https://www.youtube.com/watch?v=O40zp81x97w)
+
+
 
 ### Free trial of AutoMQ Business Edition
 To allow users to experience the capabilities of the AutoMQ business edition without any barriers, click [here](https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud) to apply for a no-obligation cluster trial, and note `AutoMQ Cloud Free Trial` in the message input box. We will immediately initialize an AutoMQ Cloud control panel for you soon in the cloud and give you the address of the control panel. Then, you can use the control panel to create a AutoMQ cluster or perform operations like scale in/out. 
