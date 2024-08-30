@@ -21,14 +21,14 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-@Timeout(30)
+@Timeout(60)
 public class AsyncNetworkBandwidthLimiterTest {
 
     @Test
     public void testByPassConsume() {
         AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 10, 5000);
         CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.BYPASS, 1);
-        Assertions.assertEquals(8, bucket.getAvailableTokens());
+        Assertions.assertEquals(9, bucket.getAvailableTokens());
         Assertions.assertTrue(cf.isDone());
     }
 
@@ -49,7 +49,7 @@ public class AsyncNetworkBandwidthLimiterTest {
     public void testThrottleConsume() {
         AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 10, 1000);
         CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 1);
-        Assertions.assertEquals(8, bucket.getAvailableTokens());
+        Assertions.assertEquals(9, bucket.getAvailableTokens());
         Assertions.assertTrue(cf.isDone());
     }
 
@@ -76,8 +76,7 @@ public class AsyncNetworkBandwidthLimiterTest {
         Assertions.assertEquals(-10, bucket.getAvailableTokens());
         CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
             Assertions.assertNull(e);
-            Assertions.assertEquals(-2, bucket.getAvailableTokens());
-            Assertions.assertEquals(0, bucket.getAvailableExtraTokens());
+            Assertions.assertEquals(0, bucket.getAvailableTokens());
         });
         cf.join();
         result.join();
@@ -92,8 +91,7 @@ public class AsyncNetworkBandwidthLimiterTest {
         bucket.consume(ThrottleStrategy.CATCH_UP, 10);
         CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
             Assertions.assertNull(e);
-            Assertions.assertEquals(75, bucket.getAvailableTokens());
-            Assertions.assertEquals(0, bucket.getAvailableExtraTokens());
+            Assertions.assertEquals(95, bucket.getAvailableTokens());
         });
         cf.join();
         result.join();
@@ -110,8 +108,7 @@ public class AsyncNetworkBandwidthLimiterTest {
         bucket.consume(ThrottleStrategy.CATCH_UP, 10);
         CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
             Assertions.assertNull(e);
-            Assertions.assertTrue(bucket.getAvailableTokens() < 0);
-            Assertions.assertEquals(5, bucket.getAvailableExtraTokens());
+            Assertions.assertTrue(bucket.getAvailableTokens() >= 0);
         });
         result.join();
     }
@@ -126,25 +123,28 @@ public class AsyncNetworkBandwidthLimiterTest {
         CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.COMPACTION, 100);
         CompletableFuture<Void> result = cf2.whenComplete((v, e) -> {
             Assertions.assertNull(e);
-            Assertions.assertEquals(-30, bucket.getAvailableTokens());
-            Assertions.assertEquals(0, bucket.getAvailableExtraTokens());
+            Assertions.assertEquals(-10, bucket.getAvailableTokens());
             Assertions.assertFalse(cf.isDone());
         });
-        cf.join();
         result.join();
+        CompletableFuture<Void> result2 = cf.whenComplete((v, e) -> {
+            Assertions.assertNull(e);
+            Assertions.assertEquals(10, bucket.getAvailableTokens());
+        });
+        result2.join();
     }
 
     @Test
     public void testThrottleConsumeWithPriority1() {
         AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 1024 * 1024, 1000);
         bucket.consume(ThrottleStrategy.BYPASS, 1024 * 1024);
+        Assertions.assertEquals(0, bucket.getAvailableTokens());
+        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.CATCH_UP, 5 * 1024 * 1024);
         CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.COMPACTION, 5 * 1024 * 1024);
-        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.COMPACTION, 5 * 1024 * 1024);
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
             Assertions.assertNull(e);
-            Assertions.assertTrue(bucket.getAvailableTokens() > -1024 * 1024);
-            Assertions.assertEquals(0, bucket.getAvailableExtraTokens());
+            Assertions.assertEquals(0, bucket.getAvailableTokens());
             Assertions.assertFalse(cf2.isDone());
             Assertions.assertTrue(timerUtil.elapsedAs(TimeUnit.SECONDS) <= 6);
         });

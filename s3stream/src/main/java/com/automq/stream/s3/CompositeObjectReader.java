@@ -71,8 +71,8 @@ public class CompositeObjectReader implements ObjectReader {
     }
 
     @Override
-    public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
-        return basicObjectInfo().thenCompose(info -> read0(info, block));
+    public CompletableFuture<DataBlockGroup> read(ReadOptions readOptions, DataBlockIndex block) {
+        return basicObjectInfo().thenCompose(info -> read0(readOptions, info, block));
     }
 
     public ObjectReader retain() {
@@ -149,9 +149,9 @@ public class CompositeObjectReader implements ObjectReader {
         });
     }
 
-    private CompletableFuture<DataBlockGroup> read0(BasicObjectInfo info, DataBlockIndex block) {
+    private CompletableFuture<DataBlockGroup> read0(ReadOptions readOptions, BasicObjectInfo info, DataBlockIndex block) {
         S3ObjectMetadata linkObjectMetadata = ((BasicObjectInfoExt) info).objectsBlock().getLinkObjectMetadata(block.id());
-        return rangeReader.rangeRead(linkObjectMetadata, block.startPosition(), block.endPosition()).thenApply(buf -> {
+        return rangeReader.rangeRead(readOptions, linkObjectMetadata, block.startPosition(), block.endPosition()).thenApply(buf -> {
             ByteBuf pooled = ByteBufAlloc.byteBuffer(buf.readableBytes(), BLOCK_CACHE);
             pooled.writeBytes(buf);
             buf.release();

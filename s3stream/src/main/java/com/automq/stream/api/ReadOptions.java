@@ -18,6 +18,7 @@ public class ReadOptions {
 
     private boolean fastRead;
     private boolean pooledBuf;
+    private boolean prioritizedRead;
 
     public static Builder builder() {
         return new Builder();
@@ -29,6 +30,10 @@ public class ReadOptions {
 
     public boolean pooledBuf() {
         return pooledBuf;
+    }
+
+    public boolean prioritizedRead() {
+        return prioritizedRead;
     }
 
     public static class Builder {
@@ -47,6 +52,11 @@ public class ReadOptions {
          */
         public Builder pooledBuf(boolean pooledBuf) {
             options.pooledBuf = pooledBuf;
+            return this;
+        }
+
+        public Builder prioritizedRead(boolean prioritizedRead) {
+            options.prioritizedRead = prioritizedRead;
             return this;
         }
 

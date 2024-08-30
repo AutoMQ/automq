@@ -14,6 +14,7 @@ package kafka.log.streamaspect;
 import com.automq.stream.DefaultRecordBatch;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
@@ -201,10 +202,13 @@ public class MetaStream implements Stream {
         long startOffset = startOffset();
         long endOffset = nextOffset();
         long pos = startOffset;
+        FetchContext fetchContext = new FetchContext();
+        ReadOptions readOptions = ReadOptions.builder().prioritizedRead(true).build();
+        fetchContext.setReadOptions(readOptions);
 
         try {
             while (pos < endOffset) {
-                FetchResult fetchRst = fetch(pos, endOffset, 64 * 1024).get();
+                FetchResult fetchRst = fetch(fetchContext, pos, endOffset, 64 * 1024).get();
                 for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
                     try {
                         MetaKeyValue kv = MetaKeyValue.decode(Unpooled.copiedBuffer(context.rawPayload()).nioBuffer());

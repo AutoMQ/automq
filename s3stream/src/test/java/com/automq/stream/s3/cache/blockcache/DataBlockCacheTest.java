@@ -69,13 +69,13 @@ import static org.mockito.Mockito.when;
         DataBlockIndex idx4 = new DataBlockIndex(STREAM_ID, 90, 10, 1, 3000, 500);
 
         CompletableFuture<ObjectReader.DataBlockGroup> readCf1 = new CompletableFuture<>();
-        when(objectReader.read(eq(idx1))).thenReturn(readCf1);
+        when(objectReader.read(any(), eq(idx1))).thenReturn(readCf1);
         CompletableFuture<ObjectReader.DataBlockGroup> readCf2 = new CompletableFuture<>();
-        when(objectReader.read(eq(idx2))).thenReturn(readCf2);
+        when(objectReader.read(any(), eq(idx2))).thenReturn(readCf2);
         CompletableFuture<ObjectReader.DataBlockGroup> readCf3 = new CompletableFuture<>();
-        when(objectReader.read(eq(idx3))).thenReturn(readCf3);
+        when(objectReader.read(any(), eq(idx3))).thenReturn(readCf3);
         CompletableFuture<ObjectReader.DataBlockGroup> readCf4 = new CompletableFuture<>();
-        when(objectReader.read(eq(idx4))).thenReturn(readCf4);
+        when(objectReader.read(any(), eq(idx4))).thenReturn(readCf4);
 
         AtomicReference<CompletableFuture<DataBlock>> cf1 = new AtomicReference<>();
         AtomicReference<CompletableFuture<DataBlock>> cf2 = new AtomicReference<>();
@@ -88,7 +88,7 @@ import static org.mockito.Mockito.when;
             cf4.set(cache.getBlock(objectReader, idx4));
 
             // the #getBlock(..., idx4) will be blocked by the sizeLimiter
-            verify(objectReader, times(3)).read(any());
+            verify(objectReader, times(3)).read(any(), any());
             assertEquals(1024 - (100 + 200 + 1500), cache.sizeLimiter.permits());
             assertEquals(4, cache.caches[0].blocks.size());
 
@@ -107,13 +107,13 @@ import static org.mockito.Mockito.when;
             assertEquals(1024 - (200 + 1500), cache.sizeLimiter.permits());
             assertEquals(3, cache.caches[0].blocks.size());
             // the #getBlock(..., idx4) is still blocked, cause of idx2 + idx3 = 1200 > 1024
-            verify(objectReader, times(3)).read(any());
+            verify(objectReader, times(3)).read(any(), any());
 
             readCf2.complete(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(idx2)));
             readCf3.complete(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(idx3)));
 
         }).get();
-        verify(objectReader, timeout(1000).times(4)).read(any());
+        verify(objectReader, timeout(1000).times(4)).read(any(), any());
         eventLoops[0].submit(() -> {
             assertTrue(cf2.get().isDone());
             assertTrue(cf3.get().isDone());
@@ -137,9 +137,9 @@ import static org.mockito.Mockito.when;
     public void testGetBlock_unread() throws ExecutionException, InterruptedException, TimeoutException {
         ObjectReader objectReader = mock(ObjectReader.class);
         doAnswer(args -> {
-            DataBlockIndex idx = args.getArgument(0);
+            DataBlockIndex idx = args.getArgument(1);
             return CompletableFuture.completedFuture(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(idx)));
-        }).when(objectReader).read(any());
+        }).when(objectReader).read(any(), any());
         when(objectReader.metadata()).thenReturn(new S3ObjectMetadata(233L, 100000, S3ObjectType.STREAM));
 
         AtomicReference<CompletableFuture<?>> cf1 = new AtomicReference<>();
@@ -175,9 +175,9 @@ import static org.mockito.Mockito.when;
     public void testGetBlock_evictExpired() throws ExecutionException, InterruptedException, TimeoutException {
         ObjectReader objectReader = mock(ObjectReader.class);
         doAnswer(args -> {
-            DataBlockIndex idx = args.getArgument(0);
+            DataBlockIndex idx = args.getArgument(1);
             return CompletableFuture.completedFuture(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(idx)));
-        }).when(objectReader).read(any());
+        }).when(objectReader).read(any(), any());
         when(objectReader.metadata()).thenReturn(new S3ObjectMetadata(233L, 100000, S3ObjectType.STREAM));
 
         AtomicReference<CompletableFuture<?>> cf1 = new AtomicReference<>();

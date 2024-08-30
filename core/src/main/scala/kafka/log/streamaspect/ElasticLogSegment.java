@@ -11,6 +11,8 @@
 
 package kafka.log.streamaspect;
 
+import com.automq.stream.api.ReadOptions;
+import com.automq.stream.s3.context.FetchContext;
 import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
@@ -485,10 +487,13 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         long timeIndexCheckpoint = timeIndex.loadLastEntry().offset;
         // exclusive recover from the checkpoint
         OptionalLong txnIndexCheckpoint = txnIndex.loadLastOffset();
+        FetchContext fetchContext = new FetchContext();
+        ReadOptions readOptions = ReadOptions.builder().prioritizedRead(true).build();
+        fetchContext.setReadOptions(readOptions);
         try {
             long recoverPoint = Math.max(producerStateManager.mapEndOffset(), baseOffset);
             LOGGER.info("{} [UNCLEAN_SHUTDOWN] recover range [{}, {})", logIdent, recoverPoint, log.nextOffset());
-            for (RecordBatch batch : log.batchesFrom(recoverPoint)) {
+            for (RecordBatch batch : log.batchesFrom(fetchContext, recoverPoint)) {
                 batch.ensureValid();
                 // The max timestamp is exposed at the batch level, so no need to iterate the records
                 if (batch.maxTimestamp() > maxTimestampSoFar()) {

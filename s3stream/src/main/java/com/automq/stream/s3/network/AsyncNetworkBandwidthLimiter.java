@@ -18,7 +18,6 @@ import com.automq.stream.utils.LogContext;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import org.slf4j.Logger;
 
-import java.time.Duration;
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Queue;
@@ -33,7 +32,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private static final Logger LOGGER = new LogContext().logger(AsyncNetworkBandwidthLimiter.class);
-    private static final float DEFAULT_EXTRA_TOKEN_RATIO = 0.1f;
     private static final long MAX_TOKEN_PART_SIZE = 1024 * 1024;
     private final Lock lock = new ReentrantLock();
     private final Condition condition = lock.newCondition();
@@ -43,12 +41,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private final Queue<BucketItem> queuedCallbacks;
     private final Type type;
     private final long tokenSize;
-    private final long extraTokenSize;
-    private final long refillIntervalMs;
     private long availableTokens;
-    private long availableExtraTokens;
-    private boolean tokenExhausted = false;
-    private long tokenExhaustedDuration = 0;
 
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs) {
         this(type, tokenSize, refillIntervalMs, tokenSize);
@@ -57,12 +50,9 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     @SuppressWarnings("this-escape")
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokens) {
         this.type = type;
-        long tokenPerSec = tokenSize * 1000 / (long) refillIntervalMs;
-        this.extraTokenSize = (long) (tokenPerSec * DEFAULT_EXTRA_TOKEN_RATIO);
-        this.tokenSize = (long) (tokenSize * (1 - DEFAULT_EXTRA_TOKEN_RATIO));
+        this.tokenSize = tokenSize;
         this.availableTokens = this.tokenSize;
         this.maxTokens = maxTokens;
-        this.refillIntervalMs = refillIntervalMs;
         this.queuedCallbacks = new PriorityQueue<>();
         this.refillThreadPool = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"));
         this.callbackThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("callback-thread"));
@@ -81,18 +71,15 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
                     condition.await();
                 }
                 while (ableToConsume()) {
-                    BucketItem head = queuedCallbacks.poll();
+                    BucketItem head = queuedCallbacks.peek();
                     if (head == null) {
                         break;
                     }
                     long size = Math.min(head.size, MAX_TOKEN_PART_SIZE);
-                    if (availableExtraTokens > 0) {
-                        // consume extra tokens
-                        availableExtraTokens = Math.max(-maxTokens, availableExtraTokens - size);
-                    } else {
-                        reduceToken(size);
+                    reduceToken(size);
+                    if (head.complete(size)) {
+                        queuedCallbacks.poll();
                     }
-                    head.complete();
                 }
             } catch (InterruptedException ignored) {
                 break;
@@ -106,17 +93,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         lock.lock();
         try {
             availableTokens = Math.min(availableTokens + this.tokenSize, this.maxTokens);
-            boolean isExhausted = isExhausted();
-            if (tokenExhausted && isExhausted) {
-                tokenExhaustedDuration += refillIntervalMs;
-            } else {
-                tokenExhaustedDuration = 0;
-            }
-            tokenExhausted = isExhausted;
-            if (Duration.ofMillis(tokenExhaustedDuration).compareTo(Duration.ofSeconds(1)) >= 0) {
-                availableExtraTokens = Math.min(availableExtraTokens + extraTokenSize, extraTokenSize);
-                tokenExhaustedDuration = 0;
-            }
             condition.signalAll();
         } finally {
             lock.unlock();
@@ -127,14 +103,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         if (queuedCallbacks.isEmpty()) {
             return false;
         }
-        return availableTokens > 0 || availableExtraTokens > 0;
-    }
-
-    private boolean isExhausted() {
-        if (queuedCallbacks.isEmpty()) {
-            return false;
-        }
-        return availableTokens <= 0;
+        return availableTokens > 0;
     }
 
     public void shutdown() {
@@ -150,15 +119,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         lock.lock();
         try {
             return availableTokens;
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    public long getAvailableExtraTokens() {
-        lock.lock();
-        try {
-            return availableExtraTokens;
         } finally {
             lock.unlock();
         }
@@ -191,7 +151,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         } else {
             lock.lock();
             try {
-                if (availableTokens < 0 || !queuedCallbacks.isEmpty()) {
+                if (availableTokens <= 0 || !queuedCallbacks.isEmpty()) {
                     queuedCallbacks.offer(new BucketItem(throttleStrategy, size, cf));
                     condition.signalAll();
                 } else {
@@ -228,7 +188,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         }
     }
 
-    private class BucketItem implements Comparable<BucketItem> {
+    private static class BucketItem implements Comparable<BucketItem> {
         private final ThrottleStrategy strategy;
         private final CompletableFuture<Void> cf;
         private final long timestamp;
@@ -249,13 +209,13 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             return Long.compare(strategy.priority(), o.strategy.priority());
         }
 
-        public void complete() {
-            size -= Math.min(size, MAX_TOKEN_PART_SIZE);
+        public boolean complete(long completeSize) {
+            size -= completeSize;
             if (size <= 0) {
                 cf.complete(null);
-                return;
+                return true;
             }
-            queuedCallbacks.offer(this);
+            return false;
         }
 
         @Override
