@@ -17,6 +17,7 @@ import com.automq.stream.s3.cache.LRUCache;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
@@ -152,7 +153,7 @@ public class DataBlockCache {
                 DataBlock newDataBlock = new DataBlock(objectId, dataBlockIndex, this, time);
                 dataBlock = newDataBlock;
                 blocks.put(key, newDataBlock);
-                read(objectReader, newDataBlock, eventLoop);
+                read(options, objectReader, newDataBlock, eventLoop);
             }
             lru.touchIfExist(key);
             CompletableFuture<DataBlock> cf = new CompletableFuture<>();
@@ -178,10 +179,11 @@ public class DataBlockCache {
             return cf;
         }
 
-        private void read(ObjectReader reader, DataBlock dataBlock, EventLoop eventLoop) {
+        private void read(GetOptions getOptions, ObjectReader reader, DataBlock dataBlock, EventLoop eventLoop) {
+            ThrottleStrategy throttleStrategy = getOptions.readahead ? ThrottleStrategy.CATCH_UP : ThrottleStrategy.BYPASS;
             reader.retain();
             boolean acquired = sizeLimiter.acquire(dataBlock.dataBlockIndex().size(), () -> {
-                reader.read(dataBlock.dataBlockIndex()).whenCompleteAsync((rst, ex) -> {
+                reader.read(new ObjectReader.ReadOptions().throttleStrategy(throttleStrategy), dataBlock.dataBlockIndex()).whenCompleteAsync((rst, ex) -> {
                     StorageOperationStats.getInstance().blockCacheReadS3Throughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
                     reader.release();
                     DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());

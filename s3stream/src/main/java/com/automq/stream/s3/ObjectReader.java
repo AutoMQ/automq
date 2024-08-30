@@ -66,7 +66,11 @@ public interface ObjectReader extends AsyncMeasurable {
         return basicObjectInfo().thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
     }
 
-    CompletableFuture<DataBlockGroup> read(DataBlockIndex block);
+    default CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
+        return read(ReadOptions.DEFAULT, block);
+    }
+
+    CompletableFuture<DataBlockGroup> read(ReadOptions readOptions, DataBlockIndex block);
 
     ObjectReader retain();
 
@@ -77,7 +81,11 @@ public interface ObjectReader extends AsyncMeasurable {
     CompletableFuture<Integer> size();
 
     interface RangeReader {
-        CompletableFuture<ByteBuf> rangeRead(S3ObjectMetadata metadata, long start, long end);
+        default CompletableFuture<ByteBuf> rangeRead(S3ObjectMetadata metadata, long start, long end) {
+            return rangeRead(ReadOptions.DEFAULT, metadata, start, end);
+        }
+
+        CompletableFuture<ByteBuf> rangeRead(ReadOptions readOptions, S3ObjectMetadata metadata, long start, long end);
     }
 
     class DefaultObjectReader implements ObjectReader {
@@ -120,9 +128,10 @@ public interface ObjectReader extends AsyncMeasurable {
             return basicObjectInfo().thenApply(basicObjectInfo -> basicObjectInfo.indexBlock().find(streamId, startOffset, endOffset, maxBytes));
         }
 
-        public CompletableFuture<DataBlockGroup> read(DataBlockIndex block) {
+        public CompletableFuture<DataBlockGroup> read(ReadOptions readOptions, DataBlockIndex block) {
             CompletableFuture<ByteBuf> rangeReadCf = objectStorage.rangeRead(
-                new ReadOptions().throttleStrategy(ThrottleStrategy.CATCH_UP).bucket(metadata.bucket()), metadata.key(),
+                new ObjectStorage.ReadOptions().throttleStrategy(readOptions.throttleStrategy).bucket(metadata.bucket()),
+                metadata.key(),
                 block.startPosition(),
                 block.endPosition()
             );
@@ -140,7 +149,8 @@ public interface ObjectReader extends AsyncMeasurable {
         }
 
         private void asyncGetBasicObjectInfo0(long startPosition, boolean firstAttempt) {
-            CompletableFuture<ByteBuf> cf = objectStorage.rangeRead(new ReadOptions().bucket(metadata.bucket()), metadata.key(), startPosition, metadata.objectSize());
+            CompletableFuture<ByteBuf> cf = objectStorage.rangeRead(new ObjectStorage.ReadOptions().bucket(metadata.bucket()),
+                metadata.key(), startPosition, metadata.objectSize());
             cf.thenAccept(buf -> {
                 try {
                     BasicObjectInfo basicObjectInfo = BasicObjectInfo.parse(buf, metadata);
@@ -610,6 +620,20 @@ public interface ObjectReader extends AsyncMeasurable {
 
         public void release() {
             buf.release();
+        }
+    }
+
+    class ReadOptions {
+        public static final ReadOptions DEFAULT = new ReadOptions();
+        private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
+
+        public ReadOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
+            this.throttleStrategy = throttleStrategy;
+            return this;
+        }
+
+        public ThrottleStrategy throttleStrategy() {
+            return throttleStrategy;
         }
     }
 
