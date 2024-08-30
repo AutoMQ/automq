@@ -54,14 +54,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.automq.stream.s3.ByteBufAlloc.POOLED_MEMORY_RECORDS;
 import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class ElasticLogFileRecords implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
-    private static final int POOLED_MEMORY_RECORDS = 30;
-    static {
-        ByteBufAlloc.registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
-    }
 
     protected final AtomicInteger size;
     // only used for recover
