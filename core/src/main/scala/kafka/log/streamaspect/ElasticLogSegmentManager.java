@@ -11,15 +11,15 @@
 
 package kafka.log.streamaspect;
 
+import com.automq.stream.api.Stream;
 import com.automq.stream.utils.Threads;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.slf4j.Logger;
@@ -27,8 +27,12 @@ import org.slf4j.LoggerFactory;
 
 public class ElasticLogSegmentManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogSegmentManager.class);
-    private final ConcurrentMap<Long, ElasticLogSegment> segments = new ConcurrentHashMap<>();
-    private final ConcurrentMap<Long, ElasticLogSegment> inflightCleanedSegments = new ConcurrentHashMap<>();
+    /**
+     * The lock of {@link #segments} and {@link #inflightCleanedSegments}
+     */
+    private final ReentrantLock segmentLock = new ReentrantLock();
+    private final Map<Long, ElasticLogSegment> segments = new HashMap<>();
+    private final Map<Long, ElasticLogSegment> inflightCleanedSegments = new HashMap<>();
     private final EventListener segmentEventListener = new EventListener();
     final AtomicReference<LogOffsetMetadata> offsetUpperBound = new AtomicReference<>();
 
@@ -43,12 +47,22 @@ public class ElasticLogSegmentManager {
     }
 
     public void put(long baseOffset, ElasticLogSegment segment) {
-        segments.put(baseOffset, segment);
-        inflightCleanedSegments.remove(baseOffset, segment);
+        segmentLock.lock();
+        try {
+            segments.put(baseOffset, segment);
+            inflightCleanedSegments.remove(baseOffset, segment);
+        } finally {
+            segmentLock.unlock();
+        }
     }
 
     public void putInflightCleaned(long baseOffset, ElasticLogSegment segment) {
-        inflightCleanedSegments.put(baseOffset, segment);
+        segmentLock.lock();
+        try {
+            inflightCleanedSegments.put(baseOffset, segment);
+        } finally {
+            segmentLock.unlock();
+        }
     }
 
     public CompletableFuture<Void> create(long baseOffset, ElasticLogSegment segment) {
@@ -57,14 +71,24 @@ public class ElasticLogSegmentManager {
             LOGGER.info("{} try create new segment with offset $baseOffset, wait last segment meta persisted.", logIdent);
             Threads.sleep(1L);
         }
-        segments.put(baseOffset, segment);
+        segmentLock.lock();
+        try {
+            segments.put(baseOffset, segment);
+        } finally {
+            segmentLock.unlock();
+        }
         return asyncPersistLogMeta().thenAccept(nil -> {
             offsetUpperBound.set(null);
         });
     }
 
     public ElasticLogSegment remove(long baseOffset) {
-        return segments.remove(baseOffset);
+        segmentLock.lock();
+        try {
+            return segments.remove(baseOffset);
+        } finally {
+            segmentLock.unlock();
+        }
     }
 
     public ElasticLogMeta persistLogMeta() {
@@ -76,11 +100,29 @@ public class ElasticLogSegmentManager {
     }
 
     public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta() {
-        ElasticLogMeta meta = logMeta();
+        // take a snapshot of streams, segments and inflightCleanedSegments
+        Map<String, Stream> streams = streamManager.streams();
+        List<ElasticStreamSegmentMeta> segmentList;
+        List<ElasticStreamSegmentMeta> inflightSegmentList;
+        segmentLock.lock();
+        try {
+            segmentList = segments.values().stream()
+                .sorted()
+                .map(ElasticLogSegment::meta)
+                .collect(Collectors.toList());
+            inflightSegmentList = inflightCleanedSegments.values().stream()
+                .map(ElasticLogSegment::meta)
+                .collect(Collectors.toList());
+        } finally {
+            segmentLock.unlock();
+        }
+
+        ElasticLogMeta meta = logMeta(streams, segmentList);
         MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta));
         return metaStream.append(kv).thenApply(nil -> {
             LOGGER.info("{} save log meta {}", logIdent, meta);
-            trimStream(meta);
+            Map<String, Long> trimOffsets = calTrimOffset(streams, segmentList, inflightSegmentList);
+            trimStream(trimOffsets);
             return meta;
         }).whenComplete((nil, ex) -> {
             if (ex != null) {
@@ -89,35 +131,49 @@ public class ElasticLogSegmentManager {
         });
     }
 
-    private void trimStream(ElasticLogMeta meta) {
+    private void trimStream(Map<String, Long> trimOffsets) {
         try {
-            trimStream0(meta);
+            trimStream0(trimOffsets);
         } catch (Throwable e) {
             LOGGER.error("{} trim stream failed", logIdent, e);
         }
     }
 
-    private void trimStream0(ElasticLogMeta meta) {
-        Map<String, Long> streamMinOffsets = new HashMap<>();
-        inflightCleanedSegments.forEach((offset, segment) -> {
-            ElasticStreamSegmentMeta segMeta = segment.meta();
-            calStreamsMinOffset(streamMinOffsets, segMeta);
-        });
-        for (ElasticStreamSegmentMeta segMeta : meta.getSegmentMetas()) {
-            calStreamsMinOffset(streamMinOffsets, segMeta);
-        }
-
+    private void trimStream0(Map<String, Long> trimOffsets) {
         streamManager.streams().forEach((streamName, stream) -> {
-            var minOffset = streamMinOffsets.get(streamName);
-            // if minOffset == null, then stream is not used by any segment, should trim it to end.
-            minOffset = Optional.ofNullable(minOffset).orElse(stream.nextOffset());
-            if (minOffset > stream.startOffset()) {
-                stream.trim(minOffset);
+            Long trimOffset = trimOffsets.get(streamName);
+            if (trimOffset != null && trimOffset > stream.startOffset()) {
+                stream.trim(trimOffset);
             }
         });
     }
 
-    private void calStreamsMinOffset(Map<String, Long> streamMinOffsets, ElasticStreamSegmentMeta segMeta) {
+    /**
+     * Calculate trim offset of each stream.
+     *
+     * @return stream trim offset map, key is stream name, value is trim offset.
+     */
+    private static Map<String, Long> calTrimOffset(Map<String, Stream> streams,
+        List<ElasticStreamSegmentMeta> segments, List<ElasticStreamSegmentMeta> inflightSegments) {
+        Map<String, Long> streamMinOffsets = calStreamsMinOffset(segments, inflightSegments);
+        Map<String, Long> trimOffsets = new HashMap<>();
+        streams.forEach((streamName, stream) -> {
+            // if minOffset == null, then stream is not used by any segment, should trim it to end.
+            long minOffset = streamMinOffsets.getOrDefault(streamName, stream.nextOffset());
+            trimOffsets.put(streamName, minOffset);
+        });
+        return trimOffsets;
+    }
+
+    private static Map<String, Long> calStreamsMinOffset(List<ElasticStreamSegmentMeta> segments,
+        List<ElasticStreamSegmentMeta> inflightSegments) {
+        Map<String, Long> streamMinOffsets = new HashMap<>();
+        inflightSegments.forEach(segMeta -> calStreamsMinOffset(streamMinOffsets, segMeta));
+        segments.forEach(segMeta -> calStreamsMinOffset(streamMinOffsets, segMeta));
+        return streamMinOffsets;
+    }
+
+    private static void calStreamsMinOffset(Map<String, Long> streamMinOffsets, ElasticStreamSegmentMeta segMeta) {
         streamMinOffsets.compute("log" + segMeta.streamSuffix(), (k, v) -> Math.min(segMeta.log().start(), Optional.ofNullable(v).orElse(Long.MAX_VALUE)));
         streamMinOffsets.compute("tim" + segMeta.streamSuffix(), (k, v) -> Math.min(segMeta.time().start(), Optional.ofNullable(v).orElse(Long.MAX_VALUE)));
         streamMinOffsets.compute("txn" + segMeta.streamSuffix(), (k, v) -> Math.min(segMeta.txn().start(), Optional.ofNullable(v).orElse(Long.MAX_VALUE)));
@@ -127,12 +183,11 @@ public class ElasticLogSegmentManager {
         return segmentEventListener;
     }
 
-    public ElasticLogMeta logMeta() {
+    public static ElasticLogMeta logMeta(Map<String, Stream> streams, List<ElasticStreamSegmentMeta> segmentList) {
         ElasticLogMeta elasticLogMeta = new ElasticLogMeta();
         Map<String, Long> streamMap = new HashMap<>();
-        streamManager.streams().forEach((streamName, stream) -> streamMap.put(streamName, stream.streamId()));
+        streams.forEach((streamName, stream) -> streamMap.put(streamName, stream.streamId()));
         elasticLogMeta.setStreamMap(streamMap);
-        List<ElasticStreamSegmentMeta> segmentList = segments.values().stream().sorted().map(ElasticLogSegment::meta).collect(Collectors.toList());
         elasticLogMeta.setSegmentMetas(segmentList);
         return elasticLogMeta;
     }
