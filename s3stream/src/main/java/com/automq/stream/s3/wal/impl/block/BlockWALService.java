@@ -417,16 +417,14 @@ public class BlockWALService implements WriteAheadLog {
     public AppendResult append(TraceContext context, ByteBuf buf, int crc) throws OverCapacityException {
         // get current method name
         TraceContext.Scope scope = TraceUtils.createAndStartSpan(context, "BlockWALService::append");
-        final long startTime = System.nanoTime();
         try {
             AppendResult result = append0(buf, crc);
             result.future().whenComplete((nil, ex) -> TraceUtils.endSpan(scope, ex));
             return result;
-        } catch (OverCapacityException ex) {
+        } catch (Throwable t) {
             buf.release();
-            StorageOperationStats.getInstance().appendWALFullStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
-            TraceUtils.endSpan(scope, ex);
-            throw ex;
+            TraceUtils.endSpan(scope, t);
+            throw t;
         }
     }
 
