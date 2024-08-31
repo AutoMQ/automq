@@ -104,28 +104,30 @@ public class ElasticLogSegmentManager {
     }
 
     public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta() {
-        // take a snapshot of streams, segments and inflightCleanedSegments
-        Map<String, Stream> streams = streamManager.streams();
-        List<ElasticStreamSegmentMeta> segmentList;
-        List<ElasticStreamSegmentMeta> inflightSegmentList;
+        ElasticLogMeta meta;
+        Map<String, Long> trimOffsets;
+
         segmentLock.lock();
         try {
-            segmentList = segments.values().stream()
+            Map<String, Stream> streams = streamManager.streams();
+            List<ElasticStreamSegmentMeta> segmentList = segments.values().stream()
                 .sorted()
                 .map(ElasticLogSegment::meta)
                 .collect(Collectors.toList());
-            inflightSegmentList = inflightCleanedSegments.values().stream()
+            List<ElasticStreamSegmentMeta> inflightSegmentList = inflightCleanedSegments.values().stream()
                 .map(ElasticLogSegment::meta)
                 .collect(Collectors.toList());
+
+            meta = logMeta(streams, segmentList);
+            // We calculate trimOffsets in the lock to ensure that no more new stream with data is created during the calculation.
+            trimOffsets = calTrimOffset(streams, segmentList, inflightSegmentList);
         } finally {
             segmentLock.unlock();
         }
 
-        ElasticLogMeta meta = logMeta(streams, segmentList);
         MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta));
         return metaStream.append(kv).thenApply(nil -> {
             LOGGER.info("{} save log meta {}", logIdent, meta);
-            Map<String, Long> trimOffsets = calTrimOffset(streams, segmentList, inflightSegmentList);
             trimStream(trimOffsets);
             return meta;
         }).whenComplete((nil, ex) -> {
