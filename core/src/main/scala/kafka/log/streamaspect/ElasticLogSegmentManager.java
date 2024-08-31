@@ -159,25 +159,21 @@ public class ElasticLogSegmentManager {
      */
     private static Map<String, Long> calTrimOffset(Map<String, Stream> streams,
         Iterator<ElasticStreamSegmentMeta> segments, Iterator<ElasticStreamSegmentMeta> inflightSegments) {
-        Map<String, Long> streamMinOffsets = calStreamsMinOffset(segments, inflightSegments);
         Map<String, Long> trimOffsets = new HashMap<>();
+
+        inflightSegments.forEachRemaining(segMeta -> calTrimOffset(trimOffsets, segMeta));
+        segments.forEachRemaining(segMeta -> calTrimOffset(trimOffsets, segMeta));
+
         streams.forEach((streamName, stream) -> {
-            // if minOffset == null, then stream is not used by any segment, should trim it to end.
-            long minOffset = streamMinOffsets.getOrDefault(streamName, stream.nextOffset());
-            trimOffsets.put(streamName, minOffset);
+            // if we haven't seen a stream before, then it is not used by any segment, and should be trimmed to the end.
+            if (!trimOffsets.containsKey(streamName)) {
+                trimOffsets.put(streamName, stream.nextOffset());
+            }
         });
         return trimOffsets;
     }
 
-    private static Map<String, Long> calStreamsMinOffset(Iterator<ElasticStreamSegmentMeta> segments,
-        Iterator<ElasticStreamSegmentMeta> inflightSegments) {
-        Map<String, Long> streamMinOffsets = new HashMap<>();
-        inflightSegments.forEachRemaining(segMeta -> calStreamsMinOffset(streamMinOffsets, segMeta));
-        segments.forEachRemaining(segMeta -> calStreamsMinOffset(streamMinOffsets, segMeta));
-        return streamMinOffsets;
-    }
-
-    private static void calStreamsMinOffset(Map<String, Long> streamMinOffsets, ElasticStreamSegmentMeta segMeta) {
+    private static void calTrimOffset(Map<String, Long> streamMinOffsets, ElasticStreamSegmentMeta segMeta) {
         streamMinOffsets.compute("log" + segMeta.streamSuffix(), (k, v) -> Math.min(segMeta.log().start(), Optional.ofNullable(v).orElse(Long.MAX_VALUE)));
         streamMinOffsets.compute("tim" + segMeta.streamSuffix(), (k, v) -> Math.min(segMeta.time().start(), Optional.ofNullable(v).orElse(Long.MAX_VALUE)));
         streamMinOffsets.compute("txn" + segMeta.streamSuffix(), (k, v) -> Math.min(segMeta.txn().start(), Optional.ofNullable(v).orElse(Long.MAX_VALUE)));
