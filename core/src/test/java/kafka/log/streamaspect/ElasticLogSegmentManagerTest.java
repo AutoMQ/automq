@@ -96,6 +96,8 @@ public class ElasticLogSegmentManagerTest {
             listener.onEvent(i, ElasticLogSegmentEvent.SEGMENT_DELETE);
         }
 
+        latch.await();
+
         // expect the first and the tail should call the persist method.
         verify(manager, times(2)).asyncPersistLogMeta();
 
@@ -103,8 +105,6 @@ public class ElasticLogSegmentManagerTest {
         for (long i = 0; i < 10L; i++) {
             assertTrue(removedSegmentId.contains(i));
         }
-
-        latch.await();
 
         // the request can be finished.
         CompletableFuture<ElasticLogMeta> pendingPersistentMetaCf = listener.getPendingPersistentMetaCf();
