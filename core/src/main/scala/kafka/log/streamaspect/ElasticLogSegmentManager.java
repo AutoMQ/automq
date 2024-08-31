@@ -14,6 +14,7 @@ package kafka.log.streamaspect;
 import com.automq.stream.api.Stream;
 import com.automq.stream.utils.Threads;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -110,13 +111,14 @@ public class ElasticLogSegmentManager {
                 .sorted()
                 .map(ElasticLogSegment::meta)
                 .collect(Collectors.toList());
-            List<ElasticStreamSegmentMeta> inflightSegmentList = inflightCleanedSegments.values().stream()
-                .map(ElasticLogSegment::meta)
-                .collect(Collectors.toList());
 
             meta = logMeta(streams, segmentList);
             // We calculate trimOffsets in the lock to ensure that no more new stream with data is created during the calculation.
-            trimOffsets = calTrimOffset(streams, segmentList, inflightSegmentList);
+            trimOffsets = calTrimOffset(
+                streams,
+                segmentList.iterator(),
+                inflightCleanedSegments.values().stream().map(ElasticLogSegment::meta).iterator()
+            );
         } finally {
             segmentLock.unlock();
         }
@@ -156,7 +158,7 @@ public class ElasticLogSegmentManager {
      * @return stream trim offset map, key is stream name, value is trim offset.
      */
     private static Map<String, Long> calTrimOffset(Map<String, Stream> streams,
-        List<ElasticStreamSegmentMeta> segments, List<ElasticStreamSegmentMeta> inflightSegments) {
+        Iterator<ElasticStreamSegmentMeta> segments, Iterator<ElasticStreamSegmentMeta> inflightSegments) {
         Map<String, Long> streamMinOffsets = calStreamsMinOffset(segments, inflightSegments);
         Map<String, Long> trimOffsets = new HashMap<>();
         streams.forEach((streamName, stream) -> {
@@ -167,11 +169,11 @@ public class ElasticLogSegmentManager {
         return trimOffsets;
     }
 
-    private static Map<String, Long> calStreamsMinOffset(List<ElasticStreamSegmentMeta> segments,
-        List<ElasticStreamSegmentMeta> inflightSegments) {
+    private static Map<String, Long> calStreamsMinOffset(Iterator<ElasticStreamSegmentMeta> segments,
+        Iterator<ElasticStreamSegmentMeta> inflightSegments) {
         Map<String, Long> streamMinOffsets = new HashMap<>();
-        inflightSegments.forEach(segMeta -> calStreamsMinOffset(streamMinOffsets, segMeta));
-        segments.forEach(segMeta -> calStreamsMinOffset(streamMinOffsets, segMeta));
+        inflightSegments.forEachRemaining(segMeta -> calStreamsMinOffset(streamMinOffsets, segMeta));
+        segments.forEachRemaining(segMeta -> calStreamsMinOffset(streamMinOffsets, segMeta));
         return streamMinOffsets;
     }
 
