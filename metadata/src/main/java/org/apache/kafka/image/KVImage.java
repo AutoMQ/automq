@@ -18,11 +18,11 @@
 package org.apache.kafka.image;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.image.writer.ImageWriter;
@@ -32,6 +32,8 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 public final class KVImage {
 
     public static final KVImage EMPTY = new KVImage(Collections.emptyMap());
+
+    private static final int DEFAULT_MAX_BATCH_SIZE = 1024 * 1024;
 
     private final Map<String, ByteBuffer> kv;
 
@@ -44,13 +46,27 @@ public final class KVImage {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        List<KeyValue> kvs = kv.entrySet().stream().map(kv -> {
-            return new KeyValue()
-                .setKey(kv.getKey())
-                .setValue(kv.getValue().array());
-        }).collect(Collectors.toList());
-        writer.write(new ApiMessageAndVersion(new KVRecord()
-            .setKeyValues(kvs), (short) 0));
+        List<KeyValue> kvs = new ArrayList<>();
+        int accumulatedSize = 0;
+        kv.entrySet().iterator().next();
+        for (Map.Entry<String, ByteBuffer> entry : kv.entrySet()) {
+            String key = entry.getKey();
+            ByteBuffer value = entry.getValue();
+            kvs.add(new KeyValue()
+                .setKey(key)
+                .setValue(value.array()));
+            accumulatedSize += key.length() + value.array().length;
+            if (accumulatedSize >= DEFAULT_MAX_BATCH_SIZE) {
+                writer.write(new ApiMessageAndVersion(new KVRecord()
+                    .setKeyValues(kvs), (short) 0));
+                kvs.clear();
+                accumulatedSize = 0;
+            }
+        }
+        if (!kvs.isEmpty()) {
+            writer.write(new ApiMessageAndVersion(new KVRecord()
+                .setKeyValues(kvs), (short) 0));
+        }
     }
 
     @Override
