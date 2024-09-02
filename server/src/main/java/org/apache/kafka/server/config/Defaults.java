@@ -284,7 +284,7 @@ public class Defaults {
     public static final long S3_STREAM_SET_OBJECT_COMPACTION_STREAM_SPLIT_SIZE = 8 * 1024 * 1024; // 8MB
     public static final int S3_STREAM_SET_OBJECT_COMPACTION_FORCE_SPLIT_MINUTES = 120; // 120min
     public static final int S3_STREAM_SET_OBJECT_COMPACTION_MAX_OBJECT_NUM = 500;
-    public static final int S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT = 100000;
+    public static final int S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT = 20000;
     public static final int S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT = 10000;
     public static final long S3_OBJECT_DELETE_RETENTION_MINUTES = 1; // 1min
     public static final long S3_NETWORK_BASELINE_BANDWIDTH = 100 * 1024 * 1024; // 100MB/s
