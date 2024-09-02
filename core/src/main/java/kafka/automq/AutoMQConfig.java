@@ -117,7 +117,7 @@ public class AutoMQConfig {
 
     public static final String S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT_CONFIG = "s3.max.stream.num.per.stream.set.object";
     public static final String S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT_DOC = "The maximum number of streams allowed in single stream set object";
-    public static final int S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT = 100000;
+    public static final int S3_MAX_STREAM_NUM_PER_STREAM_SET_OBJECT = 20000;
 
     public static final String S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_CONFIG = "s3.max.stream.object.num.per.commit";
     public static final String S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_DOC = "The maximum number of stream objects in single commit request";
