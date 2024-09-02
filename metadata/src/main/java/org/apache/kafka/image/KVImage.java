@@ -22,7 +22,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.image.writer.ImageWriter;
@@ -44,13 +43,11 @@ public final class KVImage {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        List<KeyValue> kvs = kv.entrySet().stream().map(kv -> {
-            return new KeyValue()
-                .setKey(kv.getKey())
-                .setValue(kv.getValue().array());
-        }).collect(Collectors.toList());
-        writer.write(new ApiMessageAndVersion(new KVRecord()
-            .setKeyValues(kvs), (short) 0));
+        kv.forEach((k, v) -> {
+            List<KeyValue> kvs = List.of(new KeyValue().setKey(k).setValue(v.array()));
+            writer.write(new ApiMessageAndVersion(new KVRecord()
+                .setKeyValues(kvs), (short) 0));
+        });
     }
 
     @Override
