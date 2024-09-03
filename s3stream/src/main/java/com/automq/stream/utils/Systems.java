@@ -31,4 +31,12 @@ public class Systems {
         }
         return Integer.parseInt(value);
     }
+
+    public static boolean getEnvBool(String name, boolean defaultValue) {
+        String value = System.getenv(name);
+        if (StringUtils.isBlank(value)) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value);
+    }
 }

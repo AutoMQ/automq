@@ -28,6 +28,10 @@ public class ObjectUtils {
         ObjectUtils.namespace = namespace;
     }
 
+    public static String getNamespace() {
+        return namespace;
+    }
+
     public static String genMetaStreamKvPrefix(String topic) {
         return namespace + "/" + topic + "/";
     }

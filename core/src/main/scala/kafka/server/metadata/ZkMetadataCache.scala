@@ -40,6 +40,7 @@ import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{AbstractControlRequest, ApiVersionsResponse, MetadataResponse, UpdateMetadataRequest}
 import org.apache.kafka.common.security.auth.SecurityProtocol
+import org.apache.kafka.metadata.BrokerRegistration
 import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
 
@@ -717,6 +718,14 @@ class ZkMetadataCache(
   // AutoMQ inject start
   override def autoMQVersion(): AutoMQVersion = {
     AutoMQVersion.LATEST
+  }
+
+  override def getPartitionLeaderNode(topicName: String, partitionId: Int): BrokerRegistration = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def getNode(nodeId: Int): BrokerRegistration = {
+    throw new UnsupportedOperationException()
   }
   // AutoMQ inject end
 

@@ -119,6 +119,7 @@ object RequestConvertToJson {
       case req: DeleteKVsRequest => DeleteKVsRequestDataJsonConverter.write(req.data, request.version)
       case req: AutomqRegisterNodeRequest => AutomqRegisterNodeRequestDataJsonConverter.write(req.data, request.version)
       case req: AutomqGetNodesRequest => AutomqGetNodesRequestDataJsonConverter.write(req.data, request.version)
+      case req: AutomqZoneRouterRequest => AutomqZoneRouterRequestDataJsonConverter.write(req.data, request.version)
       case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeStreamsRequest => DescribeStreamsRequestDataJsonConverter.write(req.data, request.version)
       // AutoMQ for Kafka inject end
@@ -221,6 +222,7 @@ object RequestConvertToJson {
       case res: AutomqRegisterNodeResponse => AutomqRegisterNodeResponseDataJsonConverter.write(res.data, version)
       case res: AutomqGetNodesResponse => AutomqGetNodesResponseDataJsonConverter.write(res.data, version)
       case res: GetNextNodeIdResponse => GetNextNodeIdResponseDataJsonConverter.write(res.data, version)
+      case res: AutomqZoneRouterResponse => AutomqZoneRouterResponseDataJsonConverter.write(res.data, version)
       case res: DescribeStreamsResponse => DescribeStreamsResponseDataJsonConverter.write(res.data, version)
       // AutoMQ for Kafka inject end
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +

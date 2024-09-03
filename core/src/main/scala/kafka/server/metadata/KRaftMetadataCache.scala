@@ -581,6 +581,23 @@ class KRaftMetadataCache(val brokerId: Int) extends MetadataCache with Logging w
       imageLock.unlock()
     }
   }
+
+  override def getPartitionLeaderNode(topicName: String, partitionId: Int): BrokerRegistration = {
+    val image = _currentImage
+    val topicImage = image.topics().getTopic(topicName)
+    if (topicImage == null) {
+      return null
+    }
+    val partitionImage = topicImage.partitions().get(partitionId)
+    if (partitionImage == null) {
+      return null
+    }
+    image.cluster().broker(partitionImage.leader)
+  }
+
+  override def getNode(nodeId: Int): BrokerRegistration = {
+    _currentImage.cluster().broker(nodeId)
+  }
   // AutoMQ inject end
 
 }
