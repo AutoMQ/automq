@@ -173,12 +173,17 @@ public class DeltaWALUploadTask {
             commitTimestamp = System.currentTimeMillis();
             return objectManager.commitStreamSetObject(request).thenAccept(resp -> {
                 long now = System.currentTimeMillis();
-                LOGGER.info("Upload delta WAL finished, cost {}ms, prepare {}ms, upload {}ms, commit {}ms, rate limiter {}bytes/s",
+                LOGGER.info("Upload delta WAL finished, cost {}ms, prepare {}ms, upload {}ms, commit {}ms, rate limiter {}bytes/s; object id: {}, object size: {}bytes, stream ranges count: {}, stream objects count: {}",
                     now - startTimestamp,
                     uploadTimestamp - startTimestamp,
                     commitTimestamp - uploadTimestamp,
                     now - commitTimestamp,
-                    rate);
+                    (int) rate,
+                    request.getObjectId(),
+                    request.getObjectSize(),
+                    request.getStreamRanges().size(),
+                    request.getStreamObjects().size()
+                );
                 s3ObjectLogger.info("[UPLOAD_WAL] {}", request);
             }).whenComplete((nil, ex) -> limiter.close());
         });
