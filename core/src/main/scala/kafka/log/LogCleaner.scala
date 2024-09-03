@@ -23,6 +23,7 @@ import java.util.Date
 import java.util.concurrent.TimeUnit
 import kafka.common._
 import kafka.log.LogCleaner.{CleanerRecopyPercentMetricName, DeadThreadCountMetricName, MaxBufferUtilizationPercentMetricName, MaxCleanTimeMetricName, MaxCompactionDelayMetricsName}
+import kafka.log.streamaspect.ElasticLogFileRecords.PooledMemoryRecords
 import kafka.log.streamaspect.ElasticLogSegment
 import kafka.server.{BrokerReconfigurable, KafkaConfig}
 import kafka.utils.{Logging, Pool}
@@ -1215,25 +1216,29 @@ private[log] class Cleaner(val id: Int,
     if (fetchDataInfo == null) {
       return
     }
-    for (batch <- fetchDataInfo.records.batches().asScala) {
-      checkDone(topicPartition)
-      val records = MemoryRecords.readableRecords(batch.asInstanceOf[DefaultRecordBatch].buffer())
-      throttler.maybeThrottle(records.sizeInBytes)
-      val result = records.filterTo(topicPartition, logCleanerFilter, writeBuffer, maxLogMessageSize, decompressionBufferSupplier)
+    try {
+      for (batch <- fetchDataInfo.records.batches().asScala) {
+        checkDone(topicPartition)
+        val records = MemoryRecords.readableRecords(batch.asInstanceOf[DefaultRecordBatch].buffer())
+        throttler.maybeThrottle(records.sizeInBytes)
+        val result = records.filterTo(topicPartition, logCleanerFilter, writeBuffer, maxLogMessageSize, decompressionBufferSupplier)
 
-      stats.readMessages(result.messagesRead, result.bytesRead)
-      stats.recopyMessages(result.messagesRetained, result.bytesRetained)
-      // if any messages are to be retained, write them out
-      val outputBuffer = result.outputBuffer
-      if (outputBuffer.position() > 0) {
-        outputBuffer.flip()
-        // Caution: the retained buffer will be reused in next round, so the storage layer need to copy it if cache it in memory.
-        val retained = MemoryRecords.readableRecords(outputBuffer)
-        // it's OK not to hold the Log's lock in this case, because this segment is only accessed by other threads
-        // after `Log.replaceSegments` (which acquires the lock) is called
-        dest.append(result.maxOffset, result.maxTimestamp, result.shallowOffsetOfMaxTimestamp(), retained)
-        throttler.maybeThrottle(outputBuffer.limit())
+        stats.readMessages(result.messagesRead, result.bytesRead)
+        stats.recopyMessages(result.messagesRetained, result.bytesRetained)
+        // if any messages are to be retained, write them out
+        val outputBuffer = result.outputBuffer
+        if (outputBuffer.position() > 0) {
+          outputBuffer.flip()
+          // Caution: the retained buffer will be reused in next round, so the storage layer need to copy it if cache it in memory.
+          val retained = MemoryRecords.readableRecords(outputBuffer)
+          // it's OK not to hold the Log's lock in this case, because this segment is only accessed by other threads
+          // after `Log.replaceSegments` (which acquires the lock) is called
+          dest.append(result.maxOffset, result.maxTimestamp, result.shallowOffsetOfMaxTimestamp(), retained)
+          throttler.maybeThrottle(outputBuffer.limit())
+        }
       }
+    } finally {
+      PooledMemoryRecords.releaseIfPooledResource(fetchDataInfo.records)
     }
   }
 
@@ -1249,41 +1254,46 @@ private[log] class Cleaner(val id: Int,
     if (fetchDataInfo == null) {
       return false
     }
-    for (batch <- fetchDataInfo.records.batches().asScala) {
-      checkDone(topicPartition)
-      throttler.maybeThrottle(batch.sizeInBytes())
 
-      if (batch.isControlBatch) {
-        transactionMetadata.onControlBatchRead(batch)
-        stats.indexMessagesRead(1)
-      } else {
-        val isAborted = transactionMetadata.onBatchRead(batch)
-        if (isAborted) {
-          // If the batch is aborted, do not bother populating the offset map.
-          // Note that abort markers are supported in v2 and above, which means count is defined.
-          stats.indexMessagesRead(batch.countOrNull)
+    try {
+      for (batch <- fetchDataInfo.records.batches().asScala) {
+        checkDone(topicPartition)
+        throttler.maybeThrottle(batch.sizeInBytes())
+
+        if (batch.isControlBatch) {
+          transactionMetadata.onControlBatchRead(batch)
+          stats.indexMessagesRead(1)
         } else {
-          val recordsIterator = batch.streamingIterator(decompressionBufferSupplier)
-          try {
-            for (record <- recordsIterator.asScala) {
-              if (record.hasKey && record.offset >= startOffset) {
-                if (map.size < maxDesiredMapSize)
-                  map.put(record.key, record.offset)
-                else
-                  return true
+          val isAborted = transactionMetadata.onBatchRead(batch)
+          if (isAborted) {
+            // If the batch is aborted, do not bother populating the offset map.
+            // Note that abort markers are supported in v2 and above, which means count is defined.
+            stats.indexMessagesRead(batch.countOrNull)
+          } else {
+            val recordsIterator = batch.streamingIterator(decompressionBufferSupplier)
+            try {
+              for (record <- recordsIterator.asScala) {
+                if (record.hasKey && record.offset >= startOffset) {
+                  if (map.size < maxDesiredMapSize)
+                    map.put(record.key, record.offset)
+                  else
+                    return true
+                }
+                stats.indexMessagesRead(1)
               }
-              stats.indexMessagesRead(1)
-            }
-          } finally recordsIterator.close()
+            } finally recordsIterator.close()
+          }
         }
+
+        if (batch.lastOffset >= startOffset)
+          map.updateLatestOffset(batch.lastOffset)
+
+        val bytesRead = batch.sizeInBytes()
+        stats.indexBytesRead(bytesRead)
+
       }
-
-      if (batch.lastOffset >= startOffset)
-        map.updateLatestOffset(batch.lastOffset)
-
-      val bytesRead = batch.sizeInBytes()
-      stats.indexBytesRead(bytesRead)
-
+    } finally {
+      PooledMemoryRecords.releaseIfPooledResource(fetchDataInfo.records)
     }
 
     // In the case of offsets gap, fast forward to latest expected offset in this segment.

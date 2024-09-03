@@ -3,6 +3,7 @@ package kafka.server.streamaspect
 import com.automq.stream.s3.metrics.TimerUtil
 import com.yammer.metrics.core.Histogram
 import kafka.coordinator.transaction.TransactionCoordinator
+import kafka.log.streamaspect.ElasticLogFileRecords.PooledMemoryRecords
 import kafka.log.streamaspect.ElasticLogManager
 import kafka.metrics.KafkaMetricsUtil
 import kafka.network.RequestChannel
@@ -20,7 +21,7 @@ import org.apache.kafka.common.message.{DeleteTopicsRequestData, FetchResponseDa
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.{NetworkSend, Send}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
-import org.apache.kafka.common.record.{LazyDownConversionRecords, MemoryRecords, MultiRecordsSend, PooledResource, RecordBatch}
+import org.apache.kafka.common.record.{LazyDownConversionRecords, MemoryRecords, MultiRecordsSend, RecordBatch}
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
@@ -609,9 +610,7 @@ class ElasticKafkaApis(
 
       def release(): Unit = {
         partitions.values().forEach(data => {
-          if (data.records() != null && data.records().isInstanceOf[PooledResource]) {
-            data.records().asInstanceOf[PooledResource].release()
-          }
+          PooledMemoryRecords.releaseIfPooledResource(data.records())
         })
       }
 

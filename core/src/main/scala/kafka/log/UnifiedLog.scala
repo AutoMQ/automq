@@ -22,6 +22,7 @@ import kafka.common.{OffsetsOutOfOrderException, UnexpectedAppendOffsetException
 import kafka.log.LocalLog.nextOption
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.ElasticLog
+import kafka.log.streamaspect.ElasticLogFileRecords.PooledMemoryRecords
 import kafka.server.{BrokerTopicMetrics, BrokerTopicStats, RequestLocal}
 import kafka.utils._
 import org.apache.kafka.common.errors._
@@ -1347,11 +1348,14 @@ class UnifiedLog(@volatile var logStartOffset: Long,
         // lookup the position of batch to avoid extra I/O
         // AutoMQ inject start
         // direct access log bypass the index
-        latestTimestampSegment.read(maxTimestampSoFar.offset, 1).records.batches().asScala
+        val records = latestTimestampSegment.read(maxTimestampSoFar.offset, 1).records
+        records.batches().asScala
         // AutoMQ inject end
           .find(_.maxTimestamp() == maxTimestampSoFar.timestamp)
           .flatMap(batch => batch.offsetOfMaxTimestamp().asScala.map(new TimestampAndOffset(batch.maxTimestamp(), _,
             Optional.of[Integer](batch.partitionLeaderEpoch()).filter(_ >= 0))))
+
+        PooledMemoryRecords.releaseIfPooledResource(records)
       } else {
         // We need to search the first segment whose largest timestamp is >= the target timestamp if there is one.
         if (remoteLogEnabled()) {
@@ -2296,6 +2300,8 @@ object UnifiedLog extends Logging {
           val fetchDataInfo = segment.read(startOffset, Int.MaxValue, maxPosition)
           if (fetchDataInfo != null)
             loadProducersFromRecords(producerStateManager, fetchDataInfo.records)
+
+          PooledMemoryRecords.releaseIfPooledResource(fetchDataInfo.records)
         }
       }
       producerStateManager.updateMapEndOffset(lastOffset)

@@ -26,6 +26,7 @@ import kafka.log.stream.s3.telemetry.ContextUtils;
 import kafka.log.stream.s3.telemetry.TelemetryConstants;
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
+import org.apache.kafka.common.record.BaseRecords;
 import org.apache.kafka.common.record.ConvertedRecords;
 import org.apache.kafka.common.record.FileRecords;
 import org.apache.kafka.common.record.LogInputStream;
@@ -390,6 +391,19 @@ public class ElasticLogFileRecords implements AutoCloseable {
 
         public long lastOffset() {
             return lastOffset;
+        }
+
+        public static boolean releaseIfPooledResource(BaseRecords records) {
+            if (records == null) {
+                return false;
+            }
+
+            if (records instanceof PooledResource) {
+                ((PooledResource) records).release();
+                return true;
+            }
+
+            return false;
         }
     }
 

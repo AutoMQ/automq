@@ -4,6 +4,7 @@ import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.utils.FutureUtil
 import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
+import kafka.log.streamaspect.ElasticLogFileRecords.PooledMemoryRecords
 import kafka.log.streamaspect.{ElasticLogManager, PartitionStatusTracker, ReadHint}
 import kafka.log.{LogManager, UnifiedLog}
 import kafka.server.Limiter.Handler
@@ -19,7 +20,7 @@ import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.Errors
-import org.apache.kafka.common.record.{MemoryRecords, PooledRecords, PooledResource}
+import org.apache.kafka.common.record.{MemoryRecords, PooledRecords}
 import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
@@ -742,8 +743,8 @@ class ElasticReplicaManager(
 
     def release(): Unit = {
       result.foreach { case (_, logReadResult) =>
-        if (logReadResult.info != null && logReadResult.info.records != null && logReadResult.info.records.isInstanceOf[PooledResource]) {
-          logReadResult.info.records.asInstanceOf[PooledResource].release()
+        if (logReadResult.info != null) {
+          PooledMemoryRecords.releaseIfPooledResource(logReadResult.info.records)
         }
       }
     }
