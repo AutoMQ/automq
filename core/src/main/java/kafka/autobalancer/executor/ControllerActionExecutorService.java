@@ -12,9 +12,11 @@
 package kafka.autobalancer.executor;
 
 import com.automq.stream.utils.LogContext;
+import java.util.Optional;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.AutoBalancerConstants;
+import kafka.autobalancer.common.Utils;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ApiException;
@@ -27,8 +29,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.KafkaThread;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
-import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
-import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -170,7 +170,11 @@ public class ControllerActionExecutorService implements ActionExecutorService, R
 
     @Override
     public void onBrokerRegister(RegisterBrokerRecord record) {
-        fencedBrokers.remove(record.brokerId());
+        if (Utils.isBrokerFenced(record)) {
+            fencedBrokers.add(record.brokerId());
+        } else {
+            fencedBrokers.remove(record.brokerId());
+        }
     }
 
     @Override
@@ -180,13 +184,14 @@ public class ControllerActionExecutorService implements ActionExecutorService, R
 
     @Override
     public void onBrokerRegistrationChanged(BrokerRegistrationChangeRecord record) {
-        boolean fenced = record.fenced() == BrokerRegistrationFencingChange.FENCE.value()
-                || record.inControlledShutdown() == BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN.value();
-        if (fenced) {
-            fencedBrokers.add(record.brokerId());
-        } else {
-            fencedBrokers.remove(record.brokerId());
-        }
+        Optional<Boolean> isBrokerFenced = Utils.isBrokerFenced(record);
+        isBrokerFenced.ifPresent(isFenced -> {
+            if (isFenced) {
+                fencedBrokers.add(record.brokerId());
+            } else {
+                fencedBrokers.remove(record.brokerId());
+            }
+        });
     }
 
     private static class Task {

@@ -2026,10 +2026,16 @@ public class ReplicationControlManager {
         sortedBrokerIds.sort(Integer::compare);
         Integer prevBrokerId = null;
         for (Integer brokerId : sortedBrokerIds) {
-            if (!clusterControl.brokerRegistrations().containsKey(brokerId)) {
+            BrokerRegistration brokerRegistration = clusterControl.brokerRegistrations().get(brokerId);
+            if (brokerRegistration == null) {
                 throw new InvalidReplicaAssignmentException("The manual partition " +
                     "assignment includes broker " + brokerId + ", but no such broker is " +
                     "registered.");
+            }
+            if (brokerRegistration.fenced()) {
+                throw new InvalidReplicaAssignmentException("The manual partition " +
+                    "assignment includes broker " + brokerId + ", but this broker is " +
+                    "currently fenced.");
             }
             if (brokerId.equals(prevBrokerId)) {
                 throw new InvalidReplicaAssignmentException("The manual partition " +
