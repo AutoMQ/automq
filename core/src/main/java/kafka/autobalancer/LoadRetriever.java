@@ -12,6 +12,7 @@
 package kafka.autobalancer;
 
 import com.automq.stream.utils.LogContext;
+import java.util.Optional;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
 import kafka.autobalancer.common.Utils;
 import kafka.autobalancer.common.types.MetricTypes;
@@ -48,8 +49,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.controller.ControllerRequestContext;
-import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
-import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -203,7 +202,6 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
     public void onBrokerRegister(RegisterBrokerRecord record) {
         lock.lock();
         try {
-            boolean isFenced = record.fenced() || record.inControlledShutdown();
             Set<String> endpoints = new HashSet<>();
             for (RegisterBrokerRecord.BrokerEndpoint endpoint : record.endPoints()) {
                 if ("CONTROLLER".equals(endpoint.name())) {
@@ -218,7 +216,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
                 logger.warn("No valid endpoint found for broker {} of name {}", record.brokerId(), listenerName);
             }
             BrokerEndpoints brokerEndpoints = new BrokerEndpoints(record.brokerId());
-            brokerEndpoints.setFenced(isFenced);
+            brokerEndpoints.setFenced(Utils.isBrokerFenced(record));
             brokerEndpoints.setEndpoints(endpoints);
             this.bootstrapServerMap.put(record.brokerId(), brokerEndpoints);
             cond.signal();
@@ -240,18 +238,19 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
 
     @Override
     public void onBrokerRegistrationChanged(BrokerRegistrationChangeRecord record) {
-        boolean isFenced = record.fenced() == BrokerRegistrationFencingChange.FENCE.value()
-                || record.inControlledShutdown() == BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN.value();
-        lock.lock();
-        try {
-            BrokerEndpoints brokerEndpoints = this.bootstrapServerMap.get(record.brokerId());
-            if (brokerEndpoints != null) {
-                brokerEndpoints.setFenced(isFenced);
+        Optional<Boolean> isBrokerFenced = Utils.isBrokerFenced(record);
+        isBrokerFenced.ifPresent(isFenced -> {
+            lock.lock();
+            try {
+                BrokerEndpoints brokerEndpoints = this.bootstrapServerMap.get(record.brokerId());
+                if (brokerEndpoints != null) {
+                    brokerEndpoints.setFenced(isFenced);
+                }
+                cond.signal();
+            } finally {
+                lock.unlock();
             }
-            cond.signal();
-        } finally {
-            lock.unlock();
-        }
+        });
     }
 
     private boolean hasAvailableBrokerInUse() {
