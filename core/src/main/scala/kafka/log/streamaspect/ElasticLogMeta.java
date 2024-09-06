@@ -84,11 +84,32 @@ public class ElasticLogMeta {
 
     @Override
     public String toString() {
+        StringBuilder sb = new StringBuilder("ElasticLogMeta{");
+        sb.append("streamMap=").append(streamMap).append(", ");
+
         int size = segmentMetas.size();
-        List<ElasticStreamSegmentMeta> lastNthSegmentMetas = segmentMetas.subList(Math.max(0, size - 5), size);
-        return "ElasticLogMeta{" +
-            "streamMap=" + streamMap +
-            ", lastNthSegmentMetas=" + lastNthSegmentMetas +
-            '}';
+        sb.append("segmentMetas.size=").append(size).append(", ");
+        if (size > 10) {
+            List<ElasticStreamSegmentMeta> firstFiveSegmentMetas = segmentMetas.subList(0, 5);
+            List<ElasticStreamSegmentMeta> lastFiveSegmentMetas = segmentMetas.subList(size - 5, size);
+
+            sb.append("segmentMetas=[");
+            for (ElasticStreamSegmentMeta meta : firstFiveSegmentMetas) {
+                sb.append(meta).append(", ");
+            }
+            sb.append("..., ");
+            for (ElasticStreamSegmentMeta meta : lastFiveSegmentMetas) {
+                sb.append(meta).append(", ");
+            }
+            // remove the last ", "
+            sb.setLength(sb.length() - 2);
+            sb.append("]");
+        } else {
+            sb.append("segmentMetas=").append(segmentMetas);
+        }
+
+        sb.append('}');
+        return sb.toString();
     }
+
 }
