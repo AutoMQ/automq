@@ -1267,6 +1267,7 @@ private[kafka] class Processor(
           val remove = connectionId.equals(e.getValue.request.context.connectionId)
           remove
         })
+        channelContexts.remove(connectionId)
         // the channel has been closed by the selector but the quotas still need to be updated
         connectionQuotas.dec(listenerName, InetAddress.getByName(remoteHost))
       } catch {
