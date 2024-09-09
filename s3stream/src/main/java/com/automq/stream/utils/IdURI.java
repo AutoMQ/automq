@@ -123,4 +123,9 @@ public class IdURI {
         }
         return raw.substring(0, raw.length() - 1);
     }
+
+    @Override
+    public String toString() {
+        return encode();
+    }
 }
