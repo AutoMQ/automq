@@ -29,6 +29,11 @@ public class NoopLimiter implements Limiter {
     }
 
     @Override
+    public int maxPermits() {
+        return Integer.MAX_VALUE;
+    }
+
+    @Override
     public int availablePermits() {
         return Integer.MAX_VALUE;
     }
