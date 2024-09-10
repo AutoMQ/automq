@@ -63,6 +63,11 @@ public class FairLimiter implements Limiter {
     }
 
     @Override
+    public int maxPermits() {
+        return maxPermits;
+    }
+
+    @Override
     public int availablePermits() {
         return permits.availablePermits();
     }

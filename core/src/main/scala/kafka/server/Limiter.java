@@ -36,6 +36,13 @@ public interface Limiter {
     Handler acquire(int permit, long timeoutMs) throws InterruptedException;
 
     /**
+     * Return the maximum number of permits that can be acquired at a time.
+     *
+     * @return the maximum number of permits that can be acquired at a time
+     */
+    int maxPermits();
+
+    /**
      * Return the number of permits available.
      *
      * @return the number of permits available
