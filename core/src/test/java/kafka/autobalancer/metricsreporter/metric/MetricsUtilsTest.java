@@ -17,7 +17,11 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
+import com.yammer.metrics.core.MetricName;
+import java.util.Collections;
+import java.util.Map;
 import kafka.autobalancer.common.types.RawMetricTypes;
+import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -34,5 +38,42 @@ public class MetricsUtilsTest {
         Assertions.assertFalse(MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics));
         metrics.put(RawMetricTypes.PARTITION_SIZE, 10);
         Assertions.assertTrue(MetricsUtils.sanityCheckTopicPartitionMetricsCompleteness(metrics));
+    }
+
+    @Test
+    public void testToAutoBalancerMetric() {
+        KafkaMetricsGroup kafkaMetricsGroup = new KafkaMetricsGroup(MetricsUtilsTest.class);
+        long now = System.currentTimeMillis();
+        int brokerId = 0;
+        String rack = "rack-a";
+        MetricName metricName = kafkaMetricsGroup.metricName(MetricsUtils.BYTES_IN_PER_SEC, Map.of(
+            "topic", "topic.with.dot",
+            "partition", "0"
+        ));
+        AutoBalancerMetrics metrics = MetricsUtils.toAutoBalancerMetric(now, brokerId, rack, metricName, 10.5);
+        Assertions.assertNotNull(metrics);
+        Assertions.assertInstanceOf(TopicPartitionMetrics.class, metrics);
+        Assertions.assertEquals(10.5, metrics.getMetricValueMap().get(RawMetricTypes.PARTITION_BYTES_IN));
+        TopicPartitionMetrics topicPartitionMetrics = (TopicPartitionMetrics) metrics;
+        Assertions.assertEquals("topic.with.dot", topicPartitionMetrics.topic());
+        Assertions.assertEquals(0, topicPartitionMetrics.partition());
+
+        metricName = kafkaMetricsGroup.metricName(MetricsUtils.BYTES_IN_PER_SEC, Map.of(
+            "topic", "topic_without_dot",
+            "partition", "1"
+        ));
+        metrics = MetricsUtils.toAutoBalancerMetric(now, brokerId, rack, metricName, 10.5);
+        Assertions.assertNotNull(metrics);
+        Assertions.assertInstanceOf(TopicPartitionMetrics.class, metrics);
+        Assertions.assertEquals(10.5, metrics.getMetricValueMap().get(RawMetricTypes.PARTITION_BYTES_IN));
+        topicPartitionMetrics = (TopicPartitionMetrics) metrics;
+        Assertions.assertEquals("topic_without_dot", topicPartitionMetrics.topic());
+        Assertions.assertEquals(1, topicPartitionMetrics.partition());
+
+        MetricName metricNameWithEmptyTags = kafkaMetricsGroup.metricName(MetricsUtils.BYTES_IN_PER_SEC, Collections.emptyMap());
+        Assertions.assertThrows(IllegalArgumentException.class, () -> MetricsUtils.toAutoBalancerMetric(now, brokerId, rack, metricNameWithEmptyTags, 10.5));
+        Map<String, String> tags = MetricsUtils.mBeanNameToTags(metricNameWithEmptyTags.getMBeanName());
+        Assertions.assertNotNull(tags);
+        Assertions.assertTrue(tags.isEmpty());
     }
 }
