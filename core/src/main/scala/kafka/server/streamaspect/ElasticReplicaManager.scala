@@ -499,6 +499,15 @@ class ElasticReplicaManager(
           responseCallback(partitionToFetchPartitionData)
         }
       } else {
+        // release records before delay fetch
+        logReadResults.foreach { case (_, logReadResult) =>
+          logReadResult.info.records match {
+            case r: PooledResource =>
+              r.release()
+            case _ =>
+          }
+        }
+
         // If there is not enough data to respond and there is no remote data, we will let the fetch request
         // wait for new data.
         val delayedFetch = new DelayedFetch(
@@ -536,7 +545,10 @@ class ElasticReplicaManager(
     def bytesNeed(): Int = {
       // sum the sizes of topics to fetch from fetchInfos
       val bytesNeed = readPartitionInfo.foldLeft(0) { case (sum, (_, partitionData)) => sum + partitionData.maxBytes }
-      if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
+      val bytesNeedFromParam = if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
+
+      // limit the bytes need to half of the maximum permits
+      math.min(bytesNeedFromParam, limiter.maxPermits() / 2)
     }
 
     val handler: Handler = timeoutMs match {
