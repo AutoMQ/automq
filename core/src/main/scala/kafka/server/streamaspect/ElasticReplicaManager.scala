@@ -548,7 +548,7 @@ class ElasticReplicaManager(
       val bytesNeedFromParam = if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
 
       // limit the bytes need to half of the maximum permits
-      math.min(bytesNeedFromParam, limiter.maxPermits() / 2)
+      math.min(bytesNeedFromParam, limiter.maxPermits())
     }
 
     val handler: Handler = timeoutMs match {
