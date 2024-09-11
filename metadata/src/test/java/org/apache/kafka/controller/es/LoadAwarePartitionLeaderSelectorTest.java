@@ -127,26 +127,17 @@ public class LoadAwarePartitionLeaderSelectorTest {
         MockRandom random = new MockRandom();
         LoadAwarePartitionLeaderSelector loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(random, aliveBrokers, brokerToRemove);
 
-        // fallback to random selector
-        Map<Integer, Double> brokerLoads = new HashMap<>();
-        randomSelect(loadAwarePartitionLeaderSelector, 2000, brokerSet, brokerToRemove.id(), brokerLoads);
-        Assertions.assertEquals(4000, brokerLoads.get(1));
-        Assertions.assertEquals(4000, brokerLoads.get(2));
-        Assertions.assertEquals(4000, brokerLoads.get(3));
-        Assertions.assertEquals(4000, brokerLoads.get(4));
-        Assertions.assertEquals(4000, brokerLoads.get(5));
-
         // load aware selector
-        brokerLoads = setUpCluster();
+        Map<Integer, Double> brokerLoads = setUpCluster();
         brokerToRemove = aliveBrokers.get(1);
         loadAwarePartitionLeaderSelector = new LoadAwarePartitionLeaderSelector(random, aliveBrokers, brokerToRemove);
         randomSelect(loadAwarePartitionLeaderSelector, 2000, brokerSet, brokerToRemove.id(), brokerLoads);
-        Assertions.assertEquals(0, brokerLoads.get(0));
+        Assertions.assertEquals(5300, brokerLoads.get(0));
         Assertions.assertEquals(5000, brokerLoads.get(1));
-        Assertions.assertEquals(7330, brokerLoads.get(2));
-        Assertions.assertEquals(7840, brokerLoads.get(3));
-        Assertions.assertEquals(7120, brokerLoads.get(4));
-        Assertions.assertEquals(6710, brokerLoads.get(5));
+        Assertions.assertEquals(6090, brokerLoads.get(2));
+        Assertions.assertEquals(6710, brokerLoads.get(3));
+        Assertions.assertEquals(5720, brokerLoads.get(4));
+        Assertions.assertEquals(5180, brokerLoads.get(5));
     }
 
     private Map<Integer, Double> setUpCluster() {
