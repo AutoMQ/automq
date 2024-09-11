@@ -126,21 +126,21 @@ public class LoadAwarePartitionLeaderSelectorTest {
 
         int brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 0)).orElse(-1);
         Assertions.assertTrue(brokerSet.contains(brokerId));
-        Assertions.assertEquals(2, brokerId);
+        Assertions.assertEquals(0, brokerId);
         brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 1)).orElse(-1);
         Assertions.assertTrue(brokerSet.contains(brokerId));
-        Assertions.assertEquals(2, brokerId);
+        Assertions.assertEquals(0, brokerId);
         brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 2)).orElse(-1);
         Assertions.assertTrue(brokerSet.contains(brokerId));
-        Assertions.assertEquals(3, brokerId);
+        Assertions.assertEquals(0, brokerId);
         brokerId = loadAwarePartitionLeaderSelector.select(new TopicPartition("topic", 3)).orElse(-1);
         Assertions.assertTrue(brokerSet.contains(brokerId));
         Assertions.assertEquals(2, brokerId);
 
-        Assertions.assertNull(brokerLoads.get(0));
+        Assertions.assertEquals(30.0, brokerLoads.get(0));
         Assertions.assertEquals(10.0, brokerLoads.get(1));
-        Assertions.assertEquals(55.0, brokerLoads.get(2));
-        Assertions.assertEquals(45.0, brokerLoads.get(3));
+        Assertions.assertEquals(40.0, brokerLoads.get(2));
+        Assertions.assertEquals(30.0, brokerLoads.get(3));
         Assertions.assertEquals(40.0, brokerLoads.get(4));
         Assertions.assertEquals(50.0, brokerLoads.get(5));
     }

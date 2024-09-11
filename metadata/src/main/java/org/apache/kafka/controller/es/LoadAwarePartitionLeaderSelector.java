@@ -49,9 +49,6 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
         } else {
             this.brokerLoads = new PriorityQueue<>();
             for (BrokerRegistration broker : availableBrokers) {
-                if (!broker.rack().equals(brokerToRemove.rack())) {
-                    continue;
-                }
                 brokerLoads.offer(new BrokerLoad(broker.id(), brokerLoadMap.getOrDefault(broker.id(), 0.0)));
             }
         }
