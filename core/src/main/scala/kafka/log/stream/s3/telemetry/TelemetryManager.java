@@ -195,6 +195,8 @@ public class TelemetryManager {
     }
 
     private void addJvmMetrics() {
+        // use stable jvm metrics to prevent inaccurate cpu load when multiple exporters are configured at the same time
+        System.setProperty("otel.semconv-stability.opt-in", "jvm");
         // JVM metrics
         autoCloseables.addAll(MemoryPools.registerObservers(openTelemetrySdk));
         autoCloseables.addAll(Cpu.registerObservers(openTelemetrySdk));
