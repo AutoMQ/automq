@@ -515,6 +515,9 @@ class ElasticReplicaManager(
           fetchPartitionStatus = fetchPartitionStatus,
           replicaManager = this,
           quota = quota,
+          // Always use the fast fetch limiter in delayed fetch operations, as when a delayed fetch
+          // operation is completed, it only try to read in the fast path.
+          limiter = fastFetchLimiter,
           responseCallback = responseCallback
         )
 
