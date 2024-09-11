@@ -56,7 +56,7 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
         brokerLoads = new WeightedRandomList<>(r);
         for (BrokerRegistration broker : availableBrokers) {
             int brokerId = broker.id();
-            if (!broker.rack().equals(brokerToRemove.rack()) || !brokerLoadMap.containsKey(brokerId)) {
+            if (!brokerLoadMap.containsKey(brokerId)) {
                 continue;
             }
             double load = Math.max(1, brokerLoadMap.get(brokerId));
