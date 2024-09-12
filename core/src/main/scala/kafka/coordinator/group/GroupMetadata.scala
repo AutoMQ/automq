@@ -846,6 +846,7 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
       debug(s"Expired offsets from group '$groupId': ${expiredOffsets.keySet}")
 
     offsets --= expiredOffsets.keySet
+    expiredOffsets.keySet.foreach(removeOffsetMetric)
     expiredOffsets
   }
 
