@@ -112,6 +112,7 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
      */
     @VisibleForTesting
     public static long validRefillPerMs(long writeBandwidthBytePerSecondLimit, int blockSize) {
+        // FIXME: check by bit operation rather than division
         if (WALUtil.BLOCK_SIZE % BANDWIDTH_RATE_LIMIT_SCALE_FACTOR != 0
             || WALUtil.BLOCK_SIZE >> BANDWIDTH_RATE_LIMIT_SCALE_FACTOR <= 0) {
             throw new RuntimeException(String.format("block size %d is not a multiple of %d, update it by jvm option: -D%s=%d",

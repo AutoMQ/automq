@@ -21,13 +21,15 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import io.github.bucket4j.Bucket;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Collection;
-import java.util.LinkedList;
 import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
@@ -55,12 +57,46 @@ public class SlidingWindowService {
      * @see this#pollBlockScheduler
      */
     private static final long MIN_SCHEDULED_WRITE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(1) / 1000;
+
+    /**
+     * Number of threads for writing blocks.
+     */
     private final int ioThreadNums;
+
+    /**
+     * The upper limit of the sliding window.
+     */
     private final long upperLimit;
+    /**
+     * The unit to scale out the sliding window.
+     */
     private final long scaleUnit;
+
+    /**
+     * The soft limit of a block.
+     * "Soft limit" means that the block can exceed this limit there is only one large record in this block.
+     */
     private final long blockSoftLimit;
-    private final long minWriteIntervalNanos;
+
+    /**
+     * The rate limit of write operations.
+     */
+    private final long writeRateLimit;
+    /**
+     * The bucket for rate limiting the write operations.
+     *
+     * @see #writeRateLimit
+     */
+    private final Bucket writeRateBucket;
+
+    /**
+     * The channel to write data to the disk.
+     */
     private final WALChannel walChannel;
+
+    /**
+     * The flusher used to flush the WAL header.
+     */
     private final WALHeaderFlusher walHeaderFlusher;
 
     /**
@@ -100,11 +136,6 @@ public class SlidingWindowService {
      */
     private ScheduledExecutorService pollBlockScheduler;
 
-    /**
-     * The last time when a batch of blocks is written to the disk.
-     */
-    private long lastWriteTimeNanos = 0;
-
     public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit,
         long blockSoftLimit, int writeRateLimit, WALHeaderFlusher flusher) {
         this.walChannel = walChannel;
@@ -112,7 +143,12 @@ public class SlidingWindowService {
         this.upperLimit = upperLimit;
         this.scaleUnit = scaleUnit;
         this.blockSoftLimit = blockSoftLimit;
-        this.minWriteIntervalNanos = TimeUnit.SECONDS.toNanos(1) / writeRateLimit;
+        this.writeRateLimit = writeRateLimit;
+        this.writeRateBucket = Bucket.builder()
+            .addLimit(limit -> limit
+                .capacity(ioThreadNums)
+                .refillGreedy(writeRateLimit, Duration.ofSeconds(1))
+            ).build();
         this.walHeaderFlusher = flusher;
     }
 
@@ -126,7 +162,7 @@ public class SlidingWindowService {
         this.ioExecutor = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(ioThreadNums,
             "block-wal-io-thread", false, LOGGER);
 
-        long scheduledInterval = Math.max(MIN_SCHEDULED_WRITE_INTERVAL_NANOS, minWriteIntervalNanos);
+        long scheduledInterval = Math.max(MIN_SCHEDULED_WRITE_INTERVAL_NANOS, TimeUnit.SECONDS.toNanos(1) / writeRateLimit);
         this.pollBlockScheduler = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("wal-poll-block-thread-%d", false), LOGGER);
         pollBlockScheduler.scheduleAtFixedRate(this::tryWriteBlock, 0, scheduledInterval, TimeUnit.NANOSECONDS);
@@ -203,13 +239,8 @@ public class SlidingWindowService {
     /**
      * Try to acquire the write rate limit.
      */
-    private synchronized boolean tryAcquireWriteRateLimit() {
-        long now = System.nanoTime();
-        if (now - lastWriteTimeNanos < minWriteIntervalNanos) {
-            return false;
-        }
-        lastWriteTimeNanos = now;
-        return true;
+    private boolean tryAcquireWriteRateLimit() {
+        return writeRateBucket.tryConsume(1);
     }
 
     public Lock getBlockLock() {
