@@ -75,8 +75,9 @@ public class OTelMetricsProcessor implements MetricProcessor<Void> {
         metrics.compute(otelMetricName, (k, v) -> {
             if (v == null) {
                 v = new ConcurrentHashMap<>();
+                final Map<MetricName, MetricWrapper> finalV = v;
                 OTelMetricUtils.toMeanGaugeBuilder(meter, name).buildWithCallback(measurement ->
-                    metrics.get(otelMetricName).forEach((metricname, metricWrapper) ->
+                    finalV.forEach((metricname, metricWrapper) ->
                         measurement.record(metricWrapper.mean(), metricWrapper.getAttr())));
                 LOGGER.info("Created delta gauge for metric: {}", otelMetricName);
             }
