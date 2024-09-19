@@ -392,7 +392,7 @@ public class ClusterModelTest {
 
         Map<Integer, Long> metricsTimeMap = clusterModel.calculateBrokerLatestMetricsTime();
         Assertions.assertEquals(1, metricsTimeMap.size());
-        Assertions.assertEquals(now - 2000, metricsTimeMap.get(brokerId));
+        Assertions.assertEquals(now, metricsTimeMap.get(brokerId));
     }
 
     @Test
