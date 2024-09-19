@@ -31,6 +31,15 @@ public abstract class AbstractInstanceUpdater {
     protected Map<Byte, Samples> metricSampleMap = new HashMap<>();
     protected long lastUpdateTimestamp = 0L;
     protected MetricVersion metricVersion = defaultVersion();
+    private final long createTimestamp;
+
+    public AbstractInstanceUpdater() {
+        this.createTimestamp = System.currentTimeMillis();
+    }
+
+    public long createTimestamp() {
+        return createTimestamp;
+    }
 
     public boolean update(Iterable<Map.Entry<Byte, Double>> metricsMap, long time) {
         lock.lock();

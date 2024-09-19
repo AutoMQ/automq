@@ -32,7 +32,7 @@ public class ClusterModel {
     protected final Logger logger;
     private static final String DEFAULT_RACK_ID = "rack_default";
     private static final long DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS = 60000L;
-
+    private static final long DEFAULT_METRICS_DELAY_EXEMPTION_TIME_MS = 60000L;
     /*
      * Guard the access on cluster structure (read/add/remove for brokers, replicas)
      */
@@ -78,6 +78,10 @@ public class ClusterModel {
                 Map<TopicPartition, TopicPartitionReplicaUpdater> replicaMap = entry.getValue();
                 for (Map.Entry<TopicPartition, TopicPartitionReplicaUpdater> tpEntry : replicaMap.entrySet()) {
                     TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
+                    if (System.currentTimeMillis() - replicaUpdater.createTimestamp() <= DEFAULT_METRICS_DELAY_EXEMPTION_TIME_MS) {
+                        // exempt the newly created partition
+                        continue;
+                    }
                     metricsTimeMap.put(brokerId, Math.min(metricsTimeMap.get(brokerId), replicaUpdater.getLastUpdateTimestamp()));
                 }
             }
