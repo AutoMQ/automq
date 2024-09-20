@@ -162,7 +162,7 @@ public class SlidingWindowService {
             ).build();
         this.writeBandwidthBucket = Bucket.builder()
             .addLimit(limit -> limit
-                .capacity(ioThreadNums * WALUtil.bytesToBlocks(blockSoftLimit))
+                .capacity(ioThreadNums * (WALUtil.bytesToBlocks(blockSoftLimit) + 1))
                 .refillGreedy(Math.min(WALUtil.bytesToBlocks(writeBandwidthLimit), MAX_BUCKET_TOKENS_PER_SECOND), Duration.ofSeconds(1))
             ).build()
             .asBlocking();
