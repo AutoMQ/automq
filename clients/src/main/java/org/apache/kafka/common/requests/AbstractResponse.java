@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesResponse;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeResponse;
+import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.requests.s3.CloseStreamsResponse;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectResponse;
 import org.apache.kafka.common.requests.s3.CommitStreamSetObjectResponse;
@@ -309,6 +310,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return AutomqRegisterNodeResponse.parse(responseBuffer, version);
             case AUTOMQ_GET_NODES:
                 return AutomqGetNodesResponse.parse(responseBuffer, version);
+            case AUTOMQ_ZONE_ROUTER:
+                return AutomqZoneRouterResponse.parse(responseBuffer, version);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdResponse.parse(responseBuffer, version);
             case DESCRIBE_STREAMS:

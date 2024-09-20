@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import kafka.automq.zonerouter.{NoopProduceRouter, ProduceRouter}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -38,7 +39,7 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
-import org.apache.kafka.coordinator.group.{CoordinatorRecord, GroupCoordinator, GroupCoordinatorConfig, GroupCoordinatorService, CoordinatorRecordSerde}
+import org.apache.kafka.coordinator.group.{CoordinatorRecord, CoordinatorRecordSerde, GroupCoordinator, GroupCoordinatorConfig, GroupCoordinatorService}
 import org.apache.kafka.image.loader.MetadataLoader
 import org.apache.kafka.image.publisher.MetadataPublisher
 import org.apache.kafka.metadata.{BrokerState, ListenerInfo, VersionRange}
@@ -59,7 +60,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.{Condition, ReentrantLock}
-import java.util.concurrent.{CompletableFuture, ExecutionException, TimeoutException, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ExecutionException, TimeUnit, TimeoutException}
 import scala.collection.Map
 import scala.compat.java8.OptionConverters.RichOptionForJava8
 import scala.jdk.CollectionConverters._
@@ -154,6 +155,8 @@ class BrokerServer(
   var controllerNodeProvider: RaftControllerNodeProvider = _
 
   def metadataLoader: MetadataLoader = sharedServer.loader
+
+  var produceRouter: ProduceRouter = _
   // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -439,6 +442,10 @@ class BrokerServer(
         tokenManager = tokenManager,
         apiVersionManager = apiVersionManager,
         clientMetricsManager = Some(clientMetricsManager))
+
+      // AutoMQ inject start
+      produceRouter = newProduceRouter()
+      // AutoMQ inject end
 
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,
         socketServer.dataPlaneRequestChannel, dataPlaneRequestProcessor, time,
@@ -781,6 +788,7 @@ class BrokerServer(
 
   override def boundPort(listenerName: ListenerName): Int = socketServer.boundPort(listenerName)
 
+  // AutoMQ inject start
   def newNodeToControllerChannelManager(channelName: String, retryTimeout: Int): NodeToControllerChannelManager = {
     new NodeToControllerChannelManagerImpl(
       controllerNodeProvider,
@@ -792,5 +800,12 @@ class BrokerServer(
       retryTimeout
     )
   }
+
+  protected def newProduceRouter(): ProduceRouter = {
+    val produceRouter = new NoopProduceRouter(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
+    dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setProduceRouter(produceRouter)
+    produceRouter
+  }
+  // AutoMQ inject end
 
 }

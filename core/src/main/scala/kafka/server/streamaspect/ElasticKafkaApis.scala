@@ -2,6 +2,7 @@ package kafka.server.streamaspect
 
 import com.automq.stream.s3.metrics.TimerUtil
 import com.yammer.metrics.core.Histogram
+import kafka.automq.zonerouter.{ClientIdMetadata, NoopProduceRouter, ProduceRouter}
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.streamaspect.ElasticLogManager
 import kafka.metrics.KafkaMetricsUtil
@@ -16,14 +17,15 @@ import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.acl.AclOperation.{CLUSTER_ACTION, READ, WRITE}
 import org.apache.kafka.common.errors.{ApiException, UnsupportedCompressionTypeException}
 import org.apache.kafka.common.internals.FatalExitError
-import org.apache.kafka.common.message.{DeleteTopicsRequestData, FetchResponseData}
+import org.apache.kafka.common.message.{DeleteTopicsRequestData, FetchResponseData, MetadataResponseData}
 import org.apache.kafka.common.metrics.Metrics
-import org.apache.kafka.common.network.{NetworkSend, Send}
+import org.apache.kafka.common.network.{ListenerName, NetworkSend, Send}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
-import org.apache.kafka.common.record.{LazyDownConversionRecords, MemoryRecords, MultiRecordsSend, PooledResource, RecordBatch}
+import org.apache.kafka.common.record.{LazyDownConversionRecords, MemoryRecords, MultiRecordsSend, PooledResource, RecordBatch, RecordValidationStats}
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
+import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest
 import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
@@ -43,6 +45,7 @@ import java.util.stream.IntStream
 import scala.annotation.nowarn
 import scala.collection.{Map, Seq, mutable}
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsJava, MapHasAsScala, SeqHasAsJava}
+import scala.jdk.javaapi.OptionConverters
 
 object ElasticKafkaApis {
   val metricsGroup = new KafkaMetricsGroup(this.getClass)
@@ -78,6 +81,8 @@ class ElasticKafkaApis(
 ) extends KafkaApis(requestChannel, metadataSupport, replicaManager, groupCoordinator, txnCoordinator,
   autoTopicCreationManager, brokerId, config, configRepository, metadataCache, metrics, authorizer, quotas,
   fetchManager, brokerTopicStats, clusterId, time, tokenManager, apiVersionManager, clientMetricsManager) {
+
+  private var produceRouter: ProduceRouter = new NoopProduceRouter(this, metadataCache)
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -161,6 +166,7 @@ class ElasticKafkaApis(
       }
 
       request.header.apiKey match {
+        case ApiKeys.AUTOMQ_ZONE_ROUTER => handleZoneRouterRequest(request, requestLocal)
         case ApiKeys.DELETE_TOPICS => maybeForwardTopicDeletionToController(request, handleDeleteTopicsRequest)
         case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
         case _ =>
@@ -187,9 +193,24 @@ class ElasticKafkaApis(
   override def handle(request: RequestChannel.Request,
     requestLocal: RequestLocal): Unit = {
     request.header.apiKey match {
-      case ApiKeys.DELETE_TOPICS | ApiKeys.GET_NEXT_NODE_ID => handleExtensionRequest(request, requestLocal)
+      case ApiKeys.DELETE_TOPICS | ApiKeys.GET_NEXT_NODE_ID | ApiKeys.AUTOMQ_ZONE_ROUTER => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
+  }
+
+  protected def getCurrentLeaderForProduce(tp: TopicPartition, clientIdMetadata: ClientIdMetadata, ln: ListenerName): LeaderNode = {
+    val partitionInfoOrError = replicaManager.getPartitionOrError(tp)
+    val (leaderId, leaderEpoch) = partitionInfoOrError match {
+      case Right(x) =>
+        (x.leaderReplicaIdOpt.getOrElse(-1), x.getLeaderEpoch)
+      case Left(x) =>
+        debug(s"Unable to retrieve local leaderId and Epoch with error $x, falling back to metadata cache")
+        metadataCache.getPartitionInfo(tp.topic, tp.partition) match {
+          case Some(pinfo) => (pinfo.leader(), pinfo.leaderEpoch())
+          case None => (-1, -1)
+        }
+    }
+    LeaderNode(leaderId, leaderEpoch, OptionConverters.toScala(produceRouter.getLeaderNode(leaderId, clientIdMetadata, ln.value())))
   }
 
   /**
@@ -238,6 +259,8 @@ class ElasticKafkaApis(
         }
     })
 
+    val clientIdMetadata = ClientIdMetadata.of(request.header.clientId())
+
     // the callback for sending a produce response
     // The construction of ProduceResponse is able to accept auto-generated protocol data so
     // KafkaApis#handleProduceRequest should apply auto-generated protocol to avoid extra conversion.
@@ -263,7 +286,7 @@ class ElasticKafkaApis(
           if (request.header.apiVersion >= 10) {
             status.error match {
               case Errors.NOT_LEADER_OR_FOLLOWER =>
-                val leaderNode = getCurrentLeader(topicPartition, request.context.listenerName)
+                val leaderNode = getCurrentLeaderForProduce(topicPartition, clientIdMetadata, request.context.listenerName)
                 leaderNode.node.foreach { node =>
                   nodeEndpoints.put(node.id(), node)
                 }
@@ -353,20 +376,27 @@ class ElasticKafkaApis(
       sendResponseCallback(Map.empty)
     else {
       val internalTopicsAllowed = request.header.clientId == AdminUtils.ADMIN_CLIENT_ID
-      val transactionSupportedOperation = if (request.header.apiVersion > 10) genericError else defaultError
+
+      def sendResponseCallbackJava(rst: util.Map[TopicPartition, PartitionResponse]): Unit = {
+        sendResponseCallback(rst.asScala)
+      }
+
+      def processingStatsCallbackJava(rst: util.Map[TopicPartition, RecordValidationStats]): Unit = {
+        processingStatsCallback(rst.asScala)
+      }
 
       def doAppendRecords(): Unit = {
-        // call the replica manager to append messages to the replicas
-        replicaManager.handleProduceAppend(
-          timeout = produceRequest.timeout.toLong,
-          requiredAcks = produceRequest.acks,
-          internalTopicsAllowed = internalTopicsAllowed,
-          transactionalId = produceRequest.transactionalId,
-          entriesPerPartition = authorizedRequestInfo,
-          responseCallback = sendResponseCallback,
-          recordValidationStatsCallback = processingStatsCallback,
-          requestLocal = requestLocal,
-          transactionSupportedOperation = transactionSupportedOperation)
+        produceRouter.handleProduceRequest(
+          request.header.apiVersion,
+          clientIdMetadata,
+          produceRequest.timeout,
+          produceRequest.acks,
+          internalTopicsAllowed,
+          produceRequest.transactionalId,
+          authorizedRequestInfo.asJava,
+          sendResponseCallbackJava,
+          processingStatsCallbackJava,
+        )
 
         // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
         // hence we clear its data here in order to let GC reclaim its memory since it is already appended to log
@@ -377,6 +407,37 @@ class ElasticKafkaApis(
       // TODO: isolate to a separate thread pool to avoid blocking io thread. Connection should be bind to certain async thread to keep the order
       doAppendRecords()
     }
+  }
+
+  def handleZoneRouterRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
+    val zoneRouterRequest = request.body[AutomqZoneRouterRequest]
+    produceRouter.handleZoneRouterRequest(zoneRouterRequest.data().metadata()).thenAccept(response => {
+      requestChannel.sendResponse(request, response, None)
+    }).exceptionally(ex => {
+      handleError(request, ex)
+      null
+    })
+  }
+
+  def handleProduceAppendJavaCompatible(timeout: Long,
+    requiredAcks: Short,
+    internalTopicsAllowed: Boolean,
+    transactionalId: String,
+    entriesPerPartition: util.Map[TopicPartition, MemoryRecords],
+    responseCallback: util.Map[TopicPartition, PartitionResponse] => Unit,
+    recordValidationStatsCallback: util.Map[TopicPartition, RecordValidationStats] => Unit = _ => (),
+    apiVersion: Short): Unit = {
+    val transactionSupportedOperation = if (apiVersion > 10) genericError else defaultError
+    replicaManager.handleProduceAppend(
+      timeout = timeout,
+      requiredAcks = requiredAcks,
+      internalTopicsAllowed = internalTopicsAllowed,
+      transactionalId = transactionalId,
+      entriesPerPartition = entriesPerPartition.asScala,
+      responseCallback = rst => responseCallback.apply(rst.asJava),
+      recordValidationStatsCallback = rst => recordValidationStatsCallback.apply(rst.asJava),
+      transactionSupportedOperation = transactionSupportedOperation
+    )
   }
 
   override def handleFetchRequest(request: RequestChannel.Request): Unit = {
@@ -730,4 +791,13 @@ class ElasticKafkaApis(
     // isolate to a separate thread pool to avoid blocking io thread (PRODUCE use io thread).
     listOffsetHandleExecutor.execute(() => super.handleListOffsetRequest(request))
   }
+
+  override protected def metadataTopicsInterceptor(clientId: String, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
+    produceRouter.handleMetadataResponse(clientId, topics)
+  }
+
+  def setProduceRouter(produceRouter: ProduceRouter): Unit = {
+    this.produceRouter = produceRouter
+  }
+
 }

@@ -980,7 +980,8 @@ class ElasticReplicaManager(
     doPartitionDeletionAsyncLocked(stopPartition, _ => {})
   }
 
-  private def doPartitionDeletionAsyncLocked(stopPartition: StopPartition, callback: TopicPartition => Unit): CompletableFuture[Void] = {
+  private def doPartitionDeletionAsyncLocked(stopPartition: StopPartition,
+    callback: TopicPartition => Unit): CompletableFuture[Void] = {
     val prevOp = partitionOpMap.getOrDefault(stopPartition.topicPartition, CompletableFuture.completedFuture(null))
     val opCf = new CompletableFuture[Void]()
     val tracker = partitionStatusTracker.tracker(stopPartition.topicPartition)
@@ -1021,7 +1022,8 @@ class ElasticReplicaManager(
    * @param delta    The delta to apply.
    * @param newImage The new metadata image.
    */
-  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage, callback: TopicPartition => Unit): CompletableFuture[Void] = {
+  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage,
+    callback: TopicPartition => Unit): CompletableFuture[Void] = {
     // Before taking the lock, compute the local changes
     val localChanges = delta.localChanges(config.nodeId)
     val metadataVersion = newImage.features().metadataVersion()
@@ -1345,7 +1347,7 @@ class ElasticReplicaManager(
   override def verifyTransactionCallbackWrapper[T](
     verification: Verification,
     callback: (RequestLocal, T) => Unit,
-  ):(RequestLocal, T) => Unit = {
+  ): (RequestLocal, T) => Unit = {
     (requestLocal, args) => {
       try {
         callback(requestLocal, args)

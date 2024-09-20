@@ -62,6 +62,10 @@ public class URIUtils {
 
     public static Map<String, List<String>> splitQuery(URI uri) {
         String rawQuery = uri.getRawQuery();
+        return splitQuery(rawQuery);
+    }
+
+    public static Map<String, List<String>> splitQuery(String rawQuery) {
         if (StringUtils.isBlank(rawQuery)) {
             return new HashMap<>();
         }
