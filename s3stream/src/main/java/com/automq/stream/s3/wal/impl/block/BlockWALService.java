@@ -691,7 +691,8 @@ public class BlockWALService implements WriteAheadLog {
                     slidingWindowUpperLimit,
                     slidingWindowScaleUnit,
                     blockSoftLimit,
-                    writeRateLimit,
+                    // leave some buffer for other write operations, for example, flush WAL header caused by trim
+                    Math.max(writeRateLimit - 20, writeRateLimit / 2),
                     blockWALService.flusher()
                 );
             }
