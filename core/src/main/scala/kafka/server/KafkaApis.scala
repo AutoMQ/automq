@@ -126,6 +126,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     case _ => None
   }
 
+
   def close(): Unit = {
     aclApis.close()
     info("Shutdown complete.")
@@ -1413,6 +1414,8 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
     }
 
+    val clientId = request.header.clientId()
+    val listenerName = request.context.listenerName.value()
     requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs =>
        MetadataResponse.prepareResponse(
          requestVersion,
@@ -1420,7 +1423,7 @@ class KafkaApis(val requestChannel: RequestChannel,
          brokers.toList.asJava,
          clusterId,
          controllerId.getOrElse(MetadataResponse.NO_CONTROLLER_ID),
-         completeTopicMetadata.asJava,
+         metadataTopicsInterceptor(clientId, listenerName, completeTopicMetadata.asJava),
          clusterAuthorizedOperations
       ))
   }
@@ -3952,6 +3955,19 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
     request.temporaryMemoryBytes = conversionStats.temporaryMemoryBytes
   }
+
+  // AutoMQ inject start
+  protected def metadataTopicsInterceptor(clientId: String, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
+    topics
+  }
+
+  def handleError(request: RequestChannel.Request, e: Throwable): Unit = {
+    error(s"Unexpected error handling request ${request.requestDesc(true)} " +
+      s"with context ${request.context}", e)
+    requestHelper.handleError(request, e)
+  }
+  // AutoMQ inject start
+
 }
 
 object KafkaApis {

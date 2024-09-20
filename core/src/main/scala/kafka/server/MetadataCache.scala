@@ -22,6 +22,7 @@ import org.apache.kafka.admin.BrokerMetadata
 import org.apache.kafka.common.message.{MetadataResponseData, UpdateMetadataRequestData}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.{Cluster, Node, TopicPartition, Uuid}
+import org.apache.kafka.metadata.BrokerRegistration
 import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
 
@@ -112,7 +113,13 @@ trait MetadataCache {
 
   def features(): FinalizedFeatures
 
+  // AutoMQ inject start
   def autoMQVersion(): AutoMQVersion
+
+  def getPartitionLeaderNode(topicName: String, partitionId: Int): BrokerRegistration
+
+  def getNode(nodeId: Int): BrokerRegistration
+  // AutoMQ inject end
 }
 
 object MetadataCache {
