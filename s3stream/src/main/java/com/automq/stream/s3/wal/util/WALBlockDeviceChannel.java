@@ -16,14 +16,10 @@ import com.automq.stream.s3.wal.exception.WALNotInitializedException;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOLib;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectIOUtils;
 import com.automq.stream.thirdparty.moe.cnkirito.kdio.DirectRandomAccessFile;
-import com.google.common.annotations.VisibleForTesting;
-import io.github.bucket4j.BlockingBucket;
-import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.slf4j.Logger;
@@ -35,10 +31,6 @@ import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 public class WALBlockDeviceChannel extends AbstractWALChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALBlockDeviceChannel.class);
     private static final String CHECK_DIRECT_IO_AVAILABLE_FORMAT = "%s.check_direct_io_available";
-    public static final long MAX_RATE_LIMIT_BYTES_PER_MS = 1_000_000L;
-    // the write size is expected to be at least BLOCK_SIZE (4096)
-    // use scale when acquire bandwidth rate limiter.
-    public static final long BANDWIDTH_RATE_LIMIT_SCALE_FACTOR = 2;
     final String path;
     final long capacityWant;
     final boolean recoveryMode;
@@ -67,16 +59,12 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
         }
     };
 
-    private final long writeBandwidthLimit;
-    private final BlockingBucket bucket;
-
     public WALBlockDeviceChannel(String path, long capacityWant) {
-        this(path, capacityWant, 0, 0, false,
-            MAX_RATE_LIMIT_BYTES_PER_MS * 1000L);
+        this(path, capacityWant, 0, 0, false);
     }
 
     public WALBlockDeviceChannel(String path, long capacityWant, int initTempBufferSize, int maxTempBufferSize,
-        boolean recoveryMode, long writeBandwidthBytePerSecondLimit) {
+        boolean recoveryMode) {
         this.path = path;
         this.recoveryMode = recoveryMode;
         if (recoveryMode) {
@@ -100,43 +88,7 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
             throw new RuntimeException(String.format("block size %d is not a multiple of %d, update it by jvm option: -D%s=%d",
                 WALUtil.BLOCK_SIZE, blockSize, WALUtil.BLOCK_SIZE_PROPERTY, blockSize));
         }
-
-        this.writeBandwidthLimit = writeBandwidthBytePerSecondLimit;
-        this.bucket = buildBandWidthRateLimiter(writeBandwidthBytePerSecondLimit, blockSize).asBlocking();
         this.directIOLib = lib;
-    }
-
-    /**
-     * bucket4j limit max 1 token/nanosecond
-     * after scale real limit is 4 bytes/nanosecond = 3814.7 MB/s.
-     */
-    @VisibleForTesting
-    public static long validRefillPerMs(long writeBandwidthBytePerSecondLimit, int blockSize) {
-        // FIXME: check by bit operation rather than division
-        if (WALUtil.BLOCK_SIZE % BANDWIDTH_RATE_LIMIT_SCALE_FACTOR != 0
-            || WALUtil.BLOCK_SIZE >> BANDWIDTH_RATE_LIMIT_SCALE_FACTOR <= 0) {
-            throw new RuntimeException(String.format("block size %d is not a multiple of %d, update it by jvm option: -D%s=%d",
-                WALUtil.BLOCK_SIZE, BANDWIDTH_RATE_LIMIT_SCALE_FACTOR, WALUtil.BLOCK_SIZE_PROPERTY, blockSize));
-        }
-
-        long refillPerMs = (writeBandwidthBytePerSecondLimit / 1000) >> BANDWIDTH_RATE_LIMIT_SCALE_FACTOR;
-
-        if (refillPerMs > MAX_RATE_LIMIT_BYTES_PER_MS || refillPerMs <= 0) {
-            throw new RuntimeException(String.format("block device writeBandwidthLimit %d not valid after scale by %d refillPerMs %d",
-                writeBandwidthBytePerSecondLimit, BANDWIDTH_RATE_LIMIT_SCALE_FACTOR, refillPerMs));
-        }
-
-        return refillPerMs;
-    }
-
-    @VisibleForTesting
-    public static Bucket buildBandWidthRateLimiter(long writeBandwidthBytePerSecondLimit, int blockSize) {
-        long refillPerMs = validRefillPerMs(writeBandwidthBytePerSecondLimit, blockSize);
-
-        return Bucket.builder().addLimit(limit -> limit
-            .capacity(writeBandwidthBytePerSecondLimit >> BANDWIDTH_RATE_LIMIT_SCALE_FACTOR)
-            .refillIntervally(refillPerMs, Duration.ofMillis(1)))
-            .build();
     }
 
     /**
@@ -331,17 +283,7 @@ public class WALBlockDeviceChannel extends AbstractWALChannel {
     }
 
     private int write(ByteBuffer src, long position) throws IOException {
-        int size = src.remaining();
-        assert WALUtil.isAligned(size);
-
-        if (size > 0) {
-            try {
-                // the write size is isAligned to BLOCK_SIZE so it is ok to scale
-                bucket.consume(size >> BANDWIDTH_RATE_LIMIT_SCALE_FACTOR);
-            } catch (InterruptedException e) {
-                throw new IOException("write rate limit consume interrupted", e);
-            }
-        }
+        assert WALUtil.isAligned(src.remaining());
 
         int bytesWritten = 0;
         while (src.hasRemaining()) {

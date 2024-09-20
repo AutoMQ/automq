@@ -21,7 +21,9 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import io.github.bucket4j.BlockingBucket;
 import io.github.bucket4j.Bucket;
+import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
@@ -56,6 +58,10 @@ public class SlidingWindowService {
      * @see this#pollBlockScheduler
      */
     private static final long MIN_SCHEDULED_WRITE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(1) / 1000;
+    /**
+     * The maximum rate of refilling the Bucker4j bucket, which is 1 token per nanosecond.
+     */
+    private static final long MAX_BUCKET_TOKENS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
 
     /**
      * Number of threads for writing blocks.
@@ -87,6 +93,12 @@ public class SlidingWindowService {
      * @see #writeRateLimit
      */
     private final Bucket writeRateBucket;
+    /**
+     * The bucket to limit the write bandwidth.
+     * Note: one token represents {@link WALUtil#BLOCK_SIZE} bytes. As the max rate in Bucket4j is 1 token per nanosecond,
+     * for a block size of 4KiB, the max rate is 3,814 GiB/s; for a block size of 512B, the max rate is 476 GiB/s.
+     */
+    private final BlockingBucket writeBandwidthBucket;
 
     /**
      * The channel to write data to the disk.
@@ -136,7 +148,7 @@ public class SlidingWindowService {
     private ScheduledExecutorService pollBlockScheduler;
 
     public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit,
-        long blockSoftLimit, int writeRateLimit, WALHeaderFlusher flusher) {
+        long blockSoftLimit, int writeRateLimit, long writeBandwidthLimit, WALHeaderFlusher flusher) {
         this.walChannel = walChannel;
         this.ioThreadNums = ioThreadNums;
         this.upperLimit = upperLimit;
@@ -148,6 +160,12 @@ public class SlidingWindowService {
                 .capacity(ioThreadNums)
                 .refillGreedy(writeRateLimit, Duration.ofSeconds(1))
             ).build();
+        this.writeBandwidthBucket = Bucket.builder()
+            .addLimit(limit -> limit
+                .capacity(ioThreadNums * WALUtil.bytesToBlocks(blockSoftLimit))
+                .refillGreedy(Math.max(WALUtil.bytesToBlocks(writeBandwidthLimit), MAX_BUCKET_TOKENS_PER_SECOND), Duration.ofSeconds(1))
+            ).build()
+            .asBlocking();
         this.walHeaderFlusher = flusher;
     }
 
@@ -397,7 +415,9 @@ public class SlidingWindowService {
     private void writeBlockData(Block block) throws IOException {
         final long start = System.nanoTime();
         long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
-        walChannel.retryWrite(block.data(), position);
+        ByteBuf data = block.data();
+        writeBandwidthBucket.consumeUninterruptibly(WALUtil.bytesToBlocks(data.readableBytes()));
+        walChannel.retryWrite(data, position);
         walChannel.retryFlush();
         StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.timeElapsedSince(start, TimeUnit.NANOSECONDS));
     }

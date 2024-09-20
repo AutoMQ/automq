@@ -562,7 +562,7 @@ public class BlockWALService implements WriteAheadLog {
         // wal io request limit
         private int writeRateLimit = 3000;
         // wal io bandwidth limit
-        private long writeBandwidthLimit = 1024 * 1024 * 1024; // 1GB/s
+        private long writeBandwidthLimit = Long.MAX_VALUE; // no limitation
         private int nodeId = NOOP_NODE_ID;
         private long epoch = NOOP_EPOCH;
         private boolean recoveryMode = false;
@@ -665,7 +665,6 @@ public class BlockWALService implements WriteAheadLog {
             BlockWALService blockWALService = new BlockWALService();
 
             WALChannel.WALChannelBuilder walChannelBuilder = WALChannel.builder(blockDevicePath)
-                .writeBandWidthLimit(writeBandwidthLimit)
                 .capacity(blockDeviceCapacityWant)
                 .initBufferSize(initBufferSize)
                 .maxBufferSize(maxBufferSize)
@@ -693,6 +692,7 @@ public class BlockWALService implements WriteAheadLog {
                     blockSoftLimit,
                     // leave some buffer for other write operations, for example, flush WAL header caused by trim
                     Math.max(writeRateLimit - 20, writeRateLimit / 2),
+                    writeBandwidthLimit,
                     blockWALService.flusher()
                 );
             }
