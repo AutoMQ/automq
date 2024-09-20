@@ -61,6 +61,13 @@ public interface Block {
      */
     long size();
 
+    /**
+     * The end offset of this block.
+     */
+    default long endOffset() {
+        return startOffset() + size();
+    }
+
     void release();
 
     /**
