@@ -157,13 +157,14 @@ public class SlidingWindowService {
         this.writeRateLimit = writeRateLimit;
         this.writeRateBucket = Bucket.builder()
             .addLimit(limit -> limit
-                .capacity(ioThreadNums)
+                .capacity(Math.max(writeRateLimit / 10, 1))
                 .refillGreedy(writeRateLimit, Duration.ofSeconds(1))
             ).build();
+        long writeBandwidthLimitByBlock = Math.min(WALUtil.bytesToBlocks(writeBandwidthLimit), MAX_BUCKET_TOKENS_PER_SECOND);
         this.writeBandwidthBucket = Bucket.builder()
             .addLimit(limit -> limit
-                .capacity(ioThreadNums * (WALUtil.bytesToBlocks(blockSoftLimit) + 1))
-                .refillGreedy(Math.min(WALUtil.bytesToBlocks(writeBandwidthLimit), MAX_BUCKET_TOKENS_PER_SECOND), Duration.ofSeconds(1))
+                .capacity(Math.max(writeBandwidthLimitByBlock / 10, 1))
+                .refillGreedy(writeBandwidthLimitByBlock, Duration.ofSeconds(1))
             ).build()
             .asBlocking();
         this.walHeaderFlusher = flusher;
