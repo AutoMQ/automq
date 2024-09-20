@@ -43,6 +43,6 @@ public interface ProduceRouter {
     List<MetadataResponseData.MetadataResponseTopic> handleMetadataResponse(String clientId,
         List<MetadataResponseData.MetadataResponseTopic> topics);
 
-    Optional<Node> getLeaderNode(String topicName, int partitionId, ClientIdMetadata clientId, String listenerName);
+    Optional<Node> getLeaderNode(int leaderId, ClientIdMetadata clientId, String listenerName);
 
 }

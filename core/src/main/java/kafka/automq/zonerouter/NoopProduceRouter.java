@@ -22,11 +22,11 @@ import kafka.server.streamaspect.ElasticKafkaApis;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataResponseData;
+import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordValidationStats;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
-import org.apache.kafka.metadata.BrokerRegistration;
 
 public class NoopProduceRouter implements ProduceRouter {
     private final ElasticKafkaApis kafkaApis;
@@ -72,12 +72,12 @@ public class NoopProduceRouter implements ProduceRouter {
     }
 
     @Override
-    public Optional<Node> getLeaderNode(String topicName, int partitionId, ClientIdMetadata clientId,
-        String listenerName) {
-        BrokerRegistration target = metadataCache.getPartitionLeaderNode(topicName, partitionId);
-        if (target == null) {
+    public Optional<Node> getLeaderNode(int leaderId, ClientIdMetadata clientId, String listenerName) {
+        scala.Option<Node> opt = metadataCache.getAliveBrokerNode(leaderId, new ListenerName(listenerName));
+        if (opt.isEmpty()) {
             return Optional.empty();
+        } else {
+            return Optional.of(opt.get());
         }
-        return target.node(listenerName);
     }
 }

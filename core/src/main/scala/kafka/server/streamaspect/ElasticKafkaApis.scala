@@ -210,7 +210,7 @@ class ElasticKafkaApis(
           case None => (-1, -1)
         }
     }
-    LeaderNode(leaderId, leaderEpoch, OptionConverters.toScala(produceRouter.getLeaderNode(tp.topic(), tp.partition(), clientIdMetadata, ln.value())))
+    LeaderNode(leaderId, leaderEpoch, OptionConverters.toScala(produceRouter.getLeaderNode(leaderId, clientIdMetadata, ln.value())))
   }
 
   /**
