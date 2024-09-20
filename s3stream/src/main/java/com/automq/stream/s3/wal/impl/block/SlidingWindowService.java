@@ -121,11 +121,11 @@ public class SlidingWindowService {
      * Blocks that are waiting to be written.
      * All blocks in this queue are ordered by the start offset.
      */
-    private Queue<Block> pendingBlocks = new LinkedList<>();
+    private volatile Queue<Block> pendingBlocks = new LinkedList<>();
     /**
      * The current block, records are added to this block.
      */
-    private Block currentBlock;
+    private volatile Block currentBlock;
 
     /**
      * The thread pool for write operations.
