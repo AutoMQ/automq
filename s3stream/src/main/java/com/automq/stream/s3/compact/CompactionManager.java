@@ -762,6 +762,10 @@ public class CompactionManager {
             try {
                 compactionCf.join();
             } catch (CancellationException ex) {
+                // release all data blocks on shutdown
+                for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
+                    compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                }
                 logger.warn("Compaction progress {}/{} is cancelled", i + 1, compactionPlans.size());
                 return;
             }
