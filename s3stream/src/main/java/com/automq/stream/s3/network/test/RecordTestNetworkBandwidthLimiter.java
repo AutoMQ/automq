@@ -47,6 +47,11 @@ public class RecordTestNetworkBandwidthLimiter implements NetworkBandwidthLimite
         return Long.MAX_VALUE;
     }
 
+    @Override
+    public void shutdown() {
+
+    }
+
     public long getConsumed() {
         return consumedCounter.sum();
     }

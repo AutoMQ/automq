@@ -443,10 +443,6 @@ class BrokerServer(
         apiVersionManager = apiVersionManager,
         clientMetricsManager = Some(clientMetricsManager))
 
-      // AutoMQ inject start
-      produceRouter = newProduceRouter()
-      // AutoMQ inject end
-
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,
         socketServer.dataPlaneRequestChannel, dataPlaneRequestProcessor, time,
         config.numIoThreads, s"${DataPlaneAcceptor.MetricPrefix}RequestHandlerAvgIdlePercent",
@@ -539,9 +535,10 @@ class BrokerServer(
       new KafkaConfig(config.originals(), true)
 
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       ElasticLogManager.init(config, clusterId, this)
-      // AutoMQ for Kafka inject end
+      produceRouter = newProduceRouter()
+      // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
       // from RECOVERY state to RUNNING state, once the controller unfences the broker.
