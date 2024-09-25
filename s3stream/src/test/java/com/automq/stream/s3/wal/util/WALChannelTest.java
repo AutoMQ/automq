@@ -12,27 +12,18 @@
 package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.TestUtils;
-import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.concurrent.TimeUnit;
-
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 @Tag("S3Unit")
 public class WALChannelTest {
     public static final String TEST_BLOCK_DEVICE_KEY = "WAL_TEST_BLOCK_DEVICE";
-
-    long gbPerSeconds = 1024 * 1024 * 1024L;
-    long mbPerSeconds = 1024 * 1024;
 
     WALChannel walChannel;
 
@@ -86,56 +77,5 @@ public class WALChannelTest {
 
         assert read == content.length();
         assert readString.equals(content);
-    }
-
-    @Test
-    void testWALBandwidthLimit() throws InterruptedException {
-        Bucket bucket = WALBlockDeviceChannel.buildBandWidthRateLimiter(150 * mbPerSeconds, 4096);
-        TimeUnit.MILLISECONDS.sleep(10);
-        Assertions.assertFalse(bucket.tryConsume((150 * mbPerSeconds >> WALBlockDeviceChannel.BANDWIDTH_RATE_LIMIT_SCALE_FACTOR) + 2));
-        Assertions.assertTrue(bucket.tryConsume(150 * mbPerSeconds >> WALBlockDeviceChannel.BANDWIDTH_RATE_LIMIT_SCALE_FACTOR));
-    }
-
-    @Test
-    void testWALBandwidthLimitConfig() {
-        try {
-            WALBlockDeviceChannel.validRefillPerMs(
-                150 * mbPerSeconds,
-                512);
-
-            WALBlockDeviceChannel.validRefillPerMs(
-                150 * mbPerSeconds,
-                4096);
-
-            WALBlockDeviceChannel.validRefillPerMs(
-                3 * gbPerSeconds,
-                512);
-
-            WALBlockDeviceChannel.validRefillPerMs(
-                3 * gbPerSeconds,
-                4096);
-
-            WALBlockDeviceChannel.validRefillPerMs(
-                WALBlockDeviceChannel.MAX_RATE_LIMIT_BYTES_PER_MS * 1000L,
-                512);
-
-            WALBlockDeviceChannel.validRefillPerMs(
-                WALBlockDeviceChannel.MAX_RATE_LIMIT_BYTES_PER_MS * 1000L,
-                4096);
-
-        } catch (Exception e) {
-            Assertions.fail("should not throw exception", e);
-        }
-
-        boolean exceptionThrows = false;
-        try {
-            WALBlockDeviceChannel.validRefillPerMs(Long.MAX_VALUE, 4096);
-        } catch (Exception e) {
-            // expected.
-            exceptionThrows = true;
-        }
-
-        assertTrue(exceptionThrows);
-
     }
 }
