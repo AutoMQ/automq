@@ -31,6 +31,8 @@ import com.automq.stream.s3.failover.HaltStorageFailureHandler;
 import com.automq.stream.s3.failover.StorageFailureHandlerChain;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -81,8 +83,8 @@ public class DefaultS3Client implements Client {
 
     protected Failover failover;
 
-    protected AsyncNetworkBandwidthLimiter networkInboundLimiter;
-    protected AsyncNetworkBandwidthLimiter networkOutboundLimiter;
+    protected NetworkBandwidthLimiter networkInboundLimiter;
+    protected NetworkBandwidthLimiter networkOutboundLimiter;
 
     protected BrokerServer brokerServer;
     protected LocalStreamRangeIndexCache localIndexCache;
@@ -100,10 +102,12 @@ public class DefaultS3Client implements Client {
             throw new IllegalArgumentException(String.format("refillToken must be greater than 0, bandwidth: %d, refill period: %dms",
                 config.networkBaselineBandwidth(), config.refillPeriodMs()));
         }
-        networkInboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND,
+        GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.INBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
-        networkOutboundLimiter = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
+        networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
+        GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
+        networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true)
             .threadPrefix("dataflow").build();
