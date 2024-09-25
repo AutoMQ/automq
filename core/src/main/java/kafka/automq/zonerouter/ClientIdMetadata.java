@@ -12,20 +12,27 @@
 package kafka.automq.zonerouter;
 
 import com.automq.stream.utils.URIUtils;
+import java.net.InetAddress;
 import java.util.List;
 import java.util.Map;
 
 public class ClientIdMetadata {
     private final String clientId;
     private final Map<String, List<String>> metadata;
+    private final InetAddress clientAddress;
 
-    private ClientIdMetadata(String clientId) {
+    private ClientIdMetadata(String clientId, InetAddress clientAddress) {
         this.clientId = clientId;
         this.metadata = URIUtils.splitQuery(clientId);
+        this.clientAddress = clientAddress;
     }
 
     public static ClientIdMetadata of(String clientId) {
-        return new ClientIdMetadata(clientId);
+        return new ClientIdMetadata(clientId, null);
+    }
+
+    public static ClientIdMetadata of(String clientId, InetAddress clientAddress) {
+        return new ClientIdMetadata(clientId, clientAddress);
     }
 
     public String rack() {
@@ -40,4 +47,12 @@ public class ClientIdMetadata {
         return clientId;
     }
 
+    @Override
+    public String toString() {
+        if (clientAddress == null) {
+            return clientId;
+        } else {
+            return clientId + "/" + clientAddress.getHostAddress();
+        }
+    }
 }

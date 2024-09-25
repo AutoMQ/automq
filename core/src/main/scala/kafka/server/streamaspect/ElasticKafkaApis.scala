@@ -259,7 +259,7 @@ class ElasticKafkaApis(
         }
     })
 
-    val clientIdMetadata = ClientIdMetadata.of(request.header.clientId())
+    val clientIdMetadata = ClientIdMetadata.of(request.header.clientId(), request.context.clientAddress)
 
     // the callback for sending a produce response
     // The construction of ProduceResponse is able to accept auto-generated protocol data so
