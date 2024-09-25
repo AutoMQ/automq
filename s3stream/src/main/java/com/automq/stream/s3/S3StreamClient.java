@@ -24,7 +24,7 @@ import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
@@ -76,8 +76,8 @@ public class S3StreamClient implements StreamClient {
     private final ObjectManager objectManager;
     private final ObjectStorage objectStorage;
     private final Config config;
-    private final AsyncNetworkBandwidthLimiter networkInboundBucket;
-    private final AsyncNetworkBandwidthLimiter networkOutboundBucket;
+    private final NetworkBandwidthLimiter networkInboundBucket;
+    private final NetworkBandwidthLimiter networkOutboundBucket;
     private ScheduledFuture<?> scheduledCompactionTaskFuture;
 
     private final ReentrantLock lock = new ReentrantLock();
@@ -98,7 +98,7 @@ public class S3StreamClient implements StreamClient {
 
     public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
         ObjectStorage objectStorage, Config config,
-        AsyncNetworkBandwidthLimiter networkInboundBucket, AsyncNetworkBandwidthLimiter networkOutboundBucket) {
+        NetworkBandwidthLimiter networkInboundBucket, NetworkBandwidthLimiter networkOutboundBucket) {
         this.streamManager = streamManager;
         this.storage = storage;
         this.openedStreams = new ConcurrentHashMap<>();
