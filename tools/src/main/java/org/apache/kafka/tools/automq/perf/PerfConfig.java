@@ -100,6 +100,7 @@ public class PerfConfig {
     public static ArgumentParser parser() {
         ArgumentParser parser = ArgumentParsers
             .newArgumentParser("performance-test")
+            .defaultHelp(true)
             .description("This tool is used to run performance tests.");
         parser.addArgument("-B", "--bootstrap-server")
             .setDefault("localhost:9092")

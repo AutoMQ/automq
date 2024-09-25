@@ -80,6 +80,10 @@ public class WALUtil {
         return offset / capacity;
     }
 
+    public static long bytesToBlocks(long bytes) {
+        return bytes % BLOCK_SIZE == 0 ? bytes / BLOCK_SIZE : bytes / BLOCK_SIZE + 1;
+    }
+
     public static long alignLargeByBlockSize(long offset) {
         return offset % BLOCK_SIZE == 0 ? offset : offset + BLOCK_SIZE - offset % BLOCK_SIZE;
     }
