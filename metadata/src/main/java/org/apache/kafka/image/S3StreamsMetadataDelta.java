@@ -185,12 +185,21 @@ public final class S3StreamsMetadataDelta {
             stream2partition = image.stream2partition();
         }
         registry.inLock(() -> {
-            newStreamEndOffsets.putAll(changedStreamEndOffsets);
-            deletedStreams.forEach(newStreamEndOffsets::remove);
-
             // apply the delta changes of old streams since the last image
             changedStreams.forEach((streamId, delta) -> newStreamMetadataMap.put(streamId, delta.apply()));
             deletedStreams.forEach(newStreamMetadataMap::remove);
+
+            changedStreamEndOffsets.forEach((streamId, newEndOffset) -> newStreamEndOffsets.compute(streamId, (key, oldEndOffset) -> {
+                if (!newStreamMetadataMap.containsKey(streamId)) {
+                    return null;
+                }
+                if (oldEndOffset == null) {
+                    return newEndOffset;
+                }
+                // S3StreamSetObjectRecord maybe the SSO compaction record, we need ignore the offset.
+                return Math.max(oldEndOffset, newEndOffset);
+            }));
+            deletedStreams.forEach(newStreamEndOffsets::remove);
 
             // apply the delta changes of old nodes since the last image
             this.changedNodes.forEach((nodeId, delta) -> newNodeMetadataMap.put(nodeId, delta.apply()));
