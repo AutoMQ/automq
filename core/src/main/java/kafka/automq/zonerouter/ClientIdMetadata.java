@@ -43,6 +43,14 @@ public class ClientIdMetadata {
         return list.get(0);
     }
 
+    public ClientType clientType() {
+        List<String> list = metadata.get(ClientIdKey.CLIENT_TYPE);
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        return ClientType.parse(list.get(0));
+    }
+
     public String clientId() {
         return clientId;
     }

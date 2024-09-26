@@ -11,7 +11,18 @@
 
 package kafka.automq.zonerouter;
 
-public class ClientIdKey {
-    public static final String AVAILABILITY_ZONE = "automq_az";
-    public static final String CLIENT_TYPE = "automq_type";
+public enum ClientType {
+    PRODUCER, CONSUMER;
+
+    public static ClientType parse(String str) {
+        switch (str) {
+            case "producer":
+                return PRODUCER;
+            case "consumer":
+                return CONSUMER;
+            default:
+                return null;
+        }
+    }
+
 }
