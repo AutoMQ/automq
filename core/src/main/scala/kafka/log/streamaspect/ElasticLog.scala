@@ -462,9 +462,11 @@ class ElasticLog(val metaStream: MetaStream,
         partitionMeta.setRecoverOffset(recoveryPoint)
 
         maybeHandleIOException(s"Error while closing $topicPartition in dir ${dir.getParent}") {
-            CoreUtils.swallow(persistLogMeta(), this)
             CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
             CoreUtils.swallow(segments.close(), this)
+            // https://github.com/AutoMQ/automq/issues/2038
+            // ElasticLogMeta should be saved after all segments are closed cause of the last segment may append new time index when close.
+            CoreUtils.swallow(persistLogMeta(), this)
             CoreUtils.swallow(persistPartitionMeta(), this)
             CoreUtils.swallow(closeStreams().get(), this)
         }
