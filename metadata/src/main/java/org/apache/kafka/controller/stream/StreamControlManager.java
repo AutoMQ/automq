@@ -1441,7 +1441,7 @@ public class StreamControlManager {
             if (streamMetadata == null) {
                 // should not happen
                 log.error("streamId={} not exist when replay S3StreamEndOffsetsRecord", streamEndOffset.streamId());
-                return;
+                continue;
             }
             streamMetadata.endOffset(streamEndOffset.endOffset());
         }
