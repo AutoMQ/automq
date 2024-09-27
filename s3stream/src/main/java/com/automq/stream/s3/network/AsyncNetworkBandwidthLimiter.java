@@ -146,7 +146,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
 
     public CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        cf.whenComplete((v, e) -> logMetrics(size, throttleStrategy));
+        cf.whenComplete((v, e) -> NetworkStats.getInstance().networkUsageTotalStats(type, throttleStrategy).add(MetricsLevel.INFO, size));
         if (Objects.requireNonNull(throttleStrategy) == ThrottleStrategy.BYPASS) {
             forceConsume(size);
             cf.complete(null);
@@ -169,10 +169,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
 
     private void reduceToken(long size) {
         this.availableTokens = Math.max(-maxTokens, availableTokens - size);
-    }
-
-    private void logMetrics(long size, ThrottleStrategy strategy) {
-        NetworkStats.getInstance().networkUsageTotalStats(type, strategy).add(MetricsLevel.INFO, size);
     }
 
     public enum Type {
