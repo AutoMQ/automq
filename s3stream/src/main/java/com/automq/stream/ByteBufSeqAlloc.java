@@ -13,12 +13,17 @@ package com.automq.stream;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import io.netty.buffer.ByteBuf;
+
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class ByteBufSeqAlloc {
     public static final int HUGE_BUF_SIZE = ByteBufAlloc.getChunkSize().orElse(4 << 20);
     // why not use ThreadLocal? the partition open has too much threads
     final AtomicReference<HugeBuf>[] hugeBufArray;
+    private BlockingQueue<Long> costTimes = new ArrayBlockingQueue<>(1000);
+    private BlockingQueue<Integer> noUsage = new ArrayBlockingQueue<>(1000);
     private final int allocType;
 
     @SuppressWarnings("unchecked")
@@ -28,6 +33,28 @@ public class ByteBufSeqAlloc {
         for (int i = 0; i < hugeBufArray.length; i++) {
             hugeBufArray[i] = new AtomicReference<>(new HugeBuf(ByteBufAlloc.byteBuffer(HUGE_BUF_SIZE, allocType)));
         }
+    }
+
+    public BlockingQueue<Long> getCostTimes() {
+        return this.costTimes;
+    }
+
+    public void releaseForTest() {
+        for (int i = 0; i < hugeBufArray.length; i++) {
+            assert hugeBufArray[i].get().buf.refCnt() == 1;
+            hugeBufArray[i].get().buf.release();
+        }
+    }
+
+    public BlockingQueue<Integer> getNoUsage() {
+        return this.noUsage;
+    }
+
+    public ByteBuf byteBufferForTest(int capacity) {
+        long startTime = System.currentTimeMillis();
+        ByteBuf byteBuf = byteBuffer(capacity);
+        costTimes.add(System.currentTimeMillis() - startTime);
+        return byteBuf;
     }
 
     public ByteBuf byteBuffer(int capacity) {
@@ -45,7 +72,7 @@ public class ByteBufSeqAlloc {
             if (hugeBuf.satisfies(capacity)) {
                 return hugeBuf.byteBuffer(capacity);
             }
-
+            noUsage.add(hugeBuf.buf.capacity() - hugeBuf.nextIndex);
             // if the request capacity cannot be satisfied by the current hugeBuf, allocate it in a new hugeBuf
             hugeBuf.buf.release();
             HugeBuf newHugeBuf = new HugeBuf(ByteBufAlloc.byteBuffer(HUGE_BUF_SIZE, allocType));
