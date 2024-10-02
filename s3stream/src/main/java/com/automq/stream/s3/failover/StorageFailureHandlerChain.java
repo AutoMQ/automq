@@ -18,7 +18,7 @@ import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class StorageFailureHandlerChain implements StorageFailureHandler {
+public class StorageFailureHandlerChain implements StorageHandlerChain {
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageFailureHandlerChain.class);
     private final List<StorageFailureHandler> handlers = new ArrayList<>();
     private final ExecutorService executorService = Threads.newFixedThreadPoolWithMonitor(1, "storage-failure-handler", true, LOGGER);
@@ -37,6 +37,7 @@ public class StorageFailureHandlerChain implements StorageFailureHandler {
         });
     }
 
+    @Override
     public void addHandler(StorageFailureHandler handler) {
         handlers.add(handler);
     }
