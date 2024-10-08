@@ -295,13 +295,24 @@ public class ForwardingAdmin implements Admin {
         return delegate.clientInstanceId(timeout);
     }
 
+    public AddRaftVoterResult addRaftVoter(int voterId, Uuid voterDirectoryId, Set<RaftVoterEndpoint> endpoints, AddRaftVoterOptions options) {
+        return delegate.addRaftVoter(voterId, voterDirectoryId, endpoints, options);
+    }
+
     @Override
-    public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
-        return delegate.getNodes(nodeIdList, options);
+    public RemoveRaftVoterResult removeRaftVoter(int voterId, Uuid voterDirectoryId, RemoveRaftVoterOptions options) {
+        return delegate.removeRaftVoter(voterId, voterDirectoryId, options);
     }
 
     @Override
     public Map<MetricName, ? extends Metric> metrics() {
         return delegate.metrics();
     }
+
+    // AutoMQ inject start
+    @Override
+    public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
+        return delegate.getNodes(nodeIdList, options);
+    }
+    // AutoMQ inject end
 }

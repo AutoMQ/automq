@@ -16,6 +16,16 @@
  */
 package org.apache.kafka.raft;
 
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.raft.internals.BatchAccumulator;
+import org.apache.kafka.raft.internals.KRaftControlRecordStateMachine;
+import org.apache.kafka.raft.internals.ReplicaKey;
+import org.apache.kafka.raft.internals.VoterSet;
+
+import org.slf4j.Logger;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Collections;
@@ -23,15 +33,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Random;
-import java.util.function.Supplier;
-
-import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.raft.internals.BatchAccumulator;
-import org.apache.kafka.raft.internals.ReplicaKey;
-import org.apache.kafka.raft.internals.VoterSet;
-import org.slf4j.Logger;
 
 /**
  * This class is responsible for managing the current state of this node and ensuring
@@ -81,8 +82,8 @@ public class QuorumState {
     private final Time time;
     private final Logger log;
     private final QuorumStateStore store;
-    private final Supplier<VoterSet> latestVoterSet;
-    private final Supplier<Short> latestKraftVersion;
+    private final KRaftControlRecordStateMachine partitionState;
+    private final Endpoints localListeners;
     private final Random random;
     private final int electionTimeoutMs;
     private final int fetchTimeoutMs;
@@ -93,8 +94,8 @@ public class QuorumState {
     public QuorumState(
         OptionalInt localId,
         Uuid localDirectoryId,
-        Supplier<VoterSet> latestVoterSet,
-        Supplier<Short> latestKraftVersion,
+        KRaftControlRecordStateMachine partitionState,
+        Endpoints localListeners,
         int electionTimeoutMs,
         int fetchTimeoutMs,
         QuorumStateStore store,
@@ -104,8 +105,8 @@ public class QuorumState {
     ) {
         this.localId = localId;
         this.localDirectoryId = localDirectoryId;
-        this.latestVoterSet = latestVoterSet;
-        this.latestKraftVersion = latestKraftVersion;
+        this.partitionState = partitionState;
+        this.localListeners = localListeners;
         this.electionTimeoutMs = electionTimeoutMs;
         this.fetchTimeoutMs = fetchTimeoutMs;
         this.store = store;
@@ -115,15 +116,22 @@ public class QuorumState {
         this.logContext = logContext;
     }
 
+    private ElectionState readElectionState() {
+        ElectionState election;
+        election = store
+            .readElectionState()
+            .orElseGet(
+                () -> ElectionState.withUnknownLeader(0, partitionState.lastVoterSet().voterIds())
+            );
+
+        return election;
+    }
+
     public void initialize(OffsetAndEpoch logEndOffsetAndEpoch) throws IllegalStateException {
         // We initialize in whatever state we were in on shutdown. If we were a leader
         // or candidate, probably an election was held, but we will find out about it
         // when we send Vote or BeginEpoch requests.
-
-        ElectionState election;
-        election = store
-            .readElectionState()
-            .orElseGet(() -> ElectionState.withUnknownLeader(0, latestVoterSet.get().voterIds()));
+        ElectionState election = readElectionState();
 
         final EpochState initialState;
         if (election.hasVoted() && !localId.isPresent()) {
@@ -144,7 +152,8 @@ public class QuorumState {
             initialState = new UnattachedState(
                 time,
                 logEndOffsetAndEpoch.epoch(),
-                latestVoterSet.get().voterIds(),
+                OptionalInt.empty(),
+                partitionState.lastVoterSet().voterIds(),
                 Optional.empty(),
                 randomElectionTimeoutMs(),
                 logContext
@@ -160,21 +169,22 @@ public class QuorumState {
                 time,
                 localId.getAsInt(),
                 election.epoch(),
-                latestVoterSet.get().voterIds(),
+                partitionState.lastVoterSet().voterIds(),
                 randomElectionTimeoutMs(),
                 Collections.emptyList(),
+                localListeners,
                 logContext
             );
         } else if (
             localId.isPresent() &&
-            election.isVotedCandidate(ReplicaKey.of(localId.getAsInt(), Optional.of(localDirectoryId)))
+            election.isVotedCandidate(ReplicaKey.of(localId.getAsInt(), localDirectoryId))
         ) {
             initialState = new CandidateState(
                 time,
                 localId.getAsInt(),
                 localDirectoryId,
                 election.epoch(),
-                latestVoterSet.get(),
+                partitionState.lastVoterSet(),
                 Optional.empty(),
                 1,
                 randomElectionTimeoutMs(),
@@ -185,26 +195,56 @@ public class QuorumState {
                 time,
                 election.epoch(),
                 election.votedKey(),
-                latestVoterSet.get().voterIds(),
+                partitionState.lastVoterSet().voterIds(),
                 Optional.empty(),
                 randomElectionTimeoutMs(),
                 logContext
             );
         } else if (election.hasLeader()) {
-            initialState = new FollowerState(
-                time,
-                election.epoch(),
-                election.leaderId(),
-                latestVoterSet.get().voterIds(),
-                Optional.empty(),
-                fetchTimeoutMs,
-                logContext
-            );
+            VoterSet voters = partitionState.lastVoterSet();
+            Endpoints leaderEndpoints = voters.listeners(election.leaderId());
+            if (leaderEndpoints.isEmpty()) {
+                // Since the leader's endpoints are not known, it cannot send Fetch or
+                // FetchSnapshot requests to the leader.
+                //
+                // Transition to unattached instead and discover the leader's endpoint through
+                // Fetch requests to the bootstrap servers or from a BeginQuorumEpoch request from
+                // the leader.
+                log.info(
+                    "The leader in election state {} is not a member of the latest voter set {}; " +
+                    "transitioning to unattached instead of follower because the leader's " +
+                    "endpoints are not known",
+                    election,
+                    voters
+                );
+
+                initialState = new UnattachedState(
+                    time,
+                    election.epoch(),
+                    OptionalInt.of(election.leaderId()),
+                    partitionState.lastVoterSet().voterIds(),
+                    Optional.empty(),
+                    randomElectionTimeoutMs(),
+                    logContext
+                );
+            } else {
+                initialState = new FollowerState(
+                    time,
+                    election.epoch(),
+                    election.leaderId(),
+                    leaderEndpoints,
+                    voters.voterIds(),
+                    Optional.empty(),
+                    fetchTimeoutMs,
+                    logContext
+                );
+            }
         } else {
             initialState = new UnattachedState(
                 time,
                 election.epoch(),
-                latestVoterSet.get().voterIds(),
+                OptionalInt.empty(),
+                partitionState.lastVoterSet().voterIds(),
                 Optional.empty(),
                 randomElectionTimeoutMs(),
                 logContext
@@ -216,9 +256,9 @@ public class QuorumState {
 
     public boolean isOnlyVoter() {
         return localId.isPresent() &&
-            latestVoterSet.get().isOnlyVoter(
-                ReplicaKey.of(localId.getAsInt(), Optional.of(localDirectoryId))
-            );
+            partitionState
+                .lastVoterSet()
+                .isOnlyVoter(ReplicaKey.of(localId.getAsInt(), localDirectoryId));
     }
 
     public int localIdOrSentinel() {
@@ -237,6 +277,10 @@ public class QuorumState {
         return localDirectoryId;
     }
 
+    public ReplicaKey localReplicaKeyOrThrow() {
+        return ReplicaKey.of(localIdOrThrow(), localDirectoryId());
+    }
+
     public int epoch() {
         return state.epoch();
     }
@@ -250,7 +294,6 @@ public class QuorumState {
     }
 
     public OptionalInt leaderId() {
-
         ElectionState election = state.election();
         if (election.hasLeader())
             return OptionalInt.of(state.election().leaderId());
@@ -266,25 +309,29 @@ public class QuorumState {
         return hasLeader() && leaderIdOrSentinel() != localIdOrSentinel();
     }
 
+    public Endpoints leaderEndpoints() {
+        return state.leaderEndpoints();
+    }
+
     public boolean isVoter() {
         if (!localId.isPresent()) {
             return false;
         }
 
-        return latestVoterSet
-            .get()
-            .isVoter(ReplicaKey.of(localId.getAsInt(), Optional.of(localDirectoryId)));
+        return partitionState
+            .lastVoterSet()
+            .isVoter(ReplicaKey.of(localId.getAsInt(), localDirectoryId));
     }
 
     public boolean isVoter(ReplicaKey nodeKey) {
-        return latestVoterSet.get().isVoter(nodeKey);
+        return partitionState.lastVoterSet().isVoter(nodeKey);
     }
 
     public boolean isObserver() {
         return !isVoter();
     }
 
-    public void transitionToResigned(List<Integer> preferredSuccessors) {
+    public void transitionToResigned(List<ReplicaKey> preferredSuccessors) {
         if (!isLeader()) {
             throw new IllegalStateException("Invalid transition to Resigned state from " + state);
         }
@@ -297,9 +344,10 @@ public class QuorumState {
                 time,
                 localIdOrThrow(),
                 epoch,
-                latestVoterSet.get().voterIds(),
+                partitionState.lastVoterSet().voterIds(),
                 randomElectionTimeoutMs(),
                 preferredSuccessors,
+                localListeners,
                 logContext
             )
         );
@@ -332,7 +380,8 @@ public class QuorumState {
         durableTransitionTo(new UnattachedState(
             time,
             epoch,
-            latestVoterSet.get().voterIds(),
+            OptionalInt.empty(),
+            partitionState.lastVoterSet().voterIds(),
             state.highWatermark(),
             electionTimeoutMs,
             logContext
@@ -342,8 +391,8 @@ public class QuorumState {
     /**
      * Grant a vote to a candidate and become a follower for this epoch. We will remain in this
      * state until either the election timeout expires or a leader is elected. In particular,
-     * we do not begin fetching until the election has concluded and {@link #transitionToFollower(int, int)}
-     * is invoked.
+     * we do not begin fetching until the election has concluded and
+     * {@link #transitionToFollower(int, int, Endpoints)} is invoked.
      */
     public void transitionToVoted(
         int epoch,
@@ -389,7 +438,7 @@ public class QuorumState {
                 time,
                 epoch,
                 candidateKey,
-                latestVoterSet.get().voterIds(),
+                partitionState.lastVoterSet().voterIds(),
                 state.highWatermark(),
                 randomElectionTimeoutMs(),
                 logContext
@@ -400,21 +449,17 @@ public class QuorumState {
     /**
      * Become a follower of an elected leader so that we can begin fetching.
      */
-    public void transitionToFollower(
-        int epoch,
-        int leaderId
-    ) {
+    public void transitionToFollower(int epoch, int leaderId, Endpoints endpoints) {
         int currentEpoch = state.epoch();
         if (localId.isPresent() && leaderId == localId.getAsInt()) {
-            throw new IllegalStateException("Cannot transition to Follower with leaderId=" + leaderId +
-                " and epoch=" + epoch + " since it matches the local broker.id=" + localId);
+            throw new IllegalStateException("Cannot transition to Follower with leader " + leaderId +
+                " and epoch " + epoch + " since it matches the local broker.id " + localId);
         } else if (epoch < currentEpoch) {
-            throw new IllegalStateException("Cannot transition to Follower with leaderId=" + leaderId +
-                " and epoch=" + epoch + " since the current epoch " + currentEpoch + " is larger");
-        } else if (epoch == currentEpoch
-            && (isFollower() || isLeader())) {
-            throw new IllegalStateException("Cannot transition to Follower with leaderId=" + leaderId +
-                " and epoch=" + epoch + " from state " + state);
+            throw new IllegalStateException("Cannot transition to Follower with leader " + leaderId +
+                " and epoch " + epoch + " since the current epoch " + currentEpoch + " is larger");
+        } else if (epoch == currentEpoch && (isFollower() || isLeader())) {
+            throw new IllegalStateException("Cannot transition to Follower with leader " + leaderId +
+                " and epoch " + epoch + " from state " + state);
         }
 
         durableTransitionTo(
@@ -422,7 +467,8 @@ public class QuorumState {
                 time,
                 epoch,
                 leaderId,
-                latestVoterSet.get().voterIds(),
+                endpoints,
+                partitionState.lastVoterSet().voterIds(),
                 state.highWatermark(),
                 fetchTimeoutMs,
                 logContext
@@ -438,7 +484,7 @@ public class QuorumState {
                     "is not one of the voters %s",
                     localId,
                     localDirectoryId,
-                    latestVoterSet.get()
+                    partitionState.lastVoterSet()
                 )
             );
         } else if (isLeader()) {
@@ -455,7 +501,7 @@ public class QuorumState {
             localIdOrThrow(),
             localDirectoryId,
             newEpoch,
-            latestVoterSet.get(),
+            partitionState.lastVoterSet(),
             state.highWatermark(),
             retries,
             electionTimeoutMs,
@@ -471,7 +517,7 @@ public class QuorumState {
                     "is not one of the voters %s",
                     localId,
                     localDirectoryId,
-                    latestVoterSet.get()
+                    partitionState.lastVoterSet()
                 )
             );
         } else if (!isCandidate()) {
@@ -495,12 +541,15 @@ public class QuorumState {
 
         LeaderState<T> state = new LeaderState<>(
             time,
-            localIdOrThrow(),
+            ReplicaKey.of(localIdOrThrow(), localDirectoryId),
             epoch(),
             epochStartOffset,
-            latestVoterSet.get().voterIds(),
+            partitionState.lastVoterSet(),
+            partitionState.lastVoterSetOffset(),
+            partitionState.lastKraftVersion(),
             candidateState.grantingVoters(),
             accumulator,
+            localListeners,
             fetchTimeoutMs,
             logContext
         );
@@ -509,6 +558,11 @@ public class QuorumState {
     }
 
     private void durableTransitionTo(EpochState newState) {
+        store.writeElectionState(newState.election(), partitionState.lastKraftVersion());
+        memoryTransitionTo(newState);
+    }
+
+    private void memoryTransitionTo(EpochState newState) {
         if (state != null) {
             try {
                 state.close();
@@ -518,11 +572,6 @@ public class QuorumState {
             }
         }
 
-        store.writeElectionState(newState.election(), latestKraftVersion.get());
-        memoryTransitionTo(newState);
-    }
-
-    private void memoryTransitionTo(EpochState newState) {
         EpochState from = state;
         state = newState;
         log.info("Completed transition to {} from {}", newState, from);

@@ -35,6 +35,7 @@ import org.apache.kafka.common.requests.ConsumerGroupHeartbeatResponse;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Timer;
+
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -44,6 +45,7 @@ import java.util.Map;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+
 
 /**
  * <p>Manages the request creation and response handling for the heartbeat. The module creates a
@@ -208,7 +210,11 @@ public class HeartbeatRequestManager implements RequestManager {
             return new NetworkClientDelegate.PollResult(heartbeatRequestState.heartbeatIntervalMs, Collections.singletonList(leaveHeartbeat));
         }
 
-        boolean heartbeatNow = membershipManager.shouldHeartbeatNow() && !heartbeatRequestState.requestInFlight();
+        // Case 1: The member is leaving
+        boolean heartbeatNow = membershipManager.state() == MemberState.LEAVING ||
+                // Case 2: The member state indicates it should send a heartbeat without waiting for the interval, and there is no heartbeat request currently in-flight
+                (membershipManager.shouldHeartbeatNow() && !heartbeatRequestState.requestInFlight());
+
         if (!heartbeatRequestState.canSendRequest(currentTimeMs) && !heartbeatNow) {
             return new NetworkClientDelegate.PollResult(heartbeatRequestState.timeToNextHeartbeatMs(currentTimeMs));
         }
@@ -258,7 +264,8 @@ public class HeartbeatRequestManager implements RequestManager {
         pollTimer.update(pollMs);
         if (pollTimer.isExpired()) {
             logger.warn("Time between subsequent calls to poll() was longer than the configured " +
-                "max.poll.interval.ms, exceeded approximately by {} ms.", pollTimer.isExpiredBy());
+                "max.poll.interval.ms, exceeded approximately by {} ms. Member {} will rejoin the group now.",
+                pollTimer.isExpiredBy(), membershipManager.memberId());
             membershipManager.maybeRejoinStaleMember();
         }
         pollTimer.reset(maxPollIntervalMs);
@@ -268,7 +275,7 @@ public class HeartbeatRequestManager implements RequestManager {
                                                                      final boolean ignoreResponse) {
         NetworkClientDelegate.UnsentRequest request = makeHeartbeatRequest(ignoreResponse);
         heartbeatRequestState.onSendAttempt(currentTimeMs);
-        membershipManager.onHeartbeatRequestSent();
+        membershipManager.onHeartbeatRequestGenerated();
         metricsManager.recordHeartbeatSentMs(currentTimeMs);
         heartbeatRequestState.resetTimer();
         return request;
@@ -311,6 +318,7 @@ public class HeartbeatRequestManager implements RequestManager {
     private void onFailure(final Throwable exception, final long responseTimeMs) {
         this.heartbeatRequestState.onFailedAttempt(responseTimeMs);
         this.heartbeatState.reset();
+        membershipManager.onHeartbeatFailure(exception instanceof RetriableException);
         if (exception instanceof RetriableException) {
             String message = String.format("GroupHeartbeatRequest failed because of the retriable exception. " +
                     "Will retry in %s ms: %s",
@@ -341,7 +349,7 @@ public class HeartbeatRequestManager implements RequestManager {
 
         this.heartbeatState.reset();
         this.heartbeatRequestState.onFailedAttempt(currentTimeMs);
-        membershipManager.onHeartbeatFailure();
+        membershipManager.onHeartbeatFailure(false);
 
         switch (error) {
             case NOT_COORDINATOR:
@@ -478,6 +486,13 @@ public class HeartbeatRequestManager implements RequestManager {
             this.heartbeatTimer.reset(heartbeatIntervalMs);
         }
 
+        @Override
+        public String toStringBase() {
+            return super.toStringBase() +
+                    ", remainingMs=" + heartbeatTimer.remainingMs() +
+                    ", heartbeatIntervalMs=" + heartbeatIntervalMs;
+        }
+
         /**
          * Check if a heartbeat request should be sent on the current time. A heartbeat should be
          * sent if the heartbeat timer has expired, backoff has expired, and there is no request
@@ -564,7 +579,7 @@ public class HeartbeatRequestManager implements RequestManager {
                 sentFields.rebalanceTimeoutMs = rebalanceTimeoutMs;
             }
 
-            // SubscribedTopicNames - only sent if has changed since the last heartbeat
+            // SubscribedTopicNames - only sent if it has changed since the last heartbeat
             TreeSet<String> subscribedTopicNames = new TreeSet<>(this.subscriptions.subscription());
             if (sendAllFields || !subscribedTopicNames.equals(sentFields.subscribedTopicNames)) {
                 data.setSubscribedTopicNames(new ArrayList<>(this.subscriptions.subscription()));

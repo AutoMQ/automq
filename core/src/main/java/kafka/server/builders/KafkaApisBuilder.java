@@ -33,6 +33,7 @@ import kafka.server.QuotaFactory.QuotaManagers;
 import kafka.server.ReplicaManager;
 import kafka.server.metadata.ConfigRepository;
 import kafka.server.streamaspect.ElasticKafkaApis;
+
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.common.utils.Time;
@@ -182,7 +183,7 @@ public class KafkaApisBuilder {
         if (metrics == null) throw new RuntimeException("You must set metrics");
         if (quotas == null) throw new RuntimeException("You must set quotas");
         if (fetchManager == null) throw new RuntimeException("You must set fetchManager");
-        if (brokerTopicStats == null) brokerTopicStats = new BrokerTopicStats(config.isRemoteLogStorageSystemEnabled());
+        if (brokerTopicStats == null) brokerTopicStats = new BrokerTopicStats(config.remoteLogManagerConfig().isRemoteStorageSystemEnabled());
         if (apiVersionManager == null) throw new RuntimeException("You must set apiVersionManager");
 
         return new ElasticKafkaApis(requestChannel,

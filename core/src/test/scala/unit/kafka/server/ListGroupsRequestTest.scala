@@ -21,25 +21,26 @@ import kafka.test.annotation.{ClusterConfigProperty, ClusterTest, ClusterTestDef
 import kafka.test.junit.ClusterTestExtensions
 import org.apache.kafka.common.message.ListGroupsResponseData
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
-import org.apache.kafka.coordinator.group.consumer.ConsumerGroup.ConsumerGroupState
 import org.apache.kafka.coordinator.group.classic.ClassicGroupState
+import org.apache.kafka.coordinator.group.modern.consumer.ConsumerGroup.ConsumerGroupState
 import org.apache.kafka.coordinator.group.Group
 import org.junit.jupiter.api.Assertions.{assertEquals, fail}
-import org.junit.jupiter.api.{Tag, Timeout}
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.extension.ExtendWith
 
 @Timeout(120)
 @ExtendWith(value = Array(classOf[ClusterTestExtensions]))
 @ClusterTestDefaults(types = Array(Type.KRAFT))
-@Tag("integration")
 class ListGroupsRequestTest(cluster: ClusterInstance) extends GroupCoordinatorBaseRequestTest(cluster) {
-  @ClusterTest(serverProperties = Array(
-    new ClusterConfigProperty(key = "group.coordinator.rebalance.protocols", value = "classic,consumer"),
-    new ClusterConfigProperty(key = "group.consumer.max.session.timeout.ms", value = "600000"),
-    new ClusterConfigProperty(key = "group.consumer.session.timeout.ms", value = "600000"),
-    new ClusterConfigProperty(key = "offsets.topic.num.partitions", value = "1"),
-    new ClusterConfigProperty(key = "offsets.topic.replication.factor", value = "1")
-  ))
+  @ClusterTest(
+    serverProperties = Array(
+      new ClusterConfigProperty(key = "group.coordinator.rebalance.protocols", value = "classic,consumer"),
+      new ClusterConfigProperty(key = "group.consumer.max.session.timeout.ms", value = "600000"),
+      new ClusterConfigProperty(key = "group.consumer.session.timeout.ms", value = "600000"),
+      new ClusterConfigProperty(key = "offsets.topic.num.partitions", value = "1"),
+      new ClusterConfigProperty(key = "offsets.topic.replication.factor", value = "1")
+    )
+  )
   def testListGroupsWithNewConsumerGroupProtocolAndNewGroupCoordinator(): Unit = {
     testListGroups(true)
   }

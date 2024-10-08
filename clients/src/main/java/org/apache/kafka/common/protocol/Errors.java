@@ -39,12 +39,14 @@ import org.apache.kafka.common.errors.DelegationTokenOwnerMismatchException;
 import org.apache.kafka.common.errors.DuplicateBrokerRegistrationException;
 import org.apache.kafka.common.errors.DuplicateResourceException;
 import org.apache.kafka.common.errors.DuplicateSequenceException;
+import org.apache.kafka.common.errors.DuplicateVoterException;
 import org.apache.kafka.common.errors.ElectionNotNeededException;
 import org.apache.kafka.common.errors.EligibleLeadersNotAvailableException;
 import org.apache.kafka.common.errors.FeatureUpdateFailedException;
 import org.apache.kafka.common.errors.FencedInstanceIdException;
 import org.apache.kafka.common.errors.FencedLeaderEpochException;
 import org.apache.kafka.common.errors.FencedMemberEpochException;
+import org.apache.kafka.common.errors.FencedStateEpochException;
 import org.apache.kafka.common.errors.FetchSessionIdNotFoundException;
 import org.apache.kafka.common.errors.FetchSessionTopicIdException;
 import org.apache.kafka.common.errors.GroupAuthorizationException;
@@ -68,17 +70,20 @@ import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidPidMappingException;
 import org.apache.kafka.common.errors.InvalidPrincipalTypeException;
 import org.apache.kafka.common.errors.InvalidProducerEpochException;
+import org.apache.kafka.common.errors.InvalidRecordStateException;
 import org.apache.kafka.common.errors.InvalidRegistrationException;
 import org.apache.kafka.common.errors.InvalidReplicaAssignmentException;
 import org.apache.kafka.common.errors.InvalidReplicationFactorException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.InvalidRequiredAcksException;
 import org.apache.kafka.common.errors.InvalidSessionTimeoutException;
+import org.apache.kafka.common.errors.InvalidShareSessionEpochException;
 import org.apache.kafka.common.errors.InvalidTimestampException;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.InvalidTxnStateException;
 import org.apache.kafka.common.errors.InvalidTxnTimeoutException;
 import org.apache.kafka.common.errors.InvalidUpdateVersionException;
+import org.apache.kafka.common.errors.InvalidVoterKeyException;
 import org.apache.kafka.common.errors.KafkaStorageException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.errors.ListenerNotFoundException;
@@ -113,6 +118,7 @@ import org.apache.kafka.common.errors.ResourceNotFoundException;
 import org.apache.kafka.common.errors.RetriableException;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.errors.SecurityDisabledException;
+import org.apache.kafka.common.errors.ShareSessionNotFoundException;
 import org.apache.kafka.common.errors.SnapshotNotFoundException;
 import org.apache.kafka.common.errors.StaleBrokerEpochException;
 import org.apache.kafka.common.errors.StaleMemberEpochException;
@@ -122,6 +128,7 @@ import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.common.errors.TopicDeletionDisabledException;
 import org.apache.kafka.common.errors.TopicExistsException;
+import org.apache.kafka.common.errors.TransactionAbortableException;
 import org.apache.kafka.common.errors.TransactionCoordinatorFencedException;
 import org.apache.kafka.common.errors.TransactionalIdAuthorizationException;
 import org.apache.kafka.common.errors.TransactionalIdNotFoundException;
@@ -144,6 +151,10 @@ import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.errors.TransactionAbortableException;
+import org.apache.kafka.common.errors.VoterNotFoundException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // AutoMQ inject start
 import org.apache.kafka.common.errors.s3.CompactedObjectsNotFoundException;
@@ -162,8 +173,6 @@ import org.apache.kafka.common.errors.s3.StreamNotExistException;
 import org.apache.kafka.common.errors.s3.StreamNotOpenedException;
 // AutoMQ inject end
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * This class contains all the client-server errors--those errors that must be sent from the server to the client. These
@@ -428,8 +437,16 @@ public enum Errors {
     KEY_EXIST(512, "The key already exists.", KeyExistException::new),
     KEY_NOT_EXIST(513, "The key does not exist.", ObjectNotExistException::new),
     NODE_FENCED(514, "The node is fenced.", NodeFencedException::new),
-    STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new);
+    STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new),
     // AutoMQ inject end
+
+    INVALID_RECORD_STATE(121, "The record state is invalid. The acknowledgement of delivery could not be completed.", InvalidRecordStateException::new),
+    SHARE_SESSION_NOT_FOUND(122, "The share session was not found.", ShareSessionNotFoundException::new),
+    INVALID_SHARE_SESSION_EPOCH(123, "The share session epoch is invalid.", InvalidShareSessionEpochException::new),
+    FENCED_STATE_EPOCH(124, "The share coordinator rejected the request because the share-group state epoch did not match.", FencedStateEpochException::new),
+    INVALID_VOTER_KEY(125, "The voter key doesn't match the receiving replica's key.", InvalidVoterKeyException::new),
+    DUPLICATE_VOTER(126, "The voter is already part of the set of voters.", DuplicateVoterException::new),
+    VOTER_NOT_FOUND(127, "The voter is not part of the set of voters.", VoterNotFoundException::new);
 
     private static final Logger log = LoggerFactory.getLogger(Errors.class);
 

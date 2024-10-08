@@ -17,12 +17,6 @@
 
 package org.apache.kafka.snapshot;
 
-
-import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.common.message.KRaftVersionRecord;
 import org.apache.kafka.common.message.SnapshotFooterRecord;
 import org.apache.kafka.common.message.SnapshotHeaderRecord;
@@ -34,8 +28,17 @@ import org.apache.kafka.raft.OffsetAndEpoch;
 import org.apache.kafka.raft.internals.StringSerde;
 import org.apache.kafka.raft.internals.VoterSet;
 import org.apache.kafka.raft.internals.VoterSetTest;
+import org.apache.kafka.server.common.KRaftVersion;
 import org.apache.kafka.server.common.serialization.RecordSerde;
+
 import org.junit.jupiter.api.Test;
+
+import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.IntStream;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -49,12 +52,12 @@ final class RecordsSnapshotWriterTest {
         int maxBatchSize = 1024;
         AtomicReference<ByteBuffer> buffer = new AtomicReference<>(null);
         RecordsSnapshotWriter.Builder builder = new RecordsSnapshotWriter.Builder()
-            .setKraftVersion((short) 0)
+            .setKraftVersion(KRaftVersion.KRAFT_VERSION_0)
             .setVoterSet(Optional.empty())
             .setTime(new MockTime())
             .setMaxBatchSize(maxBatchSize)
             .setRawSnapshotWriter(
-                new MockRawSnapshotWriter(snapshotId, snapshotBuf -> buffer.set(snapshotBuf))
+                new MockRawSnapshotWriter(snapshotId, buffer::set)
             );
         try (RecordsSnapshotWriter<String> snapshot = builder.build(STRING_SERDE)) {
             snapshot.freeze();
@@ -97,16 +100,16 @@ final class RecordsSnapshotWriterTest {
         OffsetAndEpoch snapshotId = new OffsetAndEpoch(100, 10);
         int maxBatchSize = 1024;
         VoterSet voterSet = VoterSetTest.voterSet(
-            new HashMap<>(VoterSetTest.voterMap(Arrays.asList(1, 2, 3), true))
+            new HashMap<>(VoterSetTest.voterMap(IntStream.of(1, 2, 3), true))
         );
         AtomicReference<ByteBuffer> buffer = new AtomicReference<>(null);
         RecordsSnapshotWriter.Builder builder = new RecordsSnapshotWriter.Builder()
-            .setKraftVersion((short) 0)
+            .setKraftVersion(KRaftVersion.KRAFT_VERSION_0)
             .setVoterSet(Optional.of(voterSet))
             .setTime(new MockTime())
             .setMaxBatchSize(maxBatchSize)
             .setRawSnapshotWriter(
-                new MockRawSnapshotWriter(snapshotId, snapshotBuf -> buffer.set(snapshotBuf))
+                new MockRawSnapshotWriter(snapshotId, buffer::set)
             );
 
         assertThrows(IllegalStateException.class, () -> builder.build(STRING_SERDE));
@@ -117,16 +120,16 @@ final class RecordsSnapshotWriterTest {
         OffsetAndEpoch snapshotId = new OffsetAndEpoch(100, 10);
         int maxBatchSize = 1024;
         VoterSet voterSet = VoterSetTest.voterSet(
-            new HashMap<>(VoterSetTest.voterMap(Arrays.asList(1, 2, 3), true))
+            new HashMap<>(VoterSetTest.voterMap(IntStream.of(1, 2, 3), true))
         );
         AtomicReference<ByteBuffer> buffer = new AtomicReference<>(null);
         RecordsSnapshotWriter.Builder builder = new RecordsSnapshotWriter.Builder()
-            .setKraftVersion((short) 1)
+            .setKraftVersion(KRaftVersion.KRAFT_VERSION_1)
             .setVoterSet(Optional.of(voterSet))
             .setTime(new MockTime())
             .setMaxBatchSize(maxBatchSize)
             .setRawSnapshotWriter(
-                new MockRawSnapshotWriter(snapshotId, snapshotBuf -> buffer.set(snapshotBuf))
+                new MockRawSnapshotWriter(snapshotId, buffer::set)
             );
         try (RecordsSnapshotWriter<String> snapshot = builder.build(STRING_SERDE)) {
             snapshot.freeze();
@@ -178,12 +181,12 @@ final class RecordsSnapshotWriterTest {
         int maxBatchSize = 1024;
         AtomicReference<ByteBuffer> buffer = new AtomicReference<>(null);
         RecordsSnapshotWriter.Builder builder = new RecordsSnapshotWriter.Builder()
-            .setKraftVersion((short) 1)
+            .setKraftVersion(KRaftVersion.KRAFT_VERSION_1)
             .setVoterSet(Optional.empty())
             .setTime(new MockTime())
             .setMaxBatchSize(maxBatchSize)
             .setRawSnapshotWriter(
-                new MockRawSnapshotWriter(snapshotId, snapshotBuf -> buffer.set(snapshotBuf))
+                new MockRawSnapshotWriter(snapshotId, buffer::set)
             );
         try (RecordsSnapshotWriter<String> snapshot = builder.build(STRING_SERDE)) {
             snapshot.freeze();

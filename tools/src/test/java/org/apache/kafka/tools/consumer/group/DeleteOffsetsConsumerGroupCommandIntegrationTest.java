@@ -20,6 +20,7 @@ import kafka.test.ClusterConfig;
 import kafka.test.ClusterInstance;
 import kafka.test.annotation.ClusterTemplate;
 import kafka.test.junit.ClusterTestExtensions;
+
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -37,8 +38,8 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.coordinator.group.GroupCoordinatorConfig;
+
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Duration;
@@ -54,7 +55,6 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-@Tag("integration")
 @ExtendWith(ClusterTestExtensions.class)
 public class DeleteOffsetsConsumerGroupCommandIntegrationTest {
     public static final String TOPIC_PREFIX = "foo.";

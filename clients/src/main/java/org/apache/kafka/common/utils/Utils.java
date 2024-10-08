@@ -17,8 +17,10 @@
 package org.apache.kafka.common.utils;
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.network.TransferableChannel;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.event.Level;
@@ -94,7 +96,7 @@ public final class Utils {
 
     // This matches URIs of formats: host:port and protocol://host:port
     // IPv6 is supported with [ip] pattern
-    private static final Pattern HOST_PORT_PATTERN = Pattern.compile("^(?:[a-zA-Z][a-zA-Z\\d+-.]*://)?\\[?([0-9a-zA-Z\\-._%:]+)\\]?:([0-9]+)$");
+    private static final Pattern HOST_PORT_PATTERN = Pattern.compile("^(?:[0-9a-zA-Z\\-%._]*://)?\\[?([0-9a-zA-Z\\-%._:]*)]?:([0-9]+)");
 
     private static final Pattern VALID_HOST_CHARACTERS = Pattern.compile("([0-9a-zA-Z\\-%._:]*)");
 
@@ -451,7 +453,14 @@ public final class Utils {
      * @return the new class
      */
     public static <T> Class<? extends T> loadClass(String klass, Class<T> base) throws ClassNotFoundException {
-        return Class.forName(klass, true, Utils.getContextOrKafkaClassLoader()).asSubclass(base);
+        ClassLoader contextOrKafkaClassLoader = Utils.getContextOrKafkaClassLoader();
+        // Use loadClass here instead of Class.forName because the name we use here may be an alias
+        // and not match the name of the class that gets loaded. If that happens, Class.forName can
+        // throw an exception.
+        Class<?> loadedClass = contextOrKafkaClassLoader.loadClass(klass);
+        // Invoke forName here with the true name of the requested class to cause class
+        // initialization to take place.
+        return Class.forName(loadedClass.getName(), true, contextOrKafkaClassLoader).asSubclass(base);
     }
 
     /**
@@ -480,7 +489,7 @@ public final class Utils {
         Class<?>[] argTypes = new Class<?>[params.length / 2];
         Object[] args = new Object[params.length / 2];
         try {
-            Class<?> c = Class.forName(className, true, Utils.getContextOrKafkaClassLoader());
+            Class<?> c = Utils.loadClass(className, Object.class);
             for (int i = 0; i < params.length / 2; i++) {
                 argTypes[i] = (Class<?>) params[2 * i];
                 args[i] = params[(2 * i) + 1];
@@ -889,15 +898,21 @@ public final class Utils {
         Files.walkFileTree(rootFile.toPath(), new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult visitFileFailed(Path path, IOException exc) throws IOException {
-                // If the root path did not exist, ignore the error; otherwise throw it.
-                if (exc instanceof NoSuchFileException && path.toFile().equals(rootFile))
-                    return FileVisitResult.TERMINATE;
+                if (exc instanceof NoSuchFileException) {
+                    if (path.toFile().equals(rootFile)) {
+                        // If the root path did not exist, ignore the error and terminate;
+                        return FileVisitResult.TERMINATE;
+                    } else {
+                        // Otherwise, just continue walking as the file might already be deleted by other threads.
+                        return FileVisitResult.CONTINUE;
+                    }
+                }
                 throw exc;
             }
 
             @Override
             public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
-                Files.delete(path);
+                Files.deleteIfExists(path);
                 return FileVisitResult.CONTINUE;
             }
 
@@ -908,7 +923,7 @@ public final class Utils {
                     throw exc;
                 }
 
-                Files.delete(path);
+                Files.deleteIfExists(path);
                 return FileVisitResult.CONTINUE;
             }
         });
@@ -1682,6 +1697,25 @@ public final class Utils {
             throw new IllegalArgumentException("requirement failed");
     }
 
+    /**
+     * Checks requirement. Throw {@link IllegalArgumentException} if {@code requirement} failed.
+     * @param requirement Requirement to check.
+     * @param errorMessage String to include in the failure message
+     */
+    public static void require(boolean requirement, String errorMessage) {
+        if (!requirement)
+            throw new IllegalArgumentException(errorMessage);
+    }
+
+    /**
+     * Merge multiple {@link ConfigDef} into one
+     * @param configDefs List of {@link ConfigDef}
+     */
+    public static ConfigDef mergeConfigs(List<ConfigDef> configDefs) {
+        ConfigDef all = new ConfigDef();
+        configDefs.forEach(configDef -> configDef.configKeys().values().forEach(all::define));
+        return all;
+    }
     /**
      * A runnable that can throw checked exception.
      */

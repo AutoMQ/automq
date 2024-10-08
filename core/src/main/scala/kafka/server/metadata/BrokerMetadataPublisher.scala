@@ -133,21 +133,6 @@ class BrokerMetadataPublisher(
         debug(s"Publishing metadata at offset $highestOffsetAndEpoch with $metadataVersionLogMsg.")
       }
 
-      Option(delta.featuresDelta()).foreach { featuresDelta =>
-        featuresDelta.metadataVersionChange().ifPresent{ metadataVersion =>
-          info(s"Updating metadata.version to ${metadataVersion.featureLevel()} at offset $highestOffsetAndEpoch.")
-          val currentMetadataVersion = delta.image().features().metadataVersion()
-          if (currentMetadataVersion.isLessThan(MetadataVersion.IBP_3_7_IV2) && metadataVersion.isAtLeast(MetadataVersion.IBP_3_7_IV2)) {
-            info(
-              s"""Resending BrokerRegistration with existing incarnation-id to inform the
-                 |controller about log directories in the broker following metadata update:
-                 |previousMetadataVersion: ${delta.image().features().metadataVersion()}
-                 |newMetadataVersion: $metadataVersion""".stripMargin.linesIterator.mkString(" ").trim)
-            brokerLifecycleManager.handleKraftJBODMetadataVersionUpdate()
-          }
-        }
-      }
-
       // Apply topic deltas.
       Option(delta.topicsDelta()).foreach { topicsDelta =>
         handleTopicsDelta(deltaName, topicsDelta, delta, newImage)
@@ -299,7 +284,7 @@ class BrokerMetadataPublisher(
     try {
       // Start the group coordinator.
       groupCoordinator.startup(() => metadataCache.numPartitions(Topic.GROUP_METADATA_TOPIC_NAME)
-        .getOrElse(config.offsetsTopicPartitions))
+        .getOrElse(config.groupCoordinatorConfig.offsetsTopicPartitions))
     } catch {
       case t: Throwable => fatalFaultHandler.handleFault("Error starting GroupCoordinator", t)
     }
