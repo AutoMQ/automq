@@ -13,6 +13,7 @@ package com.automq.stream.s3.model;
 
 import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
+
 import io.netty.buffer.ByteBuf;
 
 public class StreamRecordBatch implements Comparable<StreamRecordBatch>, ComparableItem<Long> {

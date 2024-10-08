@@ -15,7 +15,7 @@ import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 
 public class CompactionStats {
-    private volatile static CompactionStats instance = null;
+    private static volatile CompactionStats instance = null;
 
     public final CounterMetric compactionReadSizeStats = S3StreamMetricsManager.buildCompactionReadSizeMetric();
     public final CounterMetric compactionWriteSizeStats = S3StreamMetricsManager.buildCompactionWriteSizeMetric();

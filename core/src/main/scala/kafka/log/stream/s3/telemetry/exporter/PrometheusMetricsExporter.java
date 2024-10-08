@@ -11,16 +11,20 @@
 
 package kafka.log.stream.s3.telemetry.exporter;
 
-import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
-import io.opentelemetry.sdk.metrics.export.MetricReader;
+import kafka.log.stream.s3.telemetry.MetricsConstants;
+
+import org.apache.kafka.common.utils.Utils;
+
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import kafka.log.stream.s3.telemetry.MetricsConstants;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.common.utils.Utils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
+import io.opentelemetry.sdk.metrics.export.MetricReader;
 
 public class PrometheusMetricsExporter implements MetricsExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(PrometheusMetricsExporter.class);

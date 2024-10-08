@@ -12,6 +12,7 @@
 package com.automq.stream.s3.wal.common;
 
 import com.automq.stream.s3.wal.util.WALUtil;
+
 import io.netty.buffer.ByteBuf;
 
 public class RecordHeader {

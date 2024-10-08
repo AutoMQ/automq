@@ -22,7 +22,9 @@ import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
+
 import org.apache.kafka.common.TopicPartition;
+
 import org.junit.jupiter.api.Tag;
 
 import java.util.Collection;

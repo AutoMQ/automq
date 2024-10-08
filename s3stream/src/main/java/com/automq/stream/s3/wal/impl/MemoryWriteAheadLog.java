@@ -18,14 +18,16 @@ import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public class MemoryWriteAheadLog implements WriteAheadLog {
     private final AtomicLong offsetAlloc = new AtomicLong();

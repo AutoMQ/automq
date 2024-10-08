@@ -24,6 +24,7 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.streams.errors.DeserializationExceptionHandler;
 import org.apache.kafka.streams.errors.StreamsException;
 import org.apache.kafka.streams.processor.api.Record;
+
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -112,7 +113,8 @@ public class GlobalStateUpdateTask implements GlobalStateMaintainer {
                     deserialized.offset(),
                     deserialized.partition(),
                     deserialized.topic(),
-                    deserialized.headers());
+                    deserialized.headers(),
+                    record);
             processorContext.setRecordContext(recordContext);
             processorContext.setCurrentNode(sourceNodeAndDeserializer.sourceNode());
             final Record<Object, Object> toProcess = new Record<>(

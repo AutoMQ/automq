@@ -20,13 +20,16 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.ConsumerGroupListing;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.Config;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigValue;
 import org.apache.kafka.common.utils.AppInfoParser;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceConnector;
 import org.apache.kafka.connect.util.ConnectorUtils;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -103,6 +106,23 @@ public class MirrorCheckpointConnector extends SourceConnector {
         Utils.closeQuietly(groupFilter, "group filter");
         Utils.closeQuietly(sourceAdminClient, "source admin client");
         Utils.closeQuietly(targetAdminClient, "target admin client");
+    }
+
+    @Override
+    public Config validate(Map<String, String> connectorConfigs) {
+        List<ConfigValue> configValues = super.validate(connectorConfigs).configValues();
+        MirrorCheckpointConfig.validate(connectorConfigs).forEach((config, errorMsg) -> {
+            ConfigValue configValue = configValues.stream()
+                    .filter(conf -> conf.name().equals(config))
+                    .findAny()
+                    .orElseGet(() -> {
+                        ConfigValue result = new ConfigValue(config);
+                        configValues.add(result);
+                        return result;
+                    });
+            configValue.addErrorMessage(errorMsg);
+        });
+        return new Config(configValues);
     }
 
     @Override

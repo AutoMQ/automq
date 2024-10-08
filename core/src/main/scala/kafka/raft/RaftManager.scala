@@ -23,26 +23,30 @@ import java.nio.file.Paths
 import java.util.OptionalInt
 import java.util.concurrent.CompletableFuture
 import java.util.{Map => JMap}
+import java.util.{Collection => JCollection}
 import kafka.log.LogManager
 import kafka.log.UnifiedLog
 import kafka.server.KafkaConfig
 import kafka.utils.CoreUtils
-import kafka.utils.FileLock
 import kafka.utils.Logging
-import org.apache.kafka.clients.{ApiVersions, ManualMetadataUpdater, NetworkClient}
-import org.apache.kafka.common.{KafkaException, Node, TopicPartition, Uuid}
+import org.apache.kafka.clients.{ApiVersions, ManualMetadataUpdater, MetadataRecoveryStrategy, NetworkClient}
+import org.apache.kafka.common.KafkaException
+import org.apache.kafka.common.Node
+import org.apache.kafka.common.TopicPartition
+import org.apache.kafka.common.Uuid
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.{ChannelBuilders, ListenerName, NetworkReceive, Selectable, Selector}
 import org.apache.kafka.common.protocol.ApiMessage
+import org.apache.kafka.common.requests.RequestContext
 import org.apache.kafka.common.requests.RequestHeader
 import org.apache.kafka.common.security.JaasContext
 import org.apache.kafka.common.security.auth.SecurityProtocol
 import org.apache.kafka.common.utils.{LogContext, Time, Utils}
-import org.apache.kafka.raft.{FileQuorumStateStore, KafkaNetworkChannel, KafkaRaftClient, KafkaRaftClientDriver, LeaderAndEpoch, QuorumConfig, RaftClient, ReplicatedLog}
+import org.apache.kafka.raft.{Endpoints, FileQuorumStateStore, KafkaNetworkChannel, KafkaRaftClient, KafkaRaftClientDriver, LeaderAndEpoch, QuorumConfig, RaftClient, ReplicatedLog}
 import org.apache.kafka.server.ProcessRole
 import org.apache.kafka.server.common.serialization.RecordSerde
-import org.apache.kafka.server.util.KafkaScheduler
+import org.apache.kafka.server.util.{FileLock, KafkaScheduler}
 import org.apache.kafka.server.fault.FaultHandler
 import org.apache.kafka.server.util.timer.SystemTimer
 
@@ -118,6 +122,7 @@ object KafkaRaftManager {
 
 trait RaftManager[T] {
   def handleRequest(
+    context: RequestContext,
     header: RequestHeader,
     request: ApiMessage,
     createdTimeMs: Long
@@ -133,7 +138,7 @@ trait RaftManager[T] {
 
   def replicatedLog: ReplicatedLog
 
-  def voterNode(id: Int, listener: String): Option[Node]
+  def voterNode(id: Int, listener: ListenerName): Option[Node]
 }
 
 class KafkaRaftManager[T](
@@ -147,6 +152,8 @@ class KafkaRaftManager[T](
   metrics: Metrics,
   threadNamePrefixOpt: Option[String],
   val controllerQuorumVotersFuture: CompletableFuture[JMap[Integer, InetSocketAddress]],
+  bootstrapServers: JCollection[InetSocketAddress],
+  controllerListeners: Endpoints,
   fatalFaultHandler: FaultHandler
 ) extends RaftManager[T] with Logging {
 
@@ -185,7 +192,6 @@ class KafkaRaftManager[T](
   def startup(): Unit = {
     client.initialize(
       controllerQuorumVotersFuture.get(),
-      config.controllerListenerNames.head,
       new FileQuorumStateStore(new File(dataDir, FileQuorumStateStore.DEFAULT_FILE_NAME)),
       metrics
     )
@@ -210,15 +216,16 @@ class KafkaRaftManager[T](
   }
 
   override def handleRequest(
+    context: RequestContext,
     header: RequestHeader,
     request: ApiMessage,
     createdTimeMs: Long
   ): CompletableFuture[ApiMessage] = {
-    clientDriver.handleRequest(header, request, createdTimeMs)
+    clientDriver.handleRequest(context, header, request, createdTimeMs)
   }
 
   private def buildRaftClient(): KafkaRaftClient[T] = {
-    val client = new KafkaRaftClient(
+    new KafkaRaftClient(
       OptionalInt.of(config.nodeId),
       metadataLogDirUuid,
       recordSerde,
@@ -228,14 +235,15 @@ class KafkaRaftManager[T](
       expirationService,
       logContext,
       clusterId,
+      bootstrapServers,
+      controllerListeners,
       raftConfig
     )
-    client
   }
 
   private def buildNetworkChannel(): KafkaNetworkChannel = {
-    val netClient = buildNetworkClient()
-    new KafkaNetworkChannel(time, netClient, config.quorumRequestTimeoutMs, threadNamePrefix)
+    val (listenerName, netClient) = buildNetworkClient()
+    new KafkaNetworkChannel(time, listenerName, netClient, config.quorumRequestTimeoutMs, threadNamePrefix)
   }
 
   private def createDataDir(): File = {
@@ -254,7 +262,7 @@ class KafkaRaftManager[T](
     )
   }
 
-  private def buildNetworkClient(): NetworkClient = {
+  private def buildNetworkClient(): (ListenerName, NetworkClient) = {
     val controllerListenerName = new ListenerName(config.controllerListenerNames.head)
     val controllerSecurityProtocol = config.effectiveListenerSecurityProtocolMap.getOrElse(
       controllerListenerName,
@@ -292,7 +300,7 @@ class KafkaRaftManager[T](
     val reconnectBackoffMsMs = 500
     val discoverBrokerVersions = true
 
-    new NetworkClient(
+    val networkClient = new NetworkClient(
       selector,
       new ManualMetadataUpdater(),
       clientId,
@@ -307,15 +315,18 @@ class KafkaRaftManager[T](
       time,
       discoverBrokerVersions,
       apiVersions,
-      logContext
+      logContext,
+      MetadataRecoveryStrategy.NONE
     )
+
+    (controllerListenerName, networkClient)
   }
 
   override def leaderAndEpoch: LeaderAndEpoch = {
     client.leaderAndEpoch
   }
 
-  override def voterNode(id: Int, listener: String): Option[Node] = {
+  override def voterNode(id: Int, listener: ListenerName): Option[Node] = {
     client.voterNode(id, listener).toScala
   }
 }

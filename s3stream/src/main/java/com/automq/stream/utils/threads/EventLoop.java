@@ -12,13 +12,14 @@
 package com.automq.stream.utils.threads;
 
 import com.automq.stream.utils.LogContext;
+
+import org.slf4j.Logger;
+
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-
-import org.slf4j.Logger;
 
 public class EventLoop extends Thread implements Executor {
     private final Logger logger;

@@ -13,11 +13,12 @@ package org.apache.kafka.server.metrics.s3stream;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;
-import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.common.Attributes;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 
 public class MultiAttributes<K> implements ConfigListener {
     private final Map<K, Attributes> attributesMap = new ConcurrentHashMap<>();

@@ -21,13 +21,15 @@ import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The DataBlockCache, akin to Linux's Page Cache, has the following responsibilities:

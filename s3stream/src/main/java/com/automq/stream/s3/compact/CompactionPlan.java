@@ -13,6 +13,7 @@ package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.compact.objects.CompactedObject;
+
 import java.util.List;
 import java.util.Map;
 

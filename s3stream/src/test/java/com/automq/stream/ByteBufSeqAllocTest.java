@@ -10,9 +10,11 @@
  */
 package com.automq.stream;
 
-import io.netty.buffer.ByteBuf;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.atomic.AtomicReference;
+
+import io.netty.buffer.ByteBuf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;

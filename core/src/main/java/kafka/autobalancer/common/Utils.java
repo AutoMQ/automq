@@ -11,12 +11,13 @@
 
 package kafka.autobalancer.common;
 
-import java.text.DecimalFormat;
-import java.util.Optional;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
+
+import java.text.DecimalFormat;
+import java.util.Optional;
 
 public class Utils {
 

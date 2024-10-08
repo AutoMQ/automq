@@ -13,6 +13,7 @@ package com.automq.stream.utils.biniarysearch;
 
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+
 import java.util.List;
 
 public class StreamOffsetRangeSearchList extends AbstractOrderedCollection<StreamDataBlock> {

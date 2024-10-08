@@ -28,6 +28,10 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
 import com.automq.stream.utils.threads.EventLoop;
 import com.google.common.annotations.VisibleForTesting;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -39,8 +43,7 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 import static com.automq.stream.s3.cache.CacheAccessType.BLOCK_CACHE_HIT;

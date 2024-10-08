@@ -11,18 +11,6 @@
 
 package org.apache.kafka.controller.stream;
 
-import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.metadata.StreamState;
-import com.automq.stream.utils.Threads;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.OptionalLong;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.metadata.KVRecord;
@@ -35,8 +23,23 @@ import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
+
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.utils.Threads;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.OptionalLong;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Cleanup deleted topic workflow:

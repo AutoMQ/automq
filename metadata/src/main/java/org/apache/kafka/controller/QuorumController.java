@@ -17,7 +17,6 @@
 
 package org.apache.kafka.controller;
 
-import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.FeatureUpdate;
 import org.apache.kafka.common.Uuid;
@@ -32,10 +31,10 @@ import org.apache.kafka.common.errors.StaleBrokerEpochException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.message.AllocateProducerIdsRequestData;
 import org.apache.kafka.common.message.AllocateProducerIdsResponseData;
-import org.apache.kafka.common.message.AlterPartitionRequestData;
-import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.AlterPartitionRequestData;
+import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
@@ -120,17 +119,17 @@ import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
+import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
-import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
-import org.apache.kafka.common.metadata.UserScramCredentialRecord;
-import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnfenceBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
+import org.apache.kafka.common.metadata.UserScramCredentialRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
@@ -153,6 +152,8 @@ import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamClient;
 import org.apache.kafka.controller.stream.StreamControlManager;
 import org.apache.kafka.controller.stream.TopicDeletionManager;
+import org.apache.kafka.deferred.DeferredEvent;
+import org.apache.kafka.deferred.DeferredEventQueue;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistrationReply;
 import org.apache.kafka.metadata.FinalizedControllerFeatures;
@@ -164,10 +165,8 @@ import org.apache.kafka.metadata.migration.ZkRecordConsumer;
 import org.apache.kafka.metadata.placement.ReplicaPlacer;
 import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
 import org.apache.kafka.metadata.util.RecordRedactor;
-import org.apache.kafka.deferred.DeferredEventQueue;
-import org.apache.kafka.deferred.DeferredEvent;
-import org.apache.kafka.queue.EventQueue.EarliestDeadlineFunction;
 import org.apache.kafka.queue.EventQueue;
+import org.apache.kafka.queue.EventQueue.EarliestDeadlineFunction;
 import org.apache.kafka.queue.KafkaEventQueue;
 import org.apache.kafka.raft.Batch;
 import org.apache.kafka.raft.BatchReader;
@@ -186,18 +185,18 @@ import org.apache.kafka.server.policy.CreateTopicPolicy;
 import org.apache.kafka.snapshot.SnapshotReader;
 import org.apache.kafka.snapshot.Snapshots;
 import org.apache.kafka.timeline.SnapshotRegistry;
+
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -208,6 +207,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -239,19 +239,19 @@ public final class QuorumController implements Controller {
     /**
      * The maximum records that the controller will write in a single batch.
      */
-    private final static int MAX_RECORDS_PER_BATCH = 50000;
+    private static final int MAX_RECORDS_PER_BATCH = 50000;
 
     /**
      * The maximum records any user-initiated operation is allowed to generate.
      *
      * For now, this is set to the maximum records in a single batch.
      */
-    final static int MAX_RECORDS_PER_USER_OP = MAX_RECORDS_PER_BATCH;
+    static final int MAX_RECORDS_PER_USER_OP = MAX_RECORDS_PER_BATCH;
 
     /**
      * A builder class which creates the QuorumController.
      */
-    static public class Builder {
+    public static class Builder {
         private final int nodeId;
         private final String clusterId;
         private FaultHandler nonFatalFaultHandler = null;
@@ -1528,7 +1528,7 @@ public final class QuorumController implements Controller {
                     maybeScheduleNextWriteNoOpRecord();
 
                     return ControllerResult.of(
-                        Arrays.asList(new ApiMessageAndVersion(new NoOpRecord(), (short) 0)),
+                        Collections.singletonList(new ApiMessageAndVersion(new NoOpRecord(), (short) 0)),
                         null
                     );
                 },
@@ -2447,7 +2447,7 @@ public final class QuorumController implements Controller {
             () -> {
                 ControllerResult<BrokerRegistrationReply> result = clusterControl.
                     registerBroker(request, offsetControl.nextWriteOffset(), featureControl.
-                        finalizedFeatures(Long.MAX_VALUE), context.requestHeader().requestApiVersion());
+                        finalizedFeatures(Long.MAX_VALUE));
                 rescheduleMaybeFenceStaleBrokers();
                 return result;
             },

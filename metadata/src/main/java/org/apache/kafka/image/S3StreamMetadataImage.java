@@ -17,15 +17,6 @@
 
 package org.apache.kafka.image;
 
-import com.automq.stream.s3.metadata.S3StreamConstant;
-import com.automq.stream.s3.metadata.StreamState;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Objects;
-import java.util.TreeMap;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord.TagCollection;
 import org.apache.kafka.image.writer.ImageWriter;
@@ -33,6 +24,17 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
+
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamState;
+
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Objects;
+import java.util.TreeMap;
 
 public class S3StreamMetadataImage {
     public static final S3StreamMetadataImage EMPTY =

@@ -35,7 +35,12 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import io.netty.buffer.ByteBuf;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.time.StopWatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
@@ -49,10 +54,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Function;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.time.StopWatch;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 import static com.automq.stream.s3.Constants.NOOP_EPOCH;

@@ -17,8 +17,10 @@ import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.google.common.collect.Lists;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,8 +37,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public class LogUploader implements LogRecorder {
     private static final Logger LOGGER = LoggerFactory.getLogger(LogUploader.class);

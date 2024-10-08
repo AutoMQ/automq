@@ -11,6 +11,9 @@
 
 package kafka.log.streamaspect;
 
+import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.utils.ThreadUtils;
+
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.CreateStreamOptions;
@@ -28,10 +31,7 @@ import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.utils.FutureUtil;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timeout;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.utils.ThreadUtils;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +43,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
 
 import static com.automq.stream.utils.FutureUtil.cause;
 

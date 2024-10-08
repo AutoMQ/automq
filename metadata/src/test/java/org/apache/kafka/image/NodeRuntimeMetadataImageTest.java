@@ -17,10 +17,6 @@
 
 package org.apache.kafka.image;
 
-import com.automq.stream.s3.metadata.S3StreamConstant;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
-import java.util.ArrayList;
-import java.util.List;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
@@ -29,9 +25,16 @@ import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

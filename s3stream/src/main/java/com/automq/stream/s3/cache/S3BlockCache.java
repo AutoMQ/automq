@@ -12,6 +12,7 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.trace.context.TraceContext;
+
 import java.util.concurrent.CompletableFuture;
 
 /**

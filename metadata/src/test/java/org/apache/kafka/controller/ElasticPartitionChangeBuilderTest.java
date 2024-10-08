@@ -23,6 +23,7 @@ import org.apache.kafka.metadata.LeaderRecoveryState;
 import org.apache.kafka.metadata.PartitionRegistration;
 import org.apache.kafka.metadata.Replicas;
 import org.apache.kafka.server.common.MetadataVersion;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -59,7 +60,7 @@ public class ElasticPartitionChangeBuilderTest {
 
     }
 
-    private final static PartitionRegistration FOO = new PartitionRegistration.Builder()
+    private static final PartitionRegistration FOO = new PartitionRegistration.Builder()
         .setReplicas(new int[] {2, 1, 3})
         .setDirectories(new Uuid[]{new Uuid(0, 2), new Uuid(0, 1), new Uuid(0, 3)})
         .setIsr(new int[] {2, 1, 3})
@@ -71,13 +72,13 @@ public class ElasticPartitionChangeBuilderTest {
         .setPartitionEpoch(200)
         .build();
 
-    private final static Uuid FOO_ID = Uuid.fromString("FbrrdcfiR-KC2CPSTHaJrg");
+    private static final Uuid FOO_ID = Uuid.fromString("FbrrdcfiR-KC2CPSTHaJrg");
 
     private static PartitionChangeBuilder createFooBuilder() {
         return new PartitionChangeBuilder(FOO, FOO_ID, 0, r -> r != 3, MetadataVersion.IBP_3_7_IV4, 0);
     }
 
-    private final static PartitionRegistration RECOVERING_FOO = new PartitionRegistration.Builder()
+    private static final PartitionRegistration RECOVERING_FOO = new PartitionRegistration.Builder()
         .setReplicas(new int[] {2, 1, 3})
         .setDirectories(new Uuid[]{new Uuid(0, 2), new Uuid(0, 1), new Uuid(0, 3)})
         .setIsr(new int[] {2, 1, 3})
@@ -89,7 +90,7 @@ public class ElasticPartitionChangeBuilderTest {
         .setPartitionEpoch(200)
         .build();
 
-    private final static Uuid RECOVERING_FOO_ID = Uuid.fromString("KbrrdcfiR-KC2CPSTHaJrh");
+    private static final Uuid RECOVERING_FOO_ID = Uuid.fromString("KbrrdcfiR-KC2CPSTHaJrh");
 
     private static PartitionChangeBuilder createRecoveringFOOBuilder() {
         return new PartitionChangeBuilder(RECOVERING_FOO, RECOVERING_FOO_ID, 0, r -> r != 3, MetadataVersion.IBP_3_7_IV4, 0);

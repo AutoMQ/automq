@@ -12,11 +12,14 @@
 package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.utils.Threads;
-import io.netty.buffer.ByteBuf;
-import java.io.IOException;
-import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+
+import io.netty.buffer.ByteBuf;
 
 public abstract class AbstractWALChannel implements WALChannel {
 

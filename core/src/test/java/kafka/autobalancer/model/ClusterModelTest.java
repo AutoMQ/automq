@@ -18,10 +18,11 @@
 package kafka.autobalancer.model;
 
 import kafka.autobalancer.common.types.MetricVersion;
-import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.TopicPartitionMetrics;
+
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
@@ -32,6 +33,7 @@ import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

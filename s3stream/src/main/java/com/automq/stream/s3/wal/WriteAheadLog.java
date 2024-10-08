@@ -15,10 +15,12 @@ import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.RuntimeIOException;
-import io.netty.buffer.ByteBuf;
+
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
+
+import io.netty.buffer.ByteBuf;
 
 public interface WriteAheadLog {
 
@@ -71,7 +73,7 @@ public interface WriteAheadLog {
     CompletableFuture<Void> reset();
 
     /**
-     * Trim data <= offset in log.
+     * Trim {@code data <= offset} in log.
      *
      * @param offset inclusive trim offset.
      * @return future complete when trim done.

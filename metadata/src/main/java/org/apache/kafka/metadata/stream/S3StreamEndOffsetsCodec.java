@@ -11,11 +11,12 @@
 
 package org.apache.kafka.metadata.stream;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public class S3StreamEndOffsetsCodec {
     public static final byte MAGIC = 0x01;

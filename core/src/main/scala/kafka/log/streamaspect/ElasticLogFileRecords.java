@@ -11,19 +11,9 @@
 
 package kafka.log.streamaspect;
 
-import com.automq.stream.api.ReadOptions;
-import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.context.AppendContext;
-import com.automq.stream.s3.context.FetchContext;
-import com.automq.stream.s3.trace.TraceUtils;
-import com.automq.stream.utils.FutureUtil;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import com.automq.stream.api.FetchResult;
-import com.automq.stream.api.RecordBatchWithContext;
-import io.opentelemetry.api.common.Attributes;
 import kafka.log.stream.s3.telemetry.ContextUtils;
 import kafka.log.stream.s3.telemetry.TelemetryConstants;
+
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
 import org.apache.kafka.common.record.ConvertedRecords;
@@ -39,6 +29,16 @@ import org.apache.kafka.common.record.RecordsUtil;
 import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+
+import com.automq.stream.api.FetchResult;
+import com.automq.stream.api.ReadOptions;
+import com.automq.stream.api.RecordBatchWithContext;
+import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.trace.TraceUtils;
+import com.automq.stream.utils.FutureUtil;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +53,10 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.opentelemetry.api.common.Attributes;
 
 import static com.automq.stream.s3.ByteBufAlloc.POOLED_MEMORY_RECORDS;
 import static com.automq.stream.utils.FutureUtil.suppress;

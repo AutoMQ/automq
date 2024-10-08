@@ -21,8 +21,13 @@ import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
+
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -42,11 +47,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
-import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 
 public class RecordAccumulator implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(RecordAccumulator.class);

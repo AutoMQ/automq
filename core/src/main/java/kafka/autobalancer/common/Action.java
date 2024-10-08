@@ -11,8 +11,9 @@
 
 package kafka.autobalancer.common;
 
-import java.util.Objects;
 import org.apache.kafka.common.TopicPartition;
+
+import java.util.Objects;
 
 public class Action {
     private final TopicPartition srcTp;

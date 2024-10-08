@@ -11,6 +11,8 @@
 
 package kafka.log.stream.s3.telemetry.otel;
 
+import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
+
 import com.yammer.metrics.core.Counter;
 import com.yammer.metrics.core.Gauge;
 import com.yammer.metrics.core.Histogram;
@@ -18,14 +20,16 @@ import com.yammer.metrics.core.Metered;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricProcessor;
 import com.yammer.metrics.core.Timer;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.metrics.Meter;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import scala.UninitializedFieldError;
 
 public class OTelMetricsProcessor implements MetricProcessor<Void> {

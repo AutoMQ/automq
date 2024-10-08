@@ -12,19 +12,22 @@
 package com.automq.stream.s3.trace;
 
 import com.automq.stream.s3.trace.context.TraceContext;
+
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.reflect.MethodSignature;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.lang.reflect.Method;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
-import java.lang.reflect.Method;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
-import org.aspectj.lang.ProceedingJoinPoint;
-import org.aspectj.lang.reflect.MethodSignature;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class TraceUtils {
     private static final Logger LOGGER = LoggerFactory.getLogger(TraceUtils.class);

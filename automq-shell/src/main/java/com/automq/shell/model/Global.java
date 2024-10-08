@@ -12,6 +12,7 @@
 package com.automq.shell.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.Collections;
 import java.util.List;
 

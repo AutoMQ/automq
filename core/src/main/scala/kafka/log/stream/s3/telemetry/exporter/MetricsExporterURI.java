@@ -11,18 +11,23 @@
 
 package kafka.log.stream.s3.telemetry.exporter;
 
+import kafka.server.KafkaConfig;
+
+import org.apache.kafka.common.utils.Utils;
+
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.utils.URIUtils;
+
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import kafka.server.KafkaConfig;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.common.utils.Utils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 import software.amazon.awssdk.annotations.NotNull;
 
 public class MetricsExporterURI {

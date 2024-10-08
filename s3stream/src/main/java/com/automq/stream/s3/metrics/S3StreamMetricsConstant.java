@@ -11,9 +11,10 @@
 
 package com.automq.stream.s3.metrics;
 
-import io.opentelemetry.api.common.AttributeKey;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import io.opentelemetry.api.common.AttributeKey;
 
 public class S3StreamMetricsConstant {
     // value = 16KB * 2^i

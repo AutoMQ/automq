@@ -17,15 +17,16 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
-import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
-import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
-import org.apache.kafka.metadata.stream.S3StreamSetObject;
 
 public class NodeS3WALMetadataDelta {
 

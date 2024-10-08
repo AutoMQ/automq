@@ -21,9 +21,10 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import io.github.bucket4j.BlockingBucket;
-import io.github.bucket4j.Bucket;
-import io.netty.buffer.ByteBuf;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
@@ -39,8 +40,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.github.bucket4j.BlockingBucket;
+import io.github.bucket4j.Bucket;
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.wal.impl.block.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 

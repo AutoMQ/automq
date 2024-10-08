@@ -11,13 +11,6 @@
 
 package com.automq.shell.stream;
 
-import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metadata.StreamState;
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
 import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.NetworkClient;
@@ -35,6 +28,15 @@ import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
 import org.apache.kafka.common.requests.s3.DescribeStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.utils.Time;
+
+import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamState;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 public class ClientStreamManager {
 

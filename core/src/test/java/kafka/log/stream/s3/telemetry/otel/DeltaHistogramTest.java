@@ -13,6 +13,7 @@ package kafka.log.stream.s3.telemetry.otel;
 
 import com.yammer.metrics.core.Histogram;
 import com.yammer.metrics.core.MetricsRegistry;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

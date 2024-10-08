@@ -17,11 +17,6 @@
 
 package org.apache.kafka.controller;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-
-import java.util.List;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.message.DeleteKVsRequestData.DeleteKVRequest;
 import org.apache.kafka.common.message.DeleteKVsResponseData.DeleteKVResponse;
 import org.apache.kafka.common.message.GetKVsRequestData.GetKVRequest;
@@ -37,10 +32,17 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @Timeout(40)
 @Tag("S3Unit")

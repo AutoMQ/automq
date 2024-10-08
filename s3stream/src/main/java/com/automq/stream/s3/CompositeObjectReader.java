@@ -16,15 +16,18 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.utils.biniarysearch.AbstractOrderedCollection;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
-import io.netty.buffer.ByteBuf;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 import static com.automq.stream.s3.CompositeObject.FOOTER_MAGIC;

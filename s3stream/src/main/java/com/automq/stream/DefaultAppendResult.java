@@ -29,4 +29,3 @@ public class DefaultAppendResult implements AppendResult {
         return "AppendResult(baseOffset=" + baseOffset + ")";
     }
 }
-

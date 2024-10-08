@@ -32,6 +32,10 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -45,8 +49,6 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;

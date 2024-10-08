@@ -17,11 +17,10 @@
 
 package kafka.autobalancer.detector;
 
-import com.automq.stream.s3.metrics.TimerUtil;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
-import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.goals.AbstractResourceUsageDistributionGoal;
@@ -30,9 +29,13 @@ import kafka.autobalancer.goals.NetworkInUsageDistributionGoal;
 import kafka.autobalancer.goals.NetworkOutUsageDistributionGoal;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
-import org.apache.commons.math3.distribution.PoissonDistribution;
+
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+
+import com.automq.stream.s3.metrics.TimerUtil;
+
+import org.apache.commons.math3.distribution.PoissonDistribution;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;

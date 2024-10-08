@@ -11,18 +11,21 @@
 
 package com.automq.shell.commands.cluster;
 
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Properties;
-import java.util.concurrent.Callable;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.GetNodesOptions;
 import org.apache.kafka.clients.admin.GetNodesResult;
 import org.apache.kafka.clients.admin.NodeMetadata;
 import org.apache.kafka.common.utils.Utils;
+
+import org.apache.commons.lang3.exception.ExceptionUtils;
+
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.Callable;
+
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "describe", description = "Describe the AutoMQ cluster", mixinStandardHelpOptions = true)

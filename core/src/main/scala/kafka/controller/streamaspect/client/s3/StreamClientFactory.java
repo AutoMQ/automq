@@ -11,12 +11,14 @@
 
 package kafka.controller.streamaspect.client.s3;
 
-import com.automq.stream.s3.Config;
-import com.automq.stream.s3.operator.ObjectStorageFactory;
 import kafka.controller.streamaspect.client.Context;
 import kafka.controller.streamaspect.client.StreamClientFactoryProxy;
 import kafka.log.stream.s3.ConfigUtils;
+
 import org.apache.kafka.controller.stream.StreamClient;
+
+import com.automq.stream.s3.Config;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
 
 public class StreamClientFactory {
 

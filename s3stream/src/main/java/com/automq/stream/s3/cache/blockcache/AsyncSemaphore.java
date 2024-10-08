@@ -12,12 +12,14 @@
 package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.utils.threads.EventLoop;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 class AsyncSemaphore {
     private static final Logger LOGGER = LoggerFactory.getLogger(AsyncSemaphore.class);

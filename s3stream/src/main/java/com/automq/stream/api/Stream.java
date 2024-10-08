@@ -14,6 +14,7 @@ package com.automq.stream.api;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+
 import java.util.concurrent.CompletableFuture;
 
 /**

@@ -22,7 +22,6 @@ import kafka.coordinator.transaction.TransactionCoordinator;
 import kafka.network.RequestChannel;
 import kafka.network.RequestConvertToJson;
 import kafka.server.AutoTopicCreationManager;
-import kafka.server.ZkBrokerEpochManager;
 import kafka.server.BrokerFeatures;
 import kafka.server.BrokerTopicStats;
 import kafka.server.ClientQuotaManager;
@@ -37,12 +36,14 @@ import kafka.server.ReplicaManager;
 import kafka.server.ReplicationQuotaManager;
 import kafka.server.SimpleApiVersionManager;
 import kafka.server.ZkAdminManager;
+import kafka.server.ZkBrokerEpochManager;
 import kafka.server.ZkSupport;
 import kafka.server.builders.KafkaApisBuilder;
 import kafka.server.metadata.MockConfigRepository;
 import kafka.server.metadata.ZkMetadataCache;
 import kafka.server.streamaspect.BrokerQuotaManager;
 import kafka.zk.KafkaZkClient;
+
 import org.apache.kafka.common.memory.MemoryPool;
 import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.UpdateMetadataRequestData.UpdateMetadataBroker;
@@ -64,6 +65,7 @@ import org.apache.kafka.server.common.FinalizedFeatures;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.config.ZkConfigs;
+
 import org.mockito.Mockito;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -78,7 +80,6 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import scala.Option;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -89,6 +90,8 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
+
+import scala.Option;
 
 @State(Scope.Benchmark)
 @Fork(value = 1)

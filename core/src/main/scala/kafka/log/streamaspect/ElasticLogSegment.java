@@ -11,18 +11,8 @@
 
 package kafka.log.streamaspect;
 
-import com.automq.stream.api.ReadOptions;
-import com.automq.stream.s3.context.FetchContext;
-import java.io.File;
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-import java.util.Optional;
-import java.util.OptionalLong;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 import kafka.log.streamaspect.cache.FileCache;
+
 import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.record.FileRecords;
@@ -50,7 +40,21 @@ import org.apache.kafka.storage.internals.log.TimeIndex;
 import org.apache.kafka.storage.internals.log.TimestampOffset;
 import org.apache.kafka.storage.internals.log.TransactionIndex;
 import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
+
+import com.automq.stream.api.ReadOptions;
+import com.automq.stream.s3.context.FetchContext;
+
 import org.slf4j.event.Level;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ElasticLogSegment extends LogSegment implements Comparable<ElasticLogSegment> {
     public static FileCache timeCache = FileCache.NOOP;

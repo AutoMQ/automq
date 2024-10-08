@@ -19,14 +19,16 @@ import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.threads.EventLoop;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class StreamReaders implements S3BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReaders.class);

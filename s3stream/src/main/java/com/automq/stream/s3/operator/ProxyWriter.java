@@ -18,11 +18,12 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3ObjectStats;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.automq.stream.utils.FutureUtil;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 
 /**
  * If object data size is less than ObjectWriter.MAX_UPLOAD_SIZE, we should use single upload to upload it.

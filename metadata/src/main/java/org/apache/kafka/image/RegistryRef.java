@@ -11,13 +11,15 @@
 
 package org.apache.kafka.image;
 
-import io.netty.util.AbstractReferenceCounted;
-import io.netty.util.ReferenceCounted;
+import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.timeline.SnapshotRegistry;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
-import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.timeline.SnapshotRegistry;
+
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
 
 public class RegistryRef extends AbstractReferenceCounted {
     public static final RegistryRef NOOP = new RegistryRef(new SnapshotRegistry(new LogContext()), -1, List.of());

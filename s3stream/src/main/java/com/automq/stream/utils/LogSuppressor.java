@@ -11,9 +11,10 @@
 
 package com.automq.stream.utils;
 
+import org.slf4j.Logger;
+
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import org.slf4j.Logger;
 
 public class LogSuppressor {
     private final Logger logger;

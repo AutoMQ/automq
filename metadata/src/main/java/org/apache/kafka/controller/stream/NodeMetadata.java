@@ -11,10 +11,12 @@
 
 package org.apache.kafka.controller.stream;
 
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.Map;
-import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class NodeMetadata {

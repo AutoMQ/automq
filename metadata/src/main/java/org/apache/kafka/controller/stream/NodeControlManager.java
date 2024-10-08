@@ -11,12 +11,6 @@
 
 package org.apache.kafka.controller.stream;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.errors.s3.UnregisterNodeWithOpenStreamsException;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.AutomqRegisterNodeRequestData;
@@ -30,8 +24,16 @@ import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class NodeControlManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(NodeControlManager.class);

@@ -17,14 +17,15 @@
 
 package org.apache.kafka.image;
 
-import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.Objects;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.Objects;
 
 public final class KVImage {
 

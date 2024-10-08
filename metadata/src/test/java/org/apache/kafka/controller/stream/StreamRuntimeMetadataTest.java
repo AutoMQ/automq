@@ -11,16 +11,19 @@
 
 package org.apache.kafka.controller.stream;
 
-import com.automq.stream.s3.metadata.StreamState;
-import java.util.Collections;
-import java.util.List;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.timeline.SnapshotRegistry;
+
+import com.automq.stream.s3.metadata.StreamState;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

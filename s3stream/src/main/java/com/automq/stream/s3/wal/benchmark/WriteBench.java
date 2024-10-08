@@ -12,13 +12,16 @@
 package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
-import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+
+import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.inf.ArgumentParser;
+import net.sourceforge.argparse4j.inf.Namespace;
+
 import java.io.IOException;
 import java.util.NavigableSet;
 import java.util.Random;
@@ -30,9 +33,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
-import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.inf.ArgumentParser;
-import net.sourceforge.argparse4j.inf.Namespace;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
 import static com.automq.stream.s3.wal.benchmark.BenchTool.resetWALHeader;
