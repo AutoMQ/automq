@@ -13,6 +13,7 @@ package com.automq.stream.api;
 
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
+
 import java.util.concurrent.CompletableFuture;
 
 /**

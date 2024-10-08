@@ -11,11 +11,12 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import org.HdrHistogram.Histogram;
+import org.HdrHistogram.Recorder;
+
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
-import org.HdrHistogram.Histogram;
-import org.HdrHistogram.Recorder;
 
 public class Stats {
 

@@ -11,11 +11,12 @@
 
 package com.automq.stream.s3;
 
+import java.util.Random;
+import java.util.UUID;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
-import java.util.Random;
-import java.util.UUID;
 
 public class TestUtils {
 

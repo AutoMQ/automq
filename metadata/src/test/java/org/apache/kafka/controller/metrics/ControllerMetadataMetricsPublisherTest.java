@@ -17,7 +17,6 @@
 
 package org.apache.kafka.controller.metrics;
 
-import java.util.Optional;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.image.AclsImage;
 import org.apache.kafka.image.ClientQuotasImage;

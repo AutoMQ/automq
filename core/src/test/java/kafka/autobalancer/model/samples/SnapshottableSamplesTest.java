@@ -12,6 +12,7 @@
 package kafka.autobalancer.model.samples;
 
 import kafka.autobalancer.model.Snapshot;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

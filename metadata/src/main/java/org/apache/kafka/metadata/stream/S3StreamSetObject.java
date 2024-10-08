@@ -17,6 +17,11 @@
 
 package org.apache.kafka.metadata.stream;
 
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.common.utils.Bytes;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
@@ -24,8 +29,7 @@ import com.github.luben.zstd.Zstd;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.Weigher;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,10 +40,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
-import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
-import org.apache.kafka.common.utils.Bytes;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     private static final Cache<Long, List<StreamOffsetRange>> RANGES_CACHE = CacheBuilder.newBuilder()

@@ -12,8 +12,10 @@
 package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import io.netty.buffer.ByteBuf;
+
 import java.io.IOException;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 

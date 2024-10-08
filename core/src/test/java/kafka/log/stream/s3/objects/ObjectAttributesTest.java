@@ -12,6 +12,7 @@
 package kafka.log.stream.s3.objects;
 
 import com.automq.stream.s3.objects.ObjectAttributes;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -14,6 +14,7 @@ package com.automq.stream.s3.metadata;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
 import software.amazon.awssdk.services.s3.model.Tag;
 import software.amazon.awssdk.services.s3.model.Tagging;
 

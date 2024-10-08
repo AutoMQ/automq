@@ -22,7 +22,6 @@ import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
 import kafka.controller.streamaspect.client.{Context, StreamClientFactoryProxy}
-import kafka.metrics.LinuxIoMetricsCollector
 
 import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}

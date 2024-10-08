@@ -11,15 +11,6 @@
 
 package org.apache.kafka.controller.stream;
 
-import com.automq.stream.s3.Config;
-import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.objects.ObjectAttributes;
-import com.automq.stream.s3.operator.BucketURI;
-import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -39,12 +30,24 @@ import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
+
+import com.automq.stream.s3.Config;
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.operator.BucketURI;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

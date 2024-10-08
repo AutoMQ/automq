@@ -10,10 +10,17 @@
  */
 package kafka.log.streamaspect;
 
+import kafka.log.streamaspect.cache.FileCache;
+
+import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.utils.PrimitiveRef;
+import org.apache.kafka.storage.internals.log.AbortedTxn;
+import org.apache.kafka.storage.internals.log.TransactionIndex;
+import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
+
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatchWithContext;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -25,12 +32,9 @@ import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
-import kafka.log.streamaspect.cache.FileCache;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.utils.PrimitiveRef;
-import org.apache.kafka.storage.internals.log.AbortedTxn;
-import org.apache.kafka.storage.internals.log.TransactionIndex;
-import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public class ElasticTransactionIndex extends TransactionIndex {
     private final StreamSliceSupplier streamSupplier;

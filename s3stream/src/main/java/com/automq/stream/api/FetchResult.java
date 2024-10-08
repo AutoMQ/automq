@@ -12,6 +12,7 @@
 package com.automq.stream.api;
 
 import com.automq.stream.s3.cache.CacheAccessType;
+
 import java.util.List;
 
 public interface FetchResult {

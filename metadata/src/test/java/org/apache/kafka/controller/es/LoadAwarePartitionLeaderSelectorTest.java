@@ -11,20 +11,21 @@
 
 package org.apache.kafka.controller.es;
 
-import java.util.Collections;
-import java.util.Optional;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.server.util.MockRandom;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class LoadAwarePartitionLeaderSelectorTest {
 

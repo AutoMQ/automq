@@ -12,6 +12,7 @@
 package com.automq.shell;
 
 import com.automq.shell.commands.cluster.Cluster;
+
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "automq-cli", mixinStandardHelpOptions = true, version = "automq-cli 1.0",

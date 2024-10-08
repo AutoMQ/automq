@@ -11,11 +11,12 @@
 
 package org.apache.kafka.image.node.automq;
 
-import com.automq.stream.s3.metadata.StreamOffsetRange;
 import org.apache.kafka.image.NodeS3StreamSetObjectMetadataImage;
 import org.apache.kafka.image.node.MetadataNode;
 import org.apache.kafka.image.node.printer.MetadataNodePrinter;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
+
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 
 public class NodeImageNode implements MetadataNode {
     private final NodeS3StreamSetObjectMetadataImage image;

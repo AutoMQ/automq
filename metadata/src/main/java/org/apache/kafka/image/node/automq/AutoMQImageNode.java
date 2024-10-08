@@ -11,15 +11,16 @@
 
 package org.apache.kafka.image.node.automq;
 
-import java.util.Arrays;
-import java.util.Collection;
 import org.apache.kafka.image.KVImage;
 import org.apache.kafka.image.S3ObjectsImage;
 import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.image.node.MetadataNode;
 
+import java.util.Arrays;
+import java.util.Collection;
+
 public class AutoMQImageNode implements MetadataNode {
-    public final static String NAME = "automq";
+    public static final String NAME = "automq";
 
     private final KVImage kvImage;
     private final S3StreamsMetadataImage streamsMetadataImage;

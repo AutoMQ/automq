@@ -958,15 +958,13 @@ project(':core') {
     // ZooKeeperMain depends on commons-cli but declares the dependency as `provided`
     implementation libs.commonsCli
 
-<<<<<<< HEAD
     implementation libs.zstd
     implementation libs.commonLang
-    compileOnly libs.log4j
-    implementation libs.slf4jlog4j
-    implementation libs.slf4jBridge
     implementation libs.nettyHttp2
     implementation project(':s3stream')
     implementation libs.guava
+    implementation libs.slf4jBridge
+    implementation libs.slf4jReload4j
 
     implementation libs.opentelemetryJava8
     implementation libs.opentelemetryOshi
@@ -982,10 +980,7 @@ project(':core') {
       exclude group: 'org.slf4j', module: '*'
     }
 
-    compileOnly libs.log4j
-=======
     compileOnly libs.reload4j
->>>>>>> 3.9.0
 
     testImplementation project(':clients').sourceSets.test.output
     testImplementation project(':group-coordinator').sourceSets.test.output
@@ -1014,14 +1009,8 @@ project(':core') {
     testImplementation libs.junitJupiter
     testImplementation libs.slf4jReload4j
     testImplementation libs.caffeine
-<<<<<<< HEAD
     testImplementation libs.commonMath3
-
-    generator project(':generator')
-=======
-
     testRuntimeOnly libs.junitPlatformLanucher
->>>>>>> 3.9.0
   }
 
   if (userEnableTestCoverage) {
@@ -2469,11 +2458,8 @@ project(':streams') {
     testImplementation libs.hamcrest
     testImplementation libs.mockitoCore
     testImplementation libs.mockitoJunitJupiter // supports MockitoExtension
-<<<<<<< HEAD
-=======
     testImplementation libs.junitPlatformSuiteEngine // supports suite test
     testImplementation project(':group-coordinator')
->>>>>>> 3.9.0
 
     testRuntimeOnly project(':streams:test-utils')
     testRuntimeOnly libs.slf4jReload4j
@@ -3354,10 +3340,7 @@ project(':connect:runtime') {
     testImplementation project(':group-coordinator')
     testImplementation project(':storage')
     testImplementation project(':connect:test-plugins')
-<<<<<<< HEAD
-=======
     testImplementation project(':server-common').sourceSets.test.output
->>>>>>> 3.9.0
 
     testImplementation libs.junitJupiter
     testImplementation libs.mockitoCore

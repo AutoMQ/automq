@@ -14,18 +14,21 @@ package com.automq.stream.s3.wal.benchmark;
 import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.RecoverResult;
-import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.impl.block.BlockWALHeader;
+import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.util.WALUtil;
-import io.netty.buffer.ByteBuf;
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.function.Function;
-import java.util.stream.StreamSupport;
+
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.impl.Arguments;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.Namespace;
+
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.function.Function;
+import java.util.stream.StreamSupport;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
 

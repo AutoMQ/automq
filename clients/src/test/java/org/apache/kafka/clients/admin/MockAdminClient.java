@@ -343,7 +343,7 @@ public class MockAdminClient extends AdminClient {
 
     // AutoMQ for Kafka inject start
     @Override
-    synchronized public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
+    public synchronized GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
         KafkaFutureImpl<Integer> nodeIdFuture = new KafkaFutureImpl<>();
         if (timeoutNextRequests > 0) {
             nodeIdFuture.completeExceptionally(new TimeoutException());

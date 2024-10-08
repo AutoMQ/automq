@@ -17,7 +17,7 @@
 
 package kafka.server
 
-import com.yammer.metrics.core.{Gauge, Meter}
+import com.yammer.metrics.core.Meter
 
 import kafka.network.RequestChannel
 import kafka.utils.{Exit, Logging, Pool}
@@ -26,15 +26,12 @@ import org.apache.kafka.common.TopicPartition
 
 import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.AtomicInteger
-import com.yammer.metrics.core.Meter
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.utils.{KafkaThread, Time}
 import org.apache.kafka.server.log.remote.storage.RemoteStorageMetrics
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 
 import java.util.Collections
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, TimeUnit}
 import scala.collection.Set
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -791,3 +788,9 @@ class BrokerTopicStats(remoteStorageEnabled: Boolean = false) extends Logging {
     info("Broker and topic stats closed")
   }
 }
+
+// AutoMQ inject start
+class BrokerTopicPartitionMetrics(tp: TopicPartition) extends BrokerTopicMetrics(Some(tp.topic()), false) {
+  override lazy val tags: java.util.Map[String, String] = Map("topic" -> tp.topic(), "partition" -> tp.partition().toString).asJava
+}
+// AutoMQ inject end

@@ -11,30 +11,8 @@
 
 package kafka.log.stream.s3.metadata;
 
-import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
-import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
-import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3StreamConstant;
-import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.objects.ObjectAttributes;
-import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
-import com.automq.stream.utils.FutureUtil;
-import io.netty.buffer.ByteBuf;
-import io.netty.util.concurrent.DefaultThreadFactory;
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
 import kafka.server.BrokerServer;
+
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.S3ObjectsImage;
@@ -47,13 +25,40 @@ import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
+
+import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
+import com.automq.stream.utils.FutureUtil;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.util.concurrent.DefaultThreadFactory;
 
 import static com.automq.stream.utils.FutureUtil.exec;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPublisher {
-    private final static Logger LOGGER = LoggerFactory.getLogger(StreamMetadataManager.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(StreamMetadataManager.class);
     private final int nodeId;
     private final List<GetObjectsTask> pendingGetObjectsTasks;
     private final ExecutorService pendingExecutorService;

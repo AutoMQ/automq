@@ -11,24 +11,13 @@
 
 package kafka.log.stream.s3.streams;
 
-import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metadata.StreamState;
-import com.automq.stream.s3.streams.StreamCloseHook;
-import com.automq.stream.s3.streams.StreamManager;
-import com.automq.stream.utils.FutureUtil;
-import com.automq.stream.utils.LogContext;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.request.BatchRequest;
 import kafka.log.stream.s3.network.request.WrapRequest;
-import org.apache.commons.lang3.tuple.Pair;
+
 import org.apache.kafka.common.message.CloseStreamsRequestData;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
@@ -57,7 +46,22 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
+
+import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.streams.StreamCloseHook;
+import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.LogContext;
+
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class ControllerStreamManager implements StreamManager {
     private final Logger logger;

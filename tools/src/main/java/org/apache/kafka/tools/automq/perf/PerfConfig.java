@@ -11,20 +11,22 @@
 
 package org.apache.kafka.tools.automq.perf;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import org.apache.kafka.common.utils.Exit;
+import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
+import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
+import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
+
 import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.internal.HelpScreenException;
 import net.sourceforge.argparse4j.impl.type.ReflectArgumentType;
 import net.sourceforge.argparse4j.inf.Argument;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
-import org.apache.kafka.common.utils.Exit;
-import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
-import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
-import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
+import net.sourceforge.argparse4j.internal.HelpScreenException;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.nonNegativeInteger;

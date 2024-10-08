@@ -12,6 +12,7 @@
 package com.automq.stream.s3.utils;
 
 import com.automq.stream.utils.SecretUtils;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

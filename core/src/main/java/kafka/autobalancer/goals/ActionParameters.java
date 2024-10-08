@@ -3,6 +3,7 @@ package kafka.autobalancer.goals;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;

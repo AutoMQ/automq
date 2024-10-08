@@ -11,9 +11,22 @@
 
 package org.apache.kafka.tools.automq;
 
+import org.apache.kafka.tools.automq.perf.ConsumerService;
+import org.apache.kafka.tools.automq.perf.PerfConfig;
+import org.apache.kafka.tools.automq.perf.ProducerService;
+import org.apache.kafka.tools.automq.perf.Stats;
+import org.apache.kafka.tools.automq.perf.StatsCollector.Result;
+import org.apache.kafka.tools.automq.perf.StatsCollector.StopCondition;
+import org.apache.kafka.tools.automq.perf.TopicService;
+import org.apache.kafka.tools.automq.perf.TopicService.Topic;
+
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
@@ -23,16 +36,6 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import org.apache.kafka.tools.automq.perf.ConsumerService;
-import org.apache.kafka.tools.automq.perf.PerfConfig;
-import org.apache.kafka.tools.automq.perf.ProducerService;
-import org.apache.kafka.tools.automq.perf.Stats;
-import org.apache.kafka.tools.automq.perf.StatsCollector.Result;
-import org.apache.kafka.tools.automq.perf.StatsCollector.StopCondition;
-import org.apache.kafka.tools.automq.perf.TopicService;
-import org.apache.kafka.tools.automq.perf.TopicService.Topic;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static org.apache.kafka.tools.automq.perf.StatsCollector.printAndCollectStats;
 

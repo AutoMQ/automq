@@ -16,11 +16,6 @@
  */
 package org.apache.kafka.common.protocol;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
 import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
@@ -150,13 +145,7 @@ import org.apache.kafka.common.errors.UnsupportedEndpointTypeException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.errors.UnsupportedSaslMechanismException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
-import org.apache.kafka.common.errors.TransactionAbortableException;
 import org.apache.kafka.common.errors.VoterNotFoundException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-// AutoMQ inject start
 import org.apache.kafka.common.errors.s3.CompactedObjectsNotFoundException;
 import org.apache.kafka.common.errors.s3.KeyExistException;
 import org.apache.kafka.common.errors.s3.NodeEpochExpiredException;
@@ -171,6 +160,15 @@ import org.apache.kafka.common.errors.s3.StreamInnerErrorException;
 import org.apache.kafka.common.errors.s3.StreamNotClosedException;
 import org.apache.kafka.common.errors.s3.StreamNotExistException;
 import org.apache.kafka.common.errors.s3.StreamNotOpenedException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 // AutoMQ inject end
 
 

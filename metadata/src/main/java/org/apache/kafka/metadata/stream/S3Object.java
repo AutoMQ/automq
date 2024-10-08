@@ -17,14 +17,17 @@
 
 package org.apache.kafka.metadata.stream;
 
-import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.objects.ObjectAttributes;
-import java.util.Objects;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
+
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.objects.ObjectAttributes;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 import static org.apache.kafka.metadata.stream.S3ObjectState.PREPARED;
 

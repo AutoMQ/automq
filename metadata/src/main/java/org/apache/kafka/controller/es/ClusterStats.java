@@ -11,16 +11,16 @@
 
 package org.apache.kafka.controller.es;
 
-import java.util.HashMap;
 import org.apache.kafka.common.TopicPartition;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
 public class ClusterStats {
     public static final double INVALID = -1;
     private static final long EXPIRE_TIME_MS = 60000; // 1 minute
-    private volatile static ClusterStats instance = null;
+    private static volatile ClusterStats instance = null;
     private volatile Set<Integer> excludedBrokers;
     private volatile Map<Integer, Double> brokerLoads = new HashMap<>();
     private volatile Map<TopicPartition, Double> partitionLoads = new HashMap<>();

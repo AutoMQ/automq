@@ -12,6 +12,7 @@
 package com.automq.stream.s3.streams;
 
 import com.automq.stream.s3.metadata.StreamMetadata;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -89,4 +90,3 @@ public interface StreamManager {
 
     void setStreamCloseHook(StreamCloseHook hook);
 }
-

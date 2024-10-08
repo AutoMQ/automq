@@ -10,8 +10,9 @@
  */
 package com.automq.stream.utils;
 
-import io.netty.buffer.ByteBuf;
 import java.io.InputStream;
+
+import io.netty.buffer.ByteBuf;
 
 /**
  * A byte buffer backed input inputStream

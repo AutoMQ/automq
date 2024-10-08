@@ -11,8 +11,9 @@
 
 package kafka.autobalancer.services;
 
-import com.automq.stream.utils.LogContext;
 import org.apache.kafka.common.Reconfigurable;
+
+import com.automq.stream.utils.LogContext;
 
 public abstract class AutoBalancerService extends AbstractResumableService implements Reconfigurable {
     public AutoBalancerService(LogContext logContext) {

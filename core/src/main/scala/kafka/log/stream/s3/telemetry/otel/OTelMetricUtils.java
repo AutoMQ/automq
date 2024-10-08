@@ -12,6 +12,7 @@
 package kafka.log.stream.s3.telemetry.otel;
 
 import com.yammer.metrics.core.MetricName;
+
 import io.opentelemetry.api.metrics.DoubleGaugeBuilder;
 import io.opentelemetry.api.metrics.Meter;
 

@@ -205,7 +205,6 @@ class BrokerMetadataPublisherTest {
       mock(classOf[AclPublisher]),
       faultHandler,
       faultHandler,
-      mock(classOf[BrokerLifecycleManager]),
       partitionOpCallbackExecutor = MoreExecutors.newDirectExecutorService()
     )
 

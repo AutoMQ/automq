@@ -11,8 +11,9 @@
 
 package kafka.controller.streamaspect.client;
 
-import java.lang.reflect.Method;
 import org.apache.kafka.controller.stream.StreamClient;
+
+import java.lang.reflect.Method;
 
 public class StreamClientFactoryProxy {
     private static final String PROTOCOL_SEPARATOR = ":";

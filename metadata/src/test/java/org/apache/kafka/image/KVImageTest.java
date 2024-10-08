@@ -17,11 +17,6 @@
 
 package org.apache.kafka.image;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
@@ -29,21 +24,28 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Timeout(40)
 @Tag("S3Unit")
 public class KVImageTest {
 
-    final static KVImage IMAGE1;
+    static final KVImage IMAGE1;
 
-    final static List<ApiMessageAndVersion> DELTA1_RECORDS;
+    static final List<ApiMessageAndVersion> DELTA1_RECORDS;
 
-    final static KVDelta DELTA1;
+    static final KVDelta DELTA1;
 
-    final static KVImage IMAGE2;
+    static final KVImage IMAGE2;
 
 
     static {

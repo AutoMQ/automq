@@ -12,6 +12,7 @@
 package com.automq.stream.s3.compact.utils;
 
 import com.automq.stream.s3.StreamDataBlock;
+
 import java.util.function.Predicate;
 
 public class GroupByLimitPredicate implements Predicate<StreamDataBlock> {

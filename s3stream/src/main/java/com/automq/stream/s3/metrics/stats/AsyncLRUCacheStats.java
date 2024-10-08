@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AsyncLRUCacheStats {
-    private volatile static AsyncLRUCacheStats instance = null;
+    private static volatile AsyncLRUCacheStats instance = null;
 
     private final Map<String, CounterMetric> evictCount = new ConcurrentHashMap<>();
     private final Map<String, CounterMetric> hitCount = new ConcurrentHashMap<>();

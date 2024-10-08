@@ -11,20 +11,24 @@
 
 package kafka.log.stream.s3.telemetry.exporter;
 
+import kafka.server.KafkaRaftServer;
+
 import com.automq.shell.AutoMQApplication;
 import com.automq.shell.metrics.S3MetricsConfig;
 import com.automq.shell.metrics.S3MetricsExporter;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
-import io.opentelemetry.sdk.metrics.export.MetricReader;
-import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
-import java.time.Duration;
-import java.util.List;
-import kafka.server.KafkaRaftServer;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+import java.util.List;
+
+import io.opentelemetry.sdk.metrics.export.MetricReader;
+import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 
 public class OpsMetricsExporter implements MetricsExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(OpsMetricsExporter.class);

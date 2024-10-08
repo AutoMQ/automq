@@ -11,9 +11,10 @@
 
 package kafka.log.stream.s3;
 
-import com.automq.stream.s3.Config;
 import kafka.automq.AutoMQConfig;
 import kafka.server.KafkaConfig;
+
+import com.automq.stream.s3.Config;
 
 public class ConfigUtils {
 

@@ -281,7 +281,7 @@ object ElasticUnifiedLog extends Logging {
                         }
                 }
             }
-            val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint))
+            val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint), scheduler)
             // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
             // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.
             val elasticUnifiedLog = new ElasticUnifiedLog(localLog.logStartOffset,
@@ -324,9 +324,11 @@ object ElasticUnifiedLog extends Logging {
      */
     private[log] def maybeCreateLeaderEpochCache(topicPartition: TopicPartition,
         recordVersion: RecordVersion,
-        leaderEpochCheckpoint: ElasticLeaderEpochCheckpoint): Option[LeaderEpochFileCache] = {
+        leaderEpochCheckpoint: ElasticLeaderEpochCheckpoint,
+        scheduler: Scheduler
+    ): Option[LeaderEpochFileCache] = {
 
-        def newLeaderEpochFileCache(): LeaderEpochFileCache = new LeaderEpochFileCache(topicPartition, leaderEpochCheckpoint)
+        def newLeaderEpochFileCache(): LeaderEpochFileCache = new LeaderEpochFileCache(topicPartition, leaderEpochCheckpoint, scheduler)
 
         if (recordVersion.precedes(RecordVersion.V2)) {
             None
