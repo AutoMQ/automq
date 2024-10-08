@@ -53,6 +53,7 @@ object RequestConvertToJson {
       case req: DeleteAclsRequest => DeleteAclsRequestDataJsonConverter.write(req.data, request.version)
       case req: DeleteGroupsRequest => DeleteGroupsRequestDataJsonConverter.write(req.data, request.version)
       case req: DeleteRecordsRequest => DeleteRecordsRequestDataJsonConverter.write(req.data, request.version)
+      case req: DeleteShareGroupStateRequest => DeleteShareGroupStateRequestDataJsonConverter.write(req.data, request.version)
       case req: DeleteTopicsRequest => DeleteTopicsRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeAclsRequest => DescribeAclsRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeClientQuotasRequest => DescribeClientQuotasRequestDataJsonConverter.write(req.data, request.version)
@@ -77,6 +78,7 @@ object RequestConvertToJson {
       case req: GetTelemetrySubscriptionsRequest => GetTelemetrySubscriptionsRequestDataJsonConverter.write(req.data, request.version)
       case req: HeartbeatRequest => HeartbeatRequestDataJsonConverter.write(req.data, request.version)
       case req: IncrementalAlterConfigsRequest => IncrementalAlterConfigsRequestDataJsonConverter.write(req.data, request.version)
+      case req: InitializeShareGroupStateRequest => InitializeShareGroupStateRequestDataJsonConverter.write(req.data, request.version)
       case req: InitProducerIdRequest => InitProducerIdRequestDataJsonConverter.write(req.data, request.version)
       case req: JoinGroupRequest => JoinGroupRequestDataJsonConverter.write(req.data, request.version)
       case req: LeaderAndIsrRequest => LeaderAndIsrRequestDataJsonConverter.write(req.data, request.version)
@@ -93,9 +95,15 @@ object RequestConvertToJson {
       case req: OffsetsForLeaderEpochRequest => OffsetForLeaderEpochRequestDataJsonConverter.write(req.data, request.version)
       case req: ProduceRequest => ProduceRequestDataJsonConverter.write(req.data, request.version, false)
       case req: PushTelemetryRequest => PushTelemetryRequestDataJsonConverter.write(req.data, request.version)
+      case req: ReadShareGroupStateRequest => ReadShareGroupStateRequestDataJsonConverter.write(req.data, request.version)
+      case req: ReadShareGroupStateSummaryRequest => ReadShareGroupStateSummaryRequestDataJsonConverter.write(req.data, request.version)
       case req: RenewDelegationTokenRequest => RenewDelegationTokenRequestDataJsonConverter.write(req.data, request.version)
       case req: SaslAuthenticateRequest => SaslAuthenticateRequestDataJsonConverter.write(req.data, request.version)
       case req: SaslHandshakeRequest => SaslHandshakeRequestDataJsonConverter.write(req.data, request.version)
+      case req: ShareAcknowledgeRequest => ShareAcknowledgeRequestDataJsonConverter.write(req.data, request.version)
+      case req: ShareFetchRequest => ShareFetchRequestDataJsonConverter.write(req.data, request.version)
+      case req: ShareGroupDescribeRequest => ShareGroupDescribeRequestDataJsonConverter.write(req.data, request.version)
+      case req: ShareGroupHeartbeatRequest => ShareGroupHeartbeatRequestDataJsonConverter.write(req.data, request.version)
       case req: StopReplicaRequest => StopReplicaRequestDataJsonConverter.write(req.data, request.version)
       case req: SyncGroupRequest => SyncGroupRequestDataJsonConverter.write(req.data, request.version)
       case req: TxnOffsetCommitRequest => TxnOffsetCommitRequestDataJsonConverter.write(req.data, request.version)
@@ -103,7 +111,9 @@ object RequestConvertToJson {
       case req: UpdateFeaturesRequest => UpdateFeaturesRequestDataJsonConverter.write(req.data, request.version)
       case req: UpdateMetadataRequest => UpdateMetadataRequestDataJsonConverter.write(req.data, request.version)
       case req: VoteRequest => VoteRequestDataJsonConverter.write(req.data, request.version)
+      case req: WriteShareGroupStateRequest => WriteShareGroupStateRequestDataJsonConverter.write(req.data, request.version)
       case req: WriteTxnMarkersRequest => WriteTxnMarkersRequestDataJsonConverter.write(req.data, request.version)
+
       // AutoMQ for Kafka inject start
       case req: CreateStreamsRequest => CreateStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: DeleteStreamsRequest => DeleteStreamsRequestDataJsonConverter.write(req.data, request.version)
@@ -123,6 +133,10 @@ object RequestConvertToJson {
       case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeStreamsRequest => DescribeStreamsRequestDataJsonConverter.write(req.data, request.version)
       // AutoMQ for Kafka inject end
+      
+      case req: AddRaftVoterRequest => AddRaftVoterRequestDataJsonConverter.write(req.data, request.version)
+      case req: RemoveRaftVoterRequest => RemoveRaftVoterRequestDataJsonConverter.write(req.data, request.version)
+      case req: UpdateRaftVoterRequest => UpdateRaftVoterRequestDataJsonConverter.write(req.data, request.version)
       case _ => throw new IllegalStateException(s"ApiKey ${request.apiKey} is not currently handled in `request`, the " +
         "code should be updated to do so.")
     }
@@ -155,6 +169,7 @@ object RequestConvertToJson {
       case res: DeleteAclsResponse => DeleteAclsResponseDataJsonConverter.write(res.data, version)
       case res: DeleteGroupsResponse => DeleteGroupsResponseDataJsonConverter.write(res.data, version)
       case res: DeleteRecordsResponse => DeleteRecordsResponseDataJsonConverter.write(res.data, version)
+      case res: DeleteShareGroupStateResponse => DeleteShareGroupStateResponseDataJsonConverter.write(res.data, version)
       case res: DeleteTopicsResponse => DeleteTopicsResponseDataJsonConverter.write(res.data, version)
       case res: DescribeAclsResponse => DescribeAclsResponseDataJsonConverter.write(res.data, version)
       case res: DescribeClientQuotasResponse => DescribeClientQuotasResponseDataJsonConverter.write(res.data, version)
@@ -179,6 +194,7 @@ object RequestConvertToJson {
       case res: GetTelemetrySubscriptionsResponse => GetTelemetrySubscriptionsResponseDataJsonConverter.write(res.data, version)
       case res: HeartbeatResponse => HeartbeatResponseDataJsonConverter.write(res.data, version)
       case res: IncrementalAlterConfigsResponse => IncrementalAlterConfigsResponseDataJsonConverter.write(res.data, version)
+      case res: InitializeShareGroupStateResponse => InitializeShareGroupStateResponseDataJsonConverter.write(res.data, version)
       case res: InitProducerIdResponse => InitProducerIdResponseDataJsonConverter.write(res.data, version)
       case res: JoinGroupResponse => JoinGroupResponseDataJsonConverter.write(res.data, version)
       case res: LeaderAndIsrResponse => LeaderAndIsrResponseDataJsonConverter.write(res.data, version)
@@ -195,9 +211,15 @@ object RequestConvertToJson {
       case res: OffsetsForLeaderEpochResponse => OffsetForLeaderEpochResponseDataJsonConverter.write(res.data, version)
       case res: ProduceResponse => ProduceResponseDataJsonConverter.write(res.data, version)
       case res: PushTelemetryResponse => PushTelemetryResponseDataJsonConverter.write(res.data, version)
+      case res: ReadShareGroupStateResponse => ReadShareGroupStateResponseDataJsonConverter.write(res.data, version)
+      case res: ReadShareGroupStateSummaryResponse => ReadShareGroupStateSummaryResponseDataJsonConverter.write(res.data, version)
       case res: RenewDelegationTokenResponse => RenewDelegationTokenResponseDataJsonConverter.write(res.data, version)
       case res: SaslAuthenticateResponse => SaslAuthenticateResponseDataJsonConverter.write(res.data, version)
       case res: SaslHandshakeResponse => SaslHandshakeResponseDataJsonConverter.write(res.data, version)
+      case res: ShareAcknowledgeResponse => ShareAcknowledgeResponseDataJsonConverter.write(res.data, version)
+      case res: ShareFetchResponse => ShareFetchResponseDataJsonConverter.write(res.data, version)
+      case res: ShareGroupDescribeResponse => ShareGroupDescribeResponseDataJsonConverter.write(res.data, version)
+      case res: ShareGroupHeartbeatResponse => ShareGroupHeartbeatResponseDataJsonConverter.write(res.data, version)
       case res: StopReplicaResponse => StopReplicaResponseDataJsonConverter.write(res.data, version)
       case res: SyncGroupResponse => SyncGroupResponseDataJsonConverter.write(res.data, version)
       case res: TxnOffsetCommitResponse => TxnOffsetCommitResponseDataJsonConverter.write(res.data, version)
@@ -205,7 +227,9 @@ object RequestConvertToJson {
       case res: UpdateFeaturesResponse => UpdateFeaturesResponseDataJsonConverter.write(res.data, version)
       case res: UpdateMetadataResponse => UpdateMetadataResponseDataJsonConverter.write(res.data, version)
       case res: VoteResponse => VoteResponseDataJsonConverter.write(res.data, version)
+      case res: WriteShareGroupStateResponse => WriteShareGroupStateResponseDataJsonConverter.write(res.data, version)
       case res: WriteTxnMarkersResponse => WriteTxnMarkersResponseDataJsonConverter.write(res.data, version)
+
       // AutoMQ for Kafka inject start
       case res: CreateStreamsResponse => CreateStreamsResponseDataJsonConverter.write(res.data, version)
       case res: DeleteStreamsResponse => DeleteStreamsResponseDataJsonConverter.write(res.data, version)
@@ -225,6 +249,10 @@ object RequestConvertToJson {
       case res: AutomqZoneRouterResponse => AutomqZoneRouterResponseDataJsonConverter.write(res.data, version)
       case res: DescribeStreamsResponse => DescribeStreamsResponseDataJsonConverter.write(res.data, version)
       // AutoMQ for Kafka inject end
+      
+      case res: AddRaftVoterResponse => AddRaftVoterResponseDataJsonConverter.write(res.data, version)
+      case res: RemoveRaftVoterResponse => RemoveRaftVoterResponseDataJsonConverter.write(res.data, version)
+      case res: UpdateRaftVoterResponse => UpdateRaftVoterResponseDataJsonConverter.write(res.data, version)
       case _ => throw new IllegalStateException(s"ApiKey ${response.apiKey} is not currently handled in `response`, the " +
         "code should be updated to do so.")
     }

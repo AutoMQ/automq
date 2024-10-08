@@ -30,7 +30,7 @@ import org.apache.kafka.raft.OffsetAndEpoch;
  * This class is thread-safe.
  */
 public final class MetadataImage {
-    public final static MetadataImage EMPTY = new MetadataImage(
+    public static final MetadataImage EMPTY = new MetadataImage(
         MetadataProvenance.EMPTY,
         FeaturesImage.EMPTY,
         ClusterImage.EMPTY,

@@ -16,19 +16,24 @@
  */
 package org.apache.kafka.streams.processor.internals.assignment;
 
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.streams.processor.assignment.TaskTopicPartition;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.streams.processor.assignment.TaskTopicPartition;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * This is a simple container class used during the assignment process to distinguish
  * TopicPartitions type. Since the assignment logic can depend on the type of topic we're
  * looking at, and the rack information of the partition, this container class should have
  * everything necessary to make informed task assignment decisions.
+ * One detail worth noting is the fact that the rack id information can be fetched lazily
+ * when requested, so as to not make RPC calls when the rack information is unnecessary for
+ * the assignor that is currently making decisions.
  */
 public class DefaultTaskTopicPartition implements TaskTopicPartition {
     private static final Logger LOG = LoggerFactory.getLogger(DefaultTaskTopicPartition.class);
@@ -36,18 +41,20 @@ public class DefaultTaskTopicPartition implements TaskTopicPartition {
     private final TopicPartition topicPartition;
     private final boolean isSourceTopic;
     private final boolean isChangelogTopic;
+    private final Runnable rackIdInformationFetcher;
 
     private Optional<Set<String>> rackIds;
-  
+
 
     public DefaultTaskTopicPartition(final TopicPartition topicPartition,
                                      final boolean isSourceTopic,
                                      final boolean isChangelogTopic,
-                                     final Set<String> rackIds) {
+                                     final Runnable rackIdInformationFetcher) {
         this.topicPartition = topicPartition;
         this.isSourceTopic = isSourceTopic;
         this.isChangelogTopic = isChangelogTopic;
-        this.rackIds = Optional.ofNullable(rackIds);
+        this.rackIdInformationFetcher = rackIdInformationFetcher;
+        this.rackIds = Optional.empty();
     }
 
     @Override
@@ -67,6 +74,7 @@ public class DefaultTaskTopicPartition implements TaskTopicPartition {
 
     @Override
     public Optional<Set<String>> rackIds() {
+        this.rackIdInformationFetcher.run();
         return rackIds;
     }
 
@@ -89,8 +97,7 @@ public class DefaultTaskTopicPartition implements TaskTopicPartition {
         final TaskTopicPartition other = (TaskTopicPartition) obj;
         return topicPartition.equals(other.topicPartition()) &&
                isSourceTopic == other.isSource() &&
-               isChangelogTopic == other.isChangelog() &&
-               rackIds.equals(other.rackIds());
+               isChangelogTopic == other.isChangelog();
     }
 
     public void annotateWithRackIds(final Set<String> rackIds) {

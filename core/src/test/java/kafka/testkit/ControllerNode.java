@@ -37,7 +37,7 @@ public class ControllerNode implements TestKitNode {
     public static class Builder {
         private int id = -1;
         private String baseDirectory;
-        private Uuid clusterId;
+        private String clusterId;
         private boolean combined;
         private Map<String, String> propertyOverrides = Collections.emptyMap();
 
@@ -52,7 +52,7 @@ public class ControllerNode implements TestKitNode {
             return this;
         }
 
-        public Builder setClusterId(Uuid clusterId) {
+        public Builder setClusterId(String clusterId) {
             this.clusterId = clusterId;
             return this;
         }

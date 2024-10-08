@@ -46,7 +46,12 @@ class BrokerFeatures private (@volatile var supportedFeatures: Features[Supporte
    */
   def defaultFinalizedFeatures: Map[String, Short] = {
     supportedFeatures.features.asScala.map {
-      case(name, versionRange) => (name, versionRange.max)
+      case(name, versionRange) =>
+        if (name.equals("kraft.version")) {
+          (name, 0.toShort)
+        } else {
+          (name, versionRange.max)
+        }
     }.toMap
   }
 
@@ -86,13 +91,15 @@ object BrokerFeatures extends Logging {
           } else {
             MetadataVersion.latestProduction.featureLevel
           }))
-    PRODUCTION_FEATURES.forEach { feature => features.put(feature.featureName,
-          new SupportedVersionRange(0,
-            if (unstableFeatureVersionsEnabled) {
-              feature.latestTesting
-            } else {
-              feature.latestProduction
-            }))
+    PRODUCTION_FEATURES.forEach {
+      feature =>
+        val maxVersion = if (unstableFeatureVersionsEnabled)
+          feature.latestTesting
+        else
+          feature.latestProduction
+        if (maxVersion > 0) {
+          features.put(feature.featureName, new SupportedVersionRange(feature.minimumProduction(), maxVersion))
+        }
     }
     // TODO: add AutoMQVersion to Features.PRODUCTION_FEATURES
     features.put(AutoMQVersion.FEATURE_NAME, new SupportedVersionRange(AutoMQVersion.V0.featureLevel(), AutoMQVersion.LATEST.featureLevel()))
