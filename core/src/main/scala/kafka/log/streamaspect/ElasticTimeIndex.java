@@ -10,10 +10,17 @@
  */
 package kafka.log.streamaspect;
 
+import kafka.log.streamaspect.cache.FileCache;
+
+import org.apache.kafka.common.errors.InvalidOffsetException;
+import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.storage.internals.log.IndexSearchType;
+import org.apache.kafka.storage.internals.log.TimeIndex;
+import org.apache.kafka.storage.internals.log.TimestampOffset;
+
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatchWithContext;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -21,12 +28,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import kafka.log.streamaspect.cache.FileCache;
-import org.apache.kafka.common.errors.InvalidOffsetException;
-import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.storage.internals.log.IndexSearchType;
-import org.apache.kafka.storage.internals.log.TimeIndex;
-import org.apache.kafka.storage.internals.log.TimestampOffset;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public class ElasticTimeIndex extends TimeIndex {
     private final File file;

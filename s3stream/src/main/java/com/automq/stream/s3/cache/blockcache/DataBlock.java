@@ -16,15 +16,18 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.Time;
-import io.netty.buffer.ByteBuf;
-import io.netty.util.AbstractReferenceCounted;
-import io.netty.util.ReferenceCounted;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
 
 @EventLoopSafe public class DataBlock extends AbstractReferenceCounted {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlock.class);

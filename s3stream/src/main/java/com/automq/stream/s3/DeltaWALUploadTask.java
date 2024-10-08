@@ -20,6 +20,10 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.AsyncRateLimiter;
 import com.automq.stream.utils.FutureUtil;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -29,9 +33,6 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 

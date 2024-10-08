@@ -17,13 +17,6 @@
 
 package org.apache.kafka.controller.stream;
 
-import static org.apache.kafka.common.protocol.Errors.KEY_EXIST;
-import static org.apache.kafka.common.protocol.Errors.KEY_NOT_EXIST;
-
-import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
 import org.apache.kafka.common.message.DeleteKVsRequestData.DeleteKVRequest;
 import org.apache.kafka.common.message.DeleteKVsResponseData.DeleteKVResponse;
 import org.apache.kafka.common.message.GetKVsRequestData.GetKVRequest;
@@ -38,7 +31,16 @@ import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
+
 import org.slf4j.Logger;
+
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+import static org.apache.kafka.common.protocol.Errors.KEY_EXIST;
+import static org.apache.kafka.common.protocol.Errors.KEY_NOT_EXIST;
 
 public class KVControlManager {
 

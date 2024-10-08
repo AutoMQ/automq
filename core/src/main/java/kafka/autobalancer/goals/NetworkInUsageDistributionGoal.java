@@ -14,6 +14,7 @@ package kafka.autobalancer.goals;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.model.BrokerUpdater;
+
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
 

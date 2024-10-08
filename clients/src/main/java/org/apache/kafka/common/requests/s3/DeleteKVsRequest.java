@@ -17,9 +17,6 @@
 
 package org.apache.kafka.common.requests.s3;
 
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
 import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsRequestData.DeleteKVRequest;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
@@ -27,6 +24,10 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
+
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 public class DeleteKVsRequest extends AbstractRequest {
     public static class Builder extends AbstractRequest.Builder<DeleteKVsRequest> {

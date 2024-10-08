@@ -17,11 +17,12 @@
 
 package org.apache.kafka.image;
 
-import java.util.Objects;
 import org.apache.kafka.image.node.MetadataImageNode;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.raft.OffsetAndEpoch;
+
+import java.util.Objects;
 
 
 /**

@@ -17,9 +17,6 @@
 
 package kafka.autobalancer.utils;
 
-import java.io.File;
-import java.util.Collections;
-import java.util.Map;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.automq.AutoMQConfig;
@@ -27,11 +24,16 @@ import kafka.testkit.BrokerNode;
 import kafka.testkit.ControllerNode;
 import kafka.testkit.KafkaClusterTestKit;
 import kafka.testkit.TestKitNodes;
+
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.metadata.BrokerState;
 import org.apache.kafka.network.SocketServerConfigs;
 import org.apache.kafka.test.TestUtils;
+
+import java.io.File;
+import java.util.Collections;
+import java.util.Map;
 
 
 public abstract class AutoBalancerIntegrationTestHarness {

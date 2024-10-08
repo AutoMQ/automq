@@ -272,6 +272,7 @@ libs += [
   scalaReflect: "org.scala-lang:scala-reflect:$versions.scala",
   slf4jApi: "org.slf4j:slf4j-api:$versions.slf4j",
   slf4jReload4j: "org.slf4j:slf4j-reload4j:$versions.slf4j",
+  slf4jBridge: "org.slf4j:jul-to-slf4j:$versions.slf4j",
   snappy: "org.xerial.snappy:snappy-java:$versions.snappy",
   swaggerAnnotations: "io.swagger.core.v3:swagger-annotations:$swaggerVersion",
   swaggerJaxrs2: "io.swagger.core.v3:swagger-jaxrs2:$swaggerVersion",

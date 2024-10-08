@@ -13,6 +13,7 @@ package com.automq.stream.s3.context;
 
 import com.automq.stream.api.ReadOptions;
 import com.automq.stream.s3.trace.context.TraceContext;
+
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 

@@ -17,15 +17,14 @@
 
 package kafka.testkit;
 
-import java.util.HashMap;
-import java.util.Map;
-import org.apache.kafka.common.Uuid;
 import org.apache.kafka.metadata.properties.MetaProperties;
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble;
 import org.apache.kafka.metadata.properties.MetaPropertiesVersion;
 
 import java.io.File;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 

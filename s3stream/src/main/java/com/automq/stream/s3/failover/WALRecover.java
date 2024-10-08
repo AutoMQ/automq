@@ -13,6 +13,7 @@ package com.automq.stream.s3.failover;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.WriteAheadLog;
+
 import org.slf4j.Logger;
 
 public interface WALRecover {

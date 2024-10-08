@@ -10,9 +10,9 @@
  */
 package kafka.log.streamaspect;
 
-import io.netty.util.concurrent.FastThreadLocal;
-
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import io.netty.util.concurrent.FastThreadLocal;
 
 public class ReadHint {
 

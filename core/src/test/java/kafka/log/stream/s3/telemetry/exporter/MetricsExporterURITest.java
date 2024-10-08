@@ -13,6 +13,7 @@ package kafka.log.stream.s3.telemetry.exporter;
 
 import kafka.automq.AutoMQConfig;
 import kafka.server.KafkaConfig;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;

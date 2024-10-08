@@ -11,10 +11,11 @@
 
 package kafka.autobalancer.detector;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.model.ClusterModel;
+
+import com.automq.stream.utils.LogContext;
 
 import java.util.ArrayList;
 import java.util.Collection;

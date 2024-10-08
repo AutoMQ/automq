@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class StorageOperationStats {
-    private volatile static StorageOperationStats instance = null;
+    private static volatile StorageOperationStats instance = null;
 
     public final HistogramMetric appendStats = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.APPEND_STORAGE.getType().getName(),

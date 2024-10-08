@@ -12,6 +12,7 @@
 package com.automq.stream.s3.compact.utils;
 
 import com.automq.stream.s3.StreamDataBlock;
+
 import java.util.function.Predicate;
 
 public class GroupByOffsetPredicate implements Predicate<StreamDataBlock> {

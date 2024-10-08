@@ -18,11 +18,13 @@
 package com.automq.stream.s3.metrics.wrapper;
 
 import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
+
+import java.util.List;
+import java.util.function.Supplier;
+
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableDoubleGauge;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
-import java.util.List;
-import java.util.function.Supplier;
 
 public class HistogramInstrument {
     private final ObservableLongGauge count;

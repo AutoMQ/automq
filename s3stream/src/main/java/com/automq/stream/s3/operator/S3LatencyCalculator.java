@@ -11,9 +11,10 @@
 
 package com.automq.stream.s3.operator;
 
+import org.HdrHistogram.ConcurrentHistogram;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
-import org.HdrHistogram.ConcurrentHistogram;
 
 public class S3LatencyCalculator {
     private final long highestValue;

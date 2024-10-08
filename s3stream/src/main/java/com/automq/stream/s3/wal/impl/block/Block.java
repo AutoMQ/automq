@@ -15,9 +15,11 @@ import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.util.WALUtil;
-import io.netty.buffer.ByteBuf;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+
+import io.netty.buffer.ByteBuf;
 
 /**
  * A Block contains multiple records, and will be written to the WAL in one batch.

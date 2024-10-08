@@ -11,9 +11,15 @@
 
 package kafka.log.streamaspect;
 
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
+
 import com.automq.stream.utils.Threads;
-import io.netty.util.AbstractReferenceCounted;
-import io.netty.util.ReferenceCounted;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -23,11 +29,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
 
 public class PartitionStatusTracker {
     private static final Logger LOGGER = LoggerFactory.getLogger(PartitionStatusTracker.class);

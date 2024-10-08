@@ -295,7 +295,7 @@ public class TimeIndex extends AbstractIndex {
     }
 
     // AutoMQ inject start
-    final protected void lastEntry(TimestampOffset lastEntry) {
+    protected final void lastEntry(TimestampOffset lastEntry) {
         this.lastEntry = lastEntry;
     }
     // AutoMQ inject end

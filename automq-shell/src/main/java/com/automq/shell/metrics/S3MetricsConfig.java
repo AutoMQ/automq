@@ -12,8 +12,10 @@
 package com.automq.shell.metrics;
 
 import com.automq.stream.s3.operator.ObjectStorage;
-import java.util.List;
+
 import org.apache.commons.lang3.tuple.Pair;
+
+import java.util.List;
 
 public interface S3MetricsConfig {
 

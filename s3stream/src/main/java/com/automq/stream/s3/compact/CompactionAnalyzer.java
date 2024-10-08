@@ -17,6 +17,11 @@ import com.automq.stream.s3.compact.objects.CompactedObjectBuilder;
 import com.automq.stream.s3.compact.objects.CompactionType;
 import com.automq.stream.s3.compact.utils.CompactionUtils;
 import com.automq.stream.utils.LogContext;
+
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -27,9 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.Logger;
 
 public class CompactionAnalyzer {
     private final Logger logger;
@@ -349,7 +351,7 @@ public class CompactionAnalyzer {
         return builder;
     }
 
-    private static abstract class AbstractCompactedObjectComparator implements Comparator<CompactedObjectBuilder> {
+    private abstract static class AbstractCompactedObjectComparator implements Comparator<CompactedObjectBuilder> {
         protected final Map<Long, Integer> objectStatsMap;
 
         public AbstractCompactedObjectComparator(Map<Long, Integer> objectStatsMap) {

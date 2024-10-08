@@ -11,13 +11,15 @@
 
 package com.automq.stream.s3.trace.context;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.concurrent.NotThreadSafe;
+
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
-import javax.annotation.concurrent.NotThreadSafe;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Trace context that holds the current trace context. This class is not thread safe and should be copied before

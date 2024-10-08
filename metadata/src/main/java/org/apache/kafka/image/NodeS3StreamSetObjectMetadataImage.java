@@ -18,17 +18,19 @@
 
 package org.apache.kafka.image;
 
-import com.automq.stream.s3.metadata.S3StreamConstant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import com.automq.stream.s3.metadata.S3StreamConstant;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
 
 public class NodeS3StreamSetObjectMetadataImage {
     public static final NodeS3StreamSetObjectMetadataImage EMPTY = new NodeS3StreamSetObjectMetadataImage(S3StreamConstant.INVALID_BROKER_ID,

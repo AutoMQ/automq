@@ -11,11 +11,11 @@
 
 package com.automq.shell.util;
 
-import java.util.Collections;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.ManualMetadataUpdater;
+import org.apache.kafka.clients.MetadataRecoveryStrategy;
 import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.common.metrics.Metrics;
@@ -24,6 +24,8 @@ import org.apache.kafka.common.network.NetworkReceive;
 import org.apache.kafka.common.network.Selector;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
+
+import java.util.Collections;
 
 public class CLIUtils {
     public static NetworkClient buildNetworkClient(
@@ -64,7 +66,8 @@ public class CLIUtils {
             time,
             false,
             new ApiVersions(),
-            logContext
+            logContext,
+            MetadataRecoveryStrategy.NONE
         );
     }
 }

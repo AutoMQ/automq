@@ -12,14 +12,17 @@
 package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.TestUtils;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 @Tag("S3Unit")
 public class WALChannelTest {

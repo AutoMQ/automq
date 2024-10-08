@@ -11,11 +11,11 @@
 
 package kafka.log.streamaspect;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public class MetaKeyValue {
     public static final byte MAGIC_V0 = 0;

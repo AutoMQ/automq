@@ -21,7 +21,10 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
-import io.netty.buffer.ByteBuf;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -31,8 +34,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 import static com.automq.stream.s3.ByteBufAlloc.READ_INDEX_BLOCK;
@@ -638,4 +641,3 @@ public interface ObjectReader extends AsyncMeasurable {
     }
 
 }
-

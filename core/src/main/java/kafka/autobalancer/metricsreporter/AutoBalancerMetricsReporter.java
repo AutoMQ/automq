@@ -11,25 +11,20 @@
 
 package kafka.autobalancer.metricsreporter;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.StreamOperationStats;
-import com.yammer.metrics.core.Metric;
-import com.yammer.metrics.core.MetricName;
-import com.yammer.metrics.core.MetricsRegistry;
-import com.yammer.metrics.core.MetricsRegistryListener;
 import kafka.autobalancer.common.Utils;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.config.StaticAutoBalancerConfig;
 import kafka.autobalancer.config.StaticAutoBalancerConfigUtils;
-import kafka.autobalancer.config.AutoBalancerMetricsReporterConfig;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.Derivator;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
 import kafka.autobalancer.metricsreporter.metric.MetricsUtils;
 import kafka.autobalancer.metricsreporter.metric.YammerMetricProcessor;
+
 import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -49,6 +44,14 @@ import org.apache.kafka.network.SocketServerConfigs;
 import org.apache.kafka.server.config.KRaftConfigs;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
+
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.StreamOperationStats;
+import com.yammer.metrics.core.Metric;
+import com.yammer.metrics.core.MetricName;
+import com.yammer.metrics.core.MetricsRegistry;
+import com.yammer.metrics.core.MetricsRegistryListener;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

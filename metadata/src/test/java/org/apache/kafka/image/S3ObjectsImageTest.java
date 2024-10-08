@@ -17,22 +17,10 @@
 
 package org.apache.kafka.image;
 
-import com.automq.stream.s3.objects.ObjectAttributes;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
 import org.apache.kafka.common.utils.LogContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
@@ -42,9 +30,24 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
+
+import com.automq.stream.s3.objects.ObjectAttributes;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -53,13 +56,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 public class S3ObjectsImageTest {
 
-    final static S3ObjectsImage IMAGE1;
+    static final S3ObjectsImage IMAGE1;
 
-    final static List<ApiMessageAndVersion> DELTA1_RECORDS;
+    static final List<ApiMessageAndVersion> DELTA1_RECORDS;
 
-    final static S3ObjectsDelta DELTA1;
+    static final S3ObjectsDelta DELTA1;
 
-    final static S3ObjectsImage IMAGE2;
+    static final S3ObjectsImage IMAGE2;
 
     static {
         SnapshotRegistry registry = new SnapshotRegistry(new LogContext());

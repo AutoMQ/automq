@@ -22,7 +22,7 @@ import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 import kafka.automq.AutoMQConfig
 
-import java.{lang, util}
+import java.util
 import java.util.concurrent.TimeUnit
 import java.util.Properties
 import kafka.cluster.EndPoint

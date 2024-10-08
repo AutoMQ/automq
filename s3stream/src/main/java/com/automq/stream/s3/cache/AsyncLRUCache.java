@@ -11,16 +11,17 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.AsyncLRUCacheStats;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.AsyncLRUCacheStats;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     private static final Logger LOGGER = LoggerFactory.getLogger(AsyncLRUCache.class);

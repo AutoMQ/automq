@@ -11,8 +11,10 @@
 
 package kafka.autobalancer.services;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
+
+import com.automq.stream.utils.LogContext;
+
 import org.slf4j.Logger;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,7 +38,7 @@ public abstract class AbstractResumableService implements ResumableService {
     }
 
     @Override
-    final public void run() {
+    public final void run() {
         if (shutdown.get()) {
             logger.warn("Service is shutdown, cannot be running again.");
             return;
@@ -51,7 +53,7 @@ public abstract class AbstractResumableService implements ResumableService {
     }
 
     @Override
-    final public void shutdown() {
+    public final void shutdown() {
         if (!shutdown.compareAndSet(false, true)) {
             logger.warn("Service is already shutdown.");
             return;
@@ -62,7 +64,7 @@ public abstract class AbstractResumableService implements ResumableService {
     }
 
     @Override
-    final public void pause() {
+    public final void pause() {
         if (shutdown.get()) {
             logger.warn("Service is shutdown, cannot be paused.");
             return;

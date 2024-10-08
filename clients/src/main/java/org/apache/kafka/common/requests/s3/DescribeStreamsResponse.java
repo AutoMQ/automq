@@ -11,14 +11,15 @@
 
 package org.apache.kafka.common.requests.s3;
 
-import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Map;
 import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
+
+import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.Map;
 
 public class DescribeStreamsResponse extends AbstractResponse {
     private final DescribeStreamsResponseData data;

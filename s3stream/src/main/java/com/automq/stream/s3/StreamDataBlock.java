@@ -11,11 +11,12 @@
 
 package com.automq.stream.s3;
 
-import io.netty.buffer.ByteBuf;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import io.netty.buffer.ByteBuf;
 
 public class StreamDataBlock {
     public static final Comparator<StreamDataBlock> STREAM_OFFSET_COMPARATOR = Comparator.comparingLong(StreamDataBlock::getStartOffset);

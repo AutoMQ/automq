@@ -52,6 +52,12 @@ public class LeaderEpochCheckpointFile {
         checkpoint = new CheckpointFileWithFailureHandler<>(file, CURRENT_VERSION, FORMATTER, logDirFailureChannel, file.getParentFile().getParent());
     }
 
+    // AutoMQ inject start
+    public LeaderEpochCheckpointFile() {
+        checkpoint = null;
+    }
+    // AutoMQ inject end
+
     public void write(Collection<EpochEntry> epochs) {
         checkpoint.write(epochs);
     }

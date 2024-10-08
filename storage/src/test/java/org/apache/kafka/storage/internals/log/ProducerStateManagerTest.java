@@ -1145,7 +1145,7 @@ public class ProducerStateManagerTest {
 
         File file = new File(logDir, "testReadWriteSnapshot");
         ProducerStateManager.writeSnapshot(file, expectedEntryMap, true);
-        assertEntries(expectedEntryMap, ProducerStateManager.readSnapshot(file));
+        assertEntries(expectedEntryMap, ProducerStateManager.readSnapshot0(file, null));
     }
 
     private void appendEntry(ProducerStateManager stateManager,

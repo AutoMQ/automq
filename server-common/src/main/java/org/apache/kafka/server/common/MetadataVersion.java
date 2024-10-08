@@ -17,14 +17,13 @@
 package org.apache.kafka.server.common;
 
 import org.apache.kafka.common.record.RecordVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
-import org.apache.kafka.common.record.RecordVersion;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * This class contains the different Kafka versions.

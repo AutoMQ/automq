@@ -17,8 +17,9 @@
 
 package org.apache.kafka.controller.es;
 
-import java.util.Map;
 import org.apache.kafka.common.errors.PolicyViolationException;
+
+import java.util.Map;
 
 /**
  * <p>A policy on create partition requests.

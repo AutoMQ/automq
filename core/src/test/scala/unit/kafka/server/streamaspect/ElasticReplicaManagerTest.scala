@@ -128,15 +128,21 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
   }
 
   override protected def setupReplicaManagerWithMockedPurgatories(
-    timer: MockTimer, brokerId: Int,
-    aliveBrokerIds: collection.Seq[Int], propsModifier: Properties => Unit,
+    timer: MockTimer,
+    brokerId: Int,
+    aliveBrokerIds: collection.Seq[Int],
+    propsModifier: Properties => Unit,
     mockReplicaFetcherManager: Option[ReplicaFetcherManager],
     mockReplicaAlterLogDirsManager: Option[ReplicaAlterLogDirsManager],
-    isShuttingDown: AtomicBoolean, enableRemoteStorage: Boolean,
+    isShuttingDown: AtomicBoolean,
+    enableRemoteStorage: Boolean,
     shouldMockLog: Boolean, remoteLogManager: Option[RemoteLogManager],
-    defaultTopicRemoteLogStorageEnable: Boolean, setupLogDirMetaProperties: Boolean,
+    defaultTopicRemoteLogStorageEnable: Boolean,
+    setupLogDirMetaProperties: Boolean,
     directoryEventHandler: DirectoryEventHandler,
-    buildRemoteLogAuxState: Boolean): ElasticReplicaManager = {
+    buildRemoteLogAuxState: Boolean,
+    remoteFetchQuotaExceeded: Option[Boolean] = None
+  ): ElasticReplicaManager = {
     val props = TestUtils.createBrokerConfig(brokerId, TestUtils.MockZkConnect)
     val path1 = TestUtils.tempRelativeDir("data").getAbsolutePath
     val path2 = TestUtils.tempRelativeDir("data2").getAbsolutePath
@@ -323,7 +329,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
     val maxTransactionTimeoutMs = 30000
     val maxProducerIdExpirationMs = 30000
     val segments = new LogSegments(tp)
-    val leaderEpochCache = UnifiedLog.maybeCreateLeaderEpochCache(logDir, tp, mockLogDirFailureChannel, logConfig.recordVersion, "")
+    val leaderEpochCache = UnifiedLog.maybeCreateLeaderEpochCache(logDir, tp, mockLogDirFailureChannel, logConfig.recordVersion, "", None, mockScheduler)
     val producerStateManager = new ProducerStateManager(tp, logDir,
       maxTransactionTimeoutMs, new ProducerStateManagerConfig(maxProducerIdExpirationMs, true), time)
     val offsets = new LogLoader(

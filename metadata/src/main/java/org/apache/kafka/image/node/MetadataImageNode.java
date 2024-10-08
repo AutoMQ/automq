@@ -18,13 +18,13 @@
 package org.apache.kafka.image.node;
 
 import org.apache.kafka.image.MetadataImage;
+import org.apache.kafka.image.node.automq.AutoMQImageNode;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
-import org.apache.kafka.image.node.automq.AutoMQImageNode;
 
 public class MetadataImageNode implements MetadataNode {
     /**

@@ -11,17 +11,20 @@
 
 package kafka.autobalancer.goals;
 
-import com.automq.stream.utils.LogContext;
-import java.util.Collections;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
+
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.config.ConfigException;
+
+import com.automq.stream.utils.LogContext;
+
 import org.slf4j.Logger;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;

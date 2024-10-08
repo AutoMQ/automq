@@ -11,10 +11,11 @@
 
 package kafka.log.streamaspect;
 
-import java.util.Optional;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.storage.internals.log.LogSegment;
 import org.apache.kafka.storage.internals.log.LogSegments;
+
+import java.util.Optional;
 
 public class CachedLogSegments extends LogSegments {
     /**
@@ -68,4 +69,3 @@ public class CachedLogSegments extends LogSegments {
         }
     }
 }
-

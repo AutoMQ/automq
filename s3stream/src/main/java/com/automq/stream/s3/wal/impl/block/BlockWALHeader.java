@@ -15,8 +15,10 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.common.ShutdownType;
 import com.automq.stream.s3.wal.exception.UnmarshalException;
 import com.automq.stream.s3.wal.util.WALUtil;
-import io.netty.buffer.ByteBuf;
+
 import java.util.concurrent.atomic.AtomicLong;
+
+import io.netty.buffer.ByteBuf;
 
 /**
  * <p>

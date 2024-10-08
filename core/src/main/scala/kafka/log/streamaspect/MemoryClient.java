@@ -31,6 +31,7 @@ import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.FailoverRequest;
 import com.automq.stream.s3.failover.FailoverResponse;
 import com.automq.stream.utils.FutureUtil;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;

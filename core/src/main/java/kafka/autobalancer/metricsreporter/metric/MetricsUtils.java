@@ -11,18 +11,20 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
-import com.yammer.metrics.core.Metric;
-import com.yammer.metrics.core.MetricName;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
+
+import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.server.metrics.KafkaMetricsGroup;
+
+import com.yammer.metrics.core.Metric;
+import com.yammer.metrics.core.MetricName;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 
 /**
  * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.metric.MetricsUtils.

@@ -11,11 +11,10 @@
 
 package kafka.autobalancer.model;
 
-import com.automq.stream.utils.LogContext;
-import java.util.Optional;
 import kafka.autobalancer.common.Utils;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.listeners.TopicPartitionStatusListener;
+
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
@@ -25,6 +24,10 @@ import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.metadata.LeaderConstants;
+
+import com.automq.stream.utils.LogContext;
+
+import java.util.Optional;
 
 public class RecordClusterModel extends ClusterModel implements BrokerStatusListener, TopicPartitionStatusListener {
 

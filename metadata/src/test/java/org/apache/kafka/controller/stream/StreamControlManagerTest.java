@@ -11,25 +11,6 @@
 
 package org.apache.kafka.controller.stream;
 
-import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.ObjectWriter;
-import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
-import com.automq.stream.s3.metadata.S3StreamConstant;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.metadata.StreamState;
-import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.operator.MemoryObjectStorage;
-import io.netty.buffer.Unpooled;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
@@ -80,11 +61,34 @@ import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
+
+import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.ObjectWriter;
+import com.automq.stream.s3.metadata.ObjectUtils;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
+
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
+
+import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -110,23 +114,23 @@ import static org.mockito.Mockito.when;
 @Tag("S3Unit")
 public class StreamControlManagerTest {
 
-    private final static long STREAM0 = 0;
-    private final static long STREAM1 = 1;
-    private final static long STREAM2 = 2;
+    private static final long STREAM0 = 0;
+    private static final long STREAM1 = 1;
+    private static final long STREAM2 = 2;
 
-    private final static int BROKER0 = 0;
-    private final static int BROKER1 = 1;
-    private final static int BROKER2 = 2;
+    private static final int BROKER0 = 0;
+    private static final int BROKER1 = 1;
+    private static final int BROKER2 = 2;
 
-    private final static long EPOCH0 = 0;
-    private final static long EPOCH1 = 1;
-    private final static long EPOCH2 = 2;
+    private static final long EPOCH0 = 0;
+    private static final long EPOCH1 = 1;
+    private static final long EPOCH2 = 2;
 
-    private final static long BROKER_EPOCH0 = 0;
+    private static final long BROKER_EPOCH0 = 0;
 
-    private final static String TOPIC = "test";
-    private final static Uuid TOPIC_ID = Uuid.ONE_UUID;
-    private final static int PARTITION = 0;
+    private static final String TOPIC = "test";
+    private static final Uuid TOPIC_ID = Uuid.ONE_UUID;
+    private static final int PARTITION = 0;
 
     private QuorumController quorumController;
     private StreamControlManager manager;

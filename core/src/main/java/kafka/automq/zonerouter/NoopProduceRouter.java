@@ -11,14 +11,9 @@
 
 package kafka.automq.zonerouter;
 
-import com.automq.stream.utils.FutureUtil;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 import kafka.server.MetadataCache;
 import kafka.server.streamaspect.ElasticKafkaApis;
+
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataResponseData;
@@ -27,6 +22,14 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordValidationStats;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
+
+import com.automq.stream.utils.FutureUtil;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 public class NoopProduceRouter implements ProduceRouter {
     private final ElasticKafkaApis kafkaApis;

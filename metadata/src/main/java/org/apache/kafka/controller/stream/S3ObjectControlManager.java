@@ -17,37 +17,6 @@
 
 package org.apache.kafka.controller.stream;
 
-import com.automq.stream.s3.CompositeObject;
-import com.automq.stream.s3.Config;
-import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.compact.CompactOperations;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.objects.ObjectAttributes;
-import com.automq.stream.s3.objects.ObjectAttributes.Type;
-import com.automq.stream.s3.operator.AwsObjectStorage;
-import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
-import com.automq.stream.utils.CollectionHelper;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timeout;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalLong;
-import java.util.Queue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.message.PrepareS3ObjectRequestData;
 import org.apache.kafka.common.message.PrepareS3ObjectResponseData;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -70,7 +39,42 @@ import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
 import org.apache.kafka.timeline.TimelineLong;
+
+import com.automq.stream.s3.CompositeObject;
+import com.automq.stream.s3.Config;
+import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.compact.CompactOperations;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.objects.ObjectAttributes.Type;
+import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
+import com.automq.stream.utils.CollectionHelper;
+
 import org.slf4j.Logger;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 

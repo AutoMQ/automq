@@ -12,8 +12,10 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import io.netty.buffer.ByteBuf;
+
 import java.util.concurrent.CompletableFuture;
+
+import io.netty.buffer.ByteBuf;
 
 public abstract class WriterWrapper implements Writer {
     private final Writer inner;

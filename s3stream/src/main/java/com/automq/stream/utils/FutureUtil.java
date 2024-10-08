@@ -11,13 +11,14 @@
 
 package com.automq.stream.utils;
 
+import org.slf4j.Logger;
+
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
-import org.slf4j.Logger;
 
 public class FutureUtil {
     public static <T> CompletableFuture<T> failedFuture(Throwable ex) {

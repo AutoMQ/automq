@@ -13,6 +13,7 @@ package com.automq.stream.s3;
 
 import com.automq.stream.Version;
 import com.automq.stream.s3.operator.BucketURI;
+
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;

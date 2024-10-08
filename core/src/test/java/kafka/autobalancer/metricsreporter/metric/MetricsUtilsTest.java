@@ -17,14 +17,18 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
-import com.yammer.metrics.core.MetricName;
-import java.util.Collections;
-import java.util.Map;
 import kafka.autobalancer.common.types.RawMetricTypes;
+
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
+
+import com.yammer.metrics.core.MetricName;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.util.Collections;
+import java.util.Map;
 
 @Tag("S3Unit")
 public class MetricsUtilsTest {

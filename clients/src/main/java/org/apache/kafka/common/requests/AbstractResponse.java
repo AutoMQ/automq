@@ -21,14 +21,6 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.MessageUtil;
 import org.apache.kafka.common.protocol.SendBuilder;
-
-import java.nio.ByteBuffer;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesResponse;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
@@ -46,6 +38,14 @@ import org.apache.kafka.common.requests.s3.OpenStreamsResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.common.requests.s3.PutKVsResponse;
 import org.apache.kafka.common.requests.s3.TrimStreamsResponse;
+
+import java.nio.ByteBuffer;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public abstract class AbstractResponse implements AbstractRequestResponse {
     public static final int DEFAULT_THROTTLE_TIME = 0;

@@ -12,6 +12,10 @@
 package com.automq.stream.utils;
 
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -20,8 +24,6 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class Threads {
     private static final Logger LOGGER = LoggerFactory.getLogger(Threads.class);
