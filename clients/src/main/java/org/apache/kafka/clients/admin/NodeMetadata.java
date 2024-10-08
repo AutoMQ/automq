@@ -11,9 +11,10 @@
 
 package org.apache.kafka.clients.admin;
 
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
+
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 
 public class NodeMetadata {
     private final int nodeId;

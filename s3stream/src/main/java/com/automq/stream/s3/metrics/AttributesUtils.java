@@ -14,6 +14,7 @@ package com.automq.stream.s3.metrics;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.network.ThrottleStrategy;
+
 import io.opentelemetry.api.common.Attributes;
 
 public class AttributesUtils {

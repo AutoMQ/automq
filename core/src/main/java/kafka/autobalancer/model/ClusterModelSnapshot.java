@@ -11,13 +11,16 @@
 
 package kafka.autobalancer.model;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.common.types.metrics.AbnormalMetric;
+
 import org.apache.kafka.common.TopicPartition;
+
+import com.automq.stream.utils.LogContext;
+
 import org.slf4j.Logger;
 
 import java.util.Collection;

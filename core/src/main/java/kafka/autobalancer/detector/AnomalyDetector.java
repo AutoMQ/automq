@@ -11,7 +11,6 @@
 
 package kafka.autobalancer.detector;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
@@ -24,11 +23,14 @@ import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import kafka.autobalancer.services.AbstractResumableService;
+
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.controller.es.ClusterStats;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
+
+import com.automq.stream.utils.LogContext;
 
 import java.util.ArrayList;
 import java.util.Collections;

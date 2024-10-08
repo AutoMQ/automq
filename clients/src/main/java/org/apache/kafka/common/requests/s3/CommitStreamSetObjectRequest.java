@@ -17,13 +17,14 @@
 
 package org.apache.kafka.common.requests.s3;
 
-import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamSetObjectResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.ApiError;
+
+import java.nio.ByteBuffer;
 
 public class CommitStreamSetObjectRequest extends AbstractRequest {
 

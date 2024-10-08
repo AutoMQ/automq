@@ -16,8 +16,6 @@
  */
 package org.apache.kafka.tools.consumer;
 
-import joptsimple.OptionException;
-import joptsimple.OptionSpec;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.MessageFormatter;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
@@ -40,6 +38,9 @@ import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import joptsimple.OptionException;
+import joptsimple.OptionSpec;
 
 public final class ConsoleConsumerOptions extends CommandDefaultOptions {
 
@@ -363,6 +364,10 @@ public final class ConsoleConsumerOptions extends CommandDefaultOptions {
                 System.err.println("WARNING: kafka.tools.NoOpMessageFormatter is deprecated and will be removed in the next major release. " +
                         "Please use org.apache.kafka.tools.consumer.NoOpMessageFormatter instead");
                 return NoOpMessageFormatter.class.getName();
+            case "kafka.coordinator.transaction.TransactionLog$TransactionLogMessageFormatter":
+                System.err.println("WARNING: kafka.coordinator.transaction.TransactionLog$TransactionLogMessageFormatter is deprecated and will be removed in the next major release. " +
+                        "Please use org.apache.kafka.tools.consumer.TransactionLogMessageFormatter instead");
+                return className;
             default:
                 return className;
         }

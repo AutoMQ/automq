@@ -13,6 +13,7 @@ package com.automq.stream.s3;
 
 import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
+
 import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;

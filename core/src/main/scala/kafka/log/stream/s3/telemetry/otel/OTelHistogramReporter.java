@@ -15,9 +15,11 @@ import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
-import io.opentelemetry.api.metrics.Meter;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import io.opentelemetry.api.metrics.Meter;
 
 // This class is responsible for transforming yammer histogram metrics (mean, max) into OTel metrics
 public class OTelHistogramReporter implements MetricsRegistryListener {

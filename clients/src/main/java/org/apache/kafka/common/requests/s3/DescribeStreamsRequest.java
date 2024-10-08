@@ -11,12 +11,13 @@
 
 package org.apache.kafka.common.requests.s3;
 
-import java.nio.ByteBuffer;
 import org.apache.kafka.common.message.DescribeStreamsRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
+
+import java.nio.ByteBuffer;
 
 public class DescribeStreamsRequest extends AbstractRequest {
 

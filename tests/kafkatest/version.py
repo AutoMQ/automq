@@ -125,7 +125,7 @@ DEV_BRANCH = KafkaVersion("dev")
 DEV_VERSION = KafkaVersion("3.8.0-SNAPSHOT")
 
 # This should match the LATEST_PRODUCTION version defined in MetadataVersion.java
-LATEST_STABLE_METADATA_VERSION = "3.7"
+LATEST_STABLE_METADATA_VERSION = "3.8"
 
 LATEST_STABLE_AUTOMQ_VERSION = '3'
 
@@ -270,10 +270,14 @@ LATEST_3_6 = V_3_6_2
 
 # 3.7.x version
 V_3_7_0 = KafkaVersion("3.7.0")
-LATEST_3_7 = V_3_7_0
+V_3_7_1 = KafkaVersion("3.7.1")
+LATEST_3_7 = V_3_7_1
 
+# 3.8.x version
+V_3_8_0 = KafkaVersion("3.8.0")
+LATEST_3_8 = V_3_8_0
 
-# AutoMQ
-# TODO add new version
+# AutoMQ inject start
 AUTOMQ_V_1_1_0 = KafkaVersion("1.1.0")
 AUTOMQ_LATEST_1_1 = AUTOMQ_V_1_1_0
+# AutoMQ inject end

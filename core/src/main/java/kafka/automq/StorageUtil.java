@@ -11,6 +11,11 @@
 
 package kafka.automq;
 
+import kafka.server.KafkaConfig;
+import kafka.tools.StorageTool;
+
+import org.apache.commons.lang3.StringUtils;
+
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
@@ -19,9 +24,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
-import kafka.server.KafkaConfig;
-import kafka.tools.StorageTool;
-import org.apache.commons.lang3.StringUtils;
 
 public class StorageUtil {
 
@@ -34,7 +36,7 @@ public class StorageUtil {
         String metadataLog = new KafkaConfig(serverProps, false).metadataLogDir();
         if (!Files.exists(Paths.get(metadataLog, "meta.properties"))) {
             String configFilePath = persistConfig(serverProps, metadataLog);
-            StorageTool.main(new String[] {"auto-format", "-t", clusterId, "-c=" + configFilePath});
+            StorageTool.execute(new String[] {"format", "-t", clusterId, "-c=" + configFilePath});
         } else {
             persistConfig(serverProps, metadataLog);
         }

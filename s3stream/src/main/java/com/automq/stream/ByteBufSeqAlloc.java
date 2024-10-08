@@ -12,8 +12,10 @@
 package com.automq.stream;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import io.netty.buffer.ByteBuf;
+
 import java.util.concurrent.atomic.AtomicReference;
+
+import io.netty.buffer.ByteBuf;
 
 public class ByteBufSeqAlloc {
     public static final int HUGE_BUF_SIZE = ByteBufAlloc.getChunkSize().orElse(4 << 20);

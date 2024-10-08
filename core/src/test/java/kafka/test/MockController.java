@@ -26,10 +26,10 @@ import org.apache.kafka.common.errors.NotControllerException;
 import org.apache.kafka.common.errors.ThrottlingQuotaExceededException;
 import org.apache.kafka.common.message.AllocateProducerIdsRequestData;
 import org.apache.kafka.common.message.AllocateProducerIdsResponseData;
-import org.apache.kafka.common.message.AlterPartitionRequestData;
-import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.AlterPartitionReassignmentsResponseData;
+import org.apache.kafka.common.message.AlterPartitionRequestData;
+import org.apache.kafka.common.message.AlterPartitionResponseData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.AlterUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
@@ -116,7 +116,7 @@ import static org.apache.kafka.common.protocol.Errors.INVALID_REQUEST;
 
 
 public class MockController implements Controller {
-    private final static NotControllerException NOT_CONTROLLER_EXCEPTION =
+    private static final NotControllerException NOT_CONTROLLER_EXCEPTION =
         new NotControllerException("This is not the correct controller for this cluster.");
 
     private final AtomicLong nextTopicId = new AtomicLong(1);
@@ -205,7 +205,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    synchronized public CompletableFuture<CreateTopicsResponseData> createTopics(
+    public synchronized CompletableFuture<CreateTopicsResponseData> createTopics(
         ControllerRequestContext context,
         CreateTopicsRequestData request,
         Set<String> describable
@@ -288,7 +288,7 @@ public class MockController implements Controller {
     private final Map<ConfigResource, Map<String, String>> configs = new HashMap<>();
 
     @Override
-    synchronized public CompletableFuture<Map<String, ResultOrError<Uuid>>> findTopicIds(
+    public synchronized CompletableFuture<Map<String, ResultOrError<Uuid>>> findTopicIds(
         ControllerRequestContext context,
         Collection<String> topicNames
     ) {
@@ -304,7 +304,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    synchronized public CompletableFuture<Map<String, Uuid>> findAllTopicIds(
+    public synchronized CompletableFuture<Map<String, Uuid>> findAllTopicIds(
         ControllerRequestContext context
     ) {
         Map<String, Uuid> results = new HashMap<>();
@@ -315,7 +315,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    synchronized public CompletableFuture<Map<Uuid, ResultOrError<String>>> findTopicNames(
+    public synchronized CompletableFuture<Map<Uuid, ResultOrError<String>>> findTopicNames(
         ControllerRequestContext context,
         Collection<Uuid> topicIds
     ) {
@@ -332,7 +332,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    synchronized public CompletableFuture<Map<Uuid, ApiError>> deleteTopics(
+    public synchronized CompletableFuture<Map<Uuid, ApiError>> deleteTopics(
         ControllerRequestContext context,
         Collection<Uuid> topicIds
     ) {
@@ -510,7 +510,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    synchronized public CompletableFuture<List<CreatePartitionsTopicResult>> createPartitions(
+    public synchronized CompletableFuture<List<CreatePartitionsTopicResult>> createPartitions(
         ControllerRequestContext context,
         List<CreatePartitionsTopic> topicList,
         boolean validateOnly

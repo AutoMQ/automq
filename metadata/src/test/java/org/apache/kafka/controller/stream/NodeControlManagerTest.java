@@ -11,9 +11,6 @@
 
 package org.apache.kafka.controller.stream;
 
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import org.apache.kafka.common.errors.s3.UnregisterNodeWithOpenStreamsException;
 import org.apache.kafka.common.message.AutomqGetNodesRequestData;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
@@ -31,9 +28,14 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

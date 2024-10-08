@@ -17,7 +17,6 @@
 
 package kafka.server.builders;
 
-import java.util.concurrent.Executors;
 import kafka.coordinator.transaction.TransactionCoordinator;
 import kafka.network.RequestChannel;
 import kafka.server.ApiVersionManager;
@@ -33,6 +32,7 @@ import kafka.server.QuotaFactory.QuotaManagers;
 import kafka.server.ReplicaManager;
 import kafka.server.metadata.ConfigRepository;
 import kafka.server.streamaspect.ElasticKafkaApis;
+
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.common.utils.Time;
@@ -42,6 +42,7 @@ import org.apache.kafka.server.authorizer.Authorizer;
 
 import java.util.Collections;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 
 import scala.compat.java8.OptionConverters;
 
@@ -182,7 +183,7 @@ public class KafkaApisBuilder {
         if (metrics == null) throw new RuntimeException("You must set metrics");
         if (quotas == null) throw new RuntimeException("You must set quotas");
         if (fetchManager == null) throw new RuntimeException("You must set fetchManager");
-        if (brokerTopicStats == null) brokerTopicStats = new BrokerTopicStats(config.isRemoteLogStorageSystemEnabled());
+        if (brokerTopicStats == null) brokerTopicStats = new BrokerTopicStats(config.remoteLogManagerConfig().isRemoteStorageSystemEnabled());
         if (apiVersionManager == null) throw new RuntimeException("You must set apiVersionManager");
 
         return new ElasticKafkaApis(requestChannel,

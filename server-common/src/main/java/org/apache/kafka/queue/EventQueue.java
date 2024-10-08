@@ -17,11 +17,12 @@
 
 package org.apache.kafka.queue;
 
+import org.slf4j.Logger;
+
 import java.util.OptionalLong;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
-import org.slf4j.Logger;
 
 
 public interface EventQueue extends AutoCloseable {
@@ -128,7 +129,7 @@ public interface EventQueue extends AutoCloseable {
     }
 
     class VoidEvent implements Event {
-        public final static VoidEvent INSTANCE = new VoidEvent();
+        public static final VoidEvent INSTANCE = new VoidEvent();
 
         @Override
         public void run() throws Exception {

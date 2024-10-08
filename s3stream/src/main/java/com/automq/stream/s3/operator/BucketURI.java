@@ -14,6 +14,9 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.SecretUtils;
 import com.automq.stream.utils.URIUtils;
+
+import org.apache.commons.lang3.StringUtils;
+
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
@@ -21,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.StringUtils;
 
 import static com.automq.stream.utils.URIUtils.URI_PATTERN;
 

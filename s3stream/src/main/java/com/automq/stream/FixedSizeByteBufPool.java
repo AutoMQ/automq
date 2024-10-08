@@ -12,10 +12,12 @@
 package com.automq.stream;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import io.netty.buffer.ByteBuf;
+
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import io.netty.buffer.ByteBuf;
 
 /**
  * A pool of fixed-size {@link ByteBuf}.

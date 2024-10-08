@@ -11,26 +11,12 @@
 
 package kafka.log.stream.s3.objects;
 
-import com.automq.stream.s3.compact.CompactOperations;
-import com.automq.stream.s3.exceptions.AutoMQException;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.objects.CommitStreamSetObjectHook;
-import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
-import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
-import com.automq.stream.s3.objects.CompactStreamObjectRequest;
-import com.automq.stream.s3.objects.ObjectAttributes;
-import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.utils.FutureUtil;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.ControllerRequestSender.RequestTask;
 import kafka.log.stream.s3.network.ControllerRequestSender.ResponseHandleResult;
 import kafka.log.stream.s3.network.request.WrapRequest;
+
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
 import org.apache.kafka.common.message.CommitStreamObjectResponseData;
 import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
@@ -45,14 +31,32 @@ import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
+
+import com.automq.stream.s3.compact.CompactOperations;
+import com.automq.stream.s3.exceptions.AutoMQException;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.objects.CommitStreamSetObjectHook;
+import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
+import com.automq.stream.s3.objects.CompactStreamObjectRequest;
+import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.utils.FutureUtil;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class ControllerObjectManager implements ObjectManager {
 
-    private final static Logger LOGGER = LoggerFactory.getLogger(ControllerObjectManager.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ControllerObjectManager.class);
 
     private final ControllerRequestSender requestSender;
     private final StreamMetadataManager metadataManager;

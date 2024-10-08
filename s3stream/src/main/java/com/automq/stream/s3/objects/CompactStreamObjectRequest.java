@@ -12,6 +12,7 @@
 package com.automq.stream.s3.objects;
 
 import com.automq.stream.s3.compact.CompactOperations;
+
 import java.util.List;
 
 public class CompactStreamObjectRequest {

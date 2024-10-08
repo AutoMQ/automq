@@ -15,13 +15,15 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.Writer;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 
 import static com.automq.stream.s3.ByteBufAlloc.WRITE_FOOTER;
 import static com.automq.stream.s3.ByteBufAlloc.WRITE_INDEX_BLOCK;

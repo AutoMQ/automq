@@ -10,15 +10,19 @@
  */
 package kafka.log.streamaspect;
 
-import com.automq.stream.api.Stream;
-import java.io.IOException;
-import java.util.List;
 import kafka.log.streamaspect.cache.FileCache;
 import kafka.utils.TestUtils;
+
 import org.apache.kafka.storage.internals.log.TimestampOffset;
+
+import com.automq.stream.api.Stream;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

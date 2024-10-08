@@ -13,6 +13,7 @@ package com.automq.stream.utils.biniarysearch;
 
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
+
 import java.util.Objects;
 
 public class IndexBlockOrderedBytes extends AbstractOrderedCollection<IndexBlockOrderedBytes.TargetStreamOffset> {

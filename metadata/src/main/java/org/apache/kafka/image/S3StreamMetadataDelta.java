@@ -17,7 +17,17 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord.TagCollection;
+import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+
 import com.automq.stream.s3.metadata.StreamState;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -27,14 +37,6 @@ import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
-import org.apache.kafka.common.metadata.RangeRecord;
-import org.apache.kafka.common.metadata.RemoveRangeRecord;
-import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
-import org.apache.kafka.common.metadata.S3StreamObjectRecord;
-import org.apache.kafka.common.metadata.S3StreamRecord;
-import org.apache.kafka.common.metadata.S3StreamRecord.TagCollection;
-import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3StreamObject;
 
 public class S3StreamMetadataDelta {
 

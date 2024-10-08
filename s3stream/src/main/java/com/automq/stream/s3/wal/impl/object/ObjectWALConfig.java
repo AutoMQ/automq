@@ -12,6 +12,7 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.utils.IdURI;
+
 import org.apache.commons.lang3.StringUtils;
 
 public class ObjectWALConfig {

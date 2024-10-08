@@ -13,8 +13,10 @@ package com.automq.stream.thirdparty.moe.cnkirito.kdio;
 import com.sun.jna.NativeLong;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
-import io.netty.util.internal.PlatformDependent;
+
 import java.nio.ByteBuffer;
+
+import io.netty.util.internal.PlatformDependent;
 
 public class DirectIOUtils {
 

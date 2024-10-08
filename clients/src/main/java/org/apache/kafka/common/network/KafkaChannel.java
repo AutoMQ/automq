@@ -16,8 +16,6 @@
  */
 package org.apache.kafka.common.network;
 
-import java.util.LinkedList;
-import java.util.Queue;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.SslAuthenticationException;
 import org.apache.kafka.common.memory.MemoryPool;
@@ -31,7 +29,9 @@ import java.net.Socket;
 import java.net.SocketAddress;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
+import java.util.LinkedList;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.function.Supplier;
 
 /**

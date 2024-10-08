@@ -11,8 +11,9 @@
 
 package kafka.log.streamaspect;
 
-import java.io.IOException;
 import org.apache.kafka.storage.internals.log.LogDirFailureChannel;
+
+import java.io.IOException;
 
 /**
  * PartitionLogDirFailureChannel will ignore the failed dir and only fail the partition.

@@ -16,19 +16,21 @@
  */
 package org.apache.kafka.server.metrics;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import org.apache.kafka.common.utils.Sanitizer;
 
 import com.yammer.metrics.core.Gauge;
 import com.yammer.metrics.core.Histogram;
 import com.yammer.metrics.core.Meter;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.Timer;
-import org.apache.kafka.common.utils.Sanitizer;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class KafkaMetricsGroup {
     private final Class<?> klass;
@@ -69,12 +71,21 @@ public class KafkaMetricsGroup {
         return new MetricName(group, typeName, name, scope, nameBuilder.toString());
     }
 
-    public final <T> Gauge<T> newGauge(String name, Gauge<T> metric, Map<String, String> tags) {
-        return KafkaYammerMetrics.defaultRegistry().newGauge(metricName(name, tags), metric);
+    public <T> Gauge<T> newGauge(String name, Supplier<T> metric, Map<String, String> tags) {
+        return newGauge(metricName(name, tags), metric);
     }
 
-    public final <T> Gauge<T> newGauge(String name, Gauge<T> metric) {
+    public <T> Gauge<T> newGauge(String name, Supplier<T> metric) {
         return newGauge(name, metric, Collections.emptyMap());
+    }
+
+    public <T> Gauge<T> newGauge(MetricName name, Supplier<T> metric) {
+        return KafkaYammerMetrics.defaultRegistry().newGauge(name, new Gauge<T>() {
+            @Override
+            public T value() {
+                return metric.get();
+            }
+        });
     }
 
     public final Meter newMeter(String name, String eventType,
@@ -107,12 +118,20 @@ public class KafkaMetricsGroup {
         return newTimer(name, durationUnit, rateUnit, Collections.emptyMap());
     }
 
+    public final Timer newTimer(MetricName metricName, TimeUnit durationUnit, TimeUnit rateUnit) {
+        return KafkaYammerMetrics.defaultRegistry().newTimer(metricName, durationUnit, rateUnit);
+    }
+
     public final void removeMetric(String name, Map<String, String> tags) {
         KafkaYammerMetrics.defaultRegistry().removeMetric(metricName(name, tags));
     }
 
     public final void removeMetric(String name) {
         removeMetric(name, Collections.emptyMap());
+    }
+
+    public final void removeMetric(MetricName metricName) {
+        KafkaYammerMetrics.defaultRegistry().removeMetric(metricName);
     }
 
     private static Optional<String> toMBeanName(Map<String, String> tags) {

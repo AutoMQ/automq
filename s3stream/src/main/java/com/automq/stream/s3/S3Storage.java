@@ -38,11 +38,10 @@ import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import io.netty.buffer.ByteBuf;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timeout;
-import io.opentelemetry.instrumentation.annotations.SpanAttribute;
-import io.opentelemetry.instrumentation.annotations.WithSpan;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -72,8 +71,12 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 
 import static com.automq.stream.utils.FutureUtil.suppress;
 
@@ -865,7 +868,7 @@ public class S3Storage implements Storage {
          * All records whose offset is not larger than the returned offset will be removed from the queue.
          * It returns {@link #NOOP_OFFSET} if the first record is not persisted yet.
          */
-        synchronized private long calculate() {
+        private synchronized long calculate() {
             Lock lock = rwLock.writeLock();
             lock.lock();
             try {

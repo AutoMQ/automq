@@ -11,11 +11,12 @@
 
 package kafka.log.stream.s3.objects;
 
+import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
-import org.apache.kafka.common.message.CommitStreamSetObjectRequestData;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 public class Convertor {
 

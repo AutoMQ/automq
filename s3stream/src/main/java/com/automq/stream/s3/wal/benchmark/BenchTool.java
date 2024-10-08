@@ -14,13 +14,16 @@ package com.automq.stream.s3.wal.benchmark;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
 import com.automq.stream.s3.wal.util.WALChannel;
-import io.netty.buffer.ByteBuf;
-import java.io.File;
-import java.io.IOException;
+
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.internal.HelpScreenException;
+
+import java.io.File;
+import java.io.IOException;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.wal.util.WALUtil.isBlockDevice;
 

@@ -11,9 +11,9 @@
 
 package kafka.autobalancer.goals;
 
-import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.normalizer.Normalizer;
 import kafka.autobalancer.common.normalizer.StepNormalizer;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.model.BrokerUpdater;
 
 import java.util.Collection;

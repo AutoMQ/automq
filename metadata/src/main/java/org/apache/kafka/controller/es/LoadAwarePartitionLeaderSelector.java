@@ -11,11 +11,10 @@
 
 package org.apache.kafka.controller.es;
 
-import java.util.stream.Collectors;
-import java.util.Random;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.common.WeightedRandomList;
+import org.apache.kafka.metadata.BrokerRegistration;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,7 +23,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector {
     private static final Logger LOGGER = LoggerFactory.getLogger(LoadAwarePartitionLeaderSelector.class);

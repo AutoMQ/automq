@@ -24,6 +24,7 @@ import com.yammer.metrics.core.Metered;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricProcessor;
 import com.yammer.metrics.core.Timer;
+
 import org.slf4j.Logger;
 
 import java.util.HashMap;

@@ -22,6 +22,7 @@ import kafka.test.annotation.ClusterConfigProperty;
 import kafka.test.annotation.ClusterTest;
 import kafka.test.annotation.ClusterTestDefaults;
 import kafka.test.junit.ClusterTestExtensions;
+
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -34,7 +35,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.AppInfoParser;
 import org.apache.kafka.common.utils.Exit;
-import org.junit.jupiter.api.Tag;
+
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Duration;
@@ -47,9 +48,9 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @ExtendWith(value = ClusterTestExtensions.class)
 @ClusterTestDefaults(serverProperties = {
@@ -57,7 +58,6 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
     @ClusterConfigProperty(key = "offsets.topic.replication.factor", value = "1"),
     @ClusterConfigProperty(key = "offsets.topic.num.partitions", value = "4")
 })
-@Tag("integration")
 public class GetOffsetShellTest {
     private final int topicCount = 4;
     private final ClusterInstance cluster;

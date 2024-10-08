@@ -11,14 +11,16 @@
 
 package kafka.log.streamaspect;
 
-import com.automq.stream.s3.metadata.StreamState;
 import kafka.server.metadata.KRaftMetadataCache;
+
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.S3StreamMetadataImage;
 import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.metadata.PartitionRegistration;
+
+import com.automq.stream.s3.metadata.StreamState;
 
 public class DefaultOpenStreamChecker implements OpenStreamChecker {
     private final KRaftMetadataCache metadataCache;

@@ -17,13 +17,15 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.Writer;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 
 import static com.automq.stream.s3.ByteBufAlloc.WRITE_DATA_BLOCK_HEADER;
 import static com.automq.stream.s3.ByteBufAlloc.WRITE_FOOTER;

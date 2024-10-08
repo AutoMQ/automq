@@ -16,11 +16,13 @@
  */
 package org.apache.kafka.tools.automq.util;
 
-import java.util.Arrays;
-import java.util.List;
 import org.apache.kafka.tools.automq.model.ServerGroupConfig;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

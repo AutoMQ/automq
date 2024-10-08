@@ -17,6 +17,20 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
+import org.apache.kafka.image.writer.ImageWriter;
+import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.metadata.stream.InRangeObjects;
+import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.timeline.TimelineHashMap;
+
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.index.NodeRangeIndexCache;
@@ -28,9 +42,10 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.MetadataStats;
 import com.automq.stream.utils.FutureUtil;
-import io.netty.buffer.ByteBuf;
-import io.netty.util.AbstractReferenceCounted;
-import io.netty.util.ReferenceCounted;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -45,21 +60,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
-import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
-import org.apache.kafka.image.writer.ImageWriter;
-import org.apache.kafka.image.writer.ImageWriterOptions;
-import org.apache.kafka.metadata.stream.InRangeObjects;
-import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
-import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3StreamSetObject;
-import org.apache.kafka.metadata.stream.StreamEndOffset;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.timeline.TimelineHashMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
 
 import static com.automq.stream.utils.FutureUtil.exec;
 

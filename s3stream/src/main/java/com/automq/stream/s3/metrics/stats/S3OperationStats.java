@@ -18,11 +18,12 @@ import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class S3OperationStats {
-    private volatile static S3OperationStats instance = null;
+    private static volatile S3OperationStats instance = null;
     public final CounterMetric uploadSizeTotalStats = S3StreamMetricsManager.buildS3UploadSizeMetric();
     public final CounterMetric downloadSizeTotalStats = S3StreamMetricsManager.buildS3DownloadSizeMetric();
     private final Map<String, HistogramMetric> getObjectSuccessStats = new ConcurrentHashMap<>();

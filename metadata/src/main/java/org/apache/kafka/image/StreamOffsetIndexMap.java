@@ -13,13 +13,15 @@ package org.apache.kafka.image;
 
 import com.automq.stream.s3.cache.LRUCache;
 import com.google.common.annotations.VisibleForTesting;
-import javax.annotation.concurrent.ThreadSafe;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+
+import javax.annotation.concurrent.ThreadSafe;
 
 @ThreadSafe
 public class StreamOffsetIndexMap {

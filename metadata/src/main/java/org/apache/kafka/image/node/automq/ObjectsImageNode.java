@@ -11,17 +11,18 @@
 
 package org.apache.kafka.image.node.automq;
 
-import java.util.Collection;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.stream.Collectors;
 import org.apache.kafka.image.S3ObjectsImage;
 import org.apache.kafka.image.node.MetadataLeafNode;
 import org.apache.kafka.image.node.MetadataNode;
 import org.apache.kafka.metadata.stream.S3Object;
 
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.stream.Collectors;
+
 public class ObjectsImageNode implements MetadataNode {
-    public final static String NAME = "objects";
+    public static final String NAME = "objects";
 
     private final S3ObjectsImage objectsImage;
 

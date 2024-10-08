@@ -11,6 +11,15 @@
 
 package kafka.log.stream.s3;
 
+import kafka.log.stream.s3.metadata.StreamMetadataManager;
+import kafka.log.stream.s3.network.ControllerRequestSender;
+import kafka.log.stream.s3.objects.ControllerObjectManager;
+import kafka.log.stream.s3.streams.ControllerStreamManager;
+import kafka.server.BrokerServer;
+
+import org.apache.kafka.image.MetadataImage;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+
 import com.automq.stream.api.Client;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.StreamClient;
@@ -46,20 +55,15 @@ import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import kafka.log.stream.s3.metadata.StreamMetadataManager;
-import kafka.log.stream.s3.network.ControllerRequestSender;
-import kafka.log.stream.s3.objects.ControllerObjectManager;
-import kafka.log.stream.s3.streams.ControllerStreamManager;
-import kafka.server.BrokerServer;
-import org.apache.kafka.image.MetadataImage;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
 public class DefaultS3Client implements Client {
-    private final static Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     protected final Config config;
     private StreamMetadataManager metadataManager;
 

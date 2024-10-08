@@ -12,6 +12,7 @@
 package com.automq.stream.s3.wal.common;
 
 import com.automq.stream.s3.wal.AppendResult;
+
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
