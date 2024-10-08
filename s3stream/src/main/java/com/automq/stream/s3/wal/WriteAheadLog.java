@@ -73,7 +73,7 @@ public interface WriteAheadLog {
     CompletableFuture<Void> reset();
 
     /**
-     * Trim data <= offset in log.
+     * Trim {@code data <= offset} in log.
      *
      * @param offset inclusive trim offset.
      * @return future complete when trim done.

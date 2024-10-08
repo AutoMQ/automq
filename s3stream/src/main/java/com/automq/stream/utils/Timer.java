@@ -19,6 +19,7 @@ package com.automq.stream.utils;
 
 /**
  * Copy form org.apache.kafka.common.utils.Timer
+ *
  * <p>
  * This is a helper class which makes blocking methods with a timeout easier to implement.
  * In particular it enables use cases where a high-level blocking call with a timeout is
@@ -34,17 +35,6 @@ package com.automq.stream.utils;
  * return it indefinitely until the timer has been updated. This allows the caller to limit
  * unnecessary system calls and update the timer only when needed.
  * <p>
- * A typical usage might look something like this:
- *
- * <pre>
- *     Time time = Time.SYSTEM;
- *     Timer timer = time.timer(500);
- *
- *     while (!conditionSatisfied() && timer.notExpired()) {
- *         client.poll(timer.remainingMs(), timer.currentTimeMs());
- *         timer.update();
- *     }
- * </pre>
  */
 public class Timer {
     private final Time time;
