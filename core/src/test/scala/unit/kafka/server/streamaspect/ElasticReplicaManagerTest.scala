@@ -792,4 +792,12 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
   override def testBuildRemoteLogAuxStateMetricsThrowsException(): Unit = {
     // AutoMQ embedded tiered storage in S3Stream
   }
+
+  override def testRemoteReadQuotaNotExceeded(): Unit = {
+    // AutoMQ embedded tiered storage in S3Stream
+  }
+
+  override def testRemoteReadQuotaExceeded(): Unit = {
+    // AutoMQ embedded tiered storage in S3Stream
+  }
 }

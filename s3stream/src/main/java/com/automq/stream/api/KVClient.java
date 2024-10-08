@@ -17,7 +17,7 @@ import com.automq.stream.api.KeyValue.Value;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Light KV client, support light & simple kv operations.
+ * Light KV client, support simple kv operations.
  */
 public interface KVClient {
     /**
