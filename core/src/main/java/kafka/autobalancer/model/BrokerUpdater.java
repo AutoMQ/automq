@@ -66,7 +66,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
     @Override
     protected boolean processMetric(byte metricType, double value) {
         if (metricType == RawMetricTypes.BROKER_METRIC_VERSION) {
-            this.metricVersion = new MetricVersion((short) value);
+            this.metricVersion = MetricVersion.of((short) value);
         }
         return true;
     }
@@ -98,7 +98,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected Set<Byte> requiredMetrics() {
-        return RawMetricTypes.requiredBrokerMetrics(metricVersion);
+        return metricVersion.requiredBrokerMetrics();
     }
 
     protected Map<Byte, Snapshot> getMetricsSnapshot() {
