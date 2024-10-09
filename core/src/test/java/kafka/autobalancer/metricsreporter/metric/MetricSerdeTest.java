@@ -20,6 +20,7 @@ package kafka.autobalancer.metricsreporter.metric;
 import kafka.autobalancer.common.types.MetricTypes;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.metricsreporter.exception.UnknownVersionException;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 

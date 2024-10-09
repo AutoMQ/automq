@@ -17,14 +17,6 @@
 
 package org.apache.kafka.image;
 
-import com.automq.stream.s3.metadata.StreamOffsetRange;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Function;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
@@ -43,6 +35,16 @@ import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.timeline.TimelineHashMap;
+
+import com.automq.stream.s3.metadata.StreamOffsetRange;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 
 public final class S3StreamsMetadataDelta {
 
@@ -185,12 +187,21 @@ public final class S3StreamsMetadataDelta {
             stream2partition = image.stream2partition();
         }
         registry.inLock(() -> {
-            newStreamEndOffsets.putAll(changedStreamEndOffsets);
-            deletedStreams.forEach(newStreamEndOffsets::remove);
-
             // apply the delta changes of old streams since the last image
             changedStreams.forEach((streamId, delta) -> newStreamMetadataMap.put(streamId, delta.apply()));
             deletedStreams.forEach(newStreamMetadataMap::remove);
+
+            changedStreamEndOffsets.forEach((streamId, newEndOffset) -> newStreamEndOffsets.compute(streamId, (key, oldEndOffset) -> {
+                if (!newStreamMetadataMap.containsKey(streamId)) {
+                    return null;
+                }
+                if (oldEndOffset == null) {
+                    return newEndOffset;
+                }
+                // S3StreamSetObjectRecord maybe the SSO compaction record, we need ignore the offset.
+                return Math.max(oldEndOffset, newEndOffset);
+            }));
+            deletedStreams.forEach(newStreamEndOffsets::remove);
 
             // apply the delta changes of old nodes since the last image
             this.changedNodes.forEach((nodeId, delta) -> newNodeMetadataMap.put(nodeId, delta.apply()));

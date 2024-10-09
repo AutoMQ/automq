@@ -13,6 +13,7 @@ package com.automq.stream.utils;
 
 import com.automq.stream.utils.biniarysearch.AbstractOrderedCollection;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

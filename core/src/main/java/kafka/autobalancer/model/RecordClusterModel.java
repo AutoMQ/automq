@@ -11,9 +11,10 @@
 
 package kafka.autobalancer.model;
 
-import com.automq.stream.utils.LogContext;
+import kafka.autobalancer.common.Utils;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.listeners.TopicPartitionStatusListener;
+
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
@@ -22,9 +23,11 @@ import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
-import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
-import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
 import org.apache.kafka.metadata.LeaderConstants;
+
+import com.automq.stream.utils.LogContext;
+
+import java.util.Optional;
 
 public class RecordClusterModel extends ClusterModel implements BrokerStatusListener, TopicPartitionStatusListener {
 
@@ -38,8 +41,7 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
 
     @Override
     public void onBrokerRegister(RegisterBrokerRecord record) {
-        boolean isActive = !record.fenced() && !record.inControlledShutdown();
-        registerBroker(record.brokerId(), record.rack(), isActive);
+        registerBroker(record.brokerId(), record.rack(), !Utils.isBrokerFenced(record));
     }
 
     @Override
@@ -49,20 +51,8 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
 
     @Override
     public void onBrokerRegistrationChanged(BrokerRegistrationChangeRecord record) {
-        BrokerRegistrationFencingChange fencingChange =
-                BrokerRegistrationFencingChange.fromValue(record.fenced()).orElseThrow(
-                        () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +
-                                "value for fenced field: %x", record, record.fenced())));
-        BrokerRegistrationInControlledShutdownChange inControlledShutdownChange =
-                BrokerRegistrationInControlledShutdownChange.fromValue(record.inControlledShutdown()).orElseThrow(
-                        () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +
-                                "value for inControlledShutdown field: %x", record, record.inControlledShutdown())));
-        if (fencingChange == BrokerRegistrationFencingChange.FENCE
-                || inControlledShutdownChange == BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN) {
-            changeBrokerStatus(record.brokerId(), false);
-        } else if (fencingChange == BrokerRegistrationFencingChange.UNFENCE) {
-            changeBrokerStatus(record.brokerId(), true);
-        }
+        Optional<Boolean> isBrokerFenced = Utils.isBrokerFenced(record);
+        isBrokerFenced.ifPresent(isFenced -> changeBrokerStatus(record.brokerId(), !isFenced));
     }
 
     @Override

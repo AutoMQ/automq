@@ -22,7 +22,7 @@ import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
 import kafka.controller.streamaspect.client.{Context, StreamClientFactoryProxy}
-import kafka.metrics.LinuxIoMetricsCollector
+
 import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
@@ -55,7 +55,7 @@ import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.config.ServerLogConfigs.{ALTER_CONFIG_POLICY_CLASS_NAME_CONFIG, CREATE_TOPIC_POLICY_CLASS_NAME_CONFIG}
 import org.apache.kafka.server.common.ApiMessageAndVersion
 import org.apache.kafka.server.config.ConfigType
-import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics}
+import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics, LinuxIoMetricsCollector}
 import org.apache.kafka.server.network.{EndpointReadyFutures, KafkaAuthorizerServerInfo}
 import org.apache.kafka.server.policy.{AlterConfigPolicy, CreateTopicPolicy}
 import org.apache.kafka.server.util.{Deadline, FutureUtils}
@@ -167,7 +167,7 @@ class ControllerServer(
       metricsGroup.newGauge("ClusterId", () => clusterId)
       metricsGroup.newGauge("yammer-metrics-count", () =>  KafkaYammerMetrics.defaultRegistry.allMetrics.size)
 
-      linuxIoMetricsCollector = new LinuxIoMetricsCollector("/proc", time, logger.underlying)
+      linuxIoMetricsCollector = new LinuxIoMetricsCollector("/proc", time)
       if (linuxIoMetricsCollector.usable()) {
         metricsGroup.newGauge("linux-disk-read-bytes", () => linuxIoMetricsCollector.readBytes())
         metricsGroup.newGauge("linux-disk-write-bytes", () => linuxIoMetricsCollector.writeBytes())
@@ -176,7 +176,7 @@ class ControllerServer(
       authorizer = config.createNewAuthorizer()
       authorizer.foreach(_.configure(config.originals))
 
-      metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
+      metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId, () => raftManager.client.kraftVersion())
 
       metadataCachePublisher = new KRaftMetadataCachePublisher(metadataCache)
 
@@ -201,9 +201,10 @@ class ControllerServer(
         credentialProvider,
         apiVersionManager)
 
-      val listenerInfo = ListenerInfo.create(config.controllerListeners.map(_.toJava).asJava).
-        withWildcardHostnamesResolved().
-        withEphemeralPortsCorrected(name => socketServer.boundPort(new ListenerName(name)))
+      val listenerInfo = ListenerInfo
+        .create(config.effectiveAdvertisedControllerListeners.map(_.toJava).asJava)
+        .withWildcardHostnamesResolved()
+        .withEphemeralPortsCorrected(name => socketServer.boundPort(new ListenerName(name)))
       socketServerFirstBoundPortFuture.complete(listenerInfo.firstListener().port())
 
       val endpointReadyFutures = {
@@ -217,7 +218,7 @@ class ControllerServer(
             config.earlyStartListeners.map(_.value()).asJava))
       }
 
-      sharedServer.startForController()
+      sharedServer.startForController(listenerInfo)
 
       createTopicPolicy = Option(config.
         getConfiguredInstance(CREATE_TOPIC_POLICY_CLASS_NAME_CONFIG, classOf[CreateTopicPolicy]))

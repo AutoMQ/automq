@@ -11,6 +11,8 @@
 
 package com.automq.stream.utils;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -23,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.apache.commons.lang3.StringUtils;
 
 public class URIUtils {
     public static final Pattern URI_LIST_PATTERN = Pattern.compile("\\d+@.*?(?=,\\d+@|$)");
@@ -62,6 +63,10 @@ public class URIUtils {
 
     public static Map<String, List<String>> splitQuery(URI uri) {
         String rawQuery = uri.getRawQuery();
+        return splitQuery(rawQuery);
+    }
+
+    public static Map<String, List<String>> splitQuery(String rawQuery) {
         if (StringUtils.isBlank(rawQuery)) {
             return new HashMap<>();
         }

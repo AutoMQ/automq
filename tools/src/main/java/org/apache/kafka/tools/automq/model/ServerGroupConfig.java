@@ -23,16 +23,16 @@ import java.util.Map;
  * Contain several server's config
  */
 public class ServerGroupConfig {
-    final private List<Integer> nodeIdList;
+    private final List<Integer> nodeIdList;
 
-    final private String quorumVoters;
+    private final String quorumVoters;
 
     /**
      * Key is allocated node id and value is listener info
      */
-    final private Map<Integer, String> listenerMap;
+    private final Map<Integer, String> listenerMap;
 
-    final private Map<Integer, String> advertisedListenerMap;
+    private final Map<Integer, String> advertisedListenerMap;
 
     public ServerGroupConfig(List<Integer> nodeIdList, String quorumVoters, Map<Integer, String> listenerMap,
         Map<Integer, String> advertisedListenerMap) {

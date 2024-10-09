@@ -17,14 +17,14 @@
 
 package org.apache.kafka.common.requests.s3;
 
-import java.nio.ByteBuffer;
-
 import org.apache.kafka.common.message.GetNextNodeIdRequestData;
 import org.apache.kafka.common.message.GetNextNodeIdResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest;
+
+import java.nio.ByteBuffer;
 
 public class GetNextNodeIdRequest extends AbstractRequest {
     public static class Builder extends AbstractRequest.Builder<GetNextNodeIdRequest> {

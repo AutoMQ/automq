@@ -13,13 +13,15 @@ package com.automq.stream.s3.wal.metrics;
 
 import com.automq.stream.s3.metrics.NoopLongHistogram;
 import com.automq.stream.s3.metrics.NoopObservableLongGauge;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 
 public class ObjectWALMetricsManager {
     private static ObservableLongGauge inflightuploadCount = new NoopObservableLongGauge();

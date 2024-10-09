@@ -11,8 +11,8 @@
 
 package com.automq.stream.s3.index;
 
-import com.automq.stream.s3.cache.AsyncMeasurable;
 import com.automq.stream.s3.cache.AsyncLRUCache;
+import com.automq.stream.s3.cache.AsyncMeasurable;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.stats.MetadataStats;
 import com.automq.stream.utils.Systems;
@@ -21,6 +21,10 @@ import com.google.common.base.Ticker;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -28,8 +32,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class NodeRangeIndexCache {
     private static final int MAX_CACHE_SIZE = 100 * 1024 * 1024;
@@ -38,7 +40,7 @@ public class NodeRangeIndexCache {
     public static final int MIN_CACHE_UPDATE_INTERVAL_MS = 1000; // 1s
     private static final int DEFAULT_UPDATE_CONCURRENCY_LIMIT = 10;
     private static final Logger LOGGER = LoggerFactory.getLogger(NodeRangeIndexCache.class);
-    private volatile static NodeRangeIndexCache instance = null;
+    private static volatile NodeRangeIndexCache instance = null;
     private final ExpireLRUCache nodeRangeIndexMap = new ExpireLRUCache(MAX_CACHE_SIZE, DEFAULT_EXPIRE_TIME_MS);
     private final Map<Long, Long> nodeCacheUpdateTimestamp = new ConcurrentHashMap<>();
     private final Semaphore updateLimiter = new Semaphore(DEFAULT_UPDATE_CONCURRENCY_LIMIT * Systems.CPU_CORES);

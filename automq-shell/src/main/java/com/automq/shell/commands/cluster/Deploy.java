@@ -11,6 +11,8 @@
 
 package com.automq.shell.commands.cluster;
 
+import org.apache.kafka.common.utils.Exit;
+
 import com.automq.shell.model.ClusterTopology;
 import com.automq.shell.model.Env;
 import com.automq.shell.model.Node;
@@ -20,6 +22,9 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+
+import org.apache.commons.lang3.StringUtils;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
@@ -30,8 +35,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.kafka.common.utils.Exit;
+
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "deploy", description = "Deploy AutoMQ cluster", mixinStandardHelpOptions = true)

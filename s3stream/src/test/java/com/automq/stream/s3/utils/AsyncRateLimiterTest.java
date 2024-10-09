@@ -12,11 +12,13 @@
 package com.automq.stream.s3.utils;
 
 import com.automq.stream.utils.AsyncRateLimiter;
+
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
 
 public class AsyncRateLimiterTest {
 

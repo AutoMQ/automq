@@ -23,14 +23,16 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+
 public class CompactionUploader {
-    private final static Logger LOGGER = LoggerFactory.getLogger(CompactionUploader.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(CompactionUploader.class);
     private final ObjectManager objectManager;
     private final ExecutorService streamObjectUploadPool;
     private final ExecutorService streamSetObjectUploadPool;

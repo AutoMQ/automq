@@ -19,6 +19,7 @@ import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.ModelUtils;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.ArrayList;

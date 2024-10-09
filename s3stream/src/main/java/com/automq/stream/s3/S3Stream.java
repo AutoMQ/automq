@@ -30,13 +30,15 @@ import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.GlobalSwitch;
-import io.netty.buffer.Unpooled;
-import io.opentelemetry.instrumentation.annotations.SpanAttribute;
-import io.opentelemetry.instrumentation.annotations.WithSpan;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,8 +55,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.Unpooled;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 
 import static com.automq.stream.utils.FutureUtil.exec;
 import static com.automq.stream.utils.FutureUtil.propagate;
@@ -77,8 +81,8 @@ public class S3Stream implements Stream {
     private final Deque<Long> pendingAppendTimestamps = new ConcurrentLinkedDeque<>();
     private final Set<CompletableFuture<?>> pendingFetches = ConcurrentHashMap.newKeySet();
     private final Deque<Long> pendingFetchTimestamps = new ConcurrentLinkedDeque<>();
-    private final AsyncNetworkBandwidthLimiter networkInboundLimiter;
-    private final AsyncNetworkBandwidthLimiter networkOutboundLimiter;
+    private final NetworkBandwidthLimiter networkInboundLimiter;
+    private final NetworkBandwidthLimiter networkOutboundLimiter;
     private long startOffset;
     private CompletableFuture<Void> lastPendingTrim = CompletableFuture.completedFuture(null);
     private CompletableFuture<Void> closeCf;
@@ -89,8 +93,8 @@ public class S3Stream implements Stream {
     }
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager, AsyncNetworkBandwidthLimiter networkInboundLimiter,
-        AsyncNetworkBandwidthLimiter networkOutboundLimiter) {
+        StreamManager streamManager, NetworkBandwidthLimiter networkInboundLimiter,
+        NetworkBandwidthLimiter networkOutboundLimiter) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;

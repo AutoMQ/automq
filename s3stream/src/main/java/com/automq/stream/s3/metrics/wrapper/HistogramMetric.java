@@ -13,6 +13,7 @@ package com.automq.stream.s3.metrics.wrapper;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
+
 import io.opentelemetry.api.common.Attributes;
 
 public class HistogramMetric extends ConfigurableMetric {

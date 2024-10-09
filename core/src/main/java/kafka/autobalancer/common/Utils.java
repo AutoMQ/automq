@@ -11,7 +11,13 @@
 
 package kafka.autobalancer.common;
 
+import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
+import org.apache.kafka.common.metadata.RegisterBrokerRecord;
+import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
+import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
+
 import java.text.DecimalFormat;
+import java.util.Optional;
 
 public class Utils {
 
@@ -52,5 +58,29 @@ public class Utils {
             return false;
         }
         return expect.isEmpty() || listenerName.equals(expect);
+    }
+
+    public static Optional<Boolean> isBrokerFenced(BrokerRegistrationChangeRecord record) {
+        BrokerRegistrationFencingChange fencingChange =
+            BrokerRegistrationFencingChange.fromValue(record.fenced()).orElseThrow(
+                () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +
+                    "value for fenced field: %x", record, record.fenced())));
+        BrokerRegistrationInControlledShutdownChange inControlledShutdownChange =
+            BrokerRegistrationInControlledShutdownChange.fromValue(record.inControlledShutdown()).orElseThrow(
+                () -> new IllegalStateException(String.format("Unable to replay %s: unknown " +
+                    "value for inControlledShutdown field: %x", record, record.inControlledShutdown())));
+        if (fencingChange == BrokerRegistrationFencingChange.FENCE
+            || inControlledShutdownChange == BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN) {
+            return Optional.of(true);
+        } else if (fencingChange == BrokerRegistrationFencingChange.UNFENCE) {
+            return Optional.of(false);
+        } else {
+            // broker status unchanged
+            return Optional.empty();
+        }
+    }
+
+    public static boolean isBrokerFenced(RegisterBrokerRecord record) {
+        return record.fenced() || record.inControlledShutdown();
     }
 }

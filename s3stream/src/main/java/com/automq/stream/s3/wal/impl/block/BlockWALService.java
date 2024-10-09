@@ -35,7 +35,12 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import io.netty.buffer.ByteBuf;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.time.StopWatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
@@ -49,10 +54,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Function;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.time.StopWatch;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 import static com.automq.stream.s3.Constants.NOOP_EPOCH;
@@ -562,7 +565,7 @@ public class BlockWALService implements WriteAheadLog {
         // wal io request limit
         private int writeRateLimit = 3000;
         // wal io bandwidth limit
-        private long writeBandwidthLimit = 1024 * 1024 * 1024; // 1GB/s
+        private long writeBandwidthLimit = Long.MAX_VALUE; // no limitation
         private int nodeId = NOOP_NODE_ID;
         private long epoch = NOOP_EPOCH;
         private boolean recoveryMode = false;
@@ -665,7 +668,6 @@ public class BlockWALService implements WriteAheadLog {
             BlockWALService blockWALService = new BlockWALService();
 
             WALChannel.WALChannelBuilder walChannelBuilder = WALChannel.builder(blockDevicePath)
-                .writeBandWidthLimit(writeBandwidthLimit)
                 .capacity(blockDeviceCapacityWant)
                 .initBufferSize(initBufferSize)
                 .maxBufferSize(maxBufferSize)
@@ -691,7 +693,9 @@ public class BlockWALService implements WriteAheadLog {
                     slidingWindowUpperLimit,
                     slidingWindowScaleUnit,
                     blockSoftLimit,
-                    writeRateLimit,
+                    // leave some buffer for other write operations, for example, flush WAL header caused by trim
+                    Math.max(writeRateLimit - 20, writeRateLimit / 2),
+                    writeBandwidthLimit,
                     blockWALService.flusher()
                 );
             }

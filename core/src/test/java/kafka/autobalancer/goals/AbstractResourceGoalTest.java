@@ -11,18 +11,21 @@
 
 package kafka.autobalancer.goals;
 
-import java.util.ArrayList;
-import java.util.List;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
+
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static kafka.autobalancer.common.types.Resource.NW_IN;
 import static kafka.autobalancer.common.types.Resource.NW_OUT;

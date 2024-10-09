@@ -11,15 +11,16 @@
 
 package org.apache.kafka.image.node.automq;
 
-import java.util.Collection;
-import java.util.LinkedList;
-import java.util.List;
 import org.apache.kafka.image.NodeS3StreamSetObjectMetadataImage;
 import org.apache.kafka.image.node.MetadataNode;
 import org.apache.kafka.timeline.TimelineHashMap;
 
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
+
 public class NodesImageNode implements MetadataNode {
-    public final static String NAME = "nodes";
+    public static final String NAME = "nodes";
     private final TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodes;
 
     public NodesImageNode(TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodes) {

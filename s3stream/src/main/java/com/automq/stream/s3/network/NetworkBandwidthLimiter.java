@@ -22,6 +22,8 @@ public interface NetworkBandwidthLimiter {
 
     long getAvailableTokens();
 
+    void shutdown();
+
 
     class Noop implements NetworkBandwidthLimiter {
         @Override
@@ -37,6 +39,11 @@ public interface NetworkBandwidthLimiter {
         @Override
         public long getAvailableTokens() {
             return Long.MAX_VALUE;
+        }
+
+        @Override
+        public void shutdown() {
+
         }
     }
 }

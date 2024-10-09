@@ -12,6 +12,7 @@
 package com.automq.stream.s3.metadata;
 
 import com.automq.stream.s3.objects.ObjectAttributes;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;

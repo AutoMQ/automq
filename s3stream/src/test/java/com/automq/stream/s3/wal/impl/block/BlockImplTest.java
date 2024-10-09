@@ -14,11 +14,14 @@ package com.automq.stream.s3.wal.impl.block;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.common.Record;
-import io.netty.buffer.ByteBuf;
-import java.util.concurrent.CompletableFuture;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.CompletableFuture;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -16,7 +16,7 @@ repositories {
 
 dependencies {
     compileOnly libs.awsSdkAuth
-    implementation libs.log4j
+    implementation libs.reload4j
     implementation libs.nettyBuffer
     implementation libs.opentelemetrySdk
     implementation libs.jacksonDatabind

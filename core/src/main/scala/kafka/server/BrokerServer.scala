@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import kafka.automq.zonerouter.{NoopProduceRouter, ProduceRouter}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -38,9 +39,9 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
-import org.apache.kafka.coordinator.group.{CoordinatorRecord, GroupCoordinator, GroupCoordinatorConfig, GroupCoordinatorService, CoordinatorRecordSerde}
+import org.apache.kafka.coordinator.group.{CoordinatorRecord, GroupCoordinator, GroupCoordinatorService, CoordinatorRecordSerde}
+import org.apache.kafka.image.publisher.{BrokerRegistrationTracker, MetadataPublisher}
 import org.apache.kafka.image.loader.MetadataLoader
-import org.apache.kafka.image.publisher.MetadataPublisher
 import org.apache.kafka.metadata.{BrokerState, ListenerInfo, VersionRange}
 import org.apache.kafka.security.CredentialProvider
 import org.apache.kafka.server.{AssignmentsManager, ClientMetricsManager, NodeToControllerChannelManager}
@@ -59,7 +60,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.{Condition, ReentrantLock}
-import java.util.concurrent.{CompletableFuture, ExecutionException, TimeoutException, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ExecutionException, TimeUnit, TimeoutException}
 import scala.collection.Map
 import scala.compat.java8.OptionConverters.RichOptionForJava8
 import scala.jdk.CollectionConverters._
@@ -142,6 +143,8 @@ class BrokerServer(
 
   var brokerMetadataPublisher: BrokerMetadataPublisher = _
 
+  var brokerRegistrationTracker: BrokerRegistrationTracker = _
+
   val brokerFeatures: BrokerFeatures = BrokerFeatures.createDefault(config.unstableFeatureVersionsEnabled)
 
   def kafkaYammerMetrics: KafkaYammerMetrics = KafkaYammerMetrics.INSTANCE
@@ -154,6 +157,8 @@ class BrokerServer(
   var controllerNodeProvider: RaftControllerNodeProvider = _
 
   def metadataLoader: MetadataLoader = sharedServer.loader
+
+  var produceRouter: ProduceRouter = _
   // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -193,7 +198,7 @@ class BrokerServer(
       kafkaScheduler.startup()
 
       /* register broker metrics */
-      brokerTopicStats = new BrokerTopicStats(config.isRemoteLogStorageSystemEnabled)
+      brokerTopicStats = new BrokerTopicStats(config.remoteLogManagerConfig.isRemoteStorageSystemEnabled())
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, s"broker-${config.nodeId}-")
 
@@ -202,7 +207,7 @@ class BrokerServer(
       logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
       // AutoMQ for Kafka inject end
 
-      metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId)
+      metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId, () => raftManager.client.kraftVersion())
 
       // AutoMQ for Kafka inject start
       // ElasticLogManager should be marked before LogManager is created.
@@ -270,7 +275,7 @@ class BrokerServer(
       clientQuotaMetadataManager = new ClientQuotaMetadataManager(quotaManagers, socketServer.connectionQuotas)
 
       val listenerInfo = ListenerInfo.create(Optional.of(config.interBrokerListenerName.value()),
-          config.effectiveAdvertisedListeners.map(_.toJava).asJava).
+          config.effectiveAdvertisedBrokerListeners.map(_.toJava).asJava).
             withWildcardHostnamesResolved().
             withEphemeralPortsCorrected(name => socketServer.boundPort(new ListenerName(name)))
 
@@ -394,11 +399,6 @@ class BrokerServer(
         featuresRemapped,
         logManager.readBrokerEpochFromCleanShutdownFiles()
       )
-      // If the BrokerLifecycleManager's initial catch-up future fails, it means we timed out
-      // or are shutting down before we could catch up. Therefore, also fail the firstPublishFuture.
-      lifecycleManager.initialCatchUpFuture.whenComplete((_, e) => {
-        if (e != null) brokerMetadataPublisher.firstPublishFuture.completeExceptionally(e)
-      })
 
       // Create and initialize an authorizer if one is configured.
       authorizer = config.createNewAuthorizer()
@@ -462,6 +462,7 @@ class BrokerServer(
         rlm.startup()
       }
 
+      metadataPublishers.add(new MetadataVersionConfigValidator(config, sharedServer.metadataPublishingFaultHandler))
       brokerMetadataPublisher = new BrokerMetadataPublisher(config,
         metadataCache,
         logManager,
@@ -495,10 +496,18 @@ class BrokerServer(
           authorizer
         ),
         sharedServer.initialBrokerMetadataLoadFaultHandler,
-        sharedServer.metadataPublishingFaultHandler,
-        lifecycleManager
+        sharedServer.metadataPublishingFaultHandler
       )
+      // If the BrokerLifecycleManager's initial catch-up future fails, it means we timed out
+      // or are shutting down before we could catch up. Therefore, also fail the firstPublishFuture.
+      lifecycleManager.initialCatchUpFuture.whenComplete((_, e) => {
+        if (e != null) brokerMetadataPublisher.firstPublishFuture.completeExceptionally(e)
+      })
       metadataPublishers.add(brokerMetadataPublisher)
+      brokerRegistrationTracker = new BrokerRegistrationTracker(config.brokerId,
+        () => lifecycleManager.resendBrokerRegistrationUnlessZkMode())
+      metadataPublishers.add(brokerRegistrationTracker)
+
 
       // Register parts of the broker that can be reconfigured via dynamic configs.  This needs to
       // be done before we publish the dynamic configs, so that we don't miss anything.
@@ -532,9 +541,10 @@ class BrokerServer(
       new KafkaConfig(config.originals(), true)
 
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       ElasticLogManager.init(config, clusterId, this)
-      // AutoMQ for Kafka inject end
+      produceRouter = newProduceRouter()
+      // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
       // from RECOVERY state to RUNNING state, once the controller unfences the broker.
@@ -584,25 +594,6 @@ class BrokerServer(
     if (config.isNewGroupCoordinatorEnabled) {
       val time = Time.SYSTEM
       val serde = new CoordinatorRecordSerde
-      val groupCoordinatorConfig = new GroupCoordinatorConfig(
-        config.groupCoordinatorNumThreads,
-        config.consumerGroupSessionTimeoutMs,
-        config.consumerGroupHeartbeatIntervalMs,
-        config.consumerGroupMaxSize,
-        config.consumerGroupAssignors,
-        config.offsetsTopicSegmentBytes,
-        config.offsetMetadataMaxSize,
-        config.groupMaxSize,
-        config.groupInitialRebalanceDelay,
-        GroupCoordinatorConfig.CLASSIC_GROUP_NEW_MEMBER_JOIN_TIMEOUT_MS,
-        config.groupMinSessionTimeoutMs,
-        config.groupMaxSessionTimeoutMs,
-        config.offsetsRetentionCheckIntervalMs,
-        config.offsetsRetentionMinutes * 60 * 1000L,
-        config.offsetCommitTimeoutMs,
-        config.consumerGroupMigrationPolicy,
-        config.offsetsTopicCompressionType
-      )
       val timer = new SystemTimerReaper(
         "group-coordinator-reaper",
         new SystemTimer("group-coordinator")
@@ -611,12 +602,12 @@ class BrokerServer(
         time,
         replicaManager,
         serde,
-        config.offsetsLoadBufferSize
+        config.groupCoordinatorConfig.offsetsLoadBufferSize
       )
       val writer = new CoordinatorPartitionWriter(
         replicaManager
       )
-      new GroupCoordinatorService.Builder(config.brokerId, groupCoordinatorConfig)
+      new GroupCoordinatorService.Builder(config.brokerId, config.groupCoordinatorConfig)
         .withTime(time)
         .withTimer(timer)
         .withLoader(loader)
@@ -635,7 +626,7 @@ class BrokerServer(
   }
 
   protected def createRemoteLogManager(): Option[RemoteLogManager] = {
-    if (config.remoteLogManagerConfig.enableRemoteStorageSystem()) {
+    if (config.remoteLogManagerConfig.isRemoteStorageSystemEnabled()) {
       Some(new RemoteLogManager(config.remoteLogManagerConfig, config.brokerId, config.logDirs.head, clusterId, time,
         (tp: TopicPartition) => logManager.getLog(tp).asJava,
         (tp: TopicPartition, remoteLogStartOffset: java.lang.Long) => {
@@ -767,6 +758,10 @@ class BrokerServer(
     }
   }
 
+  override def isShutdown(): Boolean = {
+    status == SHUTDOWN || status == SHUTTING_DOWN
+  }
+
   override def awaitShutdown(): Unit = {
     lock.lock()
     try {
@@ -781,6 +776,7 @@ class BrokerServer(
 
   override def boundPort(listenerName: ListenerName): Int = socketServer.boundPort(listenerName)
 
+  // AutoMQ inject start
   def newNodeToControllerChannelManager(channelName: String, retryTimeout: Int): NodeToControllerChannelManager = {
     new NodeToControllerChannelManagerImpl(
       controllerNodeProvider,
@@ -792,5 +788,12 @@ class BrokerServer(
       retryTimeout
     )
   }
+
+  protected def newProduceRouter(): ProduceRouter = {
+    val produceRouter = new NoopProduceRouter(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
+    dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setProduceRouter(produceRouter)
+    produceRouter
+  }
+  // AutoMQ inject end
 
 }

@@ -17,10 +17,11 @@
 
 package org.apache.kafka.controller.es;
 
-import java.util.List;
-import java.util.Objects;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.errors.PolicyViolationException;
+
+import java.util.List;
+import java.util.Objects;
 
 /**
  * <p>An interface for enforcing a policy on create partition requests.

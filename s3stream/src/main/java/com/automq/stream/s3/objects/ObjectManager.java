@@ -12,6 +12,7 @@
 package com.automq.stream.s3.objects;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -100,4 +101,3 @@ public interface ObjectManager {
 
     void setCommitStreamSetObjectHook(CommitStreamSetObjectHook hook);
 }
-

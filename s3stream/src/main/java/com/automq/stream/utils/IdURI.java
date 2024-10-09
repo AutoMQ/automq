@@ -11,6 +11,8 @@
 
 package com.automq.stream.utils;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +20,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
-import org.apache.commons.lang3.StringUtils;
 
 import static com.automq.stream.utils.URIUtils.URI_PATTERN;
 
@@ -122,5 +123,10 @@ public class IdURI {
             }
         }
         return raw.substring(0, raw.length() - 1);
+    }
+
+    @Override
+    public String toString() {
+        return encode();
     }
 }

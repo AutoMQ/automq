@@ -11,6 +11,8 @@
 
 package kafka.log.streamaspect;
 
+import org.apache.kafka.common.utils.Utils;
+
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatch;
@@ -19,7 +21,6 @@ import com.automq.stream.api.Stream;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.utils.FutureUtil;
-import org.apache.kafka.common.utils.Utils;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;

@@ -18,7 +18,7 @@ import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 
 public class MetadataStats {
-    private volatile static MetadataStats instance = null;
+    private static volatile MetadataStats instance = null;
     private final HistogramMetric getObjectsTimeSuccessStats = S3StreamMetricsManager.buildGetObjectsTimeMetric(MetricsLevel.INFO,
         S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
     private final HistogramMetric getObjectsTimeFailedStats = S3StreamMetricsManager.buildGetObjectsTimeMetric(MetricsLevel.INFO,

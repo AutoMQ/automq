@@ -11,17 +11,18 @@
 
 package org.apache.kafka.image.node.automq;
 
+import org.apache.kafka.image.KVImage;
+import org.apache.kafka.image.node.MetadataLeafNode;
+import org.apache.kafka.image.node.MetadataNode;
+
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
-import org.apache.kafka.image.KVImage;
-import org.apache.kafka.image.node.MetadataLeafNode;
-import org.apache.kafka.image.node.MetadataNode;
 
 public class KVImageNode implements MetadataNode {
-    public final static String NAME = "kv";
+    public static final String NAME = "kv";
     private final KVImage kvImage;
 
     public KVImageNode(KVImage kvImage) {

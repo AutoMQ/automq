@@ -11,7 +11,6 @@
 
 package kafka.autobalancer.model;
 
-import java.util.Set;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
 import kafka.autobalancer.model.samples.Samples;
@@ -21,6 +20,7 @@ import kafka.autobalancer.model.samples.SnapshottableSamples;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public class BrokerUpdater extends AbstractInstanceUpdater {
     private final int brokerId;
@@ -166,7 +166,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         public String shortString() {
             return "Broker{" +
                     "brokerId=" + brokerId +
-                    "outOfDate=" + metricsOutOfDate +
+                    ", outOfDate=" + metricsOutOfDate +
                     ", slow=" + isSlowBroker +
                     ", " + timeString() +
                     ", " + loadString() +
@@ -184,7 +184,7 @@ public class BrokerUpdater extends AbstractInstanceUpdater {
         public String toString() {
             return "Broker{" +
                     "brokerId=" + brokerId +
-                    "outOfDate=" + metricsOutOfDate +
+                    ", outOfDate=" + metricsOutOfDate +
                     ", slow=" + isSlowBroker +
                     ", " + super.toString() +
                     "}";

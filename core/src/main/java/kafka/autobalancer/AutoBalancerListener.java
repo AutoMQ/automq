@@ -11,12 +11,12 @@
 
 package kafka.autobalancer;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.detector.AnomalyDetector;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.listeners.ClusterStatusListenerRegistry;
 import kafka.autobalancer.listeners.TopicPartitionStatusListener;
+
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
@@ -34,6 +34,9 @@ import org.apache.kafka.raft.LeaderAndEpoch;
 import org.apache.kafka.raft.RaftClient;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.snapshot.SnapshotReader;
+
+import com.automq.stream.utils.LogContext;
+
 import org.slf4j.Logger;
 
 import java.util.List;
@@ -149,4 +152,3 @@ public class AutoBalancerListener implements RaftClient.Listener<ApiMessageAndVe
         this.queue.beginShutdown("AutoBalancerListenerShutdown");
     }
 }
-

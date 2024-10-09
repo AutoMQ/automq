@@ -13,19 +13,23 @@ package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
-import com.automq.stream.s3.wal.WriteAheadLog;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+
+import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.inf.ArgumentParser;
+import net.sourceforge.argparse4j.inf.Namespace;
+
+import org.apache.commons.lang3.time.StopWatch;
+
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
-import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.inf.ArgumentParser;
-import net.sourceforge.argparse4j.inf.Namespace;
-import org.apache.commons.lang3.time.StopWatch;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
 import static com.automq.stream.s3.wal.benchmark.BenchTool.resetWALHeader;
@@ -121,6 +125,7 @@ public class RecoveryBench implements AutoCloseable {
         static ArgumentParser parser() {
             ArgumentParser parser = ArgumentParsers
                 .newArgumentParser("RecoveryBench")
+                .defaultHelp(true)
                 .description("Benchmark the recovery performance of BlockWALService");
             parser.addArgument("-p", "--path")
                 .required(true)

@@ -18,11 +18,18 @@ package org.apache.kafka.server.config;
 
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.security.scram.internals.ScramMechanism;
+
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;
+import static org.apache.kafka.common.config.ConfigDef.Importance.MEDIUM;
+import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
+import static org.apache.kafka.common.config.ConfigDef.Type.CLASS;
+import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 
 public class QuotaConfigs {
     public static final String NUM_QUOTA_SAMPLES_CONFIG = "quota.window.num";
@@ -120,7 +127,17 @@ public class QuotaConfigs {
 
     public static final int IP_CONNECTION_RATE_DEFAULT = Integer.MAX_VALUE;
 
-    private final static Set<String> USER_AND_CLIENT_QUOTA_NAMES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+    public static final ConfigDef CONFIG_DEF =  new ConfigDef()
+            .define(QuotaConfigs.NUM_QUOTA_SAMPLES_CONFIG, INT, QuotaConfigs.NUM_QUOTA_SAMPLES_DEFAULT, atLeast(1), LOW, QuotaConfigs.NUM_QUOTA_SAMPLES_DOC)
+            .define(QuotaConfigs.NUM_REPLICATION_QUOTA_SAMPLES_CONFIG, INT, QuotaConfigs.NUM_QUOTA_SAMPLES_DEFAULT, atLeast(1), LOW, QuotaConfigs.NUM_REPLICATION_QUOTA_SAMPLES_DOC)
+            .define(QuotaConfigs.NUM_ALTER_LOG_DIRS_REPLICATION_QUOTA_SAMPLES_CONFIG, INT, QuotaConfigs.NUM_QUOTA_SAMPLES_DEFAULT, atLeast(1), LOW, QuotaConfigs.NUM_ALTER_LOG_DIRS_REPLICATION_QUOTA_SAMPLES_DOC)
+            .define(QuotaConfigs.NUM_CONTROLLER_QUOTA_SAMPLES_CONFIG, INT, QuotaConfigs.NUM_QUOTA_SAMPLES_DEFAULT, atLeast(1), LOW, QuotaConfigs.NUM_CONTROLLER_QUOTA_SAMPLES_DOC)
+            .define(QuotaConfigs.QUOTA_WINDOW_SIZE_SECONDS_CONFIG, INT, QuotaConfigs.QUOTA_WINDOW_SIZE_SECONDS_DEFAULT, atLeast(1), LOW, QuotaConfigs.QUOTA_WINDOW_SIZE_SECONDS_DOC)
+            .define(QuotaConfigs.REPLICATION_QUOTA_WINDOW_SIZE_SECONDS_CONFIG, INT, QuotaConfigs.QUOTA_WINDOW_SIZE_SECONDS_DEFAULT, atLeast(1), LOW, QuotaConfigs.REPLICATION_QUOTA_WINDOW_SIZE_SECONDS_DOC)
+            .define(QuotaConfigs.ALTER_LOG_DIRS_REPLICATION_QUOTA_WINDOW_SIZE_SECONDS_CONFIG, INT, QuotaConfigs.QUOTA_WINDOW_SIZE_SECONDS_DEFAULT, atLeast(1), LOW, QuotaConfigs.ALTER_LOG_DIRS_REPLICATION_QUOTA_WINDOW_SIZE_SECONDS_DOC)
+            .define(QuotaConfigs.CONTROLLER_QUOTA_WINDOW_SIZE_SECONDS_CONFIG, INT, QuotaConfigs.QUOTA_WINDOW_SIZE_SECONDS_DEFAULT, atLeast(1), LOW, QuotaConfigs.CONTROLLER_QUOTA_WINDOW_SIZE_SECONDS_DOC)
+            .define(QuotaConfigs.CLIENT_QUOTA_CALLBACK_CLASS_CONFIG, CLASS, null, LOW, QuotaConfigs.CLIENT_QUOTA_CALLBACK_CLASS_DOC);
+    private static final Set<String> USER_AND_CLIENT_QUOTA_NAMES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             PRODUCER_BYTE_RATE_OVERRIDE_CONFIG,
             CONSUMER_BYTE_RATE_OVERRIDE_CONFIG,
             REQUEST_PERCENTAGE_OVERRIDE_CONFIG,
@@ -129,18 +146,43 @@ public class QuotaConfigs {
 
     private static void buildUserClientQuotaConfigDef(ConfigDef configDef) {
         configDef.define(PRODUCER_BYTE_RATE_OVERRIDE_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE,
-                ConfigDef.Importance.MEDIUM, PRODUCER_BYTE_RATE_DOC);
+                MEDIUM, PRODUCER_BYTE_RATE_DOC);
 
         configDef.define(CONSUMER_BYTE_RATE_OVERRIDE_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE,
-                ConfigDef.Importance.MEDIUM, CONSUMER_BYTE_RATE_DOC);
+                MEDIUM, CONSUMER_BYTE_RATE_DOC);
 
         configDef.define(REQUEST_PERCENTAGE_OVERRIDE_CONFIG, ConfigDef.Type.DOUBLE,
                 Integer.valueOf(Integer.MAX_VALUE).doubleValue(),
-                ConfigDef.Importance.MEDIUM, REQUEST_PERCENTAGE_DOC);
+                MEDIUM, REQUEST_PERCENTAGE_DOC);
 
         configDef.define(CONTROLLER_MUTATION_RATE_OVERRIDE_CONFIG, ConfigDef.Type.DOUBLE,
                 Integer.valueOf(Integer.MAX_VALUE).doubleValue(),
-                ConfigDef.Importance.MEDIUM, CONTROLLER_MUTATION_RATE_DOC);
+                MEDIUM, CONTROLLER_MUTATION_RATE_DOC);
+    }
+
+    public static ConfigDef brokerQuotaConfigs() {
+        return new ConfigDef()
+                // Round minimum value down, to make it easier for users.
+                .define(QuotaConfigs.LEADER_REPLICATION_THROTTLED_RATE_CONFIG, ConfigDef.Type.LONG,
+                        QuotaConfigs.QUOTA_BYTES_PER_SECOND_DEFAULT, ConfigDef.Range.atLeast(0),
+                        MEDIUM, QuotaConfigs.LEADER_REPLICATION_THROTTLED_RATE_DOC)
+                .define(QuotaConfigs.FOLLOWER_REPLICATION_THROTTLED_RATE_CONFIG, ConfigDef.Type.LONG,
+                        QuotaConfigs.QUOTA_BYTES_PER_SECOND_DEFAULT, ConfigDef.Range.atLeast(0),
+                        MEDIUM, QuotaConfigs.FOLLOWER_REPLICATION_THROTTLED_RATE_DOC)
+                .define(QuotaConfigs.REPLICA_ALTER_LOG_DIRS_IO_MAX_BYTES_PER_SECOND_CONFIG, ConfigDef.Type.LONG,
+                        QuotaConfigs.QUOTA_BYTES_PER_SECOND_DEFAULT, ConfigDef.Range.atLeast(0),
+                        MEDIUM, QuotaConfigs.REPLICA_ALTER_LOG_DIRS_IO_MAX_BYTES_PER_SECOND_DOC)
+                 // AutoMQ inject start
+                .define(QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, ConfigDef.Type.BOOLEAN, false, MEDIUM, QuotaConfigs.BROKER_QUOTA_ENABLED_DOC)
+                .define(QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_DOC)
+                .define(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_DOC)
+                .define(QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_DOC)
+                .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_DOC)
+                .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_DOC)
+                .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_DOC)
+                .define(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE, MEDIUM, QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_DOC)
+                .define(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE, MEDIUM, QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_DOC);
+                 // AutoMQ inject start
     }
 
     public static ConfigDef userAndClientQuotaConfigs() {
@@ -152,7 +194,7 @@ public class QuotaConfigs {
     public static ConfigDef scramMechanismsPlusUserAndClientQuotaConfigs() {
         ConfigDef configDef = new ConfigDef();
         ScramMechanism.mechanismNames().forEach(mechanismName -> {
-            configDef.define(mechanismName, ConfigDef.Type.STRING, null, ConfigDef.Importance.MEDIUM,
+            configDef.define(mechanismName, ConfigDef.Type.STRING, null, MEDIUM,
                     "User credentials for SCRAM mechanism " + mechanismName);
         });
         buildUserClientQuotaConfigDef(configDef);
@@ -162,7 +204,7 @@ public class QuotaConfigs {
     public static ConfigDef ipConfigs() {
         ConfigDef configDef = new ConfigDef();
         configDef.define(IP_CONNECTION_RATE_OVERRIDE_CONFIG, ConfigDef.Type.INT, Integer.MAX_VALUE,
-                ConfigDef.Range.atLeast(0), ConfigDef.Importance.MEDIUM, IP_CONNECTION_RATE_DOC);
+                ConfigDef.Range.atLeast(0), MEDIUM, IP_CONNECTION_RATE_DOC);
         return configDef;
     }
 

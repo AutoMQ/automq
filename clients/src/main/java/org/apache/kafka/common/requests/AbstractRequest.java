@@ -16,8 +16,6 @@
  */
 package org.apache.kafka.common.requests;
 
-import java.nio.ByteBuffer;
-import java.util.Map;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.network.Send;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -27,6 +25,7 @@ import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.protocol.SendBuilder;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
+import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
 import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectRequest;
 import org.apache.kafka.common.requests.s3.CommitStreamSetObjectRequest;
@@ -42,9 +41,12 @@ import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 
+import java.nio.ByteBuffer;
+import java.util.Map;
+
 public abstract class AbstractRequest implements AbstractRequestResponse {
 
-    public static abstract class Builder<T extends AbstractRequest> {
+    public abstract static class Builder<T extends AbstractRequest> {
         private final ApiKeys apiKey;
         private final short oldestAllowedVersion;
         private final short latestAllowedVersion;
@@ -371,11 +373,38 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return AutomqRegisterNodeRequest.parse(buffer, apiVersion);
             case AUTOMQ_GET_NODES:
                 return AutomqGetNodesRequest.parse(buffer, apiVersion);
+            case AUTOMQ_ZONE_ROUTER:
+                return AutomqZoneRouterRequest.parse(buffer, apiVersion);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdRequest.parse(buffer, apiVersion);
             case DESCRIBE_STREAMS:
                 return DescribeStreamsRequest.parse(buffer, apiVersion);
             // AutoMQ for Kafka inject end
+
+            case SHARE_GROUP_HEARTBEAT:
+                return ShareGroupHeartbeatRequest.parse(buffer, apiVersion);
+            case SHARE_GROUP_DESCRIBE:
+                return ShareGroupDescribeRequest.parse(buffer, apiVersion);
+            case SHARE_FETCH:
+                return ShareFetchRequest.parse(buffer, apiVersion);
+            case SHARE_ACKNOWLEDGE:
+                return ShareAcknowledgeRequest.parse(buffer, apiVersion);
+            case ADD_RAFT_VOTER:
+                return AddRaftVoterRequest.parse(buffer, apiVersion);
+            case REMOVE_RAFT_VOTER:
+                return RemoveRaftVoterRequest.parse(buffer, apiVersion);
+            case UPDATE_RAFT_VOTER:
+                return UpdateRaftVoterRequest.parse(buffer, apiVersion);
+            case INITIALIZE_SHARE_GROUP_STATE:
+                return InitializeShareGroupStateRequest.parse(buffer, apiVersion);
+            case READ_SHARE_GROUP_STATE:
+                return ReadShareGroupStateRequest.parse(buffer, apiVersion);
+            case WRITE_SHARE_GROUP_STATE:
+                return WriteShareGroupStateRequest.parse(buffer, apiVersion);
+            case DELETE_SHARE_GROUP_STATE:
+                return DeleteShareGroupStateRequest.parse(buffer, apiVersion);
+            case READ_SHARE_GROUP_STATE_SUMMARY:
+                return ReadShareGroupStateSummaryRequest.parse(buffer, apiVersion);
             default:
                 throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +
                         "code should be updated to do so.", apiKey));

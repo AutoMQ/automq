@@ -15,7 +15,7 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.utils.LogContext;
-import io.netty.util.concurrent.DefaultThreadFactory;
+
 import org.slf4j.Logger;
 
 import java.util.Objects;
@@ -29,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+
+import io.netty.util.concurrent.DefaultThreadFactory;
 
 public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private static final Logger LOGGER = new LogContext().logger(AsyncNetworkBandwidthLimiter.class);

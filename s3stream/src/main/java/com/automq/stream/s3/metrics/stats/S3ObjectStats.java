@@ -18,7 +18,7 @@ import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 
 public class S3ObjectStats {
-    private volatile static S3ObjectStats instance = null;
+    private static volatile S3ObjectStats instance = null;
 
     public final CounterMetric objectNumInTotalStats = S3StreamMetricsManager.buildObjectNumMetric();
     public final HistogramMetric objectStageUploadPartStats = S3StreamMetricsManager

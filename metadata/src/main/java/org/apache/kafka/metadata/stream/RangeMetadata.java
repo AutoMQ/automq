@@ -17,9 +17,10 @@
 
 package org.apache.kafka.metadata.stream;
 
-import java.util.Objects;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import java.util.Objects;
 
 /**
  * RangeMetadata is the metadata of a range of the stream.

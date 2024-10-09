@@ -11,19 +11,23 @@
 
 package kafka.automq;
 
+import kafka.log.stream.s3.telemetry.exporter.ExporterConstants;
+import kafka.server.KafkaConfig;
+
+import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.utils.Utils;
+
 import com.automq.stream.s3.ByteBufAllocPolicy;
 import com.automq.stream.s3.operator.BucketURI;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import kafka.log.stream.s3.telemetry.exporter.ExporterConstants;
-import kafka.server.KafkaConfig;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.common.config.ConfigDef;
-import org.apache.kafka.common.utils.Utils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;

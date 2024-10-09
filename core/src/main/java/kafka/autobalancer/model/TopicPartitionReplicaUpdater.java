@@ -11,16 +11,17 @@
 
 package kafka.autobalancer.model;
 
-import java.util.Set;
 import kafka.autobalancer.common.types.MetricVersion;
-import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.common.types.RawMetricTypes;
+import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.model.samples.Samples;
 import kafka.autobalancer.model.samples.SingleValueSamples;
+
 import org.apache.kafka.common.TopicPartition;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
     private final TopicPartition tp;
@@ -109,7 +110,7 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         public String shortString() {
             return "TopicPartitionReplica{" +
                     "tp=" + tp +
-                    "outOfDate=" + metricsOutOfDate +
+                    ", outOfDate=" + metricsOutOfDate +
                     ", " + timeString() +
                     ", " + loadString() +
                     "}";
@@ -126,7 +127,7 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
         public String toString() {
             return "TopicPartitionReplica{" +
                     "tp=" + tp +
-                    "outOfDate=" + metricsOutOfDate +
+                    ", outOfDate=" + metricsOutOfDate +
                     ", " + super.toString() +
                     "}";
         }

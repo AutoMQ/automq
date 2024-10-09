@@ -11,17 +11,20 @@
 
 package org.apache.kafka.tools.automq.perf;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.apache.kafka.tools.automq.perf.Stats.CumulativeStats;
+import org.apache.kafka.tools.automq.perf.Stats.PeriodStats;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
-import org.apache.kafka.tools.automq.perf.Stats.CumulativeStats;
-import org.apache.kafka.tools.automq.perf.Stats.PeriodStats;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 public class StatsCollector {
 

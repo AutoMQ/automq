@@ -15,13 +15,15 @@ import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
-import io.netty.buffer.ByteBuf;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
 import java.util.zip.CRC32;
+
+import io.netty.buffer.ByteBuf;
 import jnr.posix.POSIXFactory;
 
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
@@ -78,6 +80,10 @@ public class WALUtil {
     public static long calculateCycle(long offset, long physicalCapacity, long headerSize) {
         long capacity = physicalCapacity - headerSize;
         return offset / capacity;
+    }
+
+    public static long bytesToBlocks(long bytes) {
+        return bytes % BLOCK_SIZE == 0 ? bytes / BLOCK_SIZE : bytes / BLOCK_SIZE + 1;
     }
 
     public static long alignLargeByBlockSize(long offset) {

@@ -13,6 +13,7 @@ package com.automq.stream.s3.wal.impl.block;
 
 import com.automq.stream.s3.wal.common.ShutdownType;
 import com.automq.stream.s3.wal.exception.UnmarshalException;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

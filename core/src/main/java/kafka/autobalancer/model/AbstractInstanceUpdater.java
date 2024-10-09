@@ -12,16 +12,18 @@
 package kafka.autobalancer.model;
 
 
-import com.automq.stream.utils.LogContext;
-import java.util.Set;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.model.samples.Samples;
+
+import com.automq.stream.utils.LogContext;
+
 import org.slf4j.Logger;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -31,6 +33,15 @@ public abstract class AbstractInstanceUpdater {
     protected Map<Byte, Samples> metricSampleMap = new HashMap<>();
     protected long lastUpdateTimestamp = 0L;
     protected MetricVersion metricVersion = defaultVersion();
+    private final long createTimestamp;
+
+    public AbstractInstanceUpdater() {
+        this.createTimestamp = System.currentTimeMillis();
+    }
+
+    public long createTimestamp() {
+        return createTimestamp;
+    }
 
     public boolean update(Iterable<Map.Entry<Byte, Double>> metricsMap, long time) {
         lock.lock();
@@ -110,7 +121,7 @@ public abstract class AbstractInstanceUpdater {
 
     protected abstract AbstractInstance createInstance(boolean metricsOutOfDate);
 
-    public static abstract class AbstractInstance {
+    public abstract static class AbstractInstance {
         protected final Map<Byte, Load> loads = new HashMap<>();
         protected final long timestamp;
         protected final MetricVersion metricVersion;

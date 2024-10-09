@@ -17,7 +17,6 @@
 
 package kafka.autobalancer.goals;
 
-import java.util.Collection;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
@@ -25,20 +24,23 @@ import kafka.autobalancer.model.BrokerUpdater.Broker;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionReplica;
 import kafka.automq.AutoMQConfig;
+
 import org.apache.kafka.common.TopicPartition;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import static kafka.autobalancer.common.types.Resource.NW_IN;
 import static kafka.autobalancer.common.types.Resource.NW_OUT;

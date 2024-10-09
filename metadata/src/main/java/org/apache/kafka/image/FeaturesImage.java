@@ -23,6 +23,7 @@ import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.migration.ZkMigrationState;
 import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -31,7 +32,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * Represents the feature levels in the metadata image.

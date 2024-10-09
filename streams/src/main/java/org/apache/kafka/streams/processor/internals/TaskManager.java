@@ -16,9 +16,6 @@
  */
 package org.apache.kafka.streams.processor.internals;
 
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.DeleteRecordsResult;
 import org.apache.kafka.clients.admin.RecordsToDelete;
@@ -40,10 +37,12 @@ import org.apache.kafka.streams.errors.TaskIdFormatException;
 import org.apache.kafka.streams.errors.TaskMigratedException;
 import org.apache.kafka.streams.internals.StreamsConfigUtils.ProcessingMode;
 import org.apache.kafka.streams.processor.TaskId;
+import org.apache.kafka.streams.processor.assignment.ProcessId;
 import org.apache.kafka.streams.processor.internals.StateDirectory.TaskDirectory;
 import org.apache.kafka.streams.processor.internals.Task.State;
 import org.apache.kafka.streams.processor.internals.tasks.DefaultTaskManager;
 import org.apache.kafka.streams.state.internals.OffsetCheckpoint;
+
 import org.slf4j.Logger;
 
 import java.io.File;
@@ -60,9 +59,11 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -74,9 +75,9 @@ import static org.apache.kafka.streams.processor.internals.StateManagerUtil.pars
 
 public class TaskManager {
 
-    private final static String BUG_ERROR_MESSAGE = "This indicates a bug. " +
+    private static final String BUG_ERROR_MESSAGE = "This indicates a bug. " +
         "Please report at https://issues.apache.org/jira/projects/KAFKA/issues or to the dev-mailing list (https://kafka.apache.org/contact).";
-    private final static String INTERRUPTED_ERROR_MESSAGE = "Thread got interrupted. " + BUG_ERROR_MESSAGE;
+    private static final String INTERRUPTED_ERROR_MESSAGE = "Thread got interrupted. " + BUG_ERROR_MESSAGE;
 
     // initialize the task list
     // activeTasks needs to be concurrent as it can be accessed
@@ -84,7 +85,7 @@ public class TaskManager {
     private final Logger log;
     private final Time time;
     private final TasksRegistry tasks;
-    private final UUID processId;
+    private final ProcessId processId;
     private final String logPrefix;
     private final Admin adminClient;
     private final StateDirectory stateDirectory;
@@ -109,7 +110,7 @@ public class TaskManager {
     private final DefaultTaskManager schedulingTaskManager;
     TaskManager(final Time time,
                 final ChangelogReader changelogReader,
-                final UUID processId,
+                final ProcessId processId,
                 final String logPrefix,
                 final ActiveTaskCreator activeTaskCreator,
                 final StandbyTaskCreator standbyTaskCreator,
@@ -153,7 +154,7 @@ public class TaskManager {
         return activeTaskCreator.totalProducerBlockedTime();
     }
 
-    public UUID processId() {
+    public ProcessId processId() {
         return processId;
     }
 
@@ -507,8 +508,8 @@ public class TaskManager {
                                              final Set<Task> tasksToCloseClean,
                                              final Map<TaskId, RuntimeException> failedTasks) {
         handleTasksPendingInitialization();
-        handleRunningAndSuspendedTasks(activeTasksToCreate, standbyTasksToCreate, tasksToRecycle, tasksToCloseClean);
         handleRestoringAndUpdatingTasks(activeTasksToCreate, standbyTasksToCreate, failedTasks);
+        handleRunningAndSuspendedTasks(activeTasksToCreate, standbyTasksToCreate, tasksToRecycle, tasksToCloseClean);
     }
 
     private void handleTasksPendingInitialization() {
@@ -979,9 +980,11 @@ public class TaskManager {
             task.clearTaskTimeout();
         } catch (final TimeoutException timeoutException) {
             task.maybeInitTaskTimeoutOrThrow(now, timeoutException);
+            stateUpdater.add(task);
             log.debug(
                 String.format(
-                    "Could not complete restoration for %s due to the following exception; will retry",
+                    "Could not complete restoration for %s due to the following exception; adding the task " +
+                        "back to the state updater and will retry",
                     task.id()),
                 timeoutException
             );
@@ -1212,7 +1215,7 @@ public class TaskManager {
         log.debug("Closing lost active tasks as zombies.");
 
         closeRunningTasksDirty();
-        removeLostActiveTasksFromStateUpdater();
+        removeLostActiveTasksFromStateUpdaterAndPendingTasksToInit();
 
         if (processingMode == EXACTLY_ONCE_V2) {
             activeTaskCreator.reInitializeThreadProducer();
@@ -1233,11 +1236,11 @@ public class TaskManager {
         maybeUnlockTasks(allTaskIds);
     }
 
-    private void removeLostActiveTasksFromStateUpdater() {
+    private void removeLostActiveTasksFromStateUpdaterAndPendingTasksToInit() {
         if (stateUpdater != null) {
             final Map<TaskId, CompletableFuture<StateUpdater.RemovedTaskResult>> futures = new LinkedHashMap<>();
             final Map<TaskId, RuntimeException> failedTasksDuringCleanClose = new HashMap<>();
-            final Set<Task> tasksToCloseClean = new HashSet<>();
+            final Set<Task> tasksToCloseClean = new HashSet<>(tasks.drainPendingActiveTasksToInit());
             final Set<Task> tasksToCloseDirty = new HashSet<>();
             for (final Task restoringTask : stateUpdater.getTasks()) {
                 if (restoringTask.isActive()) {

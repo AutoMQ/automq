@@ -24,15 +24,18 @@ import kafka.server.metadata.BrokerServerMetrics
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.metrics.Metrics
+import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.utils.{AppInfoParser, LogContext, Time}
 import org.apache.kafka.controller.metrics.ControllerMetadataMetrics
 import org.apache.kafka.image.MetadataProvenance
 import org.apache.kafka.image.loader.MetadataLoader
 import org.apache.kafka.image.loader.metrics.MetadataLoaderMetrics
-import org.apache.kafka.image.publisher.{SnapshotEmitter, SnapshotGenerator}
 import org.apache.kafka.image.publisher.metrics.SnapshotEmitterMetrics
+import org.apache.kafka.image.publisher.{SnapshotEmitter, SnapshotGenerator}
+import org.apache.kafka.metadata.ListenerInfo
 import org.apache.kafka.metadata.MetadataRecordSerde
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble
+import org.apache.kafka.raft.Endpoints
 import org.apache.kafka.server.ProcessRole
 import org.apache.kafka.server.common.ApiMessageAndVersion
 import org.apache.kafka.server.fault.{FaultHandler, LoggingFaultHandler, ProcessTerminatingFaultHandler}
@@ -43,8 +46,9 @@ import java.util.Arrays
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.{CompletableFuture, TimeUnit}
+import java.util.{Collection => JCollection}
 import java.util.{Map => JMap}
-
+import scala.jdk.CollectionConverters._
 
 /**
  * Creates a fault handler.
@@ -96,6 +100,7 @@ class SharedServer(
   val time: Time,
   private val _metrics: Metrics,
   val controllerQuorumVotersFuture: CompletableFuture[JMap[Integer, InetSocketAddress]],
+  val bootstrapServers: JCollection[InetSocketAddress],
   val faultHandlerFactory: FaultHandlerFactory
 ) extends Logging {
   private val logContext: LogContext = new LogContext(s"[SharedServer id=${sharedServerConfig.nodeId}] ")
@@ -103,12 +108,14 @@ class SharedServer(
   private var started = false
   private var usedByBroker: Boolean = false
   private var usedByController: Boolean = false
-  val brokerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
-  val controllerConfig = new KafkaConfig(sharedServerConfig.props, false, None)
+  val brokerConfig = new KafkaConfig(sharedServerConfig.props, false)
+  val controllerConfig = new KafkaConfig(sharedServerConfig.props, false)
+
   // AutoMQ for Kafka injection start
   ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
   @volatile var telemetryManager: TelemetryManager = _
   // AutoMQ for Kafka injection end
+  
   @volatile var metrics: Metrics = _metrics
   @volatile var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _
   @volatile var brokerMetrics: BrokerServerMetrics = _
@@ -136,7 +143,7 @@ class SharedServer(
    */
   def startForBroker(): Unit = synchronized {
     if (!isUsed()) {
-      start()
+      start(Endpoints.empty())
     }
     usedByBroker = true
   }
@@ -144,9 +151,22 @@ class SharedServer(
   /**
    * The start function called by the controller.
    */
-  def startForController(): Unit = synchronized {
+  def startForController(listenerInfo: ListenerInfo): Unit = synchronized {
     if (!isUsed()) {
-      start()
+      val endpoints = Endpoints.fromInetSocketAddresses(
+        listenerInfo
+          .listeners()
+          .asScala
+          .map { case (listenerName, endpoint) =>
+            (
+              ListenerName.normalised(listenerName),
+              InetSocketAddress.createUnresolved(endpoint.host(), endpoint.port())
+            )
+          }
+          .toMap
+          .asJava
+      )
+      start(endpoints)
     }
     usedByController = true
   }
@@ -245,7 +265,7 @@ class SharedServer(
       // Note: snapshot generation does not need to be disabled for a publishing fault.
     })
 
-  private def start(): Unit = synchronized {
+  private def start(listenerEndpoints: Endpoints): Unit = synchronized {
     if (started) {
       debug("SharedServer has already been started.")
     } else {
@@ -264,8 +284,12 @@ class SharedServer(
         if (sharedServerConfig.processRoles.contains(ProcessRole.ControllerRole)) {
           controllerServerMetrics = new ControllerMetadataMetrics(Optional.of(KafkaYammerMetrics.defaultRegistry()))
         }
+        
+        // AutoMQ inject start
         telemetryManager = buildTelemetryManager(sharedServerConfig, clusterId)
         telemetryManager.init()
+        // AutoMQ inject end
+
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
           clusterId,
           sharedServerConfig,
@@ -277,6 +301,8 @@ class SharedServer(
           metrics,
           Some(s"kafka-${sharedServerConfig.nodeId}-raft"), // No dash expected at the end
           controllerQuorumVotersFuture,
+          bootstrapServers,
+          listenerEndpoints,
           raftManagerFaultHandler
         )
         raftManager = _raftManager

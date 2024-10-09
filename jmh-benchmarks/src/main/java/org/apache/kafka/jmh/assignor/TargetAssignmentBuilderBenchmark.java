@@ -17,19 +17,18 @@
 package org.apache.kafka.jmh.assignor;
 
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.coordinator.group.assignor.AssignmentMemberSpec;
-import org.apache.kafka.coordinator.group.assignor.GroupSpecImpl;
-import org.apache.kafka.coordinator.group.assignor.GroupAssignment;
-import org.apache.kafka.coordinator.group.assignor.MemberAssignment;
-import org.apache.kafka.coordinator.group.assignor.PartitionAssignor;
-import org.apache.kafka.coordinator.group.consumer.TopicIds;
+import org.apache.kafka.coordinator.group.api.assignor.GroupAssignment;
+import org.apache.kafka.coordinator.group.api.assignor.MemberAssignment;
+import org.apache.kafka.coordinator.group.api.assignor.PartitionAssignor;
 import org.apache.kafka.coordinator.group.assignor.UniformAssignor;
-import org.apache.kafka.coordinator.group.consumer.Assignment;
-import org.apache.kafka.coordinator.group.consumer.ConsumerGroupMember;
-import org.apache.kafka.coordinator.group.consumer.SubscribedTopicMetadata;
-import org.apache.kafka.coordinator.group.consumer.TargetAssignmentBuilder;
-import org.apache.kafka.coordinator.group.consumer.TopicMetadata;
-
+import org.apache.kafka.coordinator.group.modern.Assignment;
+import org.apache.kafka.coordinator.group.modern.GroupSpecImpl;
+import org.apache.kafka.coordinator.group.modern.MemberSubscriptionAndAssignmentImpl;
+import org.apache.kafka.coordinator.group.modern.SubscribedTopicDescriberImpl;
+import org.apache.kafka.coordinator.group.modern.TargetAssignmentBuilder;
+import org.apache.kafka.coordinator.group.modern.TopicIds;
+import org.apache.kafka.coordinator.group.modern.TopicMetadata;
+import org.apache.kafka.coordinator.group.modern.consumer.ConsumerGroupMember;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.MetadataProvenance;
@@ -59,7 +58,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import static org.apache.kafka.coordinator.group.assignor.SubscriptionType.HOMOGENEOUS;
+import static org.apache.kafka.coordinator.group.api.assignor.SubscriptionType.HOMOGENEOUS;
 
 @State(Scope.Benchmark)
 @Fork(value = 1)
@@ -86,7 +85,7 @@ public class TargetAssignmentBuilderBenchmark {
 
     private Map<String, TopicMetadata> subscriptionMetadata = Collections.emptyMap();
 
-    private TargetAssignmentBuilder targetAssignmentBuilder;
+    private TargetAssignmentBuilder<ConsumerGroupMember> targetAssignmentBuilder;
 
     private GroupSpecImpl groupSpec;
 
@@ -110,7 +109,7 @@ public class TargetAssignmentBuilderBenchmark {
             .setSubscribedTopicNames(allTopicNames)
             .build();
 
-        targetAssignmentBuilder = new TargetAssignmentBuilder(GROUP_ID, GROUP_EPOCH, partitionAssignor)
+        targetAssignmentBuilder = new TargetAssignmentBuilder<ConsumerGroupMember>(GROUP_ID, GROUP_EPOCH, partitionAssignor)
             .withMembers(members)
             .withSubscriptionMetadata(subscriptionMetadata)
             .withSubscriptionType(HOMOGENEOUS)
@@ -175,7 +174,7 @@ public class TargetAssignmentBuilderBenchmark {
 
         GroupAssignment groupAssignment = partitionAssignor.assign(
             groupSpec,
-            new SubscribedTopicMetadata(topicMetadataMap)
+            new SubscribedTopicDescriberImpl(topicMetadataMap)
         );
         invertedTargetAssignment = AssignorBenchmarkUtils.computeInvertedTargetAssignment(groupAssignment);
 
@@ -183,30 +182,31 @@ public class TargetAssignmentBuilderBenchmark {
 
         for (Map.Entry<String, MemberAssignment> entry : groupAssignment.members().entrySet()) {
             String memberId = entry.getKey();
-            Map<Uuid, Set<Integer>> topicPartitions = entry.getValue().targetPartitions();
-
-            Assignment assignment = new Assignment(topicPartitions);
-
-            initialTargetAssignment.put(memberId, assignment);
+            Map<Uuid, Set<Integer>> topicPartitions = entry.getValue().partitions();
+            initialTargetAssignment.put(memberId, new Assignment(topicPartitions));
         }
 
         return initialTargetAssignment;
     }
 
     private void createAssignmentSpec() {
-        Map<String, AssignmentMemberSpec> members = new HashMap<>();
+        Map<String, MemberSubscriptionAndAssignmentImpl> members = new HashMap<>();
 
         for (int i = 0; i < memberCount - 1; i++) {
             String memberId = "member" + i;
 
-            members.put(memberId, new AssignmentMemberSpec(
+            members.put(memberId, new MemberSubscriptionAndAssignmentImpl(
                 Optional.empty(),
                 Optional.empty(),
                 new TopicIds(new HashSet<>(allTopicNames), topicsImage),
-                Collections.emptyMap()
+                Assignment.EMPTY
             ));
         }
-        groupSpec = new GroupSpecImpl(members, HOMOGENEOUS, Collections.emptyMap());
+        groupSpec = new GroupSpecImpl(
+            members,
+            HOMOGENEOUS,
+            Collections.emptyMap()
+        );
     }
 
     @Benchmark

@@ -18,9 +18,11 @@ import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
-import io.netty.buffer.ByteBuf;
+
 import java.util.LinkedList;
 import java.util.List;
+
+import io.netty.buffer.ByteBuf;
 
 public class MockObject {
     final S3ObjectMetadata metadata;

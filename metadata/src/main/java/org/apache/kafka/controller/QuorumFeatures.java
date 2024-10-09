@@ -21,6 +21,7 @@ import org.apache.kafka.metadata.ControllerRegistration;
 import org.apache.kafka.metadata.VersionRange;
 import org.apache.kafka.server.common.Features;
 import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * A holder class of the local node's supported feature flags as well as the quorum node IDs.
@@ -41,7 +41,7 @@ public final class QuorumFeatures {
     private final Map<String, VersionRange> localSupportedFeatures;
     private final List<Integer> quorumNodeIds;
 
-    static public Optional<String> reasonNotSupported(
+    public static Optional<String> reasonNotSupported(
         short newVersion,
         String what,
         VersionRange range
@@ -64,11 +64,10 @@ public final class QuorumFeatures {
                     MetadataVersion.latestTesting().featureLevel() :
                     MetadataVersion.latestProduction().featureLevel()));
         for (Features feature : Features.PRODUCTION_FEATURES) {
-            features.put(feature.featureName(), VersionRange.of(
-                0,
-                enableUnstable ?
-                    feature.latestTesting() :
-                    feature.latestProduction()));
+            short maxVersion = enableUnstable ? feature.latestTesting() : feature.latestProduction();
+            if (maxVersion > 0) {
+                features.put(feature.featureName(), VersionRange.of(feature.minimumProduction(), maxVersion));
+            }
         }
         features.put(AutoMQVersion.FEATURE_NAME, VersionRange.of(AutoMQVersion.V0.featureLevel(), AutoMQVersion.LATEST.featureLevel()));
         return features;
