@@ -18,6 +18,7 @@ package org.apache.kafka.storage.internals.log;
 
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.record.RecordBatch;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -294,7 +295,7 @@ public class TimeIndex extends AbstractIndex {
     }
 
     // AutoMQ inject start
-    final protected void lastEntry(TimestampOffset lastEntry) {
+    protected final void lastEntry(TimestampOffset lastEntry) {
         this.lastEntry = lastEntry;
     }
     // AutoMQ inject end

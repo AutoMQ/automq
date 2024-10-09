@@ -16,11 +16,12 @@
  */
 package org.apache.kafka.tools.automq.util;
 
+import org.apache.kafka.tools.automq.model.ServerGroupConfig;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.kafka.tools.automq.model.ServerGroupConfig;
 
 public class ConfigParserUtil {
 

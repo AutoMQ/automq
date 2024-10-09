@@ -22,9 +22,10 @@ import org.apache.kafka.common.message.JoinGroupRequestData.JoinGroupRequestProt
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.coordinator.group.consumer.ConsumerGroupMember;
-import org.apache.kafka.coordinator.group.consumer.MemberState;
-import org.apache.kafka.coordinator.group.consumer.TopicMetadata;
+import org.apache.kafka.coordinator.group.Group.GroupType;
+import org.apache.kafka.coordinator.group.classic.ClassicGroup;
+import org.apache.kafka.coordinator.group.classic.ClassicGroupMember;
+import org.apache.kafka.coordinator.group.classic.ClassicGroupState;
 import org.apache.kafka.coordinator.group.generated.ConsumerGroupCurrentMemberAssignmentKey;
 import org.apache.kafka.coordinator.group.generated.ConsumerGroupCurrentMemberAssignmentValue;
 import org.apache.kafka.coordinator.group.generated.ConsumerGroupMemberMetadataKey;
@@ -41,12 +42,14 @@ import org.apache.kafka.coordinator.group.generated.GroupMetadataKey;
 import org.apache.kafka.coordinator.group.generated.GroupMetadataValue;
 import org.apache.kafka.coordinator.group.generated.OffsetCommitKey;
 import org.apache.kafka.coordinator.group.generated.OffsetCommitValue;
-import org.apache.kafka.coordinator.group.classic.ClassicGroup;
-import org.apache.kafka.coordinator.group.classic.ClassicGroupMember;
-import org.apache.kafka.coordinator.group.classic.ClassicGroupState;
+import org.apache.kafka.coordinator.group.generated.ShareGroupMetadataKey;
 import org.apache.kafka.coordinator.group.metrics.GroupCoordinatorMetricsShard;
+import org.apache.kafka.coordinator.group.modern.MemberState;
+import org.apache.kafka.coordinator.group.modern.TopicMetadata;
+import org.apache.kafka.coordinator.group.modern.consumer.ConsumerGroupMember;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -58,7 +61,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,8 +71,8 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.apache.kafka.coordinator.group.Assertions.assertRecordEquals;
-import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkSortedAssignment;
-import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkSortedTopicAssignment;
+import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkOrderedAssignment;
+import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkOrderedTopicAssignment;
 import static org.apache.kafka.coordinator.group.AssignmentTestUtil.mkTopicAssignment;
 import static org.apache.kafka.coordinator.group.CoordinatorRecordHelpers.newCurrentAssignmentRecord;
 import static org.apache.kafka.coordinator.group.CoordinatorRecordHelpers.newCurrentAssignmentTombstoneRecord;
@@ -293,11 +295,32 @@ public class CoordinatorRecordHelpersTest {
     }
 
     @Test
+    public void testNewGroupEpochTombstoneRecordShareGroup() {
+        CoordinatorRecord expectedRecord = new CoordinatorRecord(
+            new ApiMessageAndVersion(
+                new ShareGroupMetadataKey()
+                    .setGroupId("group-id"),
+                (short) 11),
+            null);
+
+        assertEquals(expectedRecord, newGroupEpochTombstoneRecord(
+            "group-id", GroupType.SHARE
+        ));
+    }
+
+    @Test
+    public void testNewGroupEpochTombstoneRecordUnknownGroup() {
+        assertThrows(IllegalArgumentException.class, () -> newGroupEpochTombstoneRecord(
+            "group-id", GroupType.UNKNOWN
+        ));
+    }
+
+    @Test
     public void testNewTargetAssignmentRecord() {
         Uuid topicId1 = Uuid.randomUuid();
         Uuid topicId2 = Uuid.randomUuid();
 
-        Map<Uuid, Set<Integer>> partitions = mkSortedAssignment(
+        Map<Uuid, Set<Integer>> partitions = mkOrderedAssignment(
             mkTopicAssignment(topicId1, 11, 12, 13),
             mkTopicAssignment(topicId2, 21, 22, 23)
         );
@@ -379,14 +402,14 @@ public class CoordinatorRecordHelpersTest {
         Uuid topicId1 = Uuid.randomUuid();
         Uuid topicId2 = Uuid.randomUuid();
 
-        Map<Uuid, Set<Integer>> assigned = mkSortedAssignment(
-            mkSortedTopicAssignment(topicId1, 11, 12, 13),
-            mkSortedTopicAssignment(topicId2, 21, 22, 23)
+        Map<Uuid, Set<Integer>> assigned = mkOrderedAssignment(
+            mkOrderedTopicAssignment(topicId1, 11, 12, 13),
+            mkOrderedTopicAssignment(topicId2, 21, 22, 23)
         );
 
-        Map<Uuid, Set<Integer>> revoking = mkSortedAssignment(
-            mkSortedTopicAssignment(topicId1, 14, 15, 16),
-            mkSortedTopicAssignment(topicId2, 24, 25, 26)
+        Map<Uuid, Set<Integer>> revoking = mkOrderedAssignment(
+            mkOrderedTopicAssignment(topicId1, 14, 15, 16),
+            mkOrderedTopicAssignment(topicId2, 24, 25, 26)
         );
 
         CoordinatorRecord expectedRecord = new CoordinatorRecord(

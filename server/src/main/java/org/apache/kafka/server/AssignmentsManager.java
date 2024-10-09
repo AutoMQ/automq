@@ -17,7 +17,6 @@
 
 package org.apache.kafka.server;
 
-import com.yammer.metrics.core.Gauge;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.AssignReplicasToDirsRequestData;
@@ -36,6 +35,7 @@ import org.apache.kafka.queue.EventQueue;
 import org.apache.kafka.queue.KafkaEventQueue;
 import org.apache.kafka.server.common.TopicIdPartition;
 import org.apache.kafka.server.metrics.KafkaMetricsGroup;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -104,16 +104,7 @@ public class AssignmentsManager {
                 "broker-" + brokerId + "-directory-assignments-manager-",
                 new ShutdownEvent());
         channelManager.start();
-        this.metricsGroup.newGauge(QUEUE_REPLICA_TO_DIR_ASSIGNMENTS_METRIC_NAME, new Gauge<Integer>() {
-            @Override
-            public Integer value() {
-                return getMapSize(inflight) + getMapSize(pending);
-            }
-
-            private int getMapSize(Map<TopicIdPartition, AssignmentEvent> map) {
-                return map == null ? 0 : map.size();
-            }
-        });
+        this.metricsGroup.newGauge(QUEUE_REPLICA_TO_DIR_ASSIGNMENTS_METRIC_NAME, () -> getMapSize(inflight) + getMapSize(pending));
         if (dirIdToPath == null) dirIdToPath = id -> Optional.empty();
         this.dirIdToPath = dirIdToPath;
         if (topicIdToName == null) topicIdToName = id -> Optional.empty();
@@ -126,6 +117,10 @@ public class AssignmentsManager {
         } finally {
             metricsGroup.removeMetric(QUEUE_REPLICA_TO_DIR_ASSIGNMENTS_METRIC_NAME);
         }
+    }
+
+    public void onAssignment(TopicIdPartition topicPartition, Uuid dirId, String reason) {
+        onAssignment(topicPartition, dirId, reason, null);
     }
 
     public void onAssignment(TopicIdPartition topicPartition, Uuid dirId, String reason, Runnable callback) {
@@ -444,7 +439,9 @@ public class AssignmentsManager {
                     } else {
                         acknowledged.add(topicPartition);
                         Errors error = Errors.forCode(partition.errorCode());
-                        if (error != Errors.NONE) {
+                        if (error == Errors.NOT_LEADER_OR_FOLLOWER) {
+                            log.info("Dropping late directory assignment for partition {} into directory {} because this broker is no longer a replica", partition, event.dirId);
+                        } else if (error != Errors.NONE) {
                             log.error("Controller returned error {} for assignment of partition {} into directory {}",
                                     error.name(), partition, event.dirId);
                             failures.add(event);
@@ -483,5 +480,9 @@ public class AssignmentsManager {
                 .setBrokerId(brokerId)
                 .setBrokerEpoch(brokerEpoch)
                 .setDirectories(new ArrayList<>(directoryMap.values()));
+    }
+
+    private static int getMapSize(Map<TopicIdPartition, AssignmentEvent> map) {
+        return map == null ? 0 : map.size();
     }
 }

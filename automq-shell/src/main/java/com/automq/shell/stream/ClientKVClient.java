@@ -11,11 +11,6 @@
 
 package com.automq.shell.stream;
 
-import com.automq.shell.metrics.S3MetricsExporter;
-import com.automq.stream.api.KeyValue;
-import java.io.IOException;
-import java.util.List;
-import java.util.Objects;
 import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.NetworkClient;
@@ -33,8 +28,16 @@ import org.apache.kafka.common.requests.s3.DeleteKVsRequest;
 import org.apache.kafka.common.requests.s3.GetKVsRequest;
 import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.utils.Time;
+
+import com.automq.shell.metrics.S3MetricsExporter;
+import com.automq.stream.api.KeyValue;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Objects;
 
 public class ClientKVClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3MetricsExporter.class);

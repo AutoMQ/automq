@@ -11,8 +11,15 @@
 
 package kafka.log.streamaspect;
 
+import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
+
 import com.automq.stream.api.Stream;
 import com.automq.stream.utils.Threads;
+import com.google.common.annotations.VisibleForTesting;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -24,11 +31,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
-
-import com.google.common.annotations.VisibleForTesting;
-import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class ElasticLogSegmentManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogSegmentManager.class);

@@ -11,17 +11,6 @@
 
 package kafka.log.streamaspect;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentSkipListMap;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.OutOfOrderSequenceException;
 import org.apache.kafka.common.utils.Time;
@@ -35,8 +24,20 @@ import org.apache.kafka.storage.internals.log.ProducerStateManagerConfig;
 import org.apache.kafka.storage.internals.log.SnapshotFile;
 import org.apache.kafka.storage.internals.log.VerificationStateEntry;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentSkipListMap;
+
 public class ElasticProducerStateManager extends ProducerStateManager {
-    public static final long AWAIT_SEQ_ZERO_TIMEOUT = 40000L;
+    public static final long AWAIT_SEQ_ZERO_TIMEOUT = 120000L;
     private final PersistSnapshots persistSnapshots;
     private final long createTimestamp;
 

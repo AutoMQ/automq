@@ -12,15 +12,16 @@
 
 package kafka.log.streamaspect;
 
+import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpointFile;
+import org.apache.kafka.storage.internals.log.EpochEntry;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
-import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpoint;
-import org.apache.kafka.storage.internals.log.EpochEntry;
 
 // TODO: better implementation, limit the partition meta logic in partition
-class ElasticLeaderEpochCheckpoint implements LeaderEpochCheckpoint {
+class ElasticLeaderEpochCheckpoint extends LeaderEpochCheckpointFile {
     private final ElasticLeaderEpochCheckpointMeta meta;
     private final Consumer<ElasticLeaderEpochCheckpointMeta> saveFunc;
 
@@ -31,9 +32,14 @@ class ElasticLeaderEpochCheckpoint implements LeaderEpochCheckpoint {
     }
 
     @Override
-    public synchronized void write(Collection<EpochEntry> epochs, boolean sync) {
+    public synchronized void write(Collection<EpochEntry> epochs) {
         meta.setEntries(new ArrayList<>(epochs));
         saveFunc.accept(meta);
+    }
+
+    @Override
+    public synchronized void writeIfDirExists(Collection<EpochEntry> epochs) {
+        write(epochs);
     }
 
     @Override

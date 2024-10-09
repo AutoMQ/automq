@@ -13,12 +13,14 @@ package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.exception.WALNotInitializedException;
-import io.netty.buffer.ByteBuf;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 

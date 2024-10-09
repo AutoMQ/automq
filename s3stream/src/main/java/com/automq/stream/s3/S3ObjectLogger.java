@@ -12,6 +12,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.utils.LogContext;
+
 import org.slf4j.Logger;
 
 public class S3ObjectLogger {

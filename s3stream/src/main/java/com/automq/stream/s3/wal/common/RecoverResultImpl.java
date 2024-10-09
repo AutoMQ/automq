@@ -12,8 +12,10 @@
 package com.automq.stream.s3.wal.common;
 
 import com.automq.stream.s3.wal.RecoverResult;
-import io.netty.buffer.ByteBuf;
+
 import java.util.Objects;
+
+import io.netty.buffer.ByteBuf;
 
 public class RecoverResultImpl implements RecoverResult {
     private final ByteBuf record;

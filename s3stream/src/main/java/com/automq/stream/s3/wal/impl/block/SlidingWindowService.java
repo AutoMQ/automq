@@ -21,13 +21,17 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedList;
-import java.util.Iterator;
+import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
@@ -36,8 +40,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.github.bucket4j.BlockingBucket;
+import io.github.bucket4j.Bucket;
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.wal.impl.block.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 
@@ -55,12 +61,56 @@ public class SlidingWindowService {
      * @see this#pollBlockScheduler
      */
     private static final long MIN_SCHEDULED_WRITE_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(1) / 1000;
+    /**
+     * The maximum rate of refilling the Bucker4j bucket, which is 1 token per nanosecond.
+     */
+    private static final long MAX_BUCKET_TOKENS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
+
+    /**
+     * Number of threads for writing blocks.
+     */
     private final int ioThreadNums;
+
+    /**
+     * The upper limit of the sliding window.
+     */
     private final long upperLimit;
+    /**
+     * The unit to scale out the sliding window.
+     */
     private final long scaleUnit;
+
+    /**
+     * The soft limit of a block.
+     * "Soft limit" means that the block can exceed this limit there is only one large record in this block.
+     */
     private final long blockSoftLimit;
-    private final long minWriteIntervalNanos;
+
+    /**
+     * The rate limit of write operations.
+     */
+    private final long writeRateLimit;
+    /**
+     * The bucket for rate limiting the write operations.
+     *
+     * @see #writeRateLimit
+     */
+    private final Bucket writeRateBucket;
+    /**
+     * The bucket to limit the write bandwidth.
+     * Note: one token represents {@link WALUtil#BLOCK_SIZE} bytes. As the max rate in Bucket4j is 1 token per nanosecond,
+     * for a block size of 4KiB, the max rate is 3,814 GiB/s; for a block size of 512B, the max rate is 476 GiB/s.
+     */
+    private final BlockingBucket writeBandwidthBucket;
+
+    /**
+     * The channel to write data to the disk.
+     */
     private final WALChannel walChannel;
+
+    /**
+     * The flusher used to flush the WAL header.
+     */
     private final WALHeaderFlusher walHeaderFlusher;
 
     /**
@@ -85,11 +135,11 @@ public class SlidingWindowService {
      * Blocks that are waiting to be written.
      * All blocks in this queue are ordered by the start offset.
      */
-    private Queue<Block> pendingBlocks = new LinkedList<>();
+    private volatile Queue<Block> pendingBlocks = new LinkedList<>();
     /**
      * The current block, records are added to this block.
      */
-    private Block currentBlock;
+    private volatile Block currentBlock;
 
     /**
      * The thread pool for write operations.
@@ -100,19 +150,26 @@ public class SlidingWindowService {
      */
     private ScheduledExecutorService pollBlockScheduler;
 
-    /**
-     * The last time when a batch of blocks is written to the disk.
-     */
-    private long lastWriteTimeNanos = 0;
-
     public SlidingWindowService(WALChannel walChannel, int ioThreadNums, long upperLimit, long scaleUnit,
-        long blockSoftLimit, int writeRateLimit, WALHeaderFlusher flusher) {
+        long blockSoftLimit, int writeRateLimit, long writeBandwidthLimit, WALHeaderFlusher flusher) {
         this.walChannel = walChannel;
         this.ioThreadNums = ioThreadNums;
         this.upperLimit = upperLimit;
         this.scaleUnit = scaleUnit;
         this.blockSoftLimit = blockSoftLimit;
-        this.minWriteIntervalNanos = TimeUnit.SECONDS.toNanos(1) / writeRateLimit;
+        this.writeRateLimit = writeRateLimit;
+        this.writeRateBucket = Bucket.builder()
+            .addLimit(limit -> limit
+                .capacity(Math.max(writeRateLimit / 10, 1))
+                .refillGreedy(writeRateLimit, Duration.ofSeconds(1))
+            ).build();
+        long writeBandwidthLimitByBlock = Math.min(WALUtil.bytesToBlocks(writeBandwidthLimit), MAX_BUCKET_TOKENS_PER_SECOND);
+        this.writeBandwidthBucket = Bucket.builder()
+            .addLimit(limit -> limit
+                .capacity(Math.max(writeBandwidthLimitByBlock / 10, 1))
+                .refillGreedy(writeBandwidthLimitByBlock, Duration.ofSeconds(1))
+            ).build()
+            .asBlocking();
         this.walHeaderFlusher = flusher;
     }
 
@@ -126,7 +183,7 @@ public class SlidingWindowService {
         this.ioExecutor = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(ioThreadNums,
             "block-wal-io-thread", false, LOGGER);
 
-        long scheduledInterval = Math.max(MIN_SCHEDULED_WRITE_INTERVAL_NANOS, minWriteIntervalNanos);
+        long scheduledInterval = Math.max(MIN_SCHEDULED_WRITE_INTERVAL_NANOS, TimeUnit.SECONDS.toNanos(1) / writeRateLimit);
         this.pollBlockScheduler = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("wal-poll-block-thread-%d", false), LOGGER);
         pollBlockScheduler.scheduleAtFixedRate(this::tryWriteBlock, 0, scheduledInterval, TimeUnit.NANOSECONDS);
@@ -163,10 +220,8 @@ public class SlidingWindowService {
         Collection<CompletableFuture<AppendResult.CallbackResult>> futures = new LinkedList<>();
         for (Runnable task : tasks) {
             if (task instanceof WriteBlockProcessor) {
-                Iterator<CompletableFuture<AppendResult.CallbackResult>> iterator = ((WriteBlockProcessor) task).blocks.futures();
-                while (iterator.hasNext()) {
-                    futures.add(iterator.next());
-                }
+                WriteBlockProcessor processor = (WriteBlockProcessor) task;
+                futures.addAll(processor.block.futures());
             }
         }
         for (Block block : this.pendingBlocks) {
@@ -193,23 +248,18 @@ public class SlidingWindowService {
         if (!tryAcquireWriteRateLimit()) {
             return;
         }
-        BlockBatch blocks = pollBlocks();
-        if (blocks != null) {
-            blocks.blocks().forEach(Block::polled);
-            ioExecutor.submit(new WriteBlockProcessor(blocks));
+        Block block = pollBlock();
+        if (block != null) {
+            block.polled();
+            ioExecutor.submit(new WriteBlockProcessor(block));
         }
     }
 
     /**
      * Try to acquire the write rate limit.
      */
-    private synchronized boolean tryAcquireWriteRateLimit() {
-        long now = System.nanoTime();
-        if (now - lastWriteTimeNanos < minWriteIntervalNanos) {
-            return false;
-        }
-        lastWriteTimeNanos = now;
-        return true;
+    private boolean tryAcquireWriteRateLimit() {
+        return writeRateBucket.tryConsume(1);
     }
 
     public Lock getBlockLock() {
@@ -308,67 +358,57 @@ public class SlidingWindowService {
     }
 
     /**
-     * Get all blocks to be written. If there is no non-empty block, return null.
+     * Get a block to be written. If there is no non-empty block, return null.
      */
-    private BlockBatch pollBlocks() {
+    private Block pollBlock() {
         blockLock.lock();
         try {
-            return pollBlocksLocked();
+            return pollBlockLocked();
         } finally {
             blockLock.unlock();
         }
     }
 
     /**
-     * Get all blocks to be written. If there is no non-empty block, return null.
+     * Get a block to be written. If there is no non-empty block, return null.
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
-    private BlockBatch pollBlocksLocked() {
+    private Block pollBlockLocked() {
+        Block polled = null;
+
         Block currentBlock = getCurrentBlockLocked();
-
-        boolean isPendingBlockEmpty = pendingBlocks.isEmpty();
-        boolean isCurrentBlockEmpty = currentBlock == null || currentBlock.isEmpty();
-        if (isPendingBlockEmpty && isCurrentBlockEmpty) {
-            // No record to be written
-            return null;
-        }
-
-        Collection<Block> blocks;
-        if (!isPendingBlockEmpty) {
-            blocks = pendingBlocks;
-            pendingBlocks = new LinkedList<>();
-        } else {
-            blocks = new LinkedList<>();
-        }
-        if (!isCurrentBlockEmpty) {
-            blocks.add(currentBlock);
+        if (!pendingBlocks.isEmpty()) {
+            polled = pendingBlocks.poll();
+        } else if (currentBlock != null && !currentBlock.isEmpty()) {
+            polled = currentBlock;
             setCurrentBlockLocked(nextBlock(currentBlock));
         }
 
-        BlockBatch blockBatch = new BlockBatch(blocks);
-        writingBlocks.add(blockBatch.startOffset());
+        if (polled != null) {
+            writingBlocks.add(polled.startOffset());
+        }
 
-        return blockBatch;
+        return polled;
     }
 
     /**
-     * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
+     * Finish the given block, and return the start offset of the first block which has not been flushed yet.
      */
-    private long wroteBlocks(BlockBatch wroteBlocks) {
+    private long wroteBlock(Block wroteBlock) {
         blockLock.lock();
         try {
-            return wroteBlocksLocked(wroteBlocks);
+            return wroteBlockLocked(wroteBlock);
         } finally {
             blockLock.unlock();
         }
     }
 
     /**
-     * Finish the given block batch, and return the start offset of the first block which has not been flushed yet.
+     * Finish the given block, and return the start offset of the first block which has not been flushed yet.
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
-    private long wroteBlocksLocked(BlockBatch wroteBlocks) {
-        boolean removed = writingBlocks.remove(wroteBlocks.startOffset());
+    private long wroteBlockLocked(Block wroteBlock) {
+        boolean removed = writingBlocks.remove(wroteBlock.startOffset());
         assert removed;
         if (writingBlocks.isEmpty()) {
             return getCurrentBlockLocked().startOffset();
@@ -376,12 +416,12 @@ public class SlidingWindowService {
         return writingBlocks.peek();
     }
 
-    private void writeBlockData(BlockBatch blocks) throws IOException {
+    private void writeBlockData(Block block) throws IOException {
         final long start = System.nanoTime();
-        for (Block block : blocks.blocks()) {
-            long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
-            walChannel.retryWrite(block.data(), position);
-        }
+        long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
+        ByteBuf data = block.data();
+        writeBandwidthBucket.consumeUninterruptibly(WALUtil.bytesToBlocks(data.readableBytes()));
+        walChannel.retryWrite(data, position);
         walChannel.retryFlush();
         StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.timeElapsedSince(start, TimeUnit.NANOSECONDS));
     }
@@ -466,11 +506,11 @@ public class SlidingWindowService {
     }
 
     class WriteBlockProcessor implements Runnable {
-        private final BlockBatch blocks;
+        private final Block block;
         private final long startTime;
 
-        public WriteBlockProcessor(BlockBatch blocks) {
-            this.blocks = blocks;
+        public WriteBlockProcessor(Block block) {
+            this.block = block;
             this.startTime = System.nanoTime();
         }
 
@@ -478,25 +518,25 @@ public class SlidingWindowService {
         public void run() {
             StorageOperationStats.getInstance().appendWALAwaitStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             try {
-                writeBlock(this.blocks);
+                writeBlock(this.block);
             } catch (Exception e) {
                 // should not happen, but just in case
-                FutureUtil.completeExceptionally(blocks.futures(), e);
-                LOGGER.error(String.format("failed to write blocks, startOffset: %s", blocks.startOffset()), e);
+                FutureUtil.completeExceptionally(block.futures().iterator(), e);
+                LOGGER.error(String.format("failed to write blocks, startOffset: %s", block.startOffset()), e);
             } finally {
-                blocks.release();
+                block.release();
             }
         }
 
-        private void writeBlock(BlockBatch blocks) throws IOException {
-            makeWriteOffsetMatchWindow(blocks.endOffset());
-            writeBlockData(blocks);
+        private void writeBlock(Block block) throws IOException {
+            makeWriteOffsetMatchWindow(block.endOffset());
+            writeBlockData(block);
 
             final long startTime = System.nanoTime();
             // Update the start offset of the sliding window after finishing writing the record.
-            windowCoreData.updateWindowStartOffset(wroteBlocks(blocks));
+            windowCoreData.updateWindowStartOffset(wroteBlock(block));
 
-            FutureUtil.complete(blocks.futures(), new AppendResult.CallbackResult() {
+            FutureUtil.complete(block.futures().iterator(), new AppendResult.CallbackResult() {
                 @Override
                 public long flushedOffset() {
                     return windowCoreData.getStartOffset();

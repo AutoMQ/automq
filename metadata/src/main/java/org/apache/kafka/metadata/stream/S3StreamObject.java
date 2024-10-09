@@ -17,15 +17,16 @@
 
 package org.apache.kafka.metadata.stream;
 
-import java.util.List;
-import java.util.Objects;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import org.apache.kafka.common.metadata.S3StreamObjectRecord;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
+
+import java.util.List;
+import java.util.Objects;
 
 public class S3StreamObject {
 

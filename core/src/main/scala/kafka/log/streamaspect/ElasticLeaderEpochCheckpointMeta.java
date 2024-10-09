@@ -12,10 +12,11 @@
 package kafka.log.streamaspect;
 
 
+import org.apache.kafka.storage.internals.log.EpochEntry;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.kafka.storage.internals.log.EpochEntry;
 
 public class ElasticLeaderEpochCheckpointMeta {
     private final int version;

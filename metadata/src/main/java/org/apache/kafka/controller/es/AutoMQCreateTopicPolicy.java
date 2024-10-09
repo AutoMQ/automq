@@ -16,9 +16,10 @@
  */
 package org.apache.kafka.controller.es;
 
-import java.util.Map;
 import org.apache.kafka.common.errors.PolicyViolationException;
 import org.apache.kafka.server.policy.CreateTopicPolicy;
+
+import java.util.Map;
 
 /**
  * <p>A policy on create topic requests.

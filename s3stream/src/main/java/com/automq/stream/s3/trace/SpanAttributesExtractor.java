@@ -11,9 +11,10 @@
 
 package com.automq.stream.s3.trace;
 
+import java.lang.reflect.Method;
+
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
-import java.lang.reflect.Method;
 
 public final class SpanAttributesExtractor {
 

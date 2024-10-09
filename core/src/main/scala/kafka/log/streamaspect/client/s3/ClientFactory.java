@@ -11,13 +11,14 @@
 
 package kafka.log.streamaspect.client.s3;
 
-import com.automq.stream.api.Client;
-import com.automq.stream.s3.Config;
 import kafka.log.stream.s3.ConfigUtils;
 import kafka.log.stream.s3.DefaultS3Client;
 import kafka.log.streamaspect.AlwaysSuccessClient;
 import kafka.log.streamaspect.client.ClientFactoryProxy;
 import kafka.log.streamaspect.client.Context;
+
+import com.automq.stream.api.Client;
+import com.automq.stream.s3.Config;
 
 public class ClientFactory {
 

@@ -469,11 +469,14 @@ class ElasticReplicaManager(
     //                        1) fetch request does not want to wait
     //                        2) fetch request does not require any data
     //                        3) has enough data to respond
-    //                        4) some error happens while reading data
-    //                        5) we found a diverging epoch
-    //                        6) has a preferred read replica
-    if (!remoteFetchInfo.isPresent && (params.maxWaitMs <= 0 || fetchInfos.isEmpty || bytesReadable >= params.minBytes || errorReadingData ||
-      hasDivergingEpoch || hasPreferredReadReplica)) {
+    //                        4) does not have enough data to respond but it's a catch-up read (this means we reached
+    //                           the end of a segment)
+    //                        5) some error happens while reading data
+    //                        6) we found a diverging epoch
+    //                        7) has a preferred read replica
+    if (!remoteFetchInfo.isPresent && (params.maxWaitMs <= 0 || fetchInfos.isEmpty
+      || (bytesReadable >= params.minBytes || (bytesReadable < params.minBytes && !ReadHint.isFastRead))
+      || errorReadingData || hasDivergingEpoch || hasPreferredReadReplica)) {
       val fetchPartitionData = logReadResults.map { case (tp, result) =>
         val isReassignmentFetch = params.isFromFollower && isAddingReplica(tp.topicPartition, params.replicaId)
         tp -> result.toFetchPartitionData(isReassignmentFetch)
@@ -499,6 +502,15 @@ class ElasticReplicaManager(
           responseCallback(partitionToFetchPartitionData)
         }
       } else {
+        // release records before delay fetch
+        logReadResults.foreach { case (_, logReadResult) =>
+          logReadResult.info.records match {
+            case r: PooledResource =>
+              r.release()
+            case _ =>
+          }
+        }
+
         // If there is not enough data to respond and there is no remote data, we will let the fetch request
         // wait for new data.
         val delayedFetch = new DelayedFetch(
@@ -506,6 +518,9 @@ class ElasticReplicaManager(
           fetchPartitionStatus = fetchPartitionStatus,
           replicaManager = this,
           quota = quota,
+          // Always use the fast fetch limiter in delayed fetch operations, as when a delayed fetch
+          // operation is completed, it only try to read in the fast path.
+          limiter = fastFetchLimiter,
           responseCallback = responseCallback
         )
 
@@ -536,7 +551,10 @@ class ElasticReplicaManager(
     def bytesNeed(): Int = {
       // sum the sizes of topics to fetch from fetchInfos
       val bytesNeed = readPartitionInfo.foldLeft(0) { case (sum, (_, partitionData)) => sum + partitionData.maxBytes }
-      if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
+      val bytesNeedFromParam = if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
+
+      // limit the bytes need to half of the maximum permits
+      math.min(bytesNeedFromParam, limiter.maxPermits())
     }
 
     val handler: Handler = timeoutMs match {
@@ -962,7 +980,8 @@ class ElasticReplicaManager(
     doPartitionDeletionAsyncLocked(stopPartition, _ => {})
   }
 
-  private def doPartitionDeletionAsyncLocked(stopPartition: StopPartition, callback: TopicPartition => Unit): CompletableFuture[Void] = {
+  private def doPartitionDeletionAsyncLocked(stopPartition: StopPartition,
+    callback: TopicPartition => Unit): CompletableFuture[Void] = {
     val prevOp = partitionOpMap.getOrDefault(stopPartition.topicPartition, CompletableFuture.completedFuture(null))
     val opCf = new CompletableFuture[Void]()
     val tracker = partitionStatusTracker.tracker(stopPartition.topicPartition)
@@ -1003,7 +1022,8 @@ class ElasticReplicaManager(
    * @param delta    The delta to apply.
    * @param newImage The new metadata image.
    */
-  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage, callback: TopicPartition => Unit): CompletableFuture[Void] = {
+  def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage,
+    callback: TopicPartition => Unit): CompletableFuture[Void] = {
     // Before taking the lock, compute the local changes
     val localChanges = delta.localChanges(config.nodeId)
     val metadataVersion = newImage.features().metadataVersion()
@@ -1327,7 +1347,7 @@ class ElasticReplicaManager(
   override def verifyTransactionCallbackWrapper[T](
     verification: Verification,
     callback: (RequestLocal, T) => Unit,
-  ):(RequestLocal, T) => Unit = {
+  ): (RequestLocal, T) => Unit = {
     (requestLocal, args) => {
       try {
         callback(requestLocal, args)

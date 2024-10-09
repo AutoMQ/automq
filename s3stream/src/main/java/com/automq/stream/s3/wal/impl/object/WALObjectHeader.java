@@ -13,6 +13,7 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.exception.UnmarshalException;
+
 import io.netty.buffer.ByteBuf;
 
 public class WALObjectHeader {

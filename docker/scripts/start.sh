@@ -265,11 +265,10 @@ kafka_up() {
   for role in "broker" "controller" "server"; do
       setup_value "node.id" "${node_id}" "${kafka_dir}/config/kraft/${role}.properties"
       setup_value "controller.quorum.voters" "${quorum_voters}" "${kafka_dir}/config/kraft/${role}.properties"
-      setup_value "s3.region" "${s3_region}" "${kafka_dir}/config/kraft/${role}.properties"
-      setup_value "s3.bucket" "${s3_bucket}" "${kafka_dir}/config/kraft/${role}.properties"
+      setup_value "s3.data.buckets" "0@s3://${s3_bucket}?region=${s3_region}&endpoint=${s3_endpoint}&authType=static" "${kafka_dir}/config/kraft/${role}.properties"
+      setup_value "s3.ops.buckets" "0@s3://${s3_bucket}?region=${s3_region}&endpoint=${s3_endpoint}&authType=static" "${kafka_dir}/config/kraft/${role}.properties"
       setup_value "log.dirs" "${data_path}/kraft-${role}-logs" "${kafka_dir}/config/kraft/${role}.properties"
-      setup_value "s3.wal.path" "${data_path}/wal" "${kafka_dir}/config/kraft/${role}.properties"
-      setup_value "s3.endpoint" "${s3_endpoint}" "${kafka_dir}/config/kraft/${role}.properties"
+      setup_value "s3.wal.path" "0@file://${data_path}/wal?capacity=2147483648" "${kafka_dir}/config/kraft/${role}.properties"
       # turn on auto_balancer
       turn_on_auto_balancer "${role}" "${kafka_dir}/config/kraft/${role}.properties"
   done

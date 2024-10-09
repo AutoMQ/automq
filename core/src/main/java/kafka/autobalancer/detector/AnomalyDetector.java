@@ -11,7 +11,6 @@
 
 package kafka.autobalancer.detector;
 
-import com.automq.stream.utils.LogContext;
 import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.common.AutoBalancerThreadFactory;
@@ -24,11 +23,14 @@ import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import kafka.autobalancer.services.AbstractResumableService;
+
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.controller.es.ClusterStats;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
+
+import com.automq.stream.utils.LogContext;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,6 +49,7 @@ import java.util.stream.Collectors;
 public class AnomalyDetector extends AbstractResumableService {
     private static final double MAX_PARTITION_REASSIGNMENT_RATIO = 0.5;
     private static final int MAX_REASSIGNMENT_SOURCE_NODE_COUNT = 10;
+    private static final long MAX_REASSIGNMENT_EXECUTION_TIME_MS = 60000;
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
     private final ActionExecutorService actionExecutor;
@@ -313,9 +316,15 @@ public class AnomalyDetector extends AbstractResumableService {
         int totalActionSize = totalActions.size();
         List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency,
             MAX_PARTITION_REASSIGNMENT_RATIO, MAX_REASSIGNMENT_SOURCE_NODE_COUNT, getTopicPartitionCount(snapshot));
-        logger.info("Total actions num: {}, split to {} batches", totalActionSize, actionsToExecute.size());
+        logger.info("Total actions num: {}, split to {} batches, estimated time to complete: {}ms", totalActionSize,
+            actionsToExecute.size(), Math.max(0, actionsToExecute.size() - 1) * executionIntervalMs);
 
+        long start = System.currentTimeMillis();
         for (int i = 0; i < actionsToExecute.size(); i++) {
+            if (System.currentTimeMillis() - start > MAX_REASSIGNMENT_EXECUTION_TIME_MS) {
+                logger.warn("Exceeds max reassignment execution time, stop executing actions");
+                break;
+            }
             if (i != 0) {
                 Thread.sleep(executionIntervalMs);
             }
@@ -338,6 +347,9 @@ public class AnomalyDetector extends AbstractResumableService {
 
     List<List<Action>> checkAndGroupActions(List<Action> actions, int maxExecutionConcurrency, double maxPartitionReassignmentRatio,
         int maxNodeReassignmentConcurrency, Map<String, Integer> topicPartitionNumMap) {
+        if (actions.isEmpty()) {
+            return Collections.emptyList();
+        }
         List<Action> mergedActions = checkAndMergeActions(actions);
         List<List<Action>> groupedActions = new ArrayList<>();
         List<Action> batch = new ArrayList<>();

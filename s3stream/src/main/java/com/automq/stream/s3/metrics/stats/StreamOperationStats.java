@@ -18,7 +18,7 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 
 public class StreamOperationStats {
-    private volatile static StreamOperationStats instance = null;
+    private static volatile StreamOperationStats instance = null;
     public final HistogramMetric createStreamLatency = S3StreamMetricsManager
             .buildOperationMetric(MetricsLevel.INFO, S3Operation.CREATE_STREAM.getType().getName(), S3Operation.CREATE_STREAM.getName());
     public final HistogramMetric openStreamLatency = S3StreamMetricsManager

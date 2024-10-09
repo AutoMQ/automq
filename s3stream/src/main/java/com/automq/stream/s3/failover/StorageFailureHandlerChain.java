@@ -12,11 +12,13 @@
 package com.automq.stream.s3.failover;
 
 import com.automq.stream.utils.Threads;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class StorageFailureHandlerChain implements StorageFailureHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageFailureHandlerChain.class);

@@ -11,8 +11,9 @@
 
 package org.apache.kafka.clients.admin;
 
-import java.util.List;
 import org.apache.kafka.common.KafkaFuture;
+
+import java.util.List;
 
 public class GetNodesResult {
     private final KafkaFuture<List<NodeMetadata>> future;

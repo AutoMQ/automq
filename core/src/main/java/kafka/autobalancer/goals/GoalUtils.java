@@ -15,11 +15,12 @@ import kafka.autobalancer.common.Action;
 import kafka.autobalancer.common.ActionType;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 
+import org.apache.kafka.common.internals.Topic;
+
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.apache.kafka.common.internals.Topic;
 
 public class GoalUtils {
 

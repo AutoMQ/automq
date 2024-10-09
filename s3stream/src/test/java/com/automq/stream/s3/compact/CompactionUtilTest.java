@@ -20,12 +20,14 @@ import com.automq.stream.s3.compact.utils.CompactionUtils;
 import com.automq.stream.s3.compact.utils.GroupByLimitPredicate;
 import com.automq.stream.s3.compact.utils.GroupByOffsetPredicate;
 import com.automq.stream.s3.objects.ObjectStreamRange;
-import java.util.List;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+
+import java.util.List;
 
 import static com.automq.stream.s3.ByteBufAllocPolicy.POOLED_DIRECT;
 import static org.junit.jupiter.api.Assertions.assertEquals;

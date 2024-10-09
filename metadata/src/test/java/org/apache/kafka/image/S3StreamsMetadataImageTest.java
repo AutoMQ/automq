@@ -17,9 +17,30 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.image.S3StreamsMetadataImage.RangeGetter;
+import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.image.writer.RecordListWriter;
+import org.apache.kafka.metadata.RecordTestUtils;
+import org.apache.kafka.metadata.stream.InRangeObjects;
+import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.S3StreamObject;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
+import org.apache.kafka.metadata.stream.StreamTags;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+import org.apache.kafka.timeline.TimelineHashMap;
+
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.index.RangeIndex;
 import com.automq.stream.s3.index.SparseRangeIndex;
-import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
@@ -28,7 +49,16 @@ import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.utils.FutureUtil;
 import com.google.common.collect.Range;
-import io.netty.buffer.ByteBuf;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.Mockito;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -44,29 +74,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
-import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
-import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
-import org.apache.kafka.common.metadata.S3StreamRecord;
-import org.apache.kafka.image.S3StreamsMetadataImage.RangeGetter;
-import org.apache.kafka.image.writer.ImageWriterOptions;
-import org.apache.kafka.image.writer.RecordListWriter;
-import org.apache.kafka.metadata.RecordTestUtils;
-import org.apache.kafka.metadata.stream.InRangeObjects;
-import org.apache.kafka.metadata.stream.RangeMetadata;
-import org.apache.kafka.metadata.stream.S3StreamObject;
-import org.apache.kafka.metadata.stream.S3StreamSetObject;
-import org.apache.kafka.metadata.stream.StreamTags;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.timeline.TimelineHashMap;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.Mockito;
+
+import io.netty.buffer.ByteBuf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -139,6 +148,31 @@ public class S3StreamsMetadataImageTest {
         S3StreamsMetadataImage image2 = new S3StreamsMetadataImage(10, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         assertEquals(image2, delta1.apply());
+    }
+
+    @Test
+    public void testImage_compatible() {
+        S3StreamsMetadataImage image = new S3StreamsMetadataImage(0, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(image);
+        delta.replay(new S3StreamRecord().setStreamId(233L));
+        delta.replay((S3StreamSetObjectRecord) new S3StreamSetObject(0, 1, List.of(new StreamOffsetRange(233L, 100, 200L)), 0).toRecord(AutoMQVersion.V0).message());
+        delta.replay(new S3StreamEndOffsetsRecord().setEndOffsets(S3StreamEndOffsetsCodec.encode(List.of(new StreamEndOffset(233L, 300L)))));
+
+        image = delta.apply();
+        RecordListWriter writer = new RecordListWriter();
+        ImageWriterOptions options = new ImageWriterOptions.Builder().build();
+        image.write(writer, options);
+
+        delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        RecordTestUtils.replayAll(delta, writer.records());
+        image = delta.apply();
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay((S3StreamSetObjectRecord) new S3StreamSetObject(0, 1, List.of(new StreamOffsetRange(233L, 100, 200L)), 0).toRecord(AutoMQVersion.V0).message());
+        image = delta.apply();
+
+        Assertions.assertEquals(300L, image.streamEndOffsets().get(233L));
     }
 
     private void testToImageAndBack(S3StreamsMetadataImage image) {

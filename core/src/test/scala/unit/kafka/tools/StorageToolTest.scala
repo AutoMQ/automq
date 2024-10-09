@@ -33,11 +33,12 @@ import org.apache.kafka.server.common.{ApiMessageAndVersion, Features, MetadataV
 import org.apache.kafka.common.metadata.{FeatureLevelRecord, UserScramCredentialRecord}
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, MetaPropertiesVersion, PropertiesUtils}
 import org.apache.kafka.raft.QuorumConfig
-import org.apache.kafka.server.config.{KRaftConfigs, ServerConfigs, ServerLogConfigs}
+import org.apache.kafka.server.config.{KRaftConfigs, ReplicationConfigs, ServerConfigs, ServerLogConfigs}
 import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertThrows, assertTrue}
 import org.junit.jupiter.api.{Test, Timeout}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.{EnumSource, ValueSource}
+import org.mockito.Mockito
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -255,15 +256,6 @@ Found problem:
   }
 
   @Test
-  def testFormatWithInvalidClusterId(): Unit = {
-    val config = new KafkaConfig(newSelfManagedProperties())
-    assertEquals("Cluster ID string invalid does not appear to be a valid UUID: " +
-      "Input string `invalid` decoded as 5 bytes, which is not equal to the expected " +
-        "16 bytes of a base64-encoded UUID", assertThrows(classOf[TerseFailure],
-          () => StorageTool.buildMetadataProperties("invalid", config)).getMessage)
-  }
-
-  @Test
   def testDefaultMetadataVersion(): Unit = {
     val namespace = StorageTool.parseArguments(Array("format", "-c", "config.props", "-t", "XcZZOzUqS4yHOjhMQB6JLQ"))
     val mv = StorageTool.getMetadataVersion(namespace, Map.empty, defaultVersionString = None)
@@ -376,10 +368,18 @@ Found problem:
       true
     )
 
-    val featureLevel = Features.TEST_VERSION.defaultValue(metadataVersion)
-    if (featureLevel > 0) {
-      assertEquals(List(generateRecord(TestFeatureVersion.FEATURE_NAME, featureLevel)), records)
+    val expectedRecords = new ArrayBuffer[ApiMessageAndVersion]()
+
+    def maybeAddRecordFor(features: Features): Unit = {
+      val featureLevel = features.defaultValue(metadataVersion)
+      if (featureLevel > 0) {
+        expectedRecords += generateRecord(features.featureName, featureLevel)
+      }
     }
+
+    Features.FEATURES.foreach(maybeAddRecordFor)
+
+    assertEquals(expectedRecords, records)
   }
   @Test
   def testVersionDefaultNoArgs(): Unit = {
@@ -647,6 +647,38 @@ Found problem:
         "production use yet.", exitString)
       assertEquals(1, exitStatus)
     }
+  }
+
+  @Test
+  def testFormatValidatesConfigForMetadataVersion(): Unit = {
+    val config = Mockito.spy(new KafkaConfig(TestUtils.createBrokerConfig(10, null)))
+    val args = Array("format",
+      "-c", "dummy.properties",
+      "-t", "XcZZOzUqS4yHOjhMQB6JLQ",
+      "--release-version", MetadataVersion.LATEST_PRODUCTION.toString)
+    val exitCode = StorageTool.runFormatCommand(StorageTool.parseArguments(args), config)
+    Mockito.verify(config, Mockito.times(1)).validateWithMetadataVersion(MetadataVersion.LATEST_PRODUCTION)
+    assertEquals(0, exitCode)
+  }
+
+  @Test
+  def testJbodSupportValidation(): Unit = {
+    def formatWith(logDirCount: Int, metadataVersion: MetadataVersion): Integer = {
+      val properties = TestUtils.createBrokerConfig(10, null, logDirCount = logDirCount)
+      properties.remove(ReplicationConfigs.INTER_BROKER_PROTOCOL_VERSION_CONFIG)
+      val configFile = TestUtils.tempPropertiesFile(properties.asScala.toMap).toPath.toString
+      StorageTool.execute(Array("format",
+        "-c", configFile,
+        "-t", "XcZZOzUqS4yHOjhMQB6JLQ",
+        "--release-version", metadataVersion.toString))
+    }
+
+    assertEquals(0, formatWith(1, MetadataVersion.IBP_3_6_IV2))
+    assertEquals("Invalid configuration for metadata version: " +
+      "requirement failed: Multiple log directories (aka JBOD) are not supported in the current MetadataVersion 3.6-IV2. Need 3.7-IV2 or higher",
+      assertThrows(classOf[TerseFailure], () => formatWith(2, MetadataVersion.IBP_3_6_IV2)).getMessage)
+    assertEquals(0, formatWith(1, MetadataVersion.IBP_3_7_IV2))
+    assertEquals(0, formatWith(2, MetadataVersion.IBP_3_7_IV2))
   }
 }
 

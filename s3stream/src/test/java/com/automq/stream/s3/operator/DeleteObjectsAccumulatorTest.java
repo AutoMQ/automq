@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.utils.FutureUtil;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 

@@ -16,14 +16,6 @@
  */
 package org.apache.kafka.controller.stream;
 
-import com.automq.stream.s3.metadata.StreamState;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.TreeMap;
-import java.util.stream.Collectors;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.timeline.SnapshotRegistry;
@@ -31,8 +23,19 @@ import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineInteger;
 import org.apache.kafka.timeline.TimelineLong;
 import org.apache.kafka.timeline.TimelineObject;
+
+import com.automq.stream.s3.metadata.StreamState;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 public class StreamRuntimeMetadata {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamRuntimeMetadata.class);

@@ -17,9 +17,10 @@
 
 package org.apache.kafka.common.requests.s3;
 
-import java.util.List;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractResponse;
+
+import java.util.List;
 
 public abstract class AbstractBatchResponse<T> extends AbstractResponse {
 

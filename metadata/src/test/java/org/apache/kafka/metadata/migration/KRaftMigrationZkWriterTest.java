@@ -16,9 +16,9 @@
  */
 package org.apache.kafka.metadata.migration;
 
-import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.image.AclsImage;
 import org.apache.kafka.image.AclsImageTest;
 import org.apache.kafka.image.ClientQuotasImage;
@@ -36,6 +36,7 @@ import org.apache.kafka.image.S3ObjectsImage;
 import org.apache.kafka.image.S3StreamsMetadataImage;
 import org.apache.kafka.image.ScramImage;
 import org.apache.kafka.image.TopicsImageTest;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -65,18 +66,17 @@ public class KRaftMigrationZkWriterTest {
                 visitor.visitTopic("foo", TopicsImageTest.FOO_UUID, assignments);
 
                 // Skip partition 1, visit 3 (the extra one)
-                IntStream.of(0, 2, 3).forEach(partitionId -> {
+                IntStream.of(0, 2, 3).forEach(partitionId ->
                     visitor.visitPartition(
                         new TopicIdPartition(TopicsImageTest.FOO_UUID, new TopicPartition("foo", partitionId)),
                         TopicsImageTest.IMAGE1.getPartition(TopicsImageTest.FOO_UUID, partitionId)
-                    );
-                });
+                    )
+                );
 
             }
         };
 
         CapturingConfigMigrationClient configClient = new CapturingConfigMigrationClient();
-        CapturingAclMigrationClient aclClient = new CapturingAclMigrationClient();
         CapturingMigrationClient migrationClient = CapturingMigrationClient.newBuilder()
             .setBrokersInZk(0)
             .setTopicMigrationClient(topicClient)
@@ -100,9 +100,9 @@ public class KRaftMigrationZkWriterTest {
             S3ObjectsImage.EMPTY,
             KVImage.EMPTY);
 
-        writer.handleSnapshot(image, (opType, opLog, operation) -> {
-            operation.apply(ZkMigrationLeadershipState.EMPTY);
-        });
+        writer.handleSnapshot(image, (opType, opLog, operation) ->
+            operation.apply(ZkMigrationLeadershipState.EMPTY)
+        );
         assertEquals(topicClient.updatedTopics.get("foo").size(), 3);
         assertEquals(topicClient.deletedTopicPartitions.get("foo"), Collections.singleton(3));
         assertEquals(topicClient.updatedTopicPartitions.get("foo"), Collections.singleton(1));

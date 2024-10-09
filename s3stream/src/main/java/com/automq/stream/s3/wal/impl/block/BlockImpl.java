@@ -19,14 +19,16 @@ import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Systems;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
+
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 

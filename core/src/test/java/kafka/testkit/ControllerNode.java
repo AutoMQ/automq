@@ -17,15 +17,14 @@
 
 package kafka.testkit;
 
-import java.util.HashMap;
-import java.util.Map;
-import org.apache.kafka.common.Uuid;
 import org.apache.kafka.metadata.properties.MetaProperties;
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble;
 import org.apache.kafka.metadata.properties.MetaPropertiesVersion;
 
 import java.io.File;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -37,7 +36,7 @@ public class ControllerNode implements TestKitNode {
     public static class Builder {
         private int id = -1;
         private String baseDirectory;
-        private Uuid clusterId;
+        private String clusterId;
         private boolean combined;
         private Map<String, String> propertyOverrides = Collections.emptyMap();
 
@@ -52,7 +51,7 @@ public class ControllerNode implements TestKitNode {
             return this;
         }
 
-        public Builder setClusterId(Uuid clusterId) {
+        public Builder setClusterId(String clusterId) {
             this.clusterId = clusterId;
             return this;
         }

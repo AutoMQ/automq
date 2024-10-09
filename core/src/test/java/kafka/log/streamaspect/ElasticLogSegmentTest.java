@@ -10,17 +10,8 @@
  */
 package kafka.log.streamaspect;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
 import kafka.utils.TestUtils;
+
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.config.TopicConfig;
@@ -35,7 +26,7 @@ import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.coordinator.transaction.TransactionLogConfigs;
-import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpoint;
+import org.apache.kafka.server.util.MockScheduler;
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache;
 import org.apache.kafka.storage.internals.log.EpochEntry;
 import org.apache.kafka.storage.internals.log.FetchDataInfo;
@@ -43,10 +34,21 @@ import org.apache.kafka.storage.internals.log.LogConfig;
 import org.apache.kafka.storage.internals.log.ProducerStateManager;
 import org.apache.kafka.storage.internals.log.ProducerStateManagerConfig;
 import org.apache.kafka.storage.internals.log.RollParams;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
 
 import static org.apache.kafka.test.TestUtils.checkEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -258,21 +260,9 @@ public class ElasticLogSegmentTest {
     public void testRecoveryRebuildsEpochCache() throws IOException {
         ElasticLogSegment seg = createOrLoadSegment(0);
 
-        LeaderEpochCheckpoint checkpoint = new LeaderEpochCheckpoint() {
-            private List<EpochEntry> epochs = new LinkedList<>();
-
-            @Override
-            public void write(Collection<EpochEntry> epochs, boolean sync) {
-                this.epochs = new LinkedList<>(epochs);
-            }
-
-            @Override
-            public List<EpochEntry> read() {
-                return epochs;
-            }
-        };
-
-        LeaderEpochFileCache cache = new LeaderEpochFileCache(topicPartition, checkpoint);
+        ElasticLeaderEpochCheckpoint checkpoint = new ElasticLeaderEpochCheckpoint(new ElasticLeaderEpochCheckpointMeta(0, new ArrayList<>()), meta -> {
+        });
+        LeaderEpochFileCache cache = new LeaderEpochFileCache(topicPartition, checkpoint, new MockScheduler(Time.SYSTEM));
         seg.append(105L, RecordBatch.NO_TIMESTAMP,
             104L, MemoryRecords.withRecords(104L, Compression.NONE, 0,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));

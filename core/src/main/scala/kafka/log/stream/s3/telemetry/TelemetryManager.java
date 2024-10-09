@@ -11,10 +11,33 @@
 
 package kafka.log.stream.s3.telemetry;
 
+import kafka.log.stream.s3.telemetry.exporter.MetricsExporter;
+import kafka.log.stream.s3.telemetry.exporter.MetricsExporterURI;
+import kafka.log.stream.s3.telemetry.otel.OTelHistogramReporter;
+import kafka.server.KafkaConfig;
+
+import org.apache.kafka.server.ProcessRole;
+import org.apache.kafka.server.metrics.KafkaYammerMetrics;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
+
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.bridge.SLF4JBridgeHandler;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
 import io.opentelemetry.api.common.Attributes;
@@ -37,24 +60,6 @@ import io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
 import io.opentelemetry.sdk.metrics.internal.SdkMeterProviderUtil;
 import io.opentelemetry.sdk.resources.Resource;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import kafka.log.stream.s3.telemetry.exporter.MetricsExporterURI;
-import kafka.log.stream.s3.telemetry.otel.OTelHistogramReporter;
-import kafka.log.stream.s3.telemetry.exporter.MetricsExporter;
-import kafka.server.KafkaConfig;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.kafka.server.ProcessRole;
-import org.apache.kafka.server.metrics.KafkaYammerMetrics;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.bridge.SLF4JBridgeHandler;
 import scala.collection.immutable.Set;
 
 public class TelemetryManager {

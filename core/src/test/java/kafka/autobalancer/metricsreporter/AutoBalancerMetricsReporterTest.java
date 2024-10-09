@@ -17,16 +17,18 @@
 
 package kafka.autobalancer.metricsreporter;
 
-import java.util.HashMap;
 import kafka.autobalancer.config.StaticAutoBalancerConfig;
+
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.network.SocketServerConfigs;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
 import org.mockito.Mockito;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Tag("S3Unit")
 public class AutoBalancerMetricsReporterTest {

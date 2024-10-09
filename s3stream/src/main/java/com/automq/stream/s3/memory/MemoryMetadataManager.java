@@ -26,6 +26,9 @@ import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.streams.StreamCloseHook;
 import com.automq.stream.s3.streams.StreamManager;
+
+import org.apache.commons.lang3.tuple.Pair;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -38,10 +41,9 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.tuple.Pair;
 
 public class MemoryMetadataManager implements StreamManager, ObjectManager {
-    private final static AtomicLong NODE_ID_ALLOC = new AtomicLong();
+    private static final AtomicLong NODE_ID_ALLOC = new AtomicLong();
 
     // Data structure of stream metadata
     private final AtomicLong streamIdAlloc = new AtomicLong();

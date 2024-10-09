@@ -11,13 +11,14 @@
 
 package com.automq.stream.s3.trace;
 
-import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.common.AttributesBuilder;
-import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
 import java.util.function.BiFunction;
+
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 
 public class AttributeBindings {
     private final BiFunction<AttributesBuilder, Object, AttributesBuilder>[] bindings;

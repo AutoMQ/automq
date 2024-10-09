@@ -15,6 +15,7 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
+
 import java.util.concurrent.CompletableFuture;
 
 /**

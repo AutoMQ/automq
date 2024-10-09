@@ -11,8 +11,9 @@
 
 package com.automq.stream.s3;
 
-import io.netty.buffer.ByteBuf;
 import java.util.Objects;
+
+import io.netty.buffer.ByteBuf;
 
 public final class DataBlockIndex {
 

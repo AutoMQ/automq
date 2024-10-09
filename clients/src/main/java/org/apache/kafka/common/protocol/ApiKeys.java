@@ -119,6 +119,18 @@ public enum ApiKeys {
     ASSIGN_REPLICAS_TO_DIRS(ApiMessageType.ASSIGN_REPLICAS_TO_DIRS),
     LIST_CLIENT_METRICS_RESOURCES(ApiMessageType.LIST_CLIENT_METRICS_RESOURCES),
     DESCRIBE_TOPIC_PARTITIONS(ApiMessageType.DESCRIBE_TOPIC_PARTITIONS),
+    SHARE_GROUP_HEARTBEAT(ApiMessageType.SHARE_GROUP_HEARTBEAT),
+    SHARE_GROUP_DESCRIBE(ApiMessageType.SHARE_GROUP_DESCRIBE),
+    SHARE_FETCH(ApiMessageType.SHARE_FETCH),
+    SHARE_ACKNOWLEDGE(ApiMessageType.SHARE_ACKNOWLEDGE),
+    ADD_RAFT_VOTER(ApiMessageType.ADD_RAFT_VOTER),
+    REMOVE_RAFT_VOTER(ApiMessageType.REMOVE_RAFT_VOTER),
+    UPDATE_RAFT_VOTER(ApiMessageType.UPDATE_RAFT_VOTER),
+    INITIALIZE_SHARE_GROUP_STATE(ApiMessageType.INITIALIZE_SHARE_GROUP_STATE, true),
+    READ_SHARE_GROUP_STATE(ApiMessageType.READ_SHARE_GROUP_STATE, true),
+    WRITE_SHARE_GROUP_STATE(ApiMessageType.WRITE_SHARE_GROUP_STATE, true),
+    DELETE_SHARE_GROUP_STATE(ApiMessageType.DELETE_SHARE_GROUP_STATE, true),
+    READ_SHARE_GROUP_STATE_SUMMARY(ApiMessageType.READ_SHARE_GROUP_STATE_SUMMARY, true),
 
     // AutoMQ for Kafka inject start
     CREATE_STREAMS(ApiMessageType.CREATE_STREAMS, false, true),
@@ -135,6 +147,7 @@ public enum ApiKeys {
     DELETE_KVS(ApiMessageType.DELETE_KVS, false, true),
     AUTOMQ_REGISTER_NODE(ApiMessageType.AUTOMQ_REGISTER_NODE, false, false),
     AUTOMQ_GET_NODES(ApiMessageType.AUTOMQ_GET_NODES, false, true),
+    AUTOMQ_ZONE_ROUTER(ApiMessageType.AUTOMQ_ZONE_ROUTER, false, false),
 
     GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true),
     DESCRIBE_STREAMS(ApiMessageType.DESCRIBE_STREAMS, false, true);
@@ -286,23 +299,25 @@ public enum ApiKeys {
         return messageType.listeners().contains(listener);
     }
 
-    private static String toHtml() {
+    static String toHtml() {
         final StringBuilder b = new StringBuilder();
         b.append("<table class=\"data-table\"><tbody>\n");
         b.append("<tr>");
         b.append("<th>Name</th>\n");
         b.append("<th>Key</th>\n");
         b.append("</tr>");
-        for (ApiKeys key : clientApis()) {
-            b.append("<tr>\n");
-            b.append("<td>");
-            b.append("<a href=\"#The_Messages_" + key.name + "\">" + key.name + "</a>");
-            b.append("</td>");
-            b.append("<td>");
-            b.append(key.id);
-            b.append("</td>");
-            b.append("</tr>\n");
-        }
+        clientApis().stream()
+            .filter(apiKey -> !apiKey.messageType.latestVersionUnstable())
+            .forEach(apiKey -> {
+                b.append("<tr>\n");
+                b.append("<td>");
+                b.append("<a href=\"#The_Messages_" + apiKey.name + "\">" + apiKey.name + "</a>");
+                b.append("</td>");
+                b.append("<td>");
+                b.append(apiKey.id);
+                b.append("</td>");
+                b.append("</tr>\n");
+            });
         b.append("</tbody></table>\n");
         return b.toString();
     }

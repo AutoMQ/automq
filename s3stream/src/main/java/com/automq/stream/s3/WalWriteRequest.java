@@ -15,6 +15,7 @@ import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.WriteAheadLog;
+
 import java.util.concurrent.CompletableFuture;
 
 public class WalWriteRequest implements Comparable<WalWriteRequest> {

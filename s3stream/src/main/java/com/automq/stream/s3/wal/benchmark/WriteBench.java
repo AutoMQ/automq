@@ -12,13 +12,16 @@
 package com.automq.stream.s3.wal.benchmark;
 
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.block.BlockWALService;
-import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+
+import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.inf.ArgumentParser;
+import net.sourceforge.argparse4j.inf.Namespace;
+
 import java.io.IOException;
 import java.util.NavigableSet;
 import java.util.Random;
@@ -30,9 +33,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
-import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.inf.ArgumentParser;
-import net.sourceforge.argparse4j.inf.Namespace;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.wal.benchmark.BenchTool.parseArgs;
 import static com.automq.stream.s3.wal.benchmark.BenchTool.resetWALHeader;
@@ -57,6 +60,9 @@ public class WriteBench implements AutoCloseable {
         }
         if (config.iops != null) {
             builder.writeRateLimit(config.iops);
+        }
+        if (config.bandwidth != null) {
+            builder.writeBandwidthLimit(config.bandwidth);
         }
         this.log = builder.build();
         this.log.start();
@@ -199,6 +205,7 @@ public class WriteBench implements AutoCloseable {
         final Long capacity;
         final Integer depth;
         final Integer iops;
+        final Long bandwidth;
 
         // following fields are benchmark configuration
         final Integer threads;
@@ -211,6 +218,7 @@ public class WriteBench implements AutoCloseable {
             this.capacity = ns.getLong("capacity");
             this.depth = ns.getInt("depth");
             this.iops = ns.getInt("iops");
+            this.bandwidth = ns.getLong("bandwidth");
             this.threads = ns.getInt("threads");
             this.throughputBytes = ns.getInt("throughput");
             this.recordSizeBytes = ns.getInt("recordSize");
@@ -220,6 +228,7 @@ public class WriteBench implements AutoCloseable {
         static ArgumentParser parser() {
             ArgumentParser parser = ArgumentParsers
                 .newArgumentParser("WriteBench")
+                .defaultHelp(true)
                 .description("Benchmark write performance of BlockWALService");
             parser.addArgument("-p", "--path")
                 .required(true)
@@ -234,20 +243,23 @@ public class WriteBench implements AutoCloseable {
             parser.addArgument("--iops")
                 .type(Integer.class)
                 .help("IOPS of the WAL");
+            parser.addArgument("--bandwidth")
+                .type(Long.class)
+                .help("Bandwidth of the WAL in bytes per second");
             parser.addArgument("--threads")
                 .type(Integer.class)
                 .setDefault(1)
                 .help("Number of threads to use to write");
-            parser.addArgument("--throughput")
+            parser.addArgument("-t", "--throughput")
                 .type(Integer.class)
                 .setDefault(1 << 20)
                 .help("Expected throughput in total in bytes per second");
-            parser.addArgument("--record-size")
+            parser.addArgument("-s", "--record-size")
                 .dest("recordSize")
                 .type(Integer.class)
                 .setDefault(1 << 10)
                 .help("Size of each record in bytes");
-            parser.addArgument("--duration")
+            parser.addArgument("-D", "--duration")
                 .type(Long.class)
                 .setDefault(60L)
                 .help("Duration of the benchmark in seconds");

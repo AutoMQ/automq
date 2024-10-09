@@ -11,17 +11,20 @@
 
 package kafka.autobalancer.metricsreporter.metric;
 
-import com.yammer.metrics.core.Metric;
-import com.yammer.metrics.core.MetricName;
 import kafka.autobalancer.common.types.MetricVersion;
 import kafka.autobalancer.common.types.RawMetricTypes;
+
+import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.server.metrics.KafkaMetricsGroup;
+
+import com.yammer.metrics.core.Metric;
+import com.yammer.metrics.core.MetricName;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 
 /**
  * This class was modified based on Cruise Control: com.linkedin.kafka.cruisecontrol.metricsreporter.metric.MetricsUtils.
@@ -123,7 +126,7 @@ public final class MetricsUtils {
                                                            com.yammer.metrics.core.MetricName metricName,
                                                            double value,
                                                            String attribute) {
-        Map<String, String> tags = yammerMetricScopeToTags(metricName.getScope());
+        Map<String, String> tags = mBeanNameToTags(metricName.getMBeanName());
         AutoBalancerMetrics ccm = tags == null ? null : toAutoBalancerMetric(nowMs, brokerId, brokerRack, metricName.getName(), tags, value, attribute);
         if (ccm == null) {
             throw new IllegalArgumentException(String.format("Cannot convert yammer metric %s to a Auto Balancer metric for "
@@ -223,6 +226,38 @@ public final class MetricsUtils {
             Map<String, String> tags = new HashMap<>();
             for (int i = 0; i < kv.length; i += 2) {
                 tags.put(kv[i], kv[i + 1]);
+            }
+            return tags;
+        } else {
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * Convert a mbean name to tags.
+     * This conversion is based on the assumption that the mbean name is in the format of "group:type=ClassName,name=MetricName,tag1=value1,tag2=value2,..."
+     * any string that follows the "name=MetricName" will be considered as tags. This is assured in {@code org/apache/kafka/server/metrics/KafkaMetricsGroup.java:53}
+     *
+     * @param mbeanName MBean name for the Yammer metric.
+     * @return Empty map for {@code null} mBeanName, {@code null} for mBeanName without a legal format, parsed tags otherwise.
+     */
+    public static Map<String, String> mBeanNameToTags(String mbeanName) {
+        if (!Utils.isBlank(mbeanName)) {
+            String[] kv = mbeanName.split(",");
+            Map<String, String> tags = new HashMap<>();
+            boolean markTagStart = false;
+            for (String tag : kv) {
+                String[] pair = tag.split("=");
+                if (pair.length != 2) {
+                    return null;
+                }
+                if (!markTagStart) {
+                    if (pair[0].equals("name")) {
+                        markTagStart = true;
+                    }
+                    continue;
+                }
+                tags.put(pair[0], pair[1]);
             }
             return tags;
         } else {
