@@ -126,4 +126,16 @@ public class RangeMetadata implements Comparable<RangeMetadata> {
     public int hashCode() {
         return Objects.hash(streamId, epoch, rangeIndex, startOffset, endOffset, nodeId);
     }
+
+    @Override
+    public String toString() {
+        return "RangeMetadata{" +
+            "streamId=" + streamId +
+            ", epoch=" + epoch +
+            ", rangeIndex=" + rangeIndex +
+            ", startOffset=" + startOffset +
+            ", endOffset=" + endOffset +
+            ", nodeId=" + nodeId +
+            '}';
+    }
 }

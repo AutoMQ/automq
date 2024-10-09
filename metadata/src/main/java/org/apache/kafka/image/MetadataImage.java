@@ -247,11 +247,13 @@ public final class MetadataImage {
     public void retain() {
         streamsMetadata().retain();
         objectsMetadata().retain();
+        kv().retain();
     }
 
     public void release() {
         streamsMetadata().release();
         objectsMetadata().release();
+        kv().release();
     }
     // AutoMQ inject end
 }
