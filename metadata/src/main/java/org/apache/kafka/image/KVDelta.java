@@ -26,8 +26,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.kafka.common.metadata.KVRecord;
-import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.timeline.TimelineHashMap;
 
 public final class KVDelta {
