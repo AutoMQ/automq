@@ -32,13 +32,13 @@ public class KVImageNode implements MetadataNode {
     @Override
     public Collection<String> childNames() {
         List<String> keys = new LinkedList<>();
-        kvImage.kv().forEach((k, v) -> keys.add(k));
+        kvImage.kvs().forEach((k, v) -> keys.add(k));
         return keys;
     }
 
     @Override
     public MetadataNode child(String name) {
-        ByteBuffer valueBuf = kvImage.kv().get(name);
+        ByteBuffer valueBuf = kvImage.getValue(name);
         if (valueBuf == null) {
             return null;
         }

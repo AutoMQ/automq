@@ -26,6 +26,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.kafka.timeline.TimelineHashMap;
+
 public final class KVDelta {
     private final KVImage image;
 
@@ -55,14 +57,25 @@ public final class KVDelta {
     }
 
     public KVImage apply() {
-        DeltaMap<String, ByteBuffer> newKV = image.kv().copy();
-        newKV.putAll(changedKV);
-        removedKeys.forEach(newKV::remove);
-        return new KVImage(newKV);
-    }
+        RegistryRef registry = image.registryRef();
+        // get original objects first
+        TimelineHashMap<String, ByteBuffer> newKVs;
 
-    public Map<String, ByteBuffer> changedKV() {
-        return changedKV;
+        if (registry == RegistryRef.NOOP) {
+            registry = new RegistryRef();
+            newKVs = new TimelineHashMap<>(registry.registry(), 100000);
+        } else {
+            newKVs = image.timelineKVs();
+        }
+
+        registry.inLock(() -> {
+            newKVs.putAll(changedKV);
+            removedKeys.forEach(newKVs::remove);
+        });
+
+        registry = registry.next();
+
+        return new KVImage(newKVs, registry);
     }
 
 }

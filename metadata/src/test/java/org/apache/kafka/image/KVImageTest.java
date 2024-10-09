@@ -20,10 +20,14 @@ package org.apache.kafka.image;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
+import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import org.apache.kafka.timeline.SnapshotRegistry;
+import org.apache.kafka.timeline.TimelineHashMap;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -49,10 +53,14 @@ public class KVImageTest {
 
 
     static {
-        DeltaMap<String, ByteBuffer> map = DeltaMap.of(
-            "key1", ByteBuffer.wrap(new String("value1").getBytes()),
-            "key2", ByteBuffer.wrap(new String("value2").getBytes()));
-        IMAGE1 = new KVImage(map);
+        SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
+        TimelineHashMap<String, ByteBuffer> map = new TimelineHashMap<>(registry, 10000);
+        RegistryRef ref = new RegistryRef(registry, 0, new ArrayList<>());
+        map.put("key1", ByteBuffer.wrap(new String("value1").getBytes()));
+        map.put("key2", ByteBuffer.wrap(new String("value2").getBytes()));
+        registry.getOrCreateSnapshot(0);
+
+        IMAGE1 = new KVImage(map, ref);
         DELTA1_RECORDS = new ArrayList<>();
         DELTA1_RECORDS.add(new ApiMessageAndVersion(new KVRecord()
             .setKeyValues(List.of(
@@ -67,10 +75,15 @@ public class KVImageTest {
         DELTA1 = new KVDelta(IMAGE1);
         RecordTestUtils.replayAll(DELTA1, DELTA1_RECORDS);
 
-        DeltaMap<String, ByteBuffer> map2 = DeltaMap.of(
-            "key2", ByteBuffer.wrap(new String("value2").getBytes()),
-            "key3", ByteBuffer.wrap(new String("value3").getBytes()));
-        IMAGE2 = new KVImage(map2);
+        registry = new SnapshotRegistry(new LogContext());
+        TimelineHashMap<String, ByteBuffer> map2 = new TimelineHashMap<>(registry, 10000);
+        RegistryRef ref2 = new RegistryRef(registry, 0, new ArrayList<>());
+
+        map2.put("key2", ByteBuffer.wrap(new String("value2").getBytes()));
+        map2.put("key3", ByteBuffer.wrap(new String("value3").getBytes()));
+        registry.getOrCreateSnapshot(0);
+
+        IMAGE2 = new KVImage(map2, ref2);
     }
 
     @Test
