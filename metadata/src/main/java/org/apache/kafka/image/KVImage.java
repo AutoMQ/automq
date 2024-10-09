@@ -61,7 +61,7 @@ public final class KVImage extends AbstractReferenceCounted {
 
         return registryRef.inLock(() -> {
             Map<String, ByteBuffer> result = new HashMap<>();
-            kv.entrySet(registryRef().epoch()).forEach((e) -> result.put(e.getKey(), e.getValue()));
+            kv.entrySet(registryRef().epoch()).forEach(e -> result.put(e.getKey(), e.getValue()));
             return result;
         });
     }
