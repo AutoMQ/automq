@@ -11,13 +11,13 @@
 
 package kafka.autobalancer.common.types;
 
-import java.util.Collections;
-import java.util.Set;
 import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.goals.NetworkInUsageDistributionGoal;
 import kafka.autobalancer.goals.NetworkOutUsageDistributionGoal;
 
+import java.util.Collections;
 import java.util.Objects;
+import java.util.Set;
 
 import static kafka.autobalancer.common.types.RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS;
 import static kafka.autobalancer.common.types.RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS;

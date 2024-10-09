@@ -11,9 +11,10 @@
 
 package kafka.autobalancer.common.types;
 
-import java.util.Map;
 import kafka.autobalancer.common.types.metrics.AbnormalLatency;
 import kafka.autobalancer.common.types.metrics.AbnormalMetric;
+
+import java.util.Map;
 
 public class RawMetricTypes {
     public static final byte PARTITION_BYTES_IN = (byte) 0;

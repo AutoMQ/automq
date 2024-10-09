@@ -30,6 +30,8 @@ public class NetworkStats {
     private static volatile NetworkStats instance = null;
     // <StreamId, <FastReadBytes, SlowReadBytes>>
     private final Map<Long, Pair<Counter, Counter>> streamReadBytesStats = new ConcurrentHashMap<>();
+    private final Counter networkInboundUsageTotal = new Counter();
+    private final Counter networkOutboundUsageTotal = new Counter();
     private final Map<ThrottleStrategy, CounterMetric> networkInboundUsageTotalStats = new ConcurrentHashMap<>();
     private final Map<ThrottleStrategy, CounterMetric> networkOutboundUsageTotalStats = new ConcurrentHashMap<>();
     private final Map<ThrottleStrategy, HistogramMetric> networkInboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
@@ -51,8 +53,8 @@ public class NetworkStats {
 
     public CounterMetric networkUsageTotalStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
         return type == AsyncNetworkBandwidthLimiter.Type.INBOUND
-                ? networkInboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundUsageMetric(strategy))
-                : networkOutboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundUsageMetric(strategy));
+                ? networkInboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundUsageMetric(strategy, networkInboundUsageTotal::inc))
+                : networkOutboundUsageTotalStats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundUsageMetric(strategy, networkOutboundUsageTotal::inc));
     }
 
     public Optional<Counter> fastReadBytesStats(long streamId) {
@@ -63,6 +65,14 @@ public class NetworkStats {
     public Optional<Counter> slowReadBytesStats(long streamId) {
         Pair<Counter, Counter> pair = streamReadBytesStats.getOrDefault(streamId, null);
         return pair == null ? Optional.empty() : Optional.of(pair.getRight());
+    }
+
+    public Counter networkInboundUsageTotal() {
+        return networkInboundUsageTotal;
+    }
+
+    public Counter networkOutboundUsageTotal() {
+        return networkOutboundUsageTotal;
     }
 
     public void createStreamReadBytesStats(long streamId) {
