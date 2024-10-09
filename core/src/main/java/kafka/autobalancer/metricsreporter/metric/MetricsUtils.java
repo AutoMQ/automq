@@ -294,11 +294,11 @@ public final class MetricsUtils {
     }
 
     public static boolean sanityCheckTopicPartitionMetricsCompleteness(AutoBalancerMetrics metrics) {
-        return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.requiredPartitionMetrics(MetricVersion.LATEST_VERSION));
+        return metrics.getMetricValueMap().keySet().containsAll(MetricVersion.LATEST_VERSION.requiredPartitionMetrics());
     }
 
     public static boolean sanityCheckBrokerMetricsCompleteness(AutoBalancerMetrics metrics) {
-        return metrics.getMetricValueMap().keySet().containsAll(RawMetricTypes.requiredBrokerMetrics(MetricVersion.LATEST_VERSION));
+        return metrics.getMetricValueMap().keySet().containsAll(MetricVersion.LATEST_VERSION.requiredBrokerMetrics());
     }
 
     public static String topicPartitionKey(String topic, int partition) {

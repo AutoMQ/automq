@@ -389,6 +389,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     protected void processBrokerMetrics(YammerMetricProcessor.Context context) {
         context.merge(new BrokerMetrics(context.time(), brokerId, brokerRack)
                 .put(RawMetricTypes.BROKER_METRIC_VERSION, MetricVersion.LATEST_VERSION.value())
+                // TODO: fix latency calculation
                 .put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS,
                         TimeUnit.NANOSECONDS.toMillis((long) appendLatencyAvg.derive(
                                 StreamOperationStats.getInstance().appendStreamLatency.sum(),
@@ -419,7 +420,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     protected void addMissingMetrics(YammerMetricProcessor.Context context) {
         for (AutoBalancerMetrics metrics : context.getMetricMap().values()) {
             if (metrics.metricType() == MetricTypes.TOPIC_PARTITION_METRIC) {
-                for (byte key : RawMetricTypes.requiredPartitionMetrics(MetricVersion.LATEST_VERSION)) {
+                for (byte key : MetricVersion.LATEST_VERSION.requiredPartitionMetrics()) {
                     metrics.getMetricValueMap().putIfAbsent(key, 0.0);
                 }
             }
