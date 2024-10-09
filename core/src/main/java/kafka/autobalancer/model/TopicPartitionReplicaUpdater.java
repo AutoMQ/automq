@@ -48,7 +48,7 @@ public class TopicPartitionReplicaUpdater extends AbstractInstanceUpdater {
 
     @Override
     protected Set<Byte> requiredMetrics() {
-        return RawMetricTypes.requiredPartitionMetrics(metricVersion);
+        return metricVersion.requiredPartitionMetrics();
     }
 
     public void setMetricVersion(MetricVersion metricVersion) {
