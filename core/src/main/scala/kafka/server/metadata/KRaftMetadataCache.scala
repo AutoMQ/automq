@@ -17,6 +17,10 @@
 
 package kafka.server.metadata
 
+import com.automq.stream.api.KeyValue
+import com.automq.stream.s3.metadata.StreamState
+import io.netty.buffer.Unpooled
+import kafka.log.streamaspect.{ElasticLog, ElasticLogManager}
 import kafka.server.{CachedControllerId, KRaftCachedControllerId, MetadataCache}
 import kafka.utils.Logging
 import org.apache.kafka.admin.BrokerMetadata
@@ -31,7 +35,7 @@ import org.apache.kafka.common.message._
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.MetadataResponse
-import org.apache.kafka.image.MetadataImage
+import org.apache.kafka.image.{MetadataImage, S3StreamMetadataImage}
 import org.apache.kafka.metadata.{BrokerRegistration, PartitionRegistration, Replicas}
 import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{FinalizedFeatures, KRaftVersion, MetadataVersion}
@@ -87,6 +91,42 @@ class KRaftMetadataCache(
 
   def currentImage(): MetadataImage = _currentImage
 
+
+  // AutoMQ inject start
+  private def checkFailoverSuccess(topicPartition: TopicPartition, topicId: Uuid, tpRegistration: PartitionRegistration): Boolean = {
+    safeRun((image: MetadataImage) => {
+      val key = ElasticLog.formatStreamKey(ElasticLogManager.NAMESPACE, topicPartition, Some(topicId))
+      val buffer = image.kv().getValue(key)
+      if (buffer == null) {
+        error(s"topic ${topicPartition} topicId ${topicId.toString} key $key not found ")
+        return false
+      }
+
+      val metaStreamId = Unpooled.wrappedBuffer(KeyValue.Value.of(buffer).get).readLong
+      val streamMetadata = image.streamsMetadata.getStreamMetadata(metaStreamId)
+      if (streamMetadata == null) {
+        false
+      } else {
+        return topicFailoverSuccess(topicPartition, tpRegistration, streamMetadata)
+      }
+    })
+  }
+
+  private def topicFailoverSuccess(topicPartition: TopicPartition, tpRegistration: PartitionRegistration, streamMetadata: S3StreamMetadataImage): Boolean = {
+    // the partition leaderEpoch may be different from the stream epoch
+    val result = tpRegistration.leaderEpoch >= streamMetadata.getEpoch &&
+      streamMetadata.state == StreamState.OPENED &&
+      streamMetadata.lastRange().nodeId() == tpRegistration.leader
+
+    if (!result) {
+      debug(s"Failover failed for topicPartition $topicPartition, tpEpoch $tpRegistration, streamMetadata ${streamMetadata}")
+    }
+
+    result
+  }
+
+  // AutoMQ inject end
+
   // errorUnavailableEndpoints exists to support v0 MetadataResponses
   // If errorUnavailableListeners=true, return LISTENER_NOT_FOUND if listener is missing on the broker.
   // Otherwise, return LEADER_NOT_AVAILABLE for broker unavailable and missing listener (Metadata response v5 and below).
@@ -102,10 +142,17 @@ class KRaftMetadataCache(
         val filteredIsr = maybeFilterAliveReplicas(image, partition.isr, listenerName,
           errorUnavailableEndpoints)
         val offlineReplicas = getOfflineReplicas(image, partition, listenerName)
-        val maybeLeader = getAliveEndpoint(image, partition.leader, listenerName)
+        // AutoMQ inject start
+        val failoverSuccess = checkFailoverSuccess(new TopicPartition(topicName, partitionId), topic.id(), partition)
+        val maybeLeader = if (!failoverSuccess) {
+          None
+        } else {
+          getAliveEndpoint(image, partition.leader, listenerName)
+        }
+        // AutoMQ inject end
         maybeLeader match {
           case None =>
-            val error = if (!image.cluster().brokers.containsKey(partition.leader)) {
+            val error = if (!failoverSuccess || !image.cluster().brokers.containsKey(partition.leader)) {
               debug(s"Error while fetching metadata for $topicName-$partitionId: leader not available")
               Errors.LEADER_NOT_AVAILABLE
             } else {
