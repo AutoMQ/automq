@@ -14,7 +14,7 @@ package com.automq.stream.s3.metrics.wrapper;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import io.opentelemetry.api.common.Attributes;
@@ -22,28 +22,28 @@ import io.opentelemetry.api.metrics.LongCounter;
 
 public class CounterMetric extends ConfigurableMetric {
     private final Supplier<LongCounter> longCounterSupplier;
-    private final AtomicLong total = new AtomicLong(0);
+    private final Consumer<Long> onAdded;
 
     public CounterMetric(MetricsConfig metricsConfig, Supplier<LongCounter> longCounterSupplier) {
-        super(metricsConfig, Attributes.empty());
-        this.longCounterSupplier = longCounterSupplier;
+        this(metricsConfig, Attributes.empty(), longCounterSupplier);
     }
 
     public CounterMetric(MetricsConfig metricsConfig, Attributes extraAttributes, Supplier<LongCounter> longCounterSupplier) {
+        this(metricsConfig, extraAttributes, longCounterSupplier, v -> {});
+    }
+
+    public CounterMetric(MetricsConfig metricsConfig, Attributes extraAttributes, Supplier<LongCounter> longCounterSupplier, Consumer<Long> onAdded) {
         super(metricsConfig, extraAttributes);
         this.longCounterSupplier = longCounterSupplier;
+        this.onAdded = onAdded;
     }
 
     public boolean add(MetricsLevel metricsLevel, long value) {
-        total.addAndGet(value);
+        onAdded.accept(value);
         if (metricsLevel.isWithin(this.metricsLevel)) {
             longCounterSupplier.get().add(value, attributes);
             return true;
         }
         return false;
-    }
-
-    public long getValue() {
-        return total.get();
     }
 }

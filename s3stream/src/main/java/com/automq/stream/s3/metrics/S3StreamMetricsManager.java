@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
@@ -631,17 +632,17 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static CounterMetric buildNetworkInboundUsageMetric(ThrottleStrategy strategy) {
+    public static CounterMetric buildNetworkInboundUsageMetric(ThrottleStrategy strategy, Consumer<Long> callback) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), () -> networkInboundUsageInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), () -> networkInboundUsageInTotal, callback);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }
     }
 
-    public static CounterMetric buildNetworkOutboundUsageMetric(ThrottleStrategy strategy) {
+    public static CounterMetric buildNetworkOutboundUsageMetric(ThrottleStrategy strategy, Consumer<Long> callback) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), () -> networkOutboundUsageInTotal);
+            CounterMetric metric = new CounterMetric(metricsConfig, AttributesUtils.buildAttributes(strategy), () -> networkOutboundUsageInTotal, callback);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
             return metric;
         }

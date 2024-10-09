@@ -11,16 +11,16 @@
 
 package com.automq.stream.s3.metrics.wrapper;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 public class Counter {
-    private final AtomicLong count = new AtomicLong(0);
+    private final LongAdder count = new LongAdder();
 
     public void inc(long n) {
-        count.addAndGet(n);
+        count.add(n);
     }
 
     public long get() {
-        return count.get();
+        return count.sum();
     }
 }
