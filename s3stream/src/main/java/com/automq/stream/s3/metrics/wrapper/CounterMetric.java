@@ -29,7 +29,7 @@ public class CounterMetric extends ConfigurableMetric {
     }
 
     public CounterMetric(MetricsConfig metricsConfig, Attributes extraAttributes, Supplier<LongCounter> longCounterSupplier) {
-        this(metricsConfig, extraAttributes, longCounterSupplier, v -> {});
+        this(metricsConfig, extraAttributes, longCounterSupplier, v -> { });
     }
 
     public CounterMetric(MetricsConfig metricsConfig, Attributes extraAttributes, Supplier<LongCounter> longCounterSupplier, Consumer<Long> onAdded) {
