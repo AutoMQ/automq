@@ -17,33 +17,76 @@
 
 package org.apache.kafka.image;
 
+
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
+
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.timeline.TimelineHashMap;
 
-import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.Objects;
+public final class KVImage extends AbstractReferenceCounted {
+    public static final KVImage EMPTY = new KVImage(new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), RegistryRef.NOOP);
 
-public final class KVImage {
+    private final RegistryRef registryRef;
 
-    public static final KVImage EMPTY = new KVImage(new DeltaMap<>(new int[] {1000, 10000}));
+    private final TimelineHashMap<String, ByteBuffer> kv;
 
-    private final DeltaMap<String, ByteBuffer> kv;
-
-    public KVImage(final DeltaMap<String, ByteBuffer> kv) {
+    public KVImage(TimelineHashMap<String, ByteBuffer> kv, RegistryRef registryRef) {
+        this.registryRef = registryRef;
         this.kv = kv;
     }
 
-    public DeltaMap<String, ByteBuffer> kv() {
+    public ByteBuffer getValue(String key) {
+        if (kv == null || registryRef == RegistryRef.NOOP) {
+            return null;
+        }
+
+        return registryRef.inLock(() -> this.kv.get(key, registryRef.epoch()));
+    }
+
+    public Map<String, ByteBuffer> kvs() {
+        if (kv == null || registryRef == RegistryRef.NOOP) {
+            return Collections.emptyMap();
+        }
+
+        return registryRef.inLock(() -> {
+            Map<String, ByteBuffer> result = new HashMap<>();
+            kv.entrySet(registryRef().epoch()).forEach(e -> result.put(e.getKey(), e.getValue()));
+            return result;
+        });
+    }
+
+    public TimelineHashMap<String, ByteBuffer> timelineKVs() {
         return kv;
     }
 
+    RegistryRef registryRef() {
+        return registryRef;
+    }
+
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        kv.forEach((k, v) -> {
-            List<KeyValue> kvs = List.of(new KeyValue().setKey(k).setValue(v.array()));
+        if (kv == null || registryRef == RegistryRef.NOOP) {
+            return;
+        }
+
+        List<List<KeyValue>> keyValues = registryRef.inLock(() -> kv.entrySet(registryRef.epoch())
+            .stream()
+            .map(e -> List.of(new KeyValue().setKey(e.getKey()).setValue(e.getValue().array())))
+            .collect(Collectors.toList()));
+
+        keyValues.forEach(kvs -> {
             writer.write(new ApiMessageAndVersion(new KVRecord()
                 .setKeyValues(kvs), (short) 0));
         });
@@ -58,7 +101,7 @@ public final class KVImage {
             return false;
         }
         KVImage kvImage = (KVImage) o;
-        return kv.equals(kvImage.kv);
+        return kvs().equals(kvImage.kvs());
     }
 
     public boolean isEmpty() {
@@ -68,5 +111,18 @@ public final class KVImage {
     @Override
     public int hashCode() {
         return Objects.hash(kv);
+    }
+
+    @Override
+    protected void deallocate() {
+        if (registryRef == RegistryRef.NOOP) {
+            return;
+        }
+        registryRef.release();
+    }
+
+    @Override
+    public ReferenceCounted touch(Object o) {
+        return this;
     }
 }
