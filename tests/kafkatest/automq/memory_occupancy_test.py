@@ -173,7 +173,8 @@ class TestJVMMemoryOccupancy(Test):
                 log_dict = parse_log_entry(line)
                 if '1/write_record' in log_dict['buffer_usage']:
                     write_record = log_dict['buffer_usage']['1/write_record']
-                    assert int(write_record) <= 100 * 1024 * 1024 + log_size, \
+                    # 100MB is the inflight limiter + log size + 8MB is ByteBufSeqAlloc * 2
+                    assert int(write_record) <= 100 * 1024 * 1024 + log_size + 8 * 1024 * 1024, \
                         f"Error: '1/write_record' buffer usage exceeded limit. Actual: {write_record}, Limit: {100 * 1024 * 1024 + log_size}"
                 if '11/block_cache' in log_dict['buffer_usage']:
                     block_cache = log_dict['buffer_usage']['11/block_cache']

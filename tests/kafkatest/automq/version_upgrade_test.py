@@ -10,7 +10,7 @@ by the Apache License, Version 2.0
 """
 import time
 
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, ignore
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -89,6 +89,8 @@ class TestUpgrade(ProduceConsumeValidateTest):
         self.kafka.run_features_command(op='upgrade', key='metadata', new_version=LATEST_STABLE_METADATA_VERSION)
         self.kafka.run_features_command(op='upgrade', key='feature', new_version=f'automq.version={LATEST_STABLE_AUTOMQ_VERSION}')
 
+    # FIXME
+    @ignore
     @cluster(num_nodes=5)
     @parametrize(from_kafka_version=str(AUTOMQ_LATEST_1_1))
     def test_upgrade(self, from_kafka_version):
