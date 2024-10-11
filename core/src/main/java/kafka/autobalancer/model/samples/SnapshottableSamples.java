@@ -38,7 +38,7 @@ public class SnapshottableSamples implements Samples {
     }
 
     @Override
-    public void append(double value) {
+    public void append(double value, long timestamp) {
         while (values.size() == maxSize) {
             values.pop();
         }

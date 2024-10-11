@@ -21,7 +21,7 @@ public class SnapshottableSamplesTest {
     public void testAppendAndSnapshot() {
         SnapshottableSamples sequence = new SnapshottableSamples(512);
         for (int i = 0; i < 1000; i++) {
-            sequence.append(i);
+            sequence.append(i, System.currentTimeMillis());
         }
         Assertions.assertEquals(512, sequence.size());
         Snapshot snapshot = sequence.snapshot();
@@ -32,7 +32,7 @@ public class SnapshottableSamplesTest {
         Assertions.assertEquals(744, snapshot.getValue(0.5), 1);
 
         for (int i = 1000; i < 2000; i++) {
-            sequence.append(i);
+            sequence.append(i, System.currentTimeMillis());
         }
         snapshot = sequence.snapshot();
         Assertions.assertNotNull(snapshot);
@@ -48,7 +48,7 @@ public class SnapshottableSamplesTest {
     public void testSnapshot() {
         SnapshottableSamples sequence = new SnapshottableSamples(512);
         for (int i = 0; i < 1000; i++) {
-            sequence.append(i);
+            sequence.append(i, System.currentTimeMillis());
         }
         for (int i = 0; i < 100; i++) {
             sequence.snapshot();

@@ -4,7 +4,7 @@ public class SingleValueSamples implements Samples {
     private double value;
 
     @Override
-    public void append(double value) {
+    public void append(double value, long timestamp) {
         this.value = value;
     }
 
