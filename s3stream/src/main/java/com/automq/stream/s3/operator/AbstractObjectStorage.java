@@ -53,7 +53,7 @@ import java.util.function.BiFunction;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timeout;
+import io.netty.util.ReferenceCounted;
 
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
@@ -77,7 +77,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     protected final ExecutorService writeLimiterCallbackExecutor;
     private final ExecutorService readCallbackExecutor;
     private final ExecutorService writeCallbackExecutor;
-    private final HashedWheelTimer timeoutDetect;
     final ScheduledExecutorService scheduler;
     private final HashedWheelTimer fastRetryTimer;
 
@@ -115,8 +114,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             prefix + "s3-read-cb-executor", true, LOGGER);
         writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
             prefix + "s3-write-cb-executor", true, LOGGER);
-        timeoutDetect = new HashedWheelTimer(
-            ThreadUtils.createThreadFactory(prefix + "s3-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
         scheduler = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory(prefix + "s3-scheduler", true), LOGGER);
         fastRetryTimer = new HashedWheelTimer(
@@ -206,8 +203,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             }
         });
 
-        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end), 1, TimeUnit.MINUTES);
-        return cf.whenComplete((rst, ex) -> timeout.cancel());
+        return FutureUtil.timeoutWithNewReturn(cf, 2, TimeUnit.MINUTES, () -> {
+            LOGGER.warn("rangeRead {} {}-{} timeout", objectPath, start, end);
+            // The return CompletableFuture will be completed with TimeoutException,
+            // so we need to release the ByteBuf if the read complete later.
+            cf.thenAccept(ReferenceCounted::release);
+        });
     }
 
     @Override
@@ -515,7 +516,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         readCallbackExecutor.shutdown();
         writeCallbackExecutor.shutdown();
         scheduler.shutdown();
-        timeoutDetect.stop();
         fastRetryTimer.stop();
         doClose();
     }
