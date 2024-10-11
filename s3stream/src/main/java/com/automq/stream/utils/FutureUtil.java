@@ -12,15 +12,27 @@
 package com.automq.stream.utils;
 
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
+
 public class FutureUtil {
+    private static final Logger LOGGER = LoggerFactory.getLogger(FutureUtil.class);
+    private static final HashedWheelTimer TIMEOUT_DETECT = new HashedWheelTimer(
+        ThreadUtils.createThreadFactory("timeout-detect", true), 1, TimeUnit.SECONDS, 100);
+    private static final AtomicLong TIMEOUT_DETECT_ID_ALLOC = new AtomicLong();
+
     public static <T> CompletableFuture<T> failedFuture(Throwable ex) {
         CompletableFuture<T> cf = new CompletableFuture<>();
         cf.completeExceptionally(ex);
@@ -48,7 +60,8 @@ public class FutureUtil {
         });
     }
 
-    public static <T> void propagateAsync(CompletableFuture<T> source, CompletableFuture<T> dest, ExecutorService executor) {
+    public static <T> void propagateAsync(CompletableFuture<T> source, CompletableFuture<T> dest,
+        ExecutorService executor) {
         source.whenCompleteAsync((rst, ex) -> {
             if (ex != null) {
                 dest.completeExceptionally(ex);
@@ -111,6 +124,37 @@ public class FutureUtil {
             CompletableFuture<T> future = futures.next();
             future.complete(value);
         }
+    }
+
+    public static <T> CompletableFuture<T> timeoutWithNewReturn(CompletableFuture<T> detectCf, int delay,
+        TimeUnit timeUnit, Runnable timeoutAction) {
+        if (detectCf.isDone()) {
+            return detectCf;
+        }
+        long timeoutDetectId = TIMEOUT_DETECT_ID_ALLOC.incrementAndGet();
+        CompletableFuture<T> newCf = new CompletableFuture<>();
+        Timeout timeout = TIMEOUT_DETECT.newTimeout(t -> {
+            synchronized (t) {
+                LOGGER.info("[TIME_DETECT],{}", timeoutDetectId);
+                timeoutAction.run();
+                newCf.completeExceptionally(new TimeoutException());
+            }
+        }, delay, timeUnit);
+        detectCf.whenComplete((rst, ex) -> {
+            synchronized (timeout) {
+                if (timeout.isExpired()) {
+                    LOGGER.info("[TIME_DETECT_RECOVERED],{}", timeoutDetectId);
+                } else {
+                    timeout.cancel();
+                    if (ex != null) {
+                        newCf.completeExceptionally(ex);
+                    } else {
+                        newCf.complete(rst);
+                    }
+                }
+            }
+        });
+        return newCf;
     }
 
 }

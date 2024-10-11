@@ -18,6 +18,13 @@
 package org.apache.kafka.image;
 
 
+import org.apache.kafka.common.metadata.KVRecord;
+import org.apache.kafka.common.metadata.KVRecord.KeyValue;
+import org.apache.kafka.image.writer.ImageWriter;
+import org.apache.kafka.image.writer.ImageWriterOptions;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.timeline.TimelineHashMap;
+
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
@@ -28,13 +35,6 @@ import java.util.stream.Collectors;
 
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
-
-import org.apache.kafka.common.metadata.KVRecord;
-import org.apache.kafka.common.metadata.KVRecord.KeyValue;
-import org.apache.kafka.image.writer.ImageWriter;
-import org.apache.kafka.image.writer.ImageWriterOptions;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.timeline.TimelineHashMap;
 
 public final class KVImage extends AbstractReferenceCounted {
     public static final KVImage EMPTY = new KVImage(new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), RegistryRef.NOOP);
