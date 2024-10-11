@@ -72,7 +72,7 @@ public abstract class AbstractInstanceUpdater {
             if (!processMetric(metricType, value)) {
                 continue;
             }
-            metricSampleMap.computeIfAbsent(metricType, k -> createSample(metricType)).append(value);
+            metricSampleMap.computeIfAbsent(metricType, k -> createSample(metricType)).append(value, timestamp);
         }
         this.lastUpdateTimestamp = timestamp;
     }
