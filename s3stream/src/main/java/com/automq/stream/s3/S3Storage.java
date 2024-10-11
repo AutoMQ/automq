@@ -39,8 +39,6 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import io.netty.buffer.ByteBuf;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.Timeout;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.io.IOException;
@@ -120,8 +118,6 @@ public class S3Storage implements Storage {
      * @see #handleAppendCallback
      */
     private final Lock[] streamCallbackLocks = IntStream.range(0, NUM_STREAM_CALLBACK_LOCKS).mapToObj(i -> new ReentrantLock()).toArray(Lock[]::new);
-    private final HashedWheelTimer timeoutDetect = new HashedWheelTimer(
-        ThreadUtils.createThreadFactory("storage-timeout-detect", true), 1, TimeUnit.SECONDS, 100);
     private long lastLogTimestamp = 0L;
     private volatile double maxDataWriteRate = 0.0;
 
@@ -405,7 +401,6 @@ public class S3Storage implements Storage {
             backgroundExecutor.shutdownNow();
             LOGGER.warn("await backgroundExecutor close fail", e);
         }
-        timeoutDetect.stop();
     }
 
     @Override
@@ -550,8 +545,7 @@ public class S3Storage implements Storage {
             endOffset = logCacheRecords.get(0).getBaseOffset();
         }
         long finalEndOffset = endOffset;
-        Timeout timeout = timeoutDetect.newTimeout(t -> LOGGER.error("[POTENTIAL_BUG] read from block cache timeout, stream={}, [{},{}), maxBytes: {}", streamId, startOffset, finalEndOffset, maxBytes), 1, TimeUnit.MINUTES);
-        return blockCache.read(context, streamId, startOffset, endOffset, maxBytes).thenApply(blockCacheRst -> {
+        CompletableFuture<ReadDataBlock> cf = blockCache.read(context, streamId, startOffset, endOffset, maxBytes).thenApply(blockCacheRst -> {
             List<StreamRecordBatch> rst = new ArrayList<>(blockCacheRst.getRecords());
             int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
             int readIndex = -1;
@@ -573,22 +567,18 @@ public class S3Storage implements Storage {
             }
             return new ReadDataBlock(rst, blockCacheRst.getCacheAccessType());
         }).whenComplete((rst, ex) -> {
-            handleTimeout(timeout, streamId, startOffset, finalEndOffset, maxBytes);
             if (ex != null) {
                 LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
                     streamId, startOffset, finalEndOffset, maxBytes, ex);
                 logCacheRecords.forEach(StreamRecordBatch::release);
             }
         });
-    }
-
-    private void handleTimeout(Timeout timeout, long streamId, long startOffset, long finalEndOffset, int maxBytes) {
-        if (timeout.isExpired()) {
-            LOGGER.error("[POTENTIAL_BUG_RECOVERED] read from block cache completed, stream={}, [{},{}), maxBytes: {}",
-                streamId, startOffset, finalEndOffset, maxBytes);
-        } else {
-            timeout.cancel();
-        }
+        return FutureUtil.timeoutWithNewReturn(cf, 2, TimeUnit.MINUTES, () -> {
+            LOGGER.error("[POTENTIAL_BUG] read from block cache timeout, stream={}, [{},{}), maxBytes: {}", streamId, startOffset, finalEndOffset, maxBytes);
+            cf.thenAccept(readDataBlock -> {
+                readDataBlock.getRecords().forEach(r -> r.release());
+            });
+        });
     }
 
     private void continuousCheck(List<StreamRecordBatch> records) {
