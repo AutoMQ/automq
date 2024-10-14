@@ -12,17 +12,18 @@
 package kafka.autobalancer;
 
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
-import kafka.autobalancer.detector.AnomalyDetector;
-import kafka.autobalancer.detector.AnomalyDetectorBuilder;
+import kafka.autobalancer.detector.AbstractAnomalyDetector;
+import kafka.autobalancer.detector.AnomalyDetectorImpl;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.executor.ControllerActionExecutorService;
-import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.listeners.ClusterStatusListenerRegistry;
+import kafka.autobalancer.listeners.LeaderChangeListener;
 import kafka.autobalancer.listeners.TopicPartitionStatusListener;
 import kafka.autobalancer.model.RecordClusterModel;
 import kafka.autobalancer.services.AutoBalancerService;
 
+import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.common.utils.Time;
@@ -32,18 +33,20 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import com.automq.stream.utils.LogContext;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 public class AutoBalancerManager extends AutoBalancerService {
     protected final Time time;
     protected final Map<?, ?> configs;
     protected final QuorumController quorumController;
     protected final KafkaRaftClient<ApiMessageAndVersion> raftClient;
+    protected final List<Reconfigurable> reconfigurables = new ArrayList<>();
     protected LoadRetriever loadRetriever;
-    protected AnomalyDetector anomalyDetector;
+    protected AbstractAnomalyDetector anomalyDetector;
     protected ActionExecutorService actionExecutorService;
     protected volatile boolean enabled;
 
@@ -62,33 +65,27 @@ public class AutoBalancerManager extends AutoBalancerService {
     protected void init() {
         AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(configs, false);
         this.enabled = config.getBoolean(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE);
-        RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", quorumController.nodeId())));
+        int nodeId = quorumController.nodeId();
+        RecordClusterModel clusterModel = new RecordClusterModel(new LogContext(String.format("[ClusterModel id=%d] ", nodeId)));
         this.loadRetriever = new LoadRetriever(config, quorumController, clusterModel,
-                new LogContext(String.format("[LoadRetriever id=%d] ", quorumController.nodeId())));
+                new LogContext(String.format("[LoadRetriever id=%d] ", nodeId)));
         this.actionExecutorService = new ControllerActionExecutorService(quorumController,
-                new LogContext(String.format("[ExecutionManager id=%d] ", quorumController.nodeId())));
+                new LogContext(String.format("[ExecutionManager id=%d] ", nodeId)));
         this.actionExecutorService.start();
 
-        this.anomalyDetector = new AnomalyDetectorBuilder()
-                .logContext(new LogContext(String.format("[AnomalyDetector id=%d] ", quorumController.nodeId())))
-                .detectIntervalMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS))
-                .maxTolerateMetricsDelayMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS))
-                .executionConcurrency(config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY))
-                .executionIntervalMs(config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS))
-                .clusterModel(clusterModel)
-                .executor(this.actionExecutorService)
-                .addGoals(config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class))
-                .excludedBrokers(config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS)
-                        .stream().map(Integer::parseInt).collect(Collectors.toSet()))
-                .excludedTopics(config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS))
-                .build();
+        this.anomalyDetector = new AnomalyDetectorImpl(config.originals(),
+            new LogContext(String.format("[AnomalyDetector id=%d] ", nodeId)), clusterModel, actionExecutorService);
+
+        this.reconfigurables.add(anomalyDetector);
 
         ClusterStatusListenerRegistry registry = new ClusterStatusListenerRegistry();
         registry.register((BrokerStatusListener) clusterModel);
         registry.register((TopicPartitionStatusListener) clusterModel);
         registry.register((BrokerStatusListener) this.actionExecutorService);
-        registry.register(this.loadRetriever);
-        raftClient.register(new AutoBalancerListener(quorumController.nodeId(), time, registry, this.loadRetriever, this.anomalyDetector));
+        registry.register((LeaderChangeListener) this.anomalyDetector);
+        registry.register((BrokerStatusListener) this.loadRetriever);
+        registry.register((LeaderChangeListener) this.loadRetriever);
+        raftClient.register(new AutoBalancerListener(nodeId, time, registry));
     }
 
     @Override
@@ -126,7 +123,9 @@ public class AutoBalancerManager extends AutoBalancerService {
             if (objectConfigs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE)) {
                 ConfigUtils.getBoolean(objectConfigs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ENABLE);
             }
-            this.anomalyDetector.validateReconfiguration(objectConfigs);
+            for (Reconfigurable reconfigurable : reconfigurables) {
+                reconfigurable.validateReconfiguration(objectConfigs);
+            }
         } catch (ConfigException e) {
             throw e;
         } catch (Exception e) {
@@ -149,7 +148,9 @@ public class AutoBalancerManager extends AutoBalancerService {
                 logger.info("AutoBalancerManager paused.");
             }
         }
-        this.anomalyDetector.reconfigure(objectConfigs);
+        for (Reconfigurable reconfigurable : reconfigurables) {
+            reconfigurable.reconfigure(objectConfigs);
+        }
     }
 
     @Override

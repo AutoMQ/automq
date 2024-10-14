@@ -12,7 +12,5 @@
 package kafka.autobalancer.listeners;
 
 public interface LeaderChangeListener {
-    void onBecomeLeader();
-
-    void onResign();
+    void onLeaderChanged(boolean isLeader);
 }

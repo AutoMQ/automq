@@ -19,6 +19,7 @@ import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.config.StaticAutoBalancerConfig;
 import kafka.autobalancer.config.StaticAutoBalancerConfigUtils;
 import kafka.autobalancer.listeners.BrokerStatusListener;
+import kafka.autobalancer.listeners.LeaderChangeListener;
 import kafka.autobalancer.metricsreporter.metric.AutoBalancerMetrics;
 import kafka.autobalancer.metricsreporter.metric.BrokerMetrics;
 import kafka.autobalancer.metricsreporter.metric.MetricSerde;
@@ -70,7 +71,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class LoadRetriever extends AbstractResumableService implements BrokerStatusListener {
+public class LoadRetriever extends AbstractResumableService implements BrokerStatusListener, LeaderChangeListener {
     public static final Random RANDOM = new Random();
     private final Map<Integer, BrokerEndpoints> bootstrapServerMap;
     private volatile int metricReporterTopicPartition;
@@ -163,7 +164,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         return consumerProps;
     }
 
-    static class BrokerEndpoints {
+    public static class BrokerEndpoints {
         private final int brokerId;
         private Set<String> endpoints = new HashSet<>();
 
@@ -491,6 +492,11 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         return TopicAction.NONE;
     }
 
+    public boolean isLeader() {
+        return isLeader;
+    }
+
+    @Override
     public void onLeaderChanged(boolean isLeader) {
         this.leaderEpochInitialized = true;
         this.isLeader = isLeader;
