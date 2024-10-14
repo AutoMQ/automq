@@ -16,8 +16,7 @@ import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 
-import org.apache.kafka.common.Configurable;
-import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.Reconfigurable;
 
 import com.automq.stream.utils.LogContext;
 
@@ -30,7 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public interface Goal extends Configurable, Comparable<Goal> {
+public interface Goal extends Reconfigurable, Comparable<Goal> {
     Logger LOGGER = new LogContext().logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
 
     List<Action> doOptimize(List<BrokerUpdater.Broker> eligibleBrokers, ClusterModelSnapshot cluster,
@@ -90,6 +89,4 @@ public interface Goal extends Configurable, Comparable<Goal> {
     default int compareTo(Goal other) {
         return Boolean.compare(other.isHardGoal(), this.isHardGoal());
     }
-
-    void validateReconfiguration(Map<String, ?> configs) throws ConfigException;
 }

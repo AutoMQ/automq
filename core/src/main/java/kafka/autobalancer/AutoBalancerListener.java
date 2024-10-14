@@ -12,9 +12,9 @@
 package kafka.autobalancer;
 
 import kafka.autobalancer.common.AutoBalancerConstants;
-import kafka.autobalancer.detector.AnomalyDetector;
 import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.listeners.ClusterStatusListenerRegistry;
+import kafka.autobalancer.listeners.LeaderChangeListener;
 import kafka.autobalancer.listeners.TopicPartitionStatusListener;
 
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
@@ -46,17 +46,12 @@ public class AutoBalancerListener implements RaftClient.Listener<ApiMessageAndVe
     private final Logger logger;
     private final KafkaEventQueue queue;
     private final ClusterStatusListenerRegistry registry;
-    private final LoadRetriever loadRetriever;
-    private final AnomalyDetector anomalyDetector;
 
-    public AutoBalancerListener(int nodeId, Time time, ClusterStatusListenerRegistry registry,
-                                LoadRetriever loadRetriever, AnomalyDetector anomalyDetector) {
+    public AutoBalancerListener(int nodeId, Time time, ClusterStatusListenerRegistry registry) {
         this.nodeId = nodeId;
         this.logger = new LogContext(String.format("[AutoBalancerListener id=%d] ", nodeId)).logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
         this.queue = new KafkaEventQueue(time, new org.apache.kafka.common.utils.LogContext(), "auto-balancer-listener-");
         this.registry = registry;
-        this.loadRetriever = loadRetriever;
-        this.anomalyDetector = anomalyDetector;
     }
 
     private void handleMessageBatch(Batch<ApiMessageAndVersion> messageBatch) {
@@ -138,13 +133,18 @@ public class AutoBalancerListener implements RaftClient.Listener<ApiMessageAndVe
     @Override
     public void handleLeaderChange(LeaderAndEpoch leader) {
         queue.append(() -> {
-            if (leader.leaderId().isEmpty()) {
-                return;
-            }
-            boolean isLeader = leader.isLeader(nodeId);
-            this.anomalyDetector.onLeaderChanged(isLeader);
-            this.loadRetriever.onLeaderChanged(isLeader);
+            handleLeaderChange0(leader);
         });
+    }
+
+    void handleLeaderChange0(LeaderAndEpoch leader) {
+        if (leader.leaderId().isEmpty()) {
+            return;
+        }
+        boolean isLeader = leader.isLeader(nodeId);
+        for (LeaderChangeListener listener : this.registry.leaderChangeListeners()) {
+            listener.onLeaderChanged(isLeader);
+        }
     }
 
     @Override

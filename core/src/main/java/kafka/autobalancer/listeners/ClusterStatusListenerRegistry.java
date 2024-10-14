@@ -15,8 +15,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ClusterStatusListenerRegistry {
+    private final List<LeaderChangeListener> leaderChangeListeners = new ArrayList<>();
     private final List<BrokerStatusListener> brokerListeners = new ArrayList<>();
     private final List<TopicPartitionStatusListener> topicPartitionListeners = new ArrayList<>();
+
+    public void register(LeaderChangeListener listener) {
+        leaderChangeListeners.add(listener);
+    }
 
     public void register(BrokerStatusListener listener) {
         brokerListeners.add(listener);
@@ -24,6 +29,10 @@ public class ClusterStatusListenerRegistry {
 
     public void register(TopicPartitionStatusListener listener) {
         topicPartitionListeners.add(listener);
+    }
+
+    public List<LeaderChangeListener> leaderChangeListeners() {
+        return leaderChangeListeners;
     }
 
     public List<BrokerStatusListener> brokerListeners() {
