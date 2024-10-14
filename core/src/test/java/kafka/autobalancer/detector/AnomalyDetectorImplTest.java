@@ -24,7 +24,6 @@ import kafka.autobalancer.common.types.Resource;
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.goals.AbstractResourceUsageDistributionGoal;
-import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.goals.NetworkInUsageDistributionGoal;
 import kafka.autobalancer.goals.NetworkOutUsageDistributionGoal;
 import kafka.autobalancer.model.ClusterModel;
@@ -52,30 +51,11 @@ import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-public class AnomalyDetectorTest {
+public class AnomalyDetectorImplTest {
 
     @Test
     public void testFilterAndMergeActions() {
-        AnomalyDetector anomalyDetector = new AnomalyDetectorBuilder()
-                .clusterModel(Mockito.mock(ClusterModel.class))
-                .addGoal(Mockito.mock(Goal.class))
-                .executor(new ActionExecutorService() {
-                    @Override
-                    public void start() {
-
-                    }
-
-                    @Override
-                    public void shutdown() {
-
-                    }
-
-                    @Override
-                    public CompletableFuture<Void> execute(List<Action> actions) {
-                        return CompletableFuture.completedFuture(null);
-                    }
-                })
-                .build();
+        AnomalyDetectorImpl anomalyDetector = new AnomalyDetectorImpl(Collections.emptyMap(), null, Mockito.mock(ClusterModel.class), Mockito.mock(ActionExecutorService.class));
 
         List<Action> actions = List.of(
                 new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 1, 11),
@@ -131,26 +111,7 @@ public class AnomalyDetectorTest {
 
     @Test
     public void testGroupActions() {
-        AnomalyDetector anomalyDetector = new AnomalyDetectorBuilder()
-                .clusterModel(Mockito.mock(ClusterModel.class))
-                .addGoal(Mockito.mock(Goal.class))
-                .executor(new ActionExecutorService() {
-                    @Override
-                    public void start() {
-
-                    }
-
-                    @Override
-                    public void shutdown() {
-
-                    }
-
-                    @Override
-                    public CompletableFuture<Void> execute(List<Action> actions) {
-                        return CompletableFuture.completedFuture(null);
-                    }
-                })
-                .build();
+        AnomalyDetectorImpl anomalyDetector = new AnomalyDetectorImpl(Collections.emptyMap(), null, Mockito.mock(ClusterModel.class), Mockito.mock(ActionExecutorService.class));
 
         List<Action> actions = List.of(
                 new Action(ActionType.MOVE, new TopicPartition("topic-1", 0), 0, 1),
@@ -274,38 +235,31 @@ public class AnomalyDetectorTest {
             }
         }
 
-        Map<String, ?> configs = new AutoBalancerControllerConfig(Collections.emptyMap(), false).originals();
-        Goal goal0 = new NetworkInUsageDistributionGoal();
-        Goal goal1 = new NetworkOutUsageDistributionGoal();
-        goal0.configure(configs);
-        goal1.configure(configs);
-
         List<Action> actionList = new ArrayList<>();
-        AnomalyDetector detector = new AnomalyDetectorBuilder()
-                .clusterModel(clusterModel)
-                .detectIntervalMs(Long.MAX_VALUE)
-                .executionIntervalMs(0)
-                .executionConcurrency(100)
-                .addGoal(goal0)
-                .addGoal(goal1)
-                .executor(new ActionExecutorService() {
-                    @Override
-                    public void start() {
+        AnomalyDetectorImpl detector = new AnomalyDetectorImpl(Map.of(
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, Long.MAX_VALUE,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, 0,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY, 100,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, new StringJoiner(",")
+                .add(NetworkInUsageDistributionGoal.class.getName())
+                .add(NetworkOutUsageDistributionGoal.class.getName()).toString()
+        ), null, clusterModel, new ActionExecutorService() {
+            @Override
+            public void start() {
 
-                    }
+            }
 
-                    @Override
-                    public void shutdown() {
+            @Override
+            public void shutdown() {
 
-                    }
+            }
 
-                    @Override
-                    public CompletableFuture<Void> execute(List<Action> actions) {
-                        actionList.addAll(actions);
-                        return CompletableFuture.completedFuture(null);
-                    }
-                })
-                .build();
+            @Override
+            public CompletableFuture<Void> execute(List<Action> actions) {
+                actionList.addAll(actions);
+                return CompletableFuture.completedFuture(null);
+            }
+        });
 
         TimerUtil timerUtil = new TimerUtil();
         detector.onLeaderChanged(true);
@@ -359,15 +313,9 @@ public class AnomalyDetectorTest {
 
     @Test
     public void testReconfigure() {
-        AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(Collections.emptyMap(), false);
-        List<Goal> goals = config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
-
-        AnomalyDetector detector = new AnomalyDetectorBuilder()
-                .clusterModel(Mockito.mock(ClusterModel.class))
-                .detectIntervalMs(Long.MAX_VALUE)
-                .addGoals(goals)
-                .executor(Mockito.mock(ActionExecutorService.class))
-                .build();
+        AnomalyDetectorImpl detector = new AnomalyDetectorImpl(Map.of(
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, Long.MAX_VALUE
+        ), null, Mockito.mock(ClusterModel.class), Mockito.mock(ActionExecutorService.class));
         Assertions.assertEquals(2, detector.goals().size());
         Assertions.assertEquals(NetworkInUsageDistributionGoal.class, detector.goals().get(0).getClass());
         Assertions.assertEquals(1024 * 1024, ((AbstractResourceUsageDistributionGoal) detector.goals().get(0)).getUsageDetectThreshold());

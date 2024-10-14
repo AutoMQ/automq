@@ -18,11 +18,11 @@ import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.goals.GoalUtils;
+import kafka.autobalancer.listeners.LeaderChangeListener;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModel;
 import kafka.autobalancer.model.ClusterModelSnapshot;
 import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
-import kafka.autobalancer.services.AbstractResumableService;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
@@ -46,40 +46,31 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
-public class AnomalyDetector extends AbstractResumableService {
+public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements LeaderChangeListener {
     private static final double MAX_PARTITION_REASSIGNMENT_RATIO = 0.5;
     private static final int MAX_REASSIGNMENT_SOURCE_NODE_COUNT = 10;
     private static final long MAX_REASSIGNMENT_EXECUTION_TIME_MS = 60000;
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
     private final ActionExecutorService actionExecutor;
-    private final Lock configChangeLock;
-    private volatile List<Goal> goalsByPriority;
-    private volatile Set<Integer> excludedBrokers;
-    private volatile Set<String> excludedTopics;
-    private volatile long detectInterval;
-    private volatile long maxTolerateMetricsDelayMs;
-    private volatile int executionConcurrency;
-    private volatile long executionIntervalMs;
+    private final Lock configChangeLock = new ReentrantLock();
+    private List<Goal> goalsByPriority;
+    private Set<Integer> excludedBrokers;
+    private Set<String> excludedTopics;
+    private long detectInterval;
+    private long maxTolerateMetricsDelayMs;
+    private int executionConcurrency;
+    private long executionIntervalMs;
     private volatile boolean isLeader = false;
     private volatile Map<Integer, Boolean> slowBrokers = new HashMap<>();
 
-    protected AnomalyDetector(LogContext logContext, long detectIntervalMs, long maxTolerateMetricsDelayMs, int executionConcurrency,
-                    long executionIntervalMs, ClusterModel clusterModel, ActionExecutorService actionExecutor,
-                    List<Goal> goals, Set<Integer> excludedBrokers, Set<String> excludedTopics) {
+    public AnomalyDetectorImpl(Map<String, ?> configs, LogContext logContext, ClusterModel clusterModel, ActionExecutorService actionExecutor) {
         super(logContext);
-        this.configChangeLock = new ReentrantLock();
-        this.detectInterval = detectIntervalMs;
-        this.maxTolerateMetricsDelayMs = maxTolerateMetricsDelayMs;
-        this.executionConcurrency = executionConcurrency;
-        this.executionIntervalMs = executionIntervalMs;
+        this.configure(configs);
         this.clusterModel = clusterModel;
         this.actionExecutor = actionExecutor;
         this.executorService = Executors.newScheduledThreadPool(2, new AutoBalancerThreadFactory("anomaly-detector"));
-        this.goalsByPriority = goals;
         Collections.sort(this.goalsByPriority);
-        this.excludedBrokers = excludedBrokers;
-        this.excludedTopics = excludedTopics;
         this.executorService.schedule(this::detect, detectInterval, TimeUnit.MILLISECONDS);
         this.executorService.scheduleAtFixedRate(() -> {
             if (isRunning()) {
@@ -123,6 +114,11 @@ public class AnomalyDetector extends AbstractResumableService {
         return this.excludedBrokers;
     }
 
+    public boolean isLeader() {
+        return this.isLeader;
+    }
+
+    @Override
     public void onLeaderChanged(boolean isLeader) {
         this.isLeader = isLeader;
     }
@@ -131,7 +127,32 @@ public class AnomalyDetector extends AbstractResumableService {
         return new ArrayList<>(goalsByPriority);
     }
 
-    public void validateReconfiguration(Map<String, Object> configs) throws ConfigException {
+    @Override
+    public void configure(Map<String, ?> rawConfigs) {
+        AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(rawConfigs, false);
+        this.maxTolerateMetricsDelayMs = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS);
+        this.detectInterval = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS);
+        this.executionConcurrency = config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY);
+        this.excludedBrokers = config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS)
+            .stream().map(Integer::parseInt).collect(Collectors.toSet());
+        ClusterStats.getInstance().updateExcludedBrokers(this.excludedBrokers);
+        this.excludedTopics = new HashSet<>(config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS));
+        this.executionIntervalMs = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
+        List<Goal> goals = config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
+        Collections.sort(goals);
+        this.goalsByPriority = goals;
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        // NOT USED
+        return Collections.emptySet();
+    }
+
+    @SuppressWarnings("NPathComplexity")
+    @Override
+    public void validateReconfiguration(Map<String, ?> rawConfigs) throws ConfigException {
+        Map<String, Object> configs = new HashMap<>(rawConfigs);
         try {
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS)) {
                 long metricsDelay = ConfigUtils.getInteger(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS);
@@ -187,7 +208,9 @@ public class AnomalyDetector extends AbstractResumableService {
         }
     }
 
-    public void reconfigure(Map<String, Object> configs) {
+    @Override
+    public void reconfigure(Map<String, ?> rawConfigs) {
+        Map<String, Object> configs = new HashMap<>(rawConfigs);
         configChangeLock.lock();
         try {
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ACCEPTED_METRICS_DELAY_MS)) {
@@ -247,6 +270,7 @@ public class AnomalyDetector extends AbstractResumableService {
         return this.running.get() && this.isLeader;
     }
 
+    @SuppressWarnings("NPathComplexity")
     long detect0() throws Exception {
         long detectInterval;
         Set<Integer> excludedBrokers;
