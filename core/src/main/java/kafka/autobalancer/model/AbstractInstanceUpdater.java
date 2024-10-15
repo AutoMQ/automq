@@ -280,6 +280,10 @@ public abstract class AbstractInstanceUpdater {
             return trusted;
         }
 
+        public void setTrusted(boolean isTrusted) {
+            this.trusted = isTrusted;
+        }
+
         public double getValue() {
             return value;
         }
