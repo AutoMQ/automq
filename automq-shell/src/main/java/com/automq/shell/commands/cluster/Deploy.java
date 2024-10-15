@@ -133,7 +133,7 @@ public class Deploy implements Callable<Integer> {
     private static String genServerStartupCmd(ClusterTopology topo, Node node) {
         StringBuilder sb = new StringBuilder();
         appendEnvs(sb, topo);
-        sb.append("./bin/kafka-server-start.sh config/kraft/server.properties ");
+        sb.append("./bin/kafka-server-start.sh -daemon config/kraft/server.properties ");
         appendCommonConfigsOverride(sb, topo, node);
         appendExtConfigsOverride(sb, topo.getGlobal().getConfig());
         return sb.toString();
