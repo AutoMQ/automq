@@ -149,7 +149,7 @@ public class Deploy implements Callable<Integer> {
     }
 
     private static void appendEnvs(StringBuilder sb, ClusterTopology topo) {
-        topo.getGlobal().getEnvs().forEach(env -> sb.append(env.getName()).append("=").append(env.getValue()).append(" "));
+        topo.getGlobal().getEnvs().forEach(env -> sb.append(env.getName()).append("='").append(env.getValue()).append("' "));
     }
 
     private static void appendCommonConfigsOverride(StringBuilder sb, ClusterTopology topo, Node node) {
