@@ -159,7 +159,7 @@ public class Deploy implements Callable<Integer> {
         sb.append("--override cluster.id=").append(topo.getGlobal().getClusterId()).append(" ");
         sb.append("--override node.id=").append(node.getNodeId()).append(" ");
         sb.append("--override controller.quorum.voters=").append(getQuorumVoters(topo)).append(" ");
-        sb.append("--override advertised.listener=").append(node.getHost()).append(":9092").append(" ");
+        sb.append("--override advertised.listeners=").append(node.getHost()).append(":9092").append(" ");
     }
 
     private static void appendExtConfigsOverride(StringBuilder sb, String rawConfigs) {
