@@ -26,6 +26,7 @@ from kafkatest.services.verifiable_producer import VerifiableProducer
 from kafkatest.tests.produce_consume_validate import ProduceConsumeValidateTest
 from kafkatest.utils import is_int
 import random
+import time
 
 class TestSnapshots(ProduceConsumeValidateTest):
 
@@ -251,6 +252,7 @@ class TestSnapshots(ProduceConsumeValidateTest):
         for node in self.controller_nodes:
             self.logger.debug("Restarting node: %s", self.kafka.controller_quorum.who_am_i(node))
             self.kafka.controller_quorum.clean_node(node)
+            time.sleep(10) # AutoMQ inject, try fix the test in azure runner
             self.kafka.controller_quorum.start_node(node)
 
         # Scenario -- Re-init controllers with a clean kafka dir and
@@ -261,6 +263,7 @@ class TestSnapshots(ProduceConsumeValidateTest):
         for node in self.controller_nodes:
             self.logger.debug("Restarting node: %s", self.kafka.controller_quorum.who_am_i(node))
             self.kafka.controller_quorum.clean_node(node)
+            time.sleep(10) # AutoMQ inject
             # Now modify the cluster to create more metadata changes
             self.topics_created += self.create_n_topics(topic_count=5)
             self.kafka.controller_quorum.start_node(node)
