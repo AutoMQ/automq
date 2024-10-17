@@ -27,6 +27,7 @@ import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.metadata.stream.StreamTags
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpointFile
 import org.apache.kafka.storage.internals.log._
@@ -583,6 +584,7 @@ class ElasticLog(val metaStream: MetaStream,
 object ElasticLog extends Logging {
     private val APPEND_PERMIT = 100 * 1024 * 1024
     private val APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT)
+    S3StreamKafkaMetricsManager.setLogAppendPermitNumSupplier(() => APPEND_PERMIT_SEMAPHORE.availablePermits())
 
     private val LAST_RECORD_TIMESTAMP = new AtomicLong()
     private val KafkaMetricsGroup = new KafkaMetricsGroup(ElasticLog.getClass)

@@ -63,6 +63,8 @@ public class S3StreamKafkaMetricsManager {
     private static Supplier<Map<String, Integer>> fetchLimiterPermitNumSupplier = Collections::emptyMap;
     private static ObservableLongGauge fetchPendingTaskNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier = Collections::emptyMap;
+    private static ObservableLongGauge logAppendPermitNumMetrics = new NoopObservableLongGauge();
+    private static Supplier<Integer> logAppendPermitNumSupplier = () -> 0;
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
     private static ObservableLongGauge slowBrokerMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<Integer, Boolean>> slowBrokerSupplier = Collections::emptyMap;
@@ -86,6 +88,7 @@ public class S3StreamKafkaMetricsManager {
         initAutoBalancerMetrics(meter, prefix);
         initObjectMetrics(meter, prefix);
         initFetchMetrics(meter, prefix);
+        initLogAppendMetrics(meter, prefix);
         initPartitionStatusStatisticsMetrics(meter, prefix);
     }
 
@@ -203,6 +206,17 @@ public class S3StreamKafkaMetricsManager {
                 });
     }
 
+    private static void initLogAppendMetrics(Meter meter, String prefix) {
+        logAppendPermitNumMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LOG_APPEND_PERMIT_NUM)
+                .setDescription("The number of permits in elastic log append limiter")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        result.record(logAppendPermitNumSupplier.get(), metricsConfig.getBaseAttributes());
+                    }
+                });
+    }
+
     private static void initPartitionStatusStatisticsMetrics(Meter meter, String prefix) {
         partitionStatusStatisticsMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.PARTITION_STATUS_STATISTICS_METRIC_NAME)
                 .setDescription("The statistics of partition status")
@@ -246,6 +260,10 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setFetchPendingTaskNumSupplier(Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier) {
         S3StreamKafkaMetricsManager.fetchPendingTaskNumSupplier = fetchPendingTaskNumSupplier;
+    }
+
+    public static void setLogAppendPermitNumSupplier(Supplier<Integer> logAppendPermitNumSupplier) {
+        S3StreamKafkaMetricsManager.logAppendPermitNumSupplier = logAppendPermitNumSupplier;
     }
 
     public static void setSlowBrokerSupplier(Supplier<Map<Integer, Boolean>> slowBrokerSupplier) {
