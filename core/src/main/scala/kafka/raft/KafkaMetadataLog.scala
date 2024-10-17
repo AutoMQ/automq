@@ -569,6 +569,10 @@ object KafkaMetadataLog extends Logging {
     // Disable time and byte retention when deleting segments
     props.setProperty(TopicConfig.RETENTION_MS_CONFIG, "-1")
     props.setProperty(TopicConfig.RETENTION_BYTES_CONFIG, "-1")
+    // AutoMQ for Kafka inject start
+    // Override the index interval bytes to 4KB, which is the default value in Apache Kafka.
+    props.setProperty(TopicConfig.INDEX_INTERVAL_BYTES_CONFIG, "4096")
+    // AutoMQ for Kafka inject end
     LogConfig.validate(props)
     val defaultLogConfig = new LogConfig(props)
 
