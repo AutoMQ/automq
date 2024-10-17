@@ -602,7 +602,7 @@ object ElasticLog extends Logging {
 
     private val META_SCHEDULE_EXECUTOR = Executors.newScheduledThreadPool(1, ThreadUtils.createThreadFactory("log-meta-schedule-executor", true))
 
-    private def formatStreamKey(namespace: String, topicPartition: TopicPartition, topicId: Option[Uuid]): String = {
+    def formatStreamKey(namespace: String, topicPartition: TopicPartition, topicId: Option[Uuid]): String = {
         if (topicId.isEmpty) {
             namespace + "/" + topicPartition.topic() + "/" + topicPartition.partition()
         } else {
