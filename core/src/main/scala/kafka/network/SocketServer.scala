@@ -1211,7 +1211,7 @@ private[kafka] class Processor(
         if (response == null) {
           throw new IllegalStateException(s"Send for ${send.destinationId} completed, but not in `inflightResponses`")
         }
-        
+
         // Invoke send completion callback, and then update request metrics since there might be some
         // request metrics got updated during callback
         response.onComplete.foreach(onComplete => onComplete(send))
@@ -1264,6 +1264,9 @@ private[kafka] class Processor(
         }.remoteHost
         inflightResponses.entrySet().removeIf(e => {
           val remove = connectionId.equals(e.getValue.request.context.connectionId)
+          if (remove) {
+            updateRequestMetrics(e.getValue)
+          }
           remove
         })
         channelContexts.remove(connectionId)
