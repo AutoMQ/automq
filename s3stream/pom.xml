@@ -16,7 +16,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.automq.elasticstream</groupId>
     <artifactId>s3stream</artifactId>
-    <version>1.2.0-SNAPSHOT</version>
+    <version>1.2.1-SNAPSHOT</version>
     <properties>
         <mockito-core.version>5.5.0</mockito-core.version>
         <junit-jupiter.version>5.10.0</junit-jupiter.version>
