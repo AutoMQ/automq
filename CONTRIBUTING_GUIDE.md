@@ -34,27 +34,26 @@ The usual workflow of code contribution is:
 
 Pull Request reviews are done on a regular basis.
 
-:::info
-Please make sure you respond to our feedback/questions and sign our CLA.
-
-Pull Requests without updates will be closed due inactivity.
-:::
+> [!NOTE] 
+> Please make sure you respond to our feedback/questions and sign our CLA.
+>
+> Pull Requests without updates will be closed due inactivity.
 
 ## Requirement
 
 | Requirement            | Version    |
 |------------------------|------------|
 | Compiling requirements | JDK 17     |
-| Compiling requirements | Scale 2.13 |
+| Compiling requirements | Scala 2.13 |
 | Running requirements   | JDK 17     |
 
-> Tips: You can refer the [document](https://www.scala-lang.org/download/2.13.12.html) to install Scale 2.13
+> Tips: You can refer the [document](https://www.scala-lang.org/download/2.13.12.html) to install Scala 2.13
 
 ## Local Debug with IDEA
 
 ### Gradle
 
-Build AutoMQ is the same with Apache Kafka. Kafka uses Gradle as its project management tool. The management of Gradle projects is based on scripts written in Groovy syntax, and within the Kafka project, the main project management configuration is found in the build.gradle file located in the root directory, which serves a similar function to the root POM in Maven projects. Gradle also supports configuring a build.gradle for each module separately, but Kafka does not do this; all modules are managed by the build.gradle file in the root directory.
+Building AutoMQ is the same as Apache Kafka. Kafka uses Gradle as its project management tool. The management of Gradle projects is based on scripts written in Groovy syntax, and within the Kafka project, the main project management configuration is found in the `build.gradle` file located in the root directory, which serves a similar function to the root POM in Maven projects. Gradle also supports configuring a `build.gradle` for each module separately, but Kafka does not do this; all modules are managed by the build.gradle file in the root directory.
 
 It is not recommended to manually install Gradle. The gradlew script in the root directory will automatically download Gradle for you, and the version is also specified by the gradlew script.
 
@@ -64,7 +63,7 @@ It is not recommended to manually install Gradle. The gradlew script in the root
 ```
 
 ### Prepare S3 service
-Refer this [doc](https://docs.localstack.cloud/getting-started/installation/) to install localstack to mock a local s3 service or use AWS S3 service directly. 
+Refer to this [documentation](https://docs.localstack.cloud/getting-started/installation/) to install `localstack` to mock a local s3 service or use AWS S3 service directly. 
 
 If you are using localstack then create a bucket with the following command:
 ```
@@ -95,7 +94,7 @@ Format Metadata Catalog:
 ```
 bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties
 ```
-### IDEA Start Configuration
+### IDE Start Configuration
 | Item            | Value    |
 |------------------------|------------|
 | Main | core/src/main/scala/kafka/Kafka.scala     |
