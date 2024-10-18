@@ -152,4 +152,18 @@ public class AsyncNetworkBandwidthLimiterTest {
         result.join();
         cf2.join();
     }
+
+    @Test
+    @Timeout(10)
+    public void testThrottleConsumeWithLargeChunk() {
+        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 1024 * 1024, 100);
+        CompletableFuture<Void> bypassCf = bucket.consume(ThrottleStrategy.BYPASS, 1024 * 1024);
+        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 10 * 1024 * 1024);
+        CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
+            Assertions.assertNull(e);
+            Assertions.assertEquals(0, bucket.getAvailableTokens());
+            Assertions.assertTrue(bypassCf.isDone());
+        });
+        result.join();
+    }
 }
