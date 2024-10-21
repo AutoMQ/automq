@@ -581,6 +581,12 @@ class KRaftMetadataCache(
     val lock = imageLock
     lock.lock()
     try {
+      newImage.retain()
+
+      if (_currentImage != MetadataImage.EMPTY) {
+        _currentImage.release()
+      }
+
       _currentImage = newImage
     } finally {
       lock.unlock()
