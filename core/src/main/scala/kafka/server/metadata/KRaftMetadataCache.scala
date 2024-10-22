@@ -98,7 +98,7 @@ class KRaftMetadataCache(
       val key = ElasticLog.formatStreamKey(ElasticLogManager.NAMESPACE, topicPartition, Some(topicId))
       val buffer = image.kv().getValue(key)
       if (buffer == null) {
-        error(s"topic ${topicPartition} topicId ${topicId.toString} key $key not found ")
+        // when immediately request after topic creation, the key may not be found
         return false
       }
 
