@@ -406,7 +406,7 @@ public class S3ObjectControlManager {
                 preparedObjectsTimeouts.put(obj.getObjectId(), newPreparedObjectTimeout(obj.getObjectId(), obj.getTimestamp()));
             }
         }
-        if (now - lastPreparedObjectsSwitchTimestamp > TimeUnit.HOURS.toMillis(60)) {
+        if (now - lastPreparedObjectsSwitchTimestamp > TimeUnit.MINUTES.toMillis(60)) {
             // The preparedObjectsTimeouts isn't a Timeline struct, so it's not consistent with the preparedObjects0/1.
             // Consider the following scenario:
             // 1. Prepare(obj1), add timeout check.
