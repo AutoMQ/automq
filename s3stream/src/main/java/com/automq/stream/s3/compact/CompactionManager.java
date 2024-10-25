@@ -231,10 +231,6 @@ public class CompactionManager {
                 return CompletableFuture.failedFuture(e);
             }
             return this.streamManager.getStreams(new ArrayList<>(streamIds)).thenAcceptAsync(streamMetadataList -> {
-                if (streamMetadataList.isEmpty()) {
-                    logger.info("No stream metadata found for stream set objects");
-                    return;
-                }
                 filterInvalidStreamDataBlocks(streamMetadataList);
                 this.compact(streamMetadataList, objectMetadataList);
             }, compactThreadPool);
@@ -425,10 +421,6 @@ public class CompactionManager {
             List<Long> streamIds = streamDataBlockMap.values().stream().flatMap(Collection::stream)
                 .map(StreamDataBlock::getStreamId).distinct().collect(Collectors.toList());
             this.streamManager.getStreams(streamIds).thenAcceptAsync(streamMetadataList -> {
-                if (streamMetadataList.isEmpty()) {
-                    logger.info("No stream metadata found for stream set objects");
-                    return;
-                }
                 filterInvalidStreamDataBlocks(streamMetadataList);
                 forceSplitObjects(streamMetadataList, objectMetadataList);
                 cf.complete(null);
