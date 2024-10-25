@@ -201,6 +201,72 @@ public class CompactionManagerTest extends CompactionTestBase {
         Assertions.assertTrue(request.getStreamRanges().isEmpty());
     }
 
+
+    @Test
+    public void testForceSplitWithNonExistStream() {
+        List<StreamMetadata> streamMetadataList = this.streamManager.getStreams(Collections.emptyList()).join();
+        streamMetadataList = streamMetadataList.stream().filter(s -> s.streamId() != STREAM_0).collect(Collectors.toList());
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
+        when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
+
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(0)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
+        CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_0), request.getCompactedObjectIds());
+        Assertions.assertEquals(2, request.getStreamObjects().size());
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(0)), request));
+
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(1)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
+        request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(1));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_1), request.getCompactedObjectIds());
+        Assertions.assertEquals(1, request.getStreamObjects().size());
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(1)), request));
+
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(2)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
+        request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(2));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_2), request.getCompactedObjectIds());
+        Assertions.assertEquals(2, request.getStreamObjects().size());
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(2)), request));
+    }
+
+    @Test
+    public void testForceSplitWithEmptyStreamList() {
+        List<StreamMetadata> streamMetadataList = Collections.emptyList();
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
+        when(config.streamSetObjectCompactionForceSplitPeriod()).thenReturn(0);
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
+
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(0)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
+        CommitStreamSetObjectRequest request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(0));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_0), request.getCompactedObjectIds());
+        Assertions.assertTrue(request.getStreamObjects().isEmpty());
+        Assertions.assertTrue(request.getStreamRanges().isEmpty());
+
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(1)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
+        request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(1));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_1), request.getCompactedObjectIds());
+        Assertions.assertTrue(request.getStreamObjects().isEmpty());
+        Assertions.assertTrue(request.getStreamRanges().isEmpty());
+
+        compactionManager.updateStreamDataBlockMap(List.of(s3ObjectMetadata.get(2)));
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
+        request = compactionManager.buildSplitRequest(streamMetadataList, s3ObjectMetadata.get(2));
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertEquals(List.of(OBJECT_2), request.getCompactedObjectIds());
+        Assertions.assertTrue(request.getStreamObjects().isEmpty());
+        Assertions.assertTrue(request.getStreamRanges().isEmpty());
+    }
+
     @Test
     public void testForceSplitWithException() {
         S3AsyncClient s3AsyncClient = Mockito.mock(S3AsyncClient.class);
@@ -462,6 +528,21 @@ public class CompactionManagerTest extends CompactionTestBase {
         assertEquals(3, request.getStreamObjects().size());
         assertEquals(1, request.getStreamRanges().size());
 
+        Assertions.assertTrue(checkDataIntegrity(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, request));
+    }
+
+    @Test
+    public void testCompactWithEmptyStream() {
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
+        List<StreamMetadata> streamMetadataList = Collections.emptyList();
+        compactionManager.updateStreamDataBlockMap(S3_WAL_OBJECT_METADATA_LIST);
+        compactionManager.filterInvalidStreamDataBlocks(streamMetadataList);
+        CommitStreamSetObjectRequest request = compactionManager.buildCompactRequest(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST);
+
+        Assertions.assertEquals(-1, request.getObjectId());
+        Assertions.assertTrue(request.getStreamObjects().isEmpty());
+        Assertions.assertTrue(request.getStreamRanges().isEmpty());
+        assertEquals(List.of(OBJECT_0, OBJECT_1, OBJECT_2), request.getCompactedObjectIds());
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, S3_WAL_OBJECT_METADATA_LIST, request));
     }
 
