@@ -1,6 +1,7 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.s3.metrics.TimerUtil
+import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import com.yammer.metrics.core.Histogram
 import kafka.automq.zonerouter.{ClientIdMetadata, NoopProduceRouter, ProduceRouter}
 import kafka.coordinator.transaction.TransactionCoordinator
@@ -76,11 +77,8 @@ class ElasticKafkaApis(
   tokenManager: DelegationTokenManager,
   apiVersionManager: ApiVersionManager,
   clientMetricsManager: Option[ClientMetricsManager],
-  // TODO: rename to delete topic xxx
-  // TODO: limit the queue size
-  val asyncHandleExecutor: ExecutorService = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true)),
-  // TODO: limit the queue size
-  val listOffsetHandleExecutor: ExecutorService = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-list-offset-handle-executor-%d", true))
+  val deleteTopicHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-delete-topic-handle-executor", true, 1000),
+  val listOffsetHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-list-offset-handle-executor", true, 1000)
 ) extends KafkaApis(requestChannel, metadataSupport, replicaManager, groupCoordinator, txnCoordinator,
   autoTopicCreationManager, brokerId, config, configRepository, metadataCache, metrics, authorizer, quotas,
   fetchManager, brokerTopicStats, clusterId, time, tokenManager, apiVersionManager, clientMetricsManager) {
@@ -134,7 +132,7 @@ class ElasticKafkaApis(
           response.asInstanceOf[DeleteTopicsResponse].data().responses().forEach(result => {
             if (result.errorCode() == Errors.NONE.code()) {
               if (!metadataCache.autoMQVersion().isTopicCleanupByControllerSupported) {
-                asyncHandleExecutor.submit(new Runnable {
+                deleteTopicHandleExecutor.submit(new Runnable {
                   override def run(): Unit = {
                     topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
                       ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), result.topicId(), partitionEpochs._2)
