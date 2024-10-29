@@ -30,7 +30,7 @@ import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest
 import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
-import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.utils.Time
 import org.apache.kafka.coordinator.group.GroupCoordinator
 import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer.Authorizer
@@ -41,7 +41,7 @@ import org.apache.kafka.storage.internals.log.{FetchIsolation, FetchParams, Fetc
 import java.util
 import java.util.{Collections, Optional}
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.{ExecutorService, Executors, TimeUnit}
+import java.util.concurrent.{ExecutorService, TimeUnit}
 import java.util.stream.IntStream
 import scala.annotation.nowarn
 import scala.collection.{Map, Seq, mutable}
