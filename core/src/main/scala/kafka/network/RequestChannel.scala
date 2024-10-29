@@ -52,7 +52,6 @@ object RequestChannel extends Logging {
 
   // AutoMQ inject start
   private val AvailableRequestSizeMetric = "AvailableRequestSize"
-  private val MAX_QUEUED_REQUEST_SIZE = 100 * 1024 * 1024
   // AutoMQ inject end
 
   private def isRequestLoggingEnabled: Boolean = requestLogger.underlying.isDebugEnabled
@@ -352,6 +351,9 @@ object RequestChannel extends Logging {
 }
 
 class RequestChannel(val queueSize: Int,
+                     // AutoMQ inject start
+                     val queuedRequestSize: Int,
+                      // AutoMQ inject end
                      val metricNamePrefix: String,
                      time: Time,
                      val metrics: RequestChannel.Metrics) {
@@ -390,6 +392,10 @@ class RequestChannel(val queueSize: Int,
   metricsGroup.newGauge(availableRequestSizeMetricName, () => {
     multiQueuedRequestSizeSemaphore.stream().mapToInt(s => s.availablePermits()).sum()
   })
+
+  def this(queueSize: Int, metricNamePrefix: String, time: Time, metrics: RequestChannel.Metrics) {
+    this(queueSize, Integer.MAX_VALUE, metricNamePrefix, time, metrics)
+  }
   // AutoMQ inject end
 
   metricsGroup.newGauge(responseQueueSizeMetricName, () => {
@@ -406,12 +412,13 @@ class RequestChannel(val queueSize: Int,
       Map(ProcessorMetricTag -> processor.id.toString).asJava)
   }
 
+  // AutoMQ inject start
   def registerNRequestHandler(count: Int): Unit = {
     val queueSize = math.max(this.queueSize / count, 1)
     // TODO: maxQueuedRequestSize will be 100 / 8 = 12.5 MiB as a default.
     //  However, if the request size is too large, it will block at the semaphore.
     //  Currently, the max request size is 1 MiB (max.request.size) by default, so it is not very problematic.
-    val maxQueuedRequestSize = MAX_QUEUED_REQUEST_SIZE / count
+    val maxQueuedRequestSize = this.queuedRequestSize / count
     for (_ <- 0 until count) {
       multiRequestQueue.add(new ArrayBlockingQueue[BaseRequest](queueSize))
       multiQueuedRequestSizeSemaphore.add(new Semaphore(maxQueuedRequestSize))
@@ -419,6 +426,7 @@ class RequestChannel(val queueSize: Int,
     }
     Collections.unmodifiableList(multiRequestQueue)
   }
+  // AutoMQ inject end
 
   def removeProcessor(processorId: Int): Unit = {
     processors.remove(processorId)
