@@ -201,7 +201,7 @@ If you've found a problem with AutoMQ, please open a [GitHub Issues](https://git
 To contribute to AutoMQ please see [Code of Conduct](CODE_OF_CONDUCT.md) and [Contributing Guide](CONTRIBUTING_GUIDE.md).
 We have a list of [good first issues](https://github.com/AutoMQ/automq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process. To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. If you have any questions about the 'good first issue' please feel free to ask. We will do our best to clarify any doubts you may have.
 
-## AutoMQ Business Edition
+## 👍 AutoMQ Business Edition
 The business edition of AutoMQ provides a powerful and easy-to-use control plane to help you manage clusters effortlessly. Meanwhile, the control plane is more powerful in terms of availability and observability compared to the community edition.
 
 > You can check the difference between the community and business editions [here](https://www.automq.com/product).
@@ -224,5 +224,10 @@ No need to bind a credit card, no cost at all. We look forward to receiving valu
 > Here are some of the users who have deployed AutoMQ in their production environments.
 
 [![Click on the link to learn more about AutoMQ user cases.](./docs/images/customer.jpeg "AutoMQ Uses Case")](https://www.automq.com/customer)
+
+## 🐱 The relationship with Apache Kafka
+
+AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). Based on the Apache Kafka codebase, we found an aspect at the LogSegment level, and replaced Kafka's storage layer with our self-developed cloud-first stream storage engine, [S3Stream](https://github.com/AutoMQ/automq/tree/main/s3stream). This engine can provide customers with high-performance, low-cost, and unlimited stream storage capabilities based on cloud storage like EBS WAL and S3. As such, AutoMQ completely retains the code of Kafka's computing layer and is 100% fully compatible with Apache Kafka. We appreciate the work done by the Apache Kafka community and will continue to embrace the Kafka community.
+
 ## 🙋 Contact Us
 Want to learn more, [Talk with our product experts](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh).
