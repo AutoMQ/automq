@@ -418,7 +418,7 @@ class RequestChannel(val queueSize: Int,
     // TODO: maxQueuedRequestSize will be 100 / 8 = 12.5 MiB as a default.
     //  However, if the request size is too large, it will block at the semaphore.
     //  Currently, the max request size is 1 MiB (max.request.size) by default, so it is not very problematic.
-    val maxQueuedRequestSize = this.queuedRequestSize / count
+    val maxQueuedRequestSize = math.max(this.queuedRequestSize / count, 10 * 1024 * 1024)
     for (_ <- 0 until count) {
       multiRequestQueue.add(new ArrayBlockingQueue[BaseRequest](queueSize))
       multiQueuedRequestSizeSemaphore.add(new Semaphore(maxQueuedRequestSize))
