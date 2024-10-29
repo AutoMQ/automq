@@ -83,6 +83,7 @@ class ElasticReplicaManager(
   brokerEpochSupplier: () => Long = () => -1,
   addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
   directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP,
+  // TODO: limit the queue size
   private val fastFetchExecutor: ExecutorService = Executors.newFixedThreadPool(4, ThreadUtils.createThreadFactory("kafka-apis-fast-fetch-executor-%d", true)),
   private val slowFetchExecutor: ExecutorService = Executors.newFixedThreadPool(12, ThreadUtils.createThreadFactory("kafka-apis-slow-fetch-executor-%d", true)),
   private val partitionMetricsCleanerExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("kafka-partition-metrics-cleaner", true)),

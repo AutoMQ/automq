@@ -155,6 +155,7 @@ public class SocketServerConfigs {
             String.format("This must be configured to be less than %s to prevent connection timeout.", CONNECTIONS_MAX_IDLE_MS_CONFIG);
 
     public static final String QUEUED_MAX_REQUESTS_CONFIG = "queued.max.requests";
+    // TODO: limit the total size of the queue
     public static final int QUEUED_MAX_REQUESTS_DEFAULT = 500;
     public static final String QUEUED_MAX_REQUESTS_DOC = "The number of queued requests allowed for data-plane, before blocking the network threads";
 

@@ -76,7 +76,10 @@ class ElasticKafkaApis(
   tokenManager: DelegationTokenManager,
   apiVersionManager: ApiVersionManager,
   clientMetricsManager: Option[ClientMetricsManager],
+  // TODO: rename to delete topic xxx
+  // TODO: limit the queue size
   val asyncHandleExecutor: ExecutorService = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true)),
+  // TODO: limit the queue size
   val listOffsetHandleExecutor: ExecutorService = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-list-offset-handle-executor-%d", true))
 ) extends KafkaApis(requestChannel, metadataSupport, replicaManager, groupCoordinator, txnCoordinator,
   autoTopicCreationManager, brokerId, config, configRepository, metadataCache, metrics, authorizer, quotas,
