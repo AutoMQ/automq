@@ -135,7 +135,7 @@ public abstract class AbstractInstanceUpdater {
         public void addLoad(byte resource, Load load) {
             this.loads.compute(resource, (k, v) -> {
                 if (v == null) {
-                    return load;
+                    return new Load(load);
                 }
                 v.add(load);
                 return v;
@@ -145,7 +145,7 @@ public abstract class AbstractInstanceUpdater {
         public void reduceLoad(byte resource, Load load) {
             this.loads.compute(resource, (k, v) -> {
                 if (v == null) {
-                    return load;
+                    return new Load(load);
                 }
                 v.reduceValue(load);
                 return v;
