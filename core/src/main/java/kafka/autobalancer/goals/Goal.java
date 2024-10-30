@@ -62,6 +62,10 @@ public interface Goal extends Reconfigurable, Comparable<Goal> {
         return broker.getMetricVersion().isGoalSupported(this) && !broker.isMetricsOutOfDate();
     }
 
+    default void initialize(ClusterModelSnapshot cluster) {
+        initialize(getEligibleBrokers(cluster));
+    }
+
     void initialize(Collection<BrokerUpdater.Broker> brokers);
 
     boolean isInitialized();
