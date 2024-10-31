@@ -11,10 +11,12 @@
 
 package org.apache.kafka.server.common.automq;
 
-import com.automq.stream.Version;
-import java.util.Map;
 import org.apache.kafka.server.common.FeatureVersion;
 import org.apache.kafka.server.common.MetadataVersion;
+
+import com.automq.stream.Version;
+
+import java.util.Map;
 
 public enum AutoMQVersion implements FeatureVersion {
 

@@ -22,6 +22,7 @@ import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 import com.yammer.metrics.core.Meter;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -66,8 +67,21 @@ public class BrokerTopicMetrics {
         this(Optional.of(name), remoteStorageEnabled);
     }
 
+    // AutoMQ inject start
     private BrokerTopicMetrics(Optional<String> name, boolean remoteStorageEnabled) {
-        this.tags = name.map(s -> Collections.singletonMap("topic", s)).orElse(Collections.emptyMap());
+        this(name, Collections.emptyMap(), remoteStorageEnabled);
+    }
+
+    protected BrokerTopicMetrics(Optional<String> name, Map<String, String> tagsAddon, boolean remoteStorageEnabled) {
+        Map<String, String> newTags = Collections.emptyMap();
+        if (!(tagsAddon.isEmpty() && name.isEmpty())) {
+            newTags = new HashMap<>(tagsAddon);
+            if (name.isPresent()) {
+                newTags.put("topic", name.get());
+            }
+        }
+        this.tags = newTags;
+    // AutoMQ inject start
 
         metricTypeMap.put(MESSAGE_IN_PER_SEC, new MeterWrapper(MESSAGE_IN_PER_SEC, "messages"));
         metricTypeMap.put(BYTES_IN_PER_SEC, new MeterWrapper(BYTES_IN_PER_SEC, "bytes"));

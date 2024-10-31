@@ -17,13 +17,13 @@
 package org.apache.kafka.server.common;
 
 import org.apache.kafka.common.feature.SupportedVersionRange;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * This is enum for the various features implemented for Kafka clusters.

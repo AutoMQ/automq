@@ -15,12 +15,10 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.storage.log.metrics.BrokerTopicMetrics;
 
 import java.util.Map;
+import java.util.Optional;
 
 public class BrokerTopicPartitionMetrics extends BrokerTopicMetrics {
-    final Map<String, String> tags;
-
     public BrokerTopicPartitionMetrics(TopicPartition topicPartition) {
-        super(topicPartition.topic(), false);
-        this.tags = Map.of("topic", topicPartition.topic(), "partition", String.valueOf(topicPartition.partition()));
+        super(Optional.of(topicPartition.topic()), Map.of("partition", String.valueOf(topicPartition.partition())), false);
     }
 }
