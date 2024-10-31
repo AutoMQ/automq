@@ -52,7 +52,6 @@ import org.apache.kafka.metadata.placement.StripedReplicaPlacer;
 import org.apache.kafka.metadata.placement.UsableBroker;
 import org.apache.kafka.raft.QuorumConfig;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
-import org.apache.kafka.server.common.Features;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
@@ -97,6 +96,7 @@ public class ClusterControlManager {
         private FeatureControlManager featureControl = null;
         private boolean zkMigrationEnabled = false;
         private BrokerUncleanShutdownHandler brokerUncleanShutdownHandler = null;
+        private String interBrokerListenerName = "PLAINTEXT";
 
         // AutoMQ for Kafka inject start
         private List<String> quorumVoters;
@@ -152,6 +152,11 @@ public class ClusterControlManager {
             return this;
         }
 
+        Builder setInterBrokerListenerName(String interBrokerListenerName) {
+            this.interBrokerListenerName = interBrokerListenerName;
+            return this;
+        }
+
         ClusterControlManager build() {
             if (logContext == null) {
                 logContext = new LogContext();
@@ -181,6 +186,7 @@ public class ClusterControlManager {
                 zkMigrationEnabled,
                 brokerUncleanShutdownHandler,
                 quorumVoters
+                interBrokerListenerName
             );
         }
     }
@@ -275,6 +281,11 @@ public class ClusterControlManager {
     private final BrokerUncleanShutdownHandler brokerUncleanShutdownHandler;
 
     /**
+     * The statically configured inter-broker listener name.
+     */
+    private final String interBrokerListenerName;
+
+    /**
      * Maps controller IDs to controller registrations.
      */
     private final TimelineHashMap<Integer, ControllerRegistration> controllerRegistrations;
@@ -304,7 +315,10 @@ public class ClusterControlManager {
         FeatureControlManager featureControl,
         boolean zkMigrationEnabled,
         BrokerUncleanShutdownHandler brokerUncleanShutdownHandler,
-        List<String> quorumVoters
+        // AutoMQ inject start
+        List<String> quorumVoters,
+        // AutoMQ inject end
+        String interBrokerListenerName
     ) {
         this.logContext = logContext;
         this.clusterId = clusterId;
@@ -324,6 +338,7 @@ public class ClusterControlManager {
         // AutoMQ for Kafka inject start
         this.maxControllerId = QuorumConfig.parseVoterConnections(quorumVoters).keySet().stream().max(Integer::compareTo).orElse(0);
         // AutoMQ for Kafka inject end
+        this.interBrokerListenerName = interBrokerListenerName;
     }
 
     ReplicaPlacer replicaPlacer() {
@@ -420,6 +435,13 @@ public class ClusterControlManager {
                 "brokers until the metadata migration is complete.");
         }
 
+        if (request.isMigratingZkBroker()) {
+            if (request.listeners().find(interBrokerListenerName) == null) {
+                throw new InvalidRegistrationException("Broker does not have the current inter.broker.listener " +
+                        interBrokerListenerName);
+            }
+        }
+
         if (featureControl.metadataVersion().isDirectoryAssignmentSupported()) {
             if (request.logDirs().isEmpty()) {
                 throw new InvalidRegistrationException("No directories specified in request");
@@ -448,18 +470,34 @@ public class ClusterControlManager {
             setRack(request.rack()).
             setEndPoints(listenerInfo.toBrokerRegistrationRecord());
 
+        // Track which finalized features we have not yet verified are supported by the broker.
+        Map<String, Short> unverifiedFeatures = new HashMap<>(finalizedFeatures.featureMap());
+
+        // Check every broker feature version range includes the finalized version.
         for (BrokerRegistrationRequestData.Feature feature : request.features()) {
             record.features().add(processRegistrationFeature(brokerId, finalizedFeatures, feature));
+            unverifiedFeatures.remove(feature.name());
         }
+        // Brokers that don't send a supported metadata.version range are assumed to only
+        // support the original metadata.version.
         if (request.features().find(MetadataVersion.FEATURE_NAME) == null) {
-            // Brokers that don't send a supported metadata.version range are assumed to only
-            // support the original metadata.version.
             record.features().add(processRegistrationFeature(brokerId, finalizedFeatures,
-                    new BrokerRegistrationRequestData.Feature().
-                            setName(MetadataVersion.FEATURE_NAME).
-                            setMinSupportedVersion(MetadataVersion.MINIMUM_KRAFT_VERSION.featureLevel()).
-                            setMaxSupportedVersion(MetadataVersion.MINIMUM_KRAFT_VERSION.featureLevel())));
+                new BrokerRegistrationRequestData.Feature().
+                    setName(MetadataVersion.FEATURE_NAME).
+                    setMinSupportedVersion(MetadataVersion.MINIMUM_KRAFT_VERSION.featureLevel()).
+                    setMaxSupportedVersion(MetadataVersion.MINIMUM_KRAFT_VERSION.featureLevel())));
+            unverifiedFeatures.remove(MetadataVersion.FEATURE_NAME);
         }
+        // We also need to check every controller feature is supported by the broker.
+        unverifiedFeatures.forEach((featureName, finalizedVersion) -> {
+            if (finalizedVersion != 0 && request.features().findAll(featureName).isEmpty()) {
+                processRegistrationFeature(brokerId, finalizedFeatures,
+                    new BrokerRegistrationRequestData.Feature().
+                        setName(featureName).
+                        setMinSupportedVersion((short) 0).
+                        setMaxSupportedVersion((short) 0));
+            }
+        });
         if (featureControl.metadataVersion().isDirectoryAssignmentSupported()) {
             record.setLogDirs(request.logDirs());
         }
@@ -532,15 +570,15 @@ public class ClusterControlManager {
         short finalized = finalizedFeatures.versionOrDefault(feature.name(), (short) defaultVersion);
         if (!VersionRange.of(feature.minSupportedVersion(), feature.maxSupportedVersion()).contains(finalized)) {
             throw new UnsupportedVersionException("Unable to register because the broker " +
-                "does not support version " + finalized + " of " + feature.name() +
-                    ". It wants a version between " + feature.minSupportedVersion() + " and " +
+                "does not support finalized version " + finalized + " of " + feature.name() +
+                    ". The broker wants a version between " + feature.minSupportedVersion() + " and " +
                     feature.maxSupportedVersion() + ", inclusive.");
         }
         // A feature is not found in the finalizedFeature map if it is unknown to the controller or set to 0 (feature not enabled).
-        // Only log if the feature name is not known by the controller.
-        if (!Features.PRODUCTION_FEATURE_NAMES.contains(feature.name()))
-            log.warn("Broker {} registered with feature {} that is unknown to the controller",
-                    brokerId, feature.name());
+        if (!finalizedFeatures.featureNames().contains(feature.name()))
+            log.debug("Broker {} registered with version range ({}, {}] of feature {} which controller does not know " +
+                    "or has finalized version of 0.",
+                    brokerId, feature.minSupportedVersion(), feature.maxSupportedVersion(), feature.name());
         return new BrokerFeature().
                 setName(feature.name()).
                 setMinSupportedVersion(feature.minSupportedVersion()).

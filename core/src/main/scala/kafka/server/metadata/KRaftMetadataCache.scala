@@ -593,6 +593,10 @@ class KRaftMetadataCache(
     }
   }
 
+  def getImage(): MetadataImage = {
+    _currentImage
+  }
+
   override def config(configResource: ConfigResource): Properties =
     _currentImage.configs().configProperties(configResource)
 

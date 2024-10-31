@@ -14,16 +14,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.raft.errors;
+package org.apache.kafka.server.metrics;
 
-/**
- * Indicates that an append operation cannot be completed because it would have resulted in an
- * unexpected base offset.
- */
-public class UnexpectedBaseOffsetException extends RaftException {
-    private static final long serialVersionUID = 1L;
+import com.yammer.metrics.core.MetricName;
 
-    public UnexpectedBaseOffsetException(String s) {
-        super(s);
+import org.junit.jupiter.api.Test;
+
+import java.util.Collections;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class KafkaMetricsGroupTest {
+    @Test
+    public void testConstructorWithPackageAndSimpleName() {
+        String packageName = "testPackage";
+        String simpleName = "testSimple";
+        KafkaMetricsGroup group = new KafkaMetricsGroup(packageName, simpleName);
+        MetricName metricName = group.metricName("metric-name", Collections.emptyMap());
+        assertEquals(packageName, metricName.getGroup());
+        assertEquals(simpleName, metricName.getType());
     }
 }
