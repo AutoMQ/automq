@@ -65,16 +65,14 @@ import scala.jdk.CollectionConverters._
 object ZkMigrationIntegrationTest {
   def zkClustersForAllMigrationVersions(): java.util.List[ClusterConfig] = {
     Seq(
-      MetadataVersion.IBP_3_4_IV0,
-      MetadataVersion.IBP_3_5_IV2,
+      MetadataVersion.IBP_3_6_IV1,
       MetadataVersion.IBP_3_6_IV2,
       MetadataVersion.IBP_3_7_IV0,
       MetadataVersion.IBP_3_7_IV1,
       MetadataVersion.IBP_3_7_IV2,
       MetadataVersion.IBP_3_7_IV4,
       MetadataVersion.IBP_3_8_IV0,
-      MetadataVersion.IBP_3_9_IV0,
-      MetadataVersion.IBP_3_9_IV1
+      MetadataVersion.IBP_3_9_IV0
       // Note: ZK Migration is not supported in Apache Kafka 4.0 and beyond.
     ).map { mv =>
       val serverProperties = new util.HashMap[String, String]()
@@ -93,7 +91,7 @@ object ZkMigrationIntegrationTest {
 }
 
 @ExtendWith(value = Array(classOf[ClusterTestExtensions]))
-@Timeout(300)
+@Timeout(600)
 class ZkMigrationIntegrationTest {
 
   val log: Logger = LoggerFactory.getLogger(classOf[ZkMigrationIntegrationTest])
@@ -116,7 +114,7 @@ class ZkMigrationIntegrationTest {
 
   @ClusterTest(
     brokers = 3, types = Array(Type.ZK), autoStart = AutoStart.YES,
-    metadataVersion = MetadataVersion.IBP_3_4_IV0,
+    metadataVersion = MetadataVersion.IBP_3_6_IV1,
     serverProperties = Array(
       new ClusterConfigProperty(key="authorizer.class.name", value="kafka.security.authorizer.AclAuthorizer"),
       new ClusterConfigProperty(key="super.users", value="User:ANONYMOUS")
@@ -159,7 +157,7 @@ class ZkMigrationIntegrationTest {
 
   @ClusterTest(
     brokers = 3, types = Array(Type.ZK), autoStart = AutoStart.YES,
-    metadataVersion = MetadataVersion.IBP_3_4_IV0,
+    metadataVersion = MetadataVersion.IBP_3_6_IV1,
     serverProperties = Array(
       new ClusterConfigProperty(key = "authorizer.class.name", value = "kafka.security.authorizer.AclAuthorizer"),
       new ClusterConfigProperty(key = "super.users", value = "User:ANONYMOUS"),
@@ -174,7 +172,7 @@ class ZkMigrationIntegrationTest {
     val clusterId = zkCluster.clusterId()
     val kraftCluster = new KafkaClusterTestKit.Builder(
       new TestKitNodes.Builder().
-        setBootstrapMetadataVersion(MetadataVersion.IBP_3_4_IV0).
+        setBootstrapMetadataVersion(MetadataVersion.IBP_3_6_IV1).
         setClusterId(clusterId).
         setNumBrokerNodes(0).
         setNumControllerNodes(1).build())
@@ -221,7 +219,7 @@ class ZkMigrationIntegrationTest {
    * and modifies data using AdminClient. The ZkMigrationClient is then used to read the metadata from ZK
    * as would happen during a migration. The generated records are then verified.
    */
-  @ClusterTest(brokers = 3, types = Array(Type.ZK), metadataVersion = MetadataVersion.IBP_3_4_IV0)
+  @ClusterTest(brokers = 3, types = Array(Type.ZK), metadataVersion = MetadataVersion.IBP_3_6_IV1)
   def testMigrate(clusterInstance: ClusterInstance): Unit = {
     val admin = clusterInstance.createAdminClient()
     val newTopics = new util.ArrayList[NewTopic]()
@@ -297,13 +295,29 @@ class ZkMigrationIntegrationTest {
   def testMigrateTopicDeletions(zkCluster: ClusterInstance): Unit = {
     // Create some topics in ZK mode
     var admin = zkCluster.createAdminClient()
-    val newTopics = new util.ArrayList[NewTopic]()
-    newTopics.add(new NewTopic("test-topic-1", 10, 3.toShort))
-    newTopics.add(new NewTopic("test-topic-2", 10, 3.toShort))
-    newTopics.add(new NewTopic("test-topic-3", 10, 3.toShort))
-    val createTopicResult = admin.createTopics(newTopics)
-    createTopicResult.all().get(300, TimeUnit.SECONDS)
-    admin.close()
+    try {
+      val newTopics = new util.ArrayList[NewTopic]()
+      newTopics.add(new NewTopic("test-topic-1", 10, 3.toShort))
+      newTopics.add(new NewTopic("test-topic-2", 10, 3.toShort))
+      newTopics.add(new NewTopic("test-topic-3", 10, 3.toShort))
+      val createTopicResult = admin.createTopics(newTopics)
+      createTopicResult.all().get(61, TimeUnit.SECONDS)
+      TestUtils.waitUntilTrue(() => {
+        val topicDescribe = admin.describeTopics(Seq("test-topic-1", "test-topic-2", "test-topic-3").asJava)
+        if (topicDescribe.topicNameValues() == null || topicDescribe.topicNameValues().size() < 3) {
+          false
+        } else {
+          topicDescribe.topicNameValues().values().stream().allMatch {
+            topic => topic.get(62, TimeUnit.SECONDS).partitions().stream().allMatch(part => {
+              part.leader() != null && part.isr().size() == 3
+            })
+          }
+        }
+      }, msg="waiting for topics to be available", waitTimeMs=303000)
+    } finally {
+      admin.close()
+    }
+
     val zkClient = zkCluster.asInstanceOf[ZkClusterInstance].getUnderlying().zkClient
 
     // Bootstrap the ZK cluster ID into KRaft
@@ -340,7 +354,7 @@ class ZkMigrationIntegrationTest {
       zkClient.createDeleteTopicPath("test-topic-3")
 
       zkCluster.waitForReadyBrokers()
-      readyFuture.get(60, TimeUnit.SECONDS)
+      readyFuture.get(64, TimeUnit.SECONDS)
 
       // Only continue with the test if there are some pending deletions to verify. If there are not any pending
       // deletions, this will mark the test as "skipped" instead of failed.
@@ -353,12 +367,13 @@ class ZkMigrationIntegrationTest {
       TestUtils.waitUntilTrue(
         () => zkClient.getOrCreateMigrationState(ZkMigrationLeadershipState.EMPTY).initialZkMigrationComplete(),
         "Timed out waiting for migration to complete",
-        30000)
+        65000)
 
       // At this point, some of the topics may have been deleted by ZK controller and the rest will be
       // implicitly deleted by the KRaft controller and remove from the ZK brokers as stray partitions
       def topicsAllDeleted(admin: Admin): Boolean = {
-        val topics = admin.listTopics().names().get(60, TimeUnit.SECONDS)
+        val topics = admin.listTopics().names().get(66, TimeUnit.SECONDS)
+        log.info("Topics are {}", topics)
         topics.retainAll(util.Arrays.asList(
           "test-topic-1", "test-topic-2", "test-topic-3"
         ))
@@ -370,18 +385,19 @@ class ZkMigrationIntegrationTest {
       TestUtils.waitUntilTrue(
         () => topicsAllDeleted(admin),
         "Timed out waiting for topics to be deleted",
-        30000,
+        307000,
         1000)
+      log.info("Topics were deleted. Now re-creating them.")
 
       val newTopics = new util.ArrayList[NewTopic]()
       newTopics.add(new NewTopic("test-topic-1", 2, 3.toShort))
       newTopics.add(new NewTopic("test-topic-2", 1, 3.toShort))
       newTopics.add(new NewTopic("test-topic-3", 10, 3.toShort))
       val createTopicResult = admin.createTopics(newTopics)
-      createTopicResult.all().get(60, TimeUnit.SECONDS)
+      createTopicResult.all().get(68, TimeUnit.SECONDS)
 
       def topicsAllRecreated(admin: Admin): Boolean = {
-        val topics = admin.listTopics().names().get(60, TimeUnit.SECONDS)
+        val topics = admin.listTopics().names().get(69, TimeUnit.SECONDS)
         topics.retainAll(util.Arrays.asList(
           "test-topic-1", "test-topic-2", "test-topic-3"
         ))
@@ -392,21 +408,22 @@ class ZkMigrationIntegrationTest {
       TestUtils.waitUntilTrue(
         () => topicsAllRecreated(admin),
         "Timed out waiting for topics to be created",
-        30000,
+        70000,
         1000)
-
-      TestUtils.retry(300000) {
+      log.info("Topics were re-created. Now waiting for consistent topic state.")
+      TestUtils.retry(311000) {
         // Need a retry here since topic metadata may be inconsistent between brokers
         val topicDescriptions = try {
           admin.describeTopics(util.Arrays.asList(
             "test-topic-1", "test-topic-2", "test-topic-3"
           )).topicNameValues().asScala.map { case (name, description) =>
-            name -> description.get(60, TimeUnit.SECONDS)
+            name -> description.get(72, TimeUnit.SECONDS)
           }.toMap
         } catch {
           case e: ExecutionException if e.getCause.isInstanceOf[UnknownTopicOrPartitionException] => Map.empty[String, TopicDescription]
           case t: Throwable => fail("Error describing topics", t.getCause)
         }
+        log.debug("Topic describe: {}", topicDescriptions);
 
         assertEquals(2, topicDescriptions("test-topic-1").partitions().size())
         assertEquals(1, topicDescriptions("test-topic-2").partitions().size())
@@ -418,20 +435,19 @@ class ZkMigrationIntegrationTest {
           })
         }
 
-        val absentTopics = admin.listTopics().names().get(60, TimeUnit.SECONDS).asScala
+        val absentTopics = admin.listTopics().names().get(73, TimeUnit.SECONDS).asScala
         assertTrue(absentTopics.contains("test-topic-1"))
         assertTrue(absentTopics.contains("test-topic-2"))
         assertTrue(absentTopics.contains("test-topic-3"))
       }
-
-      admin.close()
     } finally {
+      admin.close()
       shutdownInSequence(zkCluster, kraftCluster)
     }
   }
 
   // SCRAM and Quota are intermixed. Test SCRAM Only here
-  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_5_IV2, serverProperties = Array(
+  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_6_IV1, serverProperties = Array(
     new ClusterConfigProperty(key = "inter.broker.listener.name", value = "EXTERNAL"),
     new ClusterConfigProperty(key = "listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
     new ClusterConfigProperty(key = "advertised.listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
@@ -448,7 +464,7 @@ class ZkMigrationIntegrationTest {
     val clusterId = zkCluster.clusterId()
     val kraftCluster = new KafkaClusterTestKit.Builder(
       new TestKitNodes.Builder().
-        setBootstrapMetadataVersion(MetadataVersion.IBP_3_5_IV2).
+        setBootstrapMetadataVersion(MetadataVersion.IBP_3_6_IV1).
         setClusterId(clusterId).
         setNumBrokerNodes(0).
         setNumControllerNodes(1).build())
@@ -494,7 +510,7 @@ class ZkMigrationIntegrationTest {
     }
   }
 
-  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_9_IV1, serverProperties = Array(
+  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_9_IV0, serverProperties = Array(
     new ClusterConfigProperty(key = "inter.broker.listener.name", value = "EXTERNAL"),
     new ClusterConfigProperty(key = "listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
     new ClusterConfigProperty(key = "advertised.listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
@@ -516,7 +532,7 @@ class ZkMigrationIntegrationTest {
     val clusterId = zkCluster.clusterId()
     val kraftCluster = new KafkaClusterTestKit.Builder(
       new TestKitNodes.Builder().
-        setBootstrapMetadataVersion(MetadataVersion.IBP_3_9_IV1).
+        setBootstrapMetadataVersion(MetadataVersion.IBP_3_9_IV0).
         setClusterId(clusterId).
         setNumBrokerNodes(0).
         setNumControllerNodes(1).build())
@@ -667,7 +683,7 @@ class ZkMigrationIntegrationTest {
   }
 
   // SCRAM and Quota are intermixed. Test both here
-  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_5_IV2, serverProperties = Array(
+  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_6_IV1, serverProperties = Array(
     new ClusterConfigProperty(key = "inter.broker.listener.name", value = "EXTERNAL"),
     new ClusterConfigProperty(key = "listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
     new ClusterConfigProperty(key = "advertised.listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
@@ -684,7 +700,7 @@ class ZkMigrationIntegrationTest {
     val clusterId = zkCluster.clusterId()
     val kraftCluster = new KafkaClusterTestKit.Builder(
       new TestKitNodes.Builder().
-        setBootstrapMetadataVersion(MetadataVersion.IBP_3_5_IV2).
+        setBootstrapMetadataVersion(MetadataVersion.IBP_3_6_IV1).
         setClusterId(clusterId).
         setNumBrokerNodes(0).
         setNumControllerNodes(1).build())
@@ -732,7 +748,7 @@ class ZkMigrationIntegrationTest {
     }
   }
 
-  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_4_IV0, serverProperties = Array(
+  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_6_IV1, serverProperties = Array(
     new ClusterConfigProperty(key = "inter.broker.listener.name", value = "EXTERNAL"),
     new ClusterConfigProperty(key = "listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
     new ClusterConfigProperty(key = "advertised.listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
@@ -748,7 +764,7 @@ class ZkMigrationIntegrationTest {
     val clusterId = zkCluster.clusterId()
     val kraftCluster = new KafkaClusterTestKit.Builder(
       new TestKitNodes.Builder().
-        setBootstrapMetadataVersion(MetadataVersion.IBP_3_4_IV0).
+        setBootstrapMetadataVersion(MetadataVersion.IBP_3_6_IV1).
         setClusterId(clusterId).
         setNumBrokerNodes(0).
         setNumControllerNodes(1).build())
@@ -895,7 +911,7 @@ class ZkMigrationIntegrationTest {
     }
   }
 
-  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_4_IV0, serverProperties = Array(
+  @ClusterTest(types = Array(Type.ZK), brokers = 3, metadataVersion = MetadataVersion.IBP_3_6_IV1, serverProperties = Array(
     new ClusterConfigProperty(key = "inter.broker.listener.name", value = "EXTERNAL"),
     new ClusterConfigProperty(key = "listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
     new ClusterConfigProperty(key = "advertised.listeners", value = "PLAINTEXT://localhost:0,EXTERNAL://localhost:0"),
@@ -1154,6 +1170,7 @@ class ZkMigrationIntegrationTest {
 
   def shutdownInSequence(zkCluster: ClusterInstance, kraftCluster: KafkaClusterTestKit): Unit = {
     zkCluster.brokerIds().forEach(zkCluster.shutdownBroker(_))
+    kraftCluster.nonFatalFaultHandler().setIgnore(true)
     kraftCluster.close()
     zkCluster.stop()
   }

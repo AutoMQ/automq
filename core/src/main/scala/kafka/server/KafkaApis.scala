@@ -84,7 +84,7 @@ import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
 import java.util.{Collections, Optional, OptionalInt}
 import scala.annotation.nowarn
 import scala.collection.mutable.ArrayBuffer
-import scala.collection.{Map, Seq, Set, mutable}
+import scala.collection.{Map, Seq, Set, immutable, mutable}
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success, Try}
 
@@ -467,7 +467,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (!authHelper.authorize(request.context, READ, GROUP, offsetCommitRequest.data.groupId)) {
       requestHelper.sendMaybeThrottle(request, offsetCommitRequest.getErrorResponse(Errors.GROUP_AUTHORIZATION_FAILED.exception))
       CompletableFuture.completedFuture[Unit](())
-    } else if (offsetCommitRequest.data.groupInstanceId != null && config.interBrokerProtocolVersion.isLessThan(IBP_2_3_IV0)) {
+    } else if (offsetCommitRequest.data.groupInstanceId != null && metadataCache.metadataVersion().isLessThan(IBP_2_3_IV0)) {
       // Only enable static membership when IBP >= 2.3, because it is not safe for the broker to use the static member logic
       // until we are sure that all brokers support it. If static group being loaded by an older coordinator, it will discard
       // the group.instance.id field, so static members could accidentally become "dynamic", which leads to wrong states.
@@ -1127,35 +1127,43 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val responseTopics = authorizedRequestInfo.map { topic =>
       val responsePartitions = topic.partitions.asScala.map { partition =>
-        val topicPartition = new TopicPartition(topic.name, partition.partitionIndex)
-
-        try {
-          val offsets = replicaManager.legacyFetchOffsetsForTimestamp(
-            topicPartition = topicPartition,
-            timestamp = partition.timestamp,
-            maxNumOffsets = partition.maxNumOffsets,
-            isFromConsumer = offsetRequest.replicaId == ListOffsetsRequest.CONSUMER_REPLICA_ID,
-            fetchOnlyFromLeader = offsetRequest.replicaId != ListOffsetsRequest.DEBUGGING_REPLICA_ID)
+        if (partition.timestamp() < ListOffsetsRequest.EARLIEST_TIMESTAMP) {
+          // Negative timestamps are reserved for some functions.
+          // For v0 requests, negative timestamps only support LATEST_TIMESTAMP (-1) and EARLIEST_TIMESTAMP (-2).
           new ListOffsetsPartitionResponse()
             .setPartitionIndex(partition.partitionIndex)
-            .setErrorCode(Errors.NONE.code)
-            .setOldStyleOffsets(offsets.map(JLong.valueOf).asJava)
-        } catch {
-          // NOTE: UnknownTopicOrPartitionException and NotLeaderOrFollowerException are special cases since these error messages
-          // are typically transient and there is no value in logging the entire stack trace for the same
-          case e @ (_ : UnknownTopicOrPartitionException |
-                    _ : NotLeaderOrFollowerException |
-                    _ : KafkaStorageException) =>
-            debug("Offset request with correlation id %d from client %s on partition %s failed due to %s".format(
-              correlationId, clientId, topicPartition, e.getMessage))
+            .setErrorCode(Errors.UNSUPPORTED_VERSION.code)
+        } else {
+          val topicPartition = new TopicPartition(topic.name, partition.partitionIndex)
+
+          try {
+            val offsets = replicaManager.legacyFetchOffsetsForTimestamp(
+              topicPartition = topicPartition,
+              timestamp = partition.timestamp,
+              maxNumOffsets = partition.maxNumOffsets,
+              isFromConsumer = offsetRequest.replicaId == ListOffsetsRequest.CONSUMER_REPLICA_ID,
+              fetchOnlyFromLeader = offsetRequest.replicaId != ListOffsetsRequest.DEBUGGING_REPLICA_ID)
             new ListOffsetsPartitionResponse()
               .setPartitionIndex(partition.partitionIndex)
-              .setErrorCode(Errors.forException(e).code)
-          case e: Throwable =>
-            error("Error while responding to offset request", e)
-            new ListOffsetsPartitionResponse()
-              .setPartitionIndex(partition.partitionIndex)
-              .setErrorCode(Errors.forException(e).code)
+              .setErrorCode(Errors.NONE.code)
+              .setOldStyleOffsets(offsets.map(JLong.valueOf).asJava)
+          } catch {
+            // NOTE: UnknownTopicOrPartitionException and NotLeaderOrFollowerException are special cases since these error messages
+            // are typically transient and there is no value in logging the entire stack trace for the same
+            case e @ (_ : UnknownTopicOrPartitionException |
+                      _ : NotLeaderOrFollowerException |
+                      _ : KafkaStorageException) =>
+              debug("Offset request with correlation id %d from client %s on partition %s failed due to %s".format(
+                correlationId, clientId, topicPartition, e.getMessage))
+              new ListOffsetsPartitionResponse()
+                .setPartitionIndex(partition.partitionIndex)
+                .setErrorCode(Errors.forException(e).code)
+            case e: Throwable =>
+              error("Error while responding to offset request", e)
+              new ListOffsetsPartitionResponse()
+                .setPartitionIndex(partition.partitionIndex)
+                .setErrorCode(Errors.forException(e).code)
+          }
         }
       }
       new ListOffsetsTopicResponse().setName(topic.name).setPartitions(responsePartitions.asJava)
@@ -1168,6 +1176,13 @@ class KafkaApis(val requestChannel: RequestChannel,
     val clientId = request.header.clientId
     val offsetRequest = request.body[ListOffsetsRequest]
     val version = request.header.apiVersion
+    val timestampMinSupportedVersion = immutable.Map[Long, Short](
+      ListOffsetsRequest.EARLIEST_TIMESTAMP -> 1.toShort,
+      ListOffsetsRequest.LATEST_TIMESTAMP -> 1.toShort,
+      ListOffsetsRequest.MAX_TIMESTAMP -> 7.toShort,
+      ListOffsetsRequest.EARLIEST_LOCAL_TIMESTAMP -> 8.toShort,
+      ListOffsetsRequest.LATEST_TIERED_TIMESTAMP -> 9.toShort
+    )
 
     def buildErrorResponse(e: Errors, partition: ListOffsetsPartition): ListOffsetsPartitionResponse = {
       new ListOffsetsPartitionResponse()
@@ -1194,6 +1209,9 @@ class KafkaApis(val requestChannel: RequestChannel,
           debug(s"OffsetRequest with correlation id $correlationId from client $clientId on partition $topicPartition " +
               s"failed because the partition is duplicated in the request.")
           buildErrorResponse(Errors.INVALID_REQUEST, partition)
+        } else if (partition.timestamp() < 0 &&
+          (!timestampMinSupportedVersion.contains(partition.timestamp()) || version < timestampMinSupportedVersion(partition.timestamp()))) {
+          buildErrorResponse(Errors.UNSUPPORTED_VERSION, partition)
         } else {
           try {
             val fetchOnlyFromLeader = offsetRequest.replicaId != ListOffsetsRequest.DEBUGGING_REPLICA_ID
@@ -1825,7 +1843,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   ): CompletableFuture[Unit] = {
     val joinGroupRequest = request.body[JoinGroupRequest]
 
-    if (joinGroupRequest.data.groupInstanceId != null && config.interBrokerProtocolVersion.isLessThan(IBP_2_3_IV0)) {
+    if (joinGroupRequest.data.groupInstanceId != null && metadataCache.metadataVersion().isLessThan(IBP_2_3_IV0)) {
       // Only enable static membership when IBP >= 2.3, because it is not safe for the broker to use the static member logic
       // until we are sure that all brokers support it. If static group being loaded by an older coordinator, it will discard
       // the group.instance.id field, so static members could accidentally become "dynamic", which leads to wrong states.
@@ -1855,7 +1873,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   ): CompletableFuture[Unit] = {
     val syncGroupRequest = request.body[SyncGroupRequest]
 
-    if (syncGroupRequest.data.groupInstanceId != null && config.interBrokerProtocolVersion.isLessThan(IBP_2_3_IV0)) {
+    if (syncGroupRequest.data.groupInstanceId != null && metadataCache.metadataVersion().isLessThan(IBP_2_3_IV0)) {
       // Only enable static membership when IBP >= 2.3, because it is not safe for the broker to use the static member logic
       // until we are sure that all brokers support it. If static group being loaded by an older coordinator, it will discard
       // the group.instance.id field, so static members could accidentally become "dynamic", which leads to wrong states.
@@ -1924,7 +1942,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleHeartbeatRequest(request: RequestChannel.Request): CompletableFuture[Unit] = {
     val heartbeatRequest = request.body[HeartbeatRequest]
 
-    if (heartbeatRequest.data.groupInstanceId != null && config.interBrokerProtocolVersion.isLessThan(IBP_2_3_IV0)) {
+    if (heartbeatRequest.data.groupInstanceId != null && metadataCache.metadataVersion().isLessThan(IBP_2_3_IV0)) {
       // Only enable static membership when IBP >= 2.3, because it is not safe for the broker to use the static member logic
       // until we are sure that all brokers support it. If static group being loaded by an older coordinator, it will discard
       // the group.instance.id field, so static members could accidentally become "dynamic", which leads to wrong states.
@@ -2555,8 +2573,8 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   def ensureInterBrokerVersion(version: MetadataVersion): Unit = {
-    if (config.interBrokerProtocolVersion.isLessThan(version))
-      throw new UnsupportedVersionException(s"inter.broker.protocol.version: ${config.interBrokerProtocolVersion} is less than the required version: ${version}")
+    if (metadataCache.metadataVersion().isLessThan(version))
+      throw new UnsupportedVersionException(s"metadata.version: ${metadataCache.metadataVersion()} is less than the required version: ${version}")
   }
 
   def handleAddPartitionsToTxnRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {

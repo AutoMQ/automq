@@ -16,6 +16,9 @@
  */
 package org.apache.kafka.server.common;
 
+import org.apache.kafka.common.feature.SupportedVersionRange;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -39,6 +42,11 @@ public enum Features {
      *
      * See {@link TestFeatureVersion} as an example. See {@link FeatureVersion} when implementing a new feature.
      */
+
+    // AutoMQ inject start
+    AUTOMQ_VERSION(AutoMQVersion.FEATURE_NAME, AutoMQVersion.values()),
+    // AutoMQ inject end
+
     TEST_VERSION("test.feature.version", TestFeatureVersion.values()),
     KRAFT_VERSION("kraft.version", KRaftVersion.values()),
     TRANSACTION_VERSION("transaction.version", TransactionVersion.values());
@@ -84,6 +92,13 @@ public enum Features {
 
     public short latestTesting() {
         return featureVersions[featureVersions.length - 1].featureLevel();
+    }
+
+    public SupportedVersionRange supportedVersionRange() {
+        return new SupportedVersionRange(
+            minimumProduction(),
+            latestTesting()
+        );
     }
 
     /**

@@ -584,4 +584,18 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
     override def testConvertToOffsetMetadataDoesNotThrowOffsetOutOfRangeError(): Unit = {
         // AutoMQ embedded tiered storage in S3Stream
     }
+
+    override def testRetentionOnLocalLogDeletionWhenRemoteLogCopyEnabledAndDefaultLocalRetentionBytes(): Unit = {
+        // AutoMQ embedded tiered storage in S3Stream
+    }
+
+
+    override def testRetentionOnLocalLogDeletionWhenRemoteLogCopyDisabled(): Unit = {
+        // AutoMQ embedded tiered storage in S3Stream
+    }
+
+    override def testRetentionOnLocalLogDeletionWhenRemoteLogCopyEnabledAndDefaultLocalRetentionMs(): Unit = {
+        // AutoMQ embedded tiered storage in S3Stream
+    }
+
 }

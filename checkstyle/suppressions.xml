@@ -39,7 +39,7 @@
     <suppress checks="(NPathComplexity|ClassFanOutComplexity|CyclomaticComplexity|ClassDataAbstractionCoupling|FinalLocalVariable|LocalVariableName|MemberName|ParameterName|MethodLength|JavaNCSS|AvoidStarImport)"
               files="core[\\/]src[\\/](generated|generated-test)[\\/].+.java$"/>
     <suppress checks="NPathComplexity" files="(ClusterTestExtensions|KafkaApisBuilder|SharePartition).java"/>
-    <suppress checks="NPathComplexity|ClassFanOutComplexity|ClassDataAbstractionCoupling" files="(RemoteLogManager|RemoteLogManagerTest).java"/>
+    <suppress checks="NPathComplexity|ClassFanOutComplexity|ClassDataAbstractionCoupling|JavaNCSS" files="(RemoteLogManager|RemoteLogManagerTest).java"/>
     <suppress checks="MethodLength" files="RemoteLogManager.java"/>
     <suppress checks="ClassFanOutComplexity" files="RemoteLogManagerTest.java"/>
     <suppress checks="MethodLength"
@@ -190,11 +190,11 @@
 
     <!-- Raft -->
     <suppress checks="NPathComplexity"
-              files="RecordsIterator.java"/>
+              files="(DynamicVoter|RecordsIterator).java"/>
 
     <!-- Streams -->
     <suppress checks="ClassFanOutComplexity"
-              files="(KafkaStreams|KStreamImpl|KTableImpl|InternalTopologyBuilder|StreamsPartitionAssignor|StreamThread|IQv2StoreIntegrationTest|KStreamImplTest|RocksDBStore).java"/>
+              files="(KafkaStreams|KStreamImpl|KTableImpl|InternalTopologyBuilder|StreamsPartitionAssignor|StreamThread|IQv2StoreIntegrationTest|KStreamImplTest|RocksDBStore|StreamTask).java"/>
 
     <suppress checks="MethodLength"
               files="KTableImpl.java"/>
@@ -326,7 +326,7 @@
     <suppress checks="(ParameterNumber|ClassDataAbstractionCoupling)"
               files="(QuorumController).java"/>
     <suppress checks="(CyclomaticComplexity|NPathComplexity)"
-              files="(PartitionRegistration|PartitionChangeBuilder).java"/>
+              files="(PartitionRegistration|PartitionChangeBuilder|ScramParser).java"/>
     <suppress checks="CyclomaticComplexity"
               files="(ClientQuotasImage|KafkaEventQueue|MetadataDelta|QuorumController|ReplicationControlManager|KRaftMigrationDriver|ClusterControlManager|MetaPropertiesEnsemble).java"/>
     <suppress checks="NPathComplexity"

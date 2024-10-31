@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.raft.internals;
+package org.apache.kafka.raft;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.Uuid;
@@ -22,7 +22,6 @@ import org.apache.kafka.common.feature.SupportedVersionRange;
 import org.apache.kafka.common.message.VotersRecord;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.raft.Endpoints;
 
 import java.net.InetSocketAddress;
 import java.util.Collections;
@@ -49,11 +48,7 @@ import java.util.stream.Stream;
 public final class VoterSet {
     private final Map<Integer, VoterNode> voters;
 
-    VoterSet(Map<Integer, VoterNode> voters) {
-        if (voters.isEmpty()) {
-            throw new IllegalArgumentException("Voters cannot be empty");
-        }
-
+    private VoterSet(Map<Integer, VoterNode> voters) {
         this.voters = voters;
     }
 
@@ -93,6 +88,21 @@ public final class VoterSet {
         return Optional.ofNullable(voters.get(voterId))
             .flatMap(voterNode -> voterNode.address(listenerName))
             .map(address -> new Node(voterId, address.getHostString(), address.getPort()));
+    }
+
+    /**
+     * Return true if the provided voter node is a voter and would cause a change in the voter set.
+     *
+     * @param updatedVoterNode the updated voter node
+     * @return true if the updated voter node is different than the node in the voter set; otherwise false.
+     */
+    public boolean voterNodeNeedsUpdate(VoterNode updatedVoterNode) {
+        return Optional.ofNullable(voters.get(updatedVoterNode.voterKey().id()))
+            .map(
+                node -> node.isVoter(updatedVoterNode.voterKey()) &&
+                        !node.equals(updatedVoterNode)
+            )
+            .orElse(false);
     }
 
     /**
@@ -202,6 +212,24 @@ public final class VoterSet {
         ) {
             HashMap<Integer, VoterNode> newVoters = new HashMap<>(voters);
             newVoters.remove(voterKey.id());
+
+            return Optional.of(new VoterSet(newVoters));
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * Updates a voter in the voter set.
+     *
+     * @param voter the updated voter
+     * @return a new voter set if the voter was updated, otherwise {@code Optional.empty()}
+     */
+    public Optional<VoterSet> updateVoter(VoterNode voter) {
+        VoterNode oldVoter = voters.get(voter.voterKey().id());
+        if (oldVoter != null && oldVoter.isVoter(voter.voterKey())) {
+            HashMap<Integer, VoterNode> newVoters = new HashMap<>(voters);
+            newVoters.put(voter.voterKey().id(), voter);
 
             return Optional.of(new VoterSet(newVoters));
         }
@@ -377,6 +405,11 @@ public final class VoterSet {
         }
     }
 
+    private static final VoterSet EMPTY = new VoterSet(Collections.emptyMap());
+    public static VoterSet empty() {
+        return EMPTY;
+    }
+
     /**
      * Converts a {@code VotersRecord} to a {@code VoterSet}.
      *
@@ -425,5 +458,9 @@ public final class VoterSet {
             );
 
         return new VoterSet(voterNodes);
+    }
+
+    public static VoterSet fromMap(Map<Integer, VoterNode> voters) {
+        return new VoterSet(new HashMap<>(voters));
     }
 }
