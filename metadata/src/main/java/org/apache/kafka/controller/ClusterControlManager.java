@@ -185,7 +185,9 @@ public class ClusterControlManager {
                 featureControl,
                 zkMigrationEnabled,
                 brokerUncleanShutdownHandler,
-                quorumVoters
+                // AutoMQ inject start
+                quorumVoters,
+                // AutoMQ inject end
                 interBrokerListenerName
             );
         }

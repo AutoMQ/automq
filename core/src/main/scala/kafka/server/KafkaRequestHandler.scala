@@ -32,7 +32,6 @@ import org.apache.kafka.server.log.remote.storage.RemoteStorageMetrics
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.storage.log.metrics.BrokerTopicMetrics
 
-import java.util.Collections
 import scala.collection.Set
 import scala.collection.mutable
 
@@ -258,6 +257,11 @@ class BrokerTopicStats(remoteStorageEnabled: Boolean = false) extends Logging {
   private val valueFactory = (k: String) => new BrokerTopicMetrics(k, remoteStorageEnabled)
   private val stats = new Pool[String, BrokerTopicMetrics](Some(valueFactory))
   val allTopicsStats = new BrokerTopicMetrics(remoteStorageEnabled)
+
+  // AutoMQ inject start
+  private val partitionValueFactory = (k: TopicPartition) => new BrokerTopicPartitionMetrics(k)
+  private val partitionStats = new Pool[TopicPartition, BrokerTopicPartitionMetrics](Some(partitionValueFactory))
+  // AutoMQ inject end
 
   def isTopicStatsExisted(topic: String): Boolean =
     stats.contains(topic)
@@ -512,9 +516,3 @@ class BrokerTopicStats(remoteStorageEnabled: Boolean = false) extends Logging {
     info("Broker and topic stats closed")
   }
 }
-
-// AutoMQ inject start
-class BrokerTopicPartitionMetrics(tp: TopicPartition) extends BrokerTopicMetrics(Some(tp.topic()), false) {
-  override lazy val tags: java.util.Map[String, String] = Map("topic" -> tp.topic(), "partition" -> tp.partition().toString).asJava
-}
-// AutoMQ inject end

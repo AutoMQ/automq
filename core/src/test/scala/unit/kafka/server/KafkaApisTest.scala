@@ -130,7 +130,11 @@ class KafkaApisTest extends Logging {
   protected val clientRequestQuotaManager: ClientRequestQuotaManager = mock(classOf[ClientRequestQuotaManager])
   protected val clientControllerQuotaManager: ControllerMutationQuotaManager = mock(classOf[ControllerMutationQuotaManager])
   protected val replicaQuotaManager: ReplicationQuotaManager = mock(classOf[ReplicationQuotaManager])
-  protected val quotas = QuotaManagers(clientQuotaManager, clientQuotaManager, clientRequestQuotaManager,
+  // AutoMQ inject start
+  protected val brokerQuotaManager: BrokerQuotaManager = mock(classOf[BrokerQuotaManager])
+  // AutoMQ inject end
+
+  protected val quotas = QuotaManagers(clientQuotaManager, clientQuotaManager, clientRequestQuotaManager, brokerQuotaManager,
     clientControllerQuotaManager, replicaQuotaManager, replicaQuotaManager, replicaQuotaManager, None)
   protected val fetchManager: FetchManager = mock(classOf[FetchManager])
   protected val clientMetricsManager: ClientMetricsManager = mock(classOf[ClientMetricsManager])

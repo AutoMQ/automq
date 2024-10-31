@@ -31,7 +31,6 @@ import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, MetaPropertiesVersion, PropertiesUtils}
 import org.apache.kafka.metadata.storage.{Formatter, FormatterException}
 import org.apache.kafka.raft.{DynamicVoters, QuorumConfig}
-import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.ProcessRole
 import org.apache.kafka.server.config.ReplicationConfigs
 
@@ -63,8 +62,8 @@ object StorageTool extends Logging {
    * @return     The exit code
    */
   def execute(
-     args: Array[String],
-     printStream: PrintStream
+    args: Array[String],
+    printStream: PrintStream
   ): Int = {
     val namespace = try {
       parseArguments(args)
@@ -170,9 +169,9 @@ object StorageTool extends Logging {
   }
 
   def parseArguments(args: Array[String]): Namespace = {
-    val parser = ArgumentParsers
-      .newArgumentParser("kafka-storage", true, "-", "@")
-      .description("The Kafka storage tool.")
+    val parser = ArgumentParsers.
+      newArgumentParser("kafka-storage", /* defaultHelp */ true, /* prefixChars */ "-", /* fromFilePrefix */ "@").
+      description("The Kafka storage tool.")
 
     val subparsers = parser.addSubparsers().dest("command")
 
@@ -180,22 +179,13 @@ object StorageTool extends Logging {
       help("Get information about the Kafka log directories on this node.")
     val formatParser = subparsers.addParser("format").
       help("Format the Kafka log directories on this node.")
-    val autoFormatParser = subparsers.addParser("auto-format").
-      help("Auto format the Kafka log directories on this node. ")
     subparsers.addParser("random-uuid").help("Print a random UUID.")
-    List(infoParser, formatParser, autoFormatParser).foreach(parser => {
+    List(infoParser, formatParser).foreach(parser => {
       parser.addArgument("--config", "-c").
         action(store()).
         required(true).
         help("The Kafka configuration file to use.")
     })
-    configureFormatParser(formatParser)
-    configureFormatParser(autoFormatParser)
-
-    parser.parseArgsOrFail(args)
-  }
-
-  private def configureFormatParser(formatParser: Subparser): Unit = {
     formatParser.addArgument("--cluster-id", "-t").
       action(store()).
       required(true).

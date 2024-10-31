@@ -2110,7 +2110,7 @@ public final class QuorumController implements Controller {
         // AutoMQ inject start
         StreamClient streamClient,
         List<String> quorumVoters,
-        Function<QuorumController, QuorumControllerExtension> extension
+        Function<QuorumController, QuorumControllerExtension> extension,
         // AutoMQ inject end
 
         long uncleanLeaderElectionCheckIntervalMs,

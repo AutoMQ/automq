@@ -36,7 +36,7 @@ public class StorageUtil {
         String metadataLog = new KafkaConfig(serverProps, false).metadataLogDir();
         if (!Files.exists(Paths.get(metadataLog, "meta.properties"))) {
             String configFilePath = persistConfig(serverProps, metadataLog);
-            StorageTool.execute(new String[] {"format", "-t", clusterId, "-c=" + configFilePath});
+            StorageTool.execute(new String[] {"format", "-t", clusterId, "-c=" + configFilePath}, System.out);
         } else {
             persistConfig(serverProps, metadataLog);
         }
