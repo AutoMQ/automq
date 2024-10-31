@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 /**
  * This is enum for the various features implemented for Kafka clusters.
@@ -41,6 +42,11 @@ public enum Features {
      *
      * See {@link TestFeatureVersion} as an example. See {@link FeatureVersion} when implementing a new feature.
      */
+
+    // AutoMQ inject start
+    AUTOMQ_VERSION(AutoMQVersion.FEATURE_NAME, AutoMQVersion.values()),
+    // AutoMQ inject end
+
     TEST_VERSION("test.feature.version", TestFeatureVersion.values()),
     KRAFT_VERSION("kraft.version", KRaftVersion.values()),
     TRANSACTION_VERSION("transaction.version", TransactionVersion.values());
