@@ -123,7 +123,7 @@ public class ConsumerService implements AutoCloseable {
                 break;
             }
             try {
-                Thread.sleep(5000);
+                Thread.sleep(10 * 1000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
