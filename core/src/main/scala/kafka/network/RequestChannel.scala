@@ -50,6 +50,10 @@ object RequestChannel extends Logging {
   private val ResponseQueueSizeMetric = "ResponseQueueSize"
   val ProcessorMetricTag = "processor"
 
+  // AutoMQ inject start
+  private val AvailableRequestSizeMetric = "AvailableRequestSize"
+  // AutoMQ inject end
+
   private def isRequestLoggingEnabled: Boolean = requestLogger.underlying.isDebugEnabled
 
   sealed trait BaseRequest
@@ -347,6 +351,9 @@ object RequestChannel extends Logging {
 }
 
 class RequestChannel(val queueSize: Int,
+                     // AutoMQ inject start
+                     val queuedRequestSize: Int,
+                      // AutoMQ inject end
                      val metricNamePrefix: String,
                      time: Time,
                      val metrics: RequestChannel.Metrics) {
@@ -355,12 +362,23 @@ class RequestChannel(val queueSize: Int,
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
   private val requestQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
+  // AutoMQ inject start
+  /**
+   * Queue of requests to be handled, in the order they arrived.
+   * Note: Before any request enters this queue, it needs to acquire {@link multiQueuedRequestSizeSemaphore}
+   */
   private val multiRequestQueue = new java.util.ArrayList[ArrayBlockingQueue[BaseRequest]]()
-
+  /**
+   * Semaphore to limit the total size of requests in the {@link multiRequestQueue}.
+   */
+  private val multiQueuedRequestSizeSemaphore = new java.util.ArrayList[Semaphore]()
+  private val availableRequestSizeMetricName = metricNamePrefix.concat(AvailableRequestSizeMetric)
+  // AutoMQ inject end
   private val processors = new ConcurrentHashMap[Int, Processor]()
   private val requestQueueSizeMetricName = metricNamePrefix.concat(RequestQueueSizeMetric)
   private val responseQueueSizeMetricName = metricNamePrefix.concat(ResponseQueueSizeMetric)
   private val callbackQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
+  // AutoMQ inject start
   private val multiCallbackQueue = new java.util.ArrayList[ArrayBlockingQueue[BaseRequest]]()
   private var notifiedShutdown = false
 
@@ -371,6 +389,14 @@ class RequestChannel(val queueSize: Int,
       requestQueue.size()
     }
   })
+  metricsGroup.newGauge(availableRequestSizeMetricName, () => {
+    multiQueuedRequestSizeSemaphore.stream().mapToInt(s => s.availablePermits()).sum()
+  })
+
+  def this(queueSize: Int, metricNamePrefix: String, time: Time, metrics: RequestChannel.Metrics) {
+    this(queueSize, Integer.MAX_VALUE, metricNamePrefix, time, metrics)
+  }
+  // AutoMQ inject end
 
   metricsGroup.newGauge(responseQueueSizeMetricName, () => {
     processors.values.asScala.foldLeft(0) {(total, processor) =>
@@ -386,14 +412,21 @@ class RequestChannel(val queueSize: Int,
       Map(ProcessorMetricTag -> processor.id.toString).asJava)
   }
 
-  def registerNRequestHandler(count: Int): util.List[BlockingQueue[BaseRequest]] = {
+  // AutoMQ inject start
+  def registerNRequestHandler(count: Int): Unit = {
     val queueSize = math.max(this.queueSize / count, 1)
-    for (i <- 0 until count) {
+    // TODO: maxQueuedRequestSize will be 100 / 8 = 12.5 MiB as a default.
+    //  However, if the request size is too large, it will block at the semaphore.
+    //  Currently, the max request size is 1 MiB (max.request.size) by default, so it is not very problematic.
+    val maxQueuedRequestSize = math.max(this.queuedRequestSize / count, 10 * 1024 * 1024)
+    for (_ <- 0 until count) {
       multiRequestQueue.add(new ArrayBlockingQueue[BaseRequest](queueSize))
+      multiQueuedRequestSizeSemaphore.add(new Semaphore(maxQueuedRequestSize))
       multiCallbackQueue.add(new ArrayBlockingQueue[BaseRequest](queueSize))
     }
     Collections.unmodifiableList(multiRequestQueue)
   }
+  // AutoMQ inject end
 
   def removeProcessor(processorId: Int): Unit = {
     processors.remove(processorId)
@@ -403,6 +436,8 @@ class RequestChannel(val queueSize: Int,
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
   def sendRequest(request: RequestChannel.Request): Unit = {
     if (multiRequestQueue.size() != 0) {
+      val requestSizeSemaphore = multiQueuedRequestSizeSemaphore.get(math.abs(request.context.connectionId.hashCode % multiQueuedRequestSizeSemaphore.size()))
+      requestSizeSemaphore.acquire(request.sizeInBytes)
       val requestQueue = multiRequestQueue.get(math.abs(request.context.connectionId.hashCode % multiRequestQueue.size()))
       requestQueue.put(request)
     } else {
@@ -505,9 +540,11 @@ class RequestChannel(val queueSize: Int,
     }
   }
 
+  // AutoMQ inject start
   def receiveRequest(timeout: Long, id: Int): RequestChannel.BaseRequest = {
     val callbackQueue = multiCallbackQueue.get(id)
     val requestQueue = multiRequestQueue.get(id)
+    val requestSizeSemaphore = multiQueuedRequestSizeSemaphore.get(id)
     val callbackRequest = callbackQueue.poll()
     if (callbackRequest != null)
       callbackRequest
@@ -515,11 +552,14 @@ class RequestChannel(val queueSize: Int,
       val request = requestQueue.poll(timeout, TimeUnit.MILLISECONDS)
       request match {
         case WakeupRequest => callbackQueue.poll()
+        case request: Request =>
+          requestSizeSemaphore.release(request.sizeInBytes)
+          request
         case _ => request
       }
     }
   }
-
+  // AutoMQ inject end
   /** Get the next request or block until there is one */
   @Deprecated
   def receiveRequest(): RequestChannel.BaseRequest =

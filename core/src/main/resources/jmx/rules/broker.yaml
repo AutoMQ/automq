@@ -207,6 +207,13 @@ rules:
         type: gauge
         desc: Size of the request queue
 
+  - bean: kafka.network:type=RequestChannel,name=AvailableRequestSize
+    mapping:
+      Value:
+        metric: kafka.available.request.size
+        type: gauge
+        desc: Remaining permitted request size in the request queue
+
   - bean: kafka.network:type=RequestChannel,name=ResponseQueueSize
     mapping:
       Value:
