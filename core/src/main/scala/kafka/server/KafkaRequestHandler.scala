@@ -216,7 +216,7 @@ class KafkaRequestHandlerPool(
   this.logIdent = "[" + logAndThreadNamePrefix + " Kafka Request Handler on Broker " + brokerId + "], "
   val runnables = new mutable.ArrayBuffer[KafkaRequestHandler](numThreads)
 
-  var multiRequestQueue = requestChannel.registerNRequestHandler(numThreads)
+  requestChannel.registerNRequestHandler(numThreads)
 
   for (i <- 0 until numThreads) {
     createHandler(i)
