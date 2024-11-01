@@ -11,7 +11,9 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConsumerGroupOffsetsResult;
 import org.apache.kafka.clients.admin.ListOffsetsResult;
 import org.apache.kafka.clients.admin.OffsetSpec;
@@ -21,6 +23,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
@@ -56,6 +59,7 @@ import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_SEND
 public class ConsumerService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsumerService.class);
+    private static final long RESET_OFFSET_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(10);
 
     private final Admin admin;
     private final List<Group> groups = new ArrayList<>();
@@ -63,9 +67,9 @@ public class ConsumerService implements AutoCloseable {
 
     public ConsumerService(String bootstrapServer) {
         Properties properties = new Properties();
-        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
-        properties.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) TimeUnit.SECONDS.toMillis(300));
-        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
+        properties.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) RESET_OFFSET_TIMEOUT_MS);
+        properties.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, (int) TimeUnit.MINUTES.toMillis(4));
         this.admin = Admin.create(properties);
         this.groupSuffix = new SimpleDateFormat("HHmmss").format(System.currentTimeMillis());
     }
@@ -84,7 +88,7 @@ public class ConsumerService implements AutoCloseable {
         for (int g = 0; g < config.groupsPerTopic; g++) {
             Group group = new Group(g, config.consumersPerGroup, topics, config);
             groups.add(group);
-            count += group.size();
+            count += group.consumerCount();
         }
         return count;
     }
@@ -106,12 +110,26 @@ public class ConsumerService implements AutoCloseable {
     }
 
     public void resetOffset(long startMillis, long intervalMillis) {
-        AtomicLong start = new AtomicLong(startMillis);
-        CompletableFuture.allOf(
-            groups.stream()
-                .map(group -> group.seek(start.getAndAdd(intervalMillis)))
-                .toArray(CompletableFuture[]::new)
-        ).join();
+        AtomicLong timestamp = new AtomicLong(startMillis);
+        AtomicInteger completed = new AtomicInteger(0);
+
+        groups.forEach(group -> group.seek(timestamp.getAndAdd(intervalMillis), completed::incrementAndGet));
+
+        int consumerGroupCount = groups.stream().mapToInt(Group::consumerGroupCount).sum();
+        long start = System.currentTimeMillis();
+        while (System.currentTimeMillis() < start + RESET_OFFSET_TIMEOUT_MS) {
+            int completedCount = completed.get();
+            LOGGER.info("Resetting consumer offsets: {}/{}", completedCount, consumerGroupCount);
+            if (completedCount == consumerGroupCount) {
+                break;
+            }
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     @Override
@@ -181,7 +199,7 @@ public class ConsumerService implements AutoCloseable {
             consumers().forEach(Consumer::resume);
         }
 
-        public CompletableFuture<Void> seek(long timestamp) {
+        public CompletableFuture<Void> seek(long timestamp, Runnable callback) {
             return admin.listOffsets(listOffsetsRequest(timestamp))
                 .all()
                 .toCompletionStage()
@@ -191,10 +209,15 @@ public class ConsumerService implements AutoCloseable {
                     .map(AlterConsumerGroupOffsetsResult::all)
                     .map(KafkaFuture::toCompletionStage)
                     .map(CompletionStage::toCompletableFuture)
+                    .map(future -> future.thenRun(callback))
                     .toArray(CompletableFuture[]::new)));
         }
 
-        public int size() {
+        public int consumerGroupCount() {
+            return consumers.size();
+        }
+
+        public int consumerCount() {
             return consumers.values().stream()
                 .mapToInt(List::size)
                 .sum();
@@ -212,6 +235,7 @@ public class ConsumerService implements AutoCloseable {
             properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
             properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
             properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+            properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, OffsetResetStrategy.LATEST.toString());
             return properties;
         }
 
