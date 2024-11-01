@@ -1,6 +1,7 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.s3.metrics.TimerUtil
+import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import com.yammer.metrics.core.Histogram
 import kafka.automq.zonerouter.{ClientIdMetadata, NoopProduceRouter, ProduceRouter}
 import kafka.coordinator.transaction.TransactionCoordinator
@@ -29,7 +30,7 @@ import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest
 import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
-import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.utils.Time
 import org.apache.kafka.coordinator.group.GroupCoordinator
 import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer.Authorizer
@@ -40,7 +41,7 @@ import org.apache.kafka.storage.internals.log.{FetchIsolation, FetchParams, Fetc
 import java.util
 import java.util.{Collections, Optional}
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.{ExecutorService, Executors, TimeUnit}
+import java.util.concurrent.{ExecutorService, TimeUnit}
 import java.util.stream.IntStream
 import scala.annotation.nowarn
 import scala.collection.{Map, Seq, mutable}
@@ -76,8 +77,8 @@ class ElasticKafkaApis(
   tokenManager: DelegationTokenManager,
   apiVersionManager: ApiVersionManager,
   clientMetricsManager: Option[ClientMetricsManager],
-  val asyncHandleExecutor: ExecutorService = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true)),
-  val listOffsetHandleExecutor: ExecutorService = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-list-offset-handle-executor-%d", true))
+  val deleteTopicHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-delete-topic-handle-executor", true, 1000),
+  val listOffsetHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-list-offset-handle-executor", true, 1000)
 ) extends KafkaApis(requestChannel, metadataSupport, replicaManager, groupCoordinator, txnCoordinator,
   autoTopicCreationManager, brokerId, config, configRepository, metadataCache, metrics, authorizer, quotas,
   fetchManager, brokerTopicStats, clusterId, time, tokenManager, apiVersionManager, clientMetricsManager) {
@@ -131,7 +132,7 @@ class ElasticKafkaApis(
           response.asInstanceOf[DeleteTopicsResponse].data().responses().forEach(result => {
             if (result.errorCode() == Errors.NONE.code()) {
               if (!metadataCache.autoMQVersion().isTopicCleanupByControllerSupported) {
-                asyncHandleExecutor.submit(new Runnable {
+                deleteTopicHandleExecutor.submit(new Runnable {
                   override def run(): Unit = {
                     topicNameToPartitionEpochsMap.get(result.name()).foreach(partitionEpochs => {
                       ElasticLogManager.destroyLog(new TopicPartition(result.name(), partitionEpochs._1), result.topicId(), partitionEpochs._2)
