@@ -59,7 +59,6 @@ import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_SEND
 public class ConsumerService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsumerService.class);
-    private static final long RESET_OFFSET_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(10);
 
     private final Admin admin;
     private final List<Group> groups = new ArrayList<>();
@@ -68,8 +67,8 @@ public class ConsumerService implements AutoCloseable {
     public ConsumerService(String bootstrapServer) {
         Properties properties = new Properties();
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
-        properties.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) RESET_OFFSET_TIMEOUT_MS);
-        properties.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, (int) TimeUnit.MINUTES.toMillis(4));
+        properties.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) TimeUnit.MINUTES.toMillis(2));
+        properties.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, (int) TimeUnit.MINUTES.toMillis(10));
         this.admin = Admin.create(properties);
         this.groupSuffix = new SimpleDateFormat("HHmmss").format(System.currentTimeMillis());
     }
@@ -116,8 +115,8 @@ public class ConsumerService implements AutoCloseable {
         groups.forEach(group -> group.seek(timestamp.getAndAdd(intervalMillis), completed::incrementAndGet));
 
         int consumerGroupCount = groups.stream().mapToInt(Group::consumerGroupCount).sum();
-        long start = System.currentTimeMillis();
-        while (System.currentTimeMillis() < start + RESET_OFFSET_TIMEOUT_MS) {
+        long start = System.nanoTime();
+        while (System.nanoTime() < start + TimeUnit.MINUTES.toNanos(10)) {
             int completedCount = completed.get();
             LOGGER.info("Resetting consumer offsets: {}/{}", completedCount, consumerGroupCount);
             if (completedCount == consumerGroupCount) {
