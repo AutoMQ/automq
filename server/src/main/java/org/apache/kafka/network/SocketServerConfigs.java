@@ -169,6 +169,12 @@ public class SocketServerConfigs {
     public static final int QUEUED_MAX_REQUESTS_DEFAULT = 500;
     public static final String QUEUED_MAX_REQUESTS_DOC = "The number of queued requests allowed for data-plane, before blocking the network threads";
 
+    // AutoMQ inject start
+    public static final String QUEUED_MAX_REQUESTS_SIZE_BYTES_CONFIG = "queued.max.requests.size.bytes";
+    public static final int QUEUED_MAX_REQUESTS_SIZE_BYTES_DEFAULT = 100 * 1024 * 1024;
+    public static final String QUEUED_MAX_REQUESTS_SIZE_BYTES_DOC = "The number of queued requests size in total allowed for data-plane, before blocking the network threads";
+    // AutoMQ inject end
+
     public static final String QUEUED_MAX_BYTES_CONFIG = "queued.max.request.bytes";
     public static final int QUEUED_MAX_REQUEST_BYTES_DEFAULT = -1;
     public static final String QUEUED_MAX_REQUEST_BYTES_DOC = "The number of queued bytes allowed before no more requests are read";
@@ -193,6 +199,9 @@ public class SocketServerConfigs {
             .define(CONNECTIONS_MAX_IDLE_MS_CONFIG, LONG, CONNECTIONS_MAX_IDLE_MS_DEFAULT, MEDIUM, CONNECTIONS_MAX_IDLE_MS_DOC)
             .define(FAILED_AUTHENTICATION_DELAY_MS_CONFIG, INT, FAILED_AUTHENTICATION_DELAY_MS_DEFAULT, atLeast(0), LOW, FAILED_AUTHENTICATION_DELAY_MS_DOC)
             .define(QUEUED_MAX_REQUESTS_CONFIG, INT, QUEUED_MAX_REQUESTS_DEFAULT, atLeast(1), HIGH, QUEUED_MAX_REQUESTS_DOC)
+            // AutoMQ inject start
+            .define(QUEUED_MAX_REQUESTS_SIZE_BYTES_CONFIG, INT, QUEUED_MAX_REQUESTS_SIZE_BYTES_DEFAULT, atLeast(1024 * 1024), HIGH, QUEUED_MAX_REQUESTS_SIZE_BYTES_DOC)
+            // AutoMQ inject end
             .define(QUEUED_MAX_BYTES_CONFIG, LONG, QUEUED_MAX_REQUEST_BYTES_DEFAULT, MEDIUM, QUEUED_MAX_REQUEST_BYTES_DOC)
             .define(NUM_NETWORK_THREADS_CONFIG, INT, NUM_NETWORK_THREADS_DEFAULT, atLeast(1), HIGH, NUM_NETWORK_THREADS_DOC);
 
