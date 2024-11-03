@@ -697,6 +697,7 @@ public class CompactionManager {
                 >= TimeUnit.MINUTES.toMillis(this.forceSplitObjectPeriod))));
     }
 
+    @SuppressWarnings("checkstyle:CyclomaticComplexity")
     void executeCompactionPlans(CommitStreamSetObjectRequest request, List<CompactionPlan> compactionPlans,
         List<S3ObjectMetadata> s3ObjectMetadata)
         throws CompletionException {
@@ -743,17 +744,34 @@ public class CompactionManager {
                     return;
                 }
                 // wait for all stream objects and stream set object part to be uploaded
-                compactionCf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]))
-                    .whenComplete((v, ex) -> {
-                        uploader.forceUploadStreamSetObject();
-                        if (ex != null) {
-                            logger.error("Error while uploading compaction objects", ex);
-                            uploader.release().thenAccept(vv -> {
-                                for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
-                                    compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
-                                }
-                            }).join();
+                compactionCf = new CompletableFuture<>();
+                CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]))
+                    .whenComplete((v, uploadException) -> {
+                        if (uploadException != null) {
+                            logger.error("Error while uploading compaction objects", uploadException);
                         }
+                        uploader.forceUploadStreamSetObject().whenComplete((vv, forceUploadException) -> {
+                            if (forceUploadException != null) {
+                                logger.error("Error while force uploading stream set object", uploadException);
+                            }
+                            if (uploadException != null || forceUploadException != null) {
+                                uploader.release().whenComplete((vvv, releaseException) -> {
+                                    if (releaseException != null) {
+                                        logger.error("Unexpected exception while release uploader");
+                                    }
+                                    for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
+                                        compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                                    }
+                                    if (uploadException != null) {
+                                        compactionCf.completeExceptionally(new CompletionException("Uploading failed", uploadException));
+                                    } else {
+                                        compactionCf.completeExceptionally(new CompletionException("Force uploading sso failed", forceUploadException));
+                                    }
+                                });
+                            } else {
+                                compactionCf.complete(null);
+                            }
+                        });
                     });
             }
             try {
