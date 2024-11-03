@@ -744,14 +744,16 @@ public class CompactionManager {
                 }
                 // wait for all stream objects and stream set object part to be uploaded
                 compactionCf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]))
-                    .thenCompose(v -> uploader.forceUploadStreamSetObject())
-                    .exceptionally(ex -> {
-                        uploader.release().thenAccept(v -> {
-                            for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
-                                compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
-                            }
-                        }).join();
-                        throw new IllegalStateException("Error while uploading compaction objects", ex);
+                    .whenComplete((v, ex) -> {
+                        uploader.forceUploadStreamSetObject();
+                        if (ex != null) {
+                            logger.error("Error while uploading compaction objects", ex);
+                            uploader.release().thenAccept(vv -> {
+                                for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
+                                    compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                                }
+                            }).join();
+                        }
                     });
             }
             try {
