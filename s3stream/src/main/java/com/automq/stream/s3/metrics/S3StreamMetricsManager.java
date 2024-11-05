@@ -475,17 +475,25 @@ public class S3StreamMetricsManager {
             });
     }
 
-    public static void registerNetworkLimiterSupplier(AsyncNetworkBandwidthLimiter.Type type,
-        Supplier<Long> networkAvailableBandwidthSupplier,
+    public static void registerNetworkLimiterQueueSizeSupplier(AsyncNetworkBandwidthLimiter.Type type,
         Supplier<Integer> networkLimiterQueueSizeSupplier) {
         switch (type) {
             case INBOUND:
-                S3StreamMetricsManager.networkInboundAvailableBandwidthSupplier = networkAvailableBandwidthSupplier;
                 S3StreamMetricsManager.networkInboundLimiterQueueSizeSupplier = networkLimiterQueueSizeSupplier;
                 break;
             case OUTBOUND:
-                S3StreamMetricsManager.networkOutboundAvailableBandwidthSupplier = networkAvailableBandwidthSupplier;
                 S3StreamMetricsManager.networkOutboundLimiterQueueSizeSupplier = networkLimiterQueueSizeSupplier;
+                break;
+        }
+    }
+
+    public static void registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type type, Supplier<Long> networkAvailableBandwidthSupplier) {
+        switch (type) {
+            case INBOUND:
+                S3StreamMetricsManager.networkInboundAvailableBandwidthSupplier = networkAvailableBandwidthSupplier;
+                break;
+            case OUTBOUND:
+                S3StreamMetricsManager.networkOutboundAvailableBandwidthSupplier = networkAvailableBandwidthSupplier;
                 break;
         }
     }

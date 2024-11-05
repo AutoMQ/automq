@@ -11,15 +11,6 @@
 
 package kafka.log.stream.s3;
 
-import kafka.log.stream.s3.metadata.StreamMetadataManager;
-import kafka.log.stream.s3.network.ControllerRequestSender;
-import kafka.log.stream.s3.objects.ControllerObjectManager;
-import kafka.log.stream.s3.streams.ControllerStreamManager;
-import kafka.server.BrokerServer;
-
-import org.apache.kafka.image.MetadataImage;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
-
 import com.automq.stream.api.Client;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.StreamClient;
@@ -39,6 +30,8 @@ import com.automq.stream.s3.failover.ForceCloseStorageFailureHandler;
 import com.automq.stream.s3.failover.HaltStorageFailureHandler;
 import com.automq.stream.s3.failover.StorageFailureHandlerChain;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
@@ -55,16 +48,24 @@ import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import kafka.autobalancer.metricsreporter.metric.Derivator;
+import kafka.log.stream.s3.metadata.StreamMetadataManager;
+import kafka.log.stream.s3.network.ControllerRequestSender;
+import kafka.log.stream.s3.objects.ControllerObjectManager;
+import kafka.log.stream.s3.streams.ControllerStreamManager;
+import kafka.server.BrokerServer;
+import org.apache.kafka.image.MetadataImage;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DefaultS3Client implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     protected final Config config;
+    protected final Derivator networkInboundRate = new Derivator();
+    protected final Derivator networkOutboundRate = new Derivator();
     private StreamMetadataManager metadataManager;
 
     protected ControllerRequestSender requestSender;
@@ -110,9 +111,15 @@ public class DefaultS3Client implements Client {
         GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.INBOUND,
             refillToken, config.refillPeriodMs(), maxToken);
         networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
+        S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.INBOUND, () ->
+            config.networkBaselineBandwidth() - (long) networkInboundRate.derive(
+                TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkInboundUsageTotal().get()));
         GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), maxToken);
         networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
+        S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, () ->
+            config.networkBaselineBandwidth() - (long) networkOutboundRate.derive(
+                TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkOutboundUsageTotal().get()));
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true)
             .threadPrefix("dataflow").build();
