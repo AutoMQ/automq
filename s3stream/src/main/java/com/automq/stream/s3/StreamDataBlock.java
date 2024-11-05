@@ -81,6 +81,13 @@ public class StreamDataBlock {
         return this.dataCf;
     }
 
+    public ByteBuf getAndReleaseData() {
+        if (refCount.getAndDecrement() == 0) {
+            throw new IllegalStateException("Data has already been released");
+        }
+        return this.dataCf.join();
+    }
+
     public void releaseRef() {
         refCount.decrementAndGet();
     }
