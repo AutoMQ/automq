@@ -54,7 +54,7 @@ public class BrokerTopicMetrics {
 
     // KAFKA-16972: BrokerTopicMetrics is migrated from "kafka.server" package.
     // For backward compatibility, we keep the old package name as metric group name.
-    private final KafkaMetricsGroup metricsGroup = new KafkaMetricsGroup("kafka.server", "BrokerTopicMetrics");
+    private final KafkaMetricsGroup metricsGroup;
     private final Map<String, String> tags;
     private final Map<String, MeterWrapper> metricTypeMap = new java.util.HashMap<>();
     private final Map<String, GaugeWrapper> metricGaugeTypeMap = new java.util.HashMap<>();
@@ -81,7 +81,8 @@ public class BrokerTopicMetrics {
             }
         }
         this.tags = newTags;
-    // AutoMQ inject start
+        this.metricsGroup = new KafkaMetricsGroup("kafka.server", this.getClass().getSimpleName());
+    // AutoMQ inject end
 
         metricTypeMap.put(MESSAGE_IN_PER_SEC, new MeterWrapper(MESSAGE_IN_PER_SEC, "messages"));
         metricTypeMap.put(BYTES_IN_PER_SEC, new MeterWrapper(BYTES_IN_PER_SEC, "bytes"));
