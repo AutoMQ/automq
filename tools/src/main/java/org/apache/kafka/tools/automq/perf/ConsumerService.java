@@ -11,7 +11,7 @@
 
 package org.apache.kafka.tools.automq.perf;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutionException;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConsumerGroupOffsetsResult;
@@ -44,7 +44,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -110,24 +109,10 @@ public class ConsumerService implements AutoCloseable {
 
     public void resetOffset(long startMillis, long intervalMillis) {
         AtomicLong timestamp = new AtomicLong(startMillis);
-        AtomicInteger completed = new AtomicInteger(0);
-
-        groups.forEach(group -> group.seek(timestamp.getAndAdd(intervalMillis), completed::incrementAndGet));
-
-        int consumerGroupCount = groups.stream().mapToInt(Group::consumerGroupCount).sum();
-        long start = System.nanoTime();
-        while (System.nanoTime() < start + TimeUnit.MINUTES.toNanos(10)) {
-            int completedCount = completed.get();
-            LOGGER.info("Resetting consumer offsets: {}/{}", completedCount, consumerGroupCount);
-            if (completedCount == consumerGroupCount) {
-                break;
-            }
-            try {
-                Thread.sleep(10 * 1000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+        for (int i = 0, size = groups.size(); i < size; i++) {
+            Group group = groups.get(i);
+            group.seek(timestamp.getAndAdd(intervalMillis));
+            LOGGER.info("Reset consumer group offsets: {}/{}", i + 1, size);
         }
     }
 
@@ -198,18 +183,20 @@ public class ConsumerService implements AutoCloseable {
             consumers().forEach(Consumer::resume);
         }
 
-        public CompletableFuture<Void> seek(long timestamp, Runnable callback) {
-            return admin.listOffsets(listOffsetsRequest(timestamp))
-                .all()
-                .toCompletionStage()
-                .toCompletableFuture()
-                .thenCompose(offsetMap -> CompletableFuture.allOf(consumers.keySet().stream()
-                    .map(topic -> admin.alterConsumerGroupOffsets(groupId(topic), resetOffsetsRequest(topic, offsetMap)))
+        public void seek(long timestamp) {
+            // assuming all partitions approximately have the same offset at the given timestamp
+            TopicPartition firstPartition = consumers.keySet().iterator().next().firstPartition();
+            try {
+                ListOffsetsResult.ListOffsetsResultInfo offsetInfo = admin.listOffsets(Map.of(firstPartition, OffsetSpec.forTimestamp(timestamp)))
+                    .partitionResult(firstPartition)
+                    .get();
+                KafkaFuture.allOf(consumers.keySet().stream()
+                    .map(topic -> admin.alterConsumerGroupOffsets(groupId(topic), resetOffsetsRequest(topic, offsetInfo.offset())))
                     .map(AlterConsumerGroupOffsetsResult::all)
-                    .map(KafkaFuture::toCompletionStage)
-                    .map(CompletionStage::toCompletableFuture)
-                    .map(future -> future.thenRun(callback))
-                    .toArray(CompletableFuture[]::new)));
+                    .toArray(KafkaFuture[]::new)).get();
+            } catch (ExecutionException | InterruptedException e) {
+                throw new RuntimeException("Failed to list or reset consumer offsets", e);
+            }
         }
 
         public int consumerGroupCount() {
@@ -253,23 +240,11 @@ public class ConsumerService implements AutoCloseable {
             return String.format("sub-%s-%s-%03d", topic.name, groupSuffix, index);
         }
 
-        private Map<TopicPartition, OffsetSpec> listOffsetsRequest(long timestamp) {
-            return consumers.keySet().stream()
-                .map(Topic::partitions)
-                .flatMap(List::stream)
+        private Map<TopicPartition, OffsetAndMetadata> resetOffsetsRequest(Topic topic, long offset) {
+            return topic.partitions().stream()
                 .collect(Collectors.toMap(
                     partition -> partition,
-                    partition -> OffsetSpec.forTimestamp(timestamp)
-                ));
-        }
-
-        private Map<TopicPartition, OffsetAndMetadata> resetOffsetsRequest(Topic topic,
-            Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> offsetMap) {
-            return offsetMap.entrySet().stream()
-                .filter(entry -> topic.containsPartition(entry.getKey()))
-                .collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    entry -> new OffsetAndMetadata(entry.getValue().offset())
+                    ignore -> new OffsetAndMetadata(offset)
                 ));
         }
     }
