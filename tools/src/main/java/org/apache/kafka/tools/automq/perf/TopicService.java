@@ -128,6 +128,10 @@ public class TopicService implements AutoCloseable {
                 .collect(Collectors.toList());
         }
 
+        public TopicPartition firstPartition() {
+            return new TopicPartition(name, 0);
+        }
+
         public boolean containsPartition(TopicPartition partition) {
             return name.equals(partition.topic()) && partition.partition() < partitions;
         }
