@@ -30,6 +30,7 @@ import java.util.Map;
 
 import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.nonNegativeInteger;
+import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.notLessThan;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.positiveInteger;
 
 public class PerfConfig {
@@ -204,7 +205,7 @@ public class PerfConfig {
             .help("The send rate in messages per second during catchup. If not set, the send rate will be used.");
         parser.addArgument("-b", "--backlog-duration")
             .setDefault(0)
-            .type(nonNegativeInteger())
+            .type(notLessThan(300))
             .dest("backlogDurationSeconds")
             .metavar("BACKLOG_DURATION_SECONDS")
             .help("The backlog duration in seconds, and zero means no backlog. Should not be less than GROUPS_PER_TOPIC * GROUP_START_DELAY_SECONDS.");
@@ -315,6 +316,10 @@ public class PerfConfig {
 
         public static IntegerArgumentType positiveInteger() {
             return new IntegerArgumentType(value -> value <= 0 ? "expected a positive integer, but got " + value : null);
+        }
+
+        public static IntegerArgumentType notLessThan(int min) {
+            return new IntegerArgumentType(value -> value < min ? "expected an integer not less than " + min + ", but got " + value : null);
         }
     }
 
