@@ -11,6 +11,7 @@
 
 package org.apache.kafka.tools.automq;
 
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService;
@@ -31,9 +32,12 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -51,7 +55,13 @@ public class PerfCommand implements AutoCloseable {
     private final ProducerService producerService;
     private final ConsumerService consumerService;
     private final Stats stats = new Stats();
+    /**
+     * Partitions that are ready to be consumed.
+     * Only used during the initial topic readiness check, which is, {@link #preparing} is true.
+     */
+    private final Set<TopicPartition> readyPartitions = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
+    private volatile boolean preparing = true;
     private volatile boolean running = true;
 
     public static void main(String[] args) throws Exception {
@@ -97,6 +107,8 @@ public class PerfCommand implements AutoCloseable {
 
         List<byte[]> payloads = randomPayloads(config.recordSize, config.randomRatio, config.randomPoolSize);
         producerService.start(payloads, config.sendRate);
+
+        preparing = false;
 
         if (config.warmupDurationMinutes > 0) {
             LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
@@ -148,23 +160,26 @@ public class PerfCommand implements AutoCloseable {
         }
     }
 
-    private void messageReceived(byte[] payload, long sendTimeNanos) {
+    private void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos) {
+        if (preparing) {
+            readyPartitions.add(topicPartition);
+        }
         stats.messageReceived(payload.length, sendTimeNanos);
     }
 
     private void waitTopicsReady() {
-        int sent = producerService.probe();
         long start = System.nanoTime();
         boolean ready = false;
         while (System.nanoTime() < start + TOPIC_READY_TIMEOUT_NANOS) {
-            long received = stats.toCumulativeStats().totalMessagesReceived;
+            int sent = producerService.probe();
+            int received = readyPartitions.size();
             LOGGER.info("Waiting for topics to be ready... sent: {}, received: {}", sent, received);
             if (received >= sent) {
                 ready = true;
                 break;
             }
             try {
-                Thread.sleep(2000);
+                Thread.sleep(TimeUnit.SECONDS.toMillis(5));
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }

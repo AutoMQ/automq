@@ -127,10 +127,11 @@ public class ConsumerService implements AutoCloseable {
         /**
          * Called when a message is received.
          *
-         * @param payload       the received message payload
-         * @param sendTimeNanos the time in nanoseconds when the message was sent
+         * @param topicPartition the topic partition of the received message
+         * @param payload        the received message payload
+         * @param sendTimeNanos  the time in nanoseconds when the message was sent
          */
-        void messageReceived(byte[] payload, long sendTimeNanos);
+        void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos);
     }
 
     public static class ConsumersConfig {
@@ -306,7 +307,8 @@ public class ConsumerService implements AutoCloseable {
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
                     for (ConsumerRecord<String, byte[]> record : records) {
                         long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value(), HEADER_KEY_CHARSET));
-                        callback.messageReceived(record.value(), sendTimeNanos);
+                        TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
+                        callback.messageReceived(topicPartition, record.value(), sendTimeNanos);
                     }
                 } catch (InterruptException e) {
                     // ignore, as we are closing
