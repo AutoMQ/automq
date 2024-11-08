@@ -16,15 +16,19 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.utils.biniarysearch.AbstractOrderedCollection;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
-import io.netty.buffer.ByteBuf;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 import static com.automq.stream.s3.CompositeObject.FOOTER_MAGIC;
@@ -41,6 +45,7 @@ public class CompositeObjectReader implements ObjectReader {
     private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
     private CompletableFuture<Integer> sizeCf;
     private final AtomicInteger refCount = new AtomicInteger(1);
+    private final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
     public CompositeObjectReader(S3ObjectMetadata objectMetadata, RangeReader rangeReader) {
         this.objectMetadata = objectMetadata;
@@ -59,6 +64,9 @@ public class CompositeObjectReader implements ObjectReader {
 
     @Override
     public synchronized CompletableFuture<BasicObjectInfo> basicObjectInfo() {
+        if (isShutdown.get()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("ObjectReader is already shutdown"));
+        }
         if (basicObjectInfoCf == null) {
             this.basicObjectInfoCf = new CompletableFuture<>();
             this.basicObjectInfoCf.exceptionally(ex -> {
@@ -101,6 +109,9 @@ public class CompositeObjectReader implements ObjectReader {
     }
 
     public synchronized void close0() {
+        if (!isShutdown.compareAndSet(false, true)) {
+            return;
+        }
         if (basicObjectInfoCf != null) {
             basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
         }
