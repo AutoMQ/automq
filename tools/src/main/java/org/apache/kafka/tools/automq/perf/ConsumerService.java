@@ -11,7 +11,6 @@
 
 package org.apache.kafka.tools.automq.perf;
 
-import java.util.concurrent.ExecutionException;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConsumerGroupOffsetsResult;
@@ -44,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
