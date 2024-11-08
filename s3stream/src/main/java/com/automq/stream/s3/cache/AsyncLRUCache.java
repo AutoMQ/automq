@@ -11,14 +11,14 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.stats.AsyncLRUCacheStats;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.AsyncLRUCacheStats;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,6 +87,20 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
         return val;
     }
 
+    public synchronized V computeIfAbsent(K key, Function<? super K, ? extends V> valueMapper) {
+        V value = cache.get(key);
+        if (value == null) {
+            value = valueMapper.apply(key);
+            if (value != null) {
+                put(key, value);
+            }
+        }
+        return value;
+    }
+
+    public synchronized void inLockRun(Runnable runnable) {
+        runnable.run();
+    }
 
     public synchronized boolean remove(K key) {
         V value = cache.get(key);
