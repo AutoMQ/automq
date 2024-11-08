@@ -30,6 +30,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,6 +90,7 @@ public interface ObjectReader extends AsyncMeasurable {
         private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
         private CompletableFuture<Integer> sizeCf;
         private final AtomicInteger refCount = new AtomicInteger(1);
+        private final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
         public DefaultObjectReader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
             this.metadata = metadata;
@@ -105,6 +107,9 @@ public interface ObjectReader extends AsyncMeasurable {
         }
 
         public synchronized CompletableFuture<BasicObjectInfo> basicObjectInfo() {
+            if (isShutdown.get()) {
+                return CompletableFuture.failedFuture(new IllegalStateException("ObjectReader is already shutdown"));
+            }
             if (basicObjectInfoCf == null) {
                 this.basicObjectInfoCf = new CompletableFuture<>();
                 asyncGetBasicObjectInfo();
@@ -186,6 +191,9 @@ public interface ObjectReader extends AsyncMeasurable {
         }
 
         public synchronized void close0() {
+            if (!isShutdown.compareAndSet(false, true)) {
+                return;
+            }
             if (basicObjectInfoCf != null) {
                 basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
             }
