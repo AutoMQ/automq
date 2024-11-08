@@ -18,13 +18,9 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.biniarysearch.IndexBlockOrderedBytes;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import io.netty.buffer.ByteBuf;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -33,9 +29,10 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import io.netty.buffer.ByteBuf;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 import static com.automq.stream.s3.ByteBufAlloc.READ_INDEX_BLOCK;
@@ -100,6 +97,7 @@ public interface ObjectReader extends AsyncMeasurable {
         private CompletableFuture<BasicObjectInfo> basicObjectInfoCf;
         private CompletableFuture<Integer> sizeCf;
         private final AtomicInteger refCount = new AtomicInteger(1);
+        private final AtomicBoolean isShutdown = new AtomicBoolean(false);
 
         public DefaultObjectReader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
             this.metadata = metadata;
@@ -116,6 +114,9 @@ public interface ObjectReader extends AsyncMeasurable {
         }
 
         public synchronized CompletableFuture<BasicObjectInfo> basicObjectInfo() {
+            if (isShutdown.get()) {
+                return CompletableFuture.failedFuture(new IllegalStateException("ObjectReader is already shutdown"));
+            }
             if (basicObjectInfoCf == null) {
                 this.basicObjectInfoCf = new CompletableFuture<>();
                 asyncGetBasicObjectInfo();
@@ -199,6 +200,9 @@ public interface ObjectReader extends AsyncMeasurable {
         }
 
         public synchronized void close0() {
+            if (!isShutdown.compareAndSet(false, true)) {
+                return;
+            }
             if (basicObjectInfoCf != null) {
                 basicObjectInfoCf.thenAccept(BasicObjectInfo::close);
             }
