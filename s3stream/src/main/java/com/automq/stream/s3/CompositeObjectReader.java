@@ -119,17 +119,14 @@ public class CompositeObjectReader implements ObjectReader {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o)
-            return true;
-        if (o == null || getClass() != o.getClass())
-            return false;
-        CompositeObjectReader reader = (CompositeObjectReader) o;
-        return Objects.equals(objectMetadata.objectId(), reader.objectMetadata.objectId());
+        // NOTE: DO NOT OVERRIDE THIS
+        return super.equals(o);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hashCode(objectMetadata.objectId());
+        // NOTE: DO NOT OVERRIDE THIS
+        return super.hashCode();
     }
 
     private void asyncGetBasicObjectInfo(CompletableFuture<BasicObjectInfo> basicObjectInfoCf) {
