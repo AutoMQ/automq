@@ -165,6 +165,8 @@ class ElasticReplicaManager(
 
   private var fenced: Boolean = false
 
+  private val partitionLifecycleListeners = new util.ArrayList[PartitionLifecycleListener]()
+
   override def startup(): Unit = {
     super.startup()
     val haltBrokerOnFailure = metadataCache.metadataVersion().isLessThan(MetadataVersion.IBP_1_0_IV0)
@@ -196,6 +198,7 @@ class ElasticReplicaManager(
         getPartition(topicPartition) match {
           case hostedPartition: HostedPartition.Online =>
             if (allPartitions.remove(topicPartition, hostedPartition)) {
+              notifyPartitionClose(hostedPartition.partition)
               brokerTopicStats.removeMetrics(topicPartition)
               maybeRemoveTopicMetrics(topicPartition.topic)
               // AutoMQ for Kafka inject start
@@ -1184,6 +1187,7 @@ class ElasticReplicaManager(
         val state = info.partition.toLeaderAndIsrPartitionState(tp, true)
         val partitionAssignedDirectoryId = directoryIds.find(_._1.topicPartition() == tp).map(_._2)
         partition.makeLeader(state, offsetCheckpoints, Some(info.topicId), partitionAssignedDirectoryId)
+        notifyPartitionOpen(partition)
       }).foreach { case (partition, _) =>
         try {
           changedPartitions.add(partition)
@@ -1383,4 +1387,17 @@ class ElasticReplicaManager(
       }
     }
   }
+
+  def addPartitionLifecycleListener(listener: PartitionLifecycleListener): Unit = {
+    partitionLifecycleListeners.add(listener)
+  }
+
+  private def notifyPartitionOpen(partition: Partition): Unit = {
+    partitionLifecycleListeners.forEach(listener => CoreUtils.swallow(listener.onOpen(partition), this))
+  }
+
+  private def notifyPartitionClose(partition: Partition): Unit = {
+    partitionLifecycleListeners.forEach(listener => CoreUtils.swallow(listener.onClose(partition), this))
+  }
+
 }

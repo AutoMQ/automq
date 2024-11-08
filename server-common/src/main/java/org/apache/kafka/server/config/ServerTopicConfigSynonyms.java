@@ -83,6 +83,13 @@ public final class ServerTopicConfigSynonyms {
         sameName(TopicConfig.COMPRESSION_GZIP_LEVEL_CONFIG),
         sameName(TopicConfig.COMPRESSION_LZ4_LEVEL_CONFIG),
         sameName(TopicConfig.COMPRESSION_ZSTD_LEVEL_CONFIG),
+
+        // AutoMQ inject start
+        sameName(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG),
+        sameName(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG),
+        sameName(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG),
+        // AutoMQ inject end
+
         sameNameWithLogPrefix(TopicConfig.PREALLOCATE_CONFIG),
         sameNameWithLogPrefix(TopicConfig.MESSAGE_FORMAT_VERSION_CONFIG),
         sameNameWithLogPrefix(TopicConfig.MESSAGE_TIMESTAMP_TYPE_CONFIG),
