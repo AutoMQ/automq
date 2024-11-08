@@ -102,7 +102,7 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Waiting for topics to be ready...");
-        waitTopicsReady();
+        waitTopicsReady(consumerService.consumerCount() > 0);
         LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         List<byte[]> payloads = randomPayloads(config.recordSize, config.randomRatio, config.randomPoolSize);
@@ -167,7 +167,16 @@ public class PerfCommand implements AutoCloseable {
         stats.messageReceived(payload.length, sendTimeNanos);
     }
 
-    private void waitTopicsReady() {
+    private void waitTopicsReady(boolean hasConsumer) {
+        if (hasConsumer) {
+            waitTopicsReadyWithConsumer();
+        } else {
+            waitTopicsReadyWithoutConsumer();
+        }
+        stats.reset();
+    }
+
+    private void waitTopicsReadyWithConsumer() {
         long start = System.nanoTime();
         boolean ready = false;
         while (System.nanoTime() < start + TOPIC_READY_TIMEOUT_NANOS) {
@@ -187,7 +196,16 @@ public class PerfCommand implements AutoCloseable {
         if (!ready) {
             throw new RuntimeException("Timeout waiting for topics to be ready");
         }
-        stats.reset();
+    }
+
+    private void waitTopicsReadyWithoutConsumer() {
+        producerService.probe();
+        try {
+            // If there is no consumer, we can only wait for a fixed time to ensure the topic is ready.
+            Thread.sleep(TimeUnit.SECONDS.toMillis(30));
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**

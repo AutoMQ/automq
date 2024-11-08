@@ -116,6 +116,12 @@ public class ConsumerService implements AutoCloseable {
         }
     }
 
+    public int consumerCount() {
+        return groups.stream()
+            .mapToInt(Group::consumerCount)
+            .sum();
+    }
+
     @Override
     public void close() {
         admin.close();
