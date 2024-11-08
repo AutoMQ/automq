@@ -204,17 +204,14 @@ public interface ObjectReader extends AsyncMeasurable {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o)
-                return true;
-            if (o == null || getClass() != o.getClass())
-                return false;
-            DefaultObjectReader reader = (DefaultObjectReader) o;
-            return Objects.equals(metadata.objectId(), reader.metadata.objectId());
+            // NOTE: DO NOT OVERRIDE THIS
+            return super.equals(o);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(metadata.objectId());
+            // NOTE: DO NOT OVERRIDE THIS
+            return super.hashCode();
         }
 
     }
