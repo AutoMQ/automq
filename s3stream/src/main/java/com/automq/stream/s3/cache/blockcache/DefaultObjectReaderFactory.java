@@ -15,6 +15,7 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.ObjectReaderLRUCache;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.operator.ObjectStorage;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class DefaultObjectReaderFactory implements ObjectReaderFactory {
     private static final int MAX_OBJECT_READER_SIZE = 100 * 1024 * 1024; // 100MB;
@@ -29,12 +30,13 @@ public class DefaultObjectReaderFactory implements ObjectReaderFactory {
 
     @Override
     public synchronized ObjectReader get(S3ObjectMetadata metadata) {
-        ObjectReader objectReader = objectReaders.get(metadata.objectId());
-        if (objectReader == null) {
-            objectReader = ObjectReader.reader(metadata, objectStorage);
-            objectReaders.put(metadata.objectId(), objectReader);
-        }
-        return objectReader.retain();
+        AtomicReference<ObjectReader> objectReaderRef = new AtomicReference<>();
+        objectReaders.inLockRun(() -> {
+            ObjectReader objectReader = objectReaders.computeIfAbsent(metadata.objectId(), k -> ObjectReader.reader(metadata, objectStorage));
+            objectReader.retain();
+            objectReaderRef.set(objectReader);
+        });
+        return objectReaderRef.get();
     }
 
     @Override
