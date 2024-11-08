@@ -22,6 +22,12 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * An asynchronous LRU cache that supports asynchronous value computation.
+ *
+ * @param <K> key type
+ * @param <V> value type, NOTE: V must not override equals and hashCode
+ */
 public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     private static final Logger LOGGER = LoggerFactory.getLogger(AsyncLRUCache.class);
     private final AsyncLRUCacheStats stats = AsyncLRUCacheStats.getInstance();
