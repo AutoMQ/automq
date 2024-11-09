@@ -325,7 +325,7 @@ Found problem:
     properties.setProperty("log.dirs", availableDirs.mkString(","))
     val stream = new ByteArrayOutputStream()
     assertEquals(0, runFormatCommand(stream, properties, Seq("--feature", "metadata.version=20")))
-    assertTrue(stream.toString().contains("3.9-IV0"),
+    assertTrue(stream.toString().contains("3.8-IV0"),
       "Failed to find content in output: " + stream.toString())
   }
 
@@ -336,7 +336,7 @@ Found problem:
     properties.putAll(defaultStaticQuorumProperties)
     properties.setProperty("log.dirs", availableDirs.mkString(","))
     assertEquals("Unsupported feature: non.existent.feature. Supported features are: " +
-      "group.version, kraft.version, transaction.version",
+      "kraft.version, transaction.version",
         assertThrows(classOf[FormatterException], () =>
           runFormatCommand(new ByteArrayOutputStream(), properties,
             Seq("--feature", "non.existent.feature=20"))).getMessage)
