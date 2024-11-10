@@ -167,7 +167,7 @@ public class StreamTaskTest {
 
     private final MockSourceNode<Integer, Integer> source1 = new MockSourceNode<>(intDeserializer, intDeserializer);
     private final MockSourceNode<Integer, Integer> source2 = new MockSourceNode<>(intDeserializer, intDeserializer);
-    private final MockSourceNode<Integer, Integer> source3 = new MockSourceNode<>(intDeserializer, intDeserializer) {
+    private final MockSourceNode<Integer, Integer> source3 = new MockSourceNode<Integer, Integer>(intDeserializer, intDeserializer) {
         @Override
         public void process(final Record<Integer, Integer> record) {
             throw new RuntimeException("KABOOM!");
@@ -178,7 +178,7 @@ public class StreamTaskTest {
             throw new RuntimeException("KABOOM!");
         }
     };
-    private final MockSourceNode<Integer, Integer> timeoutSource = new MockSourceNode<>(intDeserializer, intDeserializer) {
+    private final MockSourceNode<Integer, Integer> timeoutSource = new MockSourceNode<Integer, Integer>(intDeserializer, intDeserializer) {
         @Override
         public void process(final Record<Integer, Integer> record) {
             throw new TimeoutException("Kaboom!");
@@ -442,7 +442,7 @@ public class StreamTaskTest {
         task.addPartitionsForOffsetReset(Collections.singleton(partition1));
 
         final AtomicReference<AssertionError> shouldNotSeek = new AtomicReference<>();
-        try (final MockConsumer<byte[], byte[]> consumer = new MockConsumer<>(OffsetResetStrategy.EARLIEST) {
+        try (final MockConsumer<byte[], byte[]> consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST) {
                 @Override
                 public void seek(final TopicPartition partition, final long offset) {
                     final AssertionError error = shouldNotSeek.get();
@@ -2203,6 +2203,7 @@ public class StreamTaskTest {
         when(stateManager.taskId()).thenReturn(taskId);
         when(stateManager.taskType()).thenReturn(TaskType.ACTIVE);
         final long offset = 543L;
+        final long consumedOffset = 345L;
 
         when(recordCollector.offsets()).thenReturn(singletonMap(changelogPartition, offset));
         when(stateManager.changelogOffsets())
@@ -2600,7 +2601,6 @@ public class StreamTaskTest {
         task.resumePollingForPartitionsWithAvailableSpace();
         consumer.poll(Duration.ZERO);
         task.addRecords(partition1, records);
-        task.updateNextOffsets(partition1, new OffsetAndMetadata(offset + 1, Optional.empty(), ""));
         task.updateLags();
 
         assertTrue(task.process(offset));
@@ -2632,7 +2632,6 @@ public class StreamTaskTest {
         task.resumePollingForPartitionsWithAvailableSpace();
         consumer.poll(Duration.ZERO);
         task.addRecords(partition1, records);
-        task.updateNextOffsets(partition1, new OffsetAndMetadata(offset + 1, Optional.empty(), ""));
         task.updateLags();
 
         assertTrue(task.process(offset));
@@ -2661,8 +2660,6 @@ public class StreamTaskTest {
         task.resumePollingForPartitionsWithAvailableSpace();
         consumer.poll(Duration.ZERO);
         task.addRecords(partition1, records);
-        task.updateNextOffsets(partition1, new OffsetAndMetadata(offset + 1, Optional.empty(), ""));
-
         task.updateLags();
 
         assertTrue(task.process(offset));
