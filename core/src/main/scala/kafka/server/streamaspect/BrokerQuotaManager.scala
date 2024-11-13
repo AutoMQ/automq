@@ -17,7 +17,6 @@ import kafka.utils.QuotaUtils
 import org.apache.kafka.common.MetricName
 import org.apache.kafka.common.metrics.stats.{Avg, CumulativeSum, Rate}
 import org.apache.kafka.common.metrics.{Metrics, Quota, QuotaViolationException, Sensor}
-import org.apache.kafka.common.requests.RequestContext
 import org.apache.kafka.common.security.auth.KafkaPrincipal
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.network.Session
