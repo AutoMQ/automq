@@ -122,20 +122,37 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
 
       val allMetrics = metrics.metrics()
 
-      val requestMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.RequestRate, metricsTags))
-      if (requestMetrics != null) {
-        requestMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.RequestRate)))
+      val requestRateMetric = allMetrics.get(clientQuotaMetricName(QuotaType.RequestRate, metricsTags))
+      if (requestRateMetric != null) {
+        requestRateMetric.config(getQuotaMetricConfig(quotaLimit(QuotaType.RequestRate)))
       }
 
-      val produceMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Produce, metricsTags))
-      if (produceMetrics != null) {
-        produceMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Produce)))
+      val produceMetric = allMetrics.get(clientQuotaMetricName(QuotaType.Produce, metricsTags))
+      if (produceMetric != null) {
+        produceMetric.config(getQuotaMetricConfig(quotaLimit(QuotaType.Produce)))
       }
 
-      val fetchMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Fetch, metricsTags))
-      if (fetchMetrics != null) {
-        fetchMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Fetch)))
+      val fetchMetric = allMetrics.get(clientQuotaMetricName(QuotaType.Fetch, metricsTags))
+      if (fetchMetric != null) {
+        fetchMetric.config(getQuotaMetricConfig(quotaLimit(QuotaType.Fetch)))
       }
+    }
+  }
+
+  def updateQuota(quotaType: QuotaType, quota: Double): Unit = {
+    // update the quota in the config first to make sure the new quota will be used if {@link #updateQuotaMetricConfigs} is called
+    quotaType match {
+      case QuotaType.RequestRate => config.requestRateQuota(quota)
+      case QuotaType.Produce => config.produceQuota(quota)
+      case QuotaType.Fetch => config.fetchQuota(quota)
+      case _ => throw new IllegalArgumentException(s"Unknown quota type $quotaType")
+    }
+
+    // update the metric config
+    val allMetrics = metrics.metrics()
+    val metric = allMetrics.get(clientQuotaMetricName(quotaType, metricsTags))
+    if (metric != null) {
+      metric.config(getQuotaMetricConfig(quotaLimit(quotaType)))
     }
   }
 

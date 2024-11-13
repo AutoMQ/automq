@@ -72,12 +72,24 @@ public class BrokerQuotaManagerConfig extends ClientQuotaManagerConfig {
         return produceQuota;
     }
 
+    public void produceQuota(double produceQuota) {
+        this.produceQuota = produceQuota;
+    }
+
     public double fetchQuota() {
         return fetchQuota;
     }
 
+    public void fetchQuota(double fetchQuota) {
+        this.fetchQuota = fetchQuota;
+    }
+
     public double requestRateQuota() {
         return requestRateQuota;
+    }
+
+    public void requestRateQuota(double requestRateQuota) {
+        this.requestRateQuota = requestRateQuota;
     }
 
     public List<String> userWhiteList() {
