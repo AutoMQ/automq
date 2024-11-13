@@ -123,6 +123,50 @@ public class BrokerQuotaManagerTest {
     }
 
     @Test
+    public void testUpdateQuota() {
+        int result;
+        long time = this.time.milliseconds();
+
+        // enable quota
+        Properties properties = new Properties();
+        properties.put(QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, true);
+        brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
+
+        brokerQuotaManager.updateQuota(QuotaType.requestRate(), 1);
+        // rate = 1 / 2000ms
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time);
+        assertEquals(0, result);
+        // rate = 2 / 2010ms
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 10);
+        assertEquals(0, result);
+        // rate = 3 / 2999ms > 1
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999);
+        assertEquals(1, result);
+
+        brokerQuotaManager.updateQuota(QuotaType.requestRate(), 2);
+        // rate = 4 / 2999ms
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999);
+        assertEquals(0, result);
+        // rate = 5 / 2999ms
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999);
+        assertEquals(0, result);
+        // rate = 6 / 2999ms > 2
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999);
+        assertEquals(1, result);
+
+        brokerQuotaManager.updateQuota(QuotaType.requestRate(), 1);
+        // rate = 5 / 2999ms > 1
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999 + 2999);
+        assertEquals(1000, result);
+        // rate = 2 / 2000ms
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999 + 2999 + 1);
+        assertEquals(0, result);
+        // rate = 3 / 2999ms > 1
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999 + 2999 + 2999);
+        assertEquals(1, result);
+    }
+
+    @Test
     public void testThrottle() {
         AtomicInteger throttleCounter = new AtomicInteger(0);
         brokerQuotaManager.throttle(QuotaType.requestRate(), new ThrottleCallback() {
