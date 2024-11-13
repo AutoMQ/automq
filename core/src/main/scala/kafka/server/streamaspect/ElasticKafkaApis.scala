@@ -312,9 +312,7 @@ class ElasticKafkaApis(
       val requestThrottleTimeMs =
         if (produceRequest.acks == 0) 0
         else quotas.request.maybeRecordAndGetThrottleTimeMs(request, timeMs)
-      val brokerRequestThrottleTimeMs =
-        if (produceRequest.acks == 0) 0
-        else quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Request, request, 1, timeMs)
+      val brokerRequestThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Request, request, 1, timeMs)
       val maxThrottleTimeMs = IntStream.of(bandwidthThrottleTimeMs, requestThrottleTimeMs, brokerBandwidthThrottleTimeMs, brokerRequestThrottleTimeMs).max().orElse(0)
       if (maxThrottleTimeMs > 0) {
         request.apiThrottleTimeMs = maxThrottleTimeMs
