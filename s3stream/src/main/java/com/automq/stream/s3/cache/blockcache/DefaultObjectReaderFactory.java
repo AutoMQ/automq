@@ -15,6 +15,7 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.ObjectReaderLRUCache;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.operator.ObjectStorage;
+
 import java.util.concurrent.atomic.AtomicReference;
 
 public class DefaultObjectReaderFactory implements ObjectReaderFactory {

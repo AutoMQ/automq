@@ -84,7 +84,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
     private final Condition cond;
     private final Controller controller;
     private final ScheduledExecutorService mainExecutorService;
-    private final Set<Integer> brokerIdsInUse;
+    private final Map<Integer, BrokerEndpoints> bootstrapServerMapInUse;
     private final Set<TopicPartition> currentAssignment = new HashSet<>();
     private final StaticAutoBalancerConfig staticConfig;
     private final String listenerName;
@@ -101,7 +101,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         this.controller = controller;
         this.clusterModel = clusterModel;
         this.bootstrapServerMap = new HashMap<>();
-        this.brokerIdsInUse = new HashSet<>();
+        this.bootstrapServerMapInUse = new HashMap<>();
         this.lock = new ReentrantLock();
         this.cond = lock.newCondition();
         this.mainExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-main"));
@@ -167,8 +167,8 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
     public static class BrokerEndpoints {
         private final int brokerId;
         private Set<String> endpoints = new HashSet<>();
-
         private boolean isFenced;
+        private boolean isOutdated = false;
 
         public BrokerEndpoints(int brokerId) {
             this.brokerId = brokerId;
@@ -199,6 +199,13 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
             return !this.isFenced && !this.endpoints.isEmpty();
         }
 
+        public boolean isOutdated() {
+            return isOutdated;
+        }
+
+        public void setOutdated(boolean outdated) {
+            isOutdated = outdated;
+        }
     }
 
     @Override
@@ -221,7 +228,13 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
             BrokerEndpoints brokerEndpoints = new BrokerEndpoints(record.brokerId());
             brokerEndpoints.setFenced(Utils.isBrokerFenced(record));
             brokerEndpoints.setEndpoints(endpoints);
+            brokerEndpoints.setOutdated(false);
             this.bootstrapServerMap.put(record.brokerId(), brokerEndpoints);
+            this.bootstrapServerMapInUse.computeIfPresent(record.brokerId(), (k, v) -> {
+                v.setOutdated(!v.getEndpoints().equals(endpoints));
+                v.setFenced(Utils.isBrokerFenced(record));
+                return v;
+            });
             cond.signal();
         } finally {
             lock.unlock();
@@ -236,7 +249,6 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         } finally {
             lock.unlock();
         }
-
     }
 
     @Override
@@ -245,10 +257,14 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         isBrokerFenced.ifPresent(isFenced -> {
             lock.lock();
             try {
-                BrokerEndpoints brokerEndpoints = this.bootstrapServerMap.get(record.brokerId());
-                if (brokerEndpoints != null) {
-                    brokerEndpoints.setFenced(isFenced);
-                }
+                this.bootstrapServerMap.computeIfPresent(record.brokerId(), (k, v) -> {
+                    v.setFenced(isFenced);
+                    return v;
+                });
+                this.bootstrapServerMapInUse.computeIfPresent(record.brokerId(), (k, v) -> {
+                    v.setFenced(isFenced);
+                    return v;
+                });
                 cond.signal();
             } finally {
                 lock.unlock();
@@ -256,20 +272,21 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         });
     }
 
-    private boolean hasAvailableBrokerInUse() {
-        if (brokerIdsInUse.isEmpty()) {
+    boolean hasAvailableBrokerInUse() {
+        if (bootstrapServerMapInUse.isEmpty()) {
             return false;
         }
-        for (int brokerId : brokerIdsInUse) {
-            BrokerEndpoints brokerEndpoints = this.bootstrapServerMap.get(brokerId);
-            if (brokerEndpoints != null && brokerEndpoints.isValid()) {
+        for (Map.Entry<Integer, BrokerEndpoints> entry : bootstrapServerMapInUse.entrySet()) {
+            int brokerId = entry.getKey();
+            BrokerEndpoints endpoints = entry.getValue();
+            if (bootstrapServerMap.containsKey(brokerId) && endpoints != null && endpoints.isValid() && !endpoints.isOutdated()) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean hasAvailableBroker() {
+    boolean hasAvailableBroker() {
         if (this.bootstrapServerMap.isEmpty()) {
             return false;
         }
@@ -283,18 +300,17 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
 
     public String buildBootstrapServer() {
         Set<String> endpoints = new HashSet<>();
-        this.brokerIdsInUse.clear();
+        this.bootstrapServerMapInUse.clear();
         for (BrokerEndpoints brokerEndpoints : this.bootstrapServerMap.values()) {
             if (brokerEndpoints.isValid() && !brokerEndpoints.getEndpoints().isEmpty()) {
                 endpoints.add(brokerEndpoints.getEndpoints().iterator().next());
-                this.brokerIdsInUse.add(brokerEndpoints.brokerId());
+                this.bootstrapServerMapInUse.put(brokerEndpoints.brokerId(), brokerEndpoints);
             }
         }
         return String.join(",", endpoints);
     }
 
-    private void checkAndCreateConsumer(int epoch) {
-        String bootstrapServer;
+    void checkAndCreateConsumer(int epoch) {
         this.lock.lock();
         try {
             if (!isRunnable(epoch)) {
@@ -314,9 +330,10 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
                     return;
                 }
             }
-            bootstrapServer = buildBootstrapServer();
-            if (this.consumer == null && !bootstrapServer.isEmpty()) {
+
+            if (this.consumer == null) {
                 //TODO: fetch metadata from controller
+                String bootstrapServer = buildBootstrapServer();
                 this.consumer = createConsumer(bootstrapServer);
                 logger.info("Created consumer on {}", bootstrapServer);
             }
