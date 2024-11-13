@@ -60,7 +60,11 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       return 0
     }
 
-    maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context, value, timeMs)
+    if (isInWhiteList(request.session.principal, request.context.clientId(), request.context.listenerName())) {
+      return 0
+    }
+
+    maybeRecordAndGetThrottleTimeMs(quotaType, value, timeMs)
   }
 
   protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
@@ -84,11 +88,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     }
   }
 
-  def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, session: Session, context: RequestContext, value: Double,
-    timeMs: Long): Int = {
-    if (isInWhiteList(session.principal, context.clientId(), context.listenerName())) {
-      return 0
-    }
+  def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, value: Double, timeMs: Long): Int = {
     val clientSensors = getOrCreateQuotaSensors(quotaType)
     try {
       clientSensors.quotaSensor.record(value, timeMs, true)
