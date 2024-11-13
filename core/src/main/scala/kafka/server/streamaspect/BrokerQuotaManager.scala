@@ -68,7 +68,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   }
 
   protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
-    if (quotaType == QuotaType.Request) {
+    if (quotaType == QuotaType.RequestRate) {
       QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
     } else {
       QuotaUtils.throttleTime(e, timeMs)
@@ -112,10 +112,10 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       whiteListCache.clear()
 
       if (!config.quotaEnabled) {
-        metrics.removeSensor(getQuotaSensorName(QuotaType.Request, metricsTags))
+        metrics.removeSensor(getQuotaSensorName(QuotaType.RequestRate, metricsTags))
         metrics.removeSensor(getQuotaSensorName(QuotaType.Produce, metricsTags))
         metrics.removeSensor(getQuotaSensorName(QuotaType.Fetch, metricsTags))
-        metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Request, metricsTags))
+        metrics.removeSensor(getThrottleTimeSensorName(QuotaType.RequestRate, metricsTags))
         metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Produce, metricsTags))
         metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Fetch, metricsTags))
         return
@@ -123,9 +123,9 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
 
       val allMetrics = metrics.metrics()
 
-      val requestMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Request, metricsTags))
+      val requestMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.RequestRate, metricsTags))
       if (requestMetrics != null) {
-        requestMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Request)))
+        requestMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.RequestRate)))
       }
 
       val produceMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Produce, metricsTags))
@@ -162,7 +162,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     s"$quotaType-${metricTagsToSensorSuffix(metricTags)}"
 
   private def quotaLimit(quotaType: QuotaType): Double = {
-    if (quotaType == QuotaType.Request) config.requestQuota
+    if (quotaType == QuotaType.RequestRate) config.requestRateQuota
     else if (quotaType == QuotaType.Produce) config.produceQuota
     else if (quotaType == QuotaType.Fetch) config.fetchQuota
     else throw new IllegalArgumentException(s"Unknown quota type $quotaType")

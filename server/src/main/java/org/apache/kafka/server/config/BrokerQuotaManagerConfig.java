@@ -26,7 +26,7 @@ public class BrokerQuotaManagerConfig extends ClientQuotaManagerConfig {
     private boolean quotaEnabled = false;
     private double produceQuota = Double.MAX_VALUE;
     private double fetchQuota = Double.MAX_VALUE;
-    private double requestQuota = Double.MAX_VALUE;
+    private double requestRateQuota = Double.MAX_VALUE;
 
     private List<String> userWhiteList = List.of();
     private List<String> clientIdWhiteList = List.of();
@@ -42,7 +42,7 @@ public class BrokerQuotaManagerConfig extends ClientQuotaManagerConfig {
         quotaEnabled = getBoolean(map, QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, quotaEnabled);
         produceQuota = getDouble(map, QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, produceQuota);
         fetchQuota = getDouble(map, QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, fetchQuota);
-        requestQuota = getDouble(map, QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, requestQuota);
+        requestRateQuota = getDouble(map, QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, requestRateQuota);
 
         String userWhiteListProp = props.getProperty(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_CONFIG);
         if (null != userWhiteListProp && !userWhiteListProp.isBlank()) {
@@ -76,8 +76,8 @@ public class BrokerQuotaManagerConfig extends ClientQuotaManagerConfig {
         return fetchQuota;
     }
 
-    public double requestQuota() {
-        return requestQuota;
+    public double requestRateQuota() {
+        return requestRateQuota;
     }
 
     public List<String> userWhiteList() {

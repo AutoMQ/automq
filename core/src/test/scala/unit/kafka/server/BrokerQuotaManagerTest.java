@@ -109,23 +109,23 @@ public class BrokerQuotaManagerTest {
         properties.put(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, 0);
         properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, 1);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
-        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 1, time);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time);
         assertEquals(0, result);
-        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 1, time + 10);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 10);
         assertEquals(0, result);
-        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 1, time + second2millis);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + second2millis);
         assertTrue(result > 0);
 
         properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, 10);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
-        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.request(), request, 0, time + second2millis);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 0, time + second2millis);
         assertEquals(0, result);
     }
 
     @Test
     public void testThrottle() {
         AtomicInteger throttleCounter = new AtomicInteger(0);
-        brokerQuotaManager.throttle(QuotaType.request(), new ThrottleCallback() {
+        brokerQuotaManager.throttle(QuotaType.requestRate(), new ThrottleCallback() {
             @Override
             public void startThrottling() {
                 throttleCounter.incrementAndGet();
