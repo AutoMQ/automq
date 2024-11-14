@@ -35,8 +35,9 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
     /**
      * The scheduler to schedule the checker periodically.
+     * Package-private for testing.
      */
-    private ScheduledExecutorService checkerScheduler;
+    ScheduledExecutorService checkerScheduler;
     /**
      * The map to store the source and the most recent load level from the checker.
      * Note: It should only be accessed in the {@link #checkerScheduler} thread.
