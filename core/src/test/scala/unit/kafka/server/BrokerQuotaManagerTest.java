@@ -105,8 +105,24 @@ public class BrokerQuotaManagerTest {
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.fetch(), request, 500, time + second2millis);
         assertEquals(0, result);
 
-        // Test request quota
+        // Test slow fetch quota
         properties.put(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, 0);
+        properties.put(QuotaConfigs.BROKER_QUOTA_SLOW_FETCH_BYTES_CONFIG, 100);
+        brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.slowFetch(), request, 100, time);
+        assertEquals(0, result);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.slowFetch(), request, 100, time + 10);
+        assertEquals(0, result);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.slowFetch(), request, 100, time + second2millis);
+        assertTrue(result > 0);
+
+        properties.put(QuotaConfigs.BROKER_QUOTA_SLOW_FETCH_BYTES_CONFIG, 1000);
+        brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.slowFetch(), request, 500, time + second2millis);
+        assertEquals(0, result);
+
+        // Test request quota
+        properties.put(QuotaConfigs.BROKER_QUOTA_SLOW_FETCH_BYTES_CONFIG, 0);
         properties.put(QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, 1);
         brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time);
