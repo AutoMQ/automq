@@ -56,10 +56,12 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, request: RequestChannel.Request, value: Double,
     timeMs: Long): Int = {
     if (!config.quotaEnabled) {
+      // Quota is disabled, no need to throttle
       return 0
     }
 
     if (isInWhiteList(request.session.principal, request.context.clientId(), request.context.listenerName())) {
+      // Client is in the white list, no need to throttle
       return 0
     }
 
