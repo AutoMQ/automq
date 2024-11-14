@@ -17,7 +17,6 @@ import kafka.utils.QuotaUtils
 import org.apache.kafka.common.MetricName
 import org.apache.kafka.common.metrics.stats.{Avg, CumulativeSum, Rate}
 import org.apache.kafka.common.metrics.{Metrics, Quota, QuotaViolationException, Sensor}
-import org.apache.kafka.common.requests.RequestContext
 import org.apache.kafka.common.security.auth.KafkaPrincipal
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.network.Session
@@ -60,11 +59,15 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       return 0
     }
 
-    maybeRecordAndGetThrottleTimeMs(quotaType, request.session, request.context, value, timeMs)
+    if (isInWhiteList(request.session.principal, request.context.clientId(), request.context.listenerName())) {
+      return 0
+    }
+
+    maybeRecordAndGetThrottleTimeMs(quotaType, value, timeMs)
   }
 
   protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
-    if (quotaType == QuotaType.Request) {
+    if (quotaType == QuotaType.RequestRate) {
       QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
     } else {
       QuotaUtils.throttleTime(e, timeMs)
@@ -84,11 +87,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     }
   }
 
-  def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, session: Session, context: RequestContext, value: Double,
-    timeMs: Long): Int = {
-    if (isInWhiteList(session.principal, context.clientId(), context.listenerName())) {
-      return 0
-    }
+  def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, value: Double, timeMs: Long): Int = {
     val clientSensors = getOrCreateQuotaSensors(quotaType)
     try {
       clientSensors.quotaSensor.record(value, timeMs, true)
@@ -112,10 +111,10 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       whiteListCache.clear()
 
       if (!config.quotaEnabled) {
-        metrics.removeSensor(getQuotaSensorName(QuotaType.Request, metricsTags))
+        metrics.removeSensor(getQuotaSensorName(QuotaType.RequestRate, metricsTags))
         metrics.removeSensor(getQuotaSensorName(QuotaType.Produce, metricsTags))
         metrics.removeSensor(getQuotaSensorName(QuotaType.Fetch, metricsTags))
-        metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Request, metricsTags))
+        metrics.removeSensor(getThrottleTimeSensorName(QuotaType.RequestRate, metricsTags))
         metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Produce, metricsTags))
         metrics.removeSensor(getThrottleTimeSensorName(QuotaType.Fetch, metricsTags))
         return
@@ -123,20 +122,37 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
 
       val allMetrics = metrics.metrics()
 
-      val requestMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Request, metricsTags))
-      if (requestMetrics != null) {
-        requestMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Request)))
+      val requestRateMetric = allMetrics.get(clientQuotaMetricName(QuotaType.RequestRate, metricsTags))
+      if (requestRateMetric != null) {
+        requestRateMetric.config(getQuotaMetricConfig(quotaLimit(QuotaType.RequestRate)))
       }
 
-      val produceMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Produce, metricsTags))
-      if (produceMetrics != null) {
-        produceMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Produce)))
+      val produceMetric = allMetrics.get(clientQuotaMetricName(QuotaType.Produce, metricsTags))
+      if (produceMetric != null) {
+        produceMetric.config(getQuotaMetricConfig(quotaLimit(QuotaType.Produce)))
       }
 
-      val fetchMetrics = allMetrics.get(clientQuotaMetricName(QuotaType.Fetch, metricsTags))
-      if (fetchMetrics != null) {
-        fetchMetrics.config(getQuotaMetricConfig(quotaLimit(QuotaType.Fetch)))
+      val fetchMetric = allMetrics.get(clientQuotaMetricName(QuotaType.Fetch, metricsTags))
+      if (fetchMetric != null) {
+        fetchMetric.config(getQuotaMetricConfig(quotaLimit(QuotaType.Fetch)))
       }
+    }
+  }
+
+  def updateQuota(quotaType: QuotaType, quota: Double): Unit = {
+    // update the quota in the config first to make sure the new quota will be used if {@link #updateQuotaMetricConfigs} is called
+    quotaType match {
+      case QuotaType.RequestRate => config.requestRateQuota(quota)
+      case QuotaType.Produce => config.produceQuota(quota)
+      case QuotaType.Fetch => config.fetchQuota(quota)
+      case _ => throw new IllegalArgumentException(s"Unknown quota type $quotaType")
+    }
+
+    // update the metric config
+    val allMetrics = metrics.metrics()
+    val metric = allMetrics.get(clientQuotaMetricName(quotaType, metricsTags))
+    if (metric != null) {
+      metric.config(getQuotaMetricConfig(quotaLimit(quotaType)))
     }
   }
 
@@ -162,7 +178,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     s"$quotaType-${metricTagsToSensorSuffix(metricTags)}"
 
   private def quotaLimit(quotaType: QuotaType): Double = {
-    if (quotaType == QuotaType.Request) config.requestQuota
+    if (quotaType == QuotaType.RequestRate) config.requestRateQuota
     else if (quotaType == QuotaType.Produce) config.produceQuota
     else if (quotaType == QuotaType.Fetch) config.fetchQuota
     else throw new IllegalArgumentException(s"Unknown quota type $quotaType")
