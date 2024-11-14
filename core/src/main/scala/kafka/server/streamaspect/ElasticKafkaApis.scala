@@ -5,7 +5,7 @@ import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import com.yammer.metrics.core.Histogram
 import kafka.automq.zonerouter.{ClientIdMetadata, NoopProduceRouter, ProduceRouter}
 import kafka.coordinator.transaction.TransactionCoordinator
-import kafka.log.streamaspect.ElasticLogManager
+import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
 import kafka.metrics.KafkaMetricsUtil
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.QuotaManagers
@@ -696,24 +696,32 @@ class ElasticKafkaApis(
         val timeMs = time.milliseconds()
 
         // AutoMQ for Kafka inject start
+        val isSlowRead = !ReadHint.isFastRead
+
         val requestThrottleTimeMs = quotas.request.maybeRecordAndGetThrottleTimeMs(request, timeMs)
         val bandwidthThrottleTimeMs = quotas.fetch.maybeRecordAndGetThrottleTimeMs(request, responseSize, timeMs)
-        val brokerRequestThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.RequestRate, request, 1, timeMs)
         val brokerBandwidthThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Fetch, request, responseSize, timeMs)
+        val brokerSlowFetchThrottleTimeMs = if (isSlowRead) quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.SlowFetch, request, responseSize, timeMs) else 0
+        val brokerRequestThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.RequestRate, request, 1, timeMs)
 
-        val maxThrottleTimeMs = IntStream.of(bandwidthThrottleTimeMs, requestThrottleTimeMs, brokerBandwidthThrottleTimeMs, brokerRequestThrottleTimeMs).max().orElse(0)
+        val maxThrottleTimeMs = IntStream.of(bandwidthThrottleTimeMs, requestThrottleTimeMs, brokerBandwidthThrottleTimeMs, brokerSlowFetchThrottleTimeMs, brokerRequestThrottleTimeMs).max().orElse(0)
         if (maxThrottleTimeMs > 0) {
           request.apiThrottleTimeMs = maxThrottleTimeMs
           // Even if we need to throttle for request quota violation, we should "unrecord" the already recorded value
           // from the fetch quota because we are going to return an empty response.
           quotas.fetch.unrecordQuotaSensor(request, responseSize, timeMs)
           quotas.broker.unrecordQuotaSensor(QuotaType.Fetch, responseSize, timeMs)
+          if (isSlowRead) {
+            quotas.broker.unrecordQuotaSensor(QuotaType.SlowFetch, responseSize, timeMs)
+          }
           if (bandwidthThrottleTimeMs == maxThrottleTimeMs) {
             requestHelper.throttle(quotas.fetch, request, bandwidthThrottleTimeMs)
           } else if (requestThrottleTimeMs == maxThrottleTimeMs) {
             requestHelper.throttle(quotas.request, request, requestThrottleTimeMs)
           } else if (brokerBandwidthThrottleTimeMs == maxThrottleTimeMs) {
             requestHelper.throttle(QuotaType.Fetch, quotas.broker, request, brokerBandwidthThrottleTimeMs)
+          } else if (brokerSlowFetchThrottleTimeMs == maxThrottleTimeMs) {
+            requestHelper.throttle(QuotaType.SlowFetch, quotas.broker, request, brokerSlowFetchThrottleTimeMs)
           } else if (brokerRequestThrottleTimeMs == maxThrottleTimeMs) {
             requestHelper.throttle(QuotaType.RequestRate, quotas.broker, request, brokerRequestThrottleTimeMs)
           }
