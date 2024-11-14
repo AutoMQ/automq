@@ -34,6 +34,10 @@ object QuotaType  {
   case object Request extends QuotaType
   // AutoMQ for Kafka inject start
   /**
+   * Quota type for slow fetch throughput limiting.
+   */
+  case object SlowFetch extends QuotaType
+  /**
    * Quota type for request rate limiting.
    */
   case object RequestRate extends QuotaType
@@ -51,6 +55,7 @@ object QuotaType  {
       case QuotaType.Produce => ClientQuotaType.PRODUCE
       case QuotaType.Request => ClientQuotaType.REQUEST
       // AutoMQ for Kafka inject start
+      case QuotaType.SlowFetch => ClientQuotaType.SLOW_FETCH
       case QuotaType.RequestRate => ClientQuotaType.REQUEST_RATE
       // AutoMQ for Kafka inject end
       case QuotaType.ControllerMutation => ClientQuotaType.CONTROLLER_MUTATION
@@ -66,6 +71,10 @@ object QuotaType  {
 
   def produce(): QuotaType = {
     QuotaType.Produce
+  }
+
+  def slowFetch(): QuotaType = {
+    QuotaType.SlowFetch
   }
 
   def requestRate(): QuotaType = {
