@@ -23,5 +23,8 @@ public enum ClientQuotaType {
     PRODUCE,
     FETCH,
     REQUEST,
+    // AutoMQ for Kafka inject start
+    REQUEST_RATE,
+    // AutoMQ for Kafka inject end
     CONTROLLER_MUTATION
 }

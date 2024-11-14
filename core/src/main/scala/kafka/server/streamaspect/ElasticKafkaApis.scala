@@ -312,9 +312,7 @@ class ElasticKafkaApis(
       val requestThrottleTimeMs =
         if (produceRequest.acks == 0) 0
         else quotas.request.maybeRecordAndGetThrottleTimeMs(request, timeMs)
-      val brokerRequestThrottleTimeMs =
-        if (produceRequest.acks == 0) 0
-        else quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Request, request, 1, timeMs)
+      val brokerRequestThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.RequestRate, request, 1, timeMs)
       val maxThrottleTimeMs = IntStream.of(bandwidthThrottleTimeMs, requestThrottleTimeMs, brokerBandwidthThrottleTimeMs, brokerRequestThrottleTimeMs).max().orElse(0)
       if (maxThrottleTimeMs > 0) {
         request.apiThrottleTimeMs = maxThrottleTimeMs
@@ -325,7 +323,7 @@ class ElasticKafkaApis(
         } else if (brokerBandwidthThrottleTimeMs == maxThrottleTimeMs) {
           requestHelper.throttle(QuotaType.Produce, quotas.broker, request, brokerBandwidthThrottleTimeMs)
         } else if (brokerRequestThrottleTimeMs == maxThrottleTimeMs) {
-          requestHelper.throttle(QuotaType.Request, quotas.broker, request, brokerRequestThrottleTimeMs)
+          requestHelper.throttle(QuotaType.RequestRate, quotas.broker, request, brokerRequestThrottleTimeMs)
         }
       }
       // AutoMQ for Kafka inject end
@@ -700,7 +698,7 @@ class ElasticKafkaApis(
         // AutoMQ for Kafka inject start
         val requestThrottleTimeMs = quotas.request.maybeRecordAndGetThrottleTimeMs(request, timeMs)
         val bandwidthThrottleTimeMs = quotas.fetch.maybeRecordAndGetThrottleTimeMs(request, responseSize, timeMs)
-        val brokerRequestThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Request, request, 1, timeMs)
+        val brokerRequestThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.RequestRate, request, 1, timeMs)
         val brokerBandwidthThrottleTimeMs = quotas.broker.maybeRecordAndGetThrottleTimeMs(QuotaType.Fetch, request, responseSize, timeMs)
 
         val maxThrottleTimeMs = IntStream.of(bandwidthThrottleTimeMs, requestThrottleTimeMs, brokerBandwidthThrottleTimeMs, brokerRequestThrottleTimeMs).max().orElse(0)
@@ -717,7 +715,7 @@ class ElasticKafkaApis(
           } else if (brokerBandwidthThrottleTimeMs == maxThrottleTimeMs) {
             requestHelper.throttle(QuotaType.Fetch, quotas.broker, request, brokerBandwidthThrottleTimeMs)
           } else if (brokerRequestThrottleTimeMs == maxThrottleTimeMs) {
-            requestHelper.throttle(QuotaType.Request, quotas.broker, request, brokerRequestThrottleTimeMs)
+            requestHelper.throttle(QuotaType.RequestRate, quotas.broker, request, brokerRequestThrottleTimeMs)
           }
           // AutoMQ for Kafka inject end
 
