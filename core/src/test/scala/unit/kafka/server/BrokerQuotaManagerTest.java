@@ -139,6 +139,25 @@ public class BrokerQuotaManagerTest {
     }
 
     @Test
+    public void testZeroQuota() {
+        long result;
+        long time = this.time.milliseconds();
+
+        // enable quota
+        Properties properties = new Properties();
+        properties.put(QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, true);
+        brokerQuotaManager.updateQuotaConfigs(Option.apply(properties));
+
+        brokerQuotaManager.updateQuota(QuotaType.requestRate(), 0);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time);
+        assertEquals(1000, result);
+
+        brokerQuotaManager.updateQuota(QuotaType.slowFetch(), 0);
+        result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.slowFetch(), request, 1, time);
+        assertEquals(1000, result);
+    }
+
+    @Test
     public void testUpdateQuota() {
         int result;
         long time = this.time.milliseconds();

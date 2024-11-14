@@ -69,11 +69,13 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   }
 
   protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
-    if (quotaType == QuotaType.RequestRate) {
-      QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
-    } else {
-      QuotaUtils.throttleTime(e, timeMs)
+    quotaType match {
+      case QuotaType.SlowFetch | QuotaType.RequestRate =>
+        QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
+      case _ =>
+        QuotaUtils.throttleTime(e, timeMs)
     }
+
   }
 
   private def isInWhiteList(principal: KafkaPrincipal, clientId: String, listenerName: String): Boolean = {
