@@ -189,7 +189,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   private def getQuotaSensorName(quotaType: QuotaType, metricTags: Map[String, String]): String =
     s"$quotaType-${metricTagsToSensorSuffix(metricTags)}"
 
-  private def quotaLimit(quotaType: QuotaType): Double = {
+  def quotaLimit(quotaType: QuotaType): Double = {
     quotaType match {
       case QuotaType.RequestRate => config.requestRateQuota
       case QuotaType.Produce => config.produceQuota
