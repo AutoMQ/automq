@@ -11,8 +11,6 @@
 
 package com.automq.stream.s3.backpressure;
 
-import java.util.function.Supplier;
-
 /**
  * It checks the {@link LoadLevel} of the system and takes actions based on the load level
  * to prevent the system from being overwhelmed.
@@ -26,13 +24,9 @@ public interface BackPressureManager {
 
     /**
      * Register a checker to check the load level of the system.
-     * Note: It should be called after {@link #start()} and before {@link #shutdown()}.
-     *
-     * @param source     The source of the checker, which should be unique to identify the checker.
-     * @param checker    The checker to check the load level of the system.
-     * @param intervalMs The interval in milliseconds to check the load level of the system.
+     * Note: It should be called between {@link #start()} and {@link #shutdown()}.
      */
-    void registerChecker(String source, Supplier<LoadLevel> checker, long intervalMs);
+    void registerChecker(Checker checker);
 
     /**
      * Shutdown the back pressure manager, and release all resources.

@@ -142,7 +142,22 @@ public class DefaultBackPressureManagerTest {
     }
 
     private void callChecker(String source, LoadLevel level) {
-        manager.registerChecker(source, () -> level, 1);
+        manager.registerChecker(new Checker() {
+            @Override
+            public String source() {
+                return source;
+            }
+
+            @Override
+            public LoadLevel check() {
+                return level;
+            }
+
+            @Override
+            public long intervalMs() {
+                return 1;
+            }
+        });
     }
 
     private void assertRegulatorCalled(int increase, int decrease, int minimize) {

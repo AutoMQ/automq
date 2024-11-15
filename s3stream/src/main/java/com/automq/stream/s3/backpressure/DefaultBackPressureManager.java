@@ -17,7 +17,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,11 +63,11 @@ public class DefaultBackPressureManager implements BackPressureManager {
     }
 
     @Override
-    public void registerChecker(String source, Supplier<LoadLevel> checker, long intervalMs) {
+    public void registerChecker(Checker checker) {
         checkerScheduler.scheduleAtFixedRate(() -> {
-            loadLevels.put(source, checker.get());
+            loadLevels.put(checker.source(), checker.check());
             maybeRegulate();
-        }, 0, intervalMs, TimeUnit.MILLISECONDS);
+        }, 0, checker.intervalMs(), TimeUnit.MILLISECONDS);
     }
 
     @Override
