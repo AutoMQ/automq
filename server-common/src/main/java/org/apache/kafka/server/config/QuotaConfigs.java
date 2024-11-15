@@ -178,6 +178,7 @@ public class QuotaConfigs {
                 .define(QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, ConfigDef.Type.BOOLEAN, false, MEDIUM, QuotaConfigs.BROKER_QUOTA_ENABLED_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_DOC)
+                .define(QuotaConfigs.BROKER_QUOTA_SLOW_FETCH_BYTES_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_SLOW_FETCH_BYTES_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_DOC)
