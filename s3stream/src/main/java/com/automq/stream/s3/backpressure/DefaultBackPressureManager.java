@@ -121,6 +121,12 @@ public class DefaultBackPressureManager implements BackPressureManager {
     }
 
     private void regulate(LoadLevel loadLevel, long now) {
+        if (LoadLevel.NORMAL.equals(loadLevel) && LOGGER.isDebugEnabled()) {
+            LOGGER.debug("The system is in a normal state, checkers: {}", loadLevels);
+        } else {
+            LOGGER.info("The system is in a {} state, checkers: {}", loadLevel, loadLevels);
+        }
+
         loadLevel.regulate(regulator);
         lastRegulateTime = now;
     }
