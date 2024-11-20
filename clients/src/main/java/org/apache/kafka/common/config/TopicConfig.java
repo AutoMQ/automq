@@ -257,4 +257,14 @@ public class TopicConfig {
         "broker will not perform down-conversion for consumers expecting an older message format. The broker responds " +
         "with <code>UNSUPPORTED_VERSION</code> error for consume requests from such older clients. This configuration" +
         "does not apply to any message format conversion that might be required for replication to followers.";
+
+    // AutoMQ inject start
+    public static final String TABLE_TOPIC_ENABLE_CONFIG = "automq.table.topic.enable";
+    public static final String TABLE_TOPIC_ENABLE_DOC = "The configuration controls whether enable table topic";
+    public static final String TABLE_TOPIC_COMMIT_INTERVAL_CONFIG = "automq.table.topic.commit.interval.ms";
+    public static final String TABLE_TOPIC_COMMIT_INTERVAL_DOC = "The table topic commit interval(ms)";
+    public static final String TABLE_TOPIC_NAMESPACE_CONFIG = "automq.table.topic.namespace";
+    public static final String TABLE_TOPIC_NAMESPACE_DOC = "The table topic table namespace";
+    // AutoMQ inject end
+
 }

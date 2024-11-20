@@ -244,6 +244,20 @@ class DefaultAutoTopicCreationManager(
           .setReplicationFactor(config.transactionTopicReplicationFactor)
           .setConfigs(convertToTopicConfigCollections(
             txnCoordinator.transactionTopicConfigs))
+
+      // AutoMQ inject start
+      case "__automq_table_control" =>
+        new CreatableTopic()
+          .setName(topic)
+          .setNumPartitions(1)
+          .setReplicationFactor(1)
+      case "__automq_table_data" =>
+        new CreatableTopic()
+          .setName(topic)
+          .setNumPartitions(50)
+          .setReplicationFactor(1)
+      // AutoMQ inject end
+
       case topicName =>
         new CreatableTopic()
           .setName(topicName)
