@@ -2245,6 +2245,7 @@ project(':tools') {
 
     // AutoMQ inject start
     implementation project(':automq-shell')
+    implementation libs.guava
     // AutoMQ inject end
 
     // for SASL/OAUTHBEARER JWT validation
