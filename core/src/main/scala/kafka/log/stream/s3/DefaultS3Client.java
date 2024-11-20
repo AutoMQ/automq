@@ -11,9 +11,6 @@
 
 package kafka.log.stream.s3;
 
-import com.automq.stream.s3.backpressure.BackPressureManager;
-import com.automq.stream.s3.backpressure.DefaultBackPressureManager;
-import com.automq.stream.s3.backpressure.Regulator;
 import kafka.autobalancer.metricsreporter.metric.Derivator;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
@@ -30,6 +27,9 @@ import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.S3StreamClient;
+import com.automq.stream.s3.backpressure.BackPressureManager;
+import com.automq.stream.s3.backpressure.DefaultBackPressureManager;
+import com.automq.stream.s3.backpressure.Regulator;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
