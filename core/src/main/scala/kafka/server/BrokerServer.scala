@@ -28,7 +28,7 @@ import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
-import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager}
+import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -39,7 +39,7 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
-import org.apache.kafka.coordinator.group.{CoordinatorRecord, GroupCoordinator, GroupCoordinatorService, CoordinatorRecordSerde}
+import org.apache.kafka.coordinator.group.{CoordinatorRecord, CoordinatorRecordSerde, GroupCoordinator, GroupCoordinatorService}
 import org.apache.kafka.image.publisher.{BrokerRegistrationTracker, MetadataPublisher}
 import org.apache.kafka.image.loader.MetadataLoader
 import org.apache.kafka.metadata.{BrokerState, ListenerInfo}
@@ -550,6 +550,10 @@ class BrokerServer(
       // AutoMQ inject start
       ElasticLogManager.init(config, clusterId, this)
       produceRouter = newProduceRouter()
+
+      newPartitionLifecycleListeners().forEach(l => {
+        _replicaManager.addPartitionLifecycleListener(l)
+      })
       // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
@@ -819,6 +823,10 @@ class BrokerServer(
       override def decrease(): Unit = {
       }
     }
+  }
+
+  protected def newPartitionLifecycleListeners(): util.List[PartitionLifecycleListener] = {
+    new util.ArrayList[PartitionLifecycleListener]()
   }
   // AutoMQ inject end
 
