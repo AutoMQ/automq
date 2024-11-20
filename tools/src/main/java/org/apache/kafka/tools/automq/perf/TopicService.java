@@ -11,6 +11,7 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import com.google.common.collect.Lists;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
@@ -35,6 +36,13 @@ import java.util.stream.IntStream;
 public class TopicService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicService.class);
+    /**
+     * The maximum number of partitions per batch.
+     *
+     * @see org.apache.kafka.controller.ReplicationControlManager
+     */
+    private static final int MAX_PARTITIONS_PER_BATCH = 10_000;
+
     private final Admin admin;
 
     public TopicService(String bootstrapServer, Map<String, String> adminConfigs) {
@@ -52,9 +60,18 @@ public class TopicService implements AutoCloseable {
             .mapToObj(i -> generateTopicName(config.topicPrefix, config.partitionsPerTopic, i))
             .map(name -> new NewTopic(name, config.partitionsPerTopic, (short) 1).configs(config.topicConfigs))
             .collect(Collectors.toList());
-        CreateTopicsResult topics = admin.createTopics(newTopics);
-        topics.values().forEach(this::waitTopicCreated);
-        return topics.values().keySet().stream()
+
+        int topicsPerBatch = MAX_PARTITIONS_PER_BATCH / config.partitionsPerTopic;
+        List<List<NewTopic>> requests = Lists.partition(newTopics, topicsPerBatch);
+
+        Map<String, KafkaFuture<Void>> results = requests.stream()
+            .map(admin::createTopics)
+            .map(CreateTopicsResult::values)
+            .flatMap(map -> map.entrySet().stream())
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        results.forEach(this::waitTopicCreated);
+
+        return results.keySet().stream()
             .map(name -> new Topic(name, config.partitionsPerTopic))
             .collect(Collectors.toList());
     }
