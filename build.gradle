@@ -2242,6 +2242,7 @@ project(':tools') {
     implementation libs.awsSdkAuth
     implementation libs.hdrHistogram
     implementation libs.spotbugsAnnotations
+    implementation libs.guava
 
     // for SASL/OAUTHBEARER JWT validation
     implementation (libs.jose4j){
