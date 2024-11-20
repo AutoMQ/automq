@@ -260,7 +260,7 @@ public class TopicConfig {
     // AutoMQ inject start
     public static final String TABLE_TOPIC_ENABLE_CONFIG = "automq.table.topic.enable";
     public static final String TABLE_TOPIC_ENABLE_DOC = "The configuration controls whether enable table topic";
-    public static final String TABLE_TOPIC_COMMIT_INTERVAL_CONFIG = "automq.table.topic.commit.interval";
+    public static final String TABLE_TOPIC_COMMIT_INTERVAL_CONFIG = "automq.table.topic.commit.interval.ms";
     public static final String TABLE_TOPIC_COMMIT_INTERVAL_DOC = "The table topic commit interval(ms)";
     public static final String TABLE_TOPIC_NAMESPACE_CONFIG = "automq.table.topic.namespace";
     public static final String TABLE_TOPIC_NAMESPACE_DOC = "The table topic table namespace";
