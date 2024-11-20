@@ -364,7 +364,7 @@ class Partition(val topicPartition: TopicPartition,
   metricsGroup.newGauge("ReplicasCount", () => if (isLeader) assignmentState.replicationFactor else 0, tags)
   metricsGroup.newGauge("LastStableOffsetLag", () => log.map(_.lastStableOffsetLag).getOrElse(0), tags)
 
-  // AutoMQ for Kafka inject start
+  // AutoMQ inject start
   private val enableTraceLog = isTraceEnabled
   private var closed: Boolean = false
   /**
@@ -373,7 +373,8 @@ class Partition(val topicPartition: TopicPartition,
    * Used to return fast when fetching messages with `fetchOffset` equals to `confirmOffset` in [[checkFetchOffsetAndMaybeGetInfo]]
    */
   private var confirmOffset: Long = -1L
-  // AutoMQ for Kafka inject end
+  private val appendListeners = new CopyOnWriteArrayList[PartitionAppendListener]()
+  // AutoMQ inject end
 
   def hasLateTransaction(currentTimeMs: Long): Boolean = leaderLogIfLocal.exists(_.hasLateTransaction(currentTimeMs))
 
@@ -431,6 +432,25 @@ class Partition(val topicPartition: TopicPartition,
   def removeListener(listener: PartitionListener): Unit = {
     listeners.remove(listener)
   }
+
+  // AutoMQ inject start
+  def addAppendListener(listener: PartitionAppendListener): Unit = {
+    appendListeners.add(listener)
+  }
+
+  def removeAppendListener(listener: PartitionAppendListener): Unit = {
+    appendListeners.remove(listener)
+  }
+
+  def notifyAppendListener(records: MemoryRecords): Unit = {
+    try {
+      appendListeners.forEach(_.onAppend(topicPartition, records))
+    } catch {
+      case e: Exception =>
+        error(s"Error while notifying append listeners for partition $topicPartition", e)
+    }
+  }
+  // AutoMQ inject end
 
   /**
     * Create the future replica if 1) the current replica is not in the given log directory and 2) the future replica
@@ -1498,6 +1518,10 @@ class Partition(val topicPartition: TopicPartition,
 
           val info = leaderLog.appendAsLeader(records, leaderEpoch = this.leaderEpoch, origin,
             interBrokerProtocolVersion, requestLocal, verificationGuard)
+
+          // AutoMQ inject start
+          notifyAppendListener(records)
+          // AutoMQ inject end
 
           // we may need to increment high watermark since ISR could be down to 1
           (info, maybeIncrementLeaderHW(leaderLog))

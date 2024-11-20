@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -242,6 +243,10 @@ public class MetaStream implements Stream {
             LOGGER.debug(sb.append("total value size: ").append(totalValueSize).toString());
         }
         return getValidMetaMap();
+    }
+
+    public Optional<ByteBuffer> get(String key) {
+        return Optional.ofNullable(metaCache.get(key)).map(o -> o.value.slice());
     }
 
     private Map<String, Object> getValidMetaMap() {

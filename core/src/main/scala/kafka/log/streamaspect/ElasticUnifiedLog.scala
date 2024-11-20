@@ -32,7 +32,7 @@ import java.nio.ByteBuffer
 import java.nio.file.Path
 import java.util
 import java.util.concurrent.atomic.LongAdder
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Executors}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList, Executors}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.util.{Failure, Success, Try}
 
@@ -57,6 +57,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     // fuzzy interval bytes for checkpoint, it's ok not thread safe
     var checkpointIntervalBytes = 0
     var lastCheckpointTimestamp = time.milliseconds()
+    var configChangeListeners = new CopyOnWriteArrayList[LogConfigChangeListener]()
 
     def getLocalLog(): ElasticLog = elasticLog
 
@@ -229,9 +230,27 @@ class ElasticUnifiedLog(_logStartOffset: Long,
         // noop implementation, producer snapshot and recover point will be appended to MetaStream, so they have order relation.
     }
 
+    override def updateConfig(
+      newConfig: LogConfig): LogConfig = {
+        val config = super.updateConfig(newConfig)
+        for (listener <- configChangeListeners.asScala) {
+          try {
+            listener.onLogConfigChange(this, newConfig)
+          } catch {
+            case e: Throwable =>
+              error(s"Error while invoking config change listener $listener", e)
+          }
+        }
+        config
+    }
+
     // only used for test
     def listProducerSnapshots(): util.NavigableMap[java.lang.Long, ByteBuffer] = {
         producerStateManager.asInstanceOf[ElasticProducerStateManager].snapshotsMap
+    }
+
+    def addConfigChangeListener(listener: LogConfigChangeListener): Unit = {
+        configChangeListeners.add(listener)
     }
 }
 
