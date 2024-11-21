@@ -49,7 +49,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2.9.0
       - name: Checkstyle
-        run: ./gradlew --build-cache rat checkstyleMain checkstyleTest
+        run: ./gradlew --build-cache rat checkstyleMain checkstyleTest spotlessJavaCheck
   spotbugs:
     name: "Spotbugs"
     runs-on: ${{ matrix.os }}
