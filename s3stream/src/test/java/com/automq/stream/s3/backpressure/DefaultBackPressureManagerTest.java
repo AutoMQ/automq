@@ -33,7 +33,6 @@ public class DefaultBackPressureManagerTest {
     Regulator regulator;
     int regulatorIncreaseCalled = 0;
     int regulatorDecreaseCalled = 0;
-    int regulatorMinimizeCalled = 0;
 
     ScheduledExecutorService scheduler;
     int schedulerScheduleCalled = 0;
@@ -53,10 +52,6 @@ public class DefaultBackPressureManagerTest {
             regulatorDecreaseCalled++;
             return null;
         }).when(regulator).decrease();
-        doAnswer(invocation -> {
-            regulatorMinimizeCalled++;
-            return null;
-        }).when(regulator).minimize();
 
         // Mock the scheduler to run the scheduled task immediately and only once
         doAnswer(invocation -> {
@@ -77,11 +72,10 @@ public class DefaultBackPressureManagerTest {
     public void testPriority1() {
         initManager(0);
 
-        callChecker(sourceA, LoadLevel.CRITICAL);
         callChecker(sourceB, LoadLevel.HIGH);
         callChecker(sourceC, LoadLevel.NORMAL);
 
-        assertRegulatorCalled(0, 0, 3);
+        assertRegulatorCalled(0, 2);
     }
 
     @Test
@@ -90,9 +84,8 @@ public class DefaultBackPressureManagerTest {
 
         callChecker(sourceC, LoadLevel.NORMAL);
         callChecker(sourceB, LoadLevel.HIGH);
-        callChecker(sourceA, LoadLevel.CRITICAL);
 
-        assertRegulatorCalled(1, 1, 1);
+        assertRegulatorCalled(1, 1);
     }
 
     @Test
@@ -101,10 +94,9 @@ public class DefaultBackPressureManagerTest {
 
         callChecker(sourceA, LoadLevel.NORMAL);
         callChecker(sourceA, LoadLevel.HIGH);
-        callChecker(sourceA, LoadLevel.CRITICAL);
         callChecker(sourceA, LoadLevel.NORMAL);
 
-        assertRegulatorCalled(2, 1, 1);
+        assertRegulatorCalled(2, 1);
     }
 
     @Test
@@ -114,22 +106,13 @@ public class DefaultBackPressureManagerTest {
 
         initManager(cooldownMs);
 
-        callChecker(sourceA, LoadLevel.CRITICAL);
-        assertRegulatorCalled(0, 0, 1);
-        assertSchedulerCalled(0);
-
         callChecker(sourceA, LoadLevel.HIGH);
-        assertRegulatorCalled(0, 0, 1);
+        assertRegulatorCalled(0, 0);
         assertSchedulerCalled(1);
         assertEquals(cooldownMs, schedulerScheduleDelay, tolerance);
 
         callChecker(sourceA, LoadLevel.NORMAL);
-        assertRegulatorCalled(0, 0, 1);
-        assertSchedulerCalled(2);
-        assertEquals(cooldownMs, schedulerScheduleDelay, tolerance);
-
-        callChecker(sourceA, LoadLevel.CRITICAL);
-        assertRegulatorCalled(0, 0, 2);
+        assertRegulatorCalled(0, 0);
         assertSchedulerCalled(2);
         assertEquals(cooldownMs, schedulerScheduleDelay, tolerance);
     }
@@ -161,10 +144,9 @@ public class DefaultBackPressureManagerTest {
         });
     }
 
-    private void assertRegulatorCalled(int increase, int decrease, int minimize) {
+    private void assertRegulatorCalled(int increase, int decrease) {
         assertEquals(increase, regulatorIncreaseCalled);
         assertEquals(decrease, regulatorDecreaseCalled);
-        assertEquals(minimize, regulatorMinimizeCalled);
     }
 
     private void assertSchedulerCalled(int times) {

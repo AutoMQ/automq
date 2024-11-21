@@ -244,10 +244,6 @@ public class DefaultS3Client implements Client {
             @Override
             public void decrease() {
             }
-
-            @Override
-            public void minimize() {
-            }
         };
     }
 

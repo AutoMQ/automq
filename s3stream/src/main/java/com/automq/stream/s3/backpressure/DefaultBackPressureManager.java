@@ -82,25 +82,15 @@ public class DefaultBackPressureManager implements BackPressureManager {
     }
 
     /**
-     * Regulate the system if necessary, which means
-     * <ul>
-     *     <li>the system is in a {@link LoadLevel#CRITICAL} state.</li>
-     *     <li>the cooldown time has passed.</li>
-     * </ul>
+     * Regulate the system if the cooldown time has passed.
      *
      * @param isInternal True if it is an internal call, which means it should not schedule the next regulate action.
      */
     private void maybeRegulate(boolean isInternal) {
         LoadLevel loadLevel = currentLoadLevel();
         long now = System.currentTimeMillis();
-
-        if (LoadLevel.CRITICAL.equals(loadLevel)) {
-            // Regulate immediately regardless of the cooldown time.
-            regulate(loadLevel, now);
-            return;
-        }
-
         long timeElapsed = now - lastRegulateTime;
+
         if (timeElapsed < cooldownMs) {
             // Skip regulating if the cooldown time has not passed.
             if (!isInternal) {
@@ -109,7 +99,6 @@ public class DefaultBackPressureManager implements BackPressureManager {
             }
             return;
         }
-
         regulate(loadLevel, now);
     }
 
