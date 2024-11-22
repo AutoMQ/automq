@@ -159,6 +159,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
                         } else {
                             LOGGER.error("Invalid record batch, last offset {} is less than next offset {}",
                                     recordBatchWithContext.lastOffset(), nextFetchOffset);
+                            rst.free();
                             throw new IllegalStateException();
                         }
                         readSize += recordBatchWithContext.rawPayload().remaining();
@@ -168,6 +169,10 @@ public class ElasticLogFileRecords implements AutoCloseable {
                                 // add to first since we need to reverse the order.
                                 rstList.addFirst(rst);
                                 return rstList;
+                            }).whenComplete((r, e) -> {
+                                if (e != null) {
+                                    rst.free();
+                                }
                             });
                 });
     }
