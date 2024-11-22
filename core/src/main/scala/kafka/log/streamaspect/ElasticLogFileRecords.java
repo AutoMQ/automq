@@ -142,6 +142,12 @@ public class ElasticLogFileRecords implements AutoCloseable {
         }
         List<FetchResult> results = new LinkedList<>();
         return fetch0(context, nextFetchOffset, endOffset, maxSize, results)
+                .whenComplete((nil, e) -> {
+                    if (e != null) {
+                        results.forEach(FetchResult::free);
+                        results.clear();
+                    }
+                })
                 .thenApply(nil -> PooledMemoryRecords.of(baseOffset, results, context.readOptions().pooledBuf()));
     }
 
