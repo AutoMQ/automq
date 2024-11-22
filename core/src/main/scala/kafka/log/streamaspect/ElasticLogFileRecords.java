@@ -140,17 +140,29 @@ public class ElasticLogFileRecords implements AutoCloseable {
         if (nextFetchOffset >= endOffset) {
             return CompletableFuture.completedFuture(MemoryRecords.EMPTY);
         }
-        return fetch0(context, nextFetchOffset, endOffset, maxSize)
-                .thenApply(rst -> PooledMemoryRecords.of(baseOffset, rst, context.readOptions().pooledBuf()));
+        List<FetchResult> results = new LinkedList<>();
+        return fetch0(context, nextFetchOffset, endOffset, maxSize, results)
+                .thenApply(nil -> PooledMemoryRecords.of(baseOffset, results, context.readOptions().pooledBuf()));
     }
 
-    private CompletableFuture<LinkedList<FetchResult>> fetch0(FetchContext context, long startOffset, long endOffset, int maxSize) {
+    /**
+     * Fetch records from the {@link ElasticStreamSlice}
+     *
+     * @param context fetch context
+     * @param startOffset start offset
+     * @param endOffset end offset
+     * @param maxSize max size of the fetched records
+     * @param results result list to be filled
+     * @return a future that completes when reaching the end offset or the max size
+     */
+    private CompletableFuture<Void> fetch0(FetchContext context, long startOffset, long endOffset, int maxSize, List<FetchResult> results) {
         if (startOffset >= endOffset || maxSize <= 0) {
-            return CompletableFuture.completedFuture(new LinkedList<>());
+            return CompletableFuture.completedFuture(null);
         }
         int adjustedMaxSize = Math.min(maxSize, 1024 * 1024);
         return streamSlice.fetch(context, startOffset, endOffset, adjustedMaxSize)
                 .thenCompose(rst -> {
+                    results.add(rst);
                     long nextFetchOffset = startOffset;
                     int readSize = 0;
                     for (RecordBatchWithContext recordBatchWithContext : rst.recordBatchList()) {
@@ -163,12 +175,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
                         }
                         readSize += recordBatchWithContext.rawPayload().remaining();
                     }
-                    return fetch0(context, nextFetchOffset, endOffset, maxSize - readSize)
-                            .thenApply(rstList -> {
-                                // add to first since we need to reverse the order.
-                                rstList.addFirst(rst);
-                                return rstList;
-                            });
+                    return fetch0(context, nextFetchOffset, endOffset, maxSize - readSize, results);
                 });
     }
 
