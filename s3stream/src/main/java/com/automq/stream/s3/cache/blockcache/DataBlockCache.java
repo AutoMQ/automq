@@ -18,6 +18,7 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.utils.AsyncSemaphore;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
