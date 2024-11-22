@@ -32,7 +32,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   private val time: Time,
   private val threadNamePrefix: String)
   extends ClientRequestQuotaManager(config, metrics, time, threadNamePrefix, None) {
-  private val maxThrottleTimeMs = TimeUnit.SECONDS.toMillis(this.config.quotaWindowSizeSeconds) * 5
+  private val maxThrottleTimeMs = TimeUnit.SECONDS.toMillis(this.config.quotaWindowSizeSeconds * this.config.numQuotaSamples)
   private val metricsTags = Map("domain" -> "broker", "nodeId" -> String.valueOf(config.nodeId()))
   private val whiteListCache = mutable.HashMap[String, Boolean]()
 
