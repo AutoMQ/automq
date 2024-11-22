@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 public class DefaultBackPressureManager implements BackPressureManager {
 
-    public static final long DEFAULT_COOLDOWN_MS = TimeUnit.SECONDS.toMillis(20);
+    public static final long DEFAULT_COOLDOWN_MS = TimeUnit.SECONDS.toMillis(15);
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultBackPressureManager.class);
 
