@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.cache.blockcache;
+package com.automq.stream.utils;
 
 import com.automq.stream.utils.threads.EventLoop;
 
@@ -21,7 +21,7 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
-class AsyncSemaphore {
+public class AsyncSemaphore {
     private static final Logger LOGGER = LoggerFactory.getLogger(AsyncSemaphore.class);
     private final Queue<AsyncSemaphoreTask> tasks = new LinkedList<>();
     private long permits;
