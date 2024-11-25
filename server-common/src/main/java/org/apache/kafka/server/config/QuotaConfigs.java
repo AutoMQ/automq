@@ -107,7 +107,7 @@ public class QuotaConfigs {
     /**
      * All clients created by AutoMQ will have this prefix in their client id, and they will be excluded from quota.
      */
-    public static final String INTERNAL_CLIENT_ID_PREFIX = "__automq_client";
+    public static final String INTERNAL_CLIENT_ID_PREFIX = "__automq_client_";
 
     public static final String BROKER_QUOTA_ENABLED_CONFIG = "broker.quota.enabled";
     public static final String BROKER_QUOTA_PRODUCE_BYTES_CONFIG = "broker.quota.produce.bytes";
