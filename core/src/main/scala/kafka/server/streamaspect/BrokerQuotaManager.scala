@@ -20,7 +20,7 @@ import org.apache.kafka.common.metrics.{Metrics, Quota, QuotaViolationException,
 import org.apache.kafka.common.security.auth.KafkaPrincipal
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.network.Session
-import org.apache.kafka.server.config.BrokerQuotaManagerConfig
+import org.apache.kafka.server.config.{BrokerQuotaManagerConfig, QuotaConfigs}
 
 import java.util.concurrent.TimeUnit
 import java.util.{Optional, Properties}
@@ -72,6 +72,11 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       return 0
     }
 
+    if (isInternalClient(request.context.clientId())) {
+      // Internal clients are exempt from quota
+      return 0
+    }
+
     if (isInWhiteList(request.session.principal, request.context.clientId(), request.context.listenerName())) {
       // Client is in the white list, no need to throttle
       return 0
@@ -88,6 +93,10 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
         QuotaUtils.throttleTime(e, timeMs)
     }
 
+  }
+
+  private def isInternalClient(clientId: String): Boolean = {
+    clientId.startsWith(QuotaConfigs.INTERNAL_CLIENT_ID_PREFIX)
   }
 
   private def isInWhiteList(principal: KafkaPrincipal, clientId: String, listenerName: String): Boolean = {
