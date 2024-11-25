@@ -22,7 +22,8 @@ import org.apache.kafka.common.utils.Time
 import org.apache.kafka.network.Session
 import org.apache.kafka.server.config.BrokerQuotaManagerConfig
 
-import java.util.Properties
+import java.util.concurrent.TimeUnit
+import java.util.{Optional, Properties}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 
@@ -31,6 +32,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   private val time: Time,
   private val threadNamePrefix: String)
   extends ClientRequestQuotaManager(config, metrics, time, threadNamePrefix, None) {
+  private val maxThrottleTimeMs = TimeUnit.SECONDS.toMillis(this.config.quotaWindowSizeSeconds * this.config.numQuotaSamples)
   private val metricsTags = Map("domain" -> "broker", "nodeId" -> String.valueOf(config.nodeId()))
   private val whiteListCache = mutable.HashMap[String, Boolean]()
 
@@ -46,6 +48,16 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     } else {
       Double.MaxValue
     }
+  }
+
+  /**
+   * Get the value of the metric for the given quota type at the given time.
+   * It return empty if the metric is not found, which is possible if the quota is disabled or no request has been
+   * processed yet.
+   */
+  def getQuotaMetricValue(quotaType: QuotaType, timeMs: Long): Optional[java.lang.Double] = {
+    Optional.ofNullable(metrics.metric(clientQuotaMetricName(quotaType, metricsTags)))
+      .map(_.measurableValueV2(timeMs))
   }
 
   def recordNoThrottle(quotaType: QuotaType, value: Double): Unit = {

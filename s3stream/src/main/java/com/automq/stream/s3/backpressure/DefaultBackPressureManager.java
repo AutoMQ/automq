@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 
 public class DefaultBackPressureManager implements BackPressureManager {
 
-    public static final long DEFAULT_COOLDOWN_MS = TimeUnit.SECONDS.toMillis(20);
+    public static final long DEFAULT_COOLDOWN_MS = TimeUnit.SECONDS.toMillis(15);
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultBackPressureManager.class);
 
@@ -80,25 +80,15 @@ public class DefaultBackPressureManager implements BackPressureManager {
     }
 
     /**
-     * Regulate the system if necessary, which means
-     * <ul>
-     *     <li>the system is in a {@link LoadLevel#CRITICAL} state.</li>
-     *     <li>the cooldown time has passed.</li>
-     * </ul>
+     * Regulate the system if the cooldown time has passed.
      *
      * @param isInternal True if it is an internal call, which means it should not schedule the next regulate action.
      */
     private void maybeRegulate(boolean isInternal) {
         LoadLevel loadLevel = currentLoadLevel();
         long now = System.currentTimeMillis();
-
-        if (LoadLevel.CRITICAL.equals(loadLevel)) {
-            // Regulate immediately regardless of the cooldown time.
-            regulate(loadLevel, now);
-            return;
-        }
-
         long timeElapsed = now - lastRegulateTime;
+
         if (timeElapsed < cooldownMs) {
             // Skip regulating if the cooldown time has not passed.
             if (!isInternal) {
@@ -107,7 +97,6 @@ public class DefaultBackPressureManager implements BackPressureManager {
             }
             return;
         }
-
         regulate(loadLevel, now);
     }
 
@@ -121,8 +110,10 @@ public class DefaultBackPressureManager implements BackPressureManager {
     }
 
     private void regulate(LoadLevel loadLevel, long now) {
-        if (LoadLevel.NORMAL.equals(loadLevel) && LOGGER.isDebugEnabled()) {
-            LOGGER.debug("The system is in a normal state, checkers: {}", loadLevels);
+        if (LoadLevel.NORMAL.equals(loadLevel)) {
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("The system is in a normal state, checkers: {}", loadLevels);
+            }
         } else {
             LOGGER.info("The system is in a {} state, checkers: {}", loadLevel, loadLevels);
         }

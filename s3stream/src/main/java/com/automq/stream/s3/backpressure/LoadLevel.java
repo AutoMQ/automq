@@ -34,15 +34,6 @@ public enum LoadLevel {
         public void regulate(Regulator regulator) {
             regulator.decrease();
         }
-    },
-    /**
-     * The system is in a critical state, and the most severe actions should be taken.
-     */
-    CRITICAL {
-        @Override
-        public void regulate(Regulator regulator) {
-            regulator.minimize();
-        }
     };
 
     /**

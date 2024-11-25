@@ -28,9 +28,4 @@ public interface Regulator {
      * If the rate is already at the minimum, this method does nothing.
      */
     void decrease();
-
-    /**
-     * Minimize the rate of incoming requests.
-     */
-    void minimize();
 }
