@@ -52,7 +52,8 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
 
   /**
    * Get the value of the metric for the given quota type at the given time.
-   * It return empty if the metric is not found, which is possible if the quota is disabled.
+   * It return empty if the metric is not found, which is possible if the quota is disabled or no request has been
+   * processed yet.
    */
   def getQuotaMetricValue(quotaType: QuotaType, timeMs: Long): Optional[java.lang.Double] = {
     Optional.ofNullable(metrics.metric(clientQuotaMetricName(quotaType, metricsTags)))
