@@ -170,34 +170,43 @@ public class BrokerQuotaManagerTest {
         brokerQuotaManager.updateQuota(QuotaType.requestRate(), 1);
         // rate = 1 / 2000ms
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 1 / 2, time);
         assertEquals(0, result);
         // rate = 2 / 2010ms
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 10);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 2 / 2.01, time + 10);
         assertEquals(0, result);
         // rate = 3 / 2999ms > 1
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 3 / 2.999, time + 2999);
         assertEquals(1, result);
 
         brokerQuotaManager.updateQuota(QuotaType.requestRate(), 2);
         // rate = 4 / 2999ms
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 4 / 2.999, time + 2999);
         assertEquals(0, result);
         // rate = 5 / 2999ms
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 5 / 2.999, time + 2999);
         assertEquals(0, result);
         // rate = 6 / 2999ms > 2
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 6 / 2.999, time + 2999);
         assertEquals(1, result);
 
         brokerQuotaManager.updateQuota(QuotaType.requestRate(), 1);
         // rate = 5 / 2999ms > 1
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999 + 2999);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 5 / 2.999, time + 2999 + 2999);
         assertEquals(1000, result);
-        // rate = 2 / 2000ms
+        // rate = 2 / 2001ms
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999 + 2999 + 1);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 2 / 2.001, time + 2999 + 2999 + 1);
         assertEquals(0, result);
         // rate = 3 / 2999ms > 1
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.requestRate(), request, 1, time + 2999 + 2999 + 2999);
+        assertQuotaMetricValue(QuotaType.requestRate(), (double) 3 / 2.999, time + 2999 + 2999 + 2999);
         assertEquals(1, result);
     }
 
@@ -262,5 +271,10 @@ public class BrokerQuotaManagerTest {
 
         result = brokerQuotaManager.maybeRecordAndGetThrottleTimeMs(QuotaType.produce(), request, 1000, time.milliseconds());
         assertEquals(0, result);
+    }
+
+    private void assertQuotaMetricValue(QuotaType quotaType, double expected, long timeMs) {
+        double value = brokerQuotaManager.getQuotaMetricValue(quotaType, timeMs).get();
+        assertEquals(expected, value);
     }
 }
