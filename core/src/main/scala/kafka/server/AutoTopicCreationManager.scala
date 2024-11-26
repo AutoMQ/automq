@@ -24,6 +24,7 @@ import kafka.controller.KafkaController
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.utils.Logging
 import org.apache.kafka.clients.ClientResponse
+import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors.InvalidTopicException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.internals.Topic.{GROUP_METADATA_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME}
@@ -246,16 +247,24 @@ class DefaultAutoTopicCreationManager(
             txnCoordinator.transactionTopicConfigs))
 
       // AutoMQ inject start
-      case "__automq_table_control" =>
+      case "__automq_table_control" => {
+        val configs = new Properties()
+        configs.put(TopicConfig.MAX_MESSAGE_BYTES_CONFIG, 20 * 1024 * 1024)
         new CreatableTopic()
           .setName(topic)
           .setNumPartitions(1)
           .setReplicationFactor(1)
-      case "__automq_table_data" =>
+          .setConfigs(convertToTopicConfigCollections(configs))
+      }
+      case "__automq_table_data" => {
+        val configs = new Properties()
+        configs.put(TopicConfig.MAX_MESSAGE_BYTES_CONFIG, 20 * 1024 * 1024)
         new CreatableTopic()
           .setName(topic)
           .setNumPartitions(50)
           .setReplicationFactor(1)
+          .setConfigs(convertToTopicConfigCollections(configs))
+      }
       // AutoMQ inject end
 
       case topicName =>
