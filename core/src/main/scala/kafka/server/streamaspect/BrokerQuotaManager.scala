@@ -85,14 +85,8 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     maybeRecordAndGetThrottleTimeMs(quotaType, value, timeMs)
   }
 
-  protected def throttleTime(quotaType: QuotaType, e: QuotaViolationException, timeMs: Long): Long = {
-    quotaType match {
-      case QuotaType.SlowFetch | QuotaType.RequestRate =>
-        QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
-      case _ =>
-        QuotaUtils.throttleTime(e, timeMs)
-    }
-
+  override protected def throttleTime(e: QuotaViolationException, timeMs: Long): Long = {
+      QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
   }
 
   private def isInternalClient(clientId: String): Boolean = {
@@ -119,7 +113,7 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
       0
     } catch {
       case e: QuotaViolationException =>
-        val throttleTimeMs = throttleTime(quotaType, e, timeMs).toInt
+        val throttleTimeMs = throttleTime(e, timeMs).toInt
         debug(s"Quota violated for sensor (${clientSensors.quotaSensor.name}). Delay time: ($throttleTimeMs)")
         throttleTimeMs
     }
