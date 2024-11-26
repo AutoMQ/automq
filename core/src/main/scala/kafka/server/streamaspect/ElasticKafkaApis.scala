@@ -753,7 +753,7 @@ class ElasticKafkaApis(
         Int.MaxValue
       else {
         val maxValue = quotas.fetch.getMaxValueInQuotaWindow(request.session, clientId).toInt
-        val brokerMaxValue = quotas.broker.getMaxValueInQuotaWindow(QuotaType.Fetch).toInt
+        val brokerMaxValue = quotas.broker.getMaxValueInQuotaWindow(QuotaType.Fetch, request).toInt
         math.min(maxValue, brokerMaxValue)
       }
 
