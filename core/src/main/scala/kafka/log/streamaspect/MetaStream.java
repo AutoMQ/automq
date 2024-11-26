@@ -266,7 +266,7 @@ public class MetaStream implements Stream {
                     metaMap.put(key, ElasticLeaderEpochCheckpointMeta.decode(value.value()));
                     break;
                 default:
-                    LOGGER.error("{} streamId {}: unknown meta key: {}", logIdent, streamId(), key);
+                    metaMap.put(key, value.value().duplicate());
             }
         });
         return metaMap;
