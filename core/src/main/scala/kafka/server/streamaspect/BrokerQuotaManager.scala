@@ -42,8 +42,8 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
 
   override def delayQueueSensor: Sensor = brokerDelayQueueSensor
 
-  def getMaxValueInQuotaWindow(quotaType: QuotaType): Double = {
-    if (config.quotaEnabled) {
+  def getMaxValueInQuotaWindow(quotaType: QuotaType, request: RequestChannel.Request): Double = {
+    if (shouldThrottle(request)) {
       quotaLimit(quotaType)
     } else {
       Double.MaxValue
@@ -67,26 +67,22 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
 
   def maybeRecordAndGetThrottleTimeMs(quotaType: QuotaType, request: RequestChannel.Request, value: Double,
     timeMs: Long): Int = {
-    if (!config.quotaEnabled) {
-      // Quota is disabled, no need to throttle
-      return 0
+    if (shouldThrottle(request)) {
+      maybeRecordAndGetThrottleTimeMs(quotaType, value, timeMs)
+    } else {
+      0
     }
-
-    if (isInternalClient(request.context.clientId())) {
-      // Internal clients are exempt from quota
-      return 0
-    }
-
-    if (isInWhiteList(request.session.principal, request.context.clientId(), request.context.listenerName())) {
-      // Client is in the white list, no need to throttle
-      return 0
-    }
-
-    maybeRecordAndGetThrottleTimeMs(quotaType, value, timeMs)
   }
 
   override protected def throttleTime(e: QuotaViolationException, timeMs: Long): Long = {
       QuotaUtils.boundedThrottleTime(e, maxThrottleTimeMs, timeMs)
+  }
+
+  private def shouldThrottle(request: RequestChannel.Request): Boolean = {
+    val quotaEnabled = config.quotaEnabled
+    val isInternal = isInternalClient(request.context.clientId())
+    val isWhiteListed = isInWhiteList(request.session.principal, request.context.clientId(), request.context.listenerName())
+    quotaEnabled && !isInternal && !isWhiteListed
   }
 
   private def isInternalClient(clientId: String): Boolean = {
