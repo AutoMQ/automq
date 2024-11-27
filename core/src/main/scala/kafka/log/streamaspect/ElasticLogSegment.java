@@ -275,7 +275,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
             return CompletableFuture.completedFuture(new FetchDataInfo(offsetMetadata, MemoryRecords.EMPTY));
         }
 
-        return log.read(startOffset, maxOffset, maxSize)
+        return log.read(startOffset, maxOffset, adjustedMaxSize)
             .thenApply(records -> new FetchDataInfo(offsetMetadata, records));
     }
 
