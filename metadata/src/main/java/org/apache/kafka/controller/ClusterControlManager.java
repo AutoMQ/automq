@@ -55,6 +55,7 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
+import org.apache.kafka.timeline.TimelineHashSet;
 
 import org.slf4j.Logger;
 
@@ -305,6 +306,11 @@ public class ClusterControlManager {
      * The real next available node id is generally one greater than this value.
      */
     private AtomicInteger nextNodeId = new AtomicInteger(-1);
+
+    /**
+     * A set of node IDs that have been unregistered and can be reused for new node assignments.
+     */
+    private final TimelineHashSet<Integer> reusableNodeIds;
     // AutoMQ for Kafka inject end
 
     private ClusterControlManager(
@@ -339,6 +345,7 @@ public class ClusterControlManager {
         this.brokerUncleanShutdownHandler = brokerUncleanShutdownHandler;
         // AutoMQ for Kafka inject start
         this.maxControllerId = QuorumConfig.parseVoterConnections(quorumVoters).keySet().stream().max(Integer::compareTo).orElse(0);
+        this.reusableNodeIds = new TimelineHashSet<>(snapshotRegistry, 0);
         // AutoMQ for Kafka inject end
         this.interBrokerListenerName = interBrokerListenerName;
     }
@@ -386,11 +393,21 @@ public class ClusterControlManager {
 
     // AutoMQ for Kafka inject start
     public ControllerResult<Integer> getNextNodeId() {
-        int maxBrokerId = brokerRegistrations.keySet().stream().max(Integer::compareTo).orElse(0);
-        int maxNodeId = Math.max(maxBrokerId, maxControllerId);
-        int nextId = this.nextNodeId.accumulateAndGet(maxNodeId, (x, y) -> Math.max(x, y) + 1);
-        // Let the broker's nodeId start from 1000 to easily distinguish broker and controller.
-        nextId = Math.max(nextId, 1000);
+        int nextId;
+        if (!reusableNodeIds.isEmpty()) {
+            Iterator<Integer> iterator = reusableNodeIds.iterator();
+            nextId = iterator.next();
+            // we simply remove the id from reusable id set because we're unable to determine if the id
+            // will finally be used.
+            iterator.remove();
+        } else {
+            int maxBrokerId = brokerRegistrations.keySet().stream().max(Integer::compareTo).orElse(0);
+            int maxNodeId = Math.max(maxBrokerId, maxControllerId);
+            nextId = this.nextNodeId.accumulateAndGet(maxNodeId, (x, y) -> Math.max(x, y) + 1);
+            // Let the broker's nodeId start from 1000 to easily distinguish broker and controller.
+            nextId = Math.max(nextId, 1000);
+        }
+
         UpdateNextNodeIdRecord record = new UpdateNextNodeIdRecord().setNodeId(nextId);
 
         List<ApiMessageAndVersion> records = new ArrayList<>();
@@ -623,6 +640,11 @@ public class ClusterControlManager {
             if (prevRegistration != null) heartbeatManager.remove(brokerId);
             heartbeatManager.register(brokerId, record.fenced());
         }
+
+        // AutoMQ injection start
+        reusableNodeIds.remove(brokerId);
+        // AutoMQ injection end
+
         if (prevRegistration == null) {
             log.info("Replayed initial RegisterBrokerRecord for broker {}: {}", record.brokerId(), record);
         } else if (prevRegistration.incarnationId().equals(record.incarnationId())) {
@@ -648,6 +670,9 @@ public class ClusterControlManager {
             if (heartbeatManager != null) heartbeatManager.remove(brokerId);
             updateDirectories(brokerId, registration.directories(), null);
             brokerRegistrations.remove(brokerId);
+            // AutoMQ injection start
+            reusableNodeIds.add(brokerId);
+            // AutoMQ injection end
             log.info("Replayed {}", record);
         }
     }
