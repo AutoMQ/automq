@@ -22,6 +22,7 @@ import kafka.utils.Logging
 import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.message.FetchResponseData
 import org.apache.kafka.common.protocol.Errors
+import org.apache.kafka.common.record.PooledResource
 import org.apache.kafka.common.requests.FetchMetadata.{FINAL_EPOCH, INITIAL_EPOCH, INVALID_SESSION_ID}
 import org.apache.kafka.common.requests.{FetchRequest, FetchResponse, FetchMetadata => JFetchMetadata}
 import org.apache.kafka.common.utils.{ImplicitLinkedHashCollection, Time, Utils}
@@ -503,6 +504,13 @@ class IncrementalFetchContext(private val time: Time,
           }
         } else {
           if (updateFetchContextAndRemoveUnselected) {
+            // AutoMQ inject start
+            respData.records() match {
+              case r: PooledResource =>
+                r.release()
+              case _ =>
+            }
+            // AutoMQ inject end
             iter.remove()
           }
         }
