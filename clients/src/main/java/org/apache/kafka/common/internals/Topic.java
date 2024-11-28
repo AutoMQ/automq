@@ -30,7 +30,13 @@ public class Topic {
     public static final String TRANSACTION_STATE_TOPIC_NAME = "__transaction_state";
     public static final String SHARE_GROUP_STATE_TOPIC_NAME = "__share_group_state";
     public static final String CLUSTER_METADATA_TOPIC_NAME = "__cluster_metadata";
+
+    // AutoMQ inject start
     public static final String AUTO_BALANCER_METRICS_TOPIC_NAME = "__auto_balancer_metrics";
+    public static final String TABLE_TOPIC_CONTROL_TOPIC_NAME = "__automq_table_control";
+    public static final String TABLE_TOPIC_DATA_TOPIC_NAME = "__automq_table_data";
+    // AutoMQ inject end
+
     public static final TopicPartition CLUSTER_METADATA_TOPIC_PARTITION = new TopicPartition(
         CLUSTER_METADATA_TOPIC_NAME,
         0

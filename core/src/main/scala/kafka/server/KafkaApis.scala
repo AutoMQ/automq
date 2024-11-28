@@ -70,7 +70,7 @@ import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.{Group, GroupCoordinator}
 import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer._
-import org.apache.kafka.server.common.{MetadataVersion}
+import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.server.common.MetadataVersion.{IBP_0_11_0_IV0, IBP_2_3_IV0}
 import org.apache.kafka.server.record.BrokerCompressionType
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchIsolation, FetchParams, FetchPartitionData}
@@ -1288,6 +1288,14 @@ class KafkaApis(val requestChannel: RequestChannel,
         val controllerMutationQuota = quotas.controllerMutation.newPermissiveQuotaFor(request)
         autoTopicCreationManager.createTopics(nonExistingTopics, controllerMutationQuota, Some(request.context))
       } else {
+        // AutoMQ inject start
+        for (tableTopic <- Set(Topic.TABLE_TOPIC_CONTROL_TOPIC_NAME, Topic.TABLE_TOPIC_DATA_TOPIC_NAME)) {
+          if (nonExistingTopics.contains(tableTopic)) {
+            val controllerMutationQuota = quotas.controllerMutation.newPermissiveQuotaFor(request)
+            autoTopicCreationManager.createTopics(Set(tableTopic), controllerMutationQuota, Some(request.context))
+          }
+        }
+        // AutoMQ inject end
         nonExistingTopics.map { topic =>
           val error = try {
             Topic.validate(topic)
