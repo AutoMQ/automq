@@ -155,7 +155,7 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
     adminClientConfig: Properties = new Properties
   ): Unit = {
     if (isKRaftTest()) {
-      Using(createAdminClient(brokers, listenerName, adminClientConfig)) { admin =>
+      Using.resource(createAdminClient(brokers, listenerName, adminClientConfig)) { admin =>
         TestUtils.createOffsetsTopicWithAdmin(admin, brokers, controllerServers)
       }
     } else {
@@ -234,7 +234,7 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
     listenerName: ListenerName = listenerName
   ): Unit = {
     if (isKRaftTest()) {
-      Using(createAdminClient(brokers, listenerName)) { admin =>
+      Using.resource(createAdminClient(brokers, listenerName)) { admin =>
         TestUtils.deleteTopicWithAdmin(
           admin = admin,
           topic = topic,
@@ -428,7 +428,7 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
 
   def changeClientIdConfig(sanitizedClientId: String, configs: Properties): Unit = {
     if (isKRaftTest()) {
-      Using(createAdminClient(brokers, listenerName)) {
+      Using.resource(createAdminClient(brokers, listenerName)) {
         admin => {
           admin.alterClientQuotas(Collections.singleton(
             new ClientQuotaAlteration(
