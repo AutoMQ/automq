@@ -44,10 +44,10 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   override def delayQueueSensor: Sensor = brokerDelayQueueSensor
 
   S3StreamMetricsManager.registerBrokerQuotaLimitSupplier(() => java.util.Map.of(
-    QuotaType.RequestRate, quotaLimit(QuotaType.RequestRate),
-    QuotaType.Produce, quotaLimit(QuotaType.Produce),
-    QuotaType.Fetch, quotaLimit(QuotaType.Fetch),
-    QuotaType.SlowFetch, quotaLimit(QuotaType.SlowFetch)
+    QuotaType.RequestRate.toString, quotaLimit(QuotaType.RequestRate),
+    QuotaType.Produce.toString, quotaLimit(QuotaType.Produce),
+    QuotaType.Fetch.toString, quotaLimit(QuotaType.Fetch),
+    QuotaType.SlowFetch.toString, quotaLimit(QuotaType.SlowFetch)
   ))
 
   def getMaxValueInQuotaWindow(quotaType: QuotaType, request: RequestChannel.Request): Double = {
