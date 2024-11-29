@@ -38,6 +38,11 @@ public class NoopLimiter implements Limiter {
         return Integer.MAX_VALUE;
     }
 
+    @Override
+    public int waitingThreads() {
+        return 0;
+    }
+
     public static class NoopHandler implements Handler {
         @Override
         public void close() {

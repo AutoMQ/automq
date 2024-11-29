@@ -116,11 +116,17 @@ class ElasticReplicaManager(
 
   private val fastFetchLimiter = new FairLimiter(200 * 1024 * 1024) // 200MiB
   private val slowFetchLimiter = new FairLimiter(200 * 1024 * 1024) // 200MiB
-  private val fetchLimiterGaugeMap = new util.HashMap[String, Integer]()
+  private val fetchLimiterWaitingTasksGaugeMap = new util.HashMap[String, Integer]()
+  S3StreamKafkaMetricsManager.setFetchLimiterWaitingTaskNumSupplier(() => {
+    fetchLimiterWaitingTasksGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.waitingThreads())
+    fetchLimiterWaitingTasksGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.waitingThreads())
+    fetchLimiterWaitingTasksGaugeMap
+  })
+  private val fetchLimiterPermitsGaugeMap = new util.HashMap[String, Integer]()
   S3StreamKafkaMetricsManager.setFetchLimiterPermitNumSupplier(() => {
-    fetchLimiterGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.availablePermits())
-    fetchLimiterGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.availablePermits())
-    fetchLimiterGaugeMap
+    fetchLimiterPermitsGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.availablePermits())
+    fetchLimiterPermitsGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.availablePermits())
+    fetchLimiterPermitsGaugeMap
   })
 
   /**
