@@ -17,11 +17,14 @@ import com.automq.stream.s3.metrics.NoopLongCounter;
 import com.automq.stream.s3.metrics.NoopObservableLongGauge;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;
 import com.automq.stream.s3.metrics.wrapper.CounterMetric;
+import com.automq.stream.s3.metrics.wrapper.HistogramInstrument;
+import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -33,6 +36,9 @@ import io.opentelemetry.api.metrics.ObservableLongGauge;
 public class S3StreamKafkaMetricsManager {
 
     private static final List<ConfigListener> BASE_ATTRIBUTES_LISTENERS = new ArrayList<>();
+
+    public static final List<HistogramMetric> FETCH_LIMITER_TIME_METRICS = new CopyOnWriteArrayList<>();
+
     private static final MultiAttributes<String> BROKER_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
             S3StreamKafkaMetricsConstants.LABEL_NODE_ID);
     private static final MultiAttributes<String> S3_OBJECT_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
@@ -70,6 +76,7 @@ public class S3StreamKafkaMetricsManager {
     private static ObservableLongGauge fetchPendingTaskNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier = Collections::emptyMap;
     private static LongCounter fetchLimiterTimeoutCount = new NoopLongCounter();
+    private static HistogramInstrument fetchLimiterTime;
 
     private static ObservableLongGauge logAppendPermitNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Integer> logAppendPermitNumSupplier = () -> 0;
@@ -228,6 +235,8 @@ public class S3StreamKafkaMetricsManager {
         fetchLimiterTimeoutCount = meter.counterBuilder(prefix + S3StreamKafkaMetricsConstants.FETCH_LIMITER_TIMEOUT_COUNT)
                 .setDescription("The number of acquire permits timeout in fetch limiters")
                 .build();
+        fetchLimiterTime = new HistogramInstrument(meter, prefix + S3StreamKafkaMetricsConstants.FETCH_LIMITER_TIME,
+                "The time cost of acquire permits in fetch limiters", "nanoseconds", () -> FETCH_LIMITER_TIME_METRICS);
     }
 
     private static void initLogAppendMetrics(Meter meter, String prefix) {
@@ -292,9 +301,17 @@ public class S3StreamKafkaMetricsManager {
 
     public static CounterMetric buildFetchLimiterTimeoutMetric(String limiterName) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
-            CounterMetric metric = new CounterMetric(metricsConfig, Attributes.builder()
-                .put(S3StreamKafkaMetricsConstants.LABEL_FETCH_LIMITER_NAME, limiterName).build(), () -> fetchLimiterTimeoutCount);
+            CounterMetric metric = new CounterMetric(metricsConfig, FETCH_LIMITER_ATTRIBUTES.get(limiterName), () -> fetchLimiterTimeoutCount);
             BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
+        }
+    }
+
+    public static HistogramMetric buildFetchLimiterTimeMetric(MetricsLevel metricsLevel, String limiterName) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            HistogramMetric metric = new HistogramMetric(metricsLevel, metricsConfig, FETCH_LIMITER_ATTRIBUTES.get(limiterName));
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            FETCH_LIMITER_TIME_METRICS.add(metric);
             return metric;
         }
     }

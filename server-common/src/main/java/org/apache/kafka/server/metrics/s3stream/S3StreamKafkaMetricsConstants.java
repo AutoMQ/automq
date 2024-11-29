@@ -23,6 +23,7 @@ public class S3StreamKafkaMetricsConstants {
     public static final String FETCH_LIMITER_WAITING_TASK_NUM = "fetch_limiter_waiting_task_num";
     public static final String FETCH_PENDING_TASK_NUM = "fetch_pending_task_num";
     public static final String FETCH_LIMITER_TIMEOUT_COUNT = "fetch_limiter_timeout_count";
+    public static final String FETCH_LIMITER_TIME = "fetch_limiter_time";
     public static final String LOG_APPEND_PERMIT_NUM = "log_append_permit_num";
     public static final String SLOW_BROKER_METRIC_NAME = "slow_broker_count";
     public static final String TOPIC_PARTITION_COUNT_METRIC_NAME = "topic_partition_count";

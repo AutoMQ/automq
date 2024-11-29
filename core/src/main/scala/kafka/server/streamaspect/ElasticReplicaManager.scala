@@ -1,7 +1,7 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.api.exceptions.FastReadFailFastException
-import com.automq.stream.s3.metrics.MetricsLevel
+import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
 import com.automq.stream.utils.FutureUtil
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import kafka.cluster.Partition
@@ -132,6 +132,10 @@ class ElasticReplicaManager(
   private val fetchLimiterTimeoutCounterMap = util.Map.of(
     fastFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeoutMetric(fastFetchLimiter.name),
     slowFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeoutMetric(slowFetchLimiter.name)
+  )
+  private val fetchLimiterTimeHistogramMap = util.Map.of(
+    fastFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeMetric(MetricsLevel.INFO, fastFetchLimiter.name),
+    slowFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeMetric(MetricsLevel.INFO, slowFetchLimiter.name)
   )
 
   /**
@@ -572,10 +576,12 @@ class ElasticReplicaManager(
       math.min(bytesNeedFromParam, limiter.maxPermits())
     }
 
+    val timer: TimerUtil = new TimerUtil()
     val handler: Handler = timeoutMs match {
       case t if t > 0 => limiter.acquire(bytesNeed(), t)
       case _ => limiter.acquire(bytesNeed())
     }
+    fetchLimiterTimeHistogramMap.get(limiter.name).record(timer.elapsedAs(TimeUnit.NANOSECONDS))
 
     if (handler == null) {
       // the handler will be null if it timed out to acquire from limiter
