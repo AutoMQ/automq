@@ -49,6 +49,11 @@ public class DefaultBackPressureManager implements BackPressureManager {
      * Note: It should only be accessed in the {@link #checkerScheduler} thread.
      */
     private long lastRegulateTime = System.currentTimeMillis();
+    /**
+     * The last load level to trigger the regulator.
+     * Only used for logging.
+     */
+    private LoadLevel lastRegulateLevel = LoadLevel.NORMAL;
 
     public DefaultBackPressureManager(Regulator regulator) {
         this(regulator, DEFAULT_COOLDOWN_MS);
@@ -113,6 +118,9 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
     private void regulate(LoadLevel loadLevel, long now) {
         if (LoadLevel.NORMAL.equals(loadLevel)) {
+            if (!LoadLevel.NORMAL.equals(lastRegulateLevel)) {
+                LOGGER.info("The system is back to a normal state, checkers: {}", loadLevels);
+            }
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("The system is in a normal state, checkers: {}", loadLevels);
             }
@@ -122,5 +130,6 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
         loadLevel.regulate(regulator);
         lastRegulateTime = now;
+        lastRegulateLevel = loadLevel;
     }
 }
