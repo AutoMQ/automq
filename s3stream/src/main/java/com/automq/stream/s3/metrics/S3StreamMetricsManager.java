@@ -513,6 +513,10 @@ public class S3StreamMetricsManager {
                     for (Map.Entry<String, Double> entry : brokerQuotaLimitMap.entrySet()) {
                         String quotaType = entry.getKey();
                         Double quotaLimit = entry.getValue();
+                        // drop too large values
+                        if (quotaLimit > 1e15) {
+                            continue;
+                        }
                         result.record(quotaLimit, BROKER_QUOTA_TYPE_ATTRIBUTES.get(quotaType));
                     }
                 }
