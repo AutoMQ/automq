@@ -73,7 +73,7 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
     @Override
     public void registerChecker(Checker checker) {
-        checkerScheduler.scheduleAtFixedRate(() -> {
+        checkerScheduler.scheduleWithFixedDelay(() -> {
             loadLevels.put(checker.source(), checker.check());
             maybeRegulate();
         }, 0, checker.intervalMs(), TimeUnit.MILLISECONDS);
