@@ -13,8 +13,10 @@ package org.apache.kafka.server.metrics.s3stream;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.NoopLongCounter;
 import com.automq.stream.s3.metrics.NoopObservableLongGauge;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;
+import com.automq.stream.s3.metrics.wrapper.CounterMetric;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,6 +26,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
 
@@ -59,12 +62,15 @@ public class S3StreamKafkaMetricsManager {
     private static Supplier<Map<String, Integer>> streamSetObjectNumSupplier = Collections::emptyMap;
     private static ObservableLongGauge streamObjectNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Integer> streamObjectNumSupplier = () -> 0;
+
     private static ObservableLongGauge fetchLimiterPermitNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<String, Integer>> fetchLimiterPermitNumSupplier = Collections::emptyMap;
     private static ObservableLongGauge fetchLimiterWaitingTaskNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<String, Integer>> fetchLimiterWaitingTaskNumSupplier = Collections::emptyMap;
     private static ObservableLongGauge fetchPendingTaskNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier = Collections::emptyMap;
+    private static LongCounter fetchLimiterTimeoutCount = new NoopLongCounter();
+
     private static ObservableLongGauge logAppendPermitNumMetrics = new NoopObservableLongGauge();
     private static Supplier<Integer> logAppendPermitNumSupplier = () -> 0;
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
@@ -218,6 +224,10 @@ public class S3StreamKafkaMetricsManager {
                         }
                     }
                 });
+
+        fetchLimiterTimeoutCount = meter.counterBuilder(prefix + S3StreamKafkaMetricsConstants.FETCH_LIMITER_TIMEOUT_COUNT)
+                .setDescription("The number of acquire permits timeout in fetch limiters")
+                .build();
     }
 
     private static void initLogAppendMetrics(Meter meter, String prefix) {
@@ -278,6 +288,15 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setFetchPendingTaskNumSupplier(Supplier<Map<String, Integer>> fetchPendingTaskNumSupplier) {
         S3StreamKafkaMetricsManager.fetchPendingTaskNumSupplier = fetchPendingTaskNumSupplier;
+    }
+
+    public static CounterMetric buildFetchLimiterTimeoutMetric(String limiterName) {
+        synchronized (BASE_ATTRIBUTES_LISTENERS) {
+            CounterMetric metric = new CounterMetric(metricsConfig, Attributes.builder()
+                .put(S3StreamKafkaMetricsConstants.LABEL_FETCH_LIMITER_NAME, limiterName).build(), () -> fetchLimiterTimeoutCount);
+            BASE_ATTRIBUTES_LISTENERS.add(metric);
+            return metric;
+        }
     }
 
     public static void setLogAppendPermitNumSupplier(Supplier<Integer> logAppendPermitNumSupplier) {

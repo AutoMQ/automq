@@ -43,6 +43,11 @@ public class NoopLimiter implements Limiter {
         return 0;
     }
 
+    @Override
+    public String name() {
+        return "noop";
+    }
+
     public static class NoopHandler implements Handler {
         @Override
         public void close() {

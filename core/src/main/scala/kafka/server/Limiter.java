@@ -51,10 +51,13 @@ public interface Limiter {
 
     /**
      * Return the number of threads waiting for permits.
-     *
-     * @return the number of threads waiting for permits
      */
     int waitingThreads();
+
+    /**
+     * Return the name of this limiter.
+     */
+    String name();
 
     /**
      * A handler to release acquired permits.

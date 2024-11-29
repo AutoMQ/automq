@@ -27,11 +27,20 @@ public class FairLimiter implements Limiter {
      */
     private final Lock lock = new ReentrantLock(true);
     private final Semaphore permits;
+
+    /**
+     * The name of this limiter, used for metrics.
+     */
+    private final String name;
+    /**
+     * The number of threads waiting for permits, used for metrics.
+     */
     private final AtomicInteger waitingThreads = new AtomicInteger(0);
 
-    public FairLimiter(int size) {
-        maxPermits = size;
-        permits = new Semaphore(size);
+    public FairLimiter(int size, String name) {
+        this.maxPermits = size;
+        this.permits = new Semaphore(size);
+        this.name = name;
     }
 
     @Override
@@ -95,6 +104,11 @@ public class FairLimiter implements Limiter {
     @Override
     public int waitingThreads() {
         return waitingThreads.get();
+    }
+
+    @Override
+    public String name() {
+        return name;
     }
 
     private Handler acquireLocked(int permit, long timeoutNs) throws InterruptedException {

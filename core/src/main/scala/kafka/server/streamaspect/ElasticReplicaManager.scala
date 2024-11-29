@@ -1,6 +1,7 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.api.exceptions.FastReadFailFastException
+import com.automq.stream.s3.metrics.MetricsLevel
 import com.automq.stream.utils.FutureUtil
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import kafka.cluster.Partition
@@ -114,8 +115,8 @@ class ElasticReplicaManager(
     fetchExecutorQueueSizeGaugeMap
   })
 
-  private val fastFetchLimiter = new FairLimiter(200 * 1024 * 1024) // 200MiB
-  private val slowFetchLimiter = new FairLimiter(200 * 1024 * 1024) // 200MiB
+  private val fastFetchLimiter = new FairLimiter(200 * 1024 * 1024, FETCH_LIMITER_FAST_NAME) // 200MiB
+  private val slowFetchLimiter = new FairLimiter(200 * 1024 * 1024, FETCH_LIMITER_SLOW_NAME) // 200MiB
   private val fetchLimiterWaitingTasksGaugeMap = new util.HashMap[String, Integer]()
   S3StreamKafkaMetricsManager.setFetchLimiterWaitingTaskNumSupplier(() => {
     fetchLimiterWaitingTasksGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.waitingThreads())
@@ -128,6 +129,10 @@ class ElasticReplicaManager(
     fetchLimiterPermitsGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.availablePermits())
     fetchLimiterPermitsGaugeMap
   })
+  private val fetchLimiterTimeoutCounterMap = util.Map.of(
+    fastFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeoutMetric(fastFetchLimiter.name),
+    slowFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeoutMetric(slowFetchLimiter.name)
+  )
 
   /**
    * Used to reduce allocation in [[readFromLocalLogV2]]
@@ -573,8 +578,8 @@ class ElasticReplicaManager(
     }
 
     if (handler == null) {
-      // handler maybe null if it timed out to acquire from limiter
-      // TODO add metrics for this
+      // the handler will be null if it timed out to acquire from limiter
+      fetchLimiterTimeoutCounterMap.get(limiter.name).add(MetricsLevel.INFO, 1)
       // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
       ElasticReplicaManager.emptyReadResults(readPartitionInfo.map(_._1))
     } else {
