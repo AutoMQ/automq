@@ -500,6 +500,12 @@ public class S3StreamMetricsManager {
                 if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                     LoadLevel state = backPressureStateSupplier.get();
                     result.record(state.ordinal(), BACK_PRESSURE_STATE_ATTRIBUTES.get(state.name()));
+                    // To beautify Grafana dashboard, we record -1 for other states
+                    for (LoadLevel l : LoadLevel.values()) {
+                        if (l != state) {
+                            result.record(-1, BACK_PRESSURE_STATE_ATTRIBUTES.get(l.name()));
+                        }
+                    }
                 }
             });
     }
