@@ -151,4 +151,8 @@ public class S3StreamMetricsConstant {
     public static final String LABEL_STAGE_GET_OBJECTS = "get_objects";
     public static final String LABEL_STAGE_FIND_INDEX = "find_index";
     public static final String LABEL_STAGE_COMPUTE = "compute";
+
+    // Back Pressure Constants
+    public static final String BACK_PRESSURE_STATE_METRIC_NAME = "back_pressure_state";
+    public static final AttributeKey<String> LABEL_BACK_PRESSURE_STATE = AttributeKey.stringKey("state");
 }

@@ -12,6 +12,7 @@
 package com.automq.stream.s3.metrics;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.backpressure.LoadLevel;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;
@@ -139,10 +140,16 @@ public class S3StreamMetricsManager {
     private static final MultiAttributes<String> OPERATOR_INDEX_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
             S3StreamMetricsConstant.LABEL_INDEX);
 
+    // Back Pressure Metrics
+    private static final MultiAttributes<String> BACK_PRESSURE_STATE_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
+            S3StreamMetricsConstant.LABEL_BACK_PRESSURE_STATE);
+    private static ObservableLongGauge backPressureState = new NoopObservableLongGauge();
+    private static Supplier<LoadLevel> backPressureStateSupplier = () -> LoadLevel.NORMAL;
 
     static {
         BASE_ATTRIBUTES_LISTENERS.add(ALLOC_TYPE_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(OPERATOR_INDEX_ATTRIBUTES);
+        BASE_ATTRIBUTES_LISTENERS.add(BACK_PRESSURE_STATE_ATTRIBUTES);
     }
 
     public static void configure(MetricsConfig metricsConfig) {
@@ -471,6 +478,18 @@ public class S3StreamMetricsManager {
                     for (Map.Entry<String, LongSupplier> entry : asyncCacheMaxSizeSupplier.entrySet()) {
                         result.record(entry.getValue().getAsLong(), Attributes.of(LABEL_CACHE_NAME, entry.getKey()));
                     }
+                }
+            });
+    }
+
+    private static void initBackPressureMetrics(Meter meter, String prefix) {
+        backPressureState = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BACK_PRESSURE_STATE_METRIC_NAME)
+            .setDescription("Back pressure state")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    LoadLevel state = backPressureStateSupplier.get();
+                    result.record(state.ordinal(), BACK_PRESSURE_STATE_ATTRIBUTES.get(state.name()));
                 }
             });
     }
@@ -906,5 +925,9 @@ public class S3StreamMetricsManager {
 
     public static void registerLocalStreamRangeIndexCacheStreamNumSupplier(Supplier<Integer> localStreamRangeIndexCacheStreamNum) {
         S3StreamMetricsManager.localStreamRangeIndexCacheStreamNum = localStreamRangeIndexCacheStreamNum;
+    }
+
+    public static void registerBackPressureStateSupplier(Supplier<LoadLevel> backPressureStateSupplier) {
+        S3StreamMetricsManager.backPressureStateSupplier = backPressureStateSupplier;
     }
 }

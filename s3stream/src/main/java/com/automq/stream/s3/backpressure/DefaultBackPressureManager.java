@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.backpressure;
 
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 
@@ -51,7 +52,7 @@ public class DefaultBackPressureManager implements BackPressureManager {
     private long lastRegulateTime = System.currentTimeMillis();
     /**
      * The last load level to trigger the regulator.
-     * Only used for logging.
+     * Only used for logging and monitoring.
      */
     private LoadLevel lastRegulateLevel = LoadLevel.NORMAL;
 
@@ -67,6 +68,7 @@ public class DefaultBackPressureManager implements BackPressureManager {
     @Override
     public void start() {
         this.checkerScheduler = Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("back-pressure-checker-%d", false), LOGGER);
+        S3StreamMetricsManager.registerBackPressureStateSupplier(this::currentLoadLevel);
     }
 
     @Override
