@@ -58,7 +58,7 @@ public class DefaultBackPressureManagerTest {
             Runnable runnable = invocation.getArgument(0);
             runnable.run();
             return null;
-        }).when(scheduler).scheduleAtFixedRate(any(Runnable.class), anyLong(), anyLong(), any(TimeUnit.class));
+        }).when(scheduler).scheduleWithFixedDelay(any(Runnable.class), anyLong(), anyLong(), any(TimeUnit.class));
         doAnswer(invocation -> {
             Runnable runnable = invocation.getArgument(0);
             runnable.run();
