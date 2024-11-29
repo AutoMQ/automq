@@ -98,7 +98,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         }
         reading = true;
         try {
-            return read(startOffset, endOffset, maxBytes, 1).whenComplete((rst, ex) -> reading = false);
+            return read(startOffset, endOffset, maxBytes, 2).whenComplete((rst, ex) -> reading = false);
         } catch (Throwable e) {
             reading = false;
             return FutureUtil.failedFuture(e);
