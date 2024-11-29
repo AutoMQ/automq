@@ -11,6 +11,7 @@
 
 package kafka.server.streamaspect
 
+import com.automq.stream.s3.metrics.S3StreamMetricsManager
 import kafka.network.RequestChannel
 import kafka.server._
 import kafka.utils.QuotaUtils
@@ -41,6 +42,13 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
     "Tracks the size of the delay queue"), new CumulativeSum())
 
   override def delayQueueSensor: Sensor = brokerDelayQueueSensor
+
+  S3StreamMetricsManager.registerBrokerQuotaLimitSupplier(() => java.util.Map.of(
+    QuotaType.RequestRate, quotaLimit(QuotaType.RequestRate),
+    QuotaType.Produce, quotaLimit(QuotaType.Produce),
+    QuotaType.Fetch, quotaLimit(QuotaType.Fetch),
+    QuotaType.SlowFetch, quotaLimit(QuotaType.SlowFetch)
+  ))
 
   def getMaxValueInQuotaWindow(quotaType: QuotaType, request: RequestChannel.Request): Double = {
     if (shouldThrottle(request)) {
