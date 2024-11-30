@@ -27,6 +27,8 @@ import org.apache.kafka.common.errors.StaleBrokerEpochException;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.message.BrokerRegistrationRequestData;
 import org.apache.kafka.common.message.ControllerRegistrationRequestData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.PutKVsRequestData;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
@@ -39,6 +41,7 @@ import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
@@ -56,12 +59,13 @@ import org.apache.kafka.server.common.Features;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
-import org.apache.kafka.timeline.TimelineHashSet;
 
 import org.slf4j.Logger;
 
+import java.nio.ByteBuffer;
 import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -101,9 +105,15 @@ public class ClusterControlManager {
 
         // AutoMQ for Kafka inject start
         private List<String> quorumVoters;
+        private KVControlManager kvControlManager;
 
         Builder setQuorumVoters(List<String> quorumVoters) {
             this.quorumVoters = quorumVoters;
+            return this;
+        }
+
+        Builder setKVControlManager(KVControlManager kvControlManager) {
+            this.kvControlManager = kvControlManager;
             return this;
         }
         // AutoMQ for Kafka inject end
@@ -181,7 +191,10 @@ public class ClusterControlManager {
                 featureControl,
                 zkMigrationEnabled,
                 brokerUncleanShutdownHandler,
-                quorumVoters
+                // AutoMQ inject start
+                quorumVoters,
+                kvControlManager
+                // AutoMQ inject end
             );
         }
     }
@@ -297,7 +310,8 @@ public class ClusterControlManager {
     /**
      * A set of node IDs that have been unregistered and can be reused for new node assignments.
      */
-    private final TimelineHashSet<Integer> reusableNodeIds;
+    private final KVControlManager kvControlManager;
+    private static final String REUSABLE_NODE_IDS_KEY = "__automq_reusable_node_ids/";
     // AutoMQ for Kafka inject end
 
     private ClusterControlManager(
@@ -310,7 +324,10 @@ public class ClusterControlManager {
         FeatureControlManager featureControl,
         boolean zkMigrationEnabled,
         BrokerUncleanShutdownHandler brokerUncleanShutdownHandler,
-        List<String> quorumVoters
+        // AutoMQ inject start
+        List<String> quorumVoters,
+        KVControlManager kvControlManager
+        // AutoMQ inject end
     ) {
         this.logContext = logContext;
         this.clusterId = clusterId;
@@ -329,7 +346,7 @@ public class ClusterControlManager {
         this.brokerUncleanShutdownHandler = brokerUncleanShutdownHandler;
         // AutoMQ for Kafka inject start
         this.maxControllerId = QuorumConfig.parseVoterConnections(quorumVoters).keySet().stream().max(Integer::compareTo).orElse(0);
-        this.reusableNodeIds = new TimelineHashSet<>(snapshotRegistry, 0);
+        this.kvControlManager = kvControlManager;
         // AutoMQ for Kafka inject end
     }
 
@@ -377,25 +394,72 @@ public class ClusterControlManager {
     // AutoMQ for Kafka inject start
     public ControllerResult<Integer> getNextNodeId() {
         int nextId;
+        Set<Integer> reusableNodeIds = getReusableNodeIds();
         if (!reusableNodeIds.isEmpty()) {
             Iterator<Integer> iterator = reusableNodeIds.iterator();
             nextId = iterator.next();
             // we simply remove the id from reusable id set because we're unable to determine if the id
             // will finally be used.
             iterator.remove();
+            return ControllerResult.atomicOf(putReusableNodeIds(reusableNodeIds), nextId);
         } else {
             int maxBrokerId = brokerRegistrations.keySet().stream().max(Integer::compareTo).orElse(0);
             int maxNodeId = Math.max(maxBrokerId, maxControllerId);
             nextId = this.nextNodeId.accumulateAndGet(maxNodeId, (x, y) -> Math.max(x, y) + 1);
             // Let the broker's nodeId start from 1000 to easily distinguish broker and controller.
             nextId = Math.max(nextId, 1000);
+            UpdateNextNodeIdRecord record = new UpdateNextNodeIdRecord().setNodeId(nextId);
+
+            List<ApiMessageAndVersion> records = new ArrayList<>();
+            records.add(new ApiMessageAndVersion(record, (short) 0));
+            return ControllerResult.atomicOf(records, nextId);
         }
+    }
 
-        UpdateNextNodeIdRecord record = new UpdateNextNodeIdRecord().setNodeId(nextId);
+    Set<Integer> getReusableNodeIds() {
+        return deserializeReusableNodeIds(kvControlManager.getKV(
+            new GetKVsRequestData.GetKVRequest().setKey(REUSABLE_NODE_IDS_KEY)).value());
+    }
 
-        List<ApiMessageAndVersion> records = new ArrayList<>();
-        records.add(new ApiMessageAndVersion(record, (short) 0));
-        return ControllerResult.atomicOf(records, nextId);
+    List<ApiMessageAndVersion> putReusableNodeIds(Set<Integer> reusableNodeIds) {
+        return kvControlManager.putKV(new PutKVsRequestData.PutKVRequest()
+            .setKey(REUSABLE_NODE_IDS_KEY)
+            .setValue(serializeReusableNodeIds(reusableNodeIds))
+            .setOverwrite(true))
+            .records();
+    }
+
+    private Set<Integer> deserializeReusableNodeIds(byte[] value) {
+        if (value == null) {
+            return new HashSet<>();
+        }
+        ByteBuffer buffer = ByteBuffer.wrap(value);
+        Set<Integer> reusableNodeIds = new HashSet<>();
+        while (buffer.hasRemaining()) {
+            reusableNodeIds.add(buffer.getInt());
+        }
+        return reusableNodeIds;
+    }
+
+    private byte[] serializeReusableNodeIds(Set<Integer> reusableNodeIds) {
+        ByteBuffer buffer = ByteBuffer.allocate(reusableNodeIds.size() * Integer.BYTES);
+        reusableNodeIds.forEach(buffer::putInt);
+        return buffer.array();
+    }
+
+    public List<ApiMessageAndVersion> registerBrokerRecords(int brokerId) {
+        Set<Integer> reusableNodeIds = getReusableNodeIds();
+        if (reusableNodeIds.contains(brokerId)) {
+            reusableNodeIds.remove(brokerId);
+            return putReusableNodeIds(reusableNodeIds);
+        }
+        return Collections.emptyList();
+    }
+
+    public List<ApiMessageAndVersion> unRegisterBrokerRecords(int brokerId) {
+        Set<Integer> reusableNodeIds = getReusableNodeIds();
+        reusableNodeIds.add(brokerId);
+        return putReusableNodeIds(reusableNodeIds);
     }
     // AutoMQ for Kafka inject end
 
@@ -513,6 +577,10 @@ public class ClusterControlManager {
         }
         heartbeatManager.register(brokerId, record.fenced());
 
+        // AutoMQ for Kafka inject start
+        records.addAll(registerBrokerRecords(brokerId));
+        // AutoMQ for Kafka inject end
+
         return ControllerResult.atomicOf(records, new BrokerRegistrationReply(record.brokerEpoch()));
     }
 
@@ -601,10 +669,6 @@ public class ClusterControlManager {
             heartbeatManager.register(brokerId, record.fenced());
         }
 
-        // AutoMQ injection start
-        reusableNodeIds.remove(brokerId);
-        // AutoMQ injection end
-
         if (prevRegistration == null) {
             log.info("Replayed initial RegisterBrokerRecord for broker {}: {}", record.brokerId(), record);
         } else if (prevRegistration.incarnationId().equals(record.incarnationId())) {
@@ -630,8 +694,6 @@ public class ClusterControlManager {
             if (heartbeatManager != null) heartbeatManager.remove(brokerId);
             updateDirectories(brokerId, registration.directories(), null);
             brokerRegistrations.remove(brokerId);
-            // AutoMQ injection start
-            reusableNodeIds.add(brokerId);
             // AutoMQ injection end
             log.info("Replayed {}", record);
         }
