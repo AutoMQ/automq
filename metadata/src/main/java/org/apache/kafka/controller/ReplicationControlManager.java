@@ -1503,6 +1503,7 @@ public class ReplicationControlManager {
             (short) 0));
         // AutoMQ for Kafka inject start
         records.add(nodeControlManager.unregisterNodeRecord(brokerId));
+        records.addAll(clusterControl.unRegisterBrokerRecords(brokerId));
         // AutoMQ for Kafka inject end
     }
 
