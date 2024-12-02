@@ -12,7 +12,6 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.Version;
-import com.automq.stream.s3.backpressure.BackPressureConfig;
 import com.automq.stream.s3.operator.BucketURI;
 
 import java.util.List;
@@ -53,8 +52,6 @@ public class Config {
     private Supplier<Version> version = () -> {
         throw new UnsupportedOperationException();
     };
-    private boolean backPressureEnabled = BackPressureConfig.BACK_PRESSURE_ENABLED_DEFAULT;
-    private long backPressureCooldownMs = BackPressureConfig.BACK_PRESSURE_COOLDOWN_MS_DEFAULT;
 
     public int nodeId() {
         return nodeId;
@@ -315,23 +312,5 @@ public class Config {
 
     public Version version() {
         return version.get();
-    }
-
-    public boolean backPressureEnabled() {
-        return backPressureEnabled;
-    }
-
-    public Config backPressureEnabled(boolean backPressureEnabled) {
-        this.backPressureEnabled = backPressureEnabled;
-        return this;
-    }
-
-    public long backPressureCooldownMs() {
-        return backPressureCooldownMs;
-    }
-
-    public Config backPressureCooldownMs(long backPressureCooldownMs) {
-        this.backPressureCooldownMs = backPressureCooldownMs;
-        return this;
     }
 }
