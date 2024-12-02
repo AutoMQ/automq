@@ -17,7 +17,7 @@
 
 package kafka.server
 
-import kafka.automq.backpressure.{BackPressureManager, DefaultBackPressureManager, Regulator}
+import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.zonerouter.{NoopProduceRouter, ProduceRouter}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
@@ -552,7 +552,10 @@ class BrokerServer(
         _replicaManager.addPartitionLifecycleListener(l)
       })
 
-      backPressureManager = new DefaultBackPressureManager(true, newBackPressureRegulator(), -1)
+      backPressureManager = new DefaultBackPressureManager(
+        BackPressureConfig.from(config),
+        newBackPressureRegulator()
+      )
       backPressureManager.start()
       // AutoMQ inject end
 

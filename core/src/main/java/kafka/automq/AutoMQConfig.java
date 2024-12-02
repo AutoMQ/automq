@@ -11,7 +11,6 @@
 
 package kafka.automq;
 
-import kafka.automq.backpressure.BackPressureConfig;
 import kafka.log.stream.s3.telemetry.exporter.ExporterConstants;
 import kafka.server.KafkaConfig;
 
@@ -29,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;
@@ -172,13 +172,13 @@ public class AutoMQConfig {
     public static final String CLUSTER_ID_CONFIG = "cluster.id";
     public static final String CLUSTER_ID_DOC = "If the cluster.id is set, Kafka will auto format the storage.";
 
-    public static final String S3_BACK_PRESSURE_ENABLED_CONFIG = BackPressureConfig.BACK_PRESSURE_ENABLED_CONFIG;
-    public static final String S3_BACK_PRESSURE_ENABLED_DOC = BackPressureConfig.BACK_PRESSURE_ENABLED_DOC;
-    public static final boolean S3_BACK_PRESSURE_ENABLED_DEFAULT = BackPressureConfig.BACK_PRESSURE_ENABLED_DEFAULT;
+    public static final String S3_BACK_PRESSURE_ENABLED_CONFIG = "s3.backpressure.enabled";
+    public static final String S3_BACK_PRESSURE_ENABLED_DOC = "Whether back pressure is enabled";
+    public static final boolean S3_BACK_PRESSURE_ENABLED_DEFAULT = true;
 
-    public static final String S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG = BackPressureConfig.BACK_PRESSURE_COOLDOWN_MS_CONFIG;
-    public static final String S3_BACK_PRESSURE_COOLDOWN_MS_DOC = BackPressureConfig.BACK_PRESSURE_COOLDOWN_MS_DOC;
-    public static final long S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT = BackPressureConfig.BACK_PRESSURE_COOLDOWN_MS_DEFAULT;
+    public static final String S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG = "s3.backpressure.cooldown.ms";
+    public static final String S3_BACK_PRESSURE_COOLDOWN_MS_DOC = "The cooldown time in milliseconds to wait between two regulator actions";
+    public static final long S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT = TimeUnit.SECONDS.toMillis(15);
 
     // Deprecated config start
     public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";

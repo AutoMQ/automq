@@ -27,12 +27,8 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultBackPressureManager.class);
 
-    private volatile boolean enabled;
+    private final BackPressureConfig config;
     private final Regulator regulator;
-    /**
-     * The cooldown time in milliseconds to wait between two regulator actions.
-     */
-    private final long cooldownMs;
 
     /**
      * The scheduler to schedule the checker periodically.
@@ -55,10 +51,9 @@ public class DefaultBackPressureManager implements BackPressureManager {
      */
     private LoadLevel lastRegulateLevel = LoadLevel.NORMAL;
 
-    public DefaultBackPressureManager(boolean enabled, Regulator regulator, long cooldownMs) {
-        this.enabled = enabled;
+    public DefaultBackPressureManager(BackPressureConfig config, Regulator regulator) {
+        this.config = config;
         this.regulator = regulator;
-        this.cooldownMs = cooldownMs;
     }
 
     @Override
@@ -81,7 +76,7 @@ public class DefaultBackPressureManager implements BackPressureManager {
     }
 
     private void maybeRegulate() {
-        if (!enabled) {
+        if (!config.enabled()) {
             return;
         }
         maybeRegulate(false);
@@ -97,11 +92,11 @@ public class DefaultBackPressureManager implements BackPressureManager {
         long now = System.currentTimeMillis();
         long timeElapsed = now - lastRegulateTime;
 
-        if (timeElapsed < cooldownMs) {
+        if (timeElapsed < config.cooldownMs()) {
             // Skip regulating if the cooldown time has not passed.
             if (!isInternal) {
                 // Schedule the next regulate action if it is not an internal call.
-                checkerScheduler.schedule(() -> maybeRegulate(true), cooldownMs - timeElapsed, TimeUnit.MILLISECONDS);
+                checkerScheduler.schedule(() -> maybeRegulate(true), config.cooldownMs() - timeElapsed, TimeUnit.MILLISECONDS);
             }
             return;
         }

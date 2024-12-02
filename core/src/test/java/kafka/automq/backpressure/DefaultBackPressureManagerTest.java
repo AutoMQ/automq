@@ -28,6 +28,7 @@ public class DefaultBackPressureManagerTest {
     static String sourceB = "sourceB";
     static String sourceC = "sourceC";
 
+    BackPressureConfig config;
     DefaultBackPressureManager manager;
 
     Regulator regulator;
@@ -70,6 +71,7 @@ public class DefaultBackPressureManagerTest {
 
     @Test
     public void testDisabled() {
+        // TODO: test dynamic configuration
         initManager(false, 0);
 
         callChecker(sourceC, LoadLevel.NORMAL);
@@ -135,7 +137,8 @@ public class DefaultBackPressureManagerTest {
      * Should be called at the beginning of each test to initialize the manager.
      */
     private void initManager(boolean enabled, long cooldownMs) {
-        manager = new DefaultBackPressureManager(enabled, regulator, cooldownMs);
+        config = new BackPressureConfig(enabled, cooldownMs);
+        manager = new DefaultBackPressureManager(config, regulator);
         manager.checkerScheduler = scheduler;
     }
 

@@ -11,15 +11,30 @@
 
 package kafka.automq.backpressure;
 
-import java.util.concurrent.TimeUnit;
+import kafka.server.KafkaConfig;
 
 public class BackPressureConfig {
 
-    public static final String BACK_PRESSURE_ENABLED_CONFIG = "s3.backpressure.enabled";
-    public static final String BACK_PRESSURE_ENABLED_DOC = "Whether back pressure is enabled";
-    public static final boolean BACK_PRESSURE_ENABLED_DEFAULT = true;
+    private volatile boolean enabled;
+    /**
+     * The cooldown time in milliseconds to wait between two regulator actions.
+     */
+    private long cooldownMs;
 
-    public static final String BACK_PRESSURE_COOLDOWN_MS_CONFIG = "s3.backpressure.cooldown.ms";
-    public static final String BACK_PRESSURE_COOLDOWN_MS_DOC = "The cooldown time in milliseconds to wait between two regulator actions";
-    public static final long BACK_PRESSURE_COOLDOWN_MS_DEFAULT = TimeUnit.SECONDS.toMillis(15);
+    public static BackPressureConfig from(KafkaConfig config) {
+        return new BackPressureConfig(config.s3BackPressureEnabled(), config.s3BackPressureCooldownMs());
+    }
+
+    public BackPressureConfig(boolean enabled, long cooldownMs) {
+        this.enabled = enabled;
+        this.cooldownMs = cooldownMs;
+    }
+
+    public boolean enabled() {
+        return enabled;
+    }
+
+    public long cooldownMs() {
+        return cooldownMs;
+    }
 }
