@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.backpressure;
 
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import java.util.HashMap;
@@ -47,6 +48,11 @@ public class DefaultBackPressureManager implements BackPressureManager {
      * Note: It should only be accessed in the {@link #checkerScheduler} thread.
      */
     private long lastRegulateTime = System.currentTimeMillis();
+    /**
+     * The last load level to trigger the regulator.
+     * Only used for logging and monitoring.
+     */
+    private LoadLevel lastRegulateLevel = LoadLevel.NORMAL;
 
     public DefaultBackPressureManager(Regulator regulator) {
         this(regulator, DEFAULT_COOLDOWN_MS);
@@ -60,11 +66,12 @@ public class DefaultBackPressureManager implements BackPressureManager {
     @Override
     public void start() {
         this.checkerScheduler = Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("back-pressure-checker-%d", false), LOGGER);
+        S3StreamMetricsManager.registerBackPressureStateSupplier(this::currentLoadLevel);
     }
 
     @Override
     public void registerChecker(Checker checker) {
-        checkerScheduler.scheduleAtFixedRate(() -> {
+        checkerScheduler.scheduleWithFixedDelay(() -> {
             loadLevels.put(checker.source(), checker.check());
             maybeRegulate();
         }, 0, checker.intervalMs(), TimeUnit.MILLISECONDS);
@@ -111,6 +118,9 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
     private void regulate(LoadLevel loadLevel, long now) {
         if (LoadLevel.NORMAL.equals(loadLevel)) {
+            if (!LoadLevel.NORMAL.equals(lastRegulateLevel)) {
+                LOGGER.info("The system is back to a normal state, checkers: {}", loadLevels);
+            }
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("The system is in a normal state, checkers: {}", loadLevels);
             }
@@ -120,5 +130,6 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
         loadLevel.regulate(regulator);
         lastRegulateTime = now;
+        lastRegulateLevel = loadLevel;
     }
 }

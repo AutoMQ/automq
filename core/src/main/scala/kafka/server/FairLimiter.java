@@ -13,6 +13,7 @@ package kafka.server;
 
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -27,13 +28,32 @@ public class FairLimiter implements Limiter {
     private final Lock lock = new ReentrantLock(true);
     private final Semaphore permits;
 
-    public FairLimiter(int size) {
-        maxPermits = size;
-        permits = new Semaphore(size);
+    /**
+     * The name of this limiter, used for metrics.
+     */
+    private final String name;
+    /**
+     * The number of threads waiting for permits, used for metrics.
+     */
+    private final AtomicInteger waitingThreads = new AtomicInteger(0);
+
+    public FairLimiter(int size, String name) {
+        this.maxPermits = size;
+        this.permits = new Semaphore(size);
+        this.name = name;
     }
 
     @Override
     public Handler acquire(int permit) throws InterruptedException {
+        waitingThreads.incrementAndGet();
+        try {
+            return acquire0(permit);
+        } finally {
+            waitingThreads.decrementAndGet();
+        }
+    }
+
+    private Handler acquire0(int permit) throws InterruptedException {
         lock.lock();
         try {
             permits.acquire(permit);
@@ -45,6 +65,15 @@ public class FairLimiter implements Limiter {
 
     @Override
     public Handler acquire(int permit, long timeoutMs) throws InterruptedException {
+        waitingThreads.incrementAndGet();
+        try {
+            return acquire0(permit, timeoutMs);
+        } finally {
+            waitingThreads.decrementAndGet();
+        }
+    }
+
+    private Handler acquire0(int permit, long timeoutMs) throws InterruptedException {
         long start = System.nanoTime();
         if (lock.tryLock(timeoutMs, TimeUnit.MILLISECONDS)) {
             try {
@@ -70,6 +99,16 @@ public class FairLimiter implements Limiter {
     @Override
     public int availablePermits() {
         return permits.availablePermits();
+    }
+
+    @Override
+    public int waitingThreads() {
+        return waitingThreads.get();
+    }
+
+    @Override
+    public String name() {
+        return name;
     }
 
     private Handler acquireLocked(int permit, long timeoutNs) throws InterruptedException {
