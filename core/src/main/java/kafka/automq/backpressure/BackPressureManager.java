@@ -11,11 +11,13 @@
 
 package kafka.automq.backpressure;
 
+import org.apache.kafka.common.Reconfigurable;
+
 /**
  * It checks the {@link LoadLevel} of the system and takes actions based on the load level
  * to prevent the system from being overwhelmed.
  */
-public interface BackPressureManager {
+public interface BackPressureManager extends Reconfigurable {
 
     /**
      * Start the back pressure manager.

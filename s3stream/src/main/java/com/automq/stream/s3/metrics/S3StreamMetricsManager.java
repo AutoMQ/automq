@@ -12,7 +12,6 @@
 package com.automq.stream.s3.metrics;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.backpressure.LoadLevel;
 import com.automq.stream.s3.metrics.operations.S3ObjectStage;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.metrics.wrapper.ConfigListener;

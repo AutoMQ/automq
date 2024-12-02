@@ -11,6 +11,8 @@
 
 package kafka.automq.backpressure;
 
+import org.apache.kafka.common.config.ConfigException;
+
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -20,8 +22,11 @@ import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
+import static kafka.automq.backpressure.BackPressureConfig.RECONFIGURABLE_CONFIGS;
 
 public class DefaultBackPressureManager implements BackPressureManager {
 
@@ -127,5 +132,24 @@ public class DefaultBackPressureManager implements BackPressureManager {
         loadLevel.regulate(regulator);
         lastRegulateTime = now;
         lastRegulateLevel = loadLevel;
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        return RECONFIGURABLE_CONFIGS;
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
+        BackPressureConfig.validate(configs);
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        config.update(configs);
+    }
+
+    @Override
+    public void configure(Map<String, ?> configs) {
     }
 }
