@@ -28,6 +28,7 @@ import org.apache.kafka.common.message.BrokerRegistrationRequestData;
 import org.apache.kafka.common.message.ControllerRegistrationRequestData;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.FenceBrokerRecord;
+import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord.BrokerEndpoint;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord.BrokerEndpointCollection;
@@ -36,6 +37,7 @@ import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.MockTime;
+import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
@@ -52,6 +54,7 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -60,12 +63,14 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static java.util.Arrays.asList;
@@ -717,5 +722,58 @@ public class ClusterControlManagerTest {
             assertEquals(100,
                     clusterControl.brokerRegistrations().get(1).epoch());
         }
+    }
+
+    @Test
+    public void testReusableNodeIds() {
+        MockTime time = new MockTime(0, 0, 0);
+        SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
+        KVControlManager kvControl = new KVControlManager(snapshotRegistry, new LogContext());
+        FeatureControlManager featureControl = new FeatureControlManager.Builder().
+            setSnapshotRegistry(snapshotRegistry).
+            setQuorumFeatures(new QuorumFeatures(0,
+                QuorumFeatures.defaultFeatureMap(true),
+                Collections.singletonList(0))).
+            setMetadataVersion(MetadataVersion.IBP_3_9_IV0).
+            build();
+        ClusterControlManager clusterControl = new ClusterControlManager.Builder().
+            setTime(time).
+            setSnapshotRegistry(snapshotRegistry).
+            setSessionTimeoutNs(1000).
+            setFeatureControlManager(featureControl).
+            setBrokerUncleanShutdownHandler((brokerId, records) -> { }).
+            setQuorumVoters(new ArrayList<>()).
+            setKVControlManager(kvControl).
+            build();
+        clusterControl.activate();
+        Set<Integer> nodeIds = clusterControl.getReusableNodeIds();
+        Assertions.assertTrue(nodeIds.isEmpty());
+        clusterControl.putReusableNodeIds(Set.of(1, 2, 3)).forEach(r -> {
+            kvControl.replay((KVRecord) r.message());
+        });
+        nodeIds = clusterControl.getReusableNodeIds();
+        Assertions.assertEquals(Set.of(1, 2, 3), nodeIds);
+
+        clusterControl.unRegisterBrokerRecords(4).forEach(r -> {
+            kvControl.replay((KVRecord) r.message());
+        });
+        nodeIds = clusterControl.getReusableNodeIds();
+        Assertions.assertEquals(Set.of(1, 2, 3, 4), nodeIds);
+
+        clusterControl.registerBrokerRecords(2).forEach(r -> {
+            kvControl.replay((KVRecord) r.message());
+        });
+        nodeIds = clusterControl.getReusableNodeIds();
+        Assertions.assertEquals(Set.of(1, 3, 4), nodeIds);
+
+        ControllerResult<Integer> result = clusterControl.getNextNodeId();
+        result.records().forEach(r -> {
+            if (r.message() instanceof KVRecord) {
+                kvControl.replay((KVRecord) r.message());
+            }
+        });
+        Set<Integer> remainIds = new HashSet<>(Set.of(1, 3, 4));
+        remainIds.remove(result.response());
+        Assertions.assertEquals(remainIds, clusterControl.getReusableNodeIds());
     }
 }
