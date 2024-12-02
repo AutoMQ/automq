@@ -44,6 +44,8 @@ public class ConfigUtils {
             .mockEnable(s.s3MockEnable())
             .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
             .refillPeriodMs(s.s3RefillPeriodMsProp())
-            .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond());
+            .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond())
+            .backPressureEnabled(s.s3BackPressureEnabled())
+            .backPressureCooldownMs(s.s3BackPressureCooldownMs());
     }
 }

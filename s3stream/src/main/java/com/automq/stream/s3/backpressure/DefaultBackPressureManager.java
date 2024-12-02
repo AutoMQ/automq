@@ -25,10 +25,9 @@ import java.util.concurrent.TimeUnit;
 
 public class DefaultBackPressureManager implements BackPressureManager {
 
-    public static final long DEFAULT_COOLDOWN_MS = TimeUnit.SECONDS.toMillis(15);
-
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultBackPressureManager.class);
 
+    private volatile boolean enabled;
     private final Regulator regulator;
     /**
      * The cooldown time in milliseconds to wait between two regulator actions.
@@ -56,11 +55,8 @@ public class DefaultBackPressureManager implements BackPressureManager {
      */
     private LoadLevel lastRegulateLevel = LoadLevel.NORMAL;
 
-    public DefaultBackPressureManager(Regulator regulator) {
-        this(regulator, DEFAULT_COOLDOWN_MS);
-    }
-
-    public DefaultBackPressureManager(Regulator regulator, long cooldownMs) {
+    public DefaultBackPressureManager(boolean enabled, Regulator regulator, long cooldownMs) {
+        this.enabled = enabled;
         this.regulator = regulator;
         this.cooldownMs = cooldownMs;
     }
@@ -85,6 +81,9 @@ public class DefaultBackPressureManager implements BackPressureManager {
     }
 
     private void maybeRegulate() {
+        if (!enabled) {
+            return;
+        }
         maybeRegulate(false);
     }
 

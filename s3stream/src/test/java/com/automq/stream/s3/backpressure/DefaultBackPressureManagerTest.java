@@ -121,7 +121,8 @@ public class DefaultBackPressureManagerTest {
      * Should be called at the beginning of each test to initialize the manager.
      */
     private void initManager(long cooldownMs) {
-        manager = new DefaultBackPressureManager(regulator, cooldownMs);
+        // TODO: test Disabled
+        manager = new DefaultBackPressureManager(true, regulator, cooldownMs);
         manager.checkerScheduler = scheduler;
     }
 

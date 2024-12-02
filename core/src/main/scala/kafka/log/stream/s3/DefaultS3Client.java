@@ -151,7 +151,7 @@ public class DefaultS3Client implements Client {
         this.objectManager.setCommitStreamSetObjectHook(localIndexCache::updateIndexFromRequest);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
-        this.backPressureManager = new DefaultBackPressureManager(backPressureRegulator());
+        this.backPressureManager = new DefaultBackPressureManager(this.config.backPressureEnabled(), backPressureRegulator(), this.config.backPressureCooldownMs());
         this.writeAheadLog = buildWAL();
         StorageFailureHandlerChain storageFailureHandler = new StorageFailureHandlerChain();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage, storageFailureHandler);
