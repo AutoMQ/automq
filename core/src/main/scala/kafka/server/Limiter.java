@@ -50,6 +50,16 @@ public interface Limiter {
     int availablePermits();
 
     /**
+     * Return the number of threads waiting for permits.
+     */
+    int waitingThreads();
+
+    /**
+     * Return the name of this limiter.
+     */
+    String name();
+
+    /**
      * A handler to release acquired permits.
      */
     interface Handler extends AutoCloseable {
