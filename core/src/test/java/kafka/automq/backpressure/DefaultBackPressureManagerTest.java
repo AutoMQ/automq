@@ -11,9 +11,12 @@
 
 package kafka.automq.backpressure;
 
+import kafka.automq.AutoMQConfig;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -70,14 +73,26 @@ public class DefaultBackPressureManagerTest {
     }
 
     @Test
-    public void testDisabled() {
-        // TODO: test dynamic configuration
+    public void testDynamicConfig() {
         initManager(false, 0);
 
         callChecker(sourceC, LoadLevel.NORMAL);
         callChecker(sourceB, LoadLevel.HIGH);
-
         assertRegulatorCalled(0, 0);
+
+        manager.reconfigure(Map.of(
+            AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, "true"
+        ));
+        callChecker(sourceC, LoadLevel.NORMAL);
+        callChecker(sourceB, LoadLevel.NORMAL);
+        assertRegulatorCalled(1, 1);
+
+        manager.reconfigure(Map.of(
+            AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, "false"
+        ));
+        callChecker(sourceC, LoadLevel.NORMAL);
+        callChecker(sourceB, LoadLevel.HIGH);
+        assertRegulatorCalled(1, 1);
     }
 
     @Test
