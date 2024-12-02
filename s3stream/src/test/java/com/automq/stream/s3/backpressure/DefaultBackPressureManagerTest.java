@@ -69,6 +69,16 @@ public class DefaultBackPressureManagerTest {
     }
 
     @Test
+    public void testDisabled() {
+        initManager(false, 0);
+
+        callChecker(sourceC, LoadLevel.NORMAL);
+        callChecker(sourceB, LoadLevel.HIGH);
+
+        assertRegulatorCalled(0, 0);
+    }
+
+    @Test
     public void testPriority1() {
         initManager(0);
 
@@ -117,12 +127,15 @@ public class DefaultBackPressureManagerTest {
         assertEquals(cooldownMs, schedulerScheduleDelay, tolerance);
     }
 
+    private void initManager(long cooldownMs) {
+        initManager(true, cooldownMs);
+    }
+
     /**
      * Should be called at the beginning of each test to initialize the manager.
      */
-    private void initManager(long cooldownMs) {
-        // TODO: test Disabled
-        manager = new DefaultBackPressureManager(true, regulator, cooldownMs);
+    private void initManager(boolean enabled, long cooldownMs) {
+        manager = new DefaultBackPressureManager(enabled, regulator, cooldownMs);
         manager.checkerScheduler = scheduler;
     }
 
