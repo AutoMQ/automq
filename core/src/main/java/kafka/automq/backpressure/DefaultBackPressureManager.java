@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.backpressure;
+package kafka.automq.backpressure;
 
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.utils.ThreadUtils;

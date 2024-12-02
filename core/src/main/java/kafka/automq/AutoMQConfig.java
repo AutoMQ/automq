@@ -18,7 +18,7 @@ import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.utils.Utils;
 
 import com.automq.stream.s3.ByteBufAllocPolicy;
-import com.automq.stream.s3.backpressure.BackPressureConfig;
+import kafka.automq.backpressure.BackPressureConfig;
 import com.automq.stream.s3.operator.BucketURI;
 
 import org.apache.commons.lang3.StringUtils;

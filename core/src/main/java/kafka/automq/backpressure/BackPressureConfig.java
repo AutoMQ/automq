@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.backpressure;
+package kafka.automq.backpressure;
 
 import java.util.concurrent.TimeUnit;
 
