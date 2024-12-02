@@ -2125,6 +2125,9 @@ public final class QuorumController implements Controller {
         this.time = time;
         this.controllerMetrics = controllerMetrics;
         this.snapshotRegistry = new SnapshotRegistry(logContext);
+        // AutoMQ for Kafka inject start
+        this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
+        // AutoMQ for Kafka inject end
         this.deferredEventQueue = new DeferredEventQueue(logContext);
         this.deferredUnstableEventQueue = new DeferredEventQueue(logContext);
         this.offsetControl = new OffsetControlManager.Builder().
@@ -2172,6 +2175,7 @@ public final class QuorumController implements Controller {
             setZkMigrationEnabled(zkMigrationEnabled).
             // AutoMQ for Kafka inject start
             setQuorumVoters(quorumVoters).
+            setKVControlManager(kvControlManager).
             // AutoMQ for Kafka inject end
             setBrokerUncleanShutdownHandler(this::handleUncleanBrokerShutdown).
             setInterBrokerListenerName(interBrokerListenerName).
@@ -2236,7 +2240,6 @@ public final class QuorumController implements Controller {
             featureControl::autoMQVersion, time);
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
                 this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
-        this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager, kvControlManager);
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoGetter(clusterControl, streamControlManager));
         this.extension = extension.apply(this);
