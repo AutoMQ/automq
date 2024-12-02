@@ -12,8 +12,8 @@
 package kafka.automq.backpressure;
 
 import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 
@@ -55,6 +55,13 @@ public class DefaultBackPressureManager implements BackPressureManager {
      * Only used for logging and monitoring.
      */
     private LoadLevel lastRegulateLevel = LoadLevel.NORMAL;
+    /**
+     * The current state metrics of the system.
+     * Only used for monitoring.
+     *
+     * @see S3StreamKafkaMetricsManager#setBackPressureStateSupplier
+     */
+    private final Map<String, Integer> stateMetrics = new HashMap<>(LoadLevel.values().length);
 
     public DefaultBackPressureManager(BackPressureConfig config, Regulator regulator) {
         this.config = config;
@@ -64,7 +71,7 @@ public class DefaultBackPressureManager implements BackPressureManager {
     @Override
     public void start() {
         this.checkerScheduler = Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("back-pressure-checker-%d", false), LOGGER);
-        S3StreamMetricsManager.registerBackPressureStateSupplier(this::currentLoadLevel);
+        S3StreamKafkaMetricsManager.setBackPressureStateSupplier(this::stateMetrics);
     }
 
     @Override
@@ -132,6 +139,15 @@ public class DefaultBackPressureManager implements BackPressureManager {
         loadLevel.regulate(regulator);
         lastRegulateTime = now;
         lastRegulateLevel = loadLevel;
+    }
+
+    private Map<String, Integer> stateMetrics() {
+        LoadLevel current = currentLoadLevel();
+        for (LoadLevel level : LoadLevel.values()) {
+            int value = level.equals(current) ? 1 : -1;
+            stateMetrics.put(level.name(), value);
+        }
+        return stateMetrics;
     }
 
     @Override
