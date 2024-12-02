@@ -172,11 +172,11 @@ public class AutoMQConfig {
     public static final String CLUSTER_ID_CONFIG = "cluster.id";
     public static final String CLUSTER_ID_DOC = "If the cluster.id is set, Kafka will auto format the storage.";
 
-    public static final String S3_BACK_PRESSURE_ENABLED_CONFIG = "s3.backpressure.enabled";
+    public static final String S3_BACK_PRESSURE_ENABLED_CONFIG = "automq.backpressure.enabled";
     public static final String S3_BACK_PRESSURE_ENABLED_DOC = "Whether back pressure is enabled";
     public static final boolean S3_BACK_PRESSURE_ENABLED_DEFAULT = true;
 
-    public static final String S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG = "s3.backpressure.cooldown.ms";
+    public static final String S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG = "automq.backpressure.cooldown.ms";
     public static final String S3_BACK_PRESSURE_COOLDOWN_MS_DOC = "The cooldown time in milliseconds to wait between two regulator actions";
     public static final long S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT = TimeUnit.SECONDS.toMillis(15);
 
