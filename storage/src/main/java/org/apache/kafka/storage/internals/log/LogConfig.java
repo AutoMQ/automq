@@ -727,6 +727,13 @@ public class LogConfig extends AbstractConfig {
         }
     }
 
+    public static void validateTableTopicSchemaConfigValues(Properties props, String tableTopicSchemaRegistryUrl) {
+        String schemaType = props.getProperty(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG);
+        if (TableTopicSchemaType.SCHEMA.name.equals(schemaType) && tableTopicSchemaRegistryUrl == null) {
+            throw new InvalidConfigurationException("Table topic schema type is set to SCHEMA but schema registry URL is not configured");
+        }
+    }
+
     @Override
     public String toString() {
         return "LogConfig{" +
