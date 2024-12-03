@@ -17,16 +17,17 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.image.node.ClusterImageNode;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.ControllerRegistration;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
-
 
 /**
  * Represents the cluster in the metadata image.
@@ -100,6 +101,7 @@ public final class ClusterImage {
                 }
             }
         }
+        writer.write(new ApiMessageAndVersion(new UpdateNextNodeIdRecord().setNodeId(nextNodeId), (short) 0));
     }
 
     @Override
