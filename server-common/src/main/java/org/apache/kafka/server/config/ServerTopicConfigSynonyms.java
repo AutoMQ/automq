@@ -88,6 +88,7 @@ public final class ServerTopicConfigSynonyms {
         sameName(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG),
         sameName(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG),
         sameName(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG),
+        sameName(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG),
         // AutoMQ inject end
 
         sameNameWithLogPrefix(TopicConfig.PREALLOCATE_CONFIG),

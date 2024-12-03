@@ -796,6 +796,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val s3BackPressureEnabled = getBoolean(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG)
   val s3BackPressureCooldownMs = getLong(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)
   val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
+  val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG);
   // AutoMQ inject end
 
   /** Internal Configurations **/
@@ -1252,6 +1253,9 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
     // AutoMQ inject start
     if (tableTopicNamespace != null) {
       logProps.put(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, tableTopicNamespace)
+    }
+    if (tableTopicSchemaRegistryUrl != null) {
+      logProps.put(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, tableTopicSchemaRegistryUrl)
     }
     // AutoMQ inject end
 

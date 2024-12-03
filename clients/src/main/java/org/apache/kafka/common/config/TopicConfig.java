@@ -265,6 +265,8 @@ public class TopicConfig {
     public static final String TABLE_TOPIC_COMMIT_INTERVAL_DOC = "The table topic commit interval(ms)";
     public static final String TABLE_TOPIC_NAMESPACE_CONFIG = "automq.table.topic.namespace";
     public static final String TABLE_TOPIC_NAMESPACE_DOC = "The table topic table namespace";
+    public static final String TABLE_TOPIC_SCHEMA_TYPE_CONFIG = "automq.table.topic.schema.type";
+    public static final String TABLE_TOPIC_SCHEMA_TYPE_DOC = "The table topic schema type, support schemaless, schema";
     // AutoMQ inject end
 
 }
