@@ -9,29 +9,29 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.backpressure;
+package kafka.automq.backpressure;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
+
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class DefaultBackPressureManager implements BackPressureManager {
+import static kafka.automq.backpressure.BackPressureConfig.RECONFIGURABLE_CONFIGS;
 
-    public static final long DEFAULT_COOLDOWN_MS = TimeUnit.SECONDS.toMillis(15);
+public class DefaultBackPressureManager implements BackPressureManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultBackPressureManager.class);
 
+    private final BackPressureConfig config;
     private final Regulator regulator;
-    /**
-     * The cooldown time in milliseconds to wait between two regulator actions.
-     */
-    private final long cooldownMs;
 
     /**
      * The scheduler to schedule the checker periodically.
@@ -53,20 +53,23 @@ public class DefaultBackPressureManager implements BackPressureManager {
      * Only used for logging and monitoring.
      */
     private LoadLevel lastRegulateLevel = LoadLevel.NORMAL;
+    /**
+     * The current state metrics of the system.
+     * Only used for monitoring.
+     *
+     * @see S3StreamKafkaMetricsManager#setBackPressureStateSupplier
+     */
+    private final Map<String, Integer> stateMetrics = new HashMap<>(LoadLevel.values().length);
 
-    public DefaultBackPressureManager(Regulator regulator) {
-        this(regulator, DEFAULT_COOLDOWN_MS);
-    }
-
-    public DefaultBackPressureManager(Regulator regulator, long cooldownMs) {
+    public DefaultBackPressureManager(BackPressureConfig config, Regulator regulator) {
+        this.config = config;
         this.regulator = regulator;
-        this.cooldownMs = cooldownMs;
     }
 
     @Override
     public void start() {
         this.checkerScheduler = Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("back-pressure-checker-%d", false), LOGGER);
-        S3StreamMetricsManager.registerBackPressureStateSupplier(this::currentLoadLevel);
+        S3StreamKafkaMetricsManager.setBackPressureStateSupplier(this::stateMetrics);
     }
 
     @Override
@@ -83,6 +86,9 @@ public class DefaultBackPressureManager implements BackPressureManager {
     }
 
     private void maybeRegulate() {
+        if (!config.enabled()) {
+            return;
+        }
         maybeRegulate(false);
     }
 
@@ -96,11 +102,11 @@ public class DefaultBackPressureManager implements BackPressureManager {
         long now = System.currentTimeMillis();
         long timeElapsed = now - lastRegulateTime;
 
-        if (timeElapsed < cooldownMs) {
+        if (timeElapsed < config.cooldownMs()) {
             // Skip regulating if the cooldown time has not passed.
             if (!isInternal) {
                 // Schedule the next regulate action if it is not an internal call.
-                checkerScheduler.schedule(() -> maybeRegulate(true), cooldownMs - timeElapsed, TimeUnit.MILLISECONDS);
+                checkerScheduler.schedule(() -> maybeRegulate(true), config.cooldownMs() - timeElapsed, TimeUnit.MILLISECONDS);
             }
             return;
         }
@@ -131,5 +137,33 @@ public class DefaultBackPressureManager implements BackPressureManager {
         loadLevel.regulate(regulator);
         lastRegulateTime = now;
         lastRegulateLevel = loadLevel;
+    }
+
+    private Map<String, Integer> stateMetrics() {
+        LoadLevel current = currentLoadLevel();
+        for (LoadLevel level : LoadLevel.values()) {
+            int value = level.equals(current) ? 1 : -1;
+            stateMetrics.put(level.name(), value);
+        }
+        return stateMetrics;
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        return RECONFIGURABLE_CONFIGS;
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
+        BackPressureConfig.validate(configs);
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        config.update(configs);
+    }
+
+    @Override
+    public void configure(Map<String, ?> configs) {
     }
 }

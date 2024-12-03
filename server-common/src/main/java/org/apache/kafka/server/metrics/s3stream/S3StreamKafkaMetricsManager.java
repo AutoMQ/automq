@@ -49,12 +49,15 @@ public class S3StreamKafkaMetricsManager {
             S3StreamKafkaMetricsConstants.LABEL_FETCH_EXECUTOR_NAME);
     private static final MultiAttributes<String> PARTITION_STATUS_STATISTICS_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
             S3StreamKafkaMetricsConstants.LABEL_STATUS);
+    private static final MultiAttributes<String> BACK_PRESSURE_STATE_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
+            S3StreamKafkaMetricsConstants.LABEL_BACK_PRESSURE_STATE);
 
     static {
         BASE_ATTRIBUTES_LISTENERS.add(BROKER_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(S3_OBJECT_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(FETCH_LIMITER_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(FETCH_EXECUTOR_ATTRIBUTES);
+        BASE_ATTRIBUTES_LISTENERS.add(BACK_PRESSURE_STATE_ATTRIBUTES);
     }
 
     private static Supplier<Boolean> isActiveSupplier = () -> false;
@@ -90,6 +93,13 @@ public class S3StreamKafkaMetricsManager {
     private static List<String> partitionStatusList = Collections.emptyList();
     private static Function<String, Integer> partitionStatusStatisticsSupplier = s -> 0;
 
+    private static ObservableLongGauge backPressureState = new NoopObservableLongGauge();
+    /**
+     * Supplier for back pressure state.
+     * Key is the state name, value is 1 for current state, -1 for other states.
+     */
+    private static Supplier<Map<String, Integer>> backPressureStateSupplier = Collections::emptyMap;
+
     public static void configure(MetricsConfig metricsConfig) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             S3StreamKafkaMetricsManager.metricsConfig = metricsConfig;
@@ -105,6 +115,7 @@ public class S3StreamKafkaMetricsManager {
         initFetchMetrics(meter, prefix);
         initLogAppendMetrics(meter, prefix);
         initPartitionStatusStatisticsMetrics(meter, prefix);
+        initBackPressureMetrics(meter, prefix);
     }
 
     private static void initAutoBalancerMetrics(Meter meter, String prefix) {
@@ -263,6 +274,20 @@ public class S3StreamKafkaMetricsManager {
                 });
     }
 
+    private static void initBackPressureMetrics(Meter meter, String prefix) {
+        backPressureState = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.BACK_PRESSURE_STATE_METRIC_NAME)
+            .setDescription("Back pressure state")
+            .ofLongs()
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    Map<String, Integer> states = backPressureStateSupplier.get();
+                    states.forEach((state, value) -> {
+                        result.record(value, BACK_PRESSURE_STATE_ATTRIBUTES.get(state));
+                    });
+                }
+            });
+    }
+
     public static void setIsActiveSupplier(Supplier<Boolean> isActiveSupplier) {
         S3StreamKafkaMetricsManager.isActiveSupplier = isActiveSupplier;
     }
@@ -331,5 +356,9 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setTopicPartitionCountMetricsSupplier(Supplier<PartitionCountDistribution> topicPartitionCountSupplier) {
         S3StreamKafkaMetricsManager.topicPartitionCountSupplier = topicPartitionCountSupplier;
+    }
+
+    public static void setBackPressureStateSupplier(Supplier<Map<String, Integer>> backPressureStateSupplier) {
+        S3StreamKafkaMetricsManager.backPressureStateSupplier = backPressureStateSupplier;
     }
 }

@@ -89,8 +89,6 @@ public class DefaultS3Client implements Client {
 
     protected CompactionManager compactionManager;
 
-    protected BackPressureManager backPressureManager;
-
     protected S3StreamClient streamClient;
 
     protected KVClient kvClient;
@@ -151,7 +149,6 @@ public class DefaultS3Client implements Client {
         this.objectManager.setCommitStreamSetObjectHook(localIndexCache::updateIndexFromRequest);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
-        this.backPressureManager = new DefaultBackPressureManager(backPressureRegulator());
         this.writeAheadLog = buildWAL();
         StorageFailureHandlerChain storageFailureHandler = new StorageFailureHandlerChain();
         this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage, storageFailureHandler);
@@ -168,13 +165,11 @@ public class DefaultS3Client implements Client {
 
         this.storage.startup();
         this.compactionManager.start();
-        this.backPressureManager.start();
         LOGGER.info("S3Client started");
     }
 
     @Override
     public void shutdown() {
-        this.backPressureManager.shutdown();
         this.compactionManager.shutdown();
         this.streamClient.shutdown();
         this.storage.shutdown();
@@ -233,18 +228,6 @@ public class DefaultS3Client implements Client {
     protected ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
         return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch,
             this::getAutoMQVersion, failoverMode);
-    }
-
-    protected Regulator backPressureRegulator() {
-        return new Regulator() {
-            @Override
-            public void increase() {
-            }
-
-            @Override
-            public void decrease() {
-            }
-        };
     }
 
     protected Failover failover() {
