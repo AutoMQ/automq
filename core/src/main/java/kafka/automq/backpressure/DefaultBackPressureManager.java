@@ -144,7 +144,7 @@ public class DefaultBackPressureManager implements BackPressureManager {
     private Map<String, Integer> stateMetrics() {
         LoadLevel current = currentLoadLevel();
         for (LoadLevel level : LoadLevel.values()) {
-            int value = level.equals(current) ? 1 : -1;
+            int value = level.equals(current) ? current.ordinal() : -1;
             stateMetrics.put(level.name(), value);
         }
         return stateMetrics;
