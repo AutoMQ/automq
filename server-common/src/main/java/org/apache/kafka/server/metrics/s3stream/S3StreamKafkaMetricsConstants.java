@@ -48,4 +48,8 @@ public class S3StreamKafkaMetricsConstants {
 
     public static final String PARTITION_STATUS_STATISTICS_METRIC_NAME = "partition_status_statistics";
     public static final AttributeKey<String> LABEL_STATUS = AttributeKey.stringKey("status");
+
+    // Back Pressure
+    public static final String BACK_PRESSURE_STATE_METRIC_NAME = "back_pressure_state";
+    public static final AttributeKey<String> LABEL_BACK_PRESSURE_STATE = AttributeKey.stringKey("state");
 }
