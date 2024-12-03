@@ -70,7 +70,7 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
     @Override
     public void start() {
-        this.checkerScheduler = Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("back-pressure-checker-%d", false), LOGGER);
+        this.checkerScheduler = Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("back-pressure-checker-%d", false), LOGGER, true, false);
         S3StreamKafkaMetricsManager.setBackPressureStateSupplier(this::stateMetrics);
     }
 
