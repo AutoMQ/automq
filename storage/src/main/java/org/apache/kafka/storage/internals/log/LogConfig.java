@@ -40,6 +40,7 @@ import org.apache.kafka.server.config.QuotaConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.config.ServerTopicConfigSynonyms;
 import org.apache.kafka.server.record.BrokerCompressionType;
+import org.apache.kafka.server.record.TableTopicSchemaType;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -336,6 +337,7 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, LONG, TimeUnit.MINUTES.toMillis(5), between(1, TimeUnit.MINUTES.toMillis(15)), MEDIUM, TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_DOC)
                 .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
+                .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.SCHEMALESS.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
                 // AutoMQ inject end
                 .define(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, STRING, TopicConfig.REMOTE_LOG_DISABLE_POLICY_RETAIN,
                         in(TopicConfig.REMOTE_LOG_DISABLE_POLICY_RETAIN, TopicConfig.REMOTE_LOG_DISABLE_POLICY_DELETE),
@@ -390,6 +392,7 @@ public class LogConfig extends AbstractConfig {
     public final boolean tableTopicEnable;
     public final long tableTopicCommitInterval;
     public final String tableTopicNamespace;
+    public final TableTopicSchemaType tableTopicSchemaType;
     // AutoMQ inject end
 
     private final int maxMessageSize;
@@ -446,6 +449,7 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicEnable = getBoolean(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG);
         this.tableTopicCommitInterval = getLong(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG);
         this.tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG);
+        this.tableTopicSchemaType = TableTopicSchemaType.forName(getString(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
         // AutoMQ inject end
 
         remoteLogConfig = new RemoteLogConfig(this);
@@ -722,6 +726,16 @@ public class LogConfig extends AbstractConfig {
             validateTopicLogConfigValues(valueMaps, isRemoteLogStorageSystemEnabled);
         }
     }
+
+    // AutoMQ inject start
+    public static void validateTableTopicSchemaConfigValues(Properties props, String tableTopicSchemaRegistryUrl) {
+        String schemaType = props.getProperty(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG);
+        if (TableTopicSchemaType.SCHEMA.name.equals(schemaType) && tableTopicSchemaRegistryUrl == null) {
+            throw new InvalidConfigurationException("Table topic schema type is set to SCHEMA but schema registry URL is not configured");
+        }
+    }
+
+    // AutoMQ inject end
 
     @Override
     public String toString() {
