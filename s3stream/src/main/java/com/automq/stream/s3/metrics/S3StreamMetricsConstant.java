@@ -152,10 +152,6 @@ public class S3StreamMetricsConstant {
     public static final String LABEL_STAGE_FIND_INDEX = "find_index";
     public static final String LABEL_STAGE_COMPUTE = "compute";
 
-    // Back Pressure
-    public static final String BACK_PRESSURE_STATE_METRIC_NAME = "back_pressure_state";
-    public static final AttributeKey<String> LABEL_BACK_PRESSURE_STATE = AttributeKey.stringKey("state");
-
     // Broker Quota
     public static final String BROKER_QUOTA_LIMIT_METRIC_NAME = "broker_quota_limit";
     public static final AttributeKey<String> LABEL_BROKER_QUOTA_TYPE = AttributeKey.stringKey("type");

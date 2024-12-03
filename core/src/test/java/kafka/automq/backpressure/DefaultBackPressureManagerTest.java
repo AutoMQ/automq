@@ -9,11 +9,14 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.backpressure;
+package kafka.automq.backpressure;
+
+import kafka.automq.AutoMQConfig;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -28,6 +31,7 @@ public class DefaultBackPressureManagerTest {
     static String sourceB = "sourceB";
     static String sourceC = "sourceC";
 
+    BackPressureConfig config;
     DefaultBackPressureManager manager;
 
     Regulator regulator;
@@ -66,6 +70,29 @@ public class DefaultBackPressureManagerTest {
             schedulerScheduleDelay = invocation.getArgument(1);
             return null;
         }).when(scheduler).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+    }
+
+    @Test
+    public void testDynamicConfig() {
+        initManager(false, 0);
+
+        callChecker(sourceC, LoadLevel.NORMAL);
+        callChecker(sourceB, LoadLevel.HIGH);
+        assertRegulatorCalled(0, 0);
+
+        manager.reconfigure(Map.of(
+            AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, "true"
+        ));
+        callChecker(sourceC, LoadLevel.NORMAL);
+        callChecker(sourceB, LoadLevel.NORMAL);
+        assertRegulatorCalled(1, 1);
+
+        manager.reconfigure(Map.of(
+            AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, "false"
+        ));
+        callChecker(sourceC, LoadLevel.NORMAL);
+        callChecker(sourceB, LoadLevel.HIGH);
+        assertRegulatorCalled(1, 1);
     }
 
     @Test
@@ -117,11 +144,16 @@ public class DefaultBackPressureManagerTest {
         assertEquals(cooldownMs, schedulerScheduleDelay, tolerance);
     }
 
+    private void initManager(long cooldownMs) {
+        initManager(true, cooldownMs);
+    }
+
     /**
      * Should be called at the beginning of each test to initialize the manager.
      */
-    private void initManager(long cooldownMs) {
-        manager = new DefaultBackPressureManager(regulator, cooldownMs);
+    private void initManager(boolean enabled, long cooldownMs) {
+        config = new BackPressureConfig(enabled, cooldownMs);
+        manager = new DefaultBackPressureManager(config, regulator);
         manager.checkerScheduler = scheduler;
     }
 
