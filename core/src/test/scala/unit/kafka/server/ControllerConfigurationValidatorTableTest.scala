@@ -15,7 +15,7 @@ import kafka.utils.TestUtils
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.TOPIC
 import org.apache.kafka.common.config.TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG
-import org.apache.kafka.common.errors.InvalidRequestException
+import org.apache.kafka.common.errors.InvalidConfigurationException
 import org.apache.kafka.server.record.TableTopicSchemaType
 import org.junit.jupiter.api.Assertions.{assertEquals, assertThrows}
 import org.junit.jupiter.api.{Tag, Test}
@@ -33,7 +33,7 @@ class ControllerConfigurationValidatorTableTest {
         config.put(TABLE_TOPIC_SCHEMA_TYPE_CONFIG, TableTopicSchemaType.SCHEMA.name)
 
         // Test without schema registry URL configured
-        val exception = assertThrows(classOf[InvalidRequestException], () => {
+        val exception = assertThrows(classOf[InvalidConfigurationException], () => {
             validator.validate(new ConfigResource(TOPIC, "foo"), config)
         })
         assertEquals("Table topic schema type is set to SCHEMA but schema registry URL is not configured", exception.getMessage)
