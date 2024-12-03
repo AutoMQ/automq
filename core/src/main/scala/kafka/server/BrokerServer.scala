@@ -507,6 +507,13 @@ class BrokerServer(
         () => lifecycleManager.resendBrokerRegistrationUnlessZkMode())
       metadataPublishers.add(brokerRegistrationTracker)
 
+      // AutoMQ inject start
+      backPressureManager = new DefaultBackPressureManager(
+        BackPressureConfig.from(config),
+        newBackPressureRegulator()
+      )
+      backPressureManager.start()
+      // AutoMQ inject end
 
       // Register parts of the broker that can be reconfigured via dynamic configs.  This needs to
       // be done before we publish the dynamic configs, so that we don't miss anything.
@@ -543,12 +550,6 @@ class BrokerServer(
       // AutoMQ inject start
       ElasticLogManager.init(config, clusterId, this)
       produceRouter = newProduceRouter()
-
-      backPressureManager = new DefaultBackPressureManager(
-        BackPressureConfig.from(config),
-        newBackPressureRegulator()
-      )
-      backPressureManager.start()
       // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
