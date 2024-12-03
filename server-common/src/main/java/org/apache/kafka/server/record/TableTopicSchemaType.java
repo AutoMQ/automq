@@ -17,14 +17,14 @@ import java.util.stream.Collectors;
 
 import static java.util.Arrays.asList;
 
-public enum TableTopicType {
+public enum TableTopicSchemaType {
     SCHEMALESS("schemaless"),
-    REGISTRY_SCHEMA("registry_schema");
+    SCHEMA("schema");
 
     public final String name;
-    private static final List<TableTopicType> VALUES = asList(values());
+    private static final List<TableTopicSchemaType> VALUES = asList(values());
 
-    TableTopicType(String name) {
+    TableTopicSchemaType(String name) {
         this.name = name;
     }
 
@@ -32,7 +32,7 @@ public enum TableTopicType {
         return VALUES.stream().map(v -> v.name).collect(Collectors.toList());
     }
 
-    public static TableTopicType forName(String n) {
+    public static TableTopicSchemaType forName(String n) {
         String name = n.toLowerCase(Locale.ROOT);
         return VALUES.stream().filter(v -> v.name.equals(name)).findFirst().orElseThrow(() ->
             new IllegalArgumentException("Unknown table topic type name: " + name)
