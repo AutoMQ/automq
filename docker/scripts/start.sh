@@ -200,6 +200,7 @@ kafka_monitor_ip() {
         setup_value "advertised.listeners" "PLAINTEXT://${advertised_ip}:9092" "${kafka_dir}/config/kraft/${process_role}.properties"
     elif [[ "${process_role}" == "controller" ]]; then
         setup_value "listeners" "CONTROLLER://${local_private_ip}:9093" "${kafka_dir}/config/kraft/${process_role}.properties"
+        setup_value "advertised.listeners" "CONTROLLER://${local_private_ip}:9093" "${kafka_dir}/config/kraft/${process_role}.properties"
     else
         die "kafka_monitor_ip: unknown process role ${process_role}"
     fi
@@ -262,9 +263,12 @@ kafka_up() {
   [[ -n "${s3_endpoint}" ]] || die "s3_endpoint is empty"
   [[ -n "${cluster_id}" ]] || cluster_id="rZdE0DjZSrqy96PXrMUZVw"
 
+  quorum_bootstrap_servers=$(echo "${quorum_voters}" | sed 's/[0-9]*@//g')
+
   for role in "broker" "controller" "server"; do
       setup_value "node.id" "${node_id}" "${kafka_dir}/config/kraft/${role}.properties"
-      setup_value "controller.quorum.voters" "${quorum_voters}" "${kafka_dir}/config/kraft/${role}.properties"
+      add_or_setup_value "controller.quorum.voters" "${quorum_voters}" "${kafka_dir}/config/kraft/${role}.properties"
+      setup_value "controller.quorum.bootstrap.servers" "${quorum_bootstrap_servers}" "${kafka_dir}/config/kraft/${role}.properties"
       setup_value "s3.data.buckets" "0@s3://${s3_bucket}?region=${s3_region}&endpoint=${s3_endpoint}&authType=static" "${kafka_dir}/config/kraft/${role}.properties"
       setup_value "s3.ops.buckets" "0@s3://${s3_bucket}?region=${s3_region}&endpoint=${s3_endpoint}&authType=static" "${kafka_dir}/config/kraft/${role}.properties"
       setup_value "log.dirs" "${data_path}/kraft-${role}-logs" "${kafka_dir}/config/kraft/${role}.properties"
