@@ -30,7 +30,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     # use a static ip
     networks:
-      afk_net:
+      automq_net:
         ipv4_address: 10.6.0.2
 
   # create needed buckets
@@ -47,7 +47,7 @@ services:
       localstack:
         condition: service_healthy
     networks:
-      - afk_net
+      - automq_net
 
   controller:
     container_name: "${CONTROLLER_DOCKER_NAME-controller}"
@@ -64,7 +64,7 @@ services:
       - |
         /opt/automq/scripts/start.sh up --process.roles controller --node.id 0 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
-      - afk_net
+      - automq_net
     depends_on:
       - localstack
       - aws-cli
@@ -93,7 +93,7 @@ services:
       - |
         /opt/automq/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
-      - afk_net
+      - automq_net
     depends_on:
       - localstack
       - aws-cli
@@ -123,7 +123,7 @@ services:
       - |
         /opt/automq/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
-      - afk_net
+      - automq_net
     depends_on:
       - localstack
       - aws-cli
@@ -135,8 +135,8 @@ volumes:
     driver: local
 
 networks:
-  afk_net:
-    name: afk_net
+  automq_net:
+    name: automq_net
     driver: bridge
     ipam:
       driver: default
