@@ -19,8 +19,12 @@ import java.util.stream.Collectors;
 
 public class CommandUtils {
     public static CommandResult run(String... cmd) {
+        return run(runtime -> runtime.exec(cmd));
+    }
+
+    public static CommandResult run(CommandCall call) {
         try {
-            Process p = Runtime.getRuntime().exec(cmd);
+            Process p = call.call(Runtime.getRuntime());
             try (BufferedReader inputReader = new BufferedReader(new InputStreamReader(p.getInputStream(), Charset.defaultCharset()));
                  BufferedReader errorReader = new BufferedReader(new InputStreamReader(p.getErrorStream(), Charset.defaultCharset()))) {
                 String stdout = inputReader.lines().collect(Collectors.joining("\n"));
@@ -31,6 +35,10 @@ public class CommandUtils {
         } catch (IOException | InterruptedException e) {
             return new CommandResult(-1, "", e.getMessage());
         }
+    }
+
+    public interface CommandCall {
+        Process call(Runtime runtime) throws IOException;
     }
 
 }
