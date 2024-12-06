@@ -103,7 +103,6 @@ versions += [
   jetty: "9.4.54.v20240208",
   jersey: "2.39.1",
   jline: "3.25.1",
-  jline: "3.25.1",
   jmh: "1.37",
   hamcrest: "2.2",
   scalaLogging: "3.9.5",
