@@ -179,11 +179,12 @@ public class PerfCommand implements AutoCloseable {
     private void waitTopicsReadyWithConsumer() {
         long start = System.nanoTime();
         boolean ready = false;
+        int expectPartitionCount = config.topics * config.partitionsPerTopic;
         while (System.nanoTime() < start + TOPIC_READY_TIMEOUT_NANOS) {
-            int sent = producerService.probe();
+            producerService.probe();
             int received = readyPartitions.size();
-            LOGGER.info("Waiting for topics to be ready... sent: {}, received: {}", sent, received);
-            if (received >= sent) {
+            LOGGER.info("Waiting for topics to be ready... sent: {}, received: {}", expectPartitionCount, received);
+            if (received >= expectPartitionCount) {
                 ready = true;
                 break;
             }
