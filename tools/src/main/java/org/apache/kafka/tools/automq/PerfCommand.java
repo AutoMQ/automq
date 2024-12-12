@@ -24,22 +24,34 @@ import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import com.google.common.base.Strings;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+import io.confluent.kafka.schemaregistry.avro.AvroSchema;
+import io.confluent.kafka.schemaregistry.avro.AvroSchemaUtils;
+import io.confluent.kafka.serializers.KafkaAvroSerializer;
 
 import static org.apache.kafka.tools.automq.perf.StatsCollector.printAndCollectStats;
 
@@ -105,7 +117,7 @@ public class PerfCommand implements AutoCloseable {
         waitTopicsReady(consumerService.consumerCount() > 0);
         LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
-        List<byte[]> payloads = randomPayloads(config.recordSize, config.randomRatio, config.randomPoolSize);
+        Function<String, List<byte[]>> payloads = payloads(config, topics);
         producerService.start(payloads, config.sendRate);
 
         preparing = false;
@@ -208,6 +220,21 @@ public class PerfCommand implements AutoCloseable {
         }
     }
 
+    private Function<String, List<byte[]>> payloads(PerfConfig config, List<Topic> topics) {
+        if (Strings.isNullOrEmpty(config.valueSchema)) {
+            List<byte[]> payloads = randomPayloads(config.recordSize, config.randomRatio, config.randomPoolSize);
+            return topic -> payloads;
+        } else {
+            // The producer configs should contain:
+            // - schema.registry.url: http://localhost:8081
+            Map<String, List<byte[]>> topic2payloads = new HashMap<>();
+            topics.forEach(topic -> {
+                topic2payloads.put(topic.name(), schemaPayloads(topic.name(), config.valueSchema, config.valuesFile, config.producerConfigs));
+            });
+            return topic2payloads::get;
+        }
+    }
+
     /**
      * Generates a list of byte arrays with specified size and mix of random and static content.
      *
@@ -269,5 +296,21 @@ public class PerfCommand implements AutoCloseable {
         topicService.close();
         producerService.close();
         consumerService.close();
+    }
+
+    private static List<byte[]> schemaPayloads(String topic, String schemaJson, String payloadsFile, Map<String, ?> configs) {
+        try (KafkaAvroSerializer serializer = new KafkaAvroSerializer()) {
+            List<byte[]> payloads = new ArrayList<>();
+            AvroSchema schema = new AvroSchema(schemaJson);
+            serializer.configure(configs, false);
+            for (String payloadStr : Files.readAllLines(Path.of(payloadsFile), StandardCharsets.UTF_8)) {
+                Object object = AvroSchemaUtils.toObject(payloadStr, schema);
+                byte[] payload = serializer.serialize(topic, object);
+                payloads.add(payload);
+            }
+            return payloads;
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 }

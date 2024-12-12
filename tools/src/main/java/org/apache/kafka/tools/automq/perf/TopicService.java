@@ -114,7 +114,7 @@ public class TopicService implements AutoCloseable {
     }
 
     private String generateTopicName(String topicPrefix, int partitions, int index) {
-        return String.format("%s-%04d-%07d", topicPrefix, partitions, index);
+        return String.format("%s_%04d_%07d", topicPrefix, partitions, index);
     }
 
     public static class TopicsConfig {
@@ -138,6 +138,10 @@ public class TopicService implements AutoCloseable {
         public Topic(String name, int partitions) {
             this.name = name;
             this.partitions = partitions;
+        }
+
+        public String name() {
+            return name;
         }
 
         public List<TopicPartition> partitions() {
