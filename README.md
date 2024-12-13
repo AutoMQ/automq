@@ -31,8 +31,8 @@
 ---
 
 ![](https://img.shields.io/badge/AWS-%E2%9C%85-lightgray?logo=amazonaws)
-![](https://img.shields.io/badge/Google-%F0%9F%9A%A7-lightyellow?logo=googlecloud)
-![](https://img.shields.io/badge/Azure-%F0%9F%9A%A7-lightyellow?logo=microsoftazure)
+![](https://img.shields.io/badge/Google-%E2%9C%85-lightgray?logo=googlecloud)
+![](https://img.shields.io/badge/Azure-%E2%9C%85-lightgray?logo=microsoftazure)
 ![](https://img.shields.io/badge/Aliyun-%E2%9C%85-lightgray?logo=alibabacloud)
 </div>
 
