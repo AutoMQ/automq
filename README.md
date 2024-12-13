@@ -34,9 +34,6 @@
 ![](https://img.shields.io/badge/Google-%F0%9F%9A%A7-lightyellow?logo=googlecloud)
 ![](https://img.shields.io/badge/Azure-%F0%9F%9A%A7-lightyellow?logo=microsoftazure)
 ![](https://img.shields.io/badge/Aliyun-%E2%9C%85-lightgray?logo=alibabacloud)
-![](https://img.shields.io/badge/Huawei-%E2%9C%85-lightgray?logo=huawei)
-![](https://img.shields.io/badge/Baidu-%E2%9C%85-lightgray?logo=baidu)
-![](https://img.shields.io/badge/Tencent-%E2%9C%85-lightgray?logo=tencentqq)
 </div>
 
 ## 📺 Youtube Video Introduction
