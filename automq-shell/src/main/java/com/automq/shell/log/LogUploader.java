@@ -12,6 +12,7 @@
 package com.automq.shell.log;
 
 import com.automq.shell.AutoMQApplication;
+import com.automq.shell.util.Utils;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
@@ -201,7 +202,7 @@ public class LogUploader implements LogRecorder {
 
                             try {
                                 String objectKey = getObjectKey();
-                                objectStorage.write(WriteOptions.DEFAULT, objectKey, uploadBuffer.retainedSlice().asReadOnly()).get();
+                                objectStorage.write(WriteOptions.DEFAULT, objectKey, Utils.compress(uploadBuffer.slice().asReadOnly())).get();
                                 break;
                             } catch (Exception e) {
                                 e.printStackTrace(System.err);
