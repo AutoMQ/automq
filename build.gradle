@@ -128,6 +128,9 @@ allprojects {
 
   repositories {
     mavenCentral()
+    maven {
+      url = uri("https://packages.confluent.io/maven/")
+    }
   }
 
   dependencyUpdates {
@@ -2226,7 +2229,10 @@ project(':tools') {
     implementation (project(':log4j-appender')){
       exclude group: 'org.slf4j', module: '*'
     }
+    // AutoMQ inject start
     implementation project(':automq-shell')
+    implementation libs.kafkaAvroSerializer
+    // AutoMQ inject end
 
     implementation project(':storage')
     implementation project(':connect:runtime')
