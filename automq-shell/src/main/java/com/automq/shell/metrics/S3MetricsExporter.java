@@ -11,6 +11,7 @@
 
 package com.automq.shell.metrics;
 
+import com.automq.shell.util.Utils;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
@@ -242,7 +243,7 @@ public class S3MetricsExporter implements MetricExporter {
         synchronized (uploadBuffer) {
             if (uploadBuffer.readableBytes() > 0) {
                 try {
-                    objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), uploadBuffer.retainedSlice().asReadOnly()).get();
+                    objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), Utils.compress(uploadBuffer.slice().asReadOnly())).get();
                 } catch (Exception e) {
                     LOGGER.error("Failed to upload metrics to s3", e);
                     return CompletableResultCode.ofFailure();
