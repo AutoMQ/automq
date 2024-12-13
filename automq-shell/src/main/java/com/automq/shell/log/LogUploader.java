@@ -13,6 +13,7 @@ package com.automq.shell.log;
 
 import com.automq.shell.AutoMQApplication;
 import com.automq.shell.auth.CredentialsProviderHolder;
+import com.automq.shell.util.Utils;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
@@ -204,7 +205,7 @@ public class LogUploader implements LogRecorder {
 
                             try {
                                 String objectKey = getObjectKey();
-                                s3Operator.write(objectKey, uploadBuffer.retainedSlice().asReadOnly(), ThrottleStrategy.BYPASS).get();
+                                s3Operator.write(objectKey, Utils.compress(uploadBuffer.slice().asReadOnly()), ThrottleStrategy.BYPASS).get();
                                 break;
                             } catch (Exception e) {
                                 e.printStackTrace(System.err);
