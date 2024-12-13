@@ -56,6 +56,8 @@ public class PerfConfig {
     public final int warmupDurationMinutes;
     public final int testDurationMinutes;
     public final int reportingIntervalSeconds;
+    public final String valueSchema;
+    public final String valuesFile;
 
     public PerfConfig(String[] args) {
         ArgumentParser parser = parser();
@@ -77,7 +79,7 @@ public class PerfConfig {
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
         reset = ns.getBoolean("reset");
-        topicPrefix = ns.getString("topicPrefix") == null ? "test-topic-" + System.currentTimeMillis() : ns.getString("topicPrefix");
+        topicPrefix = ns.getString("topicPrefix") == null ? "test_topic_" + System.currentTimeMillis() : ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
         producersPerTopic = ns.getInt("producersPerTopic");
@@ -93,6 +95,8 @@ public class PerfConfig {
         warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
         testDurationMinutes = ns.getInt("testDurationMinutes");
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
+        valueSchema = ns.getString("valueSchema");
+        valuesFile = ns.get("valuesFile");
 
         if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
@@ -233,6 +237,16 @@ public class PerfConfig {
             .dest("reportingIntervalSeconds")
             .metavar("REPORTING_INTERVAL_SECONDS")
             .help("The reporting interval in seconds.");
+        parser.addArgument("--value-schema")
+            .type(String.class)
+            .dest("valueSchema")
+            .metavar("VALUE_SCHEMA")
+            .help("The schema of the values ex. {\"type\":\"record\",\"name\":\"myrecord\",\"fields\":[{\"name\":\"f1\",\"type\":\"string\"}]}");
+        parser.addArgument("--values-file")
+            .type(String.class)
+            .dest("valuesFile")
+            .metavar("VALUES_FILE")
+            .help("The avro value file. Example file content {\"f1\": \"value1\"}");
         return parser;
     }
 

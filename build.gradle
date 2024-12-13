@@ -130,6 +130,9 @@ allprojects {
 
   repositories {
     mavenCentral()
+    maven {
+      url = uri("https://packages.confluent.io/maven/")
+    }
   }
 
   dependencyUpdates {
@@ -2246,6 +2249,7 @@ project(':tools') {
     // AutoMQ inject start
     implementation project(':automq-shell')
     implementation libs.guava
+    implementation libs.kafkaAvroSerializer
     // AutoMQ inject end
 
     // for SASL/OAUTHBEARER JWT validation
