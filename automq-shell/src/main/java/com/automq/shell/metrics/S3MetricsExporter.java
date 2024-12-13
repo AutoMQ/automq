@@ -12,6 +12,7 @@
 package com.automq.shell.metrics;
 
 import com.automq.shell.auth.CredentialsProviderHolder;
+import com.automq.shell.util.Utils;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.DefaultS3Operator;
 import com.automq.stream.s3.operator.S3Operator;
@@ -244,7 +245,7 @@ public class S3MetricsExporter implements MetricExporter {
         synchronized (uploadBuffer) {
             if (uploadBuffer.readableBytes() > 0) {
                 try {
-                    s3Operator.write(getObjectKey(), uploadBuffer.retainedSlice().asReadOnly(), ThrottleStrategy.BYPASS).get();
+                    s3Operator.write(getObjectKey(), Utils.compress(uploadBuffer.slice().asReadOnly()), ThrottleStrategy.BYPASS).get();
                 } catch (Exception e) {
                     LOGGER.error("Failed to upload metrics to s3", e);
                     return CompletableResultCode.ofFailure();
