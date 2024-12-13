@@ -41,6 +41,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -120,7 +121,7 @@ public class ProducerService implements AutoCloseable {
     /**
      * Start sending messages using the given payloads at the given rate.
      */
-    public void start(List<byte[]> payloads, double rate) {
+    public void start(Function<String, List<byte[]>> payloads, double rate) {
         adjustRate(rate);
         adjustRateExecutor.scheduleWithFixedDelay(this::adjustRate, 0, ADJUST_RATE_INTERVAL_SECONDS, TimeUnit.SECONDS);
         int processors = Runtime.getRuntime().availableProcessors();
@@ -176,7 +177,7 @@ public class ProducerService implements AutoCloseable {
         return y1 + (x - x1) * (y2 - y1) / (x2 - x1);
     }
 
-    private void start(List<Producer> producers, List<byte[]> payloads) {
+    private void start(List<Producer> producers, Function<String, List<byte[]>> payloads) {
         executor.submit(() -> {
             try {
                 sendMessages(producers, payloads);
@@ -186,11 +187,14 @@ public class ProducerService implements AutoCloseable {
         });
     }
 
-    private void sendMessages(List<Producer> producers, List<byte[]> payloads) {
+    private void sendMessages(List<Producer> producers, Function<String, List<byte[]>> payloadsGet) {
         Random random = ThreadLocalRandom.current();
         while (!closed) {
             producers.forEach(
-                p -> sendMessage(p, payloads.get(random.nextInt(payloads.size())))
+                p -> {
+                    List<byte[]> payloads = payloadsGet.apply(p.topic.name);
+                    sendMessage(p, payloads.get(random.nextInt(payloads.size())));
+                }
             );
         }
     }
@@ -290,7 +294,7 @@ public class ProducerService implements AutoCloseable {
          */
         public List<CompletableFuture<Void>> probe() {
             return IntStream.range(0, topic.partitions)
-                .mapToObj(i -> sendAsync("probe", new byte[42], i))
+                .mapToObj(i -> sendAsync("probe", new byte[] {1}, i))
                 .collect(Collectors.toList());
         }
 
