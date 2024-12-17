@@ -993,7 +993,7 @@ public class GroupCoordinatorService implements GroupCoordinator {
      * See {@link GroupCoordinator#onTransactionCompleted(long, Iterable, TransactionResult)}.
      */
     @Override
-    public void onTransactionCompleted(
+    public CompletableFuture<Void> onTransactionCompleted(
         long producerId,
         Iterable<TopicPartition> partitions,
         TransactionResult transactionResult

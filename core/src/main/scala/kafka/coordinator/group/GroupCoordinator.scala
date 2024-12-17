@@ -36,6 +36,7 @@ import org.apache.kafka.coordinator.group.{Group, OffsetConfig}
 import org.apache.kafka.server.record.BrokerCompressionType
 import org.apache.kafka.storage.internals.log.VerificationGuard
 
+import java.util.concurrent.CompletableFuture
 import scala.annotation.nowarn
 import scala.collection.{Map, Seq, Set, immutable, mutable}
 import scala.math.max
@@ -980,7 +981,7 @@ private[group] class GroupCoordinator(
 
   def scheduleHandleTxnCompletion(producerId: Long,
                                   offsetsPartitions: Iterable[TopicPartition],
-                                  transactionResult: TransactionResult): Unit = {
+                                  transactionResult: TransactionResult): CompletableFuture[Void] = {
     require(offsetsPartitions.forall(_.topic == Topic.GROUP_METADATA_TOPIC_NAME))
     val isCommit = transactionResult == TransactionResult.COMMIT
     groupManager.scheduleHandleTxnCompletion(producerId, offsetsPartitions.map(_.partition).toSet, isCommit)
