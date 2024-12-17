@@ -178,6 +178,9 @@ public class ElasticLogFileRecords implements AutoCloseable {
                         }
                         readSize += recordBatchWithContext.rawPayload().remaining();
                     }
+                    if (readSize == 0) {
+                        return CompletableFuture.completedFuture(null);
+                    }
                     return fetch0(context, nextFetchOffset, endOffset, maxSize - readSize, results);
                 });
     }
