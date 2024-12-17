@@ -8,7 +8,7 @@ import org.apache.kafka.common.Uuid
 import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.server.config.Defaults
 import org.apache.kafka.storage.internals.log.{FetchIsolation, LogConfig, LogDirFailureChannel, LogOffsetsListener}
-import org.junit.jupiter.api.{Assertions, BeforeEach, Tag, Test}
+import org.junit.jupiter.api.{Assertions, BeforeEach, Tag, Test, Timeout}
 
 import java.io.File
 import java.util.Properties
@@ -78,6 +78,51 @@ class ElasticLogCleanerTest extends LogCleanerTest {
         offset += 1
       })
     }
+  }
+
+  @Test
+  @Timeout(value = 30)
+  def testCleanSegmentCauseHollowWithEmptySegment(): Unit = {
+    val cleaner = makeCleaner(Int.MaxValue)
+    val logProps = new Properties()
+    logProps.put(TopicConfig.SEGMENT_BYTES_CONFIG, 1024: java.lang.Integer)
+
+    val log = makeLog(config = LogConfig.fromProps(logConfig.originals, logProps))
+    log.appendAsLeader(record(1, 0), leaderEpoch = 0)
+    log.appendAsLeader(record(2, 0), leaderEpoch = 0)
+    while (log.numberOfSegments < 2) {
+      log.appendAsLeader(record(1, log.logEndOffset.toInt), leaderEpoch = 0)
+    }
+    while (log.numberOfSegments < 3) {
+      log.appendAsLeader(record(3, 22), leaderEpoch = 0)
+    }
+    log.appendAsLeader(record(1, log.logEndOffset.toInt), leaderEpoch = 0)
+    log.appendAsLeader(record(3, log.logEndOffset.toInt), leaderEpoch = 0)
+
+    val map = new FakeOffsetMap(Int.MaxValue)
+    map.put(key(2L), 1L)
+    map.put(key(1L), log.logEndOffset - 2)
+    map.put(key(3L), log.logEndOffset - 1)
+
+    // create an empty segment in between first and last segment
+    cleaner.cleanSegments(log, log.logSegments.asScala.take(1).toSeq, map, 0L, new CleanerStats, new CleanedTransactionMetadata, -1)
+    cleaner.cleanSegments(log, log.logSegments.asScala.slice(1, 2).toSeq, map, 0L, new CleanerStats, new CleanedTransactionMetadata, -1)
+
+    log.logSegments.asScala.slice(1, 2).foreach(s => {
+      Assertions.assertEquals(0, s.size())
+    })
+
+    var offset = 0L
+    var total = 0
+    while (offset < log.logEndOffset) {
+      val rst = log.read(offset, 1, FetchIsolation.LOG_END, minOneMessage = true)
+      Assertions.assertNotNull(rst)
+      rst.records.batches.forEach(b => {
+        total += 1
+        offset = b.nextOffset()
+      })
+    }
+    Assertions.assertEquals(4, total)
   }
 
   override protected def makeLog(dir: File,
