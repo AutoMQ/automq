@@ -256,6 +256,10 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
             return CompletableFuture.failedFuture(new IllegalArgumentException("Invalid max size " + maxSize + " for log read from segment " + log));
         // Note that relativePositionInSegment here is a fake value. There are no 'position' in elastic streams.
 
+        // if the start offset is less than base offset, use base offset. This usually happens when the prev segment is generated
+        // by compaction and its last offset is less than the base offset of the current segment.
+        startOffset = Utils.max(startOffset, baseOffset);
+
         // if the start offset is already off the end of the log, return null
         if (startOffset >= log.nextOffset()) {
             return CompletableFuture.completedFuture(null);
