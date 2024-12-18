@@ -151,4 +151,8 @@ public class S3StreamMetricsConstant {
     public static final String LABEL_STAGE_GET_OBJECTS = "get_objects";
     public static final String LABEL_STAGE_FIND_INDEX = "find_index";
     public static final String LABEL_STAGE_COMPUTE = "compute";
+
+    // Broker Quota
+    public static final String BROKER_QUOTA_LIMIT_METRIC_NAME = "broker_quota_limit";
+    public static final AttributeKey<String> LABEL_BROKER_QUOTA_TYPE = AttributeKey.stringKey("type");
 }

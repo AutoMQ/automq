@@ -129,4 +129,13 @@ public final class KafkaMetric implements Metric {
             this.config = config;
         }
     }
+
+    // AutoMQ inject start
+    /**
+     * A public method to expose the {@link #measurableValue} method.
+     */
+    public double measurableValueV2(long timeMs) {
+        return measurableValue(timeMs);
+    }
+    // AutoMQ inject end
 }

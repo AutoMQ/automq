@@ -1,6 +1,7 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.api.exceptions.FastReadFailFastException
+import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
 import com.automq.stream.utils.FutureUtil
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import kafka.cluster.Partition
@@ -114,14 +115,28 @@ class ElasticReplicaManager(
     fetchExecutorQueueSizeGaugeMap
   })
 
-  private val fastFetchLimiter = new FairLimiter(200 * 1024 * 1024) // 200MiB
-  private val slowFetchLimiter = new FairLimiter(200 * 1024 * 1024) // 200MiB
-  private val fetchLimiterGaugeMap = new util.HashMap[String, Integer]()
-  S3StreamKafkaMetricsManager.setFetchLimiterPermitNumSupplier(() => {
-    fetchLimiterGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.availablePermits())
-    fetchLimiterGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.availablePermits())
-    fetchLimiterGaugeMap
+  private val fastFetchLimiter = new FairLimiter(200 * 1024 * 1024, FETCH_LIMITER_FAST_NAME) // 200MiB
+  private val slowFetchLimiter = new FairLimiter(200 * 1024 * 1024, FETCH_LIMITER_SLOW_NAME) // 200MiB
+  private val fetchLimiterWaitingTasksGaugeMap = new util.HashMap[String, Integer]()
+  S3StreamKafkaMetricsManager.setFetchLimiterWaitingTaskNumSupplier(() => {
+    fetchLimiterWaitingTasksGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.waitingThreads())
+    fetchLimiterWaitingTasksGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.waitingThreads())
+    fetchLimiterWaitingTasksGaugeMap
   })
+  private val fetchLimiterPermitsGaugeMap = new util.HashMap[String, Integer]()
+  S3StreamKafkaMetricsManager.setFetchLimiterPermitNumSupplier(() => {
+    fetchLimiterPermitsGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.availablePermits())
+    fetchLimiterPermitsGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.availablePermits())
+    fetchLimiterPermitsGaugeMap
+  })
+  private val fetchLimiterTimeoutCounterMap = util.Map.of(
+    fastFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeoutMetric(fastFetchLimiter.name),
+    slowFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeoutMetric(slowFetchLimiter.name)
+  )
+  private val fetchLimiterTimeHistogramMap = util.Map.of(
+    fastFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeMetric(MetricsLevel.INFO, fastFetchLimiter.name),
+    slowFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeMetric(MetricsLevel.INFO, slowFetchLimiter.name)
+  )
 
   /**
    * Used to reduce allocation in [[readFromLocalLogV2]]
@@ -558,14 +573,16 @@ class ElasticReplicaManager(
       math.min(bytesNeedFromParam, limiter.maxPermits())
     }
 
+    val timer: TimerUtil = new TimerUtil()
     val handler: Handler = timeoutMs match {
       case t if t > 0 => limiter.acquire(bytesNeed(), t)
       case _ => limiter.acquire(bytesNeed())
     }
+    fetchLimiterTimeHistogramMap.get(limiter.name).record(timer.elapsedAs(TimeUnit.NANOSECONDS))
 
     if (handler == null) {
-      // handler maybe null if it timed out to acquire from limiter
-      // TODO add metrics for this
+      // the handler will be null if it timed out to acquire from limiter
+      fetchLimiterTimeoutCounterMap.get(limiter.name).add(MetricsLevel.INFO, 1)
       // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
       ElasticReplicaManager.emptyReadResults(readPartitionInfo.map(_._1))
     } else {

@@ -34,6 +34,7 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.metrics.ObservableDoubleGauge;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
 
 import static com.automq.stream.s3.metrics.S3StreamMetricsConstant.LABEL_CACHE_NAME;
@@ -139,10 +140,16 @@ public class S3StreamMetricsManager {
     private static final MultiAttributes<String> OPERATOR_INDEX_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
             S3StreamMetricsConstant.LABEL_INDEX);
 
+    // Broker Quota
+    private static final MultiAttributes<String> BROKER_QUOTA_TYPE_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
+            S3StreamMetricsConstant.LABEL_BROKER_QUOTA_TYPE);
+    private static ObservableDoubleGauge brokerQuotaLimit = new NoopObservableDoubleGauge();
+    private static Supplier<Map<String, Double>> brokerQuotaLimitSupplier = () -> new ConcurrentHashMap<>();
 
     static {
         BASE_ATTRIBUTES_LISTENERS.add(ALLOC_TYPE_ATTRIBUTES);
         BASE_ATTRIBUTES_LISTENERS.add(OPERATOR_INDEX_ATTRIBUTES);
+        BASE_ATTRIBUTES_LISTENERS.add(BROKER_QUOTA_TYPE_ATTRIBUTES);
     }
 
     public static void configure(MetricsConfig metricsConfig) {
@@ -400,6 +407,7 @@ public class S3StreamMetricsManager {
             });
 
         initAsyncCacheMetrics(meter, prefix);
+        initBrokerQuotaMetrics(meter, prefix);
     }
 
     private static void initAsyncCacheMetrics(Meter meter, String prefix) {
@@ -470,6 +478,25 @@ public class S3StreamMetricsManager {
                 if (MetricsLevel.DEBUG.isWithin(metricsConfig.getMetricsLevel())) {
                     for (Map.Entry<String, LongSupplier> entry : asyncCacheMaxSizeSupplier.entrySet()) {
                         result.record(entry.getValue().getAsLong(), Attributes.of(LABEL_CACHE_NAME, entry.getKey()));
+                    }
+                }
+            });
+    }
+
+    private static void initBrokerQuotaMetrics(Meter meter, String prefix) {
+        brokerQuotaLimit = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.BROKER_QUOTA_LIMIT_METRIC_NAME)
+            .setDescription("Broker quota limit")
+            .buildWithCallback(result -> {
+                if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                    Map<String, Double> brokerQuotaLimitMap = brokerQuotaLimitSupplier.get();
+                    for (Map.Entry<String, Double> entry : brokerQuotaLimitMap.entrySet()) {
+                        String quotaType = entry.getKey();
+                        Double quotaLimit = entry.getValue();
+                        // drop too large values
+                        if (quotaLimit > 1e15) {
+                            continue;
+                        }
+                        result.record(quotaLimit, BROKER_QUOTA_TYPE_ATTRIBUTES.get(quotaType));
                     }
                 }
             });
@@ -906,5 +933,9 @@ public class S3StreamMetricsManager {
 
     public static void registerLocalStreamRangeIndexCacheStreamNumSupplier(Supplier<Integer> localStreamRangeIndexCacheStreamNum) {
         S3StreamMetricsManager.localStreamRangeIndexCacheStreamNum = localStreamRangeIndexCacheStreamNum;
+    }
+
+    public static void registerBrokerQuotaLimitSupplier(Supplier<Map<String, Double>> brokerQuotaLimitSupplier) {
+        S3StreamMetricsManager.brokerQuotaLimitSupplier = brokerQuotaLimitSupplier;
     }
 }

@@ -42,6 +42,7 @@ import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.common.utils.KafkaThread;
 import org.apache.kafka.network.SocketServerConfigs;
 import org.apache.kafka.server.config.KRaftConfigs;
+import org.apache.kafka.server.config.QuotaConfigs;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 
@@ -229,7 +230,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
         setIfAbsent(producerProps,
                 ProducerConfig.CLIENT_ID_CONFIG,
-                reporterConfig.getString(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID));
+                QuotaConfigs.INTERNAL_CLIENT_ID_PREFIX + reporterConfig.getString(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_PRODUCER_CLIENT_ID));
         setIfAbsent(producerProps, ProducerConfig.LINGER_MS_CONFIG,
                 reporterConfig.getLong(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_LINGER_MS_CONFIG).toString());
         setIfAbsent(producerProps, ProducerConfig.BATCH_SIZE_CONFIG,

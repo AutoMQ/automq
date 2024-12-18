@@ -104,9 +104,15 @@ public class QuotaConfigs {
             "for the specified IP.";
 
     // AutoMQ inject start
+    /**
+     * All clients created by AutoMQ will have this prefix in their client id, and they will be excluded from quota.
+     */
+    public static final String INTERNAL_CLIENT_ID_PREFIX = "__automq_client_";
+
     public static final String BROKER_QUOTA_ENABLED_CONFIG = "broker.quota.enabled";
     public static final String BROKER_QUOTA_PRODUCE_BYTES_CONFIG = "broker.quota.produce.bytes";
     public static final String BROKER_QUOTA_FETCH_BYTES_CONFIG = "broker.quota.fetch.bytes";
+    public static final String BROKER_QUOTA_SLOW_FETCH_BYTES_CONFIG = "broker.quota.slow.fetch.bytes";
     public static final String BROKER_QUOTA_REQUEST_RATE_CONFIG = "broker.quota.request.rate";
     public static final String BROKER_QUOTA_WHITE_LIST_USER_CONFIG = "broker.quota.white.list.user";
     public static final String BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG = "broker.quota.white.list.client.id";
@@ -117,6 +123,7 @@ public class QuotaConfigs {
     public static final String BROKER_QUOTA_ENABLED_DOC = "Enable broker quota.";
     public static final String BROKER_QUOTA_PRODUCE_BYTES_DOC = "The maximum bytes send by producer in single window.";
     public static final String BROKER_QUOTA_FETCH_BYTES_DOC = "The maximum bytes receive by consumer in single window.";
+    public static final String BROKER_QUOTA_SLOW_FETCH_BYTES_DOC = "The maximum bytes receive by slow fetch consumer in single window.";
     public static final String BROKER_QUOTA_REQUEST_RATE_DOC = "The maximum request count send by client in single window.";
     public static final String BROKER_QUOTA_WHITE_LIST_USER_DOC = "Broker quota white list for user.";
     public static final String BROKER_QUOTA_WHITE_LIST_CLIENT_ID_DOC = "Broker quota white list for client id.";
@@ -176,6 +183,7 @@ public class QuotaConfigs {
                 .define(QuotaConfigs.BROKER_QUOTA_ENABLED_CONFIG, ConfigDef.Type.BOOLEAN, false, MEDIUM, QuotaConfigs.BROKER_QUOTA_ENABLED_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_PRODUCE_BYTES_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_FETCH_BYTES_DOC)
+                .define(QuotaConfigs.BROKER_QUOTA_SLOW_FETCH_BYTES_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_SLOW_FETCH_BYTES_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_CONFIG, ConfigDef.Type.DOUBLE, Double.MAX_VALUE, MEDIUM, QuotaConfigs.BROKER_QUOTA_REQUEST_RATE_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_DOC)

@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.zonerouter.{NoopProduceRouter, ProduceRouter}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
@@ -158,6 +159,8 @@ class BrokerServer(
   def metadataLoader: MetadataLoader = sharedServer.loader
 
   var produceRouter: ProduceRouter = _
+
+  var backPressureManager: BackPressureManager = _
   // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -504,6 +507,13 @@ class BrokerServer(
         () => lifecycleManager.resendBrokerRegistrationUnlessZkMode())
       metadataPublishers.add(brokerRegistrationTracker)
 
+      // AutoMQ inject start
+      backPressureManager = new DefaultBackPressureManager(
+        BackPressureConfig.from(config),
+        newBackPressureRegulator()
+      )
+      backPressureManager.start()
+      // AutoMQ inject end
 
       // Register parts of the broker that can be reconfigured via dynamic configs.  This needs to
       // be done before we publish the dynamic configs, so that we don't miss anything.
@@ -660,6 +670,10 @@ class BrokerServer(
       lifecycleManager.beginShutdown()
 
       // AutoMQ for Kafka inject start
+      if (backPressureManager != null) {
+        CoreUtils.swallow(backPressureManager.shutdown(), this)
+      }
+
       // https://github.com/AutoMQ/automq-for-kafka/issues/540
       // await partition shutdown:
       // 1. after lifecycleManager start shutdown to trigger partitions gracefully reassign.
@@ -795,6 +809,16 @@ class BrokerServer(
     val produceRouter = new NoopProduceRouter(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
     dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setProduceRouter(produceRouter)
     produceRouter
+  }
+
+  protected def newBackPressureRegulator(): Regulator = {
+    new Regulator {
+      override def increase(): Unit = {
+      }
+
+      override def decrease(): Unit = {
+      }
+    }
   }
   // AutoMQ inject end
 

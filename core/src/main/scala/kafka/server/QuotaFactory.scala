@@ -32,6 +32,16 @@ object QuotaType  {
   case object Fetch extends QuotaType
   case object Produce extends QuotaType
   case object Request extends QuotaType
+  // AutoMQ for Kafka inject start
+  /**
+   * Quota type for slow fetch throughput limiting.
+   */
+  case object SlowFetch extends QuotaType
+  /**
+   * Quota type for request rate limiting.
+   */
+  case object RequestRate extends QuotaType
+  // AutoMQ for Kafka inject end
   case object ControllerMutation extends QuotaType
   case object LeaderReplication extends QuotaType
   case object FollowerReplication extends QuotaType
@@ -44,11 +54,16 @@ object QuotaType  {
       case QuotaType.Fetch => ClientQuotaType.FETCH
       case QuotaType.Produce => ClientQuotaType.PRODUCE
       case QuotaType.Request => ClientQuotaType.REQUEST
+      // AutoMQ for Kafka inject start
+      case QuotaType.SlowFetch => ClientQuotaType.SLOW_FETCH
+      case QuotaType.RequestRate => ClientQuotaType.REQUEST_RATE
+      // AutoMQ for Kafka inject end
       case QuotaType.ControllerMutation => ClientQuotaType.CONTROLLER_MUTATION
       case _ => throw new IllegalArgumentException(s"Not a client quota type: $quotaType")
     }
   }
 
+  // AutoMQ for Kafka inject start
   // for test
   def fetch(): QuotaType = {
     QuotaType.Fetch
@@ -58,9 +73,14 @@ object QuotaType  {
     QuotaType.Produce
   }
 
-  def request(): QuotaType = {
-    QuotaType.Request
+  def slowFetch(): QuotaType = {
+    QuotaType.SlowFetch
   }
+
+  def requestRate(): QuotaType = {
+    QuotaType.RequestRate
+  }
+  // AutoMQ for Kafka inject end
 }
 
 sealed trait QuotaType

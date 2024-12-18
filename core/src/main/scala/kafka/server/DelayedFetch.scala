@@ -241,7 +241,6 @@ class DelayedFetch(
           error(s"Unexpected error in delayed fetch: $params $fetchInfos ", e)
         }
     }
-    ReadHint.clear()
     // AutoMQ for Kafka inject end
 
     val fetchPartitionData = logReadResults.map { case (tp, result) =>
@@ -252,6 +251,11 @@ class DelayedFetch(
     }
 
     responseCallback(fetchPartitionData)
+    // AutoMQ for Kafka inject start
+    // clear hint after callback as it will be used in the callback
+    //  see {@link ElasticKafkaApis#handleFetchRequest#processResponseCallback}
+    ReadHint.clear()
+    // AutoMQ for Kafka inject end
   }
 }
 
