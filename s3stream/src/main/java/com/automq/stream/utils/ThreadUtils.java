@@ -11,13 +11,15 @@
 
 package com.automq.stream.utils;
 
-import io.netty.util.concurrent.FastThreadLocalThread;
+import org.slf4j.Logger;
+import org.slf4j.helpers.NOPLogger;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import org.slf4j.Logger;
-import org.slf4j.helpers.NOPLogger;
+
+import io.netty.util.concurrent.FastThreadLocalThread;
 
 /**
  * Utilities for working with threads.

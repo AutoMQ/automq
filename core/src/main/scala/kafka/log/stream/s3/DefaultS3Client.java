@@ -11,9 +11,6 @@
 
 package kafka.log.stream.s3;
 
-import com.automq.stream.s3.backpressure.BackPressureManager;
-import com.automq.stream.s3.backpressure.DefaultBackPressureManager;
-import com.automq.stream.s3.backpressure.Regulator;
 import kafka.autobalancer.metricsreporter.metric.Derivator;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
