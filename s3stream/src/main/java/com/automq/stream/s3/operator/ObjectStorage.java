@@ -121,6 +121,7 @@ public interface ObjectStorage {
         private short bucketId;
         private boolean enableFastRetry;
         private boolean retry;
+        private int retryCount;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -180,6 +181,16 @@ public interface ObjectStorage {
             return retry;
         }
 
+        public int retryCountGetAndAdd() {
+            int oldRetryCount = this.retryCount;
+            this.retryCount = retryCount + 1;
+            return oldRetryCount;
+        }
+
+        public int retryCount() {
+            return retryCount;
+        }
+
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
@@ -188,6 +199,7 @@ public interface ObjectStorage {
             copy.bucketId = bucketId;
             copy.enableFastRetry = enableFastRetry;
             copy.retry = retry;
+            copy.retryCount = retryCount;
             return copy;
         }
     }
@@ -197,6 +209,7 @@ public interface ObjectStorage {
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private short bucket = UNSET_BUCKET;
+        private int retryCount;
 
         public ReadOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -214,6 +227,16 @@ public interface ObjectStorage {
 
         public short bucket() {
             return bucket;
+        }
+
+        public int retryCountGetAndAdd() {
+            int oldRetryCount = this.retryCount;
+            this.retryCount = retryCount + 1;
+            return oldRetryCount;
+        }
+
+        public int retryCount() {
+            return retryCount;
         }
     }
 
