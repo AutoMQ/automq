@@ -34,7 +34,7 @@ class ControllerConfigurationValidatorTableTest {
 
         // Test without schema registry URL configured
         val exception = assertThrows(classOf[InvalidConfigurationException], () => {
-            validator.validate(new ConfigResource(TOPIC, "foo"), config)
+            validator.validate(new ConfigResource(TOPIC, "foo"), config, config)
         })
         assertEquals("Table topic schema type is set to SCHEMA but schema registry URL is not configured", exception.getMessage)
 
@@ -46,6 +46,6 @@ class ControllerConfigurationValidatorTableTest {
         val validatorWithSchemaRegistry = new ControllerConfigurationValidator(kafkaConfigWithSchemaRegistry)
 
         // No exception should be thrown when schema registry URL is configured properly
-        validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config)
+        validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config, config)
     }
 }
