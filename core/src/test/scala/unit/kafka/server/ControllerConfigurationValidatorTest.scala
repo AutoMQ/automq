@@ -17,12 +17,14 @@
 
 package kafka.server
 
+import kafka.automq.AutoMQConfig
 import kafka.utils.TestUtils
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.{BROKER, BROKER_LOGGER, CLIENT_METRICS, TOPIC}
-import org.apache.kafka.common.config.TopicConfig.{REMOTE_LOG_STORAGE_ENABLE_CONFIG, SEGMENT_BYTES_CONFIG, SEGMENT_JITTER_MS_CONFIG, SEGMENT_MS_CONFIG}
+import org.apache.kafka.common.config.TopicConfig.{REMOTE_LOG_STORAGE_ENABLE_CONFIG, SEGMENT_BYTES_CONFIG, SEGMENT_JITTER_MS_CONFIG, SEGMENT_MS_CONFIG, TABLE_TOPIC_SCHEMA_TYPE_CONFIG}
 import org.apache.kafka.common.errors.{InvalidConfigurationException, InvalidRequestException, InvalidTopicException}
 import org.apache.kafka.server.metrics.ClientMetricsConfigs
+import org.apache.kafka.server.record.TableTopicSchemaType
 import org.junit.jupiter.api.Assertions.{assertEquals, assertThrows}
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -173,5 +175,27 @@ class ControllerConfigurationValidatorTest {
     assertEquals("Illegal client matching pattern: 10",
       assertThrows(classOf[InvalidConfigurationException], () => validator.validate(
         new ConfigResource(CLIENT_METRICS, "subscription-1"), config, emptyMap())). getMessage)
+  }
+
+  @Test
+  def testInvalidTableTopicSchemaConfig(): Unit = {
+    val config = new util.TreeMap[String, String]()
+    config.put(TABLE_TOPIC_SCHEMA_TYPE_CONFIG, TableTopicSchemaType.SCHEMA.name)
+
+    // Test without schema registry URL configured
+    val exception = assertThrows(classOf[InvalidRequestException], () => {
+      validator.validate(new ConfigResource(TOPIC, "foo"), config, config)
+    })
+    assertEquals("Table topic schema type is set to SCHEMA but schema registry URL is not configured", exception.getMessage)
+
+    // Test with schema registry URL configured
+    val brokerConfigWithSchemaRegistry = TestUtils.createDummyBrokerConfig()
+    brokerConfigWithSchemaRegistry.put(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, "http://localhost:8081")
+
+    val kafkaConfigWithSchemaRegistry = new KafkaConfig(brokerConfigWithSchemaRegistry)
+    val validatorWithSchemaRegistry = new ControllerConfigurationValidator(kafkaConfigWithSchemaRegistry)
+
+    // No exception should be thrown when schema registry URL is configured properly
+    validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config, config)
   }
 }
