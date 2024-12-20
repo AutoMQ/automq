@@ -110,6 +110,11 @@ class ControllerConfigurationValidator(kafkaConfig: KafkaConfig) extends Configu
         }
         LogConfig.validate(oldConfigs, properties, kafkaConfig.extractLogConfigMap,
           kafkaConfig.remoteLogManagerConfig.isRemoteStorageSystemEnabled(), false)
+
+        // AutoMQ inject start
+        LogConfig.validateTableTopicSchemaConfigValues(properties, kafkaConfig.tableTopicSchemaRegistryUrl)
+        // AutoMQ inject end
+
       case BROKER => validateBrokerName(resource.name())
       case CLIENT_METRICS =>
         val properties = new Properties()
