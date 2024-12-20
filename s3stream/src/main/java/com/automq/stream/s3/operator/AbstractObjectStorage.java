@@ -45,6 +45,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -60,7 +61,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     static final Logger LOGGER = LoggerFactory.getLogger(AbstractObjectStorage.class);
     private static final int MAX_INFLIGHT_FAST_RETRY_COUNT = 5;
 
-    private static final int DEFAULT_RETRY_DELAY = 100;
     private static final AtomicInteger INDEX = new AtomicInteger(-1);
     private static final int DEFAULT_CONCURRENCY_PER_CORE = 25;
     private static final int MIN_CONCURRENCY = 50;
@@ -305,7 +305,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 }
             } else {
                 LOGGER.warn("PutObject for object {} fail, retry later", path, cause);
-                scheduler.schedule(() -> write0(retryOptions, path, data, cf), retryDelay(S3Operation.PUT_OBJECT), TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> write0(retryOptions, path, data, cf), retryDelay(S3Operation.PUT_OBJECT, retryOptions.retryCountGetAndAdd()), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -336,7 +336,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 cf.completeExceptionally(cause);
             } else {
                 LOGGER.warn("CreateMultipartUpload for object {} fail, retry later", path, cause);
-                scheduler.schedule(() -> createMultipartUpload0(options, path, cf), retryDelay(S3Operation.CREATE_MULTI_PART_UPLOAD), TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> createMultipartUpload0(options, path, cf), retryDelay(S3Operation.CREATE_MULTI_PART_UPLOAD, options.retryCountGetAndAdd()), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -383,7 +383,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 cf.completeExceptionally(cause);
             } else {
                 LOGGER.warn("UploadPart for object {}-{} fail, retry later", path, partNumber, cause);
-                scheduler.schedule(() -> uploadPart0(options, path, uploadId, partNumber, data, cf), retryDelay(S3Operation.UPLOAD_PART), TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> uploadPart0(options, path, uploadId, partNumber, data, cf), retryDelay(S3Operation.UPLOAD_PART, options.retryCountGetAndAdd()), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -419,7 +419,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 long nextApiCallAttemptTimeout = Math.min(options.apiCallAttemptTimeout() * 2, TimeUnit.MINUTES.toMillis(10));
                 LOGGER.warn("UploadPartCopy for object {}-{} [{}, {}] fail, retry later with apiCallAttemptTimeout={}", path, partNumber, start, end, nextApiCallAttemptTimeout, cause);
                 options.apiCallAttemptTimeout(nextApiCallAttemptTimeout);
-                scheduler.schedule(() -> uploadPartCopy0(options, sourcePath, path, start, end, uploadId, partNumber, cf), retryDelay(S3Operation.UPLOAD_PART_COPY), TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> uploadPartCopy0(options, sourcePath, path, start, end, uploadId, partNumber, cf), retryDelay(S3Operation.UPLOAD_PART_COPY, options.retryCountGetAndAdd()), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -458,14 +458,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     .whenComplete((nil, t) -> {
                         if (t != null) {
                             LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, cause);
-                            scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), retryDelay(S3Operation.COMPLETE_MULTI_PART_UPLOAD), TimeUnit.MILLISECONDS);
+                            scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), retryDelay(S3Operation.COMPLETE_MULTI_PART_UPLOAD, options.retryCountGetAndAdd()), TimeUnit.MILLISECONDS);
                         } else {
                             cf.complete(null);
                         }
                     });
             } else {
                 LOGGER.warn("CompleteMultipartUpload for object {} fail, retry later", path, cause);
-                scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), retryDelay(S3Operation.COMPLETE_MULTI_PART_UPLOAD), TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> completeMultipartUpload0(options, path, uploadId, parts, cf), retryDelay(S3Operation.COMPLETE_MULTI_PART_UPLOAD, options.retryCountGetAndAdd()), TimeUnit.MILLISECONDS);
             }
             return null;
         });
@@ -542,12 +542,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     abstract CompletableFuture<List<ObjectInfo>> doList(String prefix);
 
-    protected int retryDelay(S3Operation operation) {
+    protected int retryDelay(S3Operation operation, int retryCount) {
         switch (operation) {
             case UPLOAD_PART_COPY:
                 return 1000;
             default:
-                return DEFAULT_RETRY_DELAY;
+                return ThreadLocalRandom.current().nextInt(1000) + Math.min(1000 * (1 << Math.max(retryCount, 16)), (int) (TimeUnit.MINUTES.toMillis(1)));
         }
     }
 
@@ -650,7 +650,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 cf.completeExceptionally(cause);
             } else {
                 LOGGER.warn("GetObject for object {} [{}, {}) fail, retry later", path, start, end, cause);
-                scheduler.schedule(() -> mergedRangeRead0(options, path, start, end, cf), retryDelay(S3Operation.GET_OBJECT), TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> mergedRangeRead0(options, path, start, end, cf), retryDelay(S3Operation.GET_OBJECT, options.retryCountGetAndAdd()), TimeUnit.MILLISECONDS);
             }
             S3OperationStats.getInstance().getObjectStats(size, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return null;
@@ -811,9 +811,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         private boolean canMerge(AbstractObjectStorage.ReadTask readTask) {
             return objectPath != null &&
-                   objectPath.equals(readTask.objectPath) &&
-                   dataSparsityRate <= this.maxMergeReadSparsityRate &&
-                   readTask.end != RANGE_READ_TO_END;
+                objectPath.equals(readTask.objectPath) &&
+                dataSparsityRate <= this.maxMergeReadSparsityRate &&
+                readTask.end != RANGE_READ_TO_END;
         }
 
         void handleReadCompleted(ByteBuf rst, Throwable ex) {
@@ -881,9 +881,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return false;
             var that = (AbstractObjectStorage.ReadTask) obj;
             return Objects.equals(this.objectPath, that.objectPath) &&
-                   this.start == that.start &&
-                   this.end == that.end &&
-                   Objects.equals(this.cf, that.cf);
+                this.start == that.start &&
+                this.end == that.end &&
+                Objects.equals(this.cf, that.cf);
         }
 
         @Override
@@ -894,10 +894,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         @Override
         public String toString() {
             return "ReadTask[" +
-                   "s3ObjectMetadata=" + objectPath + ", " +
-                   "start=" + start + ", " +
-                   "end=" + end + ", " +
-                   "cf=" + cf + ']';
+                "s3ObjectMetadata=" + objectPath + ", " +
+                "start=" + start + ", " +
+                "end=" + end + ", " +
+                "cf=" + cf + ']';
         }
     }
 
