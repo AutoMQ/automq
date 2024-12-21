@@ -38,7 +38,7 @@
   //
   // Version 11 adds support for new error code TRANSACTION_ABORTABLE (KIP-890).
   "validVersions": "0-11",
-  "deprecatedVersions": "0-6",
+  "deprecatedVersions": "0-2",
   "flexibleVersions": "9+",
   "fields": [
     { "name": "TransactionalId", "type": "string", "versions": "3+", "nullableVersions": "3+", "default": "null", "entityType": "transactionalId",
