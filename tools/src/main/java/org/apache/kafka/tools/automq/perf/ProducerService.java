@@ -97,6 +97,7 @@ public class ProducerService implements AutoCloseable {
         properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
         properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+        properties.put(ProducerConfig.PARTITIONER_IGNORE_KEYS_CONFIG, true);
 
         KafkaProducer<String, byte[]> kafkaProducer = new KafkaProducer<>(properties);
         return new Producer(kafkaProducer, topic, callback);
@@ -265,8 +266,6 @@ public class ProducerService implements AutoCloseable {
         private final Topic topic;
         private final ProducerCallback callback;
 
-        private int partitionIndex = 0;
-
         public Producer(KafkaProducer<String, byte[]> producer, Topic topic, ProducerCallback callback) {
             this.producer = producer;
             this.topic = topic;
@@ -278,11 +277,7 @@ public class ProducerService implements AutoCloseable {
          * NOT thread-safe.
          */
         public CompletableFuture<Void> sendAsync(byte[] payload) {
-            return sendAsync(nextKey(), payload, nextPartition());
-        }
-
-        private int nextPartition() {
-            return partitionIndex++ % topic.partitions;
+            return sendAsync(nextKey(), payload, null);
         }
 
         private String nextKey() {
