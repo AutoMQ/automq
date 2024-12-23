@@ -79,7 +79,7 @@ public class PerfConfig {
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
         reset = ns.getBoolean("reset");
-        topicPrefix = ns.getString("topicPrefix") == null ? "test_topic_" + System.currentTimeMillis() : ns.getString("topicPrefix");
+        topicPrefix = ns.getString("topicPrefix") == null ? "topic_" + System.currentTimeMillis() : ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
         producersPerTopic = ns.getInt("producersPerTopic");
