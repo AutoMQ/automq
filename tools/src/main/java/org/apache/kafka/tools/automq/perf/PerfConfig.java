@@ -11,6 +11,8 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
@@ -79,7 +81,7 @@ public class PerfConfig {
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
         reset = ns.getBoolean("reset");
-        topicPrefix = ns.getString("topicPrefix") == null ? "topic_" + System.currentTimeMillis() : ns.getString("topicPrefix");
+        topicPrefix = ns.getString("topicPrefix") == null ? randomTopicPrefix() : ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
         producersPerTopic = ns.getInt("producersPerTopic");
@@ -303,6 +305,20 @@ public class PerfConfig {
             map.put(parts[0], parts[1]);
         }
         return map;
+    }
+
+    private String randomTopicPrefix() {
+        return String.format("topic_%d_%s", System.currentTimeMillis(), randomString(4));
+    }
+
+    private String randomString(int length) {
+        final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        Random r = ThreadLocalRandom.current();
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            sb.append(CHARACTERS.charAt(r.nextInt(CHARACTERS.length())));
+        }
+        return sb.toString();
     }
 
     static class IntegerArgumentType extends ReflectArgumentType<Integer> {
