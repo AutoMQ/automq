@@ -43,6 +43,10 @@ public class TopicService implements AutoCloseable {
      * @see org.apache.kafka.controller.ReplicationControlManager
      */
     private static final int MAX_PARTITIONS_PER_BATCH = 10_000;
+    /**
+     * The common prefix for performance test topics.
+     */
+    private static final String COMMON_TOPIC_PREFIX = "__automq_perf_";
 
     private final Admin admin;
 
@@ -78,13 +82,13 @@ public class TopicService implements AutoCloseable {
     }
 
     /**
-     * Delete all topics except internal topics (starting with '__').
+     * Delete all historical performance test topics.
      */
     public int deleteTopics() {
         ListTopicsResult result = admin.listTopics();
         try {
             Set<String> topics = result.names().get();
-            topics.removeIf(name -> name.startsWith("__"));
+            topics.removeIf(name -> name.startsWith(COMMON_TOPIC_PREFIX));
             admin.deleteTopics(topics).all().get();
             return topics.size();
         } catch (InterruptedException e) {
@@ -114,7 +118,7 @@ public class TopicService implements AutoCloseable {
     }
 
     private String generateTopicName(String topicPrefix, int partitions, int index) {
-        return String.format("%s_%04d_%07d", topicPrefix, partitions, index);
+        return String.format("%s%s_%04d_%07d", COMMON_TOPIC_PREFIX, topicPrefix, partitions, index);
     }
 
     public static class TopicsConfig {
