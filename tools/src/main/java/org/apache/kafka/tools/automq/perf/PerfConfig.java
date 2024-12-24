@@ -11,8 +11,6 @@
 
 package org.apache.kafka.tools.automq.perf;
 
-import java.util.Random;
-import java.util.concurrent.ThreadLocalRandom;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
@@ -29,6 +27,8 @@ import net.sourceforge.argparse4j.internal.HelpScreenException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.nonNegativeInteger;
@@ -312,11 +312,11 @@ public class PerfConfig {
     }
 
     private String randomString(int length) {
-        final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        final String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         Random r = ThreadLocalRandom.current();
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
-            sb.append(CHARACTERS.charAt(r.nextInt(CHARACTERS.length())));
+            sb.append(characters.charAt(r.nextInt(characters.length())));
         }
         return sb.toString();
     }
