@@ -148,7 +148,7 @@ public class CompactionManager {
                 }
                 data.sort(Comparator.comparingLong(S3ObjectMetadata::committedTimestamp));
                 this.compactionDelayTime = System.currentTimeMillis() - data.get(0).committedTimestamp();
-            }).join(), 1, 1, TimeUnit.MINUTES);
+            }).join(), (long) this.compactionInterval * 2, 1, TimeUnit.MINUTES);
     }
 
     void scheduleNextCompaction(long delayMillis) {
