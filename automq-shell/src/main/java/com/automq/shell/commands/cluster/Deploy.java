@@ -159,6 +159,7 @@ public class Deploy implements Callable<Integer> {
         sb.append("--override cluster.id=").append(topo.getGlobal().getClusterId()).append(" ");
         sb.append("--override node.id=").append(node.getNodeId()).append(" ");
         sb.append("--override controller.quorum.voters=").append(getQuorumVoters(topo)).append(" ");
+        sb.append("--override controller.quorum.bootstrap.servers=").append(getBootstrapServers(topo)).append(" ");
         sb.append("--override advertised.listeners=").append("PLAINTEXT://").append(node.getHost()).append(":9092").append(" ");
     }
 
@@ -179,6 +180,16 @@ public class Deploy implements Callable<Integer> {
         }
         return nodes.stream()
             .map(node -> node.getNodeId() + "@" + node.getHost() + ":9093")
+            .collect(Collectors.joining(","));
+    }
+
+    private static String getBootstrapServers(ClusterTopology topo) {
+        List<Node> nodes = topo.getControllers();
+        if (!(nodes.size() == 1 || nodes.size() == 3)) {
+            throw new IllegalArgumentException("Only support 1 or 3 controllers");
+        }
+        return nodes.stream()
+            .map(node -> node.getHost() + ":9093")
             .collect(Collectors.joining(","));
     }
 }
