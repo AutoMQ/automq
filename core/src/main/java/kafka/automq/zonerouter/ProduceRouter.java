@@ -11,6 +11,8 @@
 
 package kafka.automq.zonerouter;
 
+import kafka.server.RequestLocal;
+
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataResponseData;
@@ -36,7 +38,8 @@ public interface ProduceRouter {
         String transactionId,
         Map<TopicPartition, MemoryRecords> entriesPerPartition,
         Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback,
-        Consumer<Map<TopicPartition, RecordValidationStats>> recordValidationStatsCallback
+        Consumer<Map<TopicPartition, RecordValidationStats>> recordValidationStatsCallback,
+        RequestLocal requestLocal
     );
 
     CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(byte[] metadata);
