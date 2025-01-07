@@ -39,10 +39,10 @@ public interface LogRecorder {
                 throw new IllegalArgumentException("Level cannot be blank");
             }
             if (StringUtils.isBlank(logger)) {
-                throw new IllegalArgumentException("Level cannot be blank");
+                throw new IllegalArgumentException("Logger cannot be blank");
             }
             if (StringUtils.isBlank(message)) {
-                throw new IllegalArgumentException("Level cannot be blank");
+                throw new IllegalArgumentException("Message cannot be blank");
             }
         }
 
