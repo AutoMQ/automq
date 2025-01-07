@@ -12,6 +12,7 @@
 package kafka.automq.zonerouter;
 
 import kafka.server.MetadataCache;
+import kafka.server.RequestLocal;
 import kafka.server.streamaspect.ElasticKafkaApis;
 
 import org.apache.kafka.common.Node;
@@ -44,7 +45,9 @@ public class NoopProduceRouter implements ProduceRouter {
     public void handleProduceRequest(short apiVersion, ClientIdMetadata clientId, int timeout, short requiredAcks,
         boolean internalTopicsAllowed, String transactionId, Map<TopicPartition, MemoryRecords> entriesPerPartition,
         Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback,
-        Consumer<Map<TopicPartition, RecordValidationStats>> recordValidationStatsCallback) {
+        Consumer<Map<TopicPartition, RecordValidationStats>> recordValidationStatsCallback,
+        RequestLocal requestLocal
+    ) {
         kafkaApis.handleProduceAppendJavaCompatible(
             timeout,
             requiredAcks,
@@ -59,7 +62,8 @@ public class NoopProduceRouter implements ProduceRouter {
                 recordValidationStatsCallback.accept(rst);
                 return null;
             },
-            apiVersion
+            apiVersion,
+            requestLocal
         );
     }
 
