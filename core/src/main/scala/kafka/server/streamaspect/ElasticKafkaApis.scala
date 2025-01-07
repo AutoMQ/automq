@@ -395,6 +395,7 @@ class ElasticKafkaApis(
           authorizedRequestInfo.asJava,
           sendResponseCallbackJava,
           processingStatsCallbackJava,
+          requestLocal,
         )
 
         // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
@@ -425,7 +426,9 @@ class ElasticKafkaApis(
     entriesPerPartition: util.Map[TopicPartition, MemoryRecords],
     responseCallback: util.Map[TopicPartition, PartitionResponse] => Unit,
     recordValidationStatsCallback: util.Map[TopicPartition, RecordValidationStats] => Unit = _ => (),
-    apiVersion: Short): Unit = {
+    apiVersion: Short,
+    requestLocal: RequestLocal
+  ): Unit = {
     val transactionSupportedOperation = if (apiVersion > 10) genericError else defaultError
     replicaManager.handleProduceAppend(
       timeout = timeout,
@@ -435,7 +438,8 @@ class ElasticKafkaApis(
       entriesPerPartition = entriesPerPartition.asScala,
       responseCallback = rst => responseCallback.apply(rst.asJava),
       recordValidationStatsCallback = rst => recordValidationStatsCallback.apply(rst.asJava),
-      transactionSupportedOperation = transactionSupportedOperation
+      transactionSupportedOperation = transactionSupportedOperation,
+      requestLocal = requestLocal,
     )
   }
 
