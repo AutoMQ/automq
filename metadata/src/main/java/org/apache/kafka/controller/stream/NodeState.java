@@ -12,5 +12,30 @@
 package org.apache.kafka.controller.stream;
 
 public enum NodeState {
-    ACTIVE, FENCED, CONTROLLED_SHUTDOWN, UNKNOWN
+    /**
+     * The node is active and can handle requests.
+     */
+    ACTIVE,
+    /**
+     * The node is shutting down in a controlled manner.
+     */
+    SHUTTING_DOWN,
+    /**
+     * The node is shut down and cannot handle requests.
+     */
+    SHUTDOWN,
+    /**
+     * Use @{@link #SHUTTING_DOWN} instead.
+     */
+    @Deprecated
+    CONTROLLED_SHUTDOWN,
+    /**
+     * Use @{@link #SHUTDOWN} instead.
+     */
+    @Deprecated
+    FENCED,
+    /**
+     * The state of the node is unknown, possibly because it has not yet registered.
+     */
+    UNKNOWN
 }
