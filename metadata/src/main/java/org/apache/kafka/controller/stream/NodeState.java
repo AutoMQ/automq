@@ -11,29 +11,23 @@
 
 package org.apache.kafka.controller.stream;
 
+import org.apache.kafka.controller.BrokerControlState;
+
 public enum NodeState {
     /**
      * The node is active and can handle requests.
      */
     ACTIVE,
     /**
-     * The node is shutting down in a controlled manner.
-     */
-    SHUTTING_DOWN,
-    /**
      * The node is shut down and cannot handle requests.
      */
-    SHUTDOWN,
-    /**
-     * Use @{@link #SHUTTING_DOWN} instead.
-     */
-    @Deprecated
-    CONTROLLED_SHUTDOWN,
-    /**
-     * Use @{@link #SHUTDOWN} instead.
-     */
-    @Deprecated
     FENCED,
+    /**
+     * The node is shutting down in a controlled manner.
+     * Note: In AutoMQ, this state is different from {@link BrokerControlState#CONTROLLED_SHUTDOWN}. In some cases,
+     * a node in {@link BrokerControlState#FENCED} state may still be shutting down in a controlled manner.
+     */
+    CONTROLLED_SHUTDOWN,
     /**
      * The state of the node is unknown, possibly because it has not yet registered.
      */

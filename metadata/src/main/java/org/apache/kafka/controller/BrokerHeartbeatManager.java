@@ -518,14 +518,14 @@ public class BrokerHeartbeatManager {
             return NodeState.UNKNOWN;
         }
         if (broker.shuttingDown()) {
-            return NodeState.SHUTTING_DOWN;
+            return NodeState.CONTROLLED_SHUTDOWN;
         }
         if (broker.fenced()) {
             if (broker.lastControlledShutdownNs() + shutdownTimeoutNs > time.nanoseconds()) {
                 // The broker is still in controlled shutdown.
-                return NodeState.SHUTTING_DOWN;
+                return NodeState.CONTROLLED_SHUTDOWN;
             }
-            return NodeState.SHUTDOWN;
+            return NodeState.FENCED;
         }
         return NodeState.ACTIVE;
     }

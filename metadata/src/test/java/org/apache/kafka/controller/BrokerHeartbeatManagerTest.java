@@ -374,7 +374,7 @@ public class BrokerHeartbeatManagerTest {
         manager.register(0, true);
 
         // FENCED Broker
-        assertEquals(NodeState.SHUTDOWN, manager.brokerState(0, shutdownTimeoutNs));
+        assertEquals(NodeState.FENCED, manager.brokerState(0, shutdownTimeoutNs));
 
         // UNFENCED Broker
         manager.touch(0, false, 100);
@@ -382,16 +382,16 @@ public class BrokerHeartbeatManagerTest {
 
         // CONTROLLED_SHUTDOWN Broker
         manager.maybeUpdateControlledShutdownOffset(0, 100);
-        assertEquals(NodeState.SHUTTING_DOWN, manager.brokerState(0, shutdownTimeoutNs));
+        assertEquals(NodeState.CONTROLLED_SHUTDOWN, manager.brokerState(0, shutdownTimeoutNs));
 
         // SHUTDOWN_NOW Broker within shutdownTimeoutNs
         manager.touch(0, true, 100);
         manager.time().sleep(5);
-        assertEquals(NodeState.SHUTTING_DOWN, manager.brokerState(0, shutdownTimeoutNs));
+        assertEquals(NodeState.CONTROLLED_SHUTDOWN, manager.brokerState(0, shutdownTimeoutNs));
 
         // SHUTDOWN_NOW Broker after shutdownTimeoutNs
         manager.time().sleep(6);
-        assertEquals(NodeState.SHUTDOWN, manager.brokerState(0, shutdownTimeoutNs));
+        assertEquals(NodeState.FENCED, manager.brokerState(0, shutdownTimeoutNs));
 
         // UNFENCED Broker after SHUTDOWN
         manager.touch(0, false, 100);

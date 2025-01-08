@@ -95,7 +95,7 @@ public class NodeControlManagerTest {
         assertTrue(nodeControlManager.nodeMetadataMap.containsKey(0));
 
         when(nodeRuntimeInfoGetter.hasOpeningStreams(eq(0))).thenReturn(true);
-        when(nodeRuntimeInfoGetter.state(eq(0))).thenReturn(NodeState.SHUTDOWN);
+        when(nodeRuntimeInfoGetter.state(eq(0))).thenReturn(NodeState.FENCED);
 
         ControllerResult<AutomqGetNodesResponseData> getRst = nodeControlManager.getMetadata(
             new AutomqGetNodesRequest(new AutomqGetNodesRequestData().setNodeIds(List.of(0, 1)),
@@ -107,7 +107,7 @@ public class NodeControlManagerTest {
         assertEquals(0, nodes.get(0).nodeId());
         assertEquals(2L, nodes.get(0).nodeEpoch());
         assertEquals("wal2", nodes.get(0).walConfig());
-        assertEquals("SHUTDOWN", nodes.get(0).state());
+        assertEquals(NodeState.FENCED.name(), nodes.get(0).state());
     }
 
     AutomqRegisterNodeRequestData.TagCollection tags(Map<String, String> tags) {
