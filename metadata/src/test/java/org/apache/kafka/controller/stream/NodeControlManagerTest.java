@@ -107,6 +107,7 @@ public class NodeControlManagerTest {
         assertEquals(0, nodes.get(0).nodeId());
         assertEquals(2L, nodes.get(0).nodeEpoch());
         assertEquals("wal2", nodes.get(0).walConfig());
+        assertEquals(NodeState.FENCED.name(), nodes.get(0).state());
     }
 
     AutomqRegisterNodeRequestData.TagCollection tags(Map<String, String> tags) {
