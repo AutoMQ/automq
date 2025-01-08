@@ -11,10 +11,14 @@
 
 package org.apache.kafka.controller.stream;
 
+import org.apache.kafka.controller.BrokerHeartbeatManager;
 import org.apache.kafka.controller.ClusterControlManager;
-import org.apache.kafka.metadata.BrokerRegistration;
+
+import java.util.concurrent.TimeUnit;
 
 public class DefaultNodeRuntimeInfoGetter implements NodeRuntimeInfoGetter {
+    private static final long SHUTDOWN_TIMEOUT_NS = TimeUnit.SECONDS.toNanos(60);
+
     private final ClusterControlManager clusterControlManager;
     private final StreamControlManager streamControlManager;
 
@@ -25,17 +29,12 @@ public class DefaultNodeRuntimeInfoGetter implements NodeRuntimeInfoGetter {
 
     @Override
     public NodeState state(int nodeId) {
-        BrokerRegistration brokerRegistration = clusterControlManager.registration(nodeId);
-        if (brokerRegistration == null) {
+        BrokerHeartbeatManager brokerHeartbeatManager = clusterControlManager.getHeartbeatManager();
+        if (null == brokerHeartbeatManager) {
+            // This controller is not the active controller, so we don't have the heartbeat manager.
             return NodeState.UNKNOWN;
         }
-        if (brokerRegistration.fenced()) {
-            return NodeState.FENCED;
-        }
-        if (brokerRegistration.inControlledShutdown()) {
-            return NodeState.CONTROLLED_SHUTDOWN;
-        }
-        return NodeState.ACTIVE;
+        return brokerHeartbeatManager.brokerState(nodeId, SHUTDOWN_TIMEOUT_NS);
     }
 
     @Override
