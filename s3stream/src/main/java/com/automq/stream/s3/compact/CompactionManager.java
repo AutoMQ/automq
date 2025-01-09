@@ -32,6 +32,7 @@ import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -755,28 +756,29 @@ public class CompactionManager {
                         if (uploadException != null) {
                             logger.error("Error while uploading compaction objects", uploadException);
                         }
-                        uploader.forceUploadStreamSetObject().whenComplete((vv, forceUploadException) -> {
-                            if (forceUploadException != null) {
-                                logger.error("Error while force uploading stream set object", uploadException);
-                            }
-                            if (uploadException != null || forceUploadException != null) {
-                                uploader.release().whenComplete((vvv, releaseException) -> {
-                                    if (releaseException != null) {
-                                        logger.error("Unexpected exception while release uploader");
-                                    }
-                                    for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
-                                        compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
-                                    }
-                                    if (uploadException != null) {
-                                        compactionCf.completeExceptionally(new CompletionException("Uploading failed", uploadException));
-                                    } else {
-                                        compactionCf.completeExceptionally(new CompletionException("Force uploading sso failed", forceUploadException));
-                                    }
-                                });
-                            } else {
-                                compactionCf.complete(null);
-                            }
-                        });
+                        FutureUtil.exec(uploader::forceUploadStreamSetObject, logger, "force upload sso")
+                            .whenComplete((vv, forceUploadException) -> {
+                                if (forceUploadException != null) {
+                                    logger.error("Error while force uploading stream set object", uploadException);
+                                }
+                                if (uploadException != null || forceUploadException != null) {
+                                    FutureUtil.exec(uploader::release, logger, "release uploader").whenComplete((vvv, releaseException) -> {
+                                        if (releaseException != null) {
+                                            logger.error("Unexpected exception while release uploader");
+                                        }
+                                        for (CompactedObject compactedObject : compactionPlan.compactedObjects()) {
+                                            compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                                        }
+                                        if (uploadException != null) {
+                                            compactionCf.completeExceptionally(new CompletionException("Uploading failed", uploadException));
+                                        } else {
+                                            compactionCf.completeExceptionally(new CompletionException("Force uploading sso failed", forceUploadException));
+                                        }
+                                    });
+                                } else {
+                                    compactionCf.complete(null);
+                                }
+                            });
                     });
             }
             try {
