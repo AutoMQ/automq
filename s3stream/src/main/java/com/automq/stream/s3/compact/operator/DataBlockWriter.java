@@ -85,10 +85,14 @@ public class DataBlockWriter {
     private void uploadWaitingList() {
         CompositeByteBuf buf = groupWaitingBlocks();
         List<StreamDataBlock> blocks = new LinkedList<>(waitingUploadBlocks);
-        writer.write(buf).thenAccept(v -> {
+        writer.write(buf).whenComplete((v, ex) -> {
             for (StreamDataBlock block : blocks) {
                 waitingUploadBlockCfs.computeIfPresent(block, (k, cf) -> {
-                    cf.complete(null);
+                    if (ex != null) {
+                        cf.completeExceptionally(ex);
+                    } else {
+                        cf.complete(null);
+                    }
                     return null;
                 });
             }
