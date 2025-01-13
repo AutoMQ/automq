@@ -212,7 +212,7 @@ public class PerfConfig {
             .dest("sendRateDuringCatchup")
             .metavar("SEND_RATE_DURING_CATCHUP")
             .help("The send rate in messages per second during catchup. If not set, the send rate will be used.");
-        parser.addArgument("-m", "--max-poll-rate")
+        parser.addArgument("-m", "--max-consume-record-rate")
             .setDefault(1_000_000_000)
             .type(between(0, 1_000_000_000))
             .dest("maxConsumeRecordRate")
