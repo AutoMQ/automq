@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.controller.stream.NodeState;
 import org.apache.kafka.controller.stream.OverloadCircuitBreaker;
 import org.apache.kafka.metadata.placement.UsableBroker;
 
@@ -83,6 +84,16 @@ public class BrokerHeartbeatManager {
          */
         private long controlledShutdownOffset;
 
+        // AutoMQ inject start
+        /**
+         * The last time the broker was controlled shutdown, in monotonic nanoseconds, or 0
+         * if the broker has never been controlled shutdown since the most recent start.
+         * It will be updated on receiving a broker heartbeat with controlled shutdown request.
+         * It will be reset to 0 when the broker is active again.
+         */
+        private long lastControlledShutdownNs;
+        // AutoMQ inject end
+
         /**
          * The previous entry in the unfenced list, or null if the broker is not in that list.
          */
@@ -100,6 +111,9 @@ public class BrokerHeartbeatManager {
             this.next = null;
             this.metadataOffset = -1;
             this.controlledShutdownOffset = -1;
+            // AutoMQ inject start
+            this.lastControlledShutdownNs = 0;
+            // AutoMQ inject end
         }
 
         /**
@@ -122,6 +136,12 @@ public class BrokerHeartbeatManager {
         boolean shuttingDown() {
             return controlledShutdownOffset >= 0;
         }
+
+        // AutoMQ inject start
+        long lastControlledShutdownNs() {
+            return lastControlledShutdownNs;
+        }
+        // AutoMQ inject end
     }
 
     static class MetadataOffsetComparator implements Comparator<BrokerHeartbeatState> {
@@ -441,6 +461,9 @@ public class BrokerHeartbeatManager {
             throw new RuntimeException("Fenced brokers cannot enter controlled shutdown.");
         }
         active.remove(broker);
+        // AutoMQ inject start
+        broker.lastControlledShutdownNs = time.nanoseconds();
+        // AutoMQ inject end
         if (broker.controlledShutdownOffset < 0) {
             broker.controlledShutdownOffset = controlledShutDownOffset;
             log.debug("Updated the controlled shutdown offset for broker {} to {}.",
@@ -489,6 +512,24 @@ public class BrokerHeartbeatManager {
     }
 
     // AutoMQ inject start
+    public NodeState brokerState(int brokerId, long shutdownTimeoutNs) {
+        BrokerHeartbeatState broker = brokers.get(brokerId);
+        if (broker == null) {
+            return NodeState.UNKNOWN;
+        }
+        if (broker.shuttingDown()) {
+            return NodeState.CONTROLLED_SHUTDOWN;
+        }
+        if (broker.fenced()) {
+            if (broker.lastControlledShutdownNs() + shutdownTimeoutNs > time.nanoseconds()) {
+                // The broker is still in controlled shutdown.
+                return NodeState.CONTROLLED_SHUTDOWN;
+            }
+            return NodeState.FENCED;
+        }
+        return NodeState.ACTIVE;
+    }
+
     long nextCheckTimeNs() {
         if (overloadCircuitBreaker.isOverload()) {
             return Long.MAX_VALUE;

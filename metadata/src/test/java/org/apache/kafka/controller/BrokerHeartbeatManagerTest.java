@@ -24,6 +24,7 @@ import org.apache.kafka.controller.BrokerHeartbeatManager.BrokerHeartbeatState;
 import org.apache.kafka.controller.BrokerHeartbeatManager.BrokerHeartbeatStateIterator;
 import org.apache.kafka.controller.BrokerHeartbeatManager.BrokerHeartbeatStateList;
 import org.apache.kafka.controller.BrokerHeartbeatManager.UsableBrokerIterator;
+import org.apache.kafka.controller.stream.NodeState;
 import org.apache.kafka.metadata.placement.UsableBroker;
 
 import org.junit.jupiter.api.Test;
@@ -362,4 +363,43 @@ public class BrokerHeartbeatManagerTest {
                 assertThrows(IllegalStateException.class,
                         () -> manager.touch(4, false, 0)).getMessage());
     }
+
+    // AutoMQ inject start
+    @Test
+    public void testBrokerState() {
+        final long shutdownTimeoutNs = 10_000_000;  // 10ms
+        // init
+        BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
+        manager.time().sleep(1000);
+        manager.register(0, true);
+
+        // FENCED Broker
+        assertEquals(NodeState.FENCED, manager.brokerState(0, shutdownTimeoutNs));
+
+        // UNFENCED Broker
+        manager.touch(0, false, 100);
+        assertEquals(NodeState.ACTIVE, manager.brokerState(0, shutdownTimeoutNs));
+
+        // CONTROLLED_SHUTDOWN Broker
+        manager.maybeUpdateControlledShutdownOffset(0, 100);
+        assertEquals(NodeState.CONTROLLED_SHUTDOWN, manager.brokerState(0, shutdownTimeoutNs));
+
+        // SHUTDOWN_NOW Broker within shutdownTimeoutNs
+        manager.touch(0, true, 100);
+        manager.time().sleep(5);
+        assertEquals(NodeState.CONTROLLED_SHUTDOWN, manager.brokerState(0, shutdownTimeoutNs));
+
+        // SHUTDOWN_NOW Broker after shutdownTimeoutNs
+        manager.time().sleep(6);
+        assertEquals(NodeState.FENCED, manager.brokerState(0, shutdownTimeoutNs));
+
+        // UNFENCED Broker after SHUTDOWN
+        manager.touch(0, false, 100);
+        assertEquals(NodeState.ACTIVE, manager.brokerState(0, shutdownTimeoutNs));
+
+        // UNREGISTERED Broker
+        manager.remove(0);
+        assertEquals(NodeState.UNKNOWN, manager.brokerState(0, shutdownTimeoutNs));
+    }
+    // AutoMQ inject end
 }

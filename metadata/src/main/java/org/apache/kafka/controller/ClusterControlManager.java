@@ -1003,5 +1003,9 @@ public class ClusterControlManager {
             .filter(b -> isActive(b.id()))
             .collect(Collectors.toList());
     }
+
+    public BrokerHeartbeatManager getHeartbeatManager() {
+        return heartbeatManager;
+    }
     // AutoMQ inject end
 }
