@@ -2232,6 +2232,7 @@ project(':tools') {
     // AutoMQ inject start
     implementation project(':automq-shell')
     implementation libs.kafkaAvroSerializer
+    implementation libs.bucket4j
     // AutoMQ inject end
 
     implementation project(':storage')
