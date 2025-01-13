@@ -52,6 +52,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import io.github.bucket4j.BlockingBucket;
+import io.github.bucket4j.Bucket;
+
 import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_CHARSET;
 import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_SEND_TIME_NANOS;
 
@@ -91,10 +94,15 @@ public class ConsumerService implements AutoCloseable {
         return count;
     }
 
-    public void start(ConsumerCallback callback) {
+    public void start(ConsumerCallback callback, int pollRate) {
+        BlockingBucket bucket = rateLimitBucket(pollRate);
+        ConsumerCallback callbackWithRateLimit = (tp, p, st) -> {
+            callback.messageReceived(tp, p, st);
+            bucket.consume(1);
+        };
         CompletableFuture.allOf(
             groups.stream()
-                .map(group -> group.start(callback))
+                .map(group -> group.start(callbackWithRateLimit))
                 .toArray(CompletableFuture[]::new)
         ).join();
     }
@@ -122,6 +130,15 @@ public class ConsumerService implements AutoCloseable {
             .sum();
     }
 
+    private BlockingBucket rateLimitBucket(int rateLimit) {
+        return Bucket.builder()
+            .addLimit(limit -> limit
+                .capacity(rateLimit / 10)
+                .refillGreedy(rateLimit, Duration.ofSeconds(1))
+            ).build()
+            .asBlocking();
+    }
+
     @Override
     public void close() {
         admin.close();
@@ -137,7 +154,7 @@ public class ConsumerService implements AutoCloseable {
          * @param payload        the received message payload
          * @param sendTimeNanos  the time in nanoseconds when the message was sent
          */
-        void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos);
+        void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos) throws InterruptedException;
     }
 
     public static class ConsumersConfig {
@@ -316,7 +333,7 @@ public class ConsumerService implements AutoCloseable {
                         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
                         callback.messageReceived(topicPartition, record.value(), sendTimeNanos);
                     }
-                } catch (InterruptException e) {
+                } catch (InterruptException | InterruptedException e) {
                     // ignore, as we are closing
                 } catch (Exception e) {
                     LOGGER.warn("exception occur while consuming message", e);

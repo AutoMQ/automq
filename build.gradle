@@ -2250,6 +2250,7 @@ project(':tools') {
     implementation project(':automq-shell')
     implementation libs.guava
     implementation libs.kafkaAvroSerializer
+    implementation libs.bucket4j
     // AutoMQ inject end
 
     // for SASL/OAUTHBEARER JWT validation
