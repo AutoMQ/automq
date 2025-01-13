@@ -31,6 +31,7 @@ import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
+import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.between;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.nonNegativeInteger;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.notLessThan;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.positiveInteger;
@@ -53,6 +54,7 @@ public class PerfConfig {
     public final int randomPoolSize;
     public final int sendRate;
     public final int sendRateDuringCatchup;
+    public final int maxConsumeRecordRate;
     public final int backlogDurationSeconds;
     public final int groupStartDelaySeconds;
     public final int warmupDurationMinutes;
@@ -92,6 +94,7 @@ public class PerfConfig {
         randomPoolSize = ns.getInt("randomPoolSize");
         sendRate = ns.getInt("sendRate");
         sendRateDuringCatchup = ns.getInt("sendRateDuringCatchup") == null ? sendRate : ns.getInt("sendRateDuringCatchup");
+        maxConsumeRecordRate = ns.getInt("maxConsumeRecordRate");
         backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
         groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
         warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
@@ -209,6 +212,12 @@ public class PerfConfig {
             .dest("sendRateDuringCatchup")
             .metavar("SEND_RATE_DURING_CATCHUP")
             .help("The send rate in messages per second during catchup. If not set, the send rate will be used.");
+        parser.addArgument("-m", "--max-poll-rate")
+            .setDefault(1_000_000_000)
+            .type(between(0, 1_000_000_000))
+            .dest("maxConsumeRecordRate")
+            .metavar("MAX_CONSUME_RECORD_RATE")
+            .help("The max rate of consuming records per second.");
         parser.addArgument("-b", "--backlog-duration")
             .setDefault(0)
             .type(notLessThan(300))
@@ -350,6 +359,10 @@ public class PerfConfig {
 
         public static IntegerArgumentType notLessThan(int min) {
             return new IntegerArgumentType(value -> value < min ? "expected an integer not less than " + min + ", but got " + value : null);
+        }
+
+        public static IntegerArgumentType between(int min, int max) {
+            return new IntegerArgumentType(value -> value < min || value > max ? "expected an integer between " + min + " and " + max + ", but got " + value : null);
         }
     }
 
