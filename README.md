@@ -41,6 +41,21 @@
 
 [![What is AutoMQ?](https://img.youtube.com/vi/3JQrclZlie4/0.jpg)](https://www.youtube.com/watch?v=3JQrclZlie4)
 
+## 👥 Big Companies Worldwide are Using AutoMQ
+> Here are some of our customers who are using AutoMQ from all over the world.
+<img width="639" alt="image" src="https://github.com/user-attachments/assets/fdab52e8-d829-4762-be51-d58d0accd261" />
+
+- [Grab: Driving Efficiency with AutoMQ in DataStreaming Platform](https://www.youtube.com/watch?v=IB8sh639Rsg)
+- [Palmpay Uses AutoMQ to Replace Kafka, Optimizing Costs by 50%+](https://www.automq.com/blog/palmpay-uses-automq-to-replace-kafka)
+- [AutoMQ help Geely Auto(Fortune Global 500) solve the pain points of Kafka elasticity in the V2X scenario](https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario)
+- [How Asia’s Quora Zhihu uses AutoMQ to reduce Kafka cost and maintenance complexity](https://www.automq.com/blog/how-asias-quora-zhihu-use-automq-to-reduce-kafka-cost-and-maintenance-complexity)
+- [XPENG Motors Reduces Costs by 50%+ by Replacing Kafka with AutoMQ](https://www.automq.com/blog/xpeng-motors-reduces-costs-by-50-by-replacing-kafka-with-automq)
+- [Asia's GOAT, Poizon uses AutoMQ Kafka to build observability platform for massive data(30 GB/s)](https://www.automq.com/blog/asiax27s-goat-poizon-uses-automq-kafka-to-build-a-new-generation-observability-platform-for-massive-data)
+- [AutoMQ Helps CaoCao Mobility Address Kafka Scalability During Holidays](https://www.automq.com/blog/automq-helps-caocao-mobility-address-kafka-scalability-issues-during-mid-autumn-and-national-day)
+
+## 🗞️ Newest Feature
+Table Topic feature for unified stream and data analysis, which now supports the S3 table feature announced at the 2024 re:Invent. [Learn more](https://www.automq.com/blog/automq-table-topic-seamless-integration-with-s3-tables-and-iceberg). 
+![image](https://github.com/user-attachments/assets/6b2a514a-cc3e-442e-84f6-d953206865e0)
 
 
 ## 🍵 AutoMQ vs Other Streaming Platforms
@@ -217,11 +232,6 @@ The business edition of AutoMQ provides a powerful and easy-to-use control plane
 To allow users to experience the capabilities of the AutoMQ business edition without any barriers, click [here](https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud) to apply for a no-obligation cluster trial, and note `AutoMQ Cloud Free Trial` in the message input box. We will immediately initialize an AutoMQ Cloud control panel for you soon in the cloud and give you the address of the control panel. Then, you can use the control panel to create a AutoMQ cluster or perform operations like scale in/out. 
 
 No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://automq66.feishu.cn/share/base/form/shrcnoqxslhYkujx6ULiMxOqkGh?utm_source=github_poc). We will further support your official POC.
-
-## 👥 AutoMQ Use Cases
-> Here are some of the users who have deployed AutoMQ in their production environments.
-
-[![Click on the link to learn more about AutoMQ user cases.](./docs/images/customer.jpeg "AutoMQ Uses Case")](https://www.automq.com/customer)
 
 ## 🐱 The relationship with Apache Kafka
 
