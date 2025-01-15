@@ -63,7 +63,7 @@ public class ClientUtilsTest {
         assertFalse(validatedAddresses.isEmpty(), "Unexpected addresses " + validatedAddresses);
         List<String> validatedHostNames = validatedAddresses.stream().map(InetSocketAddress::getHostName)
                 .collect(Collectors.toList());
-        List<String> expectedHostNames = List.of(
+        List<String> expectedHostNames = asList(
             "a23-215-0-136.deploy.static.akamaitechnologies.com",
             "a23-192-228-84.deploy.static.akamaitechnologies.com",
             "a23-215-0-138.deploy.static.akamaitechnologies.com",
