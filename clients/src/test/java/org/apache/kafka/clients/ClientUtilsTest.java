@@ -25,6 +25,7 @@ import org.mockito.MockedStatic;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -83,13 +84,13 @@ public class ClientUtilsTest {
                 List<InetSocketAddress> validatedAddresses = checkWithLookup(Collections.singletonList(hostname + ":" + port));
                 assertEquals(2, inetSocketAddress.constructed().size());
                 assertEquals(2, validatedAddresses.size());
-                assertTrue(validatedAddresses.containsAll(List.of(
+                assertTrue(validatedAddresses.containsAll(Arrays.asList(
                     inetSocketAddress.constructed().get(0),
                     inetSocketAddress.constructed().get(1)))
                 );
                 validatedAddresses.forEach(address -> assertEquals(port, address.getPort()));
                 validatedAddresses.stream().map(InetSocketAddress::getHostName).forEach(
-                    hostName -> assertTrue(List.of(canonicalHostname1, canonicalHostname2).contains(hostName))
+                    hostName -> assertTrue(Arrays.asList(canonicalHostname1, canonicalHostname2).contains(hostName))
                 );
             }
         }
