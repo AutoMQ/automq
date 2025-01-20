@@ -16,6 +16,9 @@ import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -24,6 +27,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.zip.CRC32;
 
 import io.netty.buffer.ByteBuf;
+import jnr.posix.POSIX;
 import jnr.posix.POSIXFactory;
 
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
@@ -35,6 +39,8 @@ public class WALUtil {
         BLOCK_SIZE_PROPERTY,
         "4096"
     ));
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(WALUtil.class);
 
     public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start) {
         return generateRecord(body, emptyHeader, crc, start, true);
@@ -158,15 +164,25 @@ public class WALUtil {
         if (!new File(path).exists()) {
             return false;
         }
-        boolean isBlockDevice;
+
+        POSIX posix;
         try {
-            isBlockDevice = POSIXFactory.getPOSIX()
-                .stat(path)
-                .isBlockDev();
+            posix = POSIXFactory.getNativePOSIX();
+        } catch (Exception e) {
+            LOGGER.warn("Failed to get native POSIX, fallback to check by prefix", e);
+            return isBlockDeviceByPrefix(path);
+        }
+
+        try {
+            return posix.stat(path).isBlockDev();
         } catch (Exception e) {
             // In some OS (like Windows), the isBlockDev() method may throw an IllegalStateException.
-            isBlockDevice = false;
+            LOGGER.warn("Failed to check if {} is a block device, fallback to check by prefix", path, e);
+            return isBlockDeviceByPrefix(path);
         }
-        return isBlockDevice;
+    }
+
+    private static boolean isBlockDeviceByPrefix(String path) {
+        return path.startsWith("/dev/");
     }
 }
