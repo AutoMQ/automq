@@ -292,6 +292,7 @@ class ControllerServer(
           setStreamClient(streamClient).
           setExtension(c => quorumControllerExtension(c)).
           setQuorumVoters(config.quorumVoters).
+          setReplicaPlacer(replicaPlacer()).
           // AutoMQ inject end
           setUncleanLeaderElectionCheckIntervalMs(config.uncleanLeaderElectionCheckIntervalMs).
           setInterBrokerListenerName(config.interBrokerListenerName.value()).
