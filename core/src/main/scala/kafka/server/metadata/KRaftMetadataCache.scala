@@ -40,6 +40,7 @@ import org.apache.kafka.metadata.{BrokerRegistration, PartitionRegistration, Rep
 import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{FinalizedFeatures, KRaftVersion, MetadataVersion}
 
+import java.nio.ByteBuffer
 import java.util
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.locks.ReentrantLock
@@ -661,6 +662,10 @@ class KRaftMetadataCache(
 
   override def getNode(nodeId: Int): BrokerRegistration = {
     _currentImage.cluster().broker(nodeId)
+  }
+
+  override def getValue(key: String): ByteBuffer = {
+    _currentImage.kv().getValue(key)
   }
   // AutoMQ inject end
 

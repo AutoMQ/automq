@@ -30,6 +30,7 @@ import org.apache.kafka.common.record.LegacyRecord;
 import org.apache.kafka.common.record.RecordVersion;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.common.MetadataVersion;
@@ -347,6 +348,9 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_PARTITION_BY_DOC)
                 .define(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_CDC_FIELD_DOC)
+                .define(TopicConfig.KAFKA_LINKING_REMOTE_CLUSTER_ID_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKING_REMOTE_CLUSTER_ID_DOC)
+                .define(TopicConfig.KAFKA_LINKING_TOPIC_SYNC_OFFSET_CONFIG, LONG, ListOffsetsRequest.LATEST_TIMESTAMP, null, MEDIUM, TopicConfig.KAFKA_LINKING_TOPIC_SYNC_OFFSET_DOC)
+                .define(TopicConfig.KAFKA_LINKING_TOPIC_SYNC_STATE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKING_TOPIC_SYNC_STATE_DOC)
                 // AutoMQ inject end
                 .define(TopicConfig.REMOTE_LOG_COPY_DISABLE_CONFIG, BOOLEAN, false, MEDIUM, TopicConfig.REMOTE_LOG_COPY_DISABLE_DOC)
                 .define(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG, BOOLEAN, false, MEDIUM, TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_DOC);
@@ -405,6 +409,10 @@ public class LogConfig extends AbstractConfig {
     public final String tableTopicPartitionBy;
     public final boolean tableTopicUpsertEnable;
     public final String tableTopicCdcField;
+
+    public final String kafkaLinkingRemoteClusterId;
+    public final long kafkaLinkingTopicSyncOffset;
+    public final String kafkaLinkingTopicSyncState;
     // AutoMQ inject end
 
     private final int maxMessageSize;
@@ -466,6 +474,10 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicPartitionBy = getString(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG);
         this.tableTopicUpsertEnable = getBoolean(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG);
         this.tableTopicCdcField = getString(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG);
+
+        this.kafkaLinkingRemoteClusterId = getString(TopicConfig.KAFKA_LINKING_REMOTE_CLUSTER_ID_CONFIG);
+        this.kafkaLinkingTopicSyncOffset = getLong(TopicConfig.KAFKA_LINKING_TOPIC_SYNC_OFFSET_CONFIG);
+        this.kafkaLinkingTopicSyncState = getString(TopicConfig.KAFKA_LINKING_TOPIC_SYNC_STATE_CONFIG);
         // AutoMQ inject end
 
         remoteLogConfig = new RemoteLogConfig(this);
