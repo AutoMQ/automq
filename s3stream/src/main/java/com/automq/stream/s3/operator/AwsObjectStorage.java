@@ -427,8 +427,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     protected ClientOverrideConfiguration clientOverrideConfiguration() {
         return ClientOverrideConfiguration.builder()
-            .apiCallTimeout(Duration.ofMinutes(2))
-            .apiCallAttemptTimeout(Duration.ofSeconds(60))
+            .apiCallTimeout(Duration.ofSeconds(30))
+            .apiCallAttemptTimeout(Duration.ofSeconds(10))
             .build();
     }
 
