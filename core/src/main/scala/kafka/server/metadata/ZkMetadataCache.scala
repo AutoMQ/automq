@@ -44,6 +44,7 @@ import org.apache.kafka.metadata.BrokerRegistration
 import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
 
+import java.nio.ByteBuffer
 import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
 import scala.concurrent.TimeoutException
 import scala.math.max
@@ -725,6 +726,10 @@ class ZkMetadataCache(
   }
 
   override def getNode(nodeId: Int): BrokerRegistration = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def getValue(key: String): ByteBuffer = {
     throw new UnsupportedOperationException()
   }
   // AutoMQ inject end
