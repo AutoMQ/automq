@@ -43,7 +43,7 @@
 
 ## 👥 Big Companies Worldwide are Using AutoMQ
 > Here are some of our customers who are using AutoMQ from all over the world.
-<img width="639" alt="image" src="https://github.com/user-attachments/assets/fdab52e8-d829-4762-be51-d58d0accd261" />
+<img width="1151" alt="image" src="https://github.com/user-attachments/assets/a2668e5e-eebf-479a-b85a-9611de1b60c8" />
 
 - [Grab: Driving Efficiency with AutoMQ in DataStreaming Platform](https://www.youtube.com/watch?v=IB8sh639Rsg)
 - [Palmpay Uses AutoMQ to Replace Kafka, Optimizing Costs by 50%+](https://www.automq.com/blog/palmpay-uses-automq-to-replace-kafka)
