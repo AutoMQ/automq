@@ -41,7 +41,7 @@ public class CachedLogSegments extends LogSegments {
     public void remove(long offset) {
         synchronized (this) {
             if (null != activeSegment && offset == activeSegment.baseOffset()) {
-                activeSegment = null;
+                activeSegment = super.lastSegment().orElse(null);
             }
             super.remove(offset);
         }
