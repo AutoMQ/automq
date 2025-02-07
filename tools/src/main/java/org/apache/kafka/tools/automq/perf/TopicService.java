@@ -29,7 +29,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -87,10 +86,11 @@ public class TopicService implements AutoCloseable {
     public int deleteTopics() {
         ListTopicsResult result = admin.listTopics();
         try {
-            Set<String> topics = result.names().get();
-            topics.removeIf(name -> name.startsWith(COMMON_TOPIC_PREFIX));
-            admin.deleteTopics(topics).all().get();
-            return topics.size();
+            List<String> toDelete = result.names().get().stream()
+                .filter(name -> name.startsWith(COMMON_TOPIC_PREFIX))
+                .collect(Collectors.toList());
+            admin.deleteTopics(toDelete).all().get();
+            return toDelete.size();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException ignored) {
