@@ -18,6 +18,7 @@
 package kafka.server
 
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
+import kafka.automq.kafkalinking.ReplicateFetcherManager
 import kafka.automq.zonerouter.{NoopProduceRouter, ProduceRouter}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
@@ -351,6 +352,7 @@ class BrokerServer(
         addPartitionsToTxnManager = Some(addPartitionsToTxnManager),
         directoryEventHandler = directoryEventHandler
       )
+      this._replicaManager.setReplicateFetcherManager(newReplicateManager())
 
       /* start token manager */
       tokenManager = new DelegationTokenManager(config, tokenCache, time)
@@ -825,6 +827,10 @@ class BrokerServer(
       override def decrease(): Unit = {
       }
     }
+  }
+
+  protected def newReplicateManager(): ReplicateFetcherManager = {
+    null
   }
   // AutoMQ inject end
 
