@@ -15,12 +15,10 @@ import org.apache.kafka.common.TopicPartition;
 
 import java.util.Set;
 
-public interface ReplicateFetcherManager {
+public interface KafkaLinkingManager {
     void addPartitions(Set<TopicPartition> partitions);
 
     void removePartitions(Set<TopicPartition> partitions);
-
-    void shutdownIdleFetcherThreads();
 
     void shutdown();
 }
