@@ -4,7 +4,7 @@ import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
 import com.automq.stream.utils.FutureUtil
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
-import kafka.automq.kafkalinking.ReplicateFetcherManager
+import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.{ElasticLogManager, PartitionStatusTracker, ReadHint}
@@ -183,7 +183,7 @@ class ElasticReplicaManager(
 
   private val partitionLifecycleListeners = new util.ArrayList[PartitionLifecycleListener]()
 
-  private var replicateFetcherManager = Option.empty[ReplicateFetcherManager]
+  private var kafkaLinkingManager = Option.empty[KafkaLinkingManager]
 
   override def startup(): Unit = {
     super.startup()
@@ -206,7 +206,7 @@ class ElasticReplicaManager(
     val partitions = partitionsToStop.map(_.topicPartition)
     replicaFetcherManager.removeFetcherForPartitions(partitions)
     replicaAlterLogDirsManager.removeFetcherForPartitions(partitions)
-    replicateFetcherManager.foreach(_.removePartitions(partitions.asJava))
+    kafkaLinkingManager.foreach(_.removePartitions(partitions.asJava))
 
     // Second remove deleted partitions from the partition map. Fetchers rely on the
     // ReplicaManager to get Partition's information so they must be stopped first.
@@ -912,7 +912,7 @@ class ElasticReplicaManager(
 
       replicaFetcherManager.removeFetcherForPartitions(newOfflinePartitions)
       replicaAlterLogDirsManager.removeFetcherForPartitions(newOfflinePartitions ++ partitionsWithOfflineFutureReplica.map(_.topicPartition))
-      replicateFetcherManager.foreach(_.removePartitions(newOfflinePartitions.asJava))
+      kafkaLinkingManager.foreach(_.removePartitions(newOfflinePartitions.asJava))
 
       // These partitions should first be made offline to remove topic metrics.
       newOfflinePartitions.foreach { topicPartition =>
@@ -1213,7 +1213,7 @@ class ElasticReplicaManager(
       }).foreach { case (partition, _) =>
         try {
           changedPartitions.add(partition)
-          replicateFetcherManager.foreach(_.addPartitions(Set(partition.topicPartition).asJava))
+          kafkaLinkingManager.foreach(_.addPartitions(Set(partition.topicPartition).asJava))
         } catch {
           case e: KafkaStorageException =>
             stateChangeLogger.info(s"Skipped the become-leader state change for $tp " +
@@ -1425,15 +1425,15 @@ class ElasticReplicaManager(
 
   override def shutdown(checkpointHW: Boolean): Unit = {
     super.shutdown(checkpointHW)
-    replicateFetcherManager.foreach(_.shutdown())
+    kafkaLinkingManager.foreach(_.shutdown())
   }
 
-  def setReplicateFetcherManager(replicateManager: ReplicateFetcherManager): Unit = {
-    if (replicateManager == null) {
-      replicateFetcherManager = None
-    } else {
-      replicateFetcherManager = Some(replicateManager)
-    }
+  def setKafkaLinkingManager(kafkaLinkingManager: KafkaLinkingManager): Unit = {
+      if (kafkaLinkingManager == null) {
+          this.kafkaLinkingManager = None
+      } else {
+          this.kafkaLinkingManager = Some(kafkaLinkingManager)
+      }
   }
 
 }
