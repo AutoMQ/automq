@@ -1424,8 +1424,8 @@ class ElasticReplicaManager(
   }
 
   override def shutdown(checkpointHW: Boolean): Unit = {
-    super.shutdown(checkpointHW)
     kafkaLinkingManager.foreach(_.shutdown())
+    super.shutdown(checkpointHW)
   }
 
   def setKafkaLinkingManager(kafkaLinkingManager: KafkaLinkingManager): Unit = {
