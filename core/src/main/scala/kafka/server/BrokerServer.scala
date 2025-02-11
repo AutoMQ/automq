@@ -620,18 +620,22 @@ class BrokerServer(
         if (replicaManager != null)
           replicaManager.beginControlledShutdown()
 
-        lifecycleManager.beginControlledShutdown()
-        try {
-          val controlledShutdownTimeoutMs = deadline - time.milliseconds()
-          lifecycleManager.controlledShutdownFuture.get(controlledShutdownTimeoutMs, TimeUnit.MILLISECONDS)
-        } catch {
-          case _: TimeoutException =>
-            error("Timed out waiting for the controller to approve controlled shutdown")
-          case e: Throwable =>
-            error("Got unexpected exception waiting for controlled shutdown future", e)
+        if (lifecycleManager != null) {
+          lifecycleManager.beginControlledShutdown()
+          try {
+            val controlledShutdownTimeoutMs = deadline - time.milliseconds()
+            lifecycleManager.controlledShutdownFuture.get(controlledShutdownTimeoutMs, TimeUnit.MILLISECONDS)
+          } catch {
+            case _: TimeoutException =>
+              error("Timed out waiting for the controller to approve controlled shutdown")
+            case e: Throwable =>
+              error("Got unexpected exception waiting for controlled shutdown future", e)
+          }
         }
       }
-      lifecycleManager.beginShutdown()
+      if (lifecycleManager != null)
+        lifecycleManager.beginShutdown()
+
       // Stop socket server to stop accepting any more connections and requests.
       // Socket server will be shutdown towards the end of the sequence.
       if (socketServer != null) {
@@ -681,8 +685,10 @@ class BrokerServer(
       if (clientToControllerChannelManager != null)
         CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
 
-      if (logManager != null)
-        CoreUtils.swallow(logManager.shutdown(lifecycleManager.brokerEpoch), this)
+      if (logManager != null) {
+        val brokerEpoch = if (lifecycleManager != null) lifecycleManager.brokerEpoch else -1
+        CoreUtils.swallow(logManager.shutdown(brokerEpoch), this)
+      }
 
       // Close remote log manager to give a chance to any of its underlying clients
       // (especially in RemoteStorageManager and RemoteLogMetadataManager) to close gracefully.
@@ -698,9 +704,13 @@ class BrokerServer(
 
       isShuttingDown.set(false)
 
-      CoreUtils.swallow(lifecycleManager.close(), this)
+      if (lifecycleManager != null)
+        CoreUtils.swallow(lifecycleManager.close(), this)
+
       CoreUtils.swallow(config.dynamicConfig.clear(), this)
-      CoreUtils.swallow(clientMetricsManager.close(), this)
+      if (clientMetricsManager != null)
+        CoreUtils.swallow(clientMetricsManager.close(), this)
+
       sharedServer.stopForBroker()
       info("shut down completed")
     } catch {
