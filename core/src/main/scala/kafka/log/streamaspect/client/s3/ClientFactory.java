@@ -13,7 +13,7 @@ package kafka.log.streamaspect.client.s3;
 
 import kafka.log.stream.s3.ConfigUtils;
 import kafka.log.stream.s3.DefaultS3Client;
-import kafka.log.streamaspect.AlwaysSuccessClient;
+import kafka.log.streamaspect.ClientWrapper;
 import kafka.log.streamaspect.client.ClientFactoryProxy;
 import kafka.log.streamaspect.client.Context;
 
@@ -31,6 +31,6 @@ public class ClientFactory {
         config.version(() -> context.brokerServer.metadataCache().autoMQVersion().s3streamVersion());
 
         DefaultS3Client client = new DefaultS3Client(context.brokerServer, config);
-        return new AlwaysSuccessClient(client);
+        return new ClientWrapper(client);
     }
 }

@@ -12,6 +12,9 @@
 package kafka.log.streamaspect;
 
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.errors.s3.NodeEpochExpiredException;
+import org.apache.kafka.common.errors.s3.NodeEpochNotExistException;
+import org.apache.kafka.common.errors.s3.NodeFencedException;
 import org.apache.kafka.common.utils.ThreadUtils;
 
 import com.automq.stream.api.AppendResult;
@@ -49,29 +52,29 @@ import io.netty.util.Timeout;
 
 import static com.automq.stream.utils.FutureUtil.cause;
 
-public class AlwaysSuccessClient implements Client {
+public class ClientWrapper implements Client {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(AlwaysSuccessClient.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClientWrapper.class);
     public static final Set<Short> HALT_ERROR_CODES = Set.of(
-            ErrorCode.EXPIRED_STREAM_EPOCH,
-            ErrorCode.STREAM_ALREADY_CLOSED,
-            ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS
+        ErrorCode.EXPIRED_STREAM_EPOCH,
+        ErrorCode.STREAM_ALREADY_CLOSED,
+        ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS
     );
     private final ScheduledExecutorService streamManagerRetryScheduler = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
+        ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
     private final ExecutorService streamManagerCallbackExecutors = Executors.newFixedThreadPool(1,
-            ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
+        ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
     private final ScheduledExecutorService generalRetryScheduler = Executors.newScheduledThreadPool(1,
-            ThreadUtils.createThreadFactory("general-retry-scheduler-%d", true));
+        ThreadUtils.createThreadFactory("general-retry-scheduler-%d", true));
     private final ExecutorService generalCallbackExecutors = Executors.newFixedThreadPool(4,
-            ThreadUtils.createThreadFactory("general-callback-scheduler-%d", true));
+        ThreadUtils.createThreadFactory("general-callback-scheduler-%d", true));
     private final Client innerClient;
     private volatile StreamClient streamClient;
     private final HashedWheelTimer fetchTimeout = new HashedWheelTimer(
-            ThreadUtils.createThreadFactory("fetch-timeout-%d", true),
-            1, TimeUnit.SECONDS, 512);
+        ThreadUtils.createThreadFactory("fetch-timeout-%d", true),
+        1, TimeUnit.SECONDS, 512);
 
-    public AlwaysSuccessClient(Client client) {
+    public ClientWrapper(Client client) {
         this.innerClient = client;
     }
 
@@ -148,6 +151,22 @@ public class AlwaysSuccessClient implements Client {
         return true;
     }
 
+    private static <T> CompletableFuture<T> failureHandle(CompletableFuture<T> cf) {
+        return cf.whenComplete((rst, ex) -> {
+            if (ex != null) {
+                ex = FutureUtil.cause(ex);
+                if (ex instanceof NodeEpochExpiredException
+                    || ex instanceof NodeEpochNotExistException
+                    || ex instanceof NodeFencedException) {
+                    LOGGER.error("The node is fenced, force shutdown the node", ex);
+                    //noinspection CallToPrintStackTrace
+                    ex.printStackTrace();
+                    Runtime.getRuntime().halt(1);
+                }
+            }
+        });
+    }
+
     private class StreamClientImpl implements StreamClient {
 
         private final StreamClient streamClient;
@@ -158,29 +177,12 @@ public class AlwaysSuccessClient implements Client {
 
         @Override
         public CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options) {
-            CompletableFuture<Stream> cf = new CompletableFuture<>();
-            createAndOpenStream0(options, cf);
-            return cf;
-        }
-
-        private void createAndOpenStream0(CreateStreamOptions options, CompletableFuture<Stream> cf) {
-            streamClient.createAndOpenStream(options).whenCompleteAsync((stream, ex) -> {
-                FutureUtil.suppress(() -> {
-                    if (ex != null) {
-                        LOGGER.error("Create and open stream fail, retry later", ex);
-                        streamManagerRetryScheduler.schedule(() -> createAndOpenStream0(options, cf), 3, TimeUnit.SECONDS);
-                    } else {
-                        cf.complete(new StreamImpl(stream));
-                    }
-                }, LOGGER);
-            }, streamManagerCallbackExecutors);
+            return failureHandle(streamClient.createAndOpenStream(options).thenApplyAsync(rst -> rst, streamManagerCallbackExecutors));
         }
 
         @Override
         public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions options) {
-            CompletableFuture<Stream> cf = new CompletableFuture<>();
-            openStream0(streamId, options, cf);
-            return cf;
+            return failureHandle(streamClient.openStream(streamId, options).thenApplyAsync(rst -> rst, streamManagerCallbackExecutors));
         }
 
         @Override
@@ -190,21 +192,6 @@ public class AlwaysSuccessClient implements Client {
 
         public void shutdown() {
             streamClient.shutdown();
-        }
-
-        private void openStream0(long streamId, OpenStreamOptions options, CompletableFuture<Stream> cf) {
-            streamClient.openStream(streamId, options).whenCompleteAsync((stream, ex) -> {
-                FutureUtil.suppress(() -> {
-                    if (ex != null) {
-                        if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
-                            LOGGER.error("Open stream[{}]({}) fail, retry later", streamId, options.epoch(), ex);
-                            streamManagerRetryScheduler.schedule(() -> openStream0(streamId, options, cf), 3, TimeUnit.SECONDS);
-                        }
-                    } else {
-                        cf.complete(new StreamImpl(stream));
-                    }
-                }, LOGGER);
-            }, generalCallbackExecutors);
         }
     }
 
@@ -250,7 +237,8 @@ public class AlwaysSuccessClient implements Client {
         }
 
         @Override
-        public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
+        public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset,
+            int maxBytesHint) {
             CompletableFuture<FetchResult> cf = new CompletableFuture<>();
             Timeout timeout = fetchTimeout.newTimeout(t -> LOGGER.warn("fetch timeout, stream[{}] [{}, {})", streamId(), startOffset, endOffset), 1, TimeUnit.MINUTES);
             stream.fetch(context, startOffset, endOffset, maxBytesHint).whenComplete((rst, e) -> FutureUtil.suppress(() -> {
@@ -292,42 +280,12 @@ public class AlwaysSuccessClient implements Client {
 
         @Override
         public CompletableFuture<Void> close() {
-            CompletableFuture<Void> cf = new CompletableFuture<>();
-            close0(cf);
-            return cf;
-        }
-
-        private void close0(CompletableFuture<Void> cf) {
-            stream.close().whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
-                if (ex != null) {
-                    if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
-                        LOGGER.error("Close stream[{}] failed, retry later", streamId(), ex);
-                        generalRetryScheduler.schedule(() -> close0(cf), 3, TimeUnit.SECONDS);
-                    }
-                } else {
-                    cf.complete(rst);
-                }
-            }, LOGGER), generalCallbackExecutors);
+            return failureHandle(stream.close().thenApplyAsync(nil -> nil, streamManagerCallbackExecutors));
         }
 
         @Override
         public CompletableFuture<Void> destroy() {
-            CompletableFuture<Void> cf = new CompletableFuture<>();
-            destroy0(cf);
-            return cf;
-        }
-
-        private void destroy0(CompletableFuture<Void> cf) {
-            stream.destroy().whenCompleteAsync((rst, ex) -> FutureUtil.suppress(() -> {
-                if (ex != null) {
-                    if (!maybeHaltAndCompleteWaitingFuture(ex, cf)) {
-                        LOGGER.error("Destroy stream[{}] failed, retry later", streamId(), ex);
-                        generalRetryScheduler.schedule(() -> destroy0(cf), 3, TimeUnit.SECONDS);
-                    }
-                } else {
-                    cf.complete(rst);
-                }
-            }, LOGGER), generalCallbackExecutors);
+            return failureHandle(stream.destroy().thenApplyAsync(nil -> nil, streamManagerCallbackExecutors));
         }
     }
 }
