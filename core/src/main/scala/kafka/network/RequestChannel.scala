@@ -431,7 +431,7 @@ class RequestChannel(val queueSize: Int,
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
   def sendRequest(request: RequestChannel.Request): Unit = {
     if (multiRequestQueue.size() != 0) {
-      queuedRequestSizeSemaphore.acquire(request.sizeInBytes)
+      queuedRequestSizeSemaphore.acquire(Math.min(request.sizeInBytes, queuedRequestSize))
       val requestQueue = multiRequestQueue.get(math.abs(request.context.connectionId.hashCode % multiRequestQueue.size()))
       requestQueue.put(request)
     } else {
@@ -546,7 +546,7 @@ class RequestChannel(val queueSize: Int,
       request match {
         case WakeupRequest => callbackQueue.poll()
         case request: Request =>
-          queuedRequestSizeSemaphore.release(request.sizeInBytes)
+          queuedRequestSizeSemaphore.release(Math.min(request.sizeInBytes, queuedRequestSize))
           request
         case _ => request
       }
