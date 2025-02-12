@@ -365,13 +365,13 @@ class RequestChannel(val queueSize: Int,
   // AutoMQ inject start
   /**
    * Queue of requests to be handled, in the order they arrived.
-   * Note: Before any request enters this queue, it needs to acquire {@link multiQueuedRequestSizeSemaphore}
+   * Note: Before any request enters this queue, it needs to acquire {@link queuedRequestSizeSemaphore}
    */
   private val multiRequestQueue = new java.util.ArrayList[ArrayBlockingQueue[BaseRequest]]()
   /**
    * Semaphore to limit the total size of requests in the {@link multiRequestQueue}.
    */
-  private val multiQueuedRequestSizeSemaphore = new java.util.ArrayList[Semaphore]()
+  private val queuedRequestSizeSemaphore = new Semaphore(queuedRequestSize)
   private val availableRequestSizeMetricName = metricNamePrefix.concat(AvailableRequestSizeMetric)
   // AutoMQ inject end
   private val processors = new ConcurrentHashMap[Int, Processor]()
@@ -390,7 +390,7 @@ class RequestChannel(val queueSize: Int,
     }
   })
   metricsGroup.newGauge(availableRequestSizeMetricName, () => {
-    multiQueuedRequestSizeSemaphore.stream().mapToInt(s => s.availablePermits()).sum()
+    queuedRequestSizeSemaphore.availablePermits()
   })
 
   def this(queueSize: Int, metricNamePrefix: String, time: Time, metrics: RequestChannel.Metrics) {
@@ -415,13 +415,8 @@ class RequestChannel(val queueSize: Int,
   // AutoMQ inject start
   def registerNRequestHandler(count: Int): Unit = {
     val queueSize = math.max(this.queueSize / count, 1)
-    // TODO: maxQueuedRequestSize will be 100 / 8 = 12.5 MiB as a default.
-    //  However, if the request size is too large, it will block at the semaphore.
-    //  Currently, the max request size is 1 MiB (max.request.size) by default, so it is not very problematic.
-    val maxQueuedRequestSize = math.max(this.queuedRequestSize / count, 10 * 1024 * 1024)
     for (_ <- 0 until count) {
       multiRequestQueue.add(new ArrayBlockingQueue[BaseRequest](queueSize))
-      multiQueuedRequestSizeSemaphore.add(new Semaphore(maxQueuedRequestSize))
       multiCallbackQueue.add(new ArrayBlockingQueue[BaseRequest](queueSize))
     }
     Collections.unmodifiableList(multiRequestQueue)
@@ -436,8 +431,7 @@ class RequestChannel(val queueSize: Int,
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
   def sendRequest(request: RequestChannel.Request): Unit = {
     if (multiRequestQueue.size() != 0) {
-      val requestSizeSemaphore = multiQueuedRequestSizeSemaphore.get(math.abs(request.context.connectionId.hashCode % multiQueuedRequestSizeSemaphore.size()))
-      requestSizeSemaphore.acquire(request.sizeInBytes)
+      queuedRequestSizeSemaphore.acquire(Math.min(request.sizeInBytes, queuedRequestSize))
       val requestQueue = multiRequestQueue.get(math.abs(request.context.connectionId.hashCode % multiRequestQueue.size()))
       requestQueue.put(request)
     } else {
@@ -544,7 +538,6 @@ class RequestChannel(val queueSize: Int,
   def receiveRequest(timeout: Long, id: Int): RequestChannel.BaseRequest = {
     val callbackQueue = multiCallbackQueue.get(id)
     val requestQueue = multiRequestQueue.get(id)
-    val requestSizeSemaphore = multiQueuedRequestSizeSemaphore.get(id)
     val callbackRequest = callbackQueue.poll()
     if (callbackRequest != null)
       callbackRequest
@@ -553,7 +546,7 @@ class RequestChannel(val queueSize: Int,
       request match {
         case WakeupRequest => callbackQueue.poll()
         case request: Request =>
-          requestSizeSemaphore.release(request.sizeInBytes)
+          queuedRequestSizeSemaphore.release(Math.min(request.sizeInBytes, queuedRequestSize))
           request
         case _ => request
       }
