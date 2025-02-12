@@ -11,7 +11,7 @@
 
 package kafka.log.streamaspect.client.memory;
 
-import kafka.log.streamaspect.AlwaysSuccessClient;
+import kafka.log.streamaspect.ClientWrapper;
 import kafka.log.streamaspect.MemoryClient;
 import kafka.log.streamaspect.client.Context;
 
@@ -20,7 +20,7 @@ import com.automq.stream.api.Client;
 public class ClientFactory {
 
     public static Client get(Context context) {
-        return new AlwaysSuccessClient(new MemoryClient());
+        return new ClientWrapper(new MemoryClient());
     }
 
 }
