@@ -3,6 +3,7 @@ package kafka.server.streamaspect
 import com.automq.stream.s3.metrics.TimerUtil
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import com.yammer.metrics.core.Histogram
+import kafka.automq.kafkalinking.KafkaLinkingGroupCoordinator
 import kafka.automq.zonerouter.{ClientIdMetadata, NoopProduceRouter, ProduceRouter}
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
@@ -14,7 +15,6 @@ import kafka.server.metadata.ConfigRepository
 import kafka.server.streamaspect.ElasticKafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIME_HIST, PRODUCE_CALLBACK_TIME_HIST, PRODUCE_TIME_HIST}
 import kafka.utils.Implicits.MapExtensionMethods
 import org.apache.kafka.admin.AdminUtils
-import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.acl.AclOperation.{CLUSTER_ACTION, READ, WRITE}
 import org.apache.kafka.common.errors.{ApiException, UnsupportedCompressionTypeException}
 import org.apache.kafka.common.internals.FatalExitError
@@ -22,15 +22,16 @@ import org.apache.kafka.common.message.{DeleteTopicsRequestData, FetchResponseDa
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.{ListenerName, NetworkSend, Send}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
-import org.apache.kafka.common.record.{LazyDownConversionRecords, MemoryRecords, MultiRecordsSend, PooledResource, RecordBatch, RecordValidationStats}
+import org.apache.kafka.common.record._
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
-import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest
-import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
+import org.apache.kafka.common.requests.s3.{AutomqUpdateGroupsRequest, AutomqUpdateGroupsResponse, AutomqZoneRouterRequest}
+import org.apache.kafka.common.requests._
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
+import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.GroupCoordinator
 import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer.Authorizer
@@ -39,10 +40,10 @@ import org.apache.kafka.server.record.BrokerCompressionType
 import org.apache.kafka.storage.internals.log.{FetchIsolation, FetchParams, FetchPartitionData}
 
 import java.util
-import java.util.{Collections, Optional}
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{ExecutorService, TimeUnit}
 import java.util.stream.IntStream
+import java.util.{Collections, Optional}
 import scala.annotation.nowarn
 import scala.collection.{Map, Seq, mutable}
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsJava, MapHasAsScala, SeqHasAsJava}
@@ -170,6 +171,8 @@ class ElasticKafkaApis(
         case ApiKeys.AUTOMQ_ZONE_ROUTER => handleZoneRouterRequest(request, requestLocal)
         case ApiKeys.DELETE_TOPICS => maybeForwardTopicDeletionToController(request, handleDeleteTopicsRequest)
         case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
+        case ApiKeys.AUTOMQ_UPDATE_GROUPS => handleUpdateGroupsRequest(request, requestLocal)
+
         case _ =>
           throw new IllegalStateException("Message conversion info is recorded only for Produce/Fetch requests")
       }
@@ -407,6 +410,19 @@ class ElasticKafkaApis(
       // TODO: isolate to a separate thread pool to avoid blocking io thread. Connection should be bind to certain async thread to keep the order
       doAppendRecords()
     }
+  }
+
+  def handleUpdateGroupsRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
+    val updateGroupsRequest = request.body[AutomqUpdateGroupsRequest]
+    val kafkaLinkingGroupCoordinator = groupCoordinator.asInstanceOf[KafkaLinkingGroupCoordinator]
+    kafkaLinkingGroupCoordinator.updateGroups(request.context, updateGroupsRequest.data(), requestLocal.bufferSupplier)
+        .whenComplete((response, ex) => {
+          if (ex != null) {
+            requestHelper.sendMaybeThrottle(request, updateGroupsRequest.getErrorResponse(ex))
+          } else {
+            requestHelper.sendMaybeThrottle(request, new AutomqUpdateGroupsResponse(response))
+          }
+        })
   }
 
   def handleZoneRouterRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {

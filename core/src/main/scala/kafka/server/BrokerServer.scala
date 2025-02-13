@@ -18,7 +18,7 @@
 package kafka.server
 
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
-import kafka.automq.kafkalinking.KafkaLinkingManager
+import kafka.automq.kafkalinking.{DefaultKafkaLinkingGroupCoordinator, KafkaLinkingManager}
 import kafka.automq.zonerouter.{NoopProduceRouter, ProduceRouter}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
@@ -360,6 +360,10 @@ class BrokerServer(
 
       groupCoordinator = createGroupCoordinator()
 
+      // AutoMQ injection start
+      groupCoordinator = createGroupCoordinatorWrapper(groupCoordinator)
+      // AutoMQ injection end
+
       val producerIdManagerSupplier = () => ProducerIdManager.rpc(
         config.brokerId,
         time,
@@ -639,6 +643,10 @@ class BrokerServer(
         metrics
       )
     }
+  }
+
+  protected def createGroupCoordinatorWrapper(groupCoordinator: GroupCoordinator): GroupCoordinator = {
+    new DefaultKafkaLinkingGroupCoordinator(groupCoordinator)
   }
 
   protected def createRemoteLogManager(): Option[RemoteLogManager] = {

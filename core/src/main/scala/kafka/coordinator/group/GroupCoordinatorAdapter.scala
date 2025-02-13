@@ -60,8 +60,8 @@ object GroupCoordinatorAdapter {
  * GroupCoordinatorAdapter is a thin wrapper around kafka.coordinator.group.GroupCoordinator
  * that exposes the new org.apache.kafka.coordinator.group.GroupCoordinator interface.
  */
-private[group] class GroupCoordinatorAdapter(
-  private val coordinator: GroupCoordinator,
+class GroupCoordinatorAdapter(
+  val coordinator: GroupCoordinator,
   private val time: Time
 ) extends org.apache.kafka.coordinator.group.GroupCoordinator {
 

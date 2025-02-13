@@ -150,7 +150,8 @@ public enum ApiKeys {
     AUTOMQ_ZONE_ROUTER(ApiMessageType.AUTOMQ_ZONE_ROUTER, false, false),
 
     GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true),
-    DESCRIBE_STREAMS(ApiMessageType.DESCRIBE_STREAMS, false, true);
+    DESCRIBE_STREAMS(ApiMessageType.DESCRIBE_STREAMS, false, true),
+    AUTOMQ_UPDATE_GROUPS(ApiMessageType.AUTOMQ_UPDATE_GROUPS);
     // AutoMQ for Kafka inject end
 
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =
