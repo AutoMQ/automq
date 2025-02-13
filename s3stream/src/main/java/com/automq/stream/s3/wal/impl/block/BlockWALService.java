@@ -52,6 +52,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Function;
 
@@ -120,7 +121,8 @@ public class BlockWALService implements WriteAheadLog {
     public static final int WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
     public static final int WAL_HEADER_TOTAL_CAPACITY = WAL_HEADER_CAPACITY * WAL_HEADER_COUNT;
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockWALService.class);
-    private final AtomicBoolean started = new AtomicBoolean(false);
+    @SuppressWarnings("checkstyle:MemberName")
+    private final AtomicReference<WalState> state = new AtomicReference<>(WalState.INIT);
     private final AtomicBoolean resetFinished = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
     private final ExecutorService walHeaderFlusher = Threads.newFixedThreadPool(1, ThreadUtils.createThreadFactory("flush-wal-header-thread-%d", true), LOGGER);
@@ -284,10 +286,36 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public WriteAheadLog start() throws IOException {
-        if (started.get()) {
-            LOGGER.warn("block WAL service already started");
-            return this;
+        switch (state.get()) {
+            case INIT:
+                if (state.compareAndSet(WalState.INIT, WalState.STARTING)) {
+                    try {
+                        doStart();
+                        state.set(WalState.STARTED);
+                    } finally {
+                        if (state.get() != WalState.STARTED) {
+                            state.compareAndSet(WalState.STARTING, WalState.INIT);
+                            LOGGER.warn("block WAL service started fail");
+                        }
+                    }
+                }
+                break;
+            case STARTING:
+                LOGGER.warn("block WAL service is starting");
+                break;
+            case STARTED:
+                LOGGER.warn("block WAL service already started");
+                break;
+            case SHUTTING_DOWN:
+            case SHUTDOWN:
+                throw new IllegalStateException("block WAL service already shutdown");
+            default:
+                throw new IllegalStateException("invalid WAL state");
         }
+        return this;
+    }
+
+    public void doStart() throws IOException {
         StopWatch stopWatch = StopWatch.createStarted();
 
         walChannel.open(channel -> Optional.ofNullable(tryReadWALHeader(walChannel))
@@ -306,10 +334,7 @@ public class BlockWALService implements WriteAheadLog {
 
         header.setShutdownType(ShutdownType.UNGRACEFULLY);
         walHeaderReady(header);
-
-        started.set(true);
         LOGGER.info("block WAL service started, cost: {} ms", stopWatch.getTime(TimeUnit.MILLISECONDS));
-        return this;
     }
 
     private void registerMetrics() {
@@ -381,12 +406,38 @@ public class BlockWALService implements WriteAheadLog {
 
     @Override
     public void shutdownGracefully() {
-        StopWatch stopWatch = StopWatch.createStarted();
-
-        if (!started.getAndSet(false)) {
-            LOGGER.warn("block WAL service already shutdown or not started yet");
-            return;
+        for (; ; ) {
+            WalState state = this.state.get();
+            if (state == WalState.SHUTDOWN || this.state.compareAndSet(WalState.INIT, WalState.SHUTDOWN)) {
+                LOGGER.warn("block WAL service already shutdown or not started yet");
+                return;
+            }
+            if (state == WalState.STARTING) {
+                Thread.yield();
+                continue;
+            }
+            if (state == WalState.SHUTTING_DOWN
+                || this.state.compareAndSet(state, WalState.SHUTTING_DOWN)) {
+                break;
+            }
         }
+
+        if (state.compareAndSet(WalState.SHUTTING_DOWN, WalState.SHUTDOWN)) {
+            boolean success = false;
+            try {
+                doShutdown();
+                success = true;
+            } finally {
+                if (!success) {
+                    LOGGER.warn("block WAL service shutdown fail");
+                    state.compareAndSet(WalState.SHUTDOWN, WalState.SHUTTING_DOWN);
+                }
+            }
+        }
+    }
+
+    private void doShutdown() {
+        StopWatch stopWatch = StopWatch.createStarted();
         walHeaderFlusher.shutdown();
         try {
             if (!walHeaderFlusher.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -530,7 +581,7 @@ public class BlockWALService implements WriteAheadLog {
     }
 
     private void checkStarted() {
-        if (!started.get()) {
+        if (state.get() != WalState.STARTED) {
             throw new IllegalStateException("WriteAheadLog has not been started yet");
         }
     }
@@ -549,6 +600,14 @@ public class BlockWALService implements WriteAheadLog {
 
     private SlidingWindowService.WALHeaderFlusher flusher() {
         return () -> flushWALHeader(ShutdownType.UNGRACEFULLY);
+    }
+
+    private enum WalState {
+        INIT,
+        STARTING,
+        STARTED,
+        SHUTTING_DOWN,
+        SHUTDOWN,
     }
 
     public static class BlockWALServiceBuilder {
