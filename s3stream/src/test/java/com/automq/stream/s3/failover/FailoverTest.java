@@ -38,11 +38,18 @@ public class FailoverTest {
     Failover failover;
 
     @BeforeEach
-    public void setup() {
+    public void setup() throws IOException {
         path = "/tmp/" + System.currentTimeMillis() + "/failover_test_wal";
         failoverFactory = mock(FailoverFactory.class);
         walRecover = mock(WALRecover.class);
         failover = spy(new Failover(failoverFactory, walRecover));
+
+        // write node id and epoch to the wal header
+        BlockWALService wal = BlockWALService.builder(path, 1024 * 1024).nodeId(233).epoch(100).build();
+        wal.start();
+        wal.shutdownGracefully();
+        when(failoverFactory.getWal(any())).thenAnswer(s ->
+            BlockWALService.builder(path, 1024 * 1024).nodeId(233).epoch(100).build());
     }
 
     @AfterEach
@@ -51,35 +58,43 @@ public class FailoverTest {
     }
 
     @Test
-    public void test() throws IOException, ExecutionException, InterruptedException, TimeoutException {
-        BlockWALService wal = BlockWALService.builder(path, 1024 * 1024).nodeId(233).epoch(100).build();
-        wal.start();
-        wal.shutdownGracefully();
-
-        FailoverRequest request = new FailoverRequest();
-
-        // node mismatch
-        request.setNodeId(234);
-        request.setDevice(path);
-        request.setVolumeId("test_volume_id");
-
-        when(failoverFactory.getWal(any())).thenAnswer(s ->
-            BlockWALService.builder(path, 1024 * 1024).nodeId(233).epoch(100).build());
-
-        boolean exceptionThrown = false;
-        try {
-            failover.failover(request).get(100, TimeUnit.SECONDS);
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof IllegalArgumentException) {
-                exceptionThrown = true;
-            }
-        }
-        Assertions.assertTrue(exceptionThrown);
-
-        // node match
-        request.setNodeId(233);
-        FailoverResponse resp = failover.failover(request).get(1, TimeUnit.SECONDS);
-        assertEquals(233, resp.getNodeId());
+    public void testNodeIdMismatch() {
+        FailoverRequest request = createRequest(234, 100);
+        ExecutionException executionException = Assertions.assertThrows(ExecutionException.class,
+            () -> failover.failover(request).get(100, TimeUnit.SECONDS));
+        Assertions.assertInstanceOf(IllegalArgumentException.class, executionException.getCause());
     }
 
+    @Test
+    public void testNodeEpochExpired() {
+        FailoverRequest request = createRequest(233, 99);
+        ExecutionException executionException = Assertions.assertThrows(ExecutionException.class,
+            () -> failover.failover(request).get(100, TimeUnit.SECONDS));
+        Assertions.assertInstanceOf(IllegalStateException.class, executionException.getCause());
+    }
+
+    @Test
+    public void testAllMatch() throws ExecutionException, InterruptedException, TimeoutException {
+        FailoverRequest request = createRequest(233, 100);
+        FailoverResponse resp = failover.failover(request).get(100, TimeUnit.SECONDS);
+        assertEquals(233, resp.getNodeId());
+        assertEquals(100, resp.getEpoch());
+    }
+
+    @Test
+    public void testNodeEpochGreaterThan() throws ExecutionException, InterruptedException, TimeoutException {
+        FailoverRequest request = createRequest(233, 101);
+        FailoverResponse resp = failover.failover(request).get(100, TimeUnit.SECONDS);
+        assertEquals(233, resp.getNodeId());
+        assertEquals(101, resp.getEpoch());
+    }
+
+    private FailoverRequest createRequest(int nodeId, long nodeEpoch) {
+        FailoverRequest request = new FailoverRequest();
+        request.setNodeId(nodeId);
+        request.setNodeEpoch(nodeEpoch);
+        request.setVolumeId("test_volume_id");
+        request.setDevice(path);
+        return request;
+    }
 }

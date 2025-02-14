@@ -27,9 +27,6 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
-import static com.automq.stream.s3.Constants.NOOP_EPOCH;
-import static com.automq.stream.s3.Constants.NOOP_NODE_ID;
-
 /**
  * To perform a Delta WAL failover, follow these steps:
  * 1. Ensure the old node stops writing to the delta WAL.
@@ -63,8 +60,6 @@ public class Failover {
 
     class FailoverTask {
         private final FailoverRequest request;
-        private int nodeId = NOOP_NODE_ID;
-        private long epoch = NOOP_EPOCH;
 
         public FailoverTask(FailoverRequest request) {
             this.request = request;
@@ -72,8 +67,13 @@ public class Failover {
 
         public FailoverResponse failover() throws Throwable {
             LOGGER.info("failover start {}", request);
+            int nodeId = request.getNodeId();
+            long nodeEpoch = request.getNodeEpoch();
+
             FailoverResponse resp = new FailoverResponse();
-            resp.setNodeId(request.getNodeId());
+            resp.setNodeId(nodeId);
+            resp.setEpoch(nodeEpoch);
+
             // fence the device to ensure the old node stops writing to the delta WAL
             // recover WAL data and upload to S3
             WriteAheadLog wal = factory.getWal(request);
@@ -83,18 +83,19 @@ public class Failover {
                 LOGGER.info("fail over empty wal {}", request);
                 return resp;
             }
+
             try {
                 WALMetadata metadata = wal.metadata();
-                this.nodeId = metadata.nodeId();
-                this.epoch = metadata.epoch();
-                if (nodeId != request.getNodeId()) {
+                if (nodeId != metadata.nodeId()) {
                     throw new IllegalArgumentException(String.format("nodeId mismatch, request=%s, wal=%s", request, metadata));
                 }
-                resp.setNodeId(nodeId);
-                resp.setEpoch(epoch);
-                Logger taskLogger = new LogContext(String.format("[Failover nodeId=%s epoch=%s]", nodeId, epoch)).logger(FailoverTask.class);
-                StreamManager streamManager = factory.getStreamManager(nodeId, epoch);
-                ObjectManager objectManager = factory.getObjectManager(nodeId, epoch);
+                if (nodeEpoch < metadata.epoch()) {
+                    throw new IllegalStateException(String.format("epoch mismatch, request=%s, wal=%s", request, metadata));
+                }
+
+                Logger taskLogger = new LogContext(String.format("[Failover nodeId=%s epoch=%s]", nodeId, nodeEpoch)).logger(FailoverTask.class);
+                StreamManager streamManager = factory.getStreamManager(nodeId, nodeEpoch);
+                ObjectManager objectManager = factory.getObjectManager(nodeId, nodeEpoch);
                 LOGGER.info("failover recover {}", request);
                 walRecover.recover(wal, streamManager, objectManager, taskLogger);
             } finally {
@@ -108,8 +109,6 @@ public class Failover {
         public String toString() {
             return "FailoverTask{" +
                 "request=" + request +
-                ", nodeId=" + nodeId +
-                ", epoch=" + epoch +
                 '}';
         }
     }
