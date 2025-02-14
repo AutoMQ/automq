@@ -660,13 +660,16 @@ public class BlockWALService implements WriteAheadLog {
         public BlockWALService build() {
             if (recoveryMode) {
                 if (blockDeviceCapacityWant != CAPACITY_NOT_SET) {
-                    throw new IllegalArgumentException(String.format("capacity should not be set in recovery mode, but got: %d", blockDeviceCapacityWant));
+                    LOGGER.warn("capacity should not be set in recovery mode, but got {}, ignore it", blockDeviceCapacityWant);
+                    blockDeviceCapacityWant = CAPACITY_NOT_SET;
                 }
                 if (nodeId != NOOP_NODE_ID) {
-                    throw new IllegalArgumentException(String.format("node id should not be set in recovery mode, but got: %d", nodeId));
+                    LOGGER.warn("node id should not be set in recovery mode, but got {}, ignore it", nodeId);
+                    nodeId = NOOP_NODE_ID;
                 }
                 if (epoch != NOOP_EPOCH) {
-                    throw new IllegalArgumentException(String.format("node epoch should not be set in recovery mode, but got: %d", epoch));
+                    LOGGER.warn("node epoch should not be set in recovery mode, but got {}, ignore it", epoch);
+                    epoch = NOOP_EPOCH;
                 }
             } else {
                 // make blockDeviceCapacityWant align to BLOCK_SIZE
