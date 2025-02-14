@@ -296,7 +296,9 @@ public class BlockWALService implements WriteAheadLog {
 
         BlockWALHeader header = tryReadWALHeader(walChannel);
         if (null == header) {
-            assert !recoveryMode;
+            if (recoveryMode) {
+                throw new IllegalStateException("failed to read WALHeader in recovery mode");
+            }
             header = newWALHeader();
             firstStart = true;
             LOGGER.info("no available WALHeader, create a new one: {}", header);
@@ -657,9 +659,18 @@ public class BlockWALService implements WriteAheadLog {
 
         public BlockWALService build() {
             if (recoveryMode) {
-                assert blockDeviceCapacityWant == CAPACITY_NOT_SET;
-                assert nodeId == NOOP_NODE_ID;
-                assert epoch == NOOP_EPOCH;
+                if (blockDeviceCapacityWant != CAPACITY_NOT_SET) {
+                    LOGGER.warn("capacity should not be set in recovery mode, but got {}, ignore it", blockDeviceCapacityWant);
+                    blockDeviceCapacityWant = CAPACITY_NOT_SET;
+                }
+                if (nodeId != NOOP_NODE_ID) {
+                    LOGGER.warn("node id should not be set in recovery mode, but got {}, ignore it", nodeId);
+                    nodeId = NOOP_NODE_ID;
+                }
+                if (epoch != NOOP_EPOCH) {
+                    LOGGER.warn("node epoch should not be set in recovery mode, but got {}, ignore it", epoch);
+                    epoch = NOOP_EPOCH;
+                }
             } else {
                 // make blockDeviceCapacityWant align to BLOCK_SIZE
                 blockDeviceCapacityWant = blockDeviceCapacityWant / WALUtil.BLOCK_SIZE * WALUtil.BLOCK_SIZE;
