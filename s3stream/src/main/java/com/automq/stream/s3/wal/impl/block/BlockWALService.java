@@ -556,7 +556,7 @@ public class BlockWALService implements WriteAheadLog {
         private long blockDeviceCapacityWant = CAPACITY_NOT_SET;
         private Boolean direct = null;
         private int initBufferSize = 1 << 20; // 1MiB
-        private int maxBufferSize = 1 << 24; // 16MiB
+        private int maxBufferSize = 1 << 26; // 64MiB
         private int ioThreadNums = 8;
         private long slidingWindowInitialSize = 1 << 20; // 1MiB
         private long slidingWindowUpperLimit = 1 << 29; // 512MiB
