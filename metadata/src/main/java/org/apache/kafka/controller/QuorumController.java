@@ -770,6 +770,10 @@ public final class QuorumController implements Controller {
         return snapshotRegistry;
     }
 
+    public StreamControlManager streamControlManager() {
+        return streamControlManager;
+    }
+
     public NodeControlManager nodeControlManager() {
         return nodeControlManager;
     }
