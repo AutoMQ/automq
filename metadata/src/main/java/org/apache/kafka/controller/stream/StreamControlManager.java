@@ -1007,6 +1007,8 @@ public class StreamControlManager {
         NodeRuntimeMetadata nodeRuntimeMetadata = this.nodesMetadata.get(nodeId);
         if (nodeRuntimeMetadata == null) {
             // create a new node metadata if absent
+            log.info("[GetOpeningStreams]: create new node metadata. nodeId={}, nodeEpoch={}, failoverMode={}",
+                nodeId, nodeEpoch, failoverMode);
             records.add(new ApiMessageAndVersion(
                 new NodeWALMetadataRecord().setNodeId(nodeId).setNodeEpoch(nodeEpoch).setFailoverMode(failoverMode),
                 (short) 0));
@@ -1016,12 +1018,15 @@ public class StreamControlManager {
         if (nodeRuntimeMetadata != null && nodeEpoch < nodeRuntimeMetadata.getNodeEpoch()) {
             // node epoch has been expired
             resp.setErrorCode(Errors.NODE_EPOCH_EXPIRED.code());
-            log.warn("[GetOpeningStreams]: expired node epoch. nodeId={}, nodeEpoch={}", nodeId, nodeEpoch);
+            log.warn("[GetOpeningStreams]: expired node epoch. nodeId={}, nodeEpoch={}, requestNodeEpoch={}",
+                nodeId, nodeRuntimeMetadata.getNodeEpoch(), nodeEpoch);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
         if (nodeRuntimeMetadata != null) {
             // update node epoch
+            log.info("[GetOpeningStreams]: update node epoch. nodeId={}, oldNodeEpoch={}, newNodeEpoch={}, failoverMode={}",
+                nodeId, nodeRuntimeMetadata.getNodeEpoch(), nodeEpoch, failoverMode);
             records.add(new ApiMessageAndVersion(
                 new NodeWALMetadataRecord().setNodeId(nodeId).setNodeEpoch(nodeEpoch).setFailoverMode(failoverMode),
                 (short) 0));

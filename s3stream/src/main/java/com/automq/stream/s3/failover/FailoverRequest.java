@@ -13,6 +13,7 @@ package com.automq.stream.s3.failover;
 
 public class FailoverRequest {
     private int nodeId;
+    private long nodeEpoch;
     private String volumeId;
     private String device;
 
@@ -22,6 +23,14 @@ public class FailoverRequest {
 
     public void setNodeId(int nodeId) {
         this.nodeId = nodeId;
+    }
+
+    public long getNodeEpoch() {
+        return nodeEpoch;
+    }
+
+    public void setNodeEpoch(long nodeEpoch) {
+        this.nodeEpoch = nodeEpoch;
     }
 
     public String getVolumeId() {
@@ -44,6 +53,7 @@ public class FailoverRequest {
     public String toString() {
         return "FailoverRequest{" +
             "nodeId=" + nodeId +
+            ", nodeEpoch=" + nodeEpoch +
             ", volumeId='" + volumeId + '\'' +
             ", device='" + device + '\'' +
             '}';
