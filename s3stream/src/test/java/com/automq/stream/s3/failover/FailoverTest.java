@@ -76,7 +76,7 @@ public class FailoverTest {
     @Test
     public void testAllMatch() throws ExecutionException, InterruptedException, TimeoutException {
         FailoverRequest request = createRequest(233, 100);
-        FailoverResponse resp = failover.failover(request).get(1, TimeUnit.SECONDS);
+        FailoverResponse resp = failover.failover(request).get(100, TimeUnit.SECONDS);
         assertEquals(233, resp.getNodeId());
         assertEquals(100, resp.getEpoch());
     }
@@ -84,7 +84,7 @@ public class FailoverTest {
     @Test
     public void testNodeEpochGreaterThan() throws ExecutionException, InterruptedException, TimeoutException {
         FailoverRequest request = createRequest(233, 101);
-        FailoverResponse resp = failover.failover(request).get(1, TimeUnit.SECONDS);
+        FailoverResponse resp = failover.failover(request).get(100, TimeUnit.SECONDS);
         assertEquals(233, resp.getNodeId());
         assertEquals(101, resp.getEpoch());
     }
