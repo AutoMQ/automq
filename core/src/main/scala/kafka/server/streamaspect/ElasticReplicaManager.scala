@@ -1429,7 +1429,11 @@ class ElasticReplicaManager(
   }
 
   def setReplicateFetcherManager(replicateManager: ReplicateFetcherManager): Unit = {
-    this.replicateFetcherManager = Some(replicateManager)
+    if (replicateManager == null) {
+      replicateFetcherManager = None
+    } else {
+      replicateFetcherManager = Some(replicateManager)
+    }
   }
 
 }
