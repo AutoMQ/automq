@@ -48,7 +48,7 @@ public class MetadataImageNode implements MetadataNode {
         children.put(ConfigurationsImageNode.NAME, image -> new ConfigurationsImageNode(image.configs()));
         children.put(ClientQuotasImageNode.NAME, image -> new ClientQuotasImageNode(image.clientQuotas()));
         children.put(ProducerIdsImageNode.NAME, image -> new ProducerIdsImageNode(image.producerIds()));
-        children.put(AclsImageNode.NAME, image -> new AclsImageByIdNode(image.acls()));
+        children.put(AclsImageNode.NAME, image -> new AclsImageNode(image.acls()));
         children.put(ScramImageNode.NAME, image -> new ScramImageNode(image.scram()));
         children.put(DelegationTokenImageNode.NAME, image -> new DelegationTokenImageNode(image.delegationTokens()));
         CHILDREN = Collections.unmodifiableMap(children);
