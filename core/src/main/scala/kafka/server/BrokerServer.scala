@@ -360,6 +360,10 @@ class BrokerServer(
 
       groupCoordinator = createGroupCoordinator()
 
+      // AutoMQ injection start
+      groupCoordinator = createGroupCoordinatorWrapper(groupCoordinator)
+      // AutoMQ injection end
+
       val producerIdManagerSupplier = () => ProducerIdManager.rpc(
         config.brokerId,
         time,
@@ -639,6 +643,10 @@ class BrokerServer(
         metrics
       )
     }
+  }
+
+  protected def createGroupCoordinatorWrapper(groupCoordinator: GroupCoordinator): GroupCoordinator = {
+    groupCoordinator
   }
 
   protected def createRemoteLogManager(): Option[RemoteLogManager] = {

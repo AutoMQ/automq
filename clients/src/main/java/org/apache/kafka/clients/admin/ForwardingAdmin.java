@@ -314,5 +314,11 @@ public class ForwardingAdmin implements Admin {
     public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
         return delegate.getNodes(nodeIdList, options);
     }
+
+    @Override
+    public UpdateGroupResult updateGroup(String groupId, UpdateGroupSpec groupSpec, UpdateGroupOptions options) {
+        return delegate.updateGroup(groupId, groupSpec, options);
+    }
+
     // AutoMQ inject end
 }
