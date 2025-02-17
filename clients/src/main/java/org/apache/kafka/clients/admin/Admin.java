@@ -1729,6 +1729,16 @@ public interface Admin extends AutoCloseable {
      * @return {@link GetNodesResult}
      */
     GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options);
+
+    /**
+     * Update consumer group
+     *
+     * @param groupId group id
+     * @param groupSpec {@link UpdateGroupSpec}
+     * @param options {@link UpdateGroupOptions}
+     * @return {@link UpdateGroupResult}
+     */
+    UpdateGroupResult updateGroup(String groupId, UpdateGroupSpec groupSpec, UpdateGroupOptions options);
     // AutoMQ inject end
 
     /**

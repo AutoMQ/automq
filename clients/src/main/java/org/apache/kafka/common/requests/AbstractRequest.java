@@ -25,6 +25,7 @@ import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.protocol.SendBuilder;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
+import org.apache.kafka.common.requests.s3.AutomqUpdateGroupRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
 import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectRequest;
@@ -379,6 +380,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return GetNextNodeIdRequest.parse(buffer, apiVersion);
             case DESCRIBE_STREAMS:
                 return DescribeStreamsRequest.parse(buffer, apiVersion);
+            case AUTOMQ_UPDATE_GROUP:
+                return AutomqUpdateGroupRequest.parse(buffer, apiVersion);
             // AutoMQ for Kafka inject end
 
             case SHARE_GROUP_HEARTBEAT:

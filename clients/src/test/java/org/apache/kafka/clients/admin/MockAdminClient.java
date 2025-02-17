@@ -1444,6 +1444,12 @@ public class MockAdminClient extends AdminClient {
     public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
         throw new UnsupportedOperationException();
     }
+
+    @Override
+    public UpdateGroupResult updateGroup(String groupId, UpdateGroupSpec groupSpec, UpdateGroupOptions options) {
+        throw new UnsupportedOperationException();
+    }
+
     // AutoMQ inject end
 
 }
