@@ -12,6 +12,7 @@
 package org.apache.kafka.tools.automq.perf;
 
 import org.apache.kafka.common.utils.Exit;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
 import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
@@ -24,9 +25,11 @@ import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.internal.HelpScreenException;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -38,6 +41,7 @@ import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.
 
 public class PerfConfig {
     public final String bootstrapServer;
+    public final Properties commonConfigs;
     public final Map<String, String> adminConfigs;
     public final Map<String, String> topicConfigs;
     public final Map<String, String> producerConfigs;
@@ -78,6 +82,7 @@ public class PerfConfig {
         assert ns != null;
 
         bootstrapServer = ns.getString("bootstrapServer");
+        commonConfigs = ns.getString("commonConfigFile") == null ? new Properties() : loadProperties(ns.getString("commonConfigFile"));
         adminConfigs = parseConfigs(ns.getList("adminConfigs"));
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
@@ -120,6 +125,11 @@ public class PerfConfig {
             .dest("bootstrapServer")
             .metavar("BOOTSTRAP_SERVER")
             .help("The AutoMQ bootstrap server.");
+        parser.addArgument("-F", "--common-config-file")
+            .type(String.class)
+            .dest("commonConfigFile")
+            .metavar("COMMON_CONFIG_FILE")
+            .help("The property file containing common configurations to be passed to all clients —— producer, consumer, and admin.");
         parser.addArgument("-A", "--admin-configs")
             .nargs("*")
             .type(String.class)
@@ -293,6 +303,14 @@ public class PerfConfig {
             consumersPerGroup,
             consumerConfigs
         );
+    }
+
+    private Properties loadProperties(String filename) {
+        try {
+            return Utils.loadProps(filename);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private Map<String, String> parseConfigs(List<String> configs) {
