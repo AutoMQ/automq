@@ -38,7 +38,7 @@ import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.
 
 public class PerfConfig {
     public final String bootstrapServer;
-    public final Map<String, String> commonConfigs;
+    public final Map<String, String> adminConfigs;
     public final Map<String, String> topicConfigs;
     public final Map<String, String> producerConfigs;
     public final Map<String, String> consumerConfigs;
@@ -78,7 +78,7 @@ public class PerfConfig {
         assert ns != null;
 
         bootstrapServer = ns.getString("bootstrapServer");
-        commonConfigs = parseConfigs(ns.getList("commonConfigs"));
+        adminConfigs = parseConfigs(ns.getList("adminConfigs"));
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
@@ -120,12 +120,12 @@ public class PerfConfig {
             .dest("bootstrapServer")
             .metavar("BOOTSTRAP_SERVER")
             .help("The AutoMQ bootstrap server.");
-        parser.addArgument("-A", "--common-configs")
+        parser.addArgument("-A", "--admin-configs")
             .nargs("*")
             .type(String.class)
-            .dest("commonConfigs")
-            .metavar("COMMON_CONFIG")
-            .help("The common configurations.");
+            .dest("adminConfigs")
+            .metavar("ADMIN_CONFIG")
+            .help("The admin client configurations.");
         parser.addArgument("-T", "--topic-configs")
             .nargs("*")
             .type(String.class)
@@ -266,12 +266,10 @@ public class PerfConfig {
     }
 
     public Map<String, String> adminConfig() {
-        return commonConfigs;
+        return adminConfigs;
     }
 
     public TopicsConfig topicsConfig() {
-        Map<String, String> topicConfigs = new HashMap<>(commonConfigs);
-        topicConfigs.putAll(this.topicConfigs);
         return new TopicsConfig(
             topicPrefix,
             topics,
@@ -281,8 +279,6 @@ public class PerfConfig {
     }
 
     public ProducersConfig producersConfig() {
-        Map<String, String> producerConfigs = new HashMap<>(commonConfigs);
-        producerConfigs.putAll(this.producerConfigs);
         return new ProducersConfig(
             bootstrapServer,
             producersPerTopic,
@@ -291,8 +287,6 @@ public class PerfConfig {
     }
 
     public ConsumersConfig consumersConfig() {
-        Map<String, String> consumerConfigs = new HashMap<>(commonConfigs);
-        consumerConfigs.putAll(this.consumerConfigs);
         return new ConsumersConfig(
             bootstrapServer,
             groupsPerTopic,
