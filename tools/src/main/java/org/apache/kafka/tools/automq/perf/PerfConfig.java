@@ -275,8 +275,11 @@ public class PerfConfig {
         return bootstrapServer;
     }
 
-    public Map<String, String> adminConfig() {
-        return adminConfigs;
+    public Properties adminConfig() {
+        Properties properties = new Properties();
+        properties.putAll(commonConfigs);
+        properties.putAll(adminConfigs);
+        return properties;
     }
 
     public TopicsConfig topicsConfig() {
@@ -289,19 +292,25 @@ public class PerfConfig {
     }
 
     public ProducersConfig producersConfig() {
+        Properties properties = new Properties();
+        properties.putAll(commonConfigs);
+        properties.putAll(producerConfigs);
         return new ProducersConfig(
             bootstrapServer,
             producersPerTopic,
-            producerConfigs
+            properties
         );
     }
 
     public ConsumersConfig consumersConfig() {
+        Properties properties = new Properties();
+        properties.putAll(commonConfigs);
+        properties.putAll(consumerConfigs);
         return new ConsumersConfig(
             bootstrapServer,
             groupsPerTopic,
             consumersPerGroup,
-            consumerConfigs
+            properties
         );
     }
 

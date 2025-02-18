@@ -11,6 +11,7 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import java.util.Properties;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
@@ -49,10 +50,9 @@ public class TopicService implements AutoCloseable {
 
     private final Admin admin;
 
-    public TopicService(String bootstrapServer, Map<String, String> adminConfigs) {
-        Map<String, Object> configs = new HashMap<>(adminConfigs);
-        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
-        this.admin = Admin.create(configs);
+    public TopicService(String bootstrapServer, Properties properties) {
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
+        this.admin = Admin.create(properties);
     }
 
     /**
