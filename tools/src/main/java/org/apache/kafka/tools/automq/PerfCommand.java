@@ -87,7 +87,7 @@ public class PerfCommand implements AutoCloseable {
         this.config = config;
         this.topicService = new TopicService(config.bootstrapServer(), config.adminConfig());
         this.producerService = new ProducerService();
-        this.consumerService = new ConsumerService(config.bootstrapServer());
+        this.consumerService = new ConsumerService(config.bootstrapServer(), config.adminConfig());
     }
 
     private void run() {
