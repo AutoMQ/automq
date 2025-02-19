@@ -163,8 +163,13 @@ public class MultiPartWriter implements Writer {
 
     @Override
     public CompletableFuture<Void> release() {
+        List<CompletableFuture<AbstractObjectStorage.ObjectStorageCompletedPart>> partsToWait = parts;
+        if (objectPart != null) {
+            // skip waiting for pending part
+            partsToWait = partsToWait.subList(0, partsToWait.size() - 1);
+        }
         // wait for all ongoing uploading parts to finish and release pending part
-        return CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])).whenComplete((nil, ex) -> {
+        return CompletableFuture.allOf(partsToWait.toArray(new CompletableFuture[0])).whenComplete((nil, ex) -> {
             if (objectPart != null) {
                 objectPart.release();
             }
