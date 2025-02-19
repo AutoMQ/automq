@@ -66,8 +66,7 @@ public class ConsumerService implements AutoCloseable {
     private final List<Group> groups = new ArrayList<>();
     private final String groupSuffix;
 
-    public ConsumerService(String bootstrapServer) {
-        Properties properties = new Properties();
+    public ConsumerService(String bootstrapServer, Properties properties) {
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
         properties.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) TimeUnit.MINUTES.toMillis(2));
         properties.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, (int) TimeUnit.MINUTES.toMillis(10));
