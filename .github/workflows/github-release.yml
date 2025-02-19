@@ -35,31 +35,31 @@ jobs:
           mkdir -p core/build/distributions/latest
           LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
           if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
-            for file in core/build/distributions/automq-*.tgz; do
-                if [[ ! "$file" =~ site-docs ]]; then
-                    echo "Find latest tgz file: $file"
-                    cp "$file" core/build/distributions/latest/automq-kafka-latest.tgz
-                    break
-                else
-                    echo "Skip and remove site-docs file: $file"
-                    rm "$file"
-                fi
-            done
+              IS_LATEST=true
           fi
+          echo "IS_LATEST=$IS_LATEST" >> $GITHUB_OUTPUT
+          for file in core/build/distributions/automq-*.tgz; do
+              if [[ ! "$file" =~ site-docs ]]; then
+                  if [ "$IS_LATEST" = "true" ]; then
+                      echo "Find latest tgz file: $file"
+                      cp "$file" core/build/distributions/latest/automq-kafka-latest.tgz
+                  fi
+              else
+                  echo "Skip and remove site-docs file: $file"
+                  rm "$file"
+              fi
+          done
 
-      - uses: jakejarvis/s3-sync-action@master
-        name: s3-upload-latest
-        if: ${{ github.repository_owner == 'AutoMQ' }}
+      - uses: tvrcgo/oss-action@master
+        name: upload-latest
+        if: ${{ github.repository_owner == 'AutoMQ' && env.IS_LATEST == 'true' }}
         with:
-          args: --follow-symlinks
-        env:
-          AWS_S3_ENDPOINT: ${{ secrets.UPLOAD_ENDPOINT }}
-          AWS_S3_BUCKET:  ${{ secrets.UPLOAD_BUCKET }}
-          AWS_ACCESS_KEY_ID:  ${{ secrets.UPLOAD_BUCKET_AK }}
-          AWS_SECRET_ACCESS_KEY:  ${{ secrets.UPLOAD_BUCKET_SK }}
-          AWS_REGION: 'cn-hangzhou'
-          SOURCE_DIR: 'core/build/distributions/latest'
-          DEST_DIR: 'community_edition/artifacts'
+          bucket:  ${{ secrets.UPLOAD_BUCKET }}
+          key-id:  ${{ secrets.UPLOAD_BUCKET_AK }}
+          key-secret:  ${{ secrets.UPLOAD_BUCKET_SK }}
+          region: 'oss-cn-hangzhou'
+          assets: |
+            core/build/distributions/latest/automq-kafka-latest.tgz:community_edition/artifacts/automq-kafka-latest.tgz
 
       - name: GitHub Release
         uses: softprops/action-gh-release@v1
