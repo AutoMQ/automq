@@ -33,22 +33,25 @@ jobs:
         run: |
           ./gradlew -Pprefix=automq-${{ github.ref_name }}_ --build-cache --refresh-dependencies clean releaseTarGz
           mkdir -p core/build/distributions/latest
-          for file in core/build/distributions/automq-*.tgz; do
-              if [[ ! "$file" =~ site-docs ]]; then
-                  echo "Find latest tgz file: $file"
-                  cp "$file" core/build/distributions/latest/automq-kafka-latest.tgz
-                  break
-              else
-                  echo "Skip and remove site-docs file: $file"
-                  rm "$file"
-              fi
-          done
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
+            for file in core/build/distributions/automq-*.tgz; do
+                if [[ ! "$file" =~ site-docs ]]; then
+                    echo "Find latest tgz file: $file"
+                    cp "$file" core/build/distributions/latest/automq-kafka-latest.tgz
+                    break
+                else
+                    echo "Skip and remove site-docs file: $file"
+                    rm "$file"
+                fi
+            done
+          fi
 
       - uses: jakejarvis/s3-sync-action@master
         name: s3-upload-latest
         if: ${{ github.repository_owner == 'AutoMQ' }}
         with:
-          args: --follow-symlinks --delete
+          args: --follow-symlinks
         env:
           AWS_S3_ENDPOINT: ${{ secrets.UPLOAD_ENDPOINT }}
           AWS_S3_BUCKET:  ${{ secrets.UPLOAD_BUCKET }}

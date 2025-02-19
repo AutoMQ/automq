@@ -12,7 +12,7 @@ jobs:
     name: Docker Image Release
     strategy:
       matrix:
-        platform: [ "ubuntu-22.04" ]
+        platform: [ "ubuntu-24.04" ]
         jdk: ["17"]
     runs-on: ${{ matrix.platform }}
     permissions:
