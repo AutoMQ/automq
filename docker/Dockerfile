@@ -21,7 +21,7 @@ MAINTAINER AutoMQ for Apache Kafka dev@automq.com
 # Set mirrors
 ARG general_mirror_url=""
 RUN [ -z "${general_mirror_url}" ] || (sed -i "s/deb.debian.org/${general_mirror_url}/g" /etc/apt/sources.list && sed -i "s|security.debian.org/debian-security|${general_mirror_url}/debian-security|g" /etc/apt/sources.list)
-RUN apt update -y && apt install -y vim
+RUN apt-get update -y && apt-get install -y vim
 
 # Do not ask for confirmations when running apt-get, etc.
 ENV DEBIAN_FRONTEND=noninteractive \
