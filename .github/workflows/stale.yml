@@ -44,12 +44,13 @@ jobs:
           operations-per-run: ${{ inputs.operationsPerRun || 100 }}
           days-before-stale: 90
           days-before-close: 30
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
           stale-pr-label: 'stale'
           stale-pr-message: >
             This PR is being marked as stale since it has not had any activity in 90 days. If you
-            would like to keep this PR alive, please ask a committer for review. If the PR has 
+            would like to keep this PR alive, please ask a committer for review. If the PR has
             merge conflicts, please update it with the latest from trunk (or appropriate release branch)
             <p>
             If this PR is no longer valid or desired, please feel free to close it. If no activity
             occurs in the next 30 days, it will be automatically closed.
-          
