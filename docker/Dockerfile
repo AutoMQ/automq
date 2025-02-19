@@ -13,15 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG jdk_version=openjdk:17-bullseye
-FROM $jdk_version
+FROM docker.io/debian:bookworm
+
 
 MAINTAINER AutoMQ for Apache Kafka dev@automq.com
 
-# Set mirrors
-ARG general_mirror_url=""
-RUN [ -z "${general_mirror_url}" ] || (sed -i "s/deb.debian.org/${general_mirror_url}/g" /etc/apt/sources.list && sed -i "s|security.debian.org/debian-security|${general_mirror_url}/debian-security|g" /etc/apt/sources.list)
-RUN apt update && apt install -y vim
+RUN apt-get update && apt-get install -y ca-certificates dnsutils iputils-ping curl wget netcat-openbsd sysstat net-tools htop procps zlib1g vim less openjdk-17-jdk libjemalloc-dev ipset iproute2 && \
+    apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 # Do not ask for confirmations when running apt-get, etc.
 ENV DEBIAN_FRONTEND=noninteractive \
