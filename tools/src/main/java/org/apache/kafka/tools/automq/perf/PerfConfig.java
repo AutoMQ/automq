@@ -42,7 +42,6 @@ import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.
 public class PerfConfig {
     public final String bootstrapServer;
     public final Properties commonConfigs;
-    public final Map<String, String> adminConfigs;
     public final Map<String, String> topicConfigs;
     public final Map<String, String> producerConfigs;
     public final Map<String, String> consumerConfigs;
@@ -83,7 +82,6 @@ public class PerfConfig {
 
         bootstrapServer = ns.getString("bootstrapServer");
         commonConfigs = ns.getString("commonConfigFile") == null ? new Properties() : loadProperties(ns.getString("commonConfigFile"));
-        adminConfigs = parseConfigs(ns.getList("adminConfigs"));
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
@@ -130,12 +128,6 @@ public class PerfConfig {
             .dest("commonConfigFile")
             .metavar("COMMON_CONFIG_FILE")
             .help("The property file containing common configurations to be passed to all clients —— producer, consumer, and admin.");
-        parser.addArgument("-A", "--admin-configs")
-            .nargs("*")
-            .type(String.class)
-            .dest("adminConfigs")
-            .metavar("ADMIN_CONFIG")
-            .help("The admin client configurations.");
         parser.addArgument("-T", "--topic-configs")
             .nargs("*")
             .type(String.class)
@@ -278,7 +270,6 @@ public class PerfConfig {
     public Properties adminConfig() {
         Properties properties = new Properties();
         properties.putAll(commonConfigs);
-        properties.putAll(adminConfigs);
         return properties;
     }
 
