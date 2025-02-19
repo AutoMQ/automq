@@ -50,7 +50,7 @@ jobs:
         with:
           args: --follow-symlinks --delete
         env:
-          AWS_S3_ENDPOINT: 'https://oss-cn-hangzhou.aliyuncs.com'
+          AWS_S3_ENDPOINT: ${{ secrets.UPLOAD_ENDPOINT }}
           AWS_S3_BUCKET:  ${{ secrets.UPLOAD_BUCKET }}
           AWS_ACCESS_KEY_ID:  ${{ secrets.UPLOAD_BUCKET_AK }}
           AWS_SECRET_ACCESS_KEY:  ${{ secrets.UPLOAD_BUCKET_SK }}
