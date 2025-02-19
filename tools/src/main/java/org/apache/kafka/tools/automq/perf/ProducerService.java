@@ -93,7 +93,7 @@ public class ProducerService implements AutoCloseable {
 
     private Producer createProducer(Topic topic, ProducersConfig config, ProducerCallback callback) {
         Properties properties = new Properties();
-        properties.putAll(config.producerConfigs);
+        properties.putAll(config.properties);
         properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
         properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
@@ -239,12 +239,12 @@ public class ProducerService implements AutoCloseable {
     public static class ProducersConfig {
         final String bootstrapServer;
         final int producersPerTopic;
-        final Map<String, String> producerConfigs;
+        final Properties properties;
 
-        public ProducersConfig(String bootstrapServer, int producersPerTopic, Map<String, String> producerConfigs) {
+        public ProducersConfig(String bootstrapServer, int producersPerTopic, Properties properties) {
             this.bootstrapServer = bootstrapServer;
             this.producersPerTopic = producersPerTopic;
-            this.producerConfigs = producerConfigs;
+            this.properties = properties;
         }
     }
 

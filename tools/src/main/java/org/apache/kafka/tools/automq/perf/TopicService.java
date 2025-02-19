@@ -25,10 +25,10 @@ import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -49,10 +49,9 @@ public class TopicService implements AutoCloseable {
 
     private final Admin admin;
 
-    public TopicService(String bootstrapServer, Map<String, String> adminConfigs) {
-        Map<String, Object> configs = new HashMap<>(adminConfigs);
-        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
-        this.admin = Admin.create(configs);
+    public TopicService(String bootstrapServer, Properties properties) {
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
+        this.admin = Admin.create(properties);
     }
 
     /**
