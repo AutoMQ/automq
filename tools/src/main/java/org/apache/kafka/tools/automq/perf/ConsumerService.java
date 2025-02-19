@@ -161,14 +161,14 @@ public class ConsumerService implements AutoCloseable {
         final String bootstrapServer;
         final int groupsPerTopic;
         final int consumersPerGroup;
-        final Map<String, String> consumerConfigs;
+        final Properties properties;
 
         public ConsumersConfig(String bootstrapServer, int groupsPerTopic, int consumersPerGroup,
-            Map<String, String> consumerConfigs) {
+            Properties properties) {
             this.bootstrapServer = bootstrapServer;
             this.groupsPerTopic = groupsPerTopic;
             this.consumersPerGroup = consumersPerGroup;
-            this.consumerConfigs = consumerConfigs;
+            this.properties = properties;
         }
     }
 
@@ -241,7 +241,7 @@ public class ConsumerService implements AutoCloseable {
 
         private Properties toProperties(ConsumersConfig config) {
             Properties properties = new Properties();
-            properties.putAll(config.consumerConfigs);
+            properties.putAll(config.properties);
             properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
             properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
             properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
