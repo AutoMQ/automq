@@ -12,6 +12,7 @@
 package org.apache.kafka.tools.automq.perf;
 
 import org.apache.kafka.common.utils.Exit;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.tools.automq.perf.ConsumerService.ConsumersConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService.ProducersConfig;
 import org.apache.kafka.tools.automq.perf.TopicService.TopicsConfig;
@@ -24,9 +25,11 @@ import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.internal.HelpScreenException;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -38,7 +41,7 @@ import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.
 
 public class PerfConfig {
     public final String bootstrapServer;
-    public final Map<String, String> commonConfigs;
+    public final Properties commonConfigs;
     public final Map<String, String> topicConfigs;
     public final Map<String, String> producerConfigs;
     public final Map<String, String> consumerConfigs;
@@ -78,7 +81,7 @@ public class PerfConfig {
         assert ns != null;
 
         bootstrapServer = ns.getString("bootstrapServer");
-        commonConfigs = parseConfigs(ns.getList("commonConfigs"));
+        commonConfigs = ns.getString("commonConfigFile") == null ? new Properties() : loadProperties(ns.getString("commonConfigFile"));
         topicConfigs = parseConfigs(ns.getList("topicConfigs"));
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
@@ -120,12 +123,11 @@ public class PerfConfig {
             .dest("bootstrapServer")
             .metavar("BOOTSTRAP_SERVER")
             .help("The AutoMQ bootstrap server.");
-        parser.addArgument("-A", "--common-configs")
-            .nargs("*")
+        parser.addArgument("-F", "--common-config-file")
             .type(String.class)
-            .dest("commonConfigs")
-            .metavar("COMMON_CONFIG")
-            .help("The common configurations.");
+            .dest("commonConfigFile")
+            .metavar("COMMON_CONFIG_FILE")
+            .help("The property file containing common configurations to be passed to all clients —— producer, consumer, and admin.");
         parser.addArgument("-T", "--topic-configs")
             .nargs("*")
             .type(String.class)
@@ -265,13 +267,13 @@ public class PerfConfig {
         return bootstrapServer;
     }
 
-    public Map<String, String> adminConfig() {
-        return commonConfigs;
+    public Properties adminConfig() {
+        Properties properties = new Properties();
+        properties.putAll(commonConfigs);
+        return properties;
     }
 
     public TopicsConfig topicsConfig() {
-        Map<String, String> topicConfigs = new HashMap<>(commonConfigs);
-        topicConfigs.putAll(this.topicConfigs);
         return new TopicsConfig(
             topicPrefix,
             topics,
@@ -281,24 +283,34 @@ public class PerfConfig {
     }
 
     public ProducersConfig producersConfig() {
-        Map<String, String> producerConfigs = new HashMap<>(commonConfigs);
-        producerConfigs.putAll(this.producerConfigs);
+        Properties properties = new Properties();
+        properties.putAll(commonConfigs);
+        properties.putAll(producerConfigs);
         return new ProducersConfig(
             bootstrapServer,
             producersPerTopic,
-            producerConfigs
+            properties
         );
     }
 
     public ConsumersConfig consumersConfig() {
-        Map<String, String> consumerConfigs = new HashMap<>(commonConfigs);
-        consumerConfigs.putAll(this.consumerConfigs);
+        Properties properties = new Properties();
+        properties.putAll(commonConfigs);
+        properties.putAll(consumerConfigs);
         return new ConsumersConfig(
             bootstrapServer,
             groupsPerTopic,
             consumersPerGroup,
-            consumerConfigs
+            properties
         );
+    }
+
+    private Properties loadProperties(String filename) {
+        try {
+            return Utils.loadProps(filename);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private Map<String, String> parseConfigs(List<String> configs) {
