@@ -191,6 +191,16 @@ public class DefaultRecordBatch extends AbstractRecordBatch implements MutableRe
     }
 
     @Override
+    public void setProducerId(long producerId) {
+        if (producerId() == producerId) {
+            return;
+        }
+        buffer.putLong(PRODUCER_ID_OFFSET, producerId);
+        long crc = computeChecksum();
+        ByteUtils.writeUnsignedInt(buffer, CRC_OFFSET, crc);
+    }
+
+    @Override
     public short producerEpoch() {
         return buffer.getShort(PRODUCER_EPOCH_OFFSET);
     }
