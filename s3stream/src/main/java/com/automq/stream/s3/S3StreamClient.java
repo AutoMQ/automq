@@ -109,6 +109,7 @@ public class S3StreamClient implements StreamClient {
         this.config = config;
         this.networkInboundBucket = networkInboundBucket;
         this.networkOutboundBucket = networkOutboundBucket;
+        ConfigValidator.validate(config);
         startStreamObjectsCompactions();
     }
 
