@@ -5,6 +5,7 @@ import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
 import com.automq.stream.utils.FutureUtil
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import kafka.automq.kafkalinking.KafkaLinkingManager
+import kafka.automq.PartitionSnapshotsManager
 import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.{ElasticLogManager, PartitionStatusTracker, ReadHint}
@@ -25,6 +26,7 @@ import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.record.{MemoryRecords, PooledRecords, PooledResource}
 import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
+import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqGetPartitionSnapshotResponse}
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
@@ -184,6 +186,14 @@ class ElasticReplicaManager(
   private val partitionLifecycleListeners = new util.ArrayList[PartitionLifecycleListener]()
 
   private var kafkaLinkingManager = Option.empty[KafkaLinkingManager]
+
+  private val partitionSnapshotsManager = new PartitionSnapshotsManager()
+
+  addPartitionLifecycleListener(new PartitionLifecycleListener {
+    override def onOpen(partition: Partition): Unit = partitionSnapshotsManager.onPartitionOpen(partition)
+
+    override def onClose(partition: Partition): Unit = partitionSnapshotsManager.onPartitionClose(partition)
+  })
 
   override def startup(): Unit = {
     super.startup()
@@ -1409,6 +1419,10 @@ class ElasticReplicaManager(
         }
       }
     }
+  }
+
+  def handleGetPartitionSnapshotRequest(request: AutomqGetPartitionSnapshotRequest): AutomqGetPartitionSnapshotResponse = {
+    partitionSnapshotsManager.handle(request)
   }
 
   def addPartitionLifecycleListener(listener: PartitionLifecycleListener): Unit = {

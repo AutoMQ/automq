@@ -2327,5 +2327,24 @@ class Partition(val topicPartition: TopicPartition,
   def withWriteLock[T](fun: => T): T = {
     inWriteLock(leaderIsrUpdateLock)(fun)
   }
+
+  def addLogEventListener(listener: LogEventListener): Unit = {
+    log.get.asInstanceOf[ElasticUnifiedLog].getLocalLog().logSegmentManager.addLogEventListener(listener)
+  }
+
+  def snapshot(): PartitionSnapshot = {
+    inReadLock(leaderIsrUpdateLock) {
+      val snapshot = PartitionSnapshot.builder();
+      val log = this.log.get
+      val localLog = log.asInstanceOf[ElasticUnifiedLog].getLocalLog()
+      snapshot.logMeta(localLog.logSegmentManager.logMeta)
+      snapshot.lastUnstableOffset(log.getFirstUnstableOffsetMetadata().orNull)
+      snapshot.logEndOffset(log.logEndOffsetMetadata)
+      localLog.logSegmentManager.streams().forEach(stream => {
+        snapshot.streamEndOffset(stream.streamId(), stream.confirmOffset())
+      })
+      snapshot.build()
+    }
+  }
   // AutoMQ injection end
 }

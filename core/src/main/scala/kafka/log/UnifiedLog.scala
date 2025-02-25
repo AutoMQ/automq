@@ -1984,6 +1984,10 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     CompletableFuture.completedFuture(read(startOffset, maxLength, isolation, minOneMessage))
   }
 
+  def getFirstUnstableOffsetMetadata(): Option[LogOffsetMetadata] = {
+    firstUnstableOffsetMetadata
+  }
+
 
   // AutoMQ inject end
 
