@@ -24,6 +24,7 @@ import org.apache.kafka.common.protocol.MessageUtil;
 import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.protocol.SendBuilder;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
+import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
 import org.apache.kafka.common.requests.s3.AutomqUpdateGroupRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
@@ -376,6 +377,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return AutomqGetNodesRequest.parse(buffer, apiVersion);
             case AUTOMQ_ZONE_ROUTER:
                 return AutomqZoneRouterRequest.parse(buffer, apiVersion);
+            case AUTOMQ_GET_PARTITION_SNAPSHOT:
+                return AutomqGetPartitionSnapshotRequest.parse(buffer, apiVersion);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdRequest.parse(buffer, apiVersion);
             case DESCRIBE_STREAMS:

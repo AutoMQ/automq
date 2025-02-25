@@ -1098,9 +1098,9 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleListOffsetRequest(request: RequestChannel.Request): Unit = {
     val version = request.header.apiVersion
 
-    val topics = if (version == 0)
+    val topics = if (version == 0) {
       handleListOffsetRequestV0(request)
-    else
+    } else
       handleListOffsetRequestV1AndAbove(request)
 
     requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => new ListOffsetsResponse(new ListOffsetsResponseData()
