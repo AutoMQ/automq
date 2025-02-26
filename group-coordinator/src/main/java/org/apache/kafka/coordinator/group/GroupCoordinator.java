@@ -17,6 +17,8 @@
 package org.apache.kafka.coordinator.group;
 
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.AutomqUpdateGroupRequestData;
+import org.apache.kafka.common.message.AutomqUpdateGroupResponseData;
 import org.apache.kafka.common.message.ConsumerGroupDescribeResponseData;
 import org.apache.kafka.common.message.ConsumerGroupHeartbeatRequestData;
 import org.apache.kafka.common.message.ConsumerGroupHeartbeatResponseData;
@@ -413,4 +415,22 @@ public interface GroupCoordinator {
      * Shutdown the group coordinator.
      */
     void shutdown();
+
+    // AutoMQ injection start
+    /**
+     * Update consumer groups
+     *
+     * @param context           The coordinator request context.
+     * @param request           The AutomqUpdateGroupRequestData data.
+     * @param bufferSupplier    The buffer supplier tight to the request thread.
+     *
+     * @return  A future yielding the response.
+     *          The error code(s) of the response are set to indicate the error(s) occurred during the execution.
+     */
+    CompletableFuture<AutomqUpdateGroupResponseData> updateGroup(
+        RequestContext context,
+        AutomqUpdateGroupRequestData request,
+        BufferSupplier bufferSupplier
+    );
+    // AutoMQ injection end
 }

@@ -21,6 +21,8 @@ import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.NotCoordinatorException;
 import org.apache.kafka.common.internals.Topic;
+import org.apache.kafka.common.message.AutomqUpdateGroupRequestData;
+import org.apache.kafka.common.message.AutomqUpdateGroupResponseData;
 import org.apache.kafka.common.message.ConsumerGroupDescribeResponseData;
 import org.apache.kafka.common.message.ConsumerGroupHeartbeatRequestData;
 import org.apache.kafka.common.message.ConsumerGroupHeartbeatResponseData;
@@ -1116,6 +1118,12 @@ public class GroupCoordinatorService implements GroupCoordinator {
         Utils.closeQuietly(runtime, "coordinator runtime");
         Utils.closeQuietly(groupCoordinatorMetrics, "group coordinator metrics");
         log.info("Shutdown complete.");
+    }
+
+    @Override
+    public CompletableFuture<AutomqUpdateGroupResponseData> updateGroup(RequestContext context,
+        AutomqUpdateGroupRequestData request, BufferSupplier bufferSupplier) {
+        return FutureUtils.failedFuture(new UnsupportedOperationException());
     }
 
     private static boolean isGroupIdNotEmpty(String groupId) {

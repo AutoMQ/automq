@@ -20,7 +20,7 @@ import kafka.common.OffsetAndMetadata
 import kafka.server.{KafkaConfig, ReplicaManager, RequestLocal}
 import kafka.utils.Implicits.MapExtensionMethods
 import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
-import org.apache.kafka.common.message.{ConsumerGroupDescribeResponseData, ConsumerGroupHeartbeatRequestData, ConsumerGroupHeartbeatResponseData, DeleteGroupsResponseData, DescribeGroupsResponseData, HeartbeatRequestData, HeartbeatResponseData, JoinGroupRequestData, JoinGroupResponseData, LeaveGroupRequestData, LeaveGroupResponseData, ListGroupsRequestData, ListGroupsResponseData, OffsetCommitRequestData, OffsetCommitResponseData, OffsetDeleteRequestData, OffsetDeleteResponseData, OffsetFetchRequestData, OffsetFetchResponseData, ShareGroupDescribeResponseData, ShareGroupHeartbeatRequestData, ShareGroupHeartbeatResponseData, SyncGroupRequestData, SyncGroupResponseData, TxnOffsetCommitRequestData, TxnOffsetCommitResponseData}
+import org.apache.kafka.common.message.{AutomqUpdateGroupRequestData, AutomqUpdateGroupResponseData, ConsumerGroupDescribeResponseData, ConsumerGroupHeartbeatRequestData, ConsumerGroupHeartbeatResponseData, DeleteGroupsResponseData, DescribeGroupsResponseData, HeartbeatRequestData, HeartbeatResponseData, JoinGroupRequestData, JoinGroupResponseData, LeaveGroupRequestData, LeaveGroupResponseData, ListGroupsRequestData, ListGroupsResponseData, OffsetCommitRequestData, OffsetCommitResponseData, OffsetDeleteRequestData, OffsetDeleteResponseData, OffsetFetchRequestData, OffsetFetchResponseData, ShareGroupDescribeResponseData, ShareGroupHeartbeatRequestData, ShareGroupHeartbeatResponseData, SyncGroupRequestData, SyncGroupResponseData, TxnOffsetCommitRequestData, TxnOffsetCommitResponseData}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
 import org.apache.kafka.common.record.RecordBatch
@@ -60,8 +60,8 @@ object GroupCoordinatorAdapter {
  * GroupCoordinatorAdapter is a thin wrapper around kafka.coordinator.group.GroupCoordinator
  * that exposes the new org.apache.kafka.coordinator.group.GroupCoordinator interface.
  */
-private[group] class GroupCoordinatorAdapter(
-  private val coordinator: GroupCoordinator,
+class GroupCoordinatorAdapter(
+  val coordinator: GroupCoordinator,
   private val time: Time
 ) extends org.apache.kafka.coordinator.group.GroupCoordinator {
 
@@ -644,5 +644,20 @@ private[group] class GroupCoordinatorAdapter(
     FutureUtils.failedFuture(Errors.UNSUPPORTED_VERSION.exception(
       s"The old group coordinator does not support ${ApiKeys.SHARE_GROUP_DESCRIBE.name} API."
     ))
+  }
+
+  /**
+   * Update consumer groups
+   *
+   * @param context        The coordinator request context.
+   * @param request        The AutomqUpdateGroupRequestData data.
+   * @param bufferSupplier The buffer supplier tight to the request thread.
+   * @return A future yielding the response.
+   *         The error code(s) of the response are set to indicate the error(s) occurred during the execution.
+   */
+  override def updateGroup(context: RequestContext,
+      request: AutomqUpdateGroupRequestData,
+      bufferSupplier: BufferSupplier): CompletableFuture[AutomqUpdateGroupResponseData] = {
+    FutureUtils.failedFuture(new UnsupportedOperationException("Not implemented"))
   }
 }
