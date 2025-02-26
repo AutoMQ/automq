@@ -52,7 +52,7 @@ import scala.math.max
  * used by its callback.  The delayed callback may acquire the group lock
  * since the delayed operation is completed only if the group lock can be acquired.
  */
-private[group] class GroupCoordinator(
+class GroupCoordinator(
   val brokerId: Int,
   val groupConfig: GroupConfig,
   val offsetConfig: OffsetConfig,

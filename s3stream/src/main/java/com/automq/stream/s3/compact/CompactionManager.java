@@ -280,7 +280,7 @@ public class CompactionManager {
         int expectCompleteTime = compactionInterval - 1 /* ahead 1min*/;
         long expectReadBytesPerSec;
         if (expectCompleteTime > 0) {
-            expectReadBytesPerSec = totalSize / expectCompleteTime / 60;
+            expectReadBytesPerSec = Math.max(expectCompleteTime * 60L, totalSize / expectCompleteTime / 60);
             if (expectReadBytesPerSec < MAX_THROTTLE_BYTES_PER_SEC) {
                 compactionBucket = Bucket.builder().addLimit(limit -> limit
                     .capacity(expectReadBytesPerSec)

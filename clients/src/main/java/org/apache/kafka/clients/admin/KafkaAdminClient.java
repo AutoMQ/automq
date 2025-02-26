@@ -56,6 +56,7 @@ import org.apache.kafka.clients.admin.internals.ListConsumerGroupOffsetsHandler;
 import org.apache.kafka.clients.admin.internals.ListOffsetsHandler;
 import org.apache.kafka.clients.admin.internals.ListTransactionsHandler;
 import org.apache.kafka.clients.admin.internals.RemoveMembersFromConsumerGroupHandler;
+import org.apache.kafka.clients.admin.internals.UpdateGroupHandler;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.internals.ConsumerProtocol;
 import org.apache.kafka.common.Cluster;
@@ -4855,6 +4856,14 @@ public class KafkaAdminClient extends AdminClient {
 
         runnable.call(call, now);
         return new GetNodesResult(future);
+    }
+
+    @Override
+    public UpdateGroupResult updateGroup(String groupId, UpdateGroupSpec groupSpec, UpdateGroupOptions options) {
+        SimpleAdminApiFuture<CoordinatorKey, Void> future = UpdateGroupHandler.newFuture(groupId);
+        UpdateGroupHandler handler = new UpdateGroupHandler(groupId, groupSpec, logContext);
+        invokeDriver(handler, future, options.timeoutMs);
+        return new UpdateGroupResult(future.get(CoordinatorKey.byGroupId(groupId)));
     }
 
     private <K, V> void invokeDriver(

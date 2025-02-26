@@ -18,7 +18,7 @@
 package kafka.server
 
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
-import kafka.automq.kafkalinking.ReplicateFetcherManager
+import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.zonerouter.{NoopProduceRouter, ProduceRouter}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
@@ -352,13 +352,17 @@ class BrokerServer(
         addPartitionsToTxnManager = Some(addPartitionsToTxnManager),
         directoryEventHandler = directoryEventHandler
       )
-      this._replicaManager.setReplicateFetcherManager(newReplicateManager())
+      this._replicaManager.setKafkaLinkingManager(newKafkaLinkingManager())
 
       /* start token manager */
       tokenManager = new DelegationTokenManager(config, tokenCache, time)
       tokenManager.startup()
 
       groupCoordinator = createGroupCoordinator()
+
+      // AutoMQ injection start
+      groupCoordinator = createGroupCoordinatorWrapper(groupCoordinator)
+      // AutoMQ injection end
 
       val producerIdManagerSupplier = () => ProducerIdManager.rpc(
         config.brokerId,
@@ -641,6 +645,10 @@ class BrokerServer(
     }
   }
 
+  protected def createGroupCoordinatorWrapper(groupCoordinator: GroupCoordinator): GroupCoordinator = {
+    groupCoordinator
+  }
+
   protected def createRemoteLogManager(): Option[RemoteLogManager] = {
     if (config.remoteLogManagerConfig.isRemoteStorageSystemEnabled()) {
       Some(new RemoteLogManager(config.remoteLogManagerConfig, config.brokerId, config.logDirs.head, clusterId, time,
@@ -829,7 +837,7 @@ class BrokerServer(
     }
   }
 
-  protected def newReplicateManager(): ReplicateFetcherManager = {
+  protected def newKafkaLinkingManager(): KafkaLinkingManager = {
     null
   }
   // AutoMQ inject end
