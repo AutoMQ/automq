@@ -56,6 +56,9 @@ public class PartitionSnapshotsManager {
 
     public void onPartitionClose(Partition partition) {
         snapshotVersions.removeIf(p -> p.partition == partition);
+        synchronized (this) {
+            sessions.values().forEach(s -> s.onPartitionClose(partition));
+        }
     }
 
     public AutomqGetPartitionSnapshotResponse handle(AutomqGetPartitionSnapshotRequest request) {
@@ -123,6 +126,10 @@ public class PartitionSnapshotsManager {
             });
             resp.setTopics(topics);
             return new AutomqGetPartitionSnapshotResponse(resp);
+        }
+
+        public synchronized void onPartitionClose(Partition partition) {
+            synced.remove(partition);
         }
 
         private PartitionSnapshot snapshot(Partition partition, PartitionSnapshotVersion oldVersion,
