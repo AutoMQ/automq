@@ -67,7 +67,7 @@ public class S3StreamClientTest {
         CompletableFuture<StreamMetadata> cf = new CompletableFuture<>();
         when(streamManager.openStream(anyLong(), anyLong(), anyMap())).thenReturn(cf);
 
-        doAnswer(args -> stream).when(client).newStream(any());
+        doAnswer(args -> stream).when(client).newStream(any(), any());
 
         scheduler.schedule(() -> {
             cf.complete(new StreamMetadata(1, 2, 100, 200, StreamState.OPENED));

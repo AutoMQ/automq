@@ -95,4 +95,5 @@ public interface Stream {
      * Destroy stream.
      */
     CompletableFuture<Void> destroy();
+
 }

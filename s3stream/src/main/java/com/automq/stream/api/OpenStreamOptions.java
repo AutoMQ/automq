@@ -12,11 +12,12 @@
 package com.automq.stream.api;
 
 import com.automq.stream.utils.Arguments;
-
 import java.util.HashMap;
 import java.util.Map;
 
 public class OpenStreamOptions {
+    public static final OpenStreamOptions DEFAULT = new OpenStreamOptions();
+
     private WriteMode writeMode = WriteMode.SINGLE;
     private ReadMode readMode = ReadMode.MULTIPLE;
     private long epoch;
@@ -46,7 +47,7 @@ public class OpenStreamOptions {
     }
 
     public enum WriteMode {
-        SINGLE(0), MULTIPLE(1);
+        SINGLE(0), MULTIPLE(1), NONE(2);
 
         final int code;
 
