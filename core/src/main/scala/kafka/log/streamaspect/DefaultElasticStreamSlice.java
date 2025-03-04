@@ -34,10 +34,8 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
      */
     private final long startOffsetInStream;
     private final Stream stream;
-    /**
-     * next relative offset to be appended to this segment.
-     */
-    private long nextOffset;
+    // The relative endOffset of sealed stream slice
+    private long endOffset = Offsets.NOOP_OFFSET;
     private boolean sealed = false;
 
     public DefaultElasticStreamSlice(Stream stream, SliceRange sliceRange) {
@@ -47,15 +45,13 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
             // new stream slice
             this.startOffsetInStream = streamNextOffset;
             sliceRange.start(startOffsetInStream);
-            this.nextOffset = 0L;
         } else if (sliceRange.end() == Offsets.NOOP_OFFSET) {
             // unsealed stream slice
             this.startOffsetInStream = sliceRange.start();
-            this.nextOffset = streamNextOffset - startOffsetInStream;
         } else {
             // sealed stream slice
             this.startOffsetInStream = sliceRange.start();
-            this.nextOffset = sliceRange.end() - startOffsetInStream;
+            this.endOffset = sliceRange.end() - startOffsetInStream;
             this.sealed = true;
         }
     }
@@ -65,7 +61,6 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
         if (sealed) {
             return FutureUtil.failedFuture(new IllegalStateException("stream segment " + this + " is sealed"));
         }
-        nextOffset += recordBatch.count();
         return stream.append(context, recordBatch).thenApply(AppendResultWrapper::new);
     }
 
@@ -78,12 +73,12 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
 
     @Override
     public long nextOffset() {
-        return nextOffset;
+        return endOffset != Offsets.NOOP_OFFSET ? endOffset : (stream.nextOffset() - startOffsetInStream);
     }
 
     @Override
     public long confirmOffset() {
-        return stream.confirmOffset() - startOffsetInStream;
+        return endOffset != Offsets.NOOP_OFFSET ? endOffset : (stream.confirmOffset() - startOffsetInStream);
     }
 
     @Override
@@ -94,7 +89,7 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     @Override
     public SliceRange sliceRange() {
         if (sealed) {
-            return SliceRange.of(startOffsetInStream, startOffsetInStream + nextOffset);
+            return SliceRange.of(startOffsetInStream, startOffsetInStream + endOffset);
         } else {
             return SliceRange.of(startOffsetInStream, Offsets.NOOP_OFFSET);
         }
@@ -102,7 +97,10 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
 
     @Override
     public void seal() {
-        this.sealed = true;
+        if (!sealed) {
+            sealed = true;
+            endOffset = stream.nextOffset();
+        }
     }
 
     @Override
@@ -113,9 +111,9 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     @Override
     public String toString() {
         return "DefaultElasticStreamSlice{" +
-                "startOffsetInStream=" + startOffsetInStream +
-                ", stream=[id=" + stream.streamId() + ", startOffset=" + stream.startOffset() + ", nextOffset=" + stream.nextOffset() + "]" +
-                ", nextOffset=" + nextOffset +
+                ", streamId=" + stream.streamId() +
+                ", slice=" + sliceRange() +
+                ", nextOffset=" + nextOffset() +
                 ", sealed=" + sealed +
                 '}';
     }

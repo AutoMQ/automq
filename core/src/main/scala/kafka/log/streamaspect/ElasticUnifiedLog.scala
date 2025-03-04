@@ -13,6 +13,7 @@ package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
 import com.automq.stream.utils.FutureUtil
+import kafka.cluster.PartitionSnapshot
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
 import kafka.server._
@@ -43,12 +44,11 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     _leaderEpochCache: Option[LeaderEpochFileCache],
     producerStateManager: ProducerStateManager,
     __topicId: Option[Uuid],
-    logOffsetsListener: LogOffsetsListener
+    logOffsetsListener: LogOffsetsListener,
+    snapshotRead: Boolean,
 )
     extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
         _leaderEpochCache, producerStateManager, __topicId, false, false, logOffsetsListener) {
-
-    ElasticUnifiedLog.Logs.put(elasticLog.topicPartition, this)
 
     var confirmOffsetChangeListener: Option[() => Unit] = None
 
@@ -252,6 +252,24 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     def addConfigChangeListener(listener: LogConfigChangeListener): Unit = {
         configChangeListeners.add(listener)
     }
+
+    def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
+        snapshot.firstUnstableOffset(firstUnstableOffsetMetadata.orNull)
+        val localLog = getLocalLog()
+        localLog.snapshot(snapshot)
+    }
+
+    def snapshot(snapshot: PartitionSnapshot): Unit = {
+        val localLog = getLocalLog()
+        localLog.snapshot(snapshot)
+        if (snapshot.firstUnstableOffset() == null) {
+            firstUnstableOffsetMetadata = None
+        } else {
+            firstUnstableOffsetMetadata = Some(snapshot.firstUnstableOffset())
+        }
+
+    }
+
 }
 
 object ElasticUnifiedLog extends Logging {
@@ -278,10 +296,10 @@ object ElasticUnifiedLog extends Logging {
         topicId: Option[Uuid],
         leaderEpoch: Long = 0,
         logOffsetsListener: LogOffsetsListener,
-
         client: Client,
         namespace: String,
         openStreamChecker: OpenStreamChecker,
+        snapshotRead: Boolean = false
     ): ElasticUnifiedLog = {
         val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
         val partitionLogDirFailureChannel = new PartitionLogDirFailureChannel(logDirFailureChannel, dir.getPath);
@@ -290,8 +308,9 @@ object ElasticUnifiedLog extends Logging {
             var localLog: ElasticLog = null
             while(localLog == null) {
                 try {
-                    localLog = ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition, partitionLogDirFailureChannel,
-                        new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs, producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker)
+                    localLog = ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition,
+                        partitionLogDirFailureChannel, new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs,
+                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead)
                 } catch {
                     case e: Throwable =>
                         val cause = FutureUtil.cause(e)
@@ -313,10 +332,16 @@ object ElasticUnifiedLog extends Logging {
                 _leaderEpochCache = leaderEpochFileCache,
                 localLog.producerStateManager,
                 topicId,
-                logOffsetsListener
+                logOffsetsListener,
+                snapshotRead
             )
             val timeCost = System.currentTimeMillis() - start
             info(s"ElasticUnifiedLog $topicPartition opened time cost: $timeCost ms")
+
+            if (!snapshotRead) {
+                ElasticUnifiedLog.Logs.put(elasticUnifiedLog.getLocalLog().topicPartition, elasticUnifiedLog)
+            }
+
             elasticUnifiedLog
         }
     }

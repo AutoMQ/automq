@@ -54,7 +54,7 @@ public class ElasticTransactionIndex extends TransactionIndex {
         this.cache = cache;
         this.cacheId = cache.newCacheId();
         this.path = file.getPath();
-        lastAppend = new LastAppend(stream.nextOffset(), CompletableFuture.completedFuture(null));
+        lastAppend = new LastAppend(CompletableFuture.completedFuture(null));
     }
 
     @Override
@@ -75,7 +75,7 @@ public class ElasticTransactionIndex extends TransactionIndex {
         lastOffset = OptionalLong.of(abortedTxn.lastOffset());
         long position = stream.nextOffset();
         CompletableFuture<?> cf = stream.append(RawPayloadRecordBatch.of(abortedTxn.buffer().duplicate()));
-        lastAppend = new LastAppend(stream.nextOffset(), cf);
+        lastAppend = new LastAppend(cf);
         cache.put(cacheId, position, Unpooled.wrappedBuffer(abortedTxn.buffer()));
     }
 
@@ -160,12 +160,12 @@ public class ElasticTransactionIndex extends TransactionIndex {
     protected Iterable<TransactionIndex.AbortedTxnWithPosition> iterable(Supplier<ByteBuffer> allocate) {
         // await last append complete, usually the abort transaction is not frequent, so it's ok to block here.
         LastAppend lastAppend = this.lastAppend;
-        int endPosition = (int) lastAppend.offset;
         try {
             lastAppend.cf.get();
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
+        int endPosition = (int) stream.confirmOffset();
         PrimitiveRef.IntRef position = PrimitiveRef.ofInt(0);
         Queue<AbortedTxnWithPosition> queue = new ArrayDeque<>();
         return () -> new Iterator<>() {
@@ -218,11 +218,9 @@ public class ElasticTransactionIndex extends TransactionIndex {
     }
 
     static class LastAppend {
-        final long offset;
         final CompletableFuture<?> cf;
 
-        LastAppend(long offset, CompletableFuture<?> cf) {
-            this.offset = offset;
+        LastAppend(CompletableFuture<?> cf) {
             this.cf = cf;
         }
 

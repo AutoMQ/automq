@@ -24,7 +24,7 @@ import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
 import kafka.log.remote.RemoteLogManager
-import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog}
+import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog, OpenHint}
 import kafka.server._
 import kafka.server.checkpoints.OffsetCheckpoints
 import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
@@ -966,7 +966,11 @@ class Partition(val topicPartition: TopicPartition,
 
       if (!ElasticLogManager.enabled()) {
         try {
+          // AutoMQ inject start
+          OpenHint.markReadOnly()
           createLogInAssignedDirectoryId(partitionState, highWatermarkCheckpoints, topicId, targetLogDirectoryId)
+          OpenHint.clear()
+          // AutoMQ inject end
         } catch {
           case e: ZooKeeperClientException =>
             stateChangeLogger.error(s"A ZooKeeper client exception has occurred. makeFollower will be skipping the " +
@@ -2335,15 +2339,17 @@ class Partition(val topicPartition: TopicPartition,
   def snapshot(): PartitionSnapshot = {
     inReadLock(leaderIsrUpdateLock) {
       val snapshot = PartitionSnapshot.builder();
-      val log = this.log.get
-      val localLog = log.asInstanceOf[ElasticUnifiedLog].getLocalLog()
-      snapshot.logMeta(localLog.logSegmentManager.logMeta)
-      snapshot.lastUnstableOffset(log.getFirstUnstableOffsetMetadata().orNull)
-      snapshot.logEndOffset(log.logEndOffsetMetadata)
-      localLog.logSegmentManager.streams().forEach(stream => {
-        snapshot.streamEndOffset(stream.streamId(), stream.confirmOffset())
-      })
+      val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
+      log.snapshot(snapshot)
       snapshot.build()
+    }
+  }
+
+  def snapshot(snapshot: PartitionSnapshot): Unit = {
+    inWriteLock(leaderIsrUpdateLock) {
+      val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
+      log.snapshot(snapshot)
+      handleLeaderConfirmOffsetMove()
     }
   }
   // AutoMQ injection end

@@ -139,7 +139,7 @@ public class PartitionSnapshotsManager {
                 PartitionSnapshot snapshot = new PartitionSnapshot();
                 snapshot.setPartitionIndex(partition.partitionId());
                 kafka.cluster.PartitionSnapshot src = partition.snapshot();
-                snapshot.setLastUnstableOffset(logOffsetMetadata(src.lastUnstableOffset()));
+                snapshot.setLastUnstableOffset(logOffsetMetadata(src.firstUnstableOffset()));
                 snapshot.setLogEndOffset(logOffsetMetadata(src.logEndOffset()));
                 snapshot.setStreamMetadata(src.streamEndOffsets().entrySet()
                     .stream()

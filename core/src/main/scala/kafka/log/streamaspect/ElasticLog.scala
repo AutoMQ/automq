@@ -14,6 +14,7 @@ package kafka.log.streamaspect
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import com.automq.stream.utils.{FutureUtil, Systems}
 import io.netty.buffer.Unpooled
+import kafka.cluster.PartitionSnapshot
 import kafka.log.LocalLog.CleanedFileSuffix
 import kafka.log._
 import kafka.log.streamaspect.ElasticLogFileRecords.{BatchIteratorRecordsAdaptor, PooledMemoryRecords}
@@ -579,6 +580,18 @@ class ElasticLog(val metaStream: MetaStream,
             newSegment
         }
     }
+
+    def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
+        snapshot.logMeta(logSegmentManager.logMeta())
+        snapshot.logEndOffset(logEndOffsetMetadata)
+        logSegmentManager.streams().forEach(stream => {
+            snapshot.streamEndOffset(stream.streamId(), stream.confirmOffset())
+        })
+    }
+
+    def snapshot(snapshot: PartitionSnapshot): Unit = {
+        nextOffsetMetadata = snapshot.logEndOffset()
+    }
 }
 
 object ElasticLog extends Logging {
@@ -623,7 +636,8 @@ object ElasticLog extends Logging {
         producerStateManagerConfig: ProducerStateManagerConfig,
         topicId: Option[Uuid],
         leaderEpoch: Long,
-        openStreamChecker: OpenStreamChecker
+        openStreamChecker: OpenStreamChecker,
+        snapshotRead: Boolean = false
     ): ElasticLog = {
         // TODO: better error mark for elastic log
         logDirFailureChannel.clearOfflineLogDirRecord(dir.getPath)

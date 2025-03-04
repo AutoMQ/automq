@@ -1046,11 +1046,7 @@ class LogManager(logDirs: Seq[File],
    * @throws InconsistentTopicIdException if the topic ID in the log does not match the topic ID provided
    */
   def getOrCreateLog(topicPartition: TopicPartition, isNew: Boolean = false, isFuture: Boolean = false,
-                     topicId: Option[Uuid], targetLogDirectoryId: Option[Uuid] = Option.empty, leaderEpoch: Long = 0
-    // AutoMQ inject start
-    , isReadOnly: Boolean = false,
-    // AutoMQ inject false
-  ): UnifiedLog = {
+                     topicId: Option[Uuid], targetLogDirectoryId: Option[Uuid] = Option.empty, leaderEpoch: Long = 0): UnifiedLog = {
       // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
       // sequentially operate. So it's safe without lock
 //    logCreationOrDeletionLock synchronized {

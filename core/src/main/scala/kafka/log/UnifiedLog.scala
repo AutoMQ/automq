@@ -18,6 +18,7 @@
 package kafka.log
 
 import com.yammer.metrics.core.MetricName
+import kafka.cluster.PartitionSnapshot
 import kafka.common.{OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.LocalLog.nextOption
 import kafka.log.remote.RemoteLogManager
@@ -135,7 +136,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * that this could result in disagreement between replicas depending on when they began replicating the log.
    * In the worst case, the LSO could be seen by a consumer to go backwards.
    */
-  @volatile private var firstUnstableOffsetMetadata: Option[LogOffsetMetadata] = None
+  @volatile protected var firstUnstableOffsetMetadata: Option[LogOffsetMetadata] = None
 
   /* Keep track of the current high watermark in order to ensure that segments containing offsets at or above it are
    * not eligible for deletion. This means that the active segment is only eligible for deletion if the high watermark
@@ -1983,12 +1984,6 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       minOneMessage: Boolean): CompletableFuture[FetchDataInfo] = {
     CompletableFuture.completedFuture(read(startOffset, maxLength, isolation, minOneMessage))
   }
-
-  def getFirstUnstableOffsetMetadata(): Option[LogOffsetMetadata] = {
-    firstUnstableOffsetMetadata
-  }
-
-
   // AutoMQ inject end
 
 }

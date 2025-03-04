@@ -20,14 +20,14 @@ import java.util.Map;
 
 public class PartitionSnapshot {
     private final ElasticLogMeta logMeta;
-    private final LogOffsetMetadata lastUnstableOffset;
+    private final LogOffsetMetadata firstUnstableOffset;
     private final LogOffsetMetadata logEndOffset;
     private final Map<Long, Long> streamEndOffsets;
 
-    public PartitionSnapshot(ElasticLogMeta meta, LogOffsetMetadata lastUnstableOffset, LogOffsetMetadata logEndOffset,
+    public PartitionSnapshot(ElasticLogMeta meta, LogOffsetMetadata firstUnstableOffset, LogOffsetMetadata logEndOffset,
         Map<Long, Long> offsets) {
         this.logMeta = meta;
-        this.lastUnstableOffset = lastUnstableOffset;
+        this.firstUnstableOffset = firstUnstableOffset;
         this.logEndOffset = logEndOffset;
         this.streamEndOffsets = offsets;
     }
@@ -36,8 +36,8 @@ public class PartitionSnapshot {
         return logMeta;
     }
 
-    public LogOffsetMetadata lastUnstableOffset() {
-        return lastUnstableOffset;
+    public LogOffsetMetadata firstUnstableOffset() {
+        return firstUnstableOffset;
     }
 
     public LogOffsetMetadata logEndOffset() {
@@ -54,7 +54,7 @@ public class PartitionSnapshot {
 
     public static class Builder {
         private ElasticLogMeta logMeta;
-        private LogOffsetMetadata lastUnstableOffset;
+        private LogOffsetMetadata firstUnstableOffset;
         private LogOffsetMetadata logEndOffset;
         private final Map<Long, Long> streamEndOffsets = new HashMap<>();
 
@@ -63,8 +63,8 @@ public class PartitionSnapshot {
             return this;
         }
 
-        public Builder lastUnstableOffset(LogOffsetMetadata lastUnstableOffset) {
-            this.lastUnstableOffset = lastUnstableOffset;
+        public Builder firstUnstableOffset(LogOffsetMetadata firstUnstableOffset) {
+            this.firstUnstableOffset = firstUnstableOffset;
             return this;
         }
 
@@ -79,7 +79,7 @@ public class PartitionSnapshot {
         }
 
         public PartitionSnapshot build() {
-            return new PartitionSnapshot(logMeta, lastUnstableOffset, logEndOffset, streamEndOffsets);
+            return new PartitionSnapshot(logMeta, firstUnstableOffset, logEndOffset, streamEndOffsets);
         }
     }
 }
