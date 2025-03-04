@@ -82,11 +82,6 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     }
 
     @Override
-    public long startOffsetInStream() {
-        return startOffsetInStream;
-    }
-
-    @Override
     public SliceRange sliceRange() {
         if (sealed) {
             return SliceRange.of(startOffsetInStream, startOffsetInStream + endOffset);

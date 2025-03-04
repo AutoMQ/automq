@@ -66,12 +66,6 @@ public interface ElasticStreamSlice {
      */
     long confirmOffset();
 
-    /**
-     * Get slice start offset in under stream.
-     *
-     * @return segment start offset in stream.
-     */
-    long startOffsetInStream();
 
     /**
      * Get slice range which is the relative offset range in stream.

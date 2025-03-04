@@ -426,7 +426,7 @@ public class S3Stream implements Stream {
     }
 
     public boolean isReadOnly() {
-        return options.writeMode() == OpenStreamOptions.WriteMode.NONE;
+        return options.readWriteMode() == OpenStreamOptions.ReadWriteMode.SNAPSHOT_READ;
     }
 
     private CompletableFuture<Void> destroy0() {

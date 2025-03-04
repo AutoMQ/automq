@@ -47,7 +47,6 @@ public class ElasticLogSegmentManager {
     private final Map<Long, ElasticLogSegment> inflightCleanedSegments = new HashMap<>();
     private final EventListener innerListener = new EventListener();
     private final List<LogEventListener> logEventListeners = new CopyOnWriteArrayList<>();
-    final AtomicReference<LogOffsetMetadata> offsetUpperBound = new AtomicReference<>();
 
     private final MetaStream metaStream;
     private final ElasticLogStreamManager streamManager;
@@ -82,20 +81,13 @@ public class ElasticLogSegmentManager {
     }
 
     public CompletableFuture<Void> create(long baseOffset, ElasticLogSegment segment) {
-        LogOffsetMetadata offset = new LogOffsetMetadata(baseOffset, baseOffset, 0);
-        while (!offsetUpperBound.compareAndSet(null, offset)) {
-            LOGGER.info("{} try create new segment with offset $baseOffset, wait last segment meta persisted.", logIdent);
-            Threads.sleep(1L);
-        }
         segmentLock.lock();
         try {
             segments.put(baseOffset, segment);
         } finally {
             segmentLock.unlock();
         }
-        return asyncPersistLogMeta().thenAccept(nil -> {
-            offsetUpperBound.set(null);
-        });
+        return asyncPersistLogMeta().thenApply(rst -> null);
     }
 
     public ElasticLogSegment remove(long baseOffset) {
