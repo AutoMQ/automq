@@ -28,8 +28,10 @@
       { "name": "TopicId", "type": "uuid", "versions": "0+", "about": "The topic id", "mapKey": true },
       { "name": "Partitions", "type": "[]PartitionSnapshot", "versions": "0+", "about": "The partition snapshot list", "fields": [
         { "name": "PartitionIndex", "type": "int32", "versions": "0+", "about": "The partition index"},
+        { "name": "LeaderEpoch", "type": "int32", "versions": "0+", "about": "The partition leader epoch"},
+        { "name": "Operation", "type": "int16", "versions": "0+", "about": "The snapshot operation, 0 -> ADD, 1 -> PATCH, 2 -> REMOVE"},
         { "name": "LogMetadata", "type": "LogMetadata", "versions": "0+", "nullableVersions": "0+", "about": "The log metadata" },
-        { "name": "LastUnstableOffset", "type": "LogOffsetMetadata", "versions": "0+", "nullableVersions": "0+", "about": "The partition last unstable offset" },
+        { "name": "FirstUnstableOffset", "type": "LogOffsetMetadata", "versions": "0+", "nullableVersions": "0+", "about": "The partition first unstable offset" },
         { "name": "LogEndOffset", "type": "LogOffsetMetadata", "versions": "0+", "about": "The partition log end offset" },
         { "name": "StreamMetadata", "type": "[]StreamMetadata", "versions": "0+", "fields": [
           { "name": "StreamId", "type": "int64", "versions": "0+", "about": "The streamId" },
@@ -49,7 +51,7 @@
     ]},
     { "name": "LogOffsetMetadata", "versions":  "0+", "fields": [
       { "name": "messageOffset", "type": "int64", "versions": "0+", "about": "The message logic offset" },
-      { "name": "relativePositionInSegment", "type": "int64", "versions": "0+", "about": "The message relative physical offset" }
+      { "name": "relativePositionInSegment", "type": "int32", "versions": "0+", "about": "The message relative physical offset" }
     ]},
     { "name": "SegmentMetadata", "versions": "0+", "fields": [
       { "name": "baseOffset", "versions": "0+", "type": "int64", "about": "The segment base offset" },

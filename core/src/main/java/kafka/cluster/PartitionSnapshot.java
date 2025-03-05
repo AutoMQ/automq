@@ -19,17 +19,23 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class PartitionSnapshot {
+    private final int leaderEpoch;
     private final ElasticLogMeta logMeta;
     private final LogOffsetMetadata firstUnstableOffset;
     private final LogOffsetMetadata logEndOffset;
     private final Map<Long, Long> streamEndOffsets;
 
-    public PartitionSnapshot(ElasticLogMeta meta, LogOffsetMetadata firstUnstableOffset, LogOffsetMetadata logEndOffset,
+    public PartitionSnapshot(int leaderEpoch, ElasticLogMeta meta, LogOffsetMetadata firstUnstableOffset, LogOffsetMetadata logEndOffset,
         Map<Long, Long> offsets) {
+        this.leaderEpoch = leaderEpoch;
         this.logMeta = meta;
         this.firstUnstableOffset = firstUnstableOffset;
         this.logEndOffset = logEndOffset;
         this.streamEndOffsets = offsets;
+    }
+
+    public int leaderEpoch() {
+        return leaderEpoch;
     }
 
     public ElasticLogMeta logMeta() {
@@ -53,10 +59,16 @@ public class PartitionSnapshot {
     }
 
     public static class Builder {
+        private int leaderEpoch;
         private ElasticLogMeta logMeta;
         private LogOffsetMetadata firstUnstableOffset;
         private LogOffsetMetadata logEndOffset;
         private final Map<Long, Long> streamEndOffsets = new HashMap<>();
+
+        public Builder leaderEpoch(int leaderEpoch) {
+            this.leaderEpoch = leaderEpoch;
+            return this;
+        }
 
         public Builder logMeta(ElasticLogMeta meta) {
             this.logMeta = meta;
@@ -79,7 +91,7 @@ public class PartitionSnapshot {
         }
 
         public PartitionSnapshot build() {
-            return new PartitionSnapshot(logMeta, firstUnstableOffset, logEndOffset, streamEndOffsets);
+            return new PartitionSnapshot(leaderEpoch, logMeta, firstUnstableOffset, logEndOffset, streamEndOffsets);
         }
     }
 }

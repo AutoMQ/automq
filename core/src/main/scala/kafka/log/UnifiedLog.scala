@@ -18,7 +18,6 @@
 package kafka.log
 
 import com.yammer.metrics.core.MetricName
-import kafka.cluster.PartitionSnapshot
 import kafka.common.{OffsetsOutOfOrderException, UnexpectedAppendOffsetException}
 import kafka.log.LocalLog.nextOption
 import kafka.log.remote.RemoteLogManager

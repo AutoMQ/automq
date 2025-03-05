@@ -18,7 +18,7 @@
 package kafka.server.metadata
 
 import java.util
-import java.util.{Collections, Optional}
+import java.util.{Collections, Optional, OptionalLong}
 import java.util.concurrent.locks.{ReentrantLock, ReentrantReadWriteLock}
 import scala.collection.{Seq, Set, mutable}
 import scala.jdk.CollectionConverters._
@@ -730,6 +730,10 @@ class ZkMetadataCache(
   }
 
   override def getValue(key: String): ByteBuffer = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def getStreamEndOffset(streamId: Long): OptionalLong = {
     throw new UnsupportedOperationException()
   }
   // AutoMQ inject end

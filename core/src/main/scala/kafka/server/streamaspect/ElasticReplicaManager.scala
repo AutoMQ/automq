@@ -41,7 +41,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent._
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong, AtomicReference}
-import java.util.function.Consumer
+import java.util.function.{BiFunction, Consumer}
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Seq, mutable}
 import scala.compat.java8.OptionConverters
@@ -189,6 +189,8 @@ class ElasticReplicaManager(
 
   private val partitionSnapshotsManager = new PartitionSnapshotsManager()
 
+  private val snapshotReadPartitions = new ConcurrentHashMap[TopicPartition, Partition]()
+
   addPartitionLifecycleListener(new PartitionLifecycleListener {
     override def onOpen(partition: Partition): Unit = partitionSnapshotsManager.onPartitionOpen(partition)
 
@@ -286,7 +288,13 @@ class ElasticReplicaManager(
    * Remove the usage of [[Option]] in [[getPartition]] to avoid allocation
    */
   def getPartitionV2(topicPartition: TopicPartition): HostedPartition = {
-    val partition = allPartitions.get(topicPartition)
+    var partition = allPartitions.get(topicPartition)
+    if (partition == null) {
+      val p = snapshotReadPartitions.get(topicPartition)
+      if (p != null) {
+        partition = HostedPartition.Online(p)
+      }
+    }
     if (null == partition) {
       HostedPartition.None
     } else {
@@ -1427,6 +1435,11 @@ class ElasticReplicaManager(
 
   def addPartitionLifecycleListener(listener: PartitionLifecycleListener): Unit = {
     partitionLifecycleListeners.add(listener)
+  }
+
+  def computeSnapshotReadPartition(topicPartition: TopicPartition,
+    remappingFunction: BiFunction[TopicPartition, Partition, Partition]): Partition = {
+    snapshotReadPartitions.compute(topicPartition, remappingFunction)
   }
 
   private def notifyPartitionOpen(partition: Partition): Unit = {

@@ -13,7 +13,6 @@ package org.apache.kafka.common.requests.s3;
 
 import org.apache.kafka.common.message.AutomqGetPartitionSnapshotResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
-import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
@@ -45,7 +44,7 @@ public class AutomqGetPartitionSnapshotResponse extends AbstractResponse {
     }
 
     @Override
-    public ApiMessage data() {
+    public AutomqGetPartitionSnapshotResponseData data() {
         return data;
     }
 

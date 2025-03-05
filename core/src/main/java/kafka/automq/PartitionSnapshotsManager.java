@@ -43,6 +43,7 @@ import java.util.stream.Collectors;
 
 public class PartitionSnapshotsManager {
     private static final int NOOP_SESSION_ID = 0;
+    // TODO: session expire
     private final Map<Integer, Session> sessions = new HashMap<>();
     private final List<PartitionWithVersion> snapshotVersions = new CopyOnWriteArrayList<>();
 
@@ -102,6 +103,7 @@ public class PartitionSnapshotsManager {
         }
 
         public synchronized AutomqGetPartitionSnapshotResponse snapshotsDelta() {
+            // TODO: add add/patch/remove operation
             AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
             sessionEpoch++;
             resp.setSessionId(sessionId);
@@ -139,7 +141,8 @@ public class PartitionSnapshotsManager {
                 PartitionSnapshot snapshot = new PartitionSnapshot();
                 snapshot.setPartitionIndex(partition.partitionId());
                 kafka.cluster.PartitionSnapshot src = partition.snapshot();
-                snapshot.setLastUnstableOffset(logOffsetMetadata(src.firstUnstableOffset()));
+                snapshot.setLeaderEpoch(src.leaderEpoch());
+                snapshot.setFirstUnstableOffset(logOffsetMetadata(src.firstUnstableOffset()));
                 snapshot.setLogEndOffset(logOffsetMetadata(src.logEndOffset()));
                 snapshot.setStreamMetadata(src.streamEndOffsets().entrySet()
                     .stream()

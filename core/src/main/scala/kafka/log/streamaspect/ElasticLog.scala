@@ -595,8 +595,6 @@ class ElasticLog(val metaStream: MetaStream,
     }
 
     def snapshot(snapshot: PartitionSnapshot): Unit = {
-        nextOffsetMetadata = snapshot.logEndOffset()
-        _confirmOffset.set(snapshot.logEndOffset())
         val logMeta = snapshot.logMeta()
         if (logMeta != null) {
             logMeta.getStreamMap.forEach((name, streamId) => {
@@ -608,6 +606,9 @@ class ElasticLog(val metaStream: MetaStream,
                 segments.add(segment)
             })
         }
+        // TODO: fill segment base offset
+        nextOffsetMetadata = snapshot.logEndOffset()
+        _confirmOffset.set(snapshot.logEndOffset())
     }
 }
 
@@ -682,6 +683,7 @@ object ElasticLog extends Logging {
                 val logStreamManager = new ElasticLogStreamManager(Collections.emptyMap(), client.streamClient(), replicationFactor, leaderEpoch, streamTags, true)
                 val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
                 val segments = new CachedLogSegments(topicPartition)
+                partitionMeta = new ElasticPartitionMeta()
                 return new ElasticLog(null, logStreamManager, streamSliceManager, null, null, partitionMeta, null, dir, config,
                     segments, new LogOffsetMetadata(0), scheduler, time, topicPartition, logDirFailureChannel, 0, leaderEpoch, true)
             }

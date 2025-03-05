@@ -2338,7 +2338,8 @@ class Partition(val topicPartition: TopicPartition,
 
   def snapshot(): PartitionSnapshot = {
     inReadLock(leaderIsrUpdateLock) {
-      val snapshot = PartitionSnapshot.builder();
+      val snapshot = PartitionSnapshot.builder()
+      snapshot.leaderEpoch(leaderEpoch)
       val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
       log.snapshot(snapshot)
       snapshot.build()
@@ -2347,6 +2348,7 @@ class Partition(val topicPartition: TopicPartition,
 
   def snapshot(snapshot: PartitionSnapshot): Unit = {
     inWriteLock(leaderIsrUpdateLock) {
+      leaderEpoch = snapshot.leaderEpoch
       val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
       log.snapshot(snapshot)
       handleLeaderConfirmOffsetMove()

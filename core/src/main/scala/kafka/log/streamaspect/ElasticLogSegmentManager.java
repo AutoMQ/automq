@@ -13,11 +13,9 @@ package kafka.log.streamaspect;
 
 import kafka.cluster.LogEventListener;
 
-import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.apache.kafka.storage.internals.log.LogSegment;
 
 import com.automq.stream.api.Stream;
-import com.automq.stream.utils.Threads;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
@@ -33,7 +31,6 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 

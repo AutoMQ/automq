@@ -17,6 +17,7 @@
 
 package org.apache.kafka.image;
 
+import java.util.OptionalLong;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
@@ -626,6 +627,18 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     public long nextAssignedStreamId() {
         return nextAssignedStreamId;
+    }
+
+    public OptionalLong streamEndOffset(long streamId) {
+        Long endOffset = streamEndOffsets.get(streamId);
+        if (endOffset != null) {
+            return OptionalLong.of(endOffset);
+        }
+        if (streamMetadataMap.containsKey(streamId)) {
+            return OptionalLong.of(0L);
+        } else {
+            return OptionalLong.empty();
+        }
     }
 
     TimelineHashMap<TopicIdPartition, Set<Long>> partition2streams() {

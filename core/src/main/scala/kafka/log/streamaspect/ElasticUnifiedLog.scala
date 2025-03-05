@@ -265,6 +265,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
         if (snapshot.firstUnstableOffset() == null) {
             firstUnstableOffsetMetadata = None
         } else {
+            // TODO: fill the segment base offset
             firstUnstableOffsetMetadata = Some(snapshot.firstUnstableOffset())
         }
 
