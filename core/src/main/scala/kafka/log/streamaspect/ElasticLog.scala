@@ -606,9 +606,11 @@ class ElasticLog(val metaStream: MetaStream,
                 segments.add(segment)
             })
         }
-        // TODO: fill segment base offset
-        nextOffsetMetadata = snapshot.logEndOffset()
-        _confirmOffset.set(snapshot.logEndOffset())
+        var logEndOffset = snapshot.logEndOffset()
+        val segmentBaseOffset = segments.floorSegment(logEndOffset.messageOffset).get().baseOffset()
+        logEndOffset = new LogOffsetMetadata(logEndOffset.messageOffset, segmentBaseOffset, logEndOffset.relativePositionInSegment);
+        nextOffsetMetadata = logEndOffset
+        _confirmOffset.set(logEndOffset)
     }
 }
 

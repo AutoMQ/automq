@@ -265,8 +265,10 @@ class ElasticUnifiedLog(_logStartOffset: Long,
         if (snapshot.firstUnstableOffset() == null) {
             firstUnstableOffsetMetadata = None
         } else {
-            // TODO: fill the segment base offset
-            firstUnstableOffsetMetadata = Some(snapshot.firstUnstableOffset())
+            var offset = snapshot.firstUnstableOffset()
+            val segmentBaseOffset = localLog.segments.floorSegment(offset.messageOffset).get().baseOffset()
+            offset = new LogOffsetMetadata(offset.messageOffset, segmentBaseOffset, offset.relativePositionInSegment)
+            firstUnstableOffsetMetadata = Some(offset)
         }
 
     }

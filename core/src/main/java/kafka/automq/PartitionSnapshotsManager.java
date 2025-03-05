@@ -11,6 +11,9 @@
 
 package kafka.automq;
 
+import java.util.HashSet;
+import java.util.Set;
+import kafka.automq.zonerouter.SnapshotOperation;
 import kafka.cluster.LogEventListener;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionListener;
@@ -30,6 +33,7 @@ import org.apache.kafka.common.message.AutomqGetPartitionSnapshotResponseData.To
 import org.apache.kafka.common.message.AutomqGetPartitionSnapshotResponseData.TopicCollection;
 import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotRequest;
 import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotResponse;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 
 import java.util.ArrayList;
@@ -46,6 +50,11 @@ public class PartitionSnapshotsManager {
     // TODO: session expire
     private final Map<Integer, Session> sessions = new HashMap<>();
     private final List<PartitionWithVersion> snapshotVersions = new CopyOnWriteArrayList<>();
+    private final Time time;
+
+    public PartitionSnapshotsManager(Time time) {
+        this.time = time;
+    }
 
     public void onPartitionOpen(Partition partition) {
         snapshotVersions.add(new PartitionWithVersion(partition, PartitionSnapshotVersion.create()));
@@ -72,6 +81,9 @@ public class PartitionSnapshotsManager {
             if (sessionId == NOOP_SESSION_ID
                 || session == null
                 || (sessionEpoch != session.sessionEpoch())) {
+                if (session != null) {
+                    sessions.remove(sessionId);
+                }
                 sessionId = nextSessionId();
                 session = new Session(sessionId);
                 sessions.put(sessionId, session);
@@ -93,6 +105,8 @@ public class PartitionSnapshotsManager {
         private final int sessionId;
         private int sessionEpoch = 0;
         private final Map<Partition, PartitionSnapshotVersion> synced = new HashMap<>();
+        private final List<Partition> removed = new ArrayList<>();
+        private long lastGetSnapshotsTimestamp = time.milliseconds();
 
         public Session(int sessionId) {
             this.sessionId = sessionId;
@@ -103,12 +117,21 @@ public class PartitionSnapshotsManager {
         }
 
         public synchronized AutomqGetPartitionSnapshotResponse snapshotsDelta() {
-            // TODO: add add/patch/remove operation
             AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
             sessionEpoch++;
             resp.setSessionId(sessionId);
             resp.setSessionEpoch(sessionEpoch);
             Map<Uuid, List<PartitionSnapshot>> topic2partitions = new HashMap<>();
+
+            removed.forEach(partition -> {
+                PartitionSnapshotVersion version = synced.remove(partition);
+                if (version != null) {
+                    List<PartitionSnapshot> partitionSnapshots = topic2partitions.computeIfAbsent(partition.topicId().get(), topic -> new ArrayList<>());
+                    partitionSnapshots.add(snapshot(partition, version, null));
+                }
+            });
+            removed.clear();
+
             snapshotVersions.forEach(p -> {
                 PartitionSnapshotVersion oldVersion = synced.get(p.partition);
                 if (!Objects.equals(p.version, oldVersion)) {
@@ -127,21 +150,36 @@ public class PartitionSnapshotsManager {
                 topics.add(topic);
             });
             resp.setTopics(topics);
+            lastGetSnapshotsTimestamp = time.milliseconds();
             return new AutomqGetPartitionSnapshotResponse(resp);
         }
 
         public synchronized void onPartitionClose(Partition partition) {
-            synced.remove(partition);
+            removed.add(partition);
+        }
+
+        public synchronized boolean expired() {
+            return time.milliseconds() - lastGetSnapshotsTimestamp > 60000;
         }
 
         private PartitionSnapshot snapshot(Partition partition, PartitionSnapshotVersion oldVersion,
             PartitionSnapshotVersion newVersion) {
+            if (newVersion == null) {
+                // partition is closed
+                PartitionSnapshot snapshot = new PartitionSnapshot();
+                snapshot.setPartitionIndex(partition.partitionId());
+                snapshot.setLeaderEpoch(partition.getLeaderEpoch());
+                snapshot.setOperation(SnapshotOperation.REMOVE.code());
+                return snapshot;
+            }
             return partition.withReadLock(() -> {
                 boolean includeSegments = oldVersion == null || oldVersion.segmentsVersion() < newVersion.segmentsVersion();
                 PartitionSnapshot snapshot = new PartitionSnapshot();
                 snapshot.setPartitionIndex(partition.partitionId());
                 kafka.cluster.PartitionSnapshot src = partition.snapshot();
                 snapshot.setLeaderEpoch(src.leaderEpoch());
+                SnapshotOperation operation = oldVersion == null ? SnapshotOperation.ADD : SnapshotOperation.PATCH;
+                snapshot.setOperation(operation.code());
                 snapshot.setFirstUnstableOffset(logOffsetMetadata(src.firstUnstableOffset()));
                 snapshot.setLogEndOffset(logOffsetMetadata(src.logEndOffset()));
                 snapshot.setStreamMetadata(src.streamEndOffsets().entrySet()
