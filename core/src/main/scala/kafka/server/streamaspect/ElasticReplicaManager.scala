@@ -8,7 +8,7 @@ import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.PartitionSnapshotsManager
 import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
-import kafka.log.streamaspect.{ElasticLogManager, PartitionStatusTracker, ReadHint}
+import kafka.log.streamaspect.{ElasticLogManager, OpenHint, PartitionStatusTracker, ReadHint}
 import kafka.log.{LogManager, UnifiedLog}
 import kafka.server.Limiter.Handler
 import kafka.server.QuotaFactory.QuotaManagers
@@ -187,7 +187,7 @@ class ElasticReplicaManager(
 
   private var kafkaLinkingManager = Option.empty[KafkaLinkingManager]
 
-  private val partitionSnapshotsManager = new PartitionSnapshotsManager()
+  private val partitionSnapshotsManager = new PartitionSnapshotsManager(Time.SYSTEM)
 
   private val snapshotReadPartitions = new ConcurrentHashMap[TopicPartition, Partition]()
 
@@ -315,6 +315,20 @@ class ElasticReplicaManager(
         throw Errors.NOT_LEADER_OR_FOLLOWER.exception(s"Error while fetching partition state for $topicPartition")
       case HostedPartition.None =>
         throw Errors.UNKNOWN_TOPIC_OR_PARTITION.exception(s"Error while fetching partition state for $topicPartition")
+    }
+  }
+
+  override def getPartition(topicPartition: TopicPartition): HostedPartition = {
+    val partition = allPartitions.get(topicPartition)
+    if (partition == null) {
+      val p = snapshotReadPartitions.get(topicPartition)
+      if (p != null) {
+        HostedPartition.Online(p)
+      } else {
+        HostedPartition.None
+      }
+    } else {
+      partition
     }
   }
 
@@ -999,6 +1013,7 @@ class ElasticReplicaManager(
         val partition = Partition(tp, time, this)
         createHook.accept(partition)
         allPartitions.put(tp, HostedPartition.Online(partition))
+        notifyPartitionOpen(partition)
         Some(partition, true)
     }
   }
@@ -1227,7 +1242,6 @@ class ElasticReplicaManager(
         val state = info.partition.toLeaderAndIsrPartitionState(tp, true)
         val partitionAssignedDirectoryId = directoryIds.find(_._1.topicPartition() == tp).map(_._2)
         partition.makeLeader(state, offsetCheckpoints, Some(info.topicId), partitionAssignedDirectoryId)
-        notifyPartitionOpen(partition)
       }).foreach { case (partition, _) =>
         try {
           changedPartitions.add(partition)
@@ -1440,6 +1454,15 @@ class ElasticReplicaManager(
   def computeSnapshotReadPartition(topicPartition: TopicPartition,
     remappingFunction: BiFunction[TopicPartition, Partition, Partition]): Partition = {
     snapshotReadPartitions.compute(topicPartition, remappingFunction)
+  }
+
+  def newSnapshotReadPartition(topicIdPartition: TopicIdPartition): Partition = {
+    OpenHint.markSnapshotRead()
+    val partition = Partition.apply(topicIdPartition, time, this)
+    partition.leaderReplicaIdOpt = Some(localBrokerId)
+    partition.createLogIfNotExists(true, false, new LazyOffsetCheckpoints(highWatermarkCheckpoints), partition.topicId, Option.empty)
+    OpenHint.clear()
+    partition
   }
 
   private def notifyPartitionOpen(partition: Partition): Unit = {

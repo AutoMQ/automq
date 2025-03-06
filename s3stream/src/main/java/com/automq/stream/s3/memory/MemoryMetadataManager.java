@@ -26,6 +26,7 @@ import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.streams.StreamCloseHook;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.streams.StreamMetadataListener;
 
 import org.apache.commons.lang3.tuple.Pair;
 
@@ -248,6 +249,11 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds) {
         return CompletableFuture.completedFuture(streamIds.stream().map(streams::get).filter(Objects::nonNull).collect(Collectors.toList()));
+    }
+
+    @Override
+    public StreamMetadataListener.Handle addMetadataListener(long streamId, StreamMetadataListener listener) {
+        throw new UnsupportedOperationException();
     }
 
     @Override

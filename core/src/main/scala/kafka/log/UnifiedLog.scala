@@ -142,7 +142,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * equals the log end offset (which may never happen for a partition under consistent load). This is needed to
    * prevent the log start offset (which is exposed in fetch responses) from getting ahead of the high watermark.
    */
-  @volatile private var highWatermarkMetadata: LogOffsetMetadata = new LogOffsetMetadata(logStartOffset)
+  @volatile protected var highWatermarkMetadata: LogOffsetMetadata = new LogOffsetMetadata(logStartOffset)
 
   @volatile var partitionMetadataFile: Option[PartitionMetadataFile] = None
 

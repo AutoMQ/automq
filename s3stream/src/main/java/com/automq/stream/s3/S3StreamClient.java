@@ -22,6 +22,7 @@ import com.automq.stream.s3.compact.StreamObjectCompactor;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
@@ -162,16 +163,22 @@ public class S3StreamClient implements StreamClient {
         }, compactionJitterDelay, 1, TimeUnit.MINUTES);
     }
 
-    private CompletableFuture<Stream> openStream0(long streamId, long epoch, Map<String, String> tags, OpenStreamOptions options) {
+    private CompletableFuture<Stream> openStream0(long streamId, long epoch, Map<String, String> tags,
+        OpenStreamOptions options) {
         return runInLock(() -> {
             TimerUtil timerUtil = new TimerUtil();
-            CompletableFuture<Stream> cf = streamManager.openStream(streamId, epoch, tags).
-                thenApply(metadata -> {
-                    StreamWrapper stream = new StreamWrapper(newStream(metadata, options));
-                    runInLock(() -> openedStreams.put(streamId, stream));
-                    StreamOperationStats.getInstance().openStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                    return stream;
-                });
+            CompletableFuture<StreamMetadata> openStreamCf;
+            if (options.readWriteMode() == OpenStreamOptions.ReadWriteMode.SNAPSHOT_READ) {
+                openStreamCf = CompletableFuture.completedFuture(new StreamMetadata(streamId, epoch, -1, -1, StreamState.OPENED));
+            } else {
+                openStreamCf = streamManager.openStream(streamId, epoch, tags);
+            }
+            CompletableFuture<Stream> cf = openStreamCf.thenApply(metadata -> {
+                StreamWrapper stream = new StreamWrapper(newStream(metadata, options));
+                runInLock(() -> openedStreams.put(streamId, stream));
+                StreamOperationStats.getInstance().openStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                return stream;
+            });
             openingStreams.put(streamId, cf);
             cf.whenComplete((stream, ex) -> runInLock(() -> openingStreams.remove(streamId, cf)));
             return cf;
@@ -363,8 +370,8 @@ public class S3StreamClient implements StreamClient {
             return stream.isClosed();
         }
 
-        public void compact(CompactionHint hint) {
-            if (isClosed() || stream.isReadOnly()) {
+        void compact(CompactionHint hint) {
+            if (isClosed() || stream.snapshotRead()) {
                 // the compaction task may be taking a long time,
                 // so we need to check if the stream is closed before starting the compaction.
                 return;

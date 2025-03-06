@@ -71,9 +71,12 @@ class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChe
       logOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
       client,
       NAMESPACE,
-      openStreamChecker
+      openStreamChecker,
+      OpenHint.isSnapshotRead
     )
-    elasticLogs.put(topicPartition, elasticLog)
+    if (!OpenHint.isSnapshotRead) {
+      elasticLogs.put(topicPartition, elasticLog)
+    }
     elasticLog
   }
 

@@ -596,7 +596,7 @@ class ElasticLog(val metaStream: MetaStream,
 
     def snapshot(snapshot: PartitionSnapshot): Unit = {
         val logMeta = snapshot.logMeta()
-        if (logMeta != null) {
+        if (logMeta != null && !logMeta.getSegmentMetas.isEmpty) {
             logMeta.getStreamMap.forEach((name, streamId) => {
                 streamManager.putStreamIfAbsent(name, streamId)
             })
@@ -686,7 +686,10 @@ object ElasticLog extends Logging {
                 val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
                 val segments = new CachedLogSegments(topicPartition)
                 partitionMeta = new ElasticPartitionMeta()
-                return new ElasticLog(null, logStreamManager, streamSliceManager, null, null, partitionMeta, null, dir, config,
+                val leaderEpochCheckpointMeta = new ElasticLeaderEpochCheckpointMeta(LeaderEpochCheckpointFile.CURRENT_VERSION, new util.ArrayList[EpochEntry]())
+                val producerStateManager = new ElasticProducerStateManager(topicPartition, dir,
+                    maxTransactionTimeoutMs, producerStateManagerConfig, time, new util.TreeMap[java.lang.Long, ByteBuffer](), _ => CompletableFuture.completedFuture(null))
+                return new ElasticLog(null, logStreamManager, streamSliceManager, producerStateManager, null, partitionMeta, leaderEpochCheckpointMeta, dir, config,
                     segments, new LogOffsetMetadata(0), scheduler, time, topicPartition, logDirFailureChannel, 0, leaderEpoch, true)
             }
 

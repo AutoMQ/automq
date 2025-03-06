@@ -270,6 +270,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             offset = new LogOffsetMetadata(offset.messageOffset, segmentBaseOffset, offset.relativePositionInSegment)
             firstUnstableOffsetMetadata = Some(offset)
         }
+        highWatermarkMetadata = localLog.logEndOffsetMetadata
 
     }
 

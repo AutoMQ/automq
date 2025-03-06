@@ -14,18 +14,22 @@ package kafka.log.streamaspect;
 import io.netty.util.concurrent.FastThreadLocal;
 
 public class OpenHint {
-    public static final FastThreadLocal<Boolean> READONLY = new FastThreadLocal<>() {
+    public static final FastThreadLocal<Boolean> SNAPSHOT_READ = new FastThreadLocal<>() {
         @Override
         protected Boolean initialValue() {
             return false;
         }
     };
 
-    public static void markReadOnly() {
-        READONLY.set(true);
+    public static void markSnapshotRead() {
+        SNAPSHOT_READ.set(true);
+    }
+
+    public static boolean isSnapshotRead() {
+        return SNAPSHOT_READ.get();
     }
 
     public static void clear() {
-        READONLY.remove();
+        SNAPSHOT_READ.remove();
     }
 }

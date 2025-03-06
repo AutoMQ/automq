@@ -56,6 +56,7 @@ import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 
@@ -162,6 +163,8 @@ public class DefaultS3Client implements Client {
 
         this.storage.startup();
         this.compactionManager.start();
+
+        Threads.COMMON_SCHEDULER.scheduleAtFixedRate(() -> this.storage.forceUpload(-1), 1, 1, TimeUnit.SECONDS);
         LOGGER.info("S3Client started");
     }
 

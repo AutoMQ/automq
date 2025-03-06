@@ -25,6 +25,7 @@ import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
@@ -34,6 +35,7 @@ import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.GlobalSwitch;
 
@@ -64,7 +66,7 @@ import io.opentelemetry.instrumentation.annotations.WithSpan;
 import static com.automq.stream.utils.FutureUtil.exec;
 import static com.automq.stream.utils.FutureUtil.propagate;
 
-public class S3Stream implements Stream {
+public class S3Stream implements Stream, StreamMetadataListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Stream.class);
     final AtomicLong confirmOffset;
     private final String logIdent;
@@ -88,6 +90,7 @@ public class S3Stream implements Stream {
     private long startOffset;
     private CompletableFuture<Void> lastPendingTrim = CompletableFuture.completedFuture(null);
     private CompletableFuture<Void> closeCf;
+    private StreamMetadataListener.Handle listenerHandle;
 
     public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
         StreamManager streamManager) {
@@ -109,6 +112,9 @@ public class S3Stream implements Stream {
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
         this.options = options;
+        if (snapshotRead()) {
+            listenerHandle = streamManager.addMetadataListener(streamId, this);
+        }
         S3StreamMetricsManager.registerPendingStreamAppendLatencySupplier(streamId, () -> getHeadLatency(this.pendingAppendTimestamps));
         S3StreamMetricsManager.registerPendingStreamFetchLatencySupplier(streamId, () -> getHeadLatency(this.pendingFetchTimestamps));
         NetworkStats.getInstance().createStreamReadBytesStats(streamId);
@@ -138,7 +144,6 @@ public class S3Stream implements Stream {
 
     @Override
     public long startOffset() {
-        // TODO: start offset
         return this.startOffset;
     }
 
@@ -156,7 +161,7 @@ public class S3Stream implements Stream {
     @Override
     @WithSpan
     public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
-        if (isReadOnly()) {
+        if (snapshotRead()) {
             return FutureUtil.failedFuture(new IllegalStateException("Append operation is not support for readonly stream"));
         }
         long startTimeNanos = System.nanoTime();
@@ -305,7 +310,7 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<Void> trim(long newStartOffset) {
-        if (isReadOnly()) {
+        if (snapshotRead()) {
             return FutureUtil.failedFuture(new IllegalStateException("Trim operation is not support for readonly stream"));
         }
         writeLock.lock();
@@ -351,7 +356,8 @@ public class S3Stream implements Stream {
     }
 
     public CompletableFuture<Void> close(boolean force) {
-        if (isReadOnly()) {
+        if (snapshotRead()) {
+            listenerHandle.close();
             return CompletableFuture.completedFuture(null);
         }
         TimerUtil timerUtil = new TimerUtil();
@@ -409,7 +415,7 @@ public class S3Stream implements Stream {
 
     @Override
     public CompletableFuture<Void> destroy() {
-        if (isReadOnly()) {
+        if (snapshotRead()) {
             return FutureUtil.failedFuture(new IllegalStateException("Destroy operation is not support for readonly stream"));
         }
         writeLock.lock();
@@ -428,7 +434,7 @@ public class S3Stream implements Stream {
         }
     }
 
-    public boolean isReadOnly() {
+    public boolean snapshotRead() {
         return options.readWriteMode() == OpenStreamOptions.ReadWriteMode.SNAPSHOT_READ;
     }
 
@@ -451,6 +457,13 @@ public class S3Stream implements Stream {
                 break;
             }
         }
+    }
+
+    @Override
+    public void onNewStreamMetadata(StreamMetadata metadata) {
+        this.startOffset = metadata.startOffset();
+        this.confirmOffset.set(metadata.endOffset());
+        this.nextOffset.set(metadata.endOffset());
     }
 
     static class DefaultFetchResult implements FetchResult {

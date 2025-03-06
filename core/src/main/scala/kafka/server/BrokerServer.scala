@@ -822,6 +822,7 @@ class BrokerServer(
 //    val produceRouter = new NoopProduceRouter(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
     val produceRouter = new ObjectCrossZoneProduceRouter(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, config, null)
     dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setProduceRouter(produceRouter)
+    metadataLoader.installPublishers(util.List.of(produceRouter))
     produceRouter
   }
 

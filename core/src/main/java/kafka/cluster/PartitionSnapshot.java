@@ -54,6 +54,17 @@ public class PartitionSnapshot {
         return streamEndOffsets;
     }
 
+    @Override
+    public String toString() {
+        return "PartitionSnapshot{" +
+            "leaderEpoch=" + leaderEpoch +
+            ", logMeta=" + logMeta +
+            ", firstUnstableOffset=" + firstUnstableOffset +
+            ", logEndOffset=" + logEndOffset +
+            ", streamEndOffsets=" + streamEndOffsets +
+            '}';
+    }
+
     public static Builder builder() {
         return new Builder();
     }

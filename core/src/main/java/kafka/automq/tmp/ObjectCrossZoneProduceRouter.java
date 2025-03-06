@@ -17,7 +17,6 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordValidationStats;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
-import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
@@ -41,7 +40,6 @@ public class ObjectCrossZoneProduceRouter implements ProduceRouter, MetadataPubl
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectCrossZoneProduceRouter.class);
     private final ElasticKafkaApis kafkaApis;
     private final MetadataCache metadataCache;
-    private final AsyncSender asyncSender;
     private KafkaConfig config;
     private final SnapshotReadPartitionsManager manager;
 
@@ -55,11 +53,7 @@ public class ObjectCrossZoneProduceRouter implements ProduceRouter, MetadataPubl
         if (kafkaConfig.rack().isEmpty()) {
             throw new IllegalArgumentException("The node rack should be set when enable cross available zone router");
         }
-        asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), Time.SYSTEM, "router-client-id", new LogContext());
         manager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), Time.SYSTEM, (ElasticReplicaManager) kafkaApis.replicaManager(), metadataCache);
-        if (config.nodeId() == 2) {
-            manager.subscribe(metadataCache.getNode(1).node(kafkaConfig.interBrokerListenerName().value()).get());
-        }
         LOGGER.info("Start object produce router with config={}", bucketURI);
     }
 
@@ -141,6 +135,9 @@ public class ObjectCrossZoneProduceRouter implements ProduceRouter, MetadataPubl
     @Override
     public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage, LoaderManifest manifest) {
         manager.onChange(delta, newImage);
+        if (config.nodeId() == 2) {
+            manager.subscribe(metadataCache.getNode(0).node(config.interBrokerListenerName().value()).get());
+        }
     }
 
 }

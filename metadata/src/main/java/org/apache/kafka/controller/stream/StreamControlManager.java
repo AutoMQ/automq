@@ -649,7 +649,7 @@ public class StreamControlManager {
         List<ApiMessageAndVersion> records = new ArrayList<>(commitResult.records());
         long dataTs = committedTs;
         // mark destroy compacted object
-        if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
+        if (!compactedObjectIds.isEmpty()) {
             ControllerResult<Boolean> destroyResult = this.s3ObjectControlManager.markDestroyObjects(compactedObjectIds);
             if (!destroyResult.response()) {
                 log.error("[CommitStreamSetObject]: failed to mark destroy compacted objects. compactedObjects={}, streamSetObjectId={}, nodeId={}, nodeEpoch={}",
@@ -671,18 +671,6 @@ public class StreamControlManager {
             if (version.isHugeClusterSupported()) {
                 s3StreamSetObject = new S3StreamSetObject(objectId, nodeId, Bytes.EMPTY, orderId, dataTs);
                 records.add(s3StreamSetObject.toRecord(version));
-                // generate S3StreamEndOffsetsRecord to move stream endOffset
-                if (compactedObjectIds.isEmpty()) {
-                    S3StreamEndOffsetsRecord record = new S3StreamEndOffsetsRecord().setEndOffsets(
-                        S3StreamEndOffsetsCodec.encode(
-                            Stream.concat(
-                                    streamRanges.stream().map(s -> new StreamEndOffset(s.streamId(), s.endOffset())),
-                                    streamObjects.stream().map(s -> new StreamEndOffset(s.streamId(), s.endOffset()))
-                                )
-                                .collect(Collectors.toList()))
-                    );
-                    records.add(new ApiMessageAndVersion(record, (short) 0));
-                }
             } else {
                 List<StreamOffsetRange> indexes = streamRanges.stream()
                     .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset()))
@@ -691,8 +679,20 @@ public class StreamControlManager {
                 records.add(s3StreamSetObject.toRecord(version));
             }
         }
+        if (compactedObjectIds.isEmpty() && version.isHugeClusterSupported()) {
+            // generate S3StreamEndOffsetsRecord to move stream endOffset
+            S3StreamEndOffsetsRecord record = new S3StreamEndOffsetsRecord().setEndOffsets(
+                S3StreamEndOffsetsCodec.encode(
+                    Stream.concat(
+                            streamRanges.stream().map(s -> new StreamEndOffset(s.streamId(), s.endOffset())),
+                            streamObjects.stream().map(s -> new StreamEndOffset(s.streamId(), s.endOffset()))
+                        )
+                        .collect(Collectors.toList()))
+            );
+            records.add(new ApiMessageAndVersion(record, (short) 0));
+        }
         // commit stream objects
-        if (streamObjects != null && !streamObjects.isEmpty()) {
+        if (!streamObjects.isEmpty()) {
             // commit objects
             ControllerResult<CommitStreamSetObjectResponseData> ret = generateStreamObject(streamObjects, records, data, resp, committedTs);
             if (ret != null) {
@@ -700,7 +700,7 @@ public class StreamControlManager {
             }
         }
         // generate compacted objects' remove record
-        if (compactedObjectIds != null && !compactedObjectIds.isEmpty()) {
+        if (!compactedObjectIds.isEmpty()) {
             compactedObjectIds.forEach(id -> records.add(new ApiMessageAndVersion(new RemoveStreamSetObjectRecord()
                 .setNodeId(nodeId)
                 .setObjectId(id), (short) 0)));

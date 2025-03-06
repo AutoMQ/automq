@@ -148,7 +148,11 @@ object Partition {
       delayedOperations = delayedOperations,
       metadataCache = replicaManager.metadataCache,
       logManager = replicaManager.logManager,
-      alterIsrManager = replicaManager.alterPartitionManager)
+      alterIsrManager = replicaManager.alterPartitionManager,
+      // AutoMQ inject start
+      snapshotRead = OpenHint.isSnapshotRead
+      // AutoMQ inject end
+    )
   }
 
   def removeMetrics(topicPartition: TopicPartition): Unit = {
@@ -302,7 +306,10 @@ class Partition(val topicPartition: TopicPartition,
                 metadataCache: MetadataCache,
                 logManager: LogManager,
                 alterIsrManager: AlterPartitionManager,
-                @volatile private var _topicId: Option[Uuid] = None // TODO: merge topicPartition and _topicId into TopicIdPartition once TopicId persist in most of the code by KAFKA-16212
+                @volatile private var _topicId: Option[Uuid] = None, // TODO: merge topicPartition and _topicId into TopicIdPartition once TopicId persist in most of the code by KAFKA-16212
+  // AutoMQ inject start
+                snapshotRead: Boolean = false,
+  // AutoMQ inject end
                ) extends Logging {
 
   import Partition.metricsGroup
@@ -531,7 +538,8 @@ class Partition(val topicPartition: TopicPartition,
           elasticUnifiedLog.confirmOffsetChangeListener = Some(() => handleLeaderConfirmOffsetMove())
           // just update LEO to HW since we only have one replica
           val initialHighWatermark = log.logEndOffset
-          log.updateHighWatermark(log.logEndOffset)
+          // the high watermark is the same as the log end offset
+          log.updateHighWatermark(initialHighWatermark)
           info(s"Log loaded for partition $topicPartition with initial high watermark $initialHighWatermark")
         case _ =>
           updateHighWatermark(log)
@@ -967,7 +975,7 @@ class Partition(val topicPartition: TopicPartition,
       if (!ElasticLogManager.enabled()) {
         try {
           // AutoMQ inject start
-          OpenHint.markReadOnly()
+          OpenHint.markSnapshotRead()
           createLogInAssignedDirectoryId(partitionState, highWatermarkCheckpoints, topicId, targetLogDirectoryId)
           OpenHint.clear()
           // AutoMQ inject end
@@ -2348,6 +2356,8 @@ class Partition(val topicPartition: TopicPartition,
 
   def snapshot(snapshot: PartitionSnapshot): Unit = {
     inWriteLock(leaderIsrUpdateLock) {
+      // TODO: trace
+      info(s"apply snapshot partition $topic-$partitionId $snapshot")
       leaderEpoch = snapshot.leaderEpoch
       val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
       log.snapshot(snapshot)

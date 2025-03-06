@@ -55,7 +55,6 @@ public class PartitionSnapshotsManager {
     }
 
     public void onPartitionOpen(Partition partition) {
-        snapshotVersions.add(new PartitionWithVersion(partition, PartitionSnapshotVersion.create()));
         PartitionWithVersion partitionWithVersion = new PartitionWithVersion(partition, PartitionSnapshotVersion.create());
         snapshotVersions.add(partitionWithVersion);
         partition.maybeAddListener(newPartitionListener(partitionWithVersion));

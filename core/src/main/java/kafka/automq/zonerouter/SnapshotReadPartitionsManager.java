@@ -11,11 +11,13 @@
 
 package kafka.automq.zonerouter;
 
+import java.util.concurrent.atomic.AtomicLong;
 import kafka.automq.tmp.AsyncSender;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionSnapshot;
 import kafka.log.streamaspect.ElasticLogMeta;
 import kafka.log.streamaspect.ElasticStreamSegmentMeta;
+import kafka.log.streamaspect.LazyStream;
 import kafka.log.streamaspect.SliceRange;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
@@ -56,6 +58,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+
 public class SnapshotReadPartitionsManager implements MetadataListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadPartitionsManager.class);
     private final KafkaConfig config;
@@ -94,7 +97,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
     }
 
     private synchronized void triggerSubscribersApply() {
-        subscribers.forEach((nodeId, subscriber) -> subscriber.applySnapshot());
+        subscribers.forEach((nodeId, subscriber) -> subscriber.apply());
     }
 
     private void removePartition(TopicIdPartition topicIdPartition, Partition expected) {
@@ -112,7 +115,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
     private Optional<Partition> addPartition(TopicIdPartition topicIdPartition, PartitionSnapshot snapshot) {
         AtomicReference<Partition> ref = new AtomicReference<>();
         Supplier<Partition> newPartition = () -> {
-            Partition partition = Partition.apply(topicIdPartition, time, replicaManager);
+            Partition partition = replicaManager.newSnapshotReadPartition(topicIdPartition);
             ref.set(partition);
             return partition;
         };
@@ -140,14 +143,25 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
         private int sessionEpoch;
         private boolean closed;
         private long lastRequestTime;
+        private long appliedCount = 0;
+        private final AtomicLong applyingCount = new AtomicLong();
 
         public Subscriber(Node node) {
             this.node = node;
+            LOGGER.info("[SNAPSHOT_READ_SUBSCRIBE],node={}", node);
             run();
         }
 
         public void apply() {
-            eventLoop.execute(this::applySnapshot);
+            applyingCount.incrementAndGet();
+            eventLoop.execute(() -> {
+                long applyingCount = this.applyingCount.get();
+                if (this.appliedCount == applyingCount) {
+                    return;
+                }
+                run();
+                this.appliedCount = applyingCount;
+            });
         }
 
         public void close() {
@@ -174,8 +188,13 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
             if (closed) {
                 return;
             }
-            if (snapshotWithOperations.isEmpty()) {
+            if (!snapshotWithOperations.isEmpty()) {
                 applySnapshot();
+                if (snapshotWithOperations.isEmpty()) {
+                    // if apply snapshot finished, schedule next request.
+                    // if not finished, the metadata change will wake up the run.
+                    run();
+                }
             } else {
                 long elapsed = time.milliseconds() - lastRequestTime;
                 if (REQUEST_INTERVAL_MS > elapsed) {
@@ -203,7 +222,10 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
                             return;
                         }
                         Optional<Partition> partition = addPartition(topicIdPartition, snapshotWithOperation.snapshot);
-                        partition.ifPresent(value -> partitions.put(topicIdPartition, value));
+                        partition.ifPresent(p -> {
+                            partitions.put(topicIdPartition, p);
+                            p.snapshot(snapshotWithOperation.snapshot);
+                        });
                         snapshotWithOperations.poll();
                         break;
                     }
@@ -213,7 +235,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
                         }
                         Partition partition = partitions.get(topicIdPartition);
                         if (partition == null) {
-                            throw new IllegalStateException(String.format( "Cannot find partition=%s", topicIdPartition));
+                            throw new IllegalStateException(String.format("Cannot find partition=%s", topicIdPartition));
                         }
                         if (isMetadataUnready(snapshotWithOperation.snapshot.streamEndOffsets())) {
                             return;
@@ -239,6 +261,9 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
         private boolean isMetadataUnready(Map<Long, Long> streamEndOffsets) {
             AtomicBoolean ready = new AtomicBoolean(true);
             streamEndOffsets.forEach((streamId, endOffset) -> {
+                if (streamId == LazyStream.NOOP_STREAM_ID) {
+                    return;
+                }
                 OptionalLong opt = metadataCache.getStreamEndOffset(streamId);
                 if (opt.isEmpty()) {
                     throw new RuntimeException(String.format("Cannot find streamId=%s, the kraft metadata replay delay or the topic is deleted.", streamId));
@@ -256,7 +281,10 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
             AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch);
             AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
             asyncSender.sendRequest(node, builder)
-                .thenAcceptAsync(this::handleResponse, eventLoop)
+                .thenAcceptAsync(rst -> {
+                    handleResponse(rst);
+                    run();
+                }, eventLoop)
                 .exceptionally(ex -> {
                     LOGGER.error("[SNAPSHOT_SUBSCRIBE_ERROR],node={}", node, ex);
                     scheduler.schedule(this::run, 1, TimeUnit.SECONDS);
@@ -297,7 +325,6 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
             }));
             sessionId = resp.sessionId();
             sessionEpoch = resp.sessionEpoch();
-            run0();
         }
 
     }
@@ -316,7 +343,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
     }
 
     static ElasticLogMeta convert(AutomqGetPartitionSnapshotResponseData.LogMetadata src) {
-        if (src == null) {
+        if (src == null || src.segments().isEmpty()) {
+            // the AutomqGetPartitionSnapshotResponseData's default LogMetadata is an empty LogMetadata.
             return null;
         }
         ElasticLogMeta logMeta = new ElasticLogMeta();
