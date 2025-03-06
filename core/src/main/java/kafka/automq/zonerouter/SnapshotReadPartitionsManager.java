@@ -11,20 +11,6 @@
 
 package kafka.automq.zonerouter;
 
-import com.automq.stream.utils.Threads;
-import com.automq.stream.utils.threads.EventLoop;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalLong;
-import java.util.Queue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import kafka.automq.tmp.AsyncSender;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionSnapshot;
@@ -34,6 +20,7 @@ import kafka.log.streamaspect.SliceRange;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
 import kafka.server.streamaspect.ElasticReplicaManager;
+
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicIdPartition;
@@ -49,8 +36,25 @@ import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.loader.MetadataListener;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
+
+import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.threads.EventLoop;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.Queue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class SnapshotReadPartitionsManager implements MetadataListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadPartitionsManager.class);
@@ -97,6 +101,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
         replicaManager.computeSnapshotReadPartition(topicIdPartition.topicPartition(), (tp, current) -> {
             if (current == null || expected == current) {
                 expected.close();
+                LOGGER.info("[SNAPSHOT_READ_REMOVE],{}", topicIdPartition);
                 return null;
             }
             // The expected partition was closed when the current partition put in.
@@ -120,6 +125,9 @@ public class SnapshotReadPartitionsManager implements MetadataListener {
             }
             return current;
         });
+        if (ref.get() != null) {
+            LOGGER.info("[SNAPSHOT_READ_ADD],{}", topicIdPartition);
+        }
         return Optional.ofNullable(ref.get());
     }
 

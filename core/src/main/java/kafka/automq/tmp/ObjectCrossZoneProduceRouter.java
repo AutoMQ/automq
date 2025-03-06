@@ -3,10 +3,12 @@ package kafka.automq.tmp;
 import kafka.automq.zonerouter.ClientIdMetadata;
 import kafka.automq.zonerouter.ClientType;
 import kafka.automq.zonerouter.ProduceRouter;
+import kafka.automq.zonerouter.SnapshotReadPartitionsManager;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
 import kafka.server.RequestLocal;
 import kafka.server.streamaspect.ElasticKafkaApis;
+import kafka.server.streamaspect.ElasticReplicaManager;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -41,6 +43,7 @@ public class ObjectCrossZoneProduceRouter implements ProduceRouter, MetadataPubl
     private final MetadataCache metadataCache;
     private final AsyncSender asyncSender;
     private KafkaConfig config;
+    private final SnapshotReadPartitionsManager manager;
 
     public ObjectCrossZoneProduceRouter(ElasticKafkaApis kafkaApis, MetadataCache metadataCache,
         KafkaConfig kafkaConfig,
@@ -53,10 +56,11 @@ public class ObjectCrossZoneProduceRouter implements ProduceRouter, MetadataPubl
             throw new IllegalArgumentException("The node rack should be set when enable cross available zone router");
         }
         asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), Time.SYSTEM, "router-client-id", new LogContext());
-        LOGGER.info("Start object produce router with config={}", bucketURI);
+        manager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), Time.SYSTEM, (ElasticReplicaManager) kafkaApis.replicaManager(), metadataCache);
         if (config.nodeId() == 2) {
-
+            manager.subscribe(metadataCache.getNode(1).node(kafkaConfig.interBrokerListenerName().value()).get());
         }
+        LOGGER.info("Start object produce router with config={}", bucketURI);
     }
 
     @Override
@@ -136,11 +140,7 @@ public class ObjectCrossZoneProduceRouter implements ProduceRouter, MetadataPubl
 
     @Override
     public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage, LoaderManifest manifest) {
-        // TODO
-        // node 变更和 partition 变更需要重新刷新，
-//        delta.topicsDelta().changedTopic()
-        // 两种方式：主动 set 和被动 get
-        // metadata update 有点复杂
+        manager.onChange(delta, newImage);
     }
 
 }

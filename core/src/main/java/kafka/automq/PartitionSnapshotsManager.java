@@ -11,8 +11,6 @@
 
 package kafka.automq;
 
-import java.util.HashSet;
-import java.util.Set;
 import kafka.automq.zonerouter.SnapshotOperation;
 import kafka.cluster.LogEventListener;
 import kafka.cluster.Partition;

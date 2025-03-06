@@ -19,7 +19,8 @@ package kafka.server
 
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.kafkalinking.KafkaLinkingManager
-import kafka.automq.zonerouter.{NoopProduceRouter, ProduceRouter}
+import kafka.automq.tmp.ObjectCrossZoneProduceRouter
+import kafka.automq.zonerouter.ProduceRouter
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -818,7 +819,8 @@ class BrokerServer(
   }
 
   protected def newProduceRouter(): ProduceRouter = {
-    val produceRouter = new NoopProduceRouter(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
+//    val produceRouter = new NoopProduceRouter(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
+    val produceRouter = new ObjectCrossZoneProduceRouter(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, config, null)
     dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setProduceRouter(produceRouter)
     produceRouter
   }
