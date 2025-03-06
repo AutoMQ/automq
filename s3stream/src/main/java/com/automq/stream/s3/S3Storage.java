@@ -460,6 +460,8 @@ public class S3Storage implements Storage {
             } catch (OverCapacityException e) {
                 // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
                 confirmOffsetCalculator.update();
+                // TODO: Before force upload, check whether there are inflight force upload tasks. If so, skip this force upload.
+                //  Corner Case: Check (by a counter) and maybe call next force upload once the previous force upload task complete.
                 forceUpload(LogCache.MATCH_ALL_STREAMS);
                 if (!fromBackoff) {
                     backoffRecords.offer(request);
