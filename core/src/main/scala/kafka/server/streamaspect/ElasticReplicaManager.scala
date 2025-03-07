@@ -287,7 +287,7 @@ class ElasticReplicaManager(
   /**
    * Remove the usage of [[Option]] in [[getPartition]] to avoid allocation
    */
-  def getPartitionV2(topicPartition: TopicPartition): HostedPartition = {
+  override def getPartition(topicPartition: TopicPartition): HostedPartition = {
     var partition = allPartitions.get(topicPartition)
     if (partition == null) {
       val p = snapshotReadPartitions.get(topicPartition)
@@ -302,11 +302,20 @@ class ElasticReplicaManager(
     }
   }
 
+  def getPartitionWithoutSnapshotRead(topicPartition: TopicPartition): HostedPartition = {
+    val partition = allPartitions.get(topicPartition)
+    if (partition == null) {
+      HostedPartition.None
+    } else {
+      partition
+    }
+  }
+
   /**
    * Remove the usage of [[Either]] in [[getPartitionOrException]] to avoid allocation
    */
   def getPartitionOrExceptionV2(topicPartition: TopicPartition): Partition = {
-    getPartitionV2(topicPartition) match {
+    getPartition(topicPartition) match {
       case HostedPartition.Online(partition) =>
         partition
       case HostedPartition.Offline(partition) =>
@@ -315,20 +324,6 @@ class ElasticReplicaManager(
         throw Errors.NOT_LEADER_OR_FOLLOWER.exception(s"Error while fetching partition state for $topicPartition")
       case HostedPartition.None =>
         throw Errors.UNKNOWN_TOPIC_OR_PARTITION.exception(s"Error while fetching partition state for $topicPartition")
-    }
-  }
-
-  override def getPartition(topicPartition: TopicPartition): HostedPartition = {
-    val partition = allPartitions.get(topicPartition)
-    if (partition == null) {
-      val p = snapshotReadPartitions.get(topicPartition)
-      if (p != null) {
-        HostedPartition.Online(p)
-      } else {
-        HostedPartition.None
-      }
-    } else {
-      partition
     }
   }
 
@@ -970,7 +965,7 @@ class ElasticReplicaManager(
     delta: TopicsDelta,
     topicId: Uuid,
     createHook: Consumer[Partition] = _ => {}): Option[(Partition, Boolean)] = {
-    getPartition(tp) match {
+    getPartitionWithoutSnapshotRead(tp) match {
       case HostedPartition.Offline(offlinePartition) =>
         if (offlinePartition.flatMap(p => p.topicId).contains(topicId)) {
           stateChangeLogger.warn(s"Unable to bring up new local leader $tp " +

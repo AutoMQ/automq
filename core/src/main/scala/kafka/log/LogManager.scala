@@ -963,12 +963,24 @@ class LogManager(logDirs: Seq[File],
     if (isFuture)
       Option(futureLogs.get(topicPartition))
     else {
+      // AutoMQ inject start
       val log = currentLogs.get(topicPartition)
       if (log != null) {
         Option(log)
       } else {
         Option(snapshotReadLogs.get(topicPartition))
       }
+      // AutoMQ inject end
+    }
+  }
+
+  def getLogWithoutFallback(topicPartition: TopicPartition, isFuture: Boolean = false, isSnapshotRead: Boolean = false) = {
+    if (isFuture) {
+      Option(futureLogs.get(topicPartition))
+    } else if (isSnapshotRead) {
+      Option(snapshotReadLogs.get(topicPartition))
+    } else {
+      Option(currentLogs.get(topicPartition))
     }
   }
 
@@ -1060,7 +1072,7 @@ class LogManager(logDirs: Seq[File],
       // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
       // sequentially operate. So it's safe without lock
 //    logCreationOrDeletionLock synchronized {
-      val log = getLog(topicPartition, isFuture).getOrElse {
+      val log = getLogWithoutFallback(topicPartition, isFuture, OpenHint.isSnapshotRead).getOrElse {
         // create the log if it has not already been created in another thread
         val now = time.milliseconds()
 
@@ -1106,7 +1118,7 @@ class LogManager(logDirs: Seq[File],
 
         val config = fetchLogConfig(topicPartition.topic)
         val log = if (ElasticLogManager.enabled()) {
-          ElasticLogManager.getOrCreateLog(logDir, config, scheduler, time, maxTransactionTimeoutMs, producerStateManagerConfig, brokerTopicStats, producerIdExpirationCheckIntervalMs, logDirFailureChannel, topicId, leaderEpoch)
+          ElasticLogManager.createLog(logDir, config, scheduler, time, maxTransactionTimeoutMs, producerStateManagerConfig, brokerTopicStats, producerIdExpirationCheckIntervalMs, logDirFailureChannel, topicId, leaderEpoch)
         } else {
           UnifiedLog(
             dir = logDir,
@@ -1380,8 +1392,12 @@ class LogManager(logDirs: Seq[File],
   }
 
   // AutoMQ for Kafka inject start
-  def removeFromCurrentLogs(topicPartition: TopicPartition): Unit = {
-    removeLogAndMetrics(currentLogs, topicPartition)
+  def removeFromCurrentLogs(topicPartition: TopicPartition, log: ElasticUnifiedLog): Unit = {
+    if (log.snapshotRead) {
+      removeLogAndMetrics(snapshotReadLogs, topicPartition)
+    } else {
+      removeLogAndMetrics(currentLogs, topicPartition)
+    }
   }
   // AutoMQ for Kafka inject end
 

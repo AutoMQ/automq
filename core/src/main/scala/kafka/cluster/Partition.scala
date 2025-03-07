@@ -742,8 +742,12 @@ class Partition(val topicPartition: TopicPartition,
    */
   def close(): Unit = {
     info("Closing partition")
-    logManager.removeFromCurrentLogs(topicPartition)
-    ElasticLogManager.removeLog(topicPartition)
+    log match {
+      case Some(unifiedLog: ElasticUnifiedLog) =>
+        logManager.removeFromCurrentLogs(topicPartition, unifiedLog)
+        ElasticLogManager.removeLog(topicPartition, unifiedLog)
+      case _ =>
+    }
     inWriteLock(leaderIsrUpdateLock) {
       closed = true
     }

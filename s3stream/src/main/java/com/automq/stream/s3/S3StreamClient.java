@@ -173,13 +173,18 @@ public class S3StreamClient implements StreamClient {
             } else {
                 openStreamCf = streamManager.openStream(streamId, epoch, tags);
             }
+            boolean snapshotRead = options.readWriteMode() == OpenStreamOptions.ReadWriteMode.SNAPSHOT_READ;
             CompletableFuture<Stream> cf = openStreamCf.thenApply(metadata -> {
                 StreamWrapper stream = new StreamWrapper(newStream(metadata, options));
-                runInLock(() -> openedStreams.put(streamId, stream));
+                if (!snapshotRead) {
+                    runInLock(() -> openedStreams.put(streamId, stream));
+                }
                 StreamOperationStats.getInstance().openStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 return stream;
             });
-            openingStreams.put(streamId, cf);
+            if (!snapshotRead) {
+                openingStreams.put(streamId, cf);
+            }
             cf.whenComplete((stream, ex) -> runInLock(() -> openingStreams.remove(streamId, cf)));
             return cf;
         });

@@ -35,7 +35,7 @@ class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChe
   this.logIdent = s"[ElasticLogManager] "
   private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
 
-  def getOrCreateLog(dir: File,
+  def createLog(dir: File,
     config: LogConfig,
     scheduler: Scheduler,
     time: Time,
@@ -47,10 +47,10 @@ class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChe
     topicId: Option[Uuid],
     leaderEpoch: Long = 0,
   ): ElasticUnifiedLog = {
+    val snapshotRead = OpenHint.isSnapshotRead
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
-    val log = elasticLogs.get(topicPartition)
-    if (log != null) {
-      return log
+    if (!snapshotRead && elasticLogs.containsKey(topicPartition)) {
+      throw new IllegalStateException(s"Elastic log for $topicPartition already exists")
     }
     var elasticLog: ElasticUnifiedLog = null
     // Only Partition#makeLeader will create a new log, the ReplicaManager#asyncApplyDelta will ensure the same partition
@@ -74,7 +74,7 @@ class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChe
       openStreamChecker,
       OpenHint.isSnapshotRead
     )
-    if (!OpenHint.isSnapshotRead) {
+    if (!snapshotRead) {
       elasticLogs.put(topicPartition, elasticLog)
     }
     elasticLog
@@ -99,11 +99,9 @@ class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChe
 
   /**
    * Remove elastic log in the map.
-   *
-   * @param topicPartition topic partition
    */
-  def removeLog(topicPartition: TopicPartition): Unit = {
-    elasticLogs.remove(topicPartition)
+  def removeLog(topicPartition: TopicPartition, log: ElasticUnifiedLog): Unit = {
+    elasticLogs.remove(topicPartition, log)
   }
 
   def startup(): Unit = {
@@ -157,8 +155,8 @@ object ElasticLogManager {
 
   def enabled(): Boolean = isEnabled
 
-  def removeLog(topicPartition: TopicPartition): Unit = {
-    instance().get.removeLog(topicPartition)
+  def removeLog(topicPartition: TopicPartition, log: ElasticUnifiedLog): Unit = {
+    instance().get.removeLog(topicPartition, log)
   }
 
   def destroyLog(topicPartition: TopicPartition, topicId: Uuid, epoch: Long): Unit = {
@@ -176,7 +174,7 @@ object ElasticLogManager {
   }
 
   // visible for testing
-  def getOrCreateLog(dir: File,
+  def createLog(dir: File,
     config: LogConfig,
     scheduler: Scheduler,
     time: Time,
@@ -187,7 +185,7 @@ object ElasticLogManager {
     logDirFailureChannel: LogDirFailureChannel,
     topicId: Option[Uuid],
     leaderEpoch: Long = 0): ElasticUnifiedLog = {
-    instance().get.getOrCreateLog(
+    instance().get.createLog(
       dir,
       config,
       scheduler,
