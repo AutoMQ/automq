@@ -14,11 +14,9 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.network.ThrottleStrategy;
-
+import io.netty.buffer.ByteBuf;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-
-import io.netty.buffer.ByteBuf;
 
 public interface ObjectStorage {
     long RANGE_READ_TO_END = -1L;
@@ -122,6 +120,7 @@ public interface ObjectStorage {
         private boolean enableFastRetry;
         private boolean retry;
         private int retryCount;
+        private long requestTime;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -148,6 +147,11 @@ public interface ObjectStorage {
 
         public WriteOptions retry(boolean retry) {
             this.retry = retry;
+            return this;
+        }
+
+        public WriteOptions requestTime(long requestTime) {
+            this.requestTime = requestTime;
             return this;
         }
 
@@ -191,6 +195,10 @@ public interface ObjectStorage {
             return retryCount;
         }
 
+        public long requestTime() {
+            return requestTime;
+        }
+
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
@@ -200,6 +208,7 @@ public interface ObjectStorage {
             copy.enableFastRetry = enableFastRetry;
             copy.retry = retry;
             copy.retryCount = retryCount;
+            copy.requestTime = requestTime;
             return copy;
         }
     }
