@@ -56,6 +56,7 @@ import java.util.function.BiFunction;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
@@ -87,6 +88,20 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     private final S3LatencyCalculator s3LatencyCalculator;
     private final Semaphore fastRetryPermit = new Semaphore(MAX_INFLIGHT_FAST_RETRY_COUNT);
+
+    /**
+     * A monitor for successful write requests, in bytes.
+     */
+    private final TrafficMonitor successWriteMonitor = new TrafficMonitor();
+    /**
+     * A monitor for failed write requests (i.e., requests that are throttled), in bytes.
+     */
+    private final TrafficMonitor failedWriteMonitor = new TrafficMonitor();
+    /**
+     * A limiter to control the rate of write requests.
+     * It is used to limit the write traffic when the write requests are throttled.
+     */
+    private final TrafficLimiter writeLimiter;
 
     protected AbstractObjectStorage(
         BucketURI bucketURI,
@@ -134,6 +149,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 1024 * 1024, 2 * 1024 * 1024, 3 * 1024 * 1024, 4 * 1024 * 1024, 5 * 1024 * 1024, 8 * 1024 * 1024,
                 12 * 1024 * 1024, 16 * 1024 * 1024, 32 * 1024 * 1024},
             Duration.ofSeconds(3).toMillis());
+
+        writeLimiter = new TrafficLimiter(scheduler);
     }
 
     public AbstractObjectStorage(BucketURI bucketURI,
@@ -239,6 +256,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         s3LatencyCalculator.record(objectSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, objectSize);
         S3OperationStats.getInstance().putObjectStats(objectSize, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        successWriteMonitor.record(objectSize);
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         }
@@ -302,6 +320,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.PUT_OBJECT);
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
             Throwable cause = strategyAndCause.getRight();
+            if (isThrottleException(cause)) {
+                failedWriteMonitor.record(objectSize);
+            }
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 LOGGER.error("PutObject for object {} fail", path, cause);
                 data.release();
@@ -377,6 +398,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         doUploadPart(options, path, uploadId, partNumber, data).thenAccept(part -> {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, size);
             S3OperationStats.getInstance().uploadPartStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            successWriteMonitor.record(size);
             data.release();
             cf.complete(part);
         }).exceptionally(ex -> {
@@ -384,6 +406,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.UPLOAD_PART);
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
             Throwable cause = strategyAndCause.getRight();
+            if (isThrottleException(cause)) {
+                failedWriteMonitor.record(size);
+            }
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 LOGGER.error("UploadPart for object {}-{} fail", path, partNumber, cause);
                 data.release();
@@ -672,6 +697,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     static int getMaxObjectStorageConcurrency() {
         int cpuCores = Runtime.getRuntime().availableProcessors();
         return Math.max(MIN_CONCURRENCY, Math.min(cpuCores * DEFAULT_CONCURRENCY_PER_CORE, MAX_CONCURRENCY));
+    }
+
+    private static boolean isThrottleException(Throwable ex) {
+        if (ex instanceof S3Exception) {
+            S3Exception s3Ex = (S3Exception) ex;
+            return s3Ex.statusCode() == 429 || s3Ex.statusCode() == 503;
+        }
+        return false;
     }
 
     /**
