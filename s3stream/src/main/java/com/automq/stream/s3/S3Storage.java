@@ -38,10 +38,9 @@ import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import io.netty.buffer.ByteBuf;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -64,6 +63,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -71,10 +71,8 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
-import io.netty.buffer.ByteBuf;
-import io.opentelemetry.instrumentation.annotations.SpanAttribute;
-import io.opentelemetry.instrumentation.annotations.WithSpan;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.automq.stream.utils.FutureUtil.suppress;
 
@@ -98,6 +96,7 @@ public class S3Storage implements Storage {
     private final Queue<DeltaWALUploadTaskContext> walPrepareQueue = new LinkedList<>();
     private final Queue<DeltaWALUploadTaskContext> walCommitQueue = new LinkedList<>();
     private final List<DeltaWALUploadTaskContext> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean needForceUpload = new AtomicBoolean();
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
     private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPoolWithMonitor(
@@ -460,9 +459,7 @@ public class S3Storage implements Storage {
             } catch (OverCapacityException e) {
                 // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
                 confirmOffsetCalculator.update();
-                // TODO: Before force upload, check whether there are inflight force upload tasks. If so, skip this force upload.
-                //  Corner Case: Check (by a counter) and maybe call next force upload once the previous force upload task complete.
-                forceUpload(LogCache.MATCH_ALL_STREAMS);
+                maybeForceUpload();
                 if (!fromBackoff) {
                     backoffRecords.offer(request);
                 }
@@ -596,6 +593,31 @@ public class S3Storage implements Storage {
                     " actual: %d, records: %s", expectStartOffset, record.getBaseOffset(), records));
             }
         }
+    }
+
+    private void maybeForceUpload() {
+        // Limit the number of inflight force upload tasks to avoid too many S3 objects.
+        if (hasInflightForceUploadTask()) {
+            // There is already an inflight force upload task, trigger another one later after it completes.
+            needForceUpload.set(true);
+            return;
+        }
+        forceUpload();
+    }
+
+    private boolean hasInflightForceUploadTask() {
+        return inflightWALUploadTasks.stream().anyMatch(it -> it.force);
+    }
+
+    private CompletableFuture<Void> forceUpload() {
+        CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
+        cf.whenComplete((nil, ignored) -> {
+            if (needForceUpload.compareAndSet(true, false)) {
+                // Force upload needs to be triggered again.
+                forceUpload();
+            }
+        });
+        return cf;
     }
 
     /**
