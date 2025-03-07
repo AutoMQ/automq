@@ -109,6 +109,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      */
     private final TrafficLimiter writeLimiter;
     /**
+     * The regulator to control the rate of write requests.
+     */
+    private final TrafficRegulator writeRegulator;
+    /**
      * Pending tasks for write operations (PutObject and UploadPart).
      * The task with higher priority and requested earlier will be executed first.
      */
@@ -170,6 +174,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             Duration.ofSeconds(3).toMillis());
 
         writeLimiter = new TrafficLimiter(scheduler);
+        writeRegulator = new TrafficRegulator("write", successWriteMonitor, failedWriteMonitor, writeLimiter);
+        scheduler.scheduleWithFixedDelay(writeRegulator::regulate, 20, 20, TimeUnit.SECONDS);
     }
 
     public AbstractObjectStorage(BucketURI bucketURI,
@@ -1129,7 +1135,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         /**
          * The maximum rate of refilling the Bucker4j bucket, which is 1 token per nanosecond.
          */
-        private final long maxBucketTokensPerSecond = TimeUnit.SECONDS.toNanos(1);
+        private static final long MAX_BUCKET_TOKENS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
 
         /**
          * The bucket used to limit the rate of network traffic in kilobytes per second.
@@ -1142,16 +1148,23 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
          */
         private final ScheduledExecutorService scheduler;
 
+        private long currentRate;
+
         /**
          * Create a limiter without limiting.
          */
         public TrafficLimiter(ScheduledExecutorService scheduler) {
+            this.currentRate = MAX_BUCKET_TOKENS_PER_SECOND;
             this.bucket = Bucket.builder()
                 .addLimit(limit -> limit
-                    .capacity(maxBucketTokensPerSecond)
-                    .refillGreedy(maxBucketTokensPerSecond, Duration.ofSeconds(1))
+                    .capacity(currentRate)
+                    .refillGreedy(currentRate, Duration.ofSeconds(1))
                 ).build();
             this.scheduler = scheduler;
+        }
+
+        public long currentRate() {
+            return toBps(currentRate);
         }
 
         /**
@@ -1163,11 +1176,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
          * still be limited to 1 MB/s.
          */
         public void update(long bytesPerSecond) {
-            long kbps = toKbps(bytesPerSecond);
+            currentRate = toKbps(bytesPerSecond);
             bucket.replaceConfiguration(BucketConfiguration.builder()
                     .addLimit(limit -> limit
-                        .capacity(kbps)
-                        .refillGreedy(kbps, Duration.ofSeconds(1))
+                        .capacity(currentRate)
+                        .refillGreedy(currentRate, Duration.ofSeconds(1))
                     ).build(),
                 TokensInheritanceStrategy.PROPORTIONALLY
             );
@@ -1182,11 +1195,84 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return bucket.asScheduler().consume(toKbps(bytes), scheduler);
         }
 
-        private long toKbps(long bytesPerSecond) {
-            long kbps = bytesPerSecond >> 10;
-            kbps = Math.min(kbps, maxBucketTokensPerSecond);
+        private static long toKbps(long bps) {
+            long kbps = bps >> 10;
+            kbps = Math.min(kbps, MAX_BUCKET_TOKENS_PER_SECOND);
             kbps = Math.max(kbps, 1L);
             return kbps;
+        }
+
+        private static long toBps(long kbps) {
+            return kbps << 10;
+        }
+    }
+
+    /**
+     * A traffic regulator that adjusts the rate of network traffic based on the success and failure rates.
+     */
+    private static class TrafficRegulator {
+        private static final double FAILED_RATE_THRESHOLD = 1e-6; // 0%
+        private static final long MIN = 1L << 20;  // 1 MB/s
+        private static final long MAX = 1L << 40;  // 1 TB/s
+        private static final double INCREMENT_RATIO = 0.5; // 50%
+        private static final double DECREMENT_RATIO = 0.0; // 0%
+
+        private final String operation;
+        private final TrafficMonitor success;
+        private final TrafficMonitor failed;
+        private final TrafficLimiter limiter;
+
+        public TrafficRegulator(String operation, TrafficMonitor success, TrafficMonitor failed, TrafficLimiter limiter) {
+            this.operation = operation;
+            this.success = success;
+            this.failed = failed;
+            this.limiter = limiter;
+        }
+
+        public void regulate() {
+            double successRate = success.getRateAndReset();
+            double failedRate = failed.getRateAndReset();
+
+            double totalRate = successRate + failedRate;
+            if (totalRate <= 0) {
+                return;
+            }
+
+            long newRate;
+            if (failedRate / totalRate < FAILED_RATE_THRESHOLD) {
+                newRate = increase(limiter.currentRate());
+                if (newRate < MAX) {
+                    LOGGER.info("Increase {} rate to {}, success rate: {}, failed rate: {}",
+                        operation, formatRate(newRate), formatRate(successRate), formatRate(failedRate));
+                }
+            } else {
+                newRate = decrease(successRate);
+                LOGGER.info("Decrease {} rate to {}, success rate: {}, failed rate: {}",
+                    operation, formatRate(newRate), formatRate(successRate), formatRate(failedRate));
+            }
+            limiter.update(newRate);
+        }
+
+        private long increase(double currentLimit) {
+            double newRate = currentLimit * (1 + INCREMENT_RATIO);
+            return (long) Math.min(newRate, MAX);
+        }
+
+        private long decrease(double successRate) {
+            double newRate = successRate * (1 - DECREMENT_RATIO);
+            return (long) Math.max(newRate, MIN);
+        }
+
+        private static String formatRate(double bytesPerSecond) {
+            String[] units = {"B/s", "KB/s", "MB/s", "GB/s", "TB/s"};
+            int unitIndex = 0;
+
+            while (bytesPerSecond >= 1024 && unitIndex < units.length - 1) {
+                bytesPerSecond /= 1024;
+                unitIndex++;
+            }
+
+            return String.format("%.2f %s", bytesPerSecond, units[unitIndex]);
         }
     }
 
