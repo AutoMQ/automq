@@ -64,6 +64,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -98,6 +99,7 @@ public class S3Storage implements Storage {
     private final Queue<DeltaWALUploadTaskContext> walPrepareQueue = new LinkedList<>();
     private final Queue<DeltaWALUploadTaskContext> walCommitQueue = new LinkedList<>();
     private final List<DeltaWALUploadTaskContext> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean needForceUpload = new AtomicBoolean();
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
     private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPoolWithMonitor(
@@ -460,7 +462,7 @@ public class S3Storage implements Storage {
             } catch (OverCapacityException e) {
                 // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
                 confirmOffsetCalculator.update();
-                forceUpload(LogCache.MATCH_ALL_STREAMS);
+                maybeForceUpload();
                 if (!fromBackoff) {
                     backoffRecords.offer(request);
                 }
@@ -594,6 +596,32 @@ public class S3Storage implements Storage {
                     " actual: %d, records: %s", expectStartOffset, record.getBaseOffset(), records));
             }
         }
+    }
+
+    private void maybeForceUpload() {
+        // Limit the number of inflight force upload tasks to avoid too many S3 objects.
+        if (hasInflightForceUploadTask()) {
+            // There is already an inflight force upload task, trigger another one later after it completes.
+            needForceUpload.set(true);
+            return;
+        }
+        forceUpload();
+    }
+
+    private boolean hasInflightForceUploadTask() {
+        return inflightWALUploadTasks.stream().anyMatch(it -> it.force);
+    }
+
+    private CompletableFuture<Void> forceUpload() {
+        LOGGER.info("force upload all streams");
+        CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
+        cf.whenComplete((nil, ignored) -> {
+            if (needForceUpload.compareAndSet(true, false)) {
+                // Force upload needs to be triggered again.
+                forceUpload();
+            }
+        });
+        return cf;
     }
 
     /**
