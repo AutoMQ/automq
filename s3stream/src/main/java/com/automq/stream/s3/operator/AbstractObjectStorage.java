@@ -19,6 +19,7 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.metrics.stats.S3OperationStats;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.metrics.wrapper.Counter;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
@@ -952,6 +953,43 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         public String getCheckSum() {
             return checkSum;
+        }
+    }
+
+    /**
+     * A simple traffic monitor that counts the number of bytes transferred over time.
+     */
+    private static class TrafficMonitor {
+        private final Counter trafficCounter = new Counter();
+        private long lastTime = System.nanoTime();
+        private long lastTraffic = 0;
+
+        /**
+         * Record the number of bytes transferred.
+         * This method is thread-safe and can be called from multiple threads.
+         */
+        public void record(long bytes) {
+            trafficCounter.inc(bytes);
+        }
+
+        /**
+         * Calculate the rate of bytes transferred since the last call to this method, and reset the counter.
+         * Note: This method is not thread-safe.
+         */
+        public double getRateAndReset() {
+            long currentTime = System.nanoTime();
+            long deltaTime = currentTime - lastTime;
+            if (deltaTime <= 0) {
+                return 0;
+            }
+
+            long currentTraffic = trafficCounter.get();
+            long deltaTraffic = currentTraffic - lastTraffic;
+
+            lastTime = currentTime;
+            lastTraffic = currentTraffic;
+
+            return deltaTraffic * 1e9 / deltaTime;
         }
     }
 
