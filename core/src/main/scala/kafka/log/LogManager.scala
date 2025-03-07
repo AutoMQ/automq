@@ -17,7 +17,7 @@
 
 package kafka.log
 
-import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog}
+import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog, OpenHint}
 
 import java.io._
 import java.nio.file.{Files, NoSuchFileException}
@@ -163,6 +163,10 @@ class LogManager(logDirs: Seq[File],
       () => if (_liveLogDirs.contains(dir)) 0 else 1,
       Map("logDirectory" -> dir.getAbsolutePath).asJava)
   }
+
+  // AutoMQ inject start
+  private val snapshotReadLogs = new Pool[TopicPartition, UnifiedLog]()
+  // AutoMQ inject end
 
   /**
    * Create and check validity of the given directories that are not in the given offline directories, specifically:
@@ -958,8 +962,14 @@ class LogManager(logDirs: Seq[File],
   def getLog(topicPartition: TopicPartition, isFuture: Boolean = false): Option[UnifiedLog] = {
     if (isFuture)
       Option(futureLogs.get(topicPartition))
-    else
-      Option(currentLogs.get(topicPartition))
+    else {
+      val log = currentLogs.get(topicPartition)
+      if (log != null) {
+        Option(log)
+      } else {
+        Option(snapshotReadLogs.get(topicPartition))
+      }
+    }
   }
 
   /**
@@ -1117,8 +1127,15 @@ class LogManager(logDirs: Seq[File],
 
         if (isFuture)
           futureLogs.put(topicPartition, log)
-        else
-          currentLogs.put(topicPartition, log)
+        else {
+          // AutoMQ inject start
+          if (OpenHint.isSnapshotRead) {
+            snapshotReadLogs.put(topicPartition, log)
+          } else {
+            currentLogs.put(topicPartition, log)
+          }
+          // AutoMQ inject end
+        }
 
         info(s"Created log for partition $topicPartition in $logDir with properties ${config.overriddenConfigsAsLoggableString} cost ${time.milliseconds() - now}ms")
         // Remove the preferred log dir since it has already been satisfied

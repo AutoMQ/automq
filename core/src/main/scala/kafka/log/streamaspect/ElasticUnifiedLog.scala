@@ -45,7 +45,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     producerStateManager: ProducerStateManager,
     __topicId: Option[Uuid],
     logOffsetsListener: LogOffsetsListener,
-    snapshotRead: Boolean,
+    var snapshotRead: Boolean,
 )
     extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
         _leaderEpochCache, producerStateManager, __topicId, false, false, logOffsetsListener) {
