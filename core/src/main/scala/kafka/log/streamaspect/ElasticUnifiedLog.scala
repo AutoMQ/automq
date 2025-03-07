@@ -23,7 +23,7 @@ import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
 import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{TopicPartition, Uuid}
-import org.apache.kafka.server.common.MetadataVersion
+import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
 import org.apache.kafka.storage.internals.log._
@@ -244,6 +244,14 @@ class ElasticUnifiedLog(_logStartOffset: Long,
         config
     }
 
+    override def endOffsetForEpoch(leaderEpoch: Int): Option[OffsetAndEpoch] = {
+        if (snapshotRead) {
+            Option(new OffsetAndEpoch(logEndOffset, leaderEpoch))
+        } else {
+            super.endOffsetForEpoch(leaderEpoch)
+        }
+    }
+
     // only used for test
     def listProducerSnapshots(): util.NavigableMap[java.lang.Long, ByteBuffer] = {
         producerStateManager.asInstanceOf[ElasticProducerStateManager].snapshotsMap
@@ -269,6 +277,12 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             val segmentBaseOffset = localLog.segments.floorSegment(offset.messageOffset).get().baseOffset()
             offset = new LogOffsetMetadata(offset.messageOffset, segmentBaseOffset, offset.relativePositionInSegment)
             firstUnstableOffsetMetadata = Some(offset)
+        }
+        if (snapshot.logMeta() != null) {
+            val opt = localLog.segments.firstSegmentBaseOffset()
+            opt.ifPresent(baseOffset => {
+                updateLogStartOffset(baseOffset)
+            })
         }
         highWatermarkMetadata = localLog.logEndOffsetMetadata
 
