@@ -54,7 +54,10 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
+import java.util.function.Supplier;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,6 +113,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      * The task with higher priority and requested earlier will be executed first.
      */
     private final Queue<Task> writeTasks = new PriorityBlockingQueue<>();
+    /**
+     * The lock to protect the {@link this#currentWriteTask}.
+     */
+    private final Lock writeTaskLock = new ReentrantLock();
+    /**
+     * The current write task (e.g., waiting for {@link this#writeLimiter}).
+     */
+    private CompletableFuture<Void> currentWriteTask = CompletableFuture.completedFuture(null);
 
     protected AbstractObjectStorage(
         BucketURI bucketURI,
@@ -362,7 +373,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         Task task = new Task(
             options.requestTime(),
             options.throttleStrategy(),
-            () -> write0(options, path, data, cf)
+            () -> write0(options, path, data, cf),
+            () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
         maybeRunNextWriteTask();
@@ -473,7 +485,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         Task task = new Task(
             options.requestTime(),
             options.throttleStrategy(),
-            () -> uploadPart0(options, path, uploadId, partNumber, data, cf)
+            () -> uploadPart0(options, path, uploadId, partNumber, data, cf),
+            () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
         maybeRunNextWriteTask();
@@ -752,7 +765,23 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     private void maybeRunNextWriteTask() {
-        // TODO
+        writeTaskLock.lock();
+        try {
+            if (!currentWriteTask.isDone()) {
+                return;
+            }
+
+            Task task = writeTasks.poll();
+            if (task == null) {
+                return;
+            }
+
+            currentWriteTask = writeLimiter.consume(task.bytes())
+                .thenRun(task::run)
+                .thenRun(this::maybeRunNextWriteTask);
+        } finally {
+            writeTaskLock.unlock();
+        }
     }
 
     static int getMaxObjectStorageConcurrency() {
@@ -1168,11 +1197,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private final long requestTime;
         private final ThrottleStrategy strategy;
         private final Runnable task;
+        private final Supplier<Long> sizeInBytes;
 
-        public Task(long requestTime, ThrottleStrategy strategy, Runnable task) {
+        public Task(long requestTime, ThrottleStrategy strategy, Runnable task, Supplier<Long> sizeInBytes) {
             this.requestTime = requestTime;
             this.strategy = strategy;
             this.task = task;
+            this.sizeInBytes = sizeInBytes;
         }
 
         /**
@@ -1180,6 +1211,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
          */
         public void run() {
             task.run();
+        }
+
+        /**
+         * Get the request size in bytes.
+         */
+        public long bytes() {
+            return sizeInBytes.get();
         }
 
         @Override
