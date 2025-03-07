@@ -784,7 +784,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
             currentWriteTask = writeLimiter.consume(task.bytes())
                 .thenRun(task::run)
-                .thenRun(this::maybeRunNextWriteTask);
+                .whenComplete((nil, ignored) -> maybeRunNextWriteTask());
         } finally {
             writeTaskLock.unlock();
         }
@@ -1222,7 +1222,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private final TrafficMonitor failed;
         private final TrafficLimiter limiter;
 
-        public TrafficRegulator(String operation, TrafficMonitor success, TrafficMonitor failed, TrafficLimiter limiter) {
+        public TrafficRegulator(String operation, TrafficMonitor success, TrafficMonitor failed,
+            TrafficLimiter limiter) {
             this.operation = operation;
             this.success = success;
             this.failed = failed;
@@ -1230,6 +1231,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
 
         public void regulate() {
+            try {
+                regulate0();
+            } catch (Throwable e) {
+                LOGGER.error("[UNEXPECTED] {} rate regulator fail", operation, e);
+            }
+        }
+
+        private void regulate0() {
             double successRate = success.getRateAndReset();
             double failedRate = failed.getRateAndReset();
 
@@ -1296,7 +1305,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
          * Execute the task.
          */
         public void run() {
-            task.run();
+            try {
+                task.run();
+            } catch (Throwable e) {
+                LOGGER.error("[UNEXPECTED] task fail", e);
+            }
         }
 
         /**
