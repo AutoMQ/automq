@@ -27,11 +27,13 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
-
-import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import io.github.bucket4j.Bucket;
+import io.github.bucket4j.BucketConfiguration;
+import io.github.bucket4j.TokensInheritanceStrategy;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.ReferenceCounted;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -50,11 +52,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
-
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.ReferenceCounted;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
@@ -952,6 +952,75 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         public String getCheckSum() {
             return checkSum;
+        }
+    }
+
+    /**
+     * A limiter that uses Bucker4j to limit the rate of network traffic.
+     */
+    private static class TrafficLimiter {
+
+        /**
+         * The maximum rate of refilling the Bucker4j bucket, which is 1 token per nanosecond.
+         */
+        private final long maxBucketTokensPerSecond = TimeUnit.SECONDS.toNanos(1);
+
+        /**
+         * The bucket used to limit the rate of network traffic in kilobytes per second.
+         * Maximum rate is 1 token per nanosecond, which is 1 TB/s and can be regarded as unlimited.
+         */
+        private final Bucket bucket;
+        /**
+         * The scheduler used to schedule the rate limiting tasks.
+         * It should be shutdown outside of this class.
+         */
+        private final ScheduledExecutorService scheduler;
+
+        /**
+         * Create a limiter without limiting.
+         */
+        public TrafficLimiter(ScheduledExecutorService scheduler) {
+            this.bucket = Bucket.builder()
+                .addLimit(limit -> limit
+                    .capacity(maxBucketTokensPerSecond)
+                    .refillGreedy(maxBucketTokensPerSecond, Duration.ofSeconds(1))
+                ).build();
+            this.scheduler = scheduler;
+        }
+
+        /**
+         * Update the rate of the limiter.
+         * Note: The minimum rate is 1 KB/s and the maximum rate is 1 TB/s, any value outside this range will be
+         * clamped to this range.
+         * Note: An update will not take effect on the previous {@link this#consume} calls. For example, if the
+         * previous rate is 1 MB/s and the new rate is 10 MB/s, the previous {@link this#consume} calls will
+         * still be limited to 1 MB/s.
+         */
+        public void update(long bytesPerSecond) {
+            long kbps = toKbps(bytesPerSecond);
+            bucket.replaceConfiguration(BucketConfiguration.builder()
+                    .addLimit(limit -> limit
+                        .capacity(kbps)
+                        .refillGreedy(kbps, Duration.ofSeconds(1))
+                    ).build(),
+                TokensInheritanceStrategy.PROPORTIONALLY
+            );
+        }
+
+        /**
+         * Consume the specified number of bytes and return a CompletableFuture that will be completed when the
+         * tokens are consumed.
+         * Note: DO NOT perform any heavy operations in the callback, otherwise it will block the scheduler.
+         */
+        public CompletableFuture<Void> consume(long bytes) {
+            return bucket.asScheduler().consume(toKbps(bytes), scheduler);
+        }
+
+        private long toKbps(long bytesPerSecond) {
+            long kbps = bytesPerSecond >> 10;
+            kbps = Math.min(kbps, maxBucketTokensPerSecond);
+            kbps = Math.max(kbps, 1L);
+            return kbps;
         }
     }
 }
