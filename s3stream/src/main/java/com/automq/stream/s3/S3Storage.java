@@ -614,6 +614,7 @@ public class S3Storage implements Storage {
         CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
         cf.whenComplete((nil, ignored) -> {
             if (needForceUpload.compareAndSet(true, false)) {
+                LOGGER.info("trigger force upload again");
                 // Force upload needs to be triggered again.
                 forceUpload();
             }

@@ -175,7 +175,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         writeLimiter = new TrafficLimiter(scheduler);
         writeRegulator = new TrafficRegulator("write", successWriteMonitor, failedWriteMonitor, writeLimiter);
-        int regulateInterval = Integer.parseInt(System.getenv("REGULATOR_INTERVAL") == null ? "20" : System.getenv("REGULATOR_INTERVAL"));
+        int regulateInterval = Integer.parseInt(System.getenv("REGULATOR_INTERVAL") == null ? "30" : System.getenv("REGULATOR_INTERVAL"));
         scheduler.scheduleWithFixedDelay(writeRegulator::regulate, regulateInterval, regulateInterval, TimeUnit.SECONDS);
     }
 
@@ -384,7 +384,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
-        LOGGER.info("add a put object task, current count: {}", writeTasks.size());
+        if ("dataflow".equals(threadPrefix)) {
+            LOGGER.info("add a put object task, size: {} bytes, current count: {}", task.bytes(), writeTasks.size());
+        }
         maybeRunNextWriteTask();
     }
 
@@ -497,7 +499,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
-        LOGGER.info("add a upload part task, current count: {}", writeTasks.size());
+        if ("dataflow".equals(threadPrefix)) {
+            LOGGER.info("add a upload part task, size: {} bytes, current count: {}", task.bytes(), writeTasks.size());
+        }
         maybeRunNextWriteTask();
     }
 
@@ -782,13 +786,25 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
             Task task = writeTasks.poll();
             if (task == null) {
+                if ("dataflow".equals(threadPrefix)) {
+                    LOGGER.info("no write task");
+                }
                 return;
             }
-            LOGGER.info("poll a write task, current count: {}", writeTasks.size());
+            if ("dataflow".equals(threadPrefix)) {
+                LOGGER.info("poll a write task, size: {} bytes, current count: {}", task.bytes(), writeTasks.size());
+            }
 
             currentWriteTask = writeLimiter.consume(task.bytes())
                 .thenRun(task::run)
-                .whenComplete((nil, ignored) -> maybeRunNextWriteTask());
+                .whenComplete((nil, e) -> {
+                    if (null != e) {
+                        LOGGER.error("[UNEXPECTED] write task fail", e);
+                    }
+                    maybeRunNextWriteTask();
+                });
+        } catch (Throwable throwable) {
+            LOGGER.error("[UNEXPECTED] maybeRunNextWriteTask fail", throwable);
         } finally {
             writeTaskLock.unlock();
         }
@@ -1255,13 +1271,17 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (failedRate / totalRate < FAILED_RATE_THRESHOLD) {
                 newRate = increase(limiter.currentRate());
                 if (newRate < MAX) {
-                    LOGGER.info("Increase {} rate to {}, success rate: {}, failed rate: {}",
-                        operation, formatRate(newRate), formatRate(successRate), formatRate(failedRate));
+                    if (Thread.currentThread().getName().contains("dataflow")) {
+                        LOGGER.info("Increase {} rate to {}, success rate: {}, failed rate: {}",
+                            operation, formatRate(newRate), formatRate(successRate), formatRate(failedRate));
+                    }
                 }
             } else {
                 newRate = decrease(successRate);
-                LOGGER.info("Decrease {} rate to {}, success rate: {}, failed rate: {}",
-                    operation, formatRate(newRate), formatRate(successRate), formatRate(failedRate));
+                if (Thread.currentThread().getName().contains("dataflow")) {
+                    LOGGER.info("Decrease {} rate to {}, success rate: {}, failed rate: {}",
+                        operation, formatRate(newRate), formatRate(successRate), formatRate(failedRate));
+                }
             }
             limiter.update(newRate);
         }
