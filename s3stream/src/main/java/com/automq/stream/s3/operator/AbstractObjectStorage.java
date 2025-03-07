@@ -801,11 +801,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return s3Ex.statusCode() == 429 || s3Ex.statusCode() == 503;
         }
         // regard timeout as throttled except for the first try
-        return ex instanceof ApiCallAttemptTimeoutException && retryCount > 1;
+        return ex instanceof ApiCallAttemptTimeoutException && retryCount > 0;
     }
 
     private static boolean isFirstTimeout(Throwable ex, int retryCount) {
-        return ex instanceof ApiCallAttemptTimeoutException && retryCount == 1;
+        return ex instanceof ApiCallAttemptTimeoutException && retryCount == 0;
     }
 
     /**
