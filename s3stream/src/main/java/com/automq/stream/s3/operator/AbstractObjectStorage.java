@@ -175,7 +175,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         writeLimiter = new TrafficLimiter(scheduler);
         writeRegulator = new TrafficRegulator("write", successWriteMonitor, failedWriteMonitor, writeLimiter);
-        scheduler.scheduleWithFixedDelay(writeRegulator::regulate, 20, 20, TimeUnit.SECONDS);
+        int regulateInterval = Integer.parseInt(System.getenv("REGULATOR_INTERVAL") == null ? "20" : System.getenv("REGULATOR_INTERVAL"));
+        scheduler.scheduleWithFixedDelay(writeRegulator::regulate, regulateInterval, regulateInterval, TimeUnit.SECONDS);
     }
 
     public AbstractObjectStorage(BucketURI bucketURI,
@@ -383,6 +384,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
+        LOGGER.info("add a put object task, current count: {}", writeTasks.size());
         maybeRunNextWriteTask();
     }
 
@@ -495,6 +497,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
+        LOGGER.info("add a upload part task, current count: {}", writeTasks.size());
         maybeRunNextWriteTask();
     }
 
@@ -781,6 +784,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (task == null) {
                 return;
             }
+            LOGGER.info("poll a write task, current count: {}", writeTasks.size());
 
             currentWriteTask = writeLimiter.consume(task.bytes())
                 .thenRun(task::run)
@@ -1211,11 +1215,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      * A traffic regulator that adjusts the rate of network traffic based on the success and failure rates.
      */
     private static class TrafficRegulator {
-        private static final double FAILED_RATE_THRESHOLD = 1e-6; // 0%
-        private static final long MIN = 1L << 20;  // 1 MB/s
-        private static final long MAX = 1L << 40;  // 1 TB/s
-        private static final double INCREMENT_RATIO = 0.5; // 50%
-        private static final double DECREMENT_RATIO = 0.0; // 0%
+        private static final double FAILED_RATE_THRESHOLD = Double.parseDouble(System.getenv("REGULATOR_FAILED_RATE_THRESHOLD") == null ? "0.00001" : System.getenv("REGULATOR_FAILED_RATE_THRESHOLD"));
+        private static final long MIN = Long.parseLong(System.getenv("REGULATOR_MIN") == null ? "1048576" : System.getenv("REGULATOR_MIN"));
+        private static final long MAX = Long.parseLong(System.getenv("REGULATOR_MAX") == null ? "1099511627776" : System.getenv("REGULATOR_MAX"));
+        private static final double INCREMENT_RATIO = Double.parseDouble(System.getenv("REGULATOR_INCREMENT_RATIO") == null ? "0.5" : System.getenv("REGULATOR_INCREMENT_RATIO"));
+        private static final double DECREMENT_RATIO = Double.parseDouble(System.getenv("REGULATOR_DECREMENT_RATIO") == null ? "0.0" : System.getenv("REGULATOR_DECREMENT_RATIO"));
 
         private final String operation;
         private final TrafficMonitor success;
