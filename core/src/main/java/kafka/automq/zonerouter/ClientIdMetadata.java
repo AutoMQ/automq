@@ -21,19 +21,21 @@ public class ClientIdMetadata {
     private final String clientId;
     private final Map<String, List<String>> metadata;
     private final InetAddress clientAddress;
+    private final String connectionId;
 
-    private ClientIdMetadata(String clientId, InetAddress clientAddress) {
+    private ClientIdMetadata(String clientId, InetAddress clientAddress, String connectionId) {
         this.clientId = clientId;
         this.metadata = URIUtils.splitQuery(clientId);
         this.clientAddress = clientAddress;
+        this.connectionId = connectionId;
     }
 
     public static ClientIdMetadata of(String clientId) {
-        return new ClientIdMetadata(clientId, null);
+        return new ClientIdMetadata(clientId, null, null);
     }
 
-    public static ClientIdMetadata of(String clientId, InetAddress clientAddress) {
-        return new ClientIdMetadata(clientId, clientAddress);
+    public static ClientIdMetadata of(String clientId, InetAddress clientAddress, String connectionId) {
+        return new ClientIdMetadata(clientId, clientAddress, connectionId);
     }
 
     public String rack() {
@@ -54,6 +56,10 @@ public class ClientIdMetadata {
 
     public String clientId() {
         return clientId;
+    }
+
+    public String connectionId() {
+        return connectionId;
     }
 
     @Override
