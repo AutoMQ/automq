@@ -610,6 +610,7 @@ public class S3Storage implements Storage {
     }
 
     private CompletableFuture<Void> forceUpload() {
+        LOGGER.info("force upload all streams");
         CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
         cf.whenComplete((nil, ignored) -> {
             if (needForceUpload.compareAndSet(true, false)) {
