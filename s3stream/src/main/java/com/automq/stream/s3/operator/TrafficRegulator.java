@@ -71,12 +71,20 @@ class TrafficRegulator {
     }
 
     private double meanOfTopSuccessRates() {
-        List<Double> tops = successRateQueue.stream()
-            .collect(Comparators.greatest(TOP_SUCCESS_RATE_COUNT, Double::compareTo));
-        if (tops.isEmpty()) {
+        if (successRateQueue.isEmpty()) {
             return MIN;
         }
+
+        // Reduce the sample count on warmup
+        int topCount = ceilDivide(successRateQueue.size() * TOP_SUCCESS_RATE_COUNT, HISTORY_SIZE);
+        List<Double> tops = successRateQueue.stream()
+            .collect(Comparators.greatest(topCount, Double::compareTo));
+        assert !tops.isEmpty();
         return Stats.meanOf(tops);
+    }
+
+    private static int ceilDivide(int dividend, int divisor) {
+        return (dividend + divisor - 1) / divisor;
     }
 
     private long calculateNewRate(double currentLimit, double successRate, double failureRate, double totalRate) {
