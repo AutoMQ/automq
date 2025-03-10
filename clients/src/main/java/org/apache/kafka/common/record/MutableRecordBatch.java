@@ -65,4 +65,13 @@ public interface MutableRecordBatch extends RecordBatch {
      * @return The closeable iterator
      */
     CloseableIterator<Record> skipKeyValueIterator(BufferSupplier bufferSupplier);
+
+    // AutoMQ injection start
+
+    /**
+     * Set the producer id for this batch of records.
+     * @param producerId The producer id to use
+     */
+    void setProducerId(long producerId);
+    // AutoMQ injection end
 }

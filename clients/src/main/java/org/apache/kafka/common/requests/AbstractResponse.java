@@ -23,6 +23,7 @@ import org.apache.kafka.common.protocol.MessageUtil;
 import org.apache.kafka.common.protocol.SendBuilder;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesResponse;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeResponse;
+import org.apache.kafka.common.requests.s3.AutomqUpdateGroupResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.requests.s3.CloseStreamsResponse;
 import org.apache.kafka.common.requests.s3.CommitStreamObjectResponse;
@@ -316,6 +317,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return GetNextNodeIdResponse.parse(responseBuffer, version);
             case DESCRIBE_STREAMS:
                 return DescribeStreamsResponse.parse(responseBuffer, version);
+            case AUTOMQ_UPDATE_GROUP:
+                return AutomqUpdateGroupResponse.parse(responseBuffer, version);
 
             // AutoMQ for Kafka inject end
             case SHARE_GROUP_HEARTBEAT:

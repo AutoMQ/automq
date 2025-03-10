@@ -725,7 +725,7 @@ class Partition(val topicPartition: TopicPartition,
 
 
   // AutoMQ for Kafka inject start
-  private def checkClosed(): Unit = {
+  def checkClosed(): Unit = {
     if (closed) {
       throw new NotLeaderOrFollowerException("Leader %d for partition %s on broker %d is already closed"
         .format(localBrokerId, topicPartition, localBrokerId))
@@ -2318,4 +2318,14 @@ class Partition(val topicPartition: TopicPartition,
     partitionString.append("; LeaderRecoveryState: " + partitionState.leaderRecoveryState)
     partitionString.toString
   }
+
+  // AutoMQ injection start
+  def withReadLock[T](fun: => T): T = {
+    inReadLock(leaderIsrUpdateLock)(fun)
+  }
+
+  def withWriteLock[T](fun: => T): T = {
+    inWriteLock(leaderIsrUpdateLock)(fun)
+  }
+  // AutoMQ injection end
 }

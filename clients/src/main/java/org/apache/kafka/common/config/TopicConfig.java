@@ -276,6 +276,13 @@ public class TopicConfig {
     public static final String TABLE_TOPIC_UPSERT_ENABLE_DOC = "The configuration controls whether enable table topic upsert";
     public static final String TABLE_TOPIC_CDC_FIELD_CONFIG = "automq.table.topic.cdc.field";
     public static final String TABLE_TOPIC_CDC_FIELD_DOC = "The name of the field containing the CDC operation, I, U, or D";
+
+    public static final String KAFKA_LINKING_REMOTE_CLUSTER_ID_CONFIG = "automq.kafka.linking.cluster.id";
+    public static final String KAFKA_LINKING_REMOTE_CLUSTER_ID_DOC = "The unique id of the cluster to be linked";
+    public static final String KAFKA_LINKING_TOPIC_SYNC_OFFSET_CONFIG = "automq.kafka.linking.topic.sync.offset";
+    public static final String KAFKA_LINKING_TOPIC_SYNC_OFFSET_DOC = "The offset to start sync from. Valid values: -1 (latest), -2 (earliest), positive value (timestamp)";
+    public static final String KAFKA_LINKING_TOPIC_SYNC_STATE_CONFIG = "automq.kafka.linking.topic.sync.state";
+    public static final String KAFKA_LINKING_TOPIC_SYNC_STATE_DOC = "The state of the topic that's in linking";
     // AutoMQ inject end
 
 }

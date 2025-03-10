@@ -499,6 +499,11 @@ public abstract class AbstractLegacyRecordBatch extends AbstractRecordBatch impl
             throw new UnsupportedOperationException("Magic versions prior to 2 do not support partition leader epoch");
         }
 
+        @Override
+        public void setProducerId(long producerId) {
+            throw new UnsupportedOperationException("Magic versions prior to 2 do not support producer id");
+        }
+
         private void setTimestampAndUpdateCrc(TimestampType timestampType, long timestamp) {
             byte attributes = LegacyRecord.computeAttributes(magic(), compressionType(), timestampType);
             buffer.put(LOG_OVERHEAD + LegacyRecord.ATTRIBUTES_OFFSET, attributes);
