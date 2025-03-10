@@ -785,9 +785,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return;
             }
 
-            currentWriteTask = writeLimiter.consume(task.bytes())
-                .thenRun(task::run)
-                .whenComplete((nil, ignored) -> maybeRunNextWriteTask());
+            currentWriteTask = writeLimiter.consume(task.bytes()).thenRun(task::run);
+            currentWriteTask.whenComplete((nil, ignored) -> maybeRunNextWriteTask());
         } finally {
             writeTaskLock.unlock();
         }
