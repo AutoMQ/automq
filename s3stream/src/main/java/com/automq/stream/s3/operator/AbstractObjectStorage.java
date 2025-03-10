@@ -1213,8 +1213,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      * A traffic regulator that adjusts the rate of network traffic based on the success and failure rates.
      */
     private static class TrafficRegulator {
-        private static final double FAILED_RATE_THRESHOLD = 1e-6; // 0%
-        private static final long MIN = 1L << 20;  // 1 MB/s
+        private static final double FAILED_RATE_THRESHOLD = 0.1; // 10%
+        private static final long MIN = 10L << 20;  // 10 MB/s
         private static final long MAX = 1L << 40;  // 1 TB/s
         private static final double INCREMENT_RATIO = 0.5; // 50%
         private static final double DECREMENT_RATIO = 0.0; // 0%
@@ -1243,14 +1243,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private void regulate0() {
             double successRate = success.getRateAndReset();
             double failedRate = failed.getRateAndReset();
-
             double totalRate = successRate + failedRate;
-            if (totalRate <= 0) {
-                return;
-            }
 
             long newRate;
-            if (failedRate / totalRate < FAILED_RATE_THRESHOLD) {
+            if (totalRate <= 0 || failedRate / totalRate < FAILED_RATE_THRESHOLD) {
                 newRate = increase(limiter.currentRate());
                 if (newRate < MAX) {
                     LOGGER.info("Increase {} rate to {}, success rate: {}, failed rate: {}",
