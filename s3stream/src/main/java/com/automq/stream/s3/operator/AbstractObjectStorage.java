@@ -1233,11 +1233,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
 
         public void regulate() {
-            try {
-                regulate0();
-            } catch (Throwable e) {
-                LOGGER.error("[UNEXPECTED] {} rate regulator fail", operation, e);
-            }
+            regulate0();
         }
 
         private void regulate0() {
@@ -1303,11 +1299,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
          * Execute the task.
          */
         public void run() {
-            try {
-                task.run();
-            } catch (Throwable e) {
-                LOGGER.error("[UNEXPECTED] task fail", e);
-            }
+            task.run();
         }
 
         /**
