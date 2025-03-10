@@ -83,7 +83,7 @@ class TrafficRegulator {
         boolean isIncrease = totalRate <= 0 || failureRate <= 0;
         long newRate = isIncrease ? increase(currentLimit) : decrease(successRate);
 
-        if (newRate == MAX) {
+        if (newRate > MAX * 0.99) {
             // skip logging
             return newRate;
         }
@@ -95,6 +95,14 @@ class TrafficRegulator {
 
     private long increase(double currentLimit) {
         double historyRate = meanOfTopSuccessRates();
+        if (currentLimit > historyRate * SLOW_INCREMENT_RATIO * 20) {
+            // If the current limit is higher enough, which means there is and will be no throttling,
+            //  so we can just increase the limit to the maximum.
+            logger.info("{} limit is high enough, current limit: {}, history rate: {}, new rate: {}",
+                operation, formatRate(currentLimit), formatRate(historyRate), formatRate(MAX));
+            return MAX;
+        }
+
         List<Double> newRates = List.of(
             currentLimit + historyRate * FAST_INCREMENT_RATIO,
             currentLimit + historyRate * SLOW_INCREMENT_RATIO,
