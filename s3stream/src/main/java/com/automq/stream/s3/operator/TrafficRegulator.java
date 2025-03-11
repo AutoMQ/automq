@@ -24,7 +24,7 @@ import java.util.List;
  */
 class TrafficRegulator {
     private static final long MIN = 10L << 20;  // 10 MB/s
-    private static final long MAX = 1L << 40;  // 1 TB/s
+    private static final long MAX = TrafficRateLimiter.MAX_BUCKET_TOKENS_PER_SECOND * 1024;  // 953.67 GB/s
 
     private static final int HISTORY_SIZE = 64;
     private static final int TOP_SUCCESS_RATE_COUNT = 4;
@@ -96,7 +96,7 @@ class TrafficRegulator {
         boolean isIncrease = totalRate <= 0 || failureRate <= 0;
         long newRate = isIncrease ? increase(currentLimit) : decrease(successRate);
 
-        if (newRate > MAX * 0.99) {
+        if (MAX == newRate) {
             // skip logging
             return newRate;
         }
@@ -107,8 +107,11 @@ class TrafficRegulator {
     }
 
     private long increase(double currentLimit) {
+        if (MAX == currentLimit) {
+            return MAX;
+        }
         double historyRate = meanOfTopSuccessRates();
-        if (currentLimit > historyRate * SLOW_INCREMENT_RATIO * 20) {
+        if (currentLimit > historyRate * (1 + SLOW_INCREMENT_RATIO * 20)) {
             // If the current limit is higher enough, which means there is and will be no throttling,
             //  so we can just increase the limit to the maximum.
             logger.info("{} limit is high enough, current limit: {}, history rate: {}, new rate: {}",

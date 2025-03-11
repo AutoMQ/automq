@@ -28,7 +28,7 @@ class TrafficRateLimiter {
     /**
      * The maximum rate of refilling the Bucker4j bucket, which is 1 token per nanosecond.
      */
-    private static final long MAX_BUCKET_TOKENS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
+    static final long MAX_BUCKET_TOKENS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
 
     /**
      * The bucket used to limit the rate of network traffic in kilobytes per second.
