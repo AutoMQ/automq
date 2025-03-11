@@ -181,7 +181,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         writeRateLimiter = new TrafficRateLimiter(scheduler);
         writeVolumeLimiter = new TrafficVolumeLimiter();
         writeRegulator = new TrafficRegulator("write", successWriteMonitor, failedWriteMonitor, writeRateLimiter, writeVolumeLimiter, logger);
-        scheduler.scheduleWithFixedDelay(writeRegulator::regulate, 30, 30, TimeUnit.SECONDS);
+        scheduler.scheduleWithFixedDelay(writeRegulator::regulate, 60, 60, TimeUnit.SECONDS);
     }
 
     public AbstractObjectStorage(BucketURI bucketURI,

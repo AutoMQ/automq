@@ -29,7 +29,7 @@ class TrafficRegulator {
     private static final int HISTORY_SIZE = 64;
     private static final int TOP_SUCCESS_RATE_COUNT = 4;
     private static final double FAST_INCREMENT_RATIO = 0.5;
-    private static final double SLOW_INCREMENT_RATIO = 0.2;
+    private static final double SLOW_INCREMENT_RATIO = 0.05;
 
     private static final int WINDOW_SIZE = 5; // 5 seconds
 
@@ -54,10 +54,6 @@ class TrafficRegulator {
         this.logger = logger;
     }
 
-    public void regulate() {
-        regulate0();
-    }
-
     /**
      * The maximum request size allowed by the regulator.
      * Any request larger than this size should be downscaled to this size.
@@ -66,7 +62,7 @@ class TrafficRegulator {
         return MIN * WINDOW_SIZE;
     }
 
-    private void regulate0() {
+    public void regulate() {
         double successRate = success.getRateAndReset();
         double failureRate = failure.getRateAndReset();
         double totalRate = successRate + failureRate;
