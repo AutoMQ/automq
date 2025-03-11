@@ -295,11 +295,21 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
     }
 
-    private void write0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> cf) {
+    /**
+     * Put an object to the specified path.
+     *
+     * @param options options (or context) about the write operation
+     * @param path the path to put the object
+     * @param data the data to put, it will be released once the finalCf is done
+     * @param attemptCf the CompletableFuture to complete when a single attempt is done
+     * @param finalCf the CompletableFuture to complete when the write operation is done
+     */
+    private void write0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> attemptCf, CompletableFuture<Void> finalCf) {
         TimerUtil timerUtil = new TimerUtil();
         long objectSize = data.readableBytes();
 
         CompletableFuture<Void> writeCf = doWrite(options, path, data);
+        FutureUtil.propagate(writeCf, attemptCf);
         AtomicBoolean completedFlag = new AtomicBoolean(false);
         WriteOptions retryOptions = options.copy().retry(true);
 
@@ -319,7 +329,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         fastRetryPermit.release();
 
                         if (completedFlag.compareAndSet(false, true)) {
-                            cf.complete(null);
+                            finalCf.complete(null);
                             logger.info("Fast retry: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
                         } else {
                             logger.info("Fast retry but duplicated: put object {} with size {}, cost {}ms, delay {}ms", path, objectSize, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
@@ -342,7 +352,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             recordWriteStats(path, objectSize, timerUtil);
             data.release();
             if (completedFlag.compareAndSet(false, true)) {
-                cf.complete(null);
+                finalCf.complete(null);
             }
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
@@ -355,7 +365,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 logger.error("PutObject for object {} fail", path, cause);
                 data.release();
                 if (completedFlag.compareAndSet(false, true)) {
-                    cf.completeExceptionally(cause);
+                    finalCf.completeExceptionally(cause);
                 }
                 return null;
             }
@@ -367,10 +377,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (isFirstTimeout(cause, retryCount)) {
                 int delay = retryDelay(S3Operation.PUT_OBJECT, retryCount);
                 logger.warn("PutObject for object {} fail, retry count {}, retry in {}ms", path, retryCount, delay, cause);
-                delayedWrite0(retryOptions, path, data, cf, delay);
+                delayedWrite0(retryOptions, path, data, finalCf, delay);
             } else {
                 logger.warn("PutObject for object {} fail, retry count {}, queued and retry later", path, retryCount, cause);
-                queuedWrite0(retryOptions, path, data, cf);
+                queuedWrite0(retryOptions, path, data, finalCf);
             }
             return null;
         });
@@ -378,15 +388,17 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     private void delayedWrite0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> cf,
         int delayMs) {
-        scheduler.schedule(() -> write0(options, path, data, cf), delayMs, TimeUnit.MILLISECONDS);
+        CompletableFuture<Void> ignored = new CompletableFuture<>();
+        scheduler.schedule(() -> write0(options, path, data, ignored, cf), delayMs, TimeUnit.MILLISECONDS);
     }
 
     private void queuedWrite0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> cf) {
+        CompletableFuture<Void> attemptCf = new CompletableFuture<>();
         AsyncTask task = new AsyncTask(
             options.requestTime(),
             options.throttleStrategy(),
-            () -> write0(options, path, data, cf),
-            cf,
+            () -> write0(options, path, data, attemptCf, cf),
+            attemptCf,
             () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
@@ -448,16 +460,29 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return refCf;
     }
 
+    /**
+     * Upload a part of an object to the specified path.
+     *
+     * @param options options (or context) about the write operation
+     * @param path the path of the object where the part will be uploaded
+     * @param uploadId the upload ID of the multipart upload
+     * @param partNumber the part number of the part to be uploaded
+     * @param data the data to be uploaded, it will be released once the finalCf is done
+     * @param attemptCf the CompletableFuture to complete when a single attempt is done
+     * @param finalCf the CompletableFuture to complete when the upload operation is done
+     */
     private void uploadPart0(WriteOptions options, String path, String uploadId, int partNumber, ByteBuf data,
-        CompletableFuture<ObjectStorageCompletedPart> cf) {
+        CompletableFuture<ObjectStorageCompletedPart> attemptCf, CompletableFuture<ObjectStorageCompletedPart> finalCf) {
         TimerUtil timerUtil = new TimerUtil();
         int size = data.readableBytes();
-        doUploadPart(options, path, uploadId, partNumber, data).thenAccept(part -> {
+        CompletableFuture<ObjectStorageCompletedPart> uploadPartCf = doUploadPart(options, path, uploadId, partNumber, data);
+        FutureUtil.propagate(uploadPartCf, attemptCf);
+        uploadPartCf.thenAccept(part -> {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, size);
             S3OperationStats.getInstance().uploadPartStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             successWriteMonitor.record(size);
             data.release();
-            cf.complete(part);
+            finalCf.complete(part);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().uploadPartStats(size, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.UPLOAD_PART);
@@ -468,7 +493,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 // no need to retry
                 logger.error("UploadPart for object {}-{} fail", path, partNumber, cause);
                 data.release();
-                cf.completeExceptionally(cause);
+                finalCf.completeExceptionally(cause);
                 return null;
             }
 
@@ -479,10 +504,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (isFirstTimeout(cause, retryCount)) {
                 int delay = retryDelay(S3Operation.UPLOAD_PART, retryCount);
                 logger.warn("UploadPart for object {}-{} fail, retry count {}, retry in {}ms", path, partNumber, retryCount, delay, cause);
-                delayedUploadPart0(options, path, uploadId, partNumber, data, cf, delay);
+                delayedUploadPart0(options, path, uploadId, partNumber, data, finalCf, delay);
             } else {
                 logger.warn("UploadPart for object {}-{} fail, retry count {}, queued and retry later", path, partNumber, retryCount, cause);
-                queuedUploadPart0(options, path, uploadId, partNumber, data, cf);
+                queuedUploadPart0(options, path, uploadId, partNumber, data, finalCf);
             }
             return null;
         });
@@ -490,16 +515,18 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     private void delayedUploadPart0(WriteOptions options, String path, String uploadId, int partNumber, ByteBuf data,
         CompletableFuture<ObjectStorageCompletedPart> cf, int delayMs) {
-        scheduler.schedule(() -> uploadPart0(options, path, uploadId, partNumber, data, cf), delayMs, TimeUnit.MILLISECONDS);
+        CompletableFuture<ObjectStorageCompletedPart> ignored = new CompletableFuture<>();
+        scheduler.schedule(() -> uploadPart0(options, path, uploadId, partNumber, data, ignored, cf), delayMs, TimeUnit.MILLISECONDS);
     }
 
     private void queuedUploadPart0(WriteOptions options, String path, String uploadId, int partNumber, ByteBuf data,
         CompletableFuture<ObjectStorageCompletedPart> cf) {
+        CompletableFuture<ObjectStorageCompletedPart> attemptCf = new CompletableFuture<>();
         AsyncTask task = new AsyncTask(
             options.requestTime(),
             options.throttleStrategy(),
-            () -> uploadPart0(options, path, uploadId, partNumber, data, cf),
-            cf,
+            () -> uploadPart0(options, path, uploadId, partNumber, data, attemptCf, cf),
+            attemptCf,
             () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
