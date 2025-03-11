@@ -31,6 +31,8 @@ class TrafficRegulator {
     private static final double FAST_INCREMENT_RATIO = 0.5;
     private static final double SLOW_INCREMENT_RATIO = 0.2;
 
+    private static final int WINDOW_SIZE = 5; // 5 seconds
+
     private final String operation;
     private final Logger logger;
     /**
@@ -39,14 +41,16 @@ class TrafficRegulator {
     private final EvictingQueue<Double> successRateQueue = EvictingQueue.create(HISTORY_SIZE);
     private final TrafficMonitor success;
     private final TrafficMonitor failure;
-    private final TrafficRateLimiter limiter;
+    private final TrafficRateLimiter rateLimiter;
+    private final TrafficVolumeLimiter volumeLimiter;
 
     public TrafficRegulator(String operation, TrafficMonitor success, TrafficMonitor failure,
-        TrafficRateLimiter limiter, Logger logger) {
+        TrafficRateLimiter rateLimiter, TrafficVolumeLimiter volumeLimiter, Logger logger) {
         this.operation = operation;
         this.success = success;
         this.failure = failure;
-        this.limiter = limiter;
+        this.rateLimiter = rateLimiter;
+        this.volumeLimiter = volumeLimiter;
         this.logger = logger;
     }
 
@@ -60,8 +64,9 @@ class TrafficRegulator {
         double totalRate = successRate + failureRate;
 
         maybeRecord(successRate, failureRate);
-        long newRate = calculateNewRate(limiter.currentRate(), successRate, failureRate, totalRate);
-        limiter.update(newRate);
+        long newRate = calculateNewRate(rateLimiter.currentRate(), successRate, failureRate, totalRate);
+        rateLimiter.update(newRate);
+        volumeLimiter.update(newRate * WINDOW_SIZE);
     }
 
     private void maybeRecord(double successRate, double failureRate) {

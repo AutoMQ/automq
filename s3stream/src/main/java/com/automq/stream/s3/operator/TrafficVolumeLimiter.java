@@ -13,12 +13,15 @@ package com.automq.stream.s3.operator;
 
 import com.ibm.asyncutil.locks.AsyncSemaphore;
 import com.ibm.asyncutil.locks.FairAsyncSemaphore;
+
 import java.util.concurrent.CompletableFuture;
 
 /**
  * A limiter that uses an async semaphore to limit the volume of network traffic.
  */
 public class TrafficVolumeLimiter {
+
+    private static final long MAX_SEMAPHORE_PERMITS = FairAsyncSemaphore.MAX_PERMITS;
 
     /**
      * The semaphore used to limit the volume of network traffic in bytes.
@@ -29,6 +32,13 @@ public class TrafficVolumeLimiter {
      * The current volume of network traffic in bytes.
      */
     private long currentVolume;
+
+    /**
+     * Create a limiter without limiting.
+     */
+    public TrafficVolumeLimiter() {
+        this(MAX_SEMAPHORE_PERMITS);
+    }
 
     public TrafficVolumeLimiter(long bytes) {
         this.semaphore = new FairAsyncSemaphore(bytes);

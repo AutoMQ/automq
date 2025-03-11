@@ -108,6 +108,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      */
     private final TrafficRateLimiter writeRateLimiter;
     /**
+     * A limiter to control the volume of write requests.
+     * It is used to limit the inflight write traffic when the write requests are throttled.
+     */
+    private final TrafficVolumeLimiter writeVolumeLimiter;
+    /**
      * The regulator to control the rate of write requests.
      */
     private final TrafficRegulator writeRegulator;
@@ -115,7 +120,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      * Pending tasks for write operations (PutObject and UploadPart).
      * The task with higher priority and requested earlier will be executed first.
      */
-    private final Queue<Task> writeTasks = new PriorityBlockingQueue<>();
+    private final Queue<AsyncTask> writeTasks = new PriorityBlockingQueue<>();
     /**
      * The lock to protect the {@link this#currentWriteTask}.
      */
@@ -174,7 +179,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             Duration.ofSeconds(3).toMillis());
 
         writeRateLimiter = new TrafficRateLimiter(scheduler);
-        writeRegulator = new TrafficRegulator("write", successWriteMonitor, failedWriteMonitor, writeRateLimiter, logger);
+        writeVolumeLimiter = new TrafficVolumeLimiter();
+        writeRegulator = new TrafficRegulator("write", successWriteMonitor, failedWriteMonitor, writeRateLimiter, writeVolumeLimiter, logger);
         scheduler.scheduleWithFixedDelay(writeRegulator::regulate, 30, 30, TimeUnit.SECONDS);
     }
 
@@ -376,10 +382,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     private void queuedWrite0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> cf) {
-        Task task = new Task(
+        AsyncTask task = new AsyncTask(
             options.requestTime(),
             options.throttleStrategy(),
             () -> write0(options, path, data, cf),
+            cf,
             () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
@@ -488,10 +495,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     private void queuedUploadPart0(WriteOptions options, String path, String uploadId, int partNumber, ByteBuf data,
         CompletableFuture<ObjectStorageCompletedPart> cf) {
-        Task task = new Task(
+        AsyncTask task = new AsyncTask(
             options.requestTime(),
             options.throttleStrategy(),
             () -> uploadPart0(options, path, uploadId, partNumber, data, cf),
+            cf,
             () -> (long) data.readableBytes()
         );
         writeTasks.add(task);
@@ -777,12 +785,16 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return;
             }
 
-            Task task = writeTasks.poll();
+            AsyncTask task = writeTasks.poll();
             if (task == null) {
                 return;
             }
 
-            currentWriteTask = writeRateLimiter.consume(task.bytes()).thenRun(task::run);
+            currentWriteTask = CompletableFuture.allOf(
+                writeRateLimiter.consume(task.bytes()),
+                writeVolumeLimiter.acquire(task.bytes())
+            ).thenRun(task::run);
+            task.registerCallback(() -> writeVolumeLimiter.release(task.bytes()));
             currentWriteTask.whenComplete((nil, ignored) -> maybeRunNextWriteTask());
         } finally {
             writeTaskLock.unlock();
@@ -1092,24 +1104,39 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     /**
      * An object storage operation task.
      */
-    private static class Task implements Comparable<Task> {
+    private static class AsyncTask implements Comparable<AsyncTask> {
         private final long requestTime;
         private final ThrottleStrategy strategy;
-        private final Runnable task;
+        /**
+         * A runnable to start the task.
+         */
+        private final Runnable starter;
+        /**
+         * A future which will be completed when the task is done (whether success or failure).
+         */
+        private final CompletableFuture<?> finishFuture;
         private final Supplier<Long> sizeInBytes;
 
-        public Task(long requestTime, ThrottleStrategy strategy, Runnable task, Supplier<Long> sizeInBytes) {
+        public AsyncTask(long requestTime, ThrottleStrategy strategy, Runnable starter, CompletableFuture<?> finishFuture, Supplier<Long> sizeInBytes) {
             this.requestTime = requestTime;
             this.strategy = strategy;
-            this.task = task;
+            this.starter = starter;
+            this.finishFuture = finishFuture;
             this.sizeInBytes = sizeInBytes;
         }
 
         /**
-         * Execute the task.
+         * Start the async task.
          */
         public void run() {
-            task.run();
+            starter.run();
+        }
+
+        /**
+         * Register a callback to be called when the async task is finished.
+         */
+        public void registerCallback(Runnable runnable) {
+            finishFuture.whenComplete((nil, ignored) -> runnable.run());
         }
 
         /**
@@ -1120,7 +1147,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
 
         @Override
-        public int compareTo(Task other) {
+        public int compareTo(AsyncTask other) {
             int cmp = this.strategy.compareTo(other.strategy);
             if (cmp != 0) {
                 return cmp;
