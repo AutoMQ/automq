@@ -111,7 +111,7 @@ class TrafficRegulator {
             return MAX;
         }
         double historyRate = meanOfTopSuccessRates();
-        if (currentLimit > historyRate * (1 + SLOW_INCREMENT_RATIO * 20)) {
+        if (currentLimit > historyRate * (1 + SLOW_INCREMENT_RATIO * 120)) {
             // If the current limit is higher enough, which means there is and will be no throttling,
             //  so we can just increase the limit to the maximum.
             logger.info("{} limit is high enough, current limit: {}, history rate: {}, new rate: {}",
