@@ -790,11 +790,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return;
             }
 
+            long size = task.bytes();
             currentWriteTask = CompletableFuture.allOf(
-                writeRateLimiter.consume(task.bytes()),
-                writeVolumeLimiter.acquire(task.bytes())
+                writeRateLimiter.consume(size),
+                writeVolumeLimiter.acquire(size)
             ).thenRun(task::run);
-            task.registerCallback(() -> writeVolumeLimiter.release(task.bytes()));
+            task.registerCallback(() -> writeVolumeLimiter.release(size));
             currentWriteTask.whenComplete((nil, ignored) -> maybeRunNextWriteTask());
         } finally {
             writeTaskLock.unlock();
