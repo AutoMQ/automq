@@ -58,6 +58,14 @@ class TrafficRegulator {
         regulate0();
     }
 
+    /**
+     * The maximum request size allowed by the regulator.
+     * Any request larger than this size should be downscaled to this size.
+     */
+    public long maxRequestSize() {
+        return MIN * WINDOW_SIZE;
+    }
+
     private void regulate0() {
         double successRate = success.getRateAndReset();
         double failureRate = failure.getRateAndReset();

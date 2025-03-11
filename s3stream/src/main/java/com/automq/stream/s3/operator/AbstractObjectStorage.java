@@ -817,7 +817,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return;
             }
 
-            long size = task.bytes();
+            long size = Math.min(task.bytes(), writeRegulator.maxRequestSize());
             currentWriteTask = CompletableFuture.allOf(
                 writeRateLimiter.consume(size),
                 writeVolumeLimiter.acquire(size)
