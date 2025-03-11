@@ -142,7 +142,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return new Builder();
     }
 
-    static void checkDeleteObjectsResponse(DeleteObjectsResponse response) throws Exception {
+    void checkDeleteObjectsResponse(DeleteObjectsResponse response) throws Exception {
         int errDeleteCount = 0;
         ArrayList<String> failedKeys = new ArrayList<>();
         ArrayList<String> errorsMessages = new ArrayList<>();
@@ -152,7 +152,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 continue;
             }
             if (errDeleteCount < 5) {
-                LOGGER.error("Delete objects for key [{}] error code [{}] message [{}]",
+                logger.error("Delete objects for key [{}] error code [{}] message [{}]",
                     error.key(), error.code(), error.message());
             }
             failedKeys.add(error.key());
@@ -413,7 +413,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.endpointOverride(URI.create(endpoint));
         }
         if (!OpenSsl.isAvailable()) {
-            LOGGER.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
+            logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
         }
         SdkAsyncHttpClient httpClient = NettyNioAsyncHttpClient.builder()
             .maxConcurrency(maxConcurrency)
@@ -449,7 +449,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     class ReadinessCheck {
         public boolean readinessCheck() {
-            LOGGER.info("Start readiness check for {}", bucketURI);
+            logger.info("Start readiness check for {}", bucketURI);
             String normalPath = String.format("__automq/readiness_check/normal_obj/%d", System.nanoTime());
             try {
                 writeS3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(normalPath).build()).get();
@@ -457,17 +457,17 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 // 权限 / endpoint / xxx
                 Throwable cause = FutureUtil.cause(e);
                 if (cause instanceof SdkClientException) {
-                    LOGGER.error("Cannot connect to s3, please check the s3 endpoint config", cause);
+                    logger.error("Cannot connect to s3, please check the s3 endpoint config", cause);
                 } else if (cause instanceof S3Exception) {
                     int code = ((S3Exception) cause).statusCode();
                     switch (code) {
                         case HttpStatusCode.NOT_FOUND:
                             break;
                         case HttpStatusCode.FORBIDDEN:
-                            LOGGER.error("Please check whether config is correct", cause);
+                            logger.error("Please check whether config is correct", cause);
                             return false;
                         default:
-                            LOGGER.error("Please check config is correct", cause);
+                            logger.error("Please check config is correct", cause);
                     }
                 }
             }
@@ -478,9 +478,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             } catch (Throwable e) {
                 Throwable cause = FutureUtil.cause(e);
                 if (cause instanceof S3Exception && ((S3Exception) cause).statusCode() == HttpStatusCode.NOT_FOUND) {
-                    LOGGER.error("Cannot find the bucket={}", bucket, cause);
+                    logger.error("Cannot find the bucket={}", bucket, cause);
                 } else {
-                    LOGGER.error("Please check the identity have the permission to do Write Object operation", cause);
+                    logger.error("Please check the identity have the permission to do Write Object operation", cause);
                 }
                 return false;
             }
@@ -488,7 +488,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             try {
                 doDeleteObjects(List.of(normalPath)).get();
             } catch (Throwable e) {
-                LOGGER.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
+                logger.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
                 return false;
             }
 
@@ -505,15 +505,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 buf.readBytes(readContent);
                 buf.release();
                 if (!Arrays.equals(content, readContent)) {
-                    LOGGER.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
+                    logger.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
                 }
                 doDeleteObjects(List.of(multiPartPath)).get();
             } catch (Throwable e) {
-                LOGGER.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
+                logger.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
                 return false;
             }
 
-            LOGGER.info("Readiness check pass!");
+            logger.info("Readiness check pass!");
             return true;
         }
 

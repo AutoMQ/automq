@@ -64,6 +64,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -98,6 +99,14 @@ public class S3Storage implements Storage {
     private final Queue<DeltaWALUploadTaskContext> walPrepareQueue = new LinkedList<>();
     private final Queue<DeltaWALUploadTaskContext> walCommitQueue = new LinkedList<>();
     private final List<DeltaWALUploadTaskContext> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
+    /**
+     * A lock to ensure only one thread can trigger {@link #forceUpload()} in {@link #maybeForceUpload()}
+     */
+    private final AtomicBoolean forceUploadScheduled = new AtomicBoolean();
+    /**
+     * A lock to ensure only one thread can trigger {@link #forceUpload()} in {@link #forceUploadCallback()}
+     */
+    private final AtomicBoolean needForceUpload = new AtomicBoolean();
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
     private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPoolWithMonitor(
@@ -460,7 +469,7 @@ public class S3Storage implements Storage {
             } catch (OverCapacityException e) {
                 // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
                 confirmOffsetCalculator.update();
-                forceUpload(LogCache.MATCH_ALL_STREAMS);
+                maybeForceUpload();
                 if (!fromBackoff) {
                     backoffRecords.offer(request);
                 }
@@ -593,6 +602,43 @@ public class S3Storage implements Storage {
                 throw new IllegalArgumentException(String.format("Continuous check failed, expect offset: %d," +
                     " actual: %d, records: %s", expectStartOffset, record.getBaseOffset(), records));
             }
+        }
+    }
+
+    /**
+     * Limit the number of inflight force upload tasks to 1 to avoid too many S3 objects.
+     */
+    private void maybeForceUpload() {
+        if (hasInflightForceUploadTask()) {
+            // There is already an inflight force upload task, trigger another one later after it completes.
+            needForceUpload.set(true);
+            return;
+        }
+        if (forceUploadScheduled.compareAndSet(false, true)) {
+            forceUpload();
+        } else {
+            // There is already a force upload task scheduled, do nothing.
+            needForceUpload.set(true);
+        }
+    }
+
+    private boolean hasInflightForceUploadTask() {
+        return inflightWALUploadTasks.stream().anyMatch(it -> it.force);
+    }
+
+    private CompletableFuture<Void> forceUpload() {
+        LOGGER.info("force upload all streams");
+        CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
+        cf.whenComplete((nil, ignored) -> forceUploadCallback());
+        return cf;
+    }
+
+    private void forceUploadCallback() {
+        // Reset the force upload flag after the task completes.
+        forceUploadScheduled.set(false);
+        if (needForceUpload.compareAndSet(true, false)) {
+            // Force upload needs to be triggered again.
+            forceUpload();
         }
     }
 
