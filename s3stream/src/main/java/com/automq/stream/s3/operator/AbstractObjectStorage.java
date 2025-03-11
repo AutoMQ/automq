@@ -106,7 +106,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      * A limiter to control the rate of write requests.
      * It is used to limit the write traffic when the write requests are throttled.
      */
-    private final TrafficLimiter writeLimiter;
+    private final TrafficRateLimiter writeRateLimiter;
     /**
      * The regulator to control the rate of write requests.
      */
@@ -121,7 +121,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      */
     private final Lock writeTaskLock = new ReentrantLock();
     /**
-     * The current write task (e.g., waiting for {@link this#writeLimiter}).
+     * The current write task (e.g., waiting for {@link this#writeRateLimiter}).
      */
     private CompletableFuture<Void> currentWriteTask = CompletableFuture.completedFuture(null);
 
@@ -173,8 +173,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 12 * 1024 * 1024, 16 * 1024 * 1024, 32 * 1024 * 1024},
             Duration.ofSeconds(3).toMillis());
 
-        writeLimiter = new TrafficLimiter(scheduler);
-        writeRegulator = new TrafficRegulator("write", successWriteMonitor, failedWriteMonitor, writeLimiter, logger);
+        writeRateLimiter = new TrafficRateLimiter(scheduler);
+        writeRegulator = new TrafficRegulator("write", successWriteMonitor, failedWriteMonitor, writeRateLimiter, logger);
         scheduler.scheduleWithFixedDelay(writeRegulator::regulate, 30, 30, TimeUnit.SECONDS);
     }
 
@@ -782,7 +782,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return;
             }
 
-            currentWriteTask = writeLimiter.consume(task.bytes()).thenRun(task::run);
+            currentWriteTask = writeRateLimiter.consume(task.bytes()).thenRun(task::run);
             currentWriteTask.whenComplete((nil, ignored) -> maybeRunNextWriteTask());
         } finally {
             writeTaskLock.unlock();

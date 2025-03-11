@@ -23,7 +23,7 @@ import io.github.bucket4j.TokensInheritanceStrategy;
 /**
  * A limiter that uses Bucker4j to limit the rate of network traffic.
  */
-class TrafficLimiter {
+class TrafficRateLimiter {
 
     /**
      * The maximum rate of refilling the Bucker4j bucket, which is 1 token per nanosecond.
@@ -44,10 +44,14 @@ class TrafficLimiter {
     private long currentRate;
 
     /**
-     * Create a limiter without limiting.
+     * Create a limiter without limiting (actually a limit of 1 TB/s).
      */
-    public TrafficLimiter(ScheduledExecutorService scheduler) {
-        this.currentRate = MAX_BUCKET_TOKENS_PER_SECOND;
+    public TrafficRateLimiter(ScheduledExecutorService scheduler) {
+        this(scheduler, Long.MAX_VALUE);
+    }
+
+    public TrafficRateLimiter(ScheduledExecutorService scheduler, long bytesPerSecond) {
+        this.currentRate = toKbps(bytesPerSecond);
         this.bucket = Bucket.builder()
             .addLimit(limit -> limit
                 .capacity(currentRate)
@@ -67,6 +71,7 @@ class TrafficLimiter {
      * Note: An update will not take effect on the previous {@link this#consume} calls. For example, if the
      * previous rate is 1 MB/s and the new rate is 10 MB/s, the previous {@link this#consume} calls will
      * still be limited to 1 MB/s.
+     * Note：this method is not thread-safe.
      */
     public void update(long bytesPerSecond) {
         currentRate = toKbps(bytesPerSecond);

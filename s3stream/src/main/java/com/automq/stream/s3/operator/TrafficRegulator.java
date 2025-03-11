@@ -39,10 +39,10 @@ class TrafficRegulator {
     private final EvictingQueue<Double> successRateQueue = EvictingQueue.create(HISTORY_SIZE);
     private final TrafficMonitor success;
     private final TrafficMonitor failure;
-    private final TrafficLimiter limiter;
+    private final TrafficRateLimiter limiter;
 
     public TrafficRegulator(String operation, TrafficMonitor success, TrafficMonitor failure,
-        TrafficLimiter limiter, Logger logger) {
+        TrafficRateLimiter limiter, Logger logger) {
         this.operation = operation;
         this.success = success;
         this.failure = failure;
