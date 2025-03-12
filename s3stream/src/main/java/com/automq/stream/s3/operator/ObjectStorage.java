@@ -122,6 +122,7 @@ public interface ObjectStorage {
         private boolean enableFastRetry;
         private boolean retry;
         private int retryCount;
+        private long requestTime;
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -148,6 +149,11 @@ public interface ObjectStorage {
 
         public WriteOptions retry(boolean retry) {
             this.retry = retry;
+            return this;
+        }
+
+        public WriteOptions requestTime(long requestTime) {
+            this.requestTime = requestTime;
             return this;
         }
 
@@ -191,6 +197,10 @@ public interface ObjectStorage {
             return retryCount;
         }
 
+        public long requestTime() {
+            return requestTime;
+        }
+
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
@@ -200,6 +210,7 @@ public interface ObjectStorage {
             copy.enableFastRetry = enableFastRetry;
             copy.retry = retry;
             copy.retryCount = retryCount;
+            copy.requestTime = requestTime;
             return copy;
         }
     }
