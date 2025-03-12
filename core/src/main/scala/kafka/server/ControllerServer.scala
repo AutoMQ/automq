@@ -22,7 +22,6 @@ import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
 import kafka.controller.streamaspect.client.{Context, StreamClientFactoryProxy}
-
 import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
@@ -38,7 +37,7 @@ import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.security.scram.internals.ScramMechanism
 import org.apache.kafka.common.security.token.delegation.internals.DelegationTokenCache
 import org.apache.kafka.common.utils.LogContext
-import org.apache.kafka.common.{ClusterResource, Endpoint, Uuid}
+import org.apache.kafka.common.{ClusterResource, Endpoint, Reconfigurable, Uuid}
 import org.apache.kafka.controller.metrics.{ControllerMetadataMetricsPublisher, QuorumControllerMetrics}
 import org.apache.kafka.controller.{QuorumController, QuorumControllerExtension, QuorumFeatures}
 import org.apache.kafka.image.publisher.{ControllerRegistrationsPublisher, MetadataPublisher}
@@ -583,6 +582,13 @@ class ControllerServer(
 
   protected def replicaPlacer(): ReplicaPlacer = {
     new StripedReplicaPlacer(new Random())
+  }
+
+  // return a list of all reconfigurable objects
+  def reconfigurables(): java.util.List[Reconfigurable] = {
+    java.util.List.of(
+      autoBalancerManager
+    )
   }
   // AutoMQ for Kafka inject end
 }
