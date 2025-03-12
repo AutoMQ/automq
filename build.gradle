@@ -2143,6 +2143,7 @@ project(':s3stream') {
     implementation 'commons-codec:commons-codec:1.17.0'
     implementation 'org.hdrhistogram:HdrHistogram:2.2.2'
     implementation 'software.amazon.awssdk.crt:aws-crt:0.30.8'
+    implementation 'com.ibm.async:asyncutil:0.1.0'
 
     testImplementation 'org.slf4j:slf4j-simple:2.0.9'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
