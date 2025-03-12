@@ -290,6 +290,14 @@ public class S3Storage implements Storage {
                 continue;
             }
 
+            // During the WAL recovery, when restored data is split into StreamObjects, we will upload each StreamObject
+            // individually. This implementation causes the ByteBuf allocated by WriteAheadLog#recover to be released in
+            // a fragmented manner, potentially generating significant memory fragmentation.
+            // To avoid this issue, we optimize memory management by proactively releasing the ByteBuf through the
+            // StreamRecordBatch#encoded method invocation, thereby centralizing memory release operations and
+            // preventing memory fragmentation.
+            streamRecordBatch.encoded();
+
             Long expectNextOffset = streamNextOffsets.get(streamId);
             Queue<StreamRecordBatch> discontinuousRecords = streamDiscontinuousRecords.get(streamId);
             if (expectNextOffset == null || expectNextOffset == streamRecordBatch.getBaseOffset()) {
