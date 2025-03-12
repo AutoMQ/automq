@@ -47,7 +47,7 @@ public class LazyStream implements Stream {
     private volatile Stream inner = NOOP_STREAM;
     private ElasticStreamEventListener eventListener;
 
-    public LazyStream(String name, long streamId, StreamClient client, int replicaCount, long epoch, Map<String, String> tags) throws IOException {
+    public LazyStream(String name, long streamId, StreamClient client, int replicaCount, long epoch, Map<String, String> tags, boolean snapshotRead) throws IOException {
         this.name = name;
         this.client = client;
         this.replicaCount = replicaCount;
@@ -56,7 +56,11 @@ public class LazyStream implements Stream {
         if (streamId != NOOP_STREAM_ID) {
             try {
                 // open exist stream
-                inner = client.openStream(streamId, OpenStreamOptions.builder().epoch(epoch).tags(tags).build()).get();
+                OpenStreamOptions.Builder options = OpenStreamOptions.builder().epoch(epoch).tags(tags);
+                if (snapshotRead) {
+                    options.readWriteMode(OpenStreamOptions.ReadWriteMode.SNAPSHOT_READ);
+                }
+                inner = client.openStream(streamId, options.build()).get();
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             } catch (ExecutionException e) {

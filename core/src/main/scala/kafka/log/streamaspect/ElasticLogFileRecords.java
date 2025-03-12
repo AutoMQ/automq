@@ -52,7 +52,6 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -70,8 +69,6 @@ public class ElasticLogFileRecords implements AutoCloseable {
     private final ElasticStreamSlice streamSlice;
     // This is The base offset of the corresponding segment.
     private final long baseOffset;
-    private final AtomicLong nextOffset;
-    private final AtomicLong committedOffset;
     // Inflight append result.
     private volatile CompletableFuture<?> lastAppend;
     private volatile ElasticResourceStatus status;
@@ -80,16 +77,13 @@ public class ElasticLogFileRecords implements AutoCloseable {
     public ElasticLogFileRecords(ElasticStreamSlice streamSlice, long baseOffset, int size) {
         this.baseOffset = baseOffset;
         this.streamSlice = streamSlice;
-        long nextOffset = streamSlice.nextOffset();
         // Note that size is generally used to
         // 1) show the physical size of a segment. In these cases, size is referred to decide whether to roll a new
         // segment, or calculate the cleaned size in a cleaning task, etc. If size is not correctly recorded for any
         // reason, the worst thing will be just a bigger segment than configured.
         // 2) show whether this segment is empty, i.e., size == 0.
         // Therefore, it is fine to use the nextOffset as a backoff value.
-        this.size = new AtomicInteger(size == 0 ? (int) nextOffset : size);
-        this.nextOffset = new AtomicLong(baseOffset + nextOffset);
-        this.committedOffset = new AtomicLong(baseOffset + nextOffset);
+        this.size = new AtomicInteger(size == 0 ? (int) Math.min(streamSlice.nextOffset(), Integer.MAX_VALUE / 2) : size);
         this.lastAppend = CompletableFuture.completedFuture(null);
 
         batches = batchesFrom(baseOffset);
@@ -101,11 +95,11 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     public long nextOffset() {
-        return nextOffset.get();
+        return baseOffset + streamSlice.nextOffset();
     }
 
     public long appendedOffset() {
-        return nextOffset.get() - baseOffset;
+        return nextOffset() - baseOffset;
     }
 
     public CompletableFuture<Records> read(long startOffset, long maxOffset, int maxSize) {
@@ -128,7 +122,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
                 return CompletableFuture.failedFuture(ex);
             }
         } else {
-            long endOffset = Utils.min(this.committedOffset.get(), maxOffset);
+            long endOffset = Utils.min(confirmOffset(), maxOffset);
             return CompletableFuture.completedFuture(new BatchIteratorRecordsAdaptor(this, startOffset, endOffset, maxSize));
         }
     }
@@ -136,7 +130,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
     private CompletableFuture<Records> readAll0(FetchContext context, long startOffset, long maxOffset, int maxSize) {
         // calculate the relative offset in the segment, which may start from 0.
         long nextFetchOffset = startOffset - baseOffset;
-        long endOffset = Utils.min(this.committedOffset.get(), maxOffset) - baseOffset;
+        long endOffset = Utils.min(confirmOffset(), maxOffset) - baseOffset;
         if (nextFetchOffset >= endOffset) {
             return CompletableFuture.completedFuture(MemoryRecords.EMPTY);
         }
@@ -207,7 +201,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
                     " bytes is too large for segment with current file position at " + size.get());
         int appendSize = records.sizeInBytes();
         // Note that the calculation of count requires strong consistency between nextOffset and the baseOffset of records.
-        int count = (int) (lastOffset - nextOffset.get());
+        int count = (int) (lastOffset - nextOffset());
         com.automq.stream.DefaultRecordBatch batch = new com.automq.stream.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
 
         AppendContext context = ContextUtils.createAppendContext();
@@ -219,12 +213,9 @@ public class ElasticLogFileRecords implements AutoCloseable {
             throw new IOException("Failed to append to stream " + streamSlice.stream().streamId(), ex);
         }
 
-        nextOffset.set(lastOffset);
         size.getAndAdd(appendSize);
         cf.whenComplete((rst, e) -> {
-            if (e == null) {
-                updateCommittedOffset(lastOffset);
-            } else if (e instanceof IOException) {
+            if (e instanceof IOException) {
                 status = ElasticResourceStatus.FENCED;
                 LOGGER.error("ElasticLogFileRecords[stream={}, baseOffset={}] fencing with ex: {}", streamSlice.stream().streamId(), baseOffset, e.getMessage());
             }
@@ -233,15 +224,8 @@ public class ElasticLogFileRecords implements AutoCloseable {
         return appendSize;
     }
 
-    private void updateCommittedOffset(long newCommittedOffset) {
-        while (true) {
-            long oldCommittedOffset = this.committedOffset.get();
-            if (oldCommittedOffset >= newCommittedOffset) {
-                break;
-            } else if (this.committedOffset.compareAndSet(oldCommittedOffset, newCommittedOffset)) {
-                break;
-            }
-        }
+    private long confirmOffset() {
+        return baseOffset + streamSlice.confirmOffset();
     }
 
     public void flush() throws IOException {
@@ -428,7 +412,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
             this.elasticLogFileRecords = elasticLogFileRecords;
             this.maxSize = maxSize;
             this.nextFetchOffset = startOffset - elasticLogFileRecords.baseOffset;
-            this.endOffset = Utils.min(elasticLogFileRecords.committedOffset.get(), maxOffset) - elasticLogFileRecords.baseOffset;
+            this.endOffset = Utils.min(elasticLogFileRecords.confirmOffset(), maxOffset) - elasticLogFileRecords.baseOffset;
         }
 
 
