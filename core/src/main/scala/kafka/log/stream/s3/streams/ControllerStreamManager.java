@@ -51,6 +51,7 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.streams.StreamCloseHook;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 
@@ -135,6 +136,11 @@ public class ControllerStreamManager implements StreamManager {
     @Override
     public CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds) {
         return CompletableFuture.completedFuture(this.streamMetadataManager.getStreamMetadataList(streamIds));
+    }
+
+    @Override
+    public StreamMetadataListener.Handle addMetadataListener(long streamId, StreamMetadataListener listener) {
+        return streamMetadataManager.addMetadataListener(streamId, listener);
     }
 
     @Override
