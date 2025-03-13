@@ -71,6 +71,10 @@ public class AutoMQConfig {
     public static final String S3_WAL_UPLOAD_THRESHOLD_CONFIG = "s3.wal.upload.threshold";
     public static final String S3_WAL_UPLOAD_THRESHOLD_DOC = "The threshold at which WAL triggers upload to object storage. The configuration value needs to be less than s3.wal.cache.size. The larger the configuration value, the higher the data aggregation and the lower the cost of metadata storage.";
 
+    public static final String S3_WAL_UPLOAD_INTERVAL_MS_CONFIG = "s3.wal.upload.interval.ms";
+    public static final String S3_WAL_UPLOAD_INTERVAL_MS_DOC = "The interval at which WAL triggers upload to object storage. -1 means only upload by size trigger";
+    public static final long S3_WAL_UPLOAD_INTERVAL_MS_DEFAULT = -1L;
+
     public static final String S3_STREAM_SPLIT_SIZE_CONFIG = "s3.stream.object.split.size";
     public static final String S3_STREAM_SPLIT_SIZE_DOC = "The S3 stream object split size threshold when upload delta WAL or compact stream set object.";
 
@@ -246,6 +250,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_WAL_PATH_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_WAL_PATH_DOC)
             .define(AutoMQConfig.S3_WAL_CACHE_SIZE_CONFIG, LONG, -1L, MEDIUM, AutoMQConfig.S3_WAL_CACHE_SIZE_DOC)
             .define(AutoMQConfig.S3_WAL_UPLOAD_THRESHOLD_CONFIG, LONG, -1L, MEDIUM, AutoMQConfig.S3_WAL_UPLOAD_THRESHOLD_DOC)
+            .define(AutoMQConfig.S3_WAL_UPLOAD_INTERVAL_MS_CONFIG, LONG, S3_WAL_UPLOAD_INTERVAL_MS_DEFAULT, LOW, AutoMQConfig.S3_WAL_UPLOAD_INTERVAL_MS_DOC)
             .define(AutoMQConfig.S3_STREAM_SPLIT_SIZE_CONFIG, INT, 8388608, MEDIUM, AutoMQConfig.S3_STREAM_SPLIT_SIZE_DOC)
             .define(AutoMQConfig.S3_OBJECT_BLOCK_SIZE_CONFIG, INT, 524288, MEDIUM, AutoMQConfig.S3_OBJECT_BLOCK_SIZE_DOC)
             .define(AutoMQConfig.S3_OBJECT_PART_SIZE_CONFIG, INT, 16777216, MEDIUM, AutoMQConfig.S3_OBJECT_PART_SIZE_DOC)
