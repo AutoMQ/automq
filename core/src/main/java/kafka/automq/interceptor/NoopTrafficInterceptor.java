@@ -9,62 +9,34 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.automq.zonerouter;
+package kafka.automq.interceptor;
 
 import kafka.server.MetadataCache;
-import kafka.server.RequestLocal;
 import kafka.server.streamaspect.ElasticKafkaApis;
 
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.network.ListenerName;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.RecordValidationStats;
-import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 
 import com.automq.stream.utils.FutureUtil;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
-public class NoopProduceRouter implements ProduceRouter {
+public class NoopTrafficInterceptor implements TrafficInterceptor {
     private final ElasticKafkaApis kafkaApis;
     private final MetadataCache metadataCache;
 
-    public NoopProduceRouter(ElasticKafkaApis kafkaApis, MetadataCache metadataCache) {
+    public NoopTrafficInterceptor(ElasticKafkaApis kafkaApis, MetadataCache metadataCache) {
         this.kafkaApis = kafkaApis;
         this.metadataCache = metadataCache;
     }
 
     @Override
-    public void handleProduceRequest(short apiVersion, ClientIdMetadata clientId, int timeout, short requiredAcks,
-        boolean internalTopicsAllowed, String transactionId, Map<TopicPartition, MemoryRecords> entriesPerPartition,
-        Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback,
-        Consumer<Map<TopicPartition, RecordValidationStats>> recordValidationStatsCallback,
-        RequestLocal requestLocal
-    ) {
-        kafkaApis.handleProduceAppendJavaCompatible(
-            timeout,
-            requiredAcks,
-            internalTopicsAllowed,
-            transactionId,
-            entriesPerPartition,
-            rst -> {
-                responseCallback.accept(rst);
-                return null;
-            },
-            rst -> {
-                recordValidationStatsCallback.accept(rst);
-                return null;
-            },
-            apiVersion,
-            requestLocal
-        );
+    public void handleProduceRequest(ProduceRequestArgs args) {
+        kafkaApis.handleProduceAppendJavaCompatible(args);
     }
 
     @Override
@@ -73,7 +45,7 @@ public class NoopProduceRouter implements ProduceRouter {
     }
 
     @Override
-    public List<MetadataResponseData.MetadataResponseTopic> handleMetadataResponse(String clientId,
+    public List<MetadataResponseData.MetadataResponseTopic> handleMetadataResponse(ClientIdMetadata clientId,
         List<MetadataResponseData.MetadataResponseTopic> topics) {
         return topics;
     }
