@@ -25,6 +25,8 @@ public class Config {
     private String walConfig = "0@file:///tmp/s3stream_wal";
     private long walCacheSize = 200 * 1024 * 1024;
     private long walUploadThreshold = 100 * 1024 * 1024;
+    // -1L means don't upload by time
+    private long walUploadIntervalMs = -1L;
     private int streamSplitSize = 16777216;
     private int objectBlockSize = 1048576;
     private int objectPartSize = 16777216;
@@ -71,6 +73,10 @@ public class Config {
 
     public long walUploadThreshold() {
         return walUploadThreshold;
+    }
+
+    public long walUploadIntervalMs() {
+        return walUploadIntervalMs;
     }
 
     public int streamSplitSize() {
@@ -179,6 +185,11 @@ public class Config {
 
     public Config walUploadThreshold(long s3WALObjectSize) {
         this.walUploadThreshold = s3WALObjectSize;
+        return this;
+    }
+
+    public Config walUploadIntervalMs(long s3WALUploadIntervalMs) {
+        this.walUploadIntervalMs = s3WALUploadIntervalMs;
         return this;
     }
 
