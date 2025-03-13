@@ -302,7 +302,9 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
       addReconfigurable(new DynamicMetricsReporters(kafkaConfig.nodeId, controller.config, controller.metrics, controller.clusterId))
     }
     addReconfigurable(new DynamicClientQuotaCallback(controller.quotaManagers, controller.config))
-    addReconfigurable(controller.autoBalancerManager)
+    // AutoMQ inject start
+    controller.reconfigurables().asScala.foreach(addReconfigurable)
+    // AutoMQ inject end
     addBrokerReconfigurable(new ControllerDynamicThreadPool(controller))
     // TODO: addBrokerReconfigurable(new DynamicListenerConfig(controller))
     addBrokerReconfigurable(controller.socketServer)
