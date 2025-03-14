@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.automq.zonerouter;
+package kafka.automq.partition.snapshot;
 
 public enum SnapshotOperation {
     ADD((short) 0), PATCH((short) 1), REMOVE((short) 2);

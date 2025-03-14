@@ -11,7 +11,6 @@
 
 package kafka.automq.partition.snapshot;
 
-import kafka.automq.zonerouter.SnapshotOperation;
 import kafka.cluster.LogEventListener;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionListener;
