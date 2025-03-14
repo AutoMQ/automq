@@ -14,11 +14,11 @@ package org.apache.kafka.clients.admin;
 import java.util.Objects;
 
 public class UpdateGroupSpec {
-    private String clusterId;
+    private String linkId;
     private boolean promoted;
 
-    public UpdateGroupSpec clusterId(String clusterId) {
-        this.clusterId = clusterId;
+    public UpdateGroupSpec linkId(String linkId) {
+        this.linkId = linkId;
         return this;
     }
 
@@ -27,8 +27,8 @@ public class UpdateGroupSpec {
         return this;
     }
 
-    public String clusterId() {
-        return clusterId;
+    public String linkId() {
+        return linkId;
     }
 
     public boolean promoted() {
@@ -42,18 +42,18 @@ public class UpdateGroupSpec {
         if (o == null || getClass() != o.getClass())
             return false;
         UpdateGroupSpec spec = (UpdateGroupSpec) o;
-        return promoted == spec.promoted && Objects.equals(clusterId, spec.clusterId);
+        return promoted == spec.promoted && Objects.equals(linkId, spec.linkId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(clusterId, promoted);
+        return Objects.hash(linkId, promoted);
     }
 
     @Override
     public String toString() {
         return "UpdateGroupsSpec{" +
-            "clusterId='" + clusterId + '\'' +
+            "linkId='" + linkId + '\'' +
             ", promoted=" + promoted +
             '}';
     }
