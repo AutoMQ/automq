@@ -24,10 +24,10 @@
   "flexibleVersions": "0+",
   "fields": [
     {
-      "name": "ClusterId",
+      "name": "LinkId",
       "type": "string",
       "versions": "0+",
-      "about": "The unique cluster ID which used for identification of the cluster to be linked"
+      "about": "The unique ID of a kafka link"
     },
     {
       "name": "GroupId",
