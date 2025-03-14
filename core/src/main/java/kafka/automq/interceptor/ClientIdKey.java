@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package kafka.automq.zonerouter;
+package kafka.automq.interceptor;
 
 public class ClientIdKey {
     public static final String AVAILABILITY_ZONE = "automq_az";
