@@ -18,6 +18,7 @@
 package kafka.server
 
 import kafka.api.ElectLeadersRequestOps
+import kafka.automq.interceptor.ClientIdMetadata
 import kafka.controller.ReplicaAssignment
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.network.RequestChannel
@@ -1454,7 +1455,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
     }
 
-    val clientId = request.header.clientId()
+    val clientId = ClientIdMetadata.of(request.header.clientId(), request.context.clientAddress, request.context.connectionId)
     val listenerName = request.context.listenerName.value()
     requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs =>
        MetadataResponse.prepareResponse(
@@ -4138,7 +4139,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   }
 
   // AutoMQ inject start
-  protected def metadataTopicsInterceptor(clientId: String, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
+  protected def metadataTopicsInterceptor(clientId: ClientIdMetadata, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
     topics
   }
 
