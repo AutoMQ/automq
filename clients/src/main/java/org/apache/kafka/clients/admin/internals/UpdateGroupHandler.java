@@ -86,7 +86,7 @@ public class UpdateGroupHandler extends AdminApiHandler.Batched<CoordinatorKey, 
         validateKeys(groupIds);
         return new AutomqUpdateGroupRequest.Builder(
             new AutomqUpdateGroupRequestData()
-                .setClusterId(groupSpec.clusterId())
+                .setLinkId(groupSpec.linkId())
                 .setGroupId(this.groupId.idValue)
                 .setPromoted(groupSpec.promoted())
         );
