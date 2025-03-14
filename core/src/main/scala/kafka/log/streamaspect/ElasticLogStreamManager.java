@@ -30,6 +30,7 @@ public class ElasticLogStreamManager {
     private final int replicaCount;
     private final long epoch;
     private final Map<String, String> tags;
+    private final boolean snapshotRead;
     /**
      * inner listener for created LazyStream
      */
@@ -39,15 +40,16 @@ public class ElasticLogStreamManager {
      */
     private ElasticStreamEventListener outerListener;
 
-    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount, long epoch, Map<String, String> tags) throws IOException {
+    public ElasticLogStreamManager(Map<String, Long> streams, StreamClient streamClient, int replicaCount, long epoch, Map<String, String> tags, boolean snapshotRead) throws IOException {
         this.streamClient = streamClient;
         this.replicaCount = replicaCount;
         this.epoch = epoch;
         this.tags = tags;
+        this.snapshotRead = snapshotRead;
         for (Map.Entry<String, Long> entry : streams.entrySet()) {
             String name = entry.getKey();
             long streamId = entry.getValue();
-            LazyStream stream = new LazyStream(name, streamId, streamClient, replicaCount, epoch, tags);
+            LazyStream stream = new LazyStream(name, streamId, streamClient, replicaCount, epoch, tags, snapshotRead);
             stream.setListener(innerListener);
             streamMap.put(name, stream);
         }
@@ -57,7 +59,10 @@ public class ElasticLogStreamManager {
         if (streamMap.containsKey(name)) {
             return streamMap.get(name);
         }
-        LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount, epoch, tags);
+        if (snapshotRead) {
+            throw new IllegalStateException("snapshotRead mode can not create stream");
+        }
+        LazyStream lazyStream = new LazyStream(name, LazyStream.NOOP_STREAM_ID, streamClient, replicaCount, epoch, tags, snapshotRead);
         lazyStream.setListener(innerListener);
         // pre-create log and tim stream cause of their high frequency of use.
         boolean warmUp = "log".equals(name) || "tim".equals(name);
@@ -70,6 +75,16 @@ public class ElasticLogStreamManager {
 
     public Map<String, Stream> streams() {
         return Collections.unmodifiableMap(streamMap);
+    }
+
+    public void putStreamIfAbsent(String name, long streamId) {
+        streamMap.computeIfAbsent(name, n -> {
+            try {
+                return new LazyStream(name, streamId, streamClient, replicaCount, epoch, tags, snapshotRead);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     public void setListener(ElasticStreamEventListener listener) {

@@ -136,14 +136,14 @@ class UnifiedLog(@volatile var logStartOffset: Long,
    * that this could result in disagreement between replicas depending on when they began replicating the log.
    * In the worst case, the LSO could be seen by a consumer to go backwards.
    */
-  @volatile private var firstUnstableOffsetMetadata: Option[LogOffsetMetadata] = None
+  @volatile protected var firstUnstableOffsetMetadata: Option[LogOffsetMetadata] = None
 
   /* Keep track of the current high watermark in order to ensure that segments containing offsets at or above it are
    * not eligible for deletion. This means that the active segment is only eligible for deletion if the high watermark
    * equals the log end offset (which may never happen for a partition under consistent load). This is needed to
    * prevent the log start offset (which is exposed in fetch responses) from getting ahead of the high watermark.
    */
-  @volatile private var highWatermarkMetadata: LogOffsetMetadata = new LogOffsetMetadata(logStartOffset)
+  @volatile protected var highWatermarkMetadata: LogOffsetMetadata = new LogOffsetMetadata(logStartOffset)
 
   @volatile var partitionMetadataFile: Option[PartitionMetadataFile] = None
 
@@ -1990,8 +1990,6 @@ class UnifiedLog(@volatile var logStartOffset: Long,
       minOneMessage: Boolean): CompletableFuture[FetchDataInfo] = {
     CompletableFuture.completedFuture(read(startOffset, maxLength, isolation, minOneMessage))
   }
-
-
   // AutoMQ inject end
 
 }

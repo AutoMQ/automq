@@ -331,7 +331,7 @@ public class ElasticLogSegmentTest {
         });
         ElasticStreamSliceManager manager = segmentStreams.computeIfAbsent(offset, k -> {
             try {
-                return new ElasticStreamSliceManager(new ElasticLogStreamManager(new HashMap<>(), new MemoryClient.StreamClientImpl(), 1, 0, new HashMap<>()));
+                return new ElasticStreamSliceManager(new ElasticLogStreamManager(new HashMap<>(), new MemoryClient.StreamClientImpl(), 1, 0, new HashMap<>(), false));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

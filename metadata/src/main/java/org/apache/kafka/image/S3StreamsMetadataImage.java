@@ -55,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -626,6 +627,19 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     public long nextAssignedStreamId() {
         return nextAssignedStreamId;
+    }
+
+    public OptionalLong streamEndOffset(long streamId) {
+        Long endOffset = streamEndOffsets.get(streamId);
+        if (endOffset != null) {
+            return OptionalLong.of(endOffset);
+        }
+        // There is no record in a new stream
+        if (streamMetadataMap.containsKey(streamId)) {
+            return OptionalLong.of(0L);
+        } else {
+            return OptionalLong.empty();
+        }
     }
 
     TimelineHashMap<TopicIdPartition, Set<Long>> partition2streams() {

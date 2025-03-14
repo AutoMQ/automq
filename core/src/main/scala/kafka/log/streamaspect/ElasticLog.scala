@@ -14,6 +14,7 @@ package kafka.log.streamaspect
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import com.automq.stream.utils.{FutureUtil, Systems}
 import io.netty.buffer.Unpooled
+import kafka.cluster.PartitionSnapshot
 import kafka.log.LocalLog.CleanedFileSuffix
 import kafka.log._
 import kafka.log.streamaspect.ElasticLogFileRecords.{BatchIteratorRecordsAdaptor, PooledMemoryRecords}
@@ -36,7 +37,7 @@ import java.io.{File, IOException}
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.util
-import java.util.Optional
+import java.util.{Collections, Optional}
 import java.util.concurrent._
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.collection.mutable.ListBuffer
@@ -87,7 +88,8 @@ class ElasticLog(val metaStream: MetaStream,
     topicPartition: TopicPartition,
     logDirFailureChannel: LogDirFailureChannel,
     val _initStartOffset: Long = 0,
-    leaderEpoch: Long
+    leaderEpoch: Long,
+    snapshotRead: Boolean = false
 ) extends LocalLog(__dir, _config, segments, partitionMeta.getRecoverOffset, _nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel) {
 
     import ElasticLog._
@@ -168,10 +170,16 @@ class ElasticLog(val metaStream: MetaStream,
     }
 
     private def persistLogMeta(): Unit = {
+        if (snapshotRead) {
+            return
+        }
         logSegmentManager.persistLogMeta()
     }
 
     private def persistPartitionMeta(): Unit = {
+        if (snapshotRead) {
+            return
+        }
         persistMeta(metaStream, MetaKeyValue.of(MetaStream.PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta)))
         if (isDebugEnabled) {
             debug(s"${logIdent}save partition meta $partitionMeta")
@@ -263,13 +271,7 @@ class ElasticLog(val metaStream: MetaStream,
     }
 
     private[log] def confirmOffset: LogOffsetMetadata = {
-        val confirmOffset = _confirmOffset.get()
-        val offsetUpperBound = logSegmentManager.offsetUpperBound.get()
-        if (offsetUpperBound != null && offsetUpperBound.messageOffset < confirmOffset.messageOffset) {
-            offsetUpperBound
-        } else {
-            confirmOffset
-        }
+        _confirmOffset.get()
     }
 
     override private[log] def flush(offset: Long): Unit = {
@@ -478,7 +480,11 @@ class ElasticLog(val metaStream: MetaStream,
      * Directly close all streams of the log.
      */
     def closeStreams(): CompletableFuture[Void] = {
-        CompletableFuture.allOf(streamManager.close(), metaStream.close())
+        if (snapshotRead) {
+            CompletableFuture.allOf(streamManager.close())
+        } else {
+            CompletableFuture.allOf(streamManager.close(), metaStream.close())
+        }
     }
 
     def updateLogStartOffset(offset: Long): Unit = {
@@ -579,6 +585,33 @@ class ElasticLog(val metaStream: MetaStream,
             newSegment
         }
     }
+
+    def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
+        snapshot.logMeta(logSegmentManager.logMeta())
+        snapshot.logEndOffset(logEndOffsetMetadata)
+        logSegmentManager.streams().forEach(stream => {
+            snapshot.streamEndOffset(stream.streamId(), stream.confirmOffset())
+        })
+    }
+
+    def snapshot(snapshot: PartitionSnapshot): Unit = {
+        val logMeta = snapshot.logMeta()
+        if (logMeta != null && !logMeta.getSegmentMetas.isEmpty) {
+            logMeta.getStreamMap.forEach((name, streamId) => {
+                streamManager.putStreamIfAbsent(name, streamId)
+            })
+            segments.clear()
+            logMeta.getSegmentMetas.forEach(segMeta => {
+                val segment = new ElasticLogSegment(dir, segMeta, streamSliceManager, config, time, (_, _) => {}, logIdent)
+                segments.add(segment)
+            })
+        }
+        var logEndOffset = snapshot.logEndOffset()
+        val segmentBaseOffset = segments.floorSegment(logEndOffset.messageOffset).get().baseOffset()
+        logEndOffset = new LogOffsetMetadata(logEndOffset.messageOffset, segmentBaseOffset, logEndOffset.relativePositionInSegment);
+        nextOffsetMetadata = logEndOffset
+        _confirmOffset.set(logEndOffset)
+    }
 }
 
 object ElasticLog extends Logging {
@@ -623,7 +656,8 @@ object ElasticLog extends Logging {
         producerStateManagerConfig: ProducerStateManagerConfig,
         topicId: Option[Uuid],
         leaderEpoch: Long,
-        openStreamChecker: OpenStreamChecker
+        openStreamChecker: OpenStreamChecker,
+        snapshotRead: Boolean = false
     ): ElasticLog = {
         // TODO: better error mark for elastic log
         logDirFailureChannel.clearOfflineLogDirRecord(dir.getPath)
@@ -647,6 +681,18 @@ object ElasticLog extends Logging {
         streamTags.put(StreamTags.Partition.KEY, StreamTags.Partition.encode(topicPartition.partition()))
 
         try {
+            if (snapshotRead) {
+                val logStreamManager = new ElasticLogStreamManager(Collections.emptyMap(), client.streamClient(), replicationFactor, leaderEpoch, streamTags, true)
+                val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
+                val segments = new CachedLogSegments(topicPartition)
+                partitionMeta = new ElasticPartitionMeta()
+                val leaderEpochCheckpointMeta = new ElasticLeaderEpochCheckpointMeta(LeaderEpochCheckpointFile.CURRENT_VERSION, new util.ArrayList[EpochEntry]())
+                val producerStateManager = new ElasticProducerStateManager(topicPartition, dir,
+                    maxTransactionTimeoutMs, producerStateManagerConfig, time, new util.TreeMap[java.lang.Long, ByteBuffer](), _ => CompletableFuture.completedFuture(null))
+                return new ElasticLog(null, logStreamManager, streamSliceManager, producerStateManager, null, partitionMeta, leaderEpochCheckpointMeta, dir, config,
+                    segments, new LogOffsetMetadata(0), scheduler, time, topicPartition, logDirFailureChannel, 0, leaderEpoch, true)
+            }
+
             metaStream = if (metaNotExists) {
                 val stream = createMetaStream(client, key, replicationFactor, leaderEpoch, streamTags, logIdent = logIdent)
                 info(s"${logIdent}created a new meta stream: streamId=${stream.streamId()}")
@@ -687,7 +733,7 @@ object ElasticLog extends Logging {
                 maxTransactionTimeoutMs, producerStateManagerConfig, time, snapshotsMap, kv => metaStream.append(kv).thenApply(_ => null))
 
             val logMeta: ElasticLogMeta = metaMap.get(MetaStream.LOG_META_KEY).map(m => m.asInstanceOf[ElasticLogMeta]).getOrElse(new ElasticLogMeta())
-            logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), replicationFactor, leaderEpoch, streamTags)
+            logStreamManager = new ElasticLogStreamManager(logMeta.getStreamMap, client.streamClient(), replicationFactor, leaderEpoch, streamTags, false)
             val streamSliceManager = new ElasticStreamSliceManager(logStreamManager)
 
             val logSegmentManager = new ElasticLogSegmentManager(metaStream, logStreamManager, logIdent)

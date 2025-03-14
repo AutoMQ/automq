@@ -11,15 +11,17 @@
 
 package kafka.log.streamaspect;
 
-import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
+import kafka.cluster.LogEventListener;
+
+import org.apache.kafka.storage.internals.log.LogSegment;
 
 import com.automq.stream.api.Stream;
-import com.automq.stream.utils.Threads;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -28,7 +30,7 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
@@ -40,12 +42,14 @@ public class ElasticLogSegmentManager {
     private final ReentrantLock segmentLock = new ReentrantLock();
     private final Map<Long, ElasticLogSegment> segments = new HashMap<>();
     private final Map<Long, ElasticLogSegment> inflightCleanedSegments = new HashMap<>();
-    private final EventListener segmentEventListener = new EventListener();
-    final AtomicReference<LogOffsetMetadata> offsetUpperBound = new AtomicReference<>();
+    private final EventListener innerListener = new EventListener();
+    private final List<LogEventListener> logEventListeners = new CopyOnWriteArrayList<>();
 
     private final MetaStream metaStream;
     private final ElasticLogStreamManager streamManager;
     private final String logIdent;
+
+    private volatile ElasticLogMeta logMeta;
 
     public ElasticLogSegmentManager(MetaStream metaStream, ElasticLogStreamManager streamManager, String logIdent) {
         this.metaStream = metaStream;
@@ -61,6 +65,7 @@ public class ElasticLogSegmentManager {
         } finally {
             segmentLock.unlock();
         }
+        notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE);
     }
 
     public void putInflightCleaned(long baseOffset, ElasticLogSegment segment) {
@@ -73,26 +78,23 @@ public class ElasticLogSegmentManager {
     }
 
     public CompletableFuture<Void> create(long baseOffset, ElasticLogSegment segment) {
-        LogOffsetMetadata offset = new LogOffsetMetadata(baseOffset, baseOffset, 0);
-        while (!offsetUpperBound.compareAndSet(null, offset)) {
-            LOGGER.info("{} try create new segment with offset $baseOffset, wait last segment meta persisted.", logIdent);
-            Threads.sleep(1L);
-        }
         segmentLock.lock();
         try {
             segments.put(baseOffset, segment);
         } finally {
             segmentLock.unlock();
         }
-        return asyncPersistLogMeta().thenAccept(nil -> {
-            offsetUpperBound.set(null);
-        });
+        return asyncPersistLogMeta().thenApply(rst -> null);
     }
 
     public ElasticLogSegment remove(long baseOffset) {
         segmentLock.lock();
         try {
-            return segments.remove(baseOffset);
+            ElasticLogSegment segment = segments.remove(baseOffset);
+            if (segment != null) {
+                notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
+            }
+            return segment;
         } finally {
             segmentLock.unlock();
         }
@@ -119,6 +121,7 @@ public class ElasticLogSegmentManager {
                 .collect(Collectors.toList());
 
             meta = logMeta(streams, segmentList);
+            this.logMeta = meta;
             // We calculate trimOffsets in the lock to ensure that no more new stream with data is created during the calculation.
             trimOffsets = calTrimOffset(
                 streams,
@@ -186,7 +189,49 @@ public class ElasticLogSegmentManager {
     }
 
     public ElasticLogSegmentEventListener logSegmentEventListener() {
-        return segmentEventListener;
+        return innerListener;
+    }
+
+    public ElasticLogMeta logMeta() {
+        if (logMeta == null) {
+            segmentLock.lock();
+            try {
+                if (logMeta != null) {
+                    return logMeta;
+                }
+                logMeta = generateLogMeta();
+            } finally {
+                segmentLock.unlock();
+            }
+        }
+        return logMeta;
+    }
+
+    public Collection<Stream> streams() {
+        return streamManager.streams().values();
+    }
+
+    public void addLogEventListener(LogEventListener listener) {
+        logEventListeners.add(listener);
+    }
+
+    private void notifyLogEventListeners(LogSegment segment, LogEventListener.Event event) {
+        for (LogEventListener listener : logEventListeners) {
+            try {
+                listener.onChanged(segment, event);
+            } catch (Throwable e) {
+                LOGGER.error("got notify listener error", e);
+            }
+        }
+    }
+
+    private ElasticLogMeta generateLogMeta() {
+        Map<String, Stream> streams = streamManager.streams();
+        List<ElasticStreamSegmentMeta> segmentList = segments.values().stream()
+            .sorted()
+            .map(ElasticLogSegment::meta)
+            .collect(Collectors.toList());
+        return logMeta(streams, segmentList);
     }
 
     public static ElasticLogMeta logMeta(Map<String, Stream> streams, List<ElasticStreamSegmentMeta> segmentList) {

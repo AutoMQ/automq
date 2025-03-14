@@ -36,6 +36,14 @@ public interface StreamManager {
      */
     CompletableFuture<List<StreamMetadata>> getStreams(List<Long> streamIds);
 
+    /**
+     * Add a stream metadata listener.
+     * @param streamId the stream id to listen
+     * @param listener {@link StreamMetadataListener}
+     * @return listener handle to remove listener
+     */
+    StreamMetadataListener.Handle addMetadataListener(long streamId, StreamMetadataListener listener);
+
     default CompletableFuture<Long> createStream() {
         return createStream(Collections.emptyMap());
     }

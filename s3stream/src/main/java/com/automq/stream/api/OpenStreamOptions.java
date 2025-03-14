@@ -17,8 +17,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class OpenStreamOptions {
-    private WriteMode writeMode = WriteMode.SINGLE;
-    private ReadMode readMode = ReadMode.MULTIPLE;
+    public static final OpenStreamOptions DEFAULT = new OpenStreamOptions();
+
+    private ReadWriteMode readWriteMode = ReadWriteMode.READ_WRITE;
     private long epoch;
     private final Map<String, String> tags = new HashMap<>();
 
@@ -29,12 +30,8 @@ public class OpenStreamOptions {
         return new Builder();
     }
 
-    public WriteMode writeMode() {
-        return writeMode;
-    }
-
-    public ReadMode readMode() {
-        return readMode;
+    public ReadWriteMode readWriteMode() {
+        return readWriteMode;
     }
 
     public long epoch() {
@@ -45,26 +42,12 @@ public class OpenStreamOptions {
         return tags;
     }
 
-    public enum WriteMode {
-        SINGLE(0), MULTIPLE(1);
+    public enum ReadWriteMode {
+        READ_WRITE(0), SNAPSHOT_READ(1);
 
         final int code;
 
-        WriteMode(int code) {
-            this.code = code;
-        }
-
-        public int getCode() {
-            return code;
-        }
-    }
-
-    public enum ReadMode {
-        SINGLE(0), MULTIPLE(1);
-
-        final int code;
-
-        ReadMode(int code) {
+        ReadWriteMode(int code) {
             this.code = code;
         }
 
@@ -76,15 +59,10 @@ public class OpenStreamOptions {
     public static class Builder {
         private final OpenStreamOptions options = new OpenStreamOptions();
 
-        public Builder writeMode(WriteMode writeMode) {
-            Arguments.isNotNull(writeMode, "WriteMode should be set with SINGLE or MULTIPLE");
-            options.writeMode = writeMode;
-            return this;
-        }
+        public Builder readWriteMode(ReadWriteMode readWriteMode) {
+            Arguments.isNotNull(readWriteMode, "readWriteMode should be set with READ_WRITE or SNAPSHOT_READ");
 
-        public Builder readMode(ReadMode readMode) {
-            Arguments.isNotNull(readMode, "ReadMode should be set with SINGLE or MULTIPLE");
-            options.readMode = readMode;
+            options.readWriteMode = readWriteMode;
             return this;
         }
 

@@ -25,8 +25,8 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
-import org.apache.kafka.common.requests.s3.{AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
-import org.apache.kafka.common.requests._
+import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
+import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
@@ -168,6 +168,7 @@ class ElasticKafkaApis(
 
       request.header.apiKey match {
         case ApiKeys.AUTOMQ_ZONE_ROUTER => handleZoneRouterRequest(request, requestLocal)
+        case ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT => handleGetPartitionSnapshotRequest(request, requestLocal)
         case ApiKeys.DELETE_TOPICS => maybeForwardTopicDeletionToController(request, handleDeleteTopicsRequest)
         case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
         case ApiKeys.AUTOMQ_UPDATE_GROUP => handleUpdateGroupRequest(request, requestLocal)
@@ -199,7 +200,8 @@ class ElasticKafkaApis(
       case ApiKeys.DELETE_TOPICS
            | ApiKeys.GET_NEXT_NODE_ID
            | ApiKeys.AUTOMQ_ZONE_ROUTER
-           | ApiKeys.AUTOMQ_UPDATE_GROUP => handleExtensionRequest(request, requestLocal)
+           | ApiKeys.AUTOMQ_UPDATE_GROUP
+           | ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }
@@ -822,6 +824,12 @@ class ElasticKafkaApis(
 
   override protected def metadataTopicsInterceptor(clientId: String, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
     produceRouter.handleMetadataResponse(clientId, topics)
+  }
+
+  def handleGetPartitionSnapshotRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
+    val req = request.body[AutomqGetPartitionSnapshotRequest]
+    val resp = replicaManager.asInstanceOf[ElasticReplicaManager].handleGetPartitionSnapshotRequest(req)
+    requestHelper.sendMaybeThrottle(request, resp)
   }
 
   def setProduceRouter(produceRouter: ProduceRouter): Unit = {

@@ -37,6 +37,7 @@ import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
+import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
 
 import org.slf4j.Logger;
@@ -45,9 +46,11 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -65,8 +68,10 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     private MetadataImage metadataImage;
     private final ObjectReaderFactory objectReaderFactory;
     private final LocalStreamRangeIndexCache indexCache;
+    private final Map<Long, StreamMetadataListener> streamMetadataListeners = new ConcurrentHashMap<>();
 
-    public StreamMetadataManager(BrokerServer broker, int nodeId, ObjectReaderFactory objectReaderFactory, LocalStreamRangeIndexCache indexCache) {
+    public StreamMetadataManager(BrokerServer broker, int nodeId, ObjectReaderFactory objectReaderFactory,
+        LocalStreamRangeIndexCache indexCache) {
         this.nodeId = nodeId;
         this.metadataImage = broker.metadataCache().currentImage();
         this.pendingGetObjectsTasks = new LinkedList<>();
@@ -83,15 +88,18 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
     @Override
     public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage, LoaderManifest manifest) {
+        Set<Long> changedStreams;
         synchronized (this) {
             if (newImage.highestOffsetAndEpoch().equals(this.metadataImage.highestOffsetAndEpoch())) {
                 return;
             }
             this.metadataImage = newImage;
+            changedStreams = delta.getOrCreateStreamsMetadataDelta().changedStreams();
         }
         // retry all pending tasks
         retryPendingTasks();
         this.indexCache.asyncPrune(this::getStreamSetObjectIds);
+        notifyMetadataListeners(changedStreams);
     }
 
     public CompletableFuture<List<S3ObjectMetadata>> getStreamSetObjects() {
@@ -211,13 +219,10 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
                     continue;
                 }
+                // If there is a streamImage, it means the stream exists.
+                @SuppressWarnings("OptionalGetWithoutIsPresent") long endOffset = streamsImage.streamEndOffset(streamId).getAsLong();
                 StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
-                    streamImage.getStartOffset(), -1L, streamImage.state()) {
-                    @Override
-                    public long endOffset() {
-                        throw new UnsupportedOperationException();
-                    }
-                };
+                    streamImage.getStartOffset(), endOffset, streamImage.state());
                 streamMetadataList.add(streamMetadata);
             }
             return streamMetadataList;
@@ -240,6 +245,27 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         try (Image image = getImage()) {
             return image.objectsMetadata().objectsCount();
         }
+    }
+
+    public synchronized StreamMetadataListener.Handle addMetadataListener(long streamId, StreamMetadataListener listener) {
+        streamMetadataListeners.put(streamId, listener);
+        List<StreamMetadata> list = getStreamMetadataList(List.of(streamId));
+        if (!list.isEmpty()) {
+            listener.onNewStreamMetadata(list.get(0));
+        }
+        return () -> streamMetadataListeners.remove(streamId, listener);
+    }
+
+    private synchronized void notifyMetadataListeners(Set<Long> changedStreams) {
+        changedStreams.forEach(streamId -> {
+            StreamMetadataListener listener = streamMetadataListeners.get(streamId);
+            if (listener != null) {
+                List<StreamMetadata> list = getStreamMetadataList(List.of(streamId));
+                if (!list.isEmpty()) {
+                    listener.onNewStreamMetadata(list.get(0));
+                }
+            }
+        });
     }
 
     // must access thread safe

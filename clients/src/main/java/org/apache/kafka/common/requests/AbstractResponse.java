@@ -22,6 +22,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.MessageUtil;
 import org.apache.kafka.common.protocol.SendBuilder;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesResponse;
+import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotResponse;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeResponse;
 import org.apache.kafka.common.requests.s3.AutomqUpdateGroupResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
@@ -313,6 +314,8 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return AutomqGetNodesResponse.parse(responseBuffer, version);
             case AUTOMQ_ZONE_ROUTER:
                 return AutomqZoneRouterResponse.parse(responseBuffer, version);
+            case AUTOMQ_GET_PARTITION_SNAPSHOT:
+                return AutomqGetPartitionSnapshotResponse.parse(responseBuffer, version);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdResponse.parse(responseBuffer, version);
             case DESCRIBE_STREAMS:

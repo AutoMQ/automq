@@ -531,7 +531,8 @@ class Partition(val topicPartition: TopicPartition,
           elasticUnifiedLog.confirmOffsetChangeListener = Some(() => handleLeaderConfirmOffsetMove())
           // just update LEO to HW since we only have one replica
           val initialHighWatermark = log.logEndOffset
-          log.updateHighWatermark(log.logEndOffset)
+          // the high watermark is the same as the log end offset
+          log.updateHighWatermark(initialHighWatermark)
           info(s"Log loaded for partition $topicPartition with initial high watermark $initialHighWatermark")
         case _ =>
           updateHighWatermark(log)
@@ -740,8 +741,12 @@ class Partition(val topicPartition: TopicPartition,
    */
   def close(): Unit = {
     info("Closing partition")
-    logManager.removeFromCurrentLogs(topicPartition)
-    ElasticLogManager.removeLog(topicPartition)
+    log match {
+      case Some(unifiedLog: ElasticUnifiedLog) =>
+        logManager.removeFromCurrentLogs(topicPartition, unifiedLog)
+        ElasticLogManager.removeLog(topicPartition, unifiedLog)
+      case _ =>
+    }
     inWriteLock(leaderIsrUpdateLock) {
       closed = true
     }
@@ -2326,6 +2331,32 @@ class Partition(val topicPartition: TopicPartition,
 
   def withWriteLock[T](fun: => T): T = {
     inWriteLock(leaderIsrUpdateLock)(fun)
+  }
+
+  def addLogEventListener(listener: LogEventListener): Unit = {
+    log.get.asInstanceOf[ElasticUnifiedLog].getLocalLog().logSegmentManager.addLogEventListener(listener)
+  }
+
+  def snapshot(): PartitionSnapshot = {
+    inReadLock(leaderIsrUpdateLock) {
+      val snapshot = PartitionSnapshot.builder()
+      snapshot.leaderEpoch(leaderEpoch)
+      val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
+      log.snapshot(snapshot)
+      snapshot.build()
+    }
+  }
+
+  def snapshot(snapshot: PartitionSnapshot): Unit = {
+    inWriteLock(leaderIsrUpdateLock) {
+      if (enableTraceLog) {
+        trace(s"apply snapshot partition $topic-$partitionId $snapshot")
+      }
+      leaderEpoch = snapshot.leaderEpoch
+      val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
+      log.snapshot(snapshot)
+      handleLeaderConfirmOffsetMove()
+    }
   }
   // AutoMQ injection end
 }
