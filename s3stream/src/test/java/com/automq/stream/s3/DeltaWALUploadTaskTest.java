@@ -52,7 +52,7 @@ import static org.mockito.Mockito.when;
 public class DeltaWALUploadTaskTest {
     ObjectManager objectManager;
     ObjectStorage objectStorage;
-    DeltaWALUploadTask deltaWALUploadTask;
+    DefaultUploadWriteAheadLogTask deltaWALUploadTask;
 
     @BeforeEach
     public void setup() {
@@ -81,7 +81,7 @@ public class DeltaWALUploadTaskTest {
             .objectBlockSize(16 * 1024 * 1024)
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(1000);
-        deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
+        deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
             .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
@@ -161,7 +161,7 @@ public class DeltaWALUploadTaskTest {
             .objectBlockSize(16 * 1024 * 1024)
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(16 * 1024 * 1024);
-        deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
+        deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
             .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
 
         deltaWALUploadTask.prepare().get();
@@ -197,7 +197,7 @@ public class DeltaWALUploadTaskTest {
             .objectBlockSize(16 * 1024 * 1024)
             .objectPartSize(16 * 1024 * 1024)
             .streamSplitSize(64);
-        deltaWALUploadTask = DeltaWALUploadTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
+        deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
             .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
         assertTrue(deltaWALUploadTask.forceSplit);
     }

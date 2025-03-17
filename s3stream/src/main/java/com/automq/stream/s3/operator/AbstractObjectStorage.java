@@ -49,6 +49,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
@@ -261,26 +262,26 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf data) {
-        long requestTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
+        retCf = retCf.whenComplete((nil, ex) -> data.release());
         if (retCf.isDone()) {
-            data.release();
             return retCf;
         }
         TimerUtil timerUtil = new TimerUtil();
         networkOutboundBandwidthLimiter
             .consume(options.throttleStrategy(), data.readableBytes())
             .whenCompleteAsync((v, ex) -> {
+                if (ex != null) {
+                    cf.completeExceptionally(ex);
+                    return;
+                }
+                if (checkTimeout(options, cf)) {
+                    return;
+                }
                 NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, options.throttleStrategy())
                     .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                if (ex != null) {
-                    data.release();
-                    cf.completeExceptionally(ex);
-                } else {
-                    WriteOptions opts = options.copy().requestTime(requestTime);
-                    queuedWrite0(opts, objectPath, data, cf);
-                }
+                queuedWrite0(options, objectPath, data, cf);
             }, writeLimiterCallbackExecutor);
         return retCf;
     }
@@ -298,15 +299,21 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     /**
      * Put an object to the specified path.
      *
-     * @param options options (or context) about the write operation
-     * @param path the path to put the object
-     * @param data the data to put, it will be released once the finalCf is done
+     * @param options   options (or context) about the write operation
+     * @param path      the path to put the object
+     * @param data      the data to put, it will be released once the finalCf is done
      * @param attemptCf the CompletableFuture to complete when a single attempt is done
-     * @param finalCf the CompletableFuture to complete when the write operation is done
+     * @param finalCf   the CompletableFuture to complete when the write operation is done
      */
-    private void write0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> attemptCf, CompletableFuture<Void> finalCf) {
+    private void write0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> attemptCf,
+        CompletableFuture<Void> finalCf) {
         TimerUtil timerUtil = new TimerUtil();
         long objectSize = data.readableBytes();
+
+        if (checkTimeout(options, finalCf)) {
+            attemptCf.completeExceptionally(new TimeoutException());
+            return;
+        }
 
         CompletableFuture<Void> writeCf = doWrite(options, path, data);
         FutureUtil.propagate(writeCf, attemptCf);
@@ -350,7 +357,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         writeCf.thenAccept(nil -> {
             recordWriteStats(path, objectSize, timerUtil);
-            data.release();
             if (completedFlag.compareAndSet(false, true)) {
                 finalCf.complete(null);
             }
@@ -363,7 +369,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 // no need to retry
                 logger.error("PutObject for object {} fail", path, cause);
-                data.release();
                 if (completedFlag.compareAndSet(false, true)) {
                     finalCf.completeExceptionally(cause);
                 }
@@ -439,23 +444,23 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     public CompletableFuture<ObjectStorageCompletedPart> uploadPart(WriteOptions options, String path, String uploadId,
         int partNumber, ByteBuf data) {
-        long requestTime = System.nanoTime();
         CompletableFuture<ObjectStorageCompletedPart> cf = new CompletableFuture<>();
         CompletableFuture<ObjectStorageCompletedPart> refCf = acquireWritePermit(cf);
+        refCf = refCf.whenComplete((v, ex) -> data.release());
         if (refCf.isDone()) {
-            data.release();
             return refCf;
         }
         networkOutboundBandwidthLimiter
             .consume(options.throttleStrategy(), data.readableBytes())
             .whenCompleteAsync((v, ex) -> {
                 if (ex != null) {
-                    data.release();
                     cf.completeExceptionally(ex);
-                } else {
-                    WriteOptions opts = options.copy().requestTime(requestTime);
-                    queuedUploadPart0(opts, path, uploadId, partNumber, data, cf);
+                    return;
                 }
+                if (checkTimeout(options, cf)) {
+                    return;
+                }
+                queuedUploadPart0(options, path, uploadId, partNumber, data, cf);
             }, writeLimiterCallbackExecutor);
         return refCf;
     }
@@ -463,16 +468,21 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     /**
      * Upload a part of an object to the specified path.
      *
-     * @param options options (or context) about the write operation
-     * @param path the path of the object where the part will be uploaded
-     * @param uploadId the upload ID of the multipart upload
+     * @param options    options (or context) about the write operation
+     * @param path       the path of the object where the part will be uploaded
+     * @param uploadId   the upload ID of the multipart upload
      * @param partNumber the part number of the part to be uploaded
-     * @param data the data to be uploaded, it will be released once the finalCf is done
-     * @param attemptCf the CompletableFuture to complete when a single attempt is done
-     * @param finalCf the CompletableFuture to complete when the upload operation is done
+     * @param data       the data to be uploaded, it will be released once the finalCf is done
+     * @param attemptCf  the CompletableFuture to complete when a single attempt is done
+     * @param finalCf    the CompletableFuture to complete when the upload operation is done
      */
     private void uploadPart0(WriteOptions options, String path, String uploadId, int partNumber, ByteBuf data,
-        CompletableFuture<ObjectStorageCompletedPart> attemptCf, CompletableFuture<ObjectStorageCompletedPart> finalCf) {
+        CompletableFuture<ObjectStorageCompletedPart> attemptCf,
+        CompletableFuture<ObjectStorageCompletedPart> finalCf) {
+        if (checkTimeout(options, finalCf)) {
+            attemptCf.completeExceptionally(new TimeoutException());
+            return;
+        }
         TimerUtil timerUtil = new TimerUtil();
         int size = data.readableBytes();
         CompletableFuture<ObjectStorageCompletedPart> uploadPartCf = doUploadPart(options, path, uploadId, partNumber, data);
@@ -481,7 +491,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             S3OperationStats.getInstance().uploadSizeTotalStats.add(MetricsLevel.INFO, size);
             S3OperationStats.getInstance().uploadPartStats(size, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             successWriteMonitor.record(size);
-            data.release();
             finalCf.complete(part);
         }).exceptionally(ex -> {
             S3OperationStats.getInstance().uploadPartStats(size, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
@@ -492,7 +501,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 // no need to retry
                 logger.error("UploadPart for object {}-{} fail", path, partNumber, cause);
-                data.release();
                 finalCf.completeExceptionally(cause);
                 return null;
             }
@@ -848,6 +856,20 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     /**
+     * Check whether the operation is timeout, and fail the future with {@link TimeoutException} if timeout.
+     */
+    private static boolean checkTimeout(WriteOptions options, CompletableFuture<?> cf) {
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - options.requestTime());
+        if (elapsedMs > options.timeout()) {
+            cf.completeExceptionally(new TimeoutException(String.format("request timeout, elapsedMs %d > timeoutMs %d",
+                elapsedMs, options.timeout())));
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
      * Acquire read permit, permit will auto release when cf complete.
      *
      * @return retCf the retCf should be used as method return value to ensure release before following operations.
@@ -1145,7 +1167,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private final CompletableFuture<?> finishFuture;
         private final Supplier<Long> sizeInBytes;
 
-        public AsyncTask(long requestTime, ThrottleStrategy strategy, Runnable starter, CompletableFuture<?> finishFuture, Supplier<Long> sizeInBytes) {
+        public AsyncTask(long requestTime, ThrottleStrategy strategy, Runnable starter,
+            CompletableFuture<?> finishFuture, Supplier<Long> sizeInBytes) {
             this.requestTime = requestTime;
             this.strategy = strategy;
             this.starter = starter;
