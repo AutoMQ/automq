@@ -1066,17 +1066,22 @@ private[kafka] class Processor(
             // AutoMQ for Kafka inject start
             val channelContext = channelContexts.get(channelId)
             val channel = selector.channel(channelId)
-            if (channel != null && channel.isMuted) {
-              val unmute = if (channelContext == null) {
-                true
-              } else if (channelContext.nextCorrelationId.size() < 8 && channelContext.clearQueueFull()) {
-                true
-              } else {
-                false
+            try{
+              if (channel != null && channel.isMuted) {
+                val unmute = if (channelContext == null) {
+                  true
+                } else if (channelContext.nextCorrelationId.size() < 8 && channelContext.clearQueueFull()) {
+                  true
+                } else {
+                  false
+                }
+                if (unmute) {
+                  selector.unmute(channel.id)
+                }
               }
-              if (unmute) {
-                selector.unmute(channel.id)
-              }
+            }catch {
+              case e:IllegalStateException =>
+                warn(s"Channel already closed while processing response for $channelId",e)
             }
             // AutoMQ for Kafka inject end
 
