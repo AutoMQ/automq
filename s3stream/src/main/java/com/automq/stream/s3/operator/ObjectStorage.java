@@ -46,7 +46,12 @@ public interface ObjectStorage {
 
     /**
      * Range read object from the object storage.
-     * It will throw {@link ObjectNotExistException} if the object not found.
+     * It will failFuture with {@link ObjectNotExistException} if the object not found.
+     * @param options {@link ReadOptions}
+     * @param objectPath the object path
+     * @param start inclusive start position
+     * @param end inclusive end position
+     * @return read result
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
@@ -117,12 +122,17 @@ public interface ObjectStorage {
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private int allocType = ByteBufAlloc.DEFAULT;
+        // timeout for one single network rpc
         private long apiCallAttemptTimeout = -1L;
+        // timeout for the whole write operation
+        private long timeout = Long.MAX_VALUE;
         private short bucketId;
         private boolean enableFastRetry;
+        // write context start
         private boolean retry;
         private int retryCount;
-        private long requestTime;
+        private long requestTime = System.nanoTime();
+        // write context end
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -179,6 +189,11 @@ public interface ObjectStorage {
             return bucketId;
         }
 
+        public WriteOptions timeout(long timeout) {
+            this.timeout = timeout;
+            return this;
+        }
+
         public boolean enableFastRetry() {
             return enableFastRetry;
         }
@@ -201,6 +216,10 @@ public interface ObjectStorage {
             return requestTime;
         }
 
+        public long timeout() {
+            return timeout;
+        }
+
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
@@ -211,6 +230,7 @@ public interface ObjectStorage {
             copy.retry = retry;
             copy.retryCount = retryCount;
             copy.requestTime = requestTime;
+            copy.timeout = timeout;
             return copy;
         }
     }

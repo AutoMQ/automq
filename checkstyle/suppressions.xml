@@ -372,7 +372,7 @@
     <suppress checks="CyclomaticComplexity"
               files="(S3StreamsMetadataImage|S3StreamMetricsManager|BlockCache|StreamReader|S3MetricsExporter|PrometheusUtils).java"/>
     <suppress checks="NPathComplexity"
-              files="(StreamControlManager|S3StreamsMetadataImage|CompactionManagerTest|S3StreamMetricsManager|CompactionManager|BlockCache|DefaultS3BlockCache|StreamReader|S3Utils|AnomalyDetector|Recreate|ForceClose|QuorumController).java"/>
+              files="(StreamControlManager|S3StreamsMetadataImage|CompactionManagerTest|S3StreamMetricsManager|CompactionManager|BlockCache|DefaultS3BlockCache|StreamReader|S3Utils|AnomalyDetector|Recreate|ForceClose|QuorumController|AbstractObjectStorage).java"/>
     <suppress checks="MethodLength"
               files="(S3StreamMetricsManager|BlockWALServiceTest).java"/>
     <suppress id="dontUseSystemExit"
