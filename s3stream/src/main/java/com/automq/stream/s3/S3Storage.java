@@ -85,7 +85,7 @@ public class S3Storage implements Storage {
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
     private final long maxDeltaWALCacheSize;
-    private final Config config;
+    protected final Config config;
     private final WriteAheadLog deltaWAL;
     /**
      * WAL log cache
@@ -119,11 +119,11 @@ public class S3Storage implements Storage {
     private final FutureTicker forceUploadTicker = new FutureTicker(100, TimeUnit.MILLISECONDS, backgroundExecutor);
     private final Queue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
-    private final StreamManager streamManager;
-    private final ObjectManager objectManager;
-    private final ObjectStorage objectStorage;
-    private final S3BlockCache blockCache;
-    private final StorageFailureHandler storageFailureHandler;
+    protected final StreamManager streamManager;
+    protected final ObjectManager objectManager;
+    protected final ObjectStorage objectStorage;
+    protected final S3BlockCache blockCache;
+    protected final StorageFailureHandler storageFailureHandler;
     /**
      * Stream callback locks. Used to ensure the stream callbacks will not be called concurrently.
      *
@@ -382,8 +382,7 @@ public class S3Storage implements Storage {
 
         if (cacheBlock.size() != 0) {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
-            DeltaWALUploadTask task = DeltaWALUploadTask.builder().config(config).streamRecordsMap(cacheBlock.records())
-                .objectManager(objectManager).objectStorage(objectStorage).executor(uploadWALExecutor).build();
+            UploadWriteAheadLogTask task = newUploadWriteAheadLogTask(cacheBlock.records(), objectManager, Long.MAX_VALUE);
             task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
         }
@@ -712,6 +711,11 @@ public class S3Storage implements Storage {
         return streamCallbackLocks[(int) ((streamId & Long.MAX_VALUE) % NUM_STREAM_CALLBACK_LOCKS)];
     }
 
+    protected UploadWriteAheadLogTask newUploadWriteAheadLogTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, double rate) {
+        return DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(streamRecordsMap)
+            .objectManager(objectManager).objectStorage(objectStorage).executor(uploadWALExecutor).build();
+    }
+
     @SuppressWarnings("UnusedReturnValue")
     CompletableFuture<Void> uploadDeltaWAL() {
         return uploadDeltaWAL(LogCache.MATCH_ALL_STREAMS, false);
@@ -787,14 +791,7 @@ public class S3Storage implements Storage {
             }
             rate = maxDataWriteRate;
         }
-        context.task = DeltaWALUploadTask.builder()
-            .config(config)
-            .streamRecordsMap(context.cache.records())
-            .objectManager(objectManager)
-            .objectStorage(objectStorage)
-            .executor(uploadWALExecutor)
-            .rate(rate)
-            .build();
+        context.task = newUploadWriteAheadLogTask(context.cache.records(), objectManager, rate);
         boolean walObjectPrepareQueueEmpty = walPrepareQueue.isEmpty();
         walPrepareQueue.add(context);
         if (!walObjectPrepareQueueEmpty) {
@@ -1081,7 +1078,7 @@ public class S3Storage implements Storage {
     public static class DeltaWALUploadTaskContext {
         TimerUtil timer;
         LogCache.LogCacheBlock cache;
-        DeltaWALUploadTask task;
+        UploadWriteAheadLogTask task;
         CompletableFuture<Void> cf;
         ObjectManager objectManager;
         /**
