@@ -74,7 +74,11 @@ public class DefaultS3Client implements Client {
 
     protected ControllerRequestSender requestSender;
 
+    protected ObjectStorage objectStorage;
+    protected ObjectStorage compactionObjectStorage;
+
     protected WriteAheadLog writeAheadLog;
+    protected StorageFailureHandlerChain storageFailureHandlerChain;
     protected S3Storage storage;
 
     protected ObjectReaderFactory objectReaderFactory;
@@ -123,13 +127,13 @@ public class DefaultS3Client implements Client {
         S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, () ->
             config.networkBaselineBandwidth() - (long) networkOutboundRate.derive(
                 TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkOutboundUsageTotal().get()));
-        ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
+        this.objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true)
             .threadPrefix("dataflow").build();
         if (!objectStorage.readinessCheck()) {
             throw new IllegalArgumentException(String.format("%s is not ready", config.dataBuckets()));
         }
-        ObjectStorage compactionobjectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
+        this.compactionObjectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
             .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter)
             .threadPrefix("compaction").build();
         ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
@@ -145,14 +149,14 @@ public class DefaultS3Client implements Client {
         this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
         this.objectManager.setCommitStreamSetObjectHook(localIndexCache::updateIndexFromRequest);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
-        this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionobjectStorage);
+        this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionObjectStorage);
         this.writeAheadLog = buildWAL();
-        StorageFailureHandlerChain storageFailureHandler = new StorageFailureHandlerChain();
-        this.storage = new S3Storage(this.config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage, storageFailureHandler);
+        this.storageFailureHandlerChain = new StorageFailureHandlerChain();
+        this.storage = newS3Storage();
         // stream object compactions share the same object storage with stream set object compactions
-        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionobjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
-        storageFailureHandler.addHandler(new ForceCloseStorageFailureHandler(streamClient));
-        storageFailureHandler.addHandler(new HaltStorageFailureHandler());
+        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionObjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
+        storageFailureHandlerChain.addHandler(new ForceCloseStorageFailureHandler(streamClient));
+        storageFailureHandlerChain.addHandler(new HaltStorageFailureHandler());
         this.streamClient.registerStreamLifeCycleListener(localIndexCache);
         this.kvClient = new ControllerKVClient(this.requestSender);
         this.failover = failover();
@@ -225,6 +229,10 @@ public class DefaultS3Client implements Client {
     protected ObjectManager newObjectManager(int nodeId, long nodeEpoch, boolean failoverMode) {
         return new ControllerObjectManager(this.requestSender, this.metadataManager, nodeId, nodeEpoch,
             this::getAutoMQVersion, failoverMode);
+    }
+
+    protected S3Storage newS3Storage() {
+        return new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage, storageFailureHandlerChain);
     }
 
     protected Failover failover() {

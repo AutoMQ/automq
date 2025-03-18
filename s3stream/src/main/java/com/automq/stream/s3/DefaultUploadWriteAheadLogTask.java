@@ -36,8 +36,8 @@ import java.util.concurrent.TimeUnit;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
-public class DeltaWALUploadTask {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DeltaWALUploadTask.class);
+public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultUploadWriteAheadLogTask.class);
     final boolean forceSplit;
     private final Logger s3ObjectLogger;
     private final Map<Long, List<StreamRecordBatch>> streamRecordsMap;
@@ -57,7 +57,7 @@ public class DeltaWALUploadTask {
     private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
     private volatile boolean burst = false;
 
-    public DeltaWALUploadTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
+    public DefaultUploadWriteAheadLogTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
                               ObjectManager objectManager, ObjectStorage objectStorage,
                               ExecutorService executor, boolean forceSplit, double rate) {
         this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.nodeId()));
@@ -77,6 +77,7 @@ public class DeltaWALUploadTask {
         return new Builder();
     }
 
+    @Override
     public CompletableFuture<Long> prepare() {
         startTimestamp = System.currentTimeMillis();
         if (forceSplit) {
@@ -96,6 +97,7 @@ public class DeltaWALUploadTask {
     /**
      * bypass the uploadTask rateLimit to make the task finish as fast as possible.
      */
+    @Override
     public void burst() {
         if (this.burst) {
             return;
@@ -113,6 +115,7 @@ public class DeltaWALUploadTask {
         return limiter.acquire(size);
     }
 
+    @Override
     public CompletableFuture<CommitStreamSetObjectRequest> upload() {
         prepareCf.thenAcceptAsync(objectId -> FutureUtil.exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"), executor);
         return uploadCf;
@@ -169,6 +172,7 @@ public class DeltaWALUploadTask {
         });
     }
 
+    @Override
     public CompletableFuture<Void> commit() {
         return uploadCf.thenCompose(request -> {
             commitTimestamp = System.currentTimeMillis();
@@ -261,7 +265,7 @@ public class DeltaWALUploadTask {
             return this;
         }
 
-        public DeltaWALUploadTask build() {
+        public DefaultUploadWriteAheadLogTask build() {
             if (forceSplit == null) {
                 boolean forceSplit = streamRecordsMap.size() == 1;
                 if (!forceSplit) {
@@ -276,7 +280,7 @@ public class DeltaWALUploadTask {
                 }
                 this.forceSplit = forceSplit;
             }
-            return new DeltaWALUploadTask(config, streamRecordsMap, objectManager, objectStorage, executor, forceSplit, rate);
+            return new DefaultUploadWriteAheadLogTask(config, streamRecordsMap, objectManager, objectStorage, executor, forceSplit, rate);
         }
     }
 
