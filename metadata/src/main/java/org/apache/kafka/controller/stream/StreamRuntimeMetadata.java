@@ -95,6 +95,10 @@ public class StreamRuntimeMetadata {
      * Return the owner (node id) of current range.
      */
     public int currentRangeOwner() {
+        if (ranges.isEmpty()) {
+            // there is no range in a new stream
+            return -1;
+        }
         return ranges.get(currentRangeIndex.get()).nodeId();
     }
 

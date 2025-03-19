@@ -151,6 +151,7 @@ import org.apache.kafka.common.errors.s3.KeyExistException;
 import org.apache.kafka.common.errors.s3.NodeEpochExpiredException;
 import org.apache.kafka.common.errors.s3.NodeEpochNotExistException;
 import org.apache.kafka.common.errors.s3.NodeFencedException;
+import org.apache.kafka.common.errors.s3.NodeLockedException;
 import org.apache.kafka.common.errors.s3.ObjectNotExistException;
 import org.apache.kafka.common.errors.s3.OffsetNotMatchedException;
 import org.apache.kafka.common.errors.s3.RedundantOperationException;
@@ -435,6 +436,7 @@ public enum Errors {
     KEY_EXIST(512, "The key already exists.", KeyExistException::new),
     KEY_NOT_EXIST(513, "The key does not exist.", ObjectNotExistException::new),
     NODE_FENCED(514, "The node is fenced.", NodeFencedException::new),
+    NODE_LOCKED(515, "The node is locked", NodeLockedException::new),
     STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new),
     // AutoMQ inject end
 

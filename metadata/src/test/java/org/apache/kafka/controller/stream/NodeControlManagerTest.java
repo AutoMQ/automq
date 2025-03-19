@@ -47,16 +47,16 @@ import static org.mockito.Mockito.when;
 @Tag("S3Unit")
 public class NodeControlManagerTest {
     SnapshotRegistry registry;
-    NodeRuntimeInfoGetter nodeRuntimeInfoGetter;
+    NodeRuntimeInfoManager nodeRuntimeInfoManager;
 
     NodeControlManager nodeControlManager;
 
     @BeforeEach
     public void setup() {
         registry = new SnapshotRegistry(new LogContext());
-        nodeRuntimeInfoGetter = mock(NodeRuntimeInfoGetter.class);
+        nodeRuntimeInfoManager = mock(NodeRuntimeInfoManager.class);
 
-        nodeControlManager = new NodeControlManager(registry, nodeRuntimeInfoGetter);
+        nodeControlManager = new NodeControlManager(registry, nodeRuntimeInfoManager);
     }
 
     @Test
@@ -94,8 +94,8 @@ public class NodeControlManagerTest {
         assertEquals(Errors.NONE.code(), rst.response().errorCode());
         assertTrue(nodeControlManager.nodeMetadataMap.containsKey(0));
 
-        when(nodeRuntimeInfoGetter.hasOpeningStreams(eq(0))).thenReturn(true);
-        when(nodeRuntimeInfoGetter.state(eq(0))).thenReturn(NodeState.FENCED);
+        when(nodeRuntimeInfoManager.hasOpeningStreams(eq(0))).thenReturn(true);
+        when(nodeRuntimeInfoManager.state(eq(0))).thenReturn(NodeState.FENCED);
 
         ControllerResult<AutomqGetNodesResponseData> getRst = nodeControlManager.getMetadata(
             new AutomqGetNodesRequest(new AutomqGetNodesRequestData().setNodeIds(List.of(0, 1)),
@@ -137,7 +137,7 @@ public class NodeControlManagerTest {
         assertTrue(nodeControlManager.nodeMetadataMap.containsKey(0));
 
         // prepare: node has opening streams
-        when(nodeRuntimeInfoGetter.hasOpeningStreams(eq(0))).thenReturn(true);
+        when(nodeRuntimeInfoManager.hasOpeningStreams(eq(0))).thenReturn(true);
 
         // test: unregister node with open streams
         assertThrows(UnregisterNodeWithOpenStreamsException.class, () -> nodeControlManager.unregisterNodeRecord(0));

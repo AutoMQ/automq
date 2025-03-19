@@ -36,29 +36,6 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class CompactionUtils {
-    public static List<ObjectStreamRange> buildObjectStreamRange(List<StreamDataBlock> streamDataBlocks) {
-        List<ObjectStreamRange> objectStreamRanges = new ArrayList<>();
-        ObjectStreamRange currObjectStreamRange = null;
-        for (StreamDataBlock streamDataBlock : streamDataBlocks) {
-            if (currObjectStreamRange == null) {
-                currObjectStreamRange = new ObjectStreamRange(streamDataBlock.getStreamId(), -1L,
-                    streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset(), streamDataBlock.getBlockSize());
-            } else {
-                if (currObjectStreamRange.getStreamId() == streamDataBlock.getStreamId()) {
-                    currObjectStreamRange.setEndOffset(streamDataBlock.getEndOffset());
-                    currObjectStreamRange.setSize(currObjectStreamRange.getSize() + streamDataBlock.getBlockSize());
-                } else {
-                    objectStreamRanges.add(currObjectStreamRange);
-                    currObjectStreamRange = new ObjectStreamRange(streamDataBlock.getStreamId(), -1L,
-                        streamDataBlock.getStartOffset(), streamDataBlock.getEndOffset(), streamDataBlock.getBlockSize());
-                }
-            }
-        }
-        if (currObjectStreamRange != null) {
-            objectStreamRanges.add(currObjectStreamRange);
-        }
-        return objectStreamRanges;
-    }
 
     // test only
     public static Map<Long, List<StreamDataBlock>> blockWaitObjectIndices(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectMetadataList,

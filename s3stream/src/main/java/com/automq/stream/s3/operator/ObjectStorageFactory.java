@@ -16,11 +16,13 @@ import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 public class ObjectStorageFactory {
+
     private static volatile ObjectStorageFactory instance;
     private final Map<String /* protocol */, Function<Builder, ObjectStorage>> protocolHandlers = new HashMap<>();
 
@@ -28,7 +30,7 @@ public class ObjectStorageFactory {
         ObjectStorageFactory.instance()
             .registerProtocolHandler("s3", builder ->
                 AwsObjectStorage.builder()
-                    .bucket(builder.bucketURI)
+                    .bucket(builder.bucket)
                     .tagging(builder.tagging)
                     .inboundLimiter(builder.inboundLimiter)
                     .outboundLimiter(builder.outboundLimiter)
@@ -36,7 +38,11 @@ public class ObjectStorageFactory {
                     .checkS3ApiModel(builder.checkS3ApiModel)
                     .threadPrefix(builder.threadPrefix)
                     .build())
-            .registerProtocolHandler("mem", builder -> new MemoryObjectStorage(builder.bucketURI.bucketId()));
+            .registerProtocolHandler("mem", builder -> new MemoryObjectStorage(builder.bucket.bucketId()))
+            .registerProtocolHandler("file", builder ->
+                LocalFileObjectStorage.builder()
+                    .bucket(builder.bucket)
+                    .build());
     }
 
     private ObjectStorageFactory() {
@@ -52,6 +58,10 @@ public class ObjectStorageFactory {
         return new Builder().bucket(bucket);
     }
 
+    public Builder builder() {
+        return new Builder();
+    }
+
     public static ObjectStorageFactory instance() {
         if (instance == null) {
             synchronized (ObjectStorageFactory.class) {
@@ -65,21 +75,32 @@ public class ObjectStorageFactory {
 
     public class Builder {
         private final AtomicLong defaultThreadPrefixCounter = new AtomicLong();
-        private BucketURI bucketURI;
+        private BucketURI bucket;
+        private List<BucketURI> buckets;
         private Map<String, String> tagging;
         private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
         private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
         private boolean readWriteIsolate;
         private boolean checkS3ApiModel = false;
         private String threadPrefix = "";
+        private final Map<String, Object> extensions = new HashMap<>();
 
         Builder bucket(BucketURI bucketURI) {
-            this.bucketURI = bucketURI;
+            this.bucket = bucketURI;
             return this;
         }
 
         public BucketURI bucket() {
-            return bucketURI;
+            return bucket;
+        }
+
+        public Builder buckets(List<BucketURI> buckets) {
+            this.buckets = buckets;
+            return this;
+        }
+
+        public List<BucketURI> buckets() {
+            return buckets;
         }
 
         public Builder tagging(Map<String, String> tagging) {
@@ -136,11 +157,29 @@ public class ObjectStorageFactory {
             return threadPrefix;
         }
 
+        public Builder extension(String key, Object value) {
+            this.extensions.put(key, value);
+            return this;
+        }
+
+        @SuppressWarnings("unchecked")
+        public <T> T extension(String key) {
+            return (T) this.extensions.get(key);
+        }
+
+        public Map<String, Object> extensions() {
+            return extensions;
+        }
+
         public ObjectStorage build() {
             if (StringUtils.isEmpty(this.threadPrefix)) {
                 this.threadPrefix = Long.toString(defaultThreadPrefixCounter.getAndIncrement());
             }
-            return protocolHandlers.get(bucketURI.protocol()).apply(this);
+            if (buckets != null && buckets.size() > 1) {
+                return protocolHandlers.get("root").apply(this);
+            } else {
+                return protocolHandlers.get(bucket.protocol()).apply(this);
+            }
         }
     }
 }

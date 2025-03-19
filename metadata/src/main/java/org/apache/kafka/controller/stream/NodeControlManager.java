@@ -41,11 +41,11 @@ public class NodeControlManager {
 
     final TimelineHashMap<Integer, NodeMetadata> nodeMetadataMap;
 
-    private final NodeRuntimeInfoGetter nodeRuntimeInfoGetter;
+    private final NodeRuntimeInfoManager nodeRuntimeInfoManager;
 
-    public NodeControlManager(SnapshotRegistry registry, NodeRuntimeInfoGetter nodeRuntimeInfoGetter) {
+    public NodeControlManager(SnapshotRegistry registry, NodeRuntimeInfoManager nodeRuntimeInfoManager) {
         this.nodeMetadataMap = new TimelineHashMap<>(registry, 100);
-        this.nodeRuntimeInfoGetter = nodeRuntimeInfoGetter;
+        this.nodeRuntimeInfoManager = nodeRuntimeInfoManager;
     }
 
     public ControllerResult<AutomqRegisterNodeResponseData> register(AutomqRegisterNodeRequest req) {
@@ -102,14 +102,14 @@ public class NodeControlManager {
     }
 
     public NodeState state(int nodeId) {
-        return nodeRuntimeInfoGetter.state(nodeId);
+        return nodeRuntimeInfoManager.state(nodeId);
     }
 
     /**
      * Note: It is costly to check if a node has opening streams, so it is recommended to use this method only when necessary.
      */
     public boolean hasOpeningStreams(int nodeId) {
-        return nodeRuntimeInfoGetter.hasOpeningStreams(nodeId);
+        return nodeRuntimeInfoManager.hasOpeningStreams(nodeId);
     }
 
     public void replay(KVRecord kvRecord) {
@@ -121,6 +121,11 @@ public class NodeControlManager {
                 int nodeId = Integer.parseInt(kv.key().substring(KEY_PREFIX.length()));
                 NodeMetadata nodeMetadata = NodeMetadataCodec.decode(kv.value());
                 nodeMetadataMap.put(nodeId, nodeMetadata);
+                if ("OPEN".equals(nodeMetadata.getTags().getOrDefault("circuit", "OPEN"))) {
+                    nodeRuntimeInfoManager.unlock(nodeId);
+                } else {
+                    nodeRuntimeInfoManager.lock(nodeId);
+                }
             } catch (Throwable e) {
                 LOGGER.error("[FATAL] replay NodeMetadata from KV fail", e);
             }
@@ -144,6 +149,7 @@ public class NodeControlManager {
             try {
                 int nodeId = Integer.parseInt(key.substring(KEY_PREFIX.length()));
                 nodeMetadataMap.remove(nodeId);
+                nodeRuntimeInfoManager.unlock(nodeId);
             } catch (Throwable e) {
                 LOGGER.error("[FATAL] replay NodeMetadata from KV fail", e);
             }

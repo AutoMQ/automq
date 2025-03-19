@@ -30,6 +30,7 @@ import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
+import com.automq.stream.s3.operator.LocalFileObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
@@ -222,6 +223,9 @@ public class StreamObjectCompactor {
     static boolean checkObjectGroupCouldBeCompact(List<S3ObjectMetadata> objectGroup, long startOffset,
         CompactionType compactionType) {
         if (objectGroup.size() == 1 && SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP.contains(compactionType)) {
+            return false;
+        }
+        if (objectGroup.stream().anyMatch(o -> o.bucket() == LocalFileObjectStorage.BUCKET_ID)) {
             return false;
         }
         if (CLEANUP_V1.equals(compactionType)) {

@@ -41,8 +41,13 @@ public interface ObjectWriter {
     byte DATA_BLOCK_DEFAULT_FLAG = 0x02;
 
     static ObjectWriter writer(long objectId, ObjectStorage objectStorage, int blockSizeThreshold,
+        int partSizeThreshold, ObjectStorage.WriteOptions writeOptions) {
+        return new DefaultObjectWriter(objectId, objectStorage, blockSizeThreshold, partSizeThreshold, writeOptions);
+    }
+
+    static ObjectWriter writer(long objectId, ObjectStorage objectStorage, int blockSizeThreshold,
         int partSizeThreshold) {
-        return new DefaultObjectWriter(objectId, objectStorage, blockSizeThreshold, partSizeThreshold);
+        return writer(objectId, objectStorage, blockSizeThreshold, partSizeThreshold, new ObjectStorage.WriteOptions());
     }
 
     static ObjectWriter noop(long objectId) {
@@ -92,15 +97,16 @@ public interface ObjectWriter {
          * @param objectStorage      S3 operator
          * @param blockSizeThreshold the max size of a block
          * @param partSizeThreshold  the max size of a part. If it is smaller than {@link Writer#MIN_PART_SIZE}, it will be set to {@link Writer#MIN_PART_SIZE}.
+         * @param writeOptions       the object storage write options
          */
         public DefaultObjectWriter(long objectId, ObjectStorage objectStorage, int blockSizeThreshold,
-            int partSizeThreshold) {
+            int partSizeThreshold, ObjectStorage.WriteOptions writeOptions) {
             String objectKey = ObjectUtils.genKey(0, objectId);
             this.blockSizeThreshold = blockSizeThreshold;
             this.partSizeThreshold = Math.max(Writer.MIN_PART_SIZE, partSizeThreshold);
             waitingUploadBlocks = new LinkedList<>();
             completedBlocks = new LinkedList<>();
-            writer = objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, objectKey);
+            writer = objectStorage.writer(writeOptions, objectKey);
         }
 
         public synchronized void write(long streamId, List<StreamRecordBatch> records) {

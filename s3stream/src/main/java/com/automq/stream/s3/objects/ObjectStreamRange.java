@@ -26,6 +26,7 @@ public class ObjectStreamRange {
         this.epoch = epoch;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
+        // TODO: remove useless size
         this.size = size;
     }
 

@@ -16,13 +16,13 @@ import org.apache.kafka.controller.ClusterControlManager;
 
 import java.util.concurrent.TimeUnit;
 
-public class DefaultNodeRuntimeInfoGetter implements NodeRuntimeInfoGetter {
+public class DefaultNodeRuntimeInfoManager implements NodeRuntimeInfoManager {
     private static final long SHUTDOWN_TIMEOUT_NS = TimeUnit.SECONDS.toNanos(60);
 
     private final ClusterControlManager clusterControlManager;
     private final StreamControlManager streamControlManager;
 
-    public DefaultNodeRuntimeInfoGetter(ClusterControlManager clusterControlManager, StreamControlManager streamControlManager) {
+    public DefaultNodeRuntimeInfoManager(ClusterControlManager clusterControlManager, StreamControlManager streamControlManager) {
         this.clusterControlManager = clusterControlManager;
         this.streamControlManager = streamControlManager;
     }
@@ -40,5 +40,15 @@ public class DefaultNodeRuntimeInfoGetter implements NodeRuntimeInfoGetter {
     @Override
     public boolean hasOpeningStreams(int nodeId) {
         return streamControlManager.hasOpeningStreams(nodeId);
+    }
+
+    @Override
+    public void lock(int nodeId) {
+        streamControlManager.lock(nodeId);
+    }
+
+    @Override
+    public void unlock(int nodeId) {
+        streamControlManager.unlock(nodeId);
     }
 }

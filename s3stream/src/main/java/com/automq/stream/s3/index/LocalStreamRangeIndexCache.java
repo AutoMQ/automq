@@ -108,7 +108,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
             lastUploadTime = now;
             LOGGER.info("Upload local index cache on stream close");
         }
-        return uploadCf;
+        return uploadCf.orTimeout(1, TimeUnit.SECONDS);
     }
 
     CompletableFuture<Void> initCf() {

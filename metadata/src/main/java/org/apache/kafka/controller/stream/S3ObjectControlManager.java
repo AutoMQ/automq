@@ -48,6 +48,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectAttributes.Type;
 import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.LocalFileObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.utils.CollectionHelper;
@@ -521,11 +522,14 @@ public class S3ObjectControlManager {
 
     class ObjectCleaner {
         CompletableFuture<Void> clean(List<S3Object> objects) {
+            List<S3Object> ignoredObjects = new LinkedList<>();
             List<S3Object> deepDeleteCompositeObjects = new LinkedList<>();
             List<S3Object> shallowDeleteObjects = new ArrayList<>(objects.size());
             for (S3Object object : objects) {
                 ObjectAttributes attributes = ObjectAttributes.from(object.getAttributes());
-                if (attributes.deepDelete() && attributes.type() == Type.Composite) {
+                if (attributes.bucket() == LocalFileObjectStorage.BUCKET_ID) {
+                    ignoredObjects.add(object);
+                } else if (attributes.deepDelete() && attributes.type() == Type.Composite) {
                     deepDeleteCompositeObjects.add(object);
                 } else {
                     shallowDeleteObjects.add(object);
@@ -537,6 +541,8 @@ public class S3ObjectControlManager {
             batchDelete(shallowDeleteObjects, this::shallowlyDelete, cfList);
             // Delete the composite object and it's linked objects
             batchDelete(deepDeleteCompositeObjects, this::deepDelete, cfList);
+            // Delete the local file objects
+            batchDelete(ignoredObjects, this::noopDelete, cfList);
 
             return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
         }
@@ -581,6 +587,12 @@ public class S3ObjectControlManager {
             });
             return allCf;
         }
+
+        private CompletableFuture<Void> noopDelete(List<S3Object> s3objects) {
+            List<Long> deletedObjectIds = s3objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
+            return CompletableFuture.completedFuture(null).thenAccept(rst -> notifyS3ObjectDeleted(deletedObjectIds));
+        }
+
 
         private void notifyS3ObjectDeleted(List<Long> deletedObjectIds) {
             // notify the controller an objects deletion event to drive the removal of the objects

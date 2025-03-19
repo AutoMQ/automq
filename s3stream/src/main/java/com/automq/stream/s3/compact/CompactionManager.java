@@ -30,6 +30,7 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
+import com.automq.stream.s3.operator.LocalFileObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
@@ -222,6 +223,10 @@ public class CompactionManager {
         return this.objectManager.getServerObjects().thenComposeAsync(objectMetadataList -> {
             logger.info("Get {} stream set objects from metadata", objectMetadataList.size());
             if (objectMetadataList.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            if (objectMetadataList.stream().anyMatch(o -> o.bucket() == LocalFileObjectStorage.BUCKET_ID)) {
+                logger.info("Skip the compaction, because the s3 is in CIRCUIT_CLOSED status");
                 return CompletableFuture.completedFuture(null);
             }
             updateStreamDataBlockMap(objectMetadataList);

@@ -11,10 +11,14 @@
 
 package org.apache.kafka.controller.stream;
 
-public interface NodeRuntimeInfoGetter {
+public interface NodeRuntimeInfoManager {
 
     NodeState state(int nodeId);
 
     boolean hasOpeningStreams(int nodeId);
+
+    void lock(int nodeId);
+
+    void unlock(int nodeId);
 
 }

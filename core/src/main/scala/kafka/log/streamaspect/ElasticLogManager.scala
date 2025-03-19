@@ -133,7 +133,7 @@ object ElasticLogManager {
     context.config = config
     context.brokerServer = broker
     val openStreamChecker = if (broker != null) {
-      new DefaultOpenStreamChecker(broker.metadataCache)
+      new DefaultOpenStreamChecker(config.nodeId, broker.metadataCache)
     } else {
       OpenStreamChecker.NOOP
     }

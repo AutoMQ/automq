@@ -145,7 +145,7 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.controller.errors.ControllerExceptions;
 import org.apache.kafka.controller.errors.EventHandlerExceptionInfo;
 import org.apache.kafka.controller.metrics.QuorumControllerMetrics;
-import org.apache.kafka.controller.stream.DefaultNodeRuntimeInfoGetter;
+import org.apache.kafka.controller.stream.DefaultNodeRuntimeInfoManager;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.NodeControlManager;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
@@ -2165,7 +2165,7 @@ public final class QuorumController implements Controller {
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
                 this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager, kvControlManager);
-        this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoGetter(clusterControl, streamControlManager));
+        this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
         this.extension = extension.apply(this);
 
         // set the nodeControlManager here to avoid circular dependency

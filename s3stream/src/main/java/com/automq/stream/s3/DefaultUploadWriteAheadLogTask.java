@@ -121,7 +121,7 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         return uploadCf;
     }
 
-    private void upload0(long objectId) {
+    void upload0(long objectId) {
         uploadTimestamp = System.currentTimeMillis();
         List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
         Collections.sort(streamIds);
