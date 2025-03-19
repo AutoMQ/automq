@@ -708,21 +708,21 @@ private[kafka] abstract class Acceptor(val socketServer: SocketServer,
     }
   }
 
-private def closeAll(): Unit = {
+  private def closeAll(): Unit = {
     debug("Closing server socket, selector, and any throttled sockets.")
-
+    
+    // AutoMQ inject start
+    // Ensure null-safe closure of serverChannel to avoid NullPointerException
     Option(serverChannel).foreach { ch =>
       CoreUtils.swallow(ch.close(), this, Level.ERROR)
     }
+    // AutoMQ inject end
 
-    Option(nioSelector).foreach { sel =>
-      CoreUtils.swallow(sel.close(), this, Level.ERROR)
+    CoreUtils.swallow(nioSelector.close(), this, Level.ERROR)
+    throttledSockets.foreach { throttledSocket =>
+      closeSocket(throttledSocket.socket, this)
     }
-
-    Option(throttledSockets).foreach { sockets =>
-      sockets.foreach(throttledSocket => closeSocket(throttledSocket.socket, this))
-      sockets.clear()
-    }
+    throttledSockets.clear()
   }
 
   /**
