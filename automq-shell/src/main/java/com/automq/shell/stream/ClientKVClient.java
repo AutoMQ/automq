@@ -66,7 +66,9 @@ public class ClientKVClient {
     public KeyValue.Value getKV(String key) throws IOException {
         long now = Time.SYSTEM.milliseconds();
 
-        LOGGER.trace("[ClientKVClient]: Get KV: {}", key);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ClientKVClient]: Get KV: {}", key);
+        }
 
         GetKVsRequestData data = new GetKVsRequestData()
             .setGetKeyRequests(List.of(new GetKVsRequestData.GetKVRequest().setKey(key)));
@@ -88,7 +90,9 @@ public class ClientKVClient {
     public KeyValue.Value putKV(String key, byte[] value) throws IOException {
         long now = Time.SYSTEM.milliseconds();
 
-        LOGGER.trace("[ClientKVClient]: put KV: {}", key);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ClientKVClient]: put KV: {}", key);
+        }
 
         PutKVsRequestData data = new PutKVsRequestData()
             .setPutKVRequests(List.of(new PutKVsRequestData.PutKVRequest().setKey(key).setValue(value)));
@@ -110,7 +114,10 @@ public class ClientKVClient {
     public KeyValue.Value deleteKV(String key) throws IOException {
         long now = Time.SYSTEM.milliseconds();
 
-        LOGGER.trace("[ClientKVClient]: Delete KV: {}", key);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ClientKVClient]: Delete KV: {}", key);
+        }
+
         DeleteKVsRequestData data = new DeleteKVsRequestData()
             .setDeleteKVRequests(List.of(new DeleteKVsRequestData.DeleteKVRequest().setKey(key)));
 

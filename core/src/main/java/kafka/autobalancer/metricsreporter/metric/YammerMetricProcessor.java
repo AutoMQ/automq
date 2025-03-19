@@ -41,7 +41,9 @@ public class YammerMetricProcessor implements MetricProcessor<YammerMetricProces
     @Override
     public void processMeter(MetricName metricName, Metered metered, Context context) {
         if (MetricsUtils.isInterested(metricName)) {
-            LOG.trace("Processing metric {} of type Meter.", metricName);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Processing metric {} of type Meter.", metricName);
+            }
             double value;
             if (context.reportingInterval().toMillis() <= TimeUnit.MINUTES.toMillis(1)) {
                 value = metered.oneMinuteRate();
@@ -69,7 +71,9 @@ public class YammerMetricProcessor implements MetricProcessor<YammerMetricProces
     @Override
     public void processHistogram(MetricName metricName, Histogram histogram, Context context) {
         if (MetricsUtils.isInterested(metricName)) {
-            LOG.trace("Processing metric {} of type Histogram.", metricName);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Processing metric {} of type Histogram.", metricName);
+            }
             // Get max metric value
             AutoBalancerMetrics ccm = MetricsUtils.toAutoBalancerMetric(context.time(),
                     context.brokerId(),
@@ -112,7 +116,9 @@ public class YammerMetricProcessor implements MetricProcessor<YammerMetricProces
     @Override
     public void processTimer(MetricName metricName, Timer timer, Context context) {
         if (MetricsUtils.isInterested(metricName)) {
-            LOG.trace("Processing metric {} of type Timer.", metricName);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Processing metric {} of type Timer.", metricName);
+            }
 
             AutoBalancerMetrics ccm = MetricsUtils.toAutoBalancerMetric(context.time(),
                     context.brokerId(),
@@ -161,7 +167,9 @@ public class YammerMetricProcessor implements MetricProcessor<YammerMetricProces
     @Override
     public void processGauge(MetricName metricName, Gauge<?> gauge, Context context) {
         if (MetricsUtils.isInterested(metricName)) {
-            LOG.trace("Processing metric {} of type Gauge.", metricName);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Processing metric {} of type Gauge.", metricName);
+            }
             if (!(gauge.value() instanceof Number)) {
                 throw new IllegalStateException(String.format("The value of yammer metric %s is %s, which is not a number",
                         metricName, gauge.value()));

@@ -53,8 +53,10 @@ public abstract class AbstractGoal implements Goal {
                 candidateActionScores.add(Map.entry(action, score));
             }
         }
-        LOGGER.debug("try move partition {} out for broker {}, all possible action score: {} on goal {}", parameters.replica.getTopicPartition(),
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("try move partition {} out for broker {}, all possible action score: {} on goal {}", parameters    .replica.getTopicPartition(),
                 parameters.srcBroker.getBrokerId(), candidateActionScores, name());
+        }
         return getAcceptableAction(candidateActionScores);
     }
 
@@ -76,8 +78,10 @@ public abstract class AbstractGoal implements Goal {
                         candidate.getBrokerId(), candidateReplica.getTopicPartition());
                 double score = calculateCandidateActionScores(parameters.goalsByPriority, action, parameters.cluster, parameters.optimizedGoals, parameters.goalsByGroup);
                 if (score > POSITIVE_ACTION_SCORE_THRESHOLD) {
-                    LOGGER.debug("try swap partition {} out for broker {} with {}, action score: {}", parameters.replica.getTopicPartition(),
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("try swap partition {} out for broker {} with {}, action score: {}", parameters.replica.getTopicPartition(),
                             parameters.srcBroker.getBrokerId(), candidateReplica.getTopicPartition(), score);
+                    }
                     return Optional.of(action);
                 }
             }
@@ -92,13 +96,17 @@ public abstract class AbstractGoal implements Goal {
         for (Goal goal : goalsByPriority) {
             double score = goal.actionAcceptanceScore(action, cluster);
             if (score == NOT_ACCEPTABLE) {
-                LOGGER.debug("action {} is not acceptable for goal {}", action, goal);
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("action {} is not acceptable for goal {}", action, goal);
+                }
                 return NOT_ACCEPTABLE;
             }
             goalScoreMapByGroup.compute(goal.group(), (k, v) -> v == null ? new HashMap<>() : v).put(goal, score);
         }
 
-        LOGGER.debug("action {} scores on each goal: {}", action, goalScoreMapByGroup);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("action {} scores on each goal: {}", action, goalScoreMapByGroup);
+        }
         Map<String, Double> groupScoreMap = weightedGoalsScoreByGroup(goalScoreMapByGroup);
         for (Map.Entry<String, Double> entry : groupScoreMap.entrySet()) {
             String group = entry.getKey();
