@@ -9,12 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-package org.apache.kafka.controller.stream;
+package com.automq.stream.s3.exceptions;
 
-public interface NodeRuntimeInfoGetter {
-
-    NodeState state(int nodeId);
-
-    boolean hasOpeningStreams(int nodeId);
-
+public class ObjectNotCommittedException extends AutoMQException {
 }
