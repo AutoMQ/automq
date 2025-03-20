@@ -285,6 +285,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         }, metricsReporterCreateRetries);
     }
 
+    @SuppressWarnings("NPathComplexity")
     @Override
     public void run() {
         LOGGER.info("Starting auto balancer metrics reporter with reporting interval of {} ms.", reportingIntervalMs);
