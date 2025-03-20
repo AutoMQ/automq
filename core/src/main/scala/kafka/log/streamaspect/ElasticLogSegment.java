@@ -210,7 +210,9 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
             // append the messages
             long appendedBytes = log.append(records, largestOffset + 1);
-            LOGGER.trace("Appended {} to {} at end offset {}", appendedBytes, log, largestOffset);
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Appended {} to {} at end offset {}", appendedBytes, log, largestOffset);
+            }
             // Update the in memory max timestamp and corresponding offset.
             if (largestTimestampMs > maxTimestampSoFar()) {
                 maxTimestampAndOffsetSoFar = new TimestampOffset(largestTimestampMs, offsetOfMaxTimestamp);

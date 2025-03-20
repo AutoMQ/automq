@@ -55,7 +55,9 @@ public class ControllerKVClient implements KVClient {
 
     @Override
     public CompletableFuture<Value> putKVIfAbsent(KeyValue keyValue) {
-        LOGGER.trace("[ControllerKVClient]: Put KV if absent: {}", keyValue);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ControllerKVClient]: Put KV if absent: {}", keyValue);
+        }
         PutKVRequest request = new PutKVRequest()
                 .setKey(keyValue.key().get())
                 .setValue(keyValue.value().get().array());
@@ -83,7 +85,9 @@ public class ControllerKVClient implements KVClient {
             Errors code = Errors.forCode(response.errorCode());
             switch (code) {
                 case NONE:
-                    LOGGER.trace("[ControllerKVClient]: Put KV if absent: {}, result: {}", keyValue, response);
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ControllerKVClient]: Put KV if absent: {}, result: {}", keyValue, response);
+                    }
                     return ResponseHandleResult.withSuccess(Value.of(response.value()));
                 case KEY_EXIST:
                     LOGGER.warn("[ControllerKVClient]: Failed to Put KV if absent: {}, code: {}, key already exist", keyValue, code);
@@ -99,7 +103,9 @@ public class ControllerKVClient implements KVClient {
 
     @Override
     public CompletableFuture<Value> putKV(KeyValue keyValue) {
-        LOGGER.trace("[ControllerKVClient]: Put KV: {}", keyValue);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ControllerKVClient]: Put KV: {}", keyValue);
+        }
         PutKVRequest request = new PutKVRequest()
                 .setKey(keyValue.key().get())
                 .setValue(keyValue.value().get().array())
@@ -128,7 +134,9 @@ public class ControllerKVClient implements KVClient {
             Errors code = Errors.forCode(response.errorCode());
             switch (code) {
                 case NONE:
-                    LOGGER.trace("[ControllerKVClient]: Put KV: {}, result: {}", keyValue, response);
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ControllerKVClient]: Put KV: {}, result: {}", keyValue, response);
+                    }
                     return ResponseHandleResult.withSuccess(Value.of(response.value()));
                 default:
                     LOGGER.error("[ControllerKVClient]: Failed to Put KV: {}, code: {}, retry later", keyValue, code);
@@ -141,7 +149,9 @@ public class ControllerKVClient implements KVClient {
 
     @Override
     public CompletableFuture<Value> getKV(Key key) {
-        LOGGER.trace("[ControllerKVClient]: Get KV: {}", key);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ControllerKVClient]: Get KV: {}", key);
+        }
         GetKVRequest request = new GetKVRequest()
                 .setKey(key.get());
         WrapRequest req = new BatchRequest() {
@@ -169,7 +179,9 @@ public class ControllerKVClient implements KVClient {
             switch (code) {
                 case NONE:
                     Value val = Value.of(response.value());
-                    LOGGER.trace("[ControllerKVClient]: Get KV: {}, result: {}", key, response);
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ControllerKVClient]: Get KV: {}, result: {}", key, response);
+                    }
                     return ResponseHandleResult.withSuccess(val);
                 default:
                     LOGGER.error("[ControllerKVClient]: Failed to Get KV: {}, code: {}, retry later", key, code);
@@ -182,7 +194,9 @@ public class ControllerKVClient implements KVClient {
 
     @Override
     public CompletableFuture<Value> delKV(Key key) {
-        LOGGER.trace("[ControllerKVClient]: Delete KV: {}", key);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ControllerKVClient]: Delete KV: {}", key);
+        }
         DeleteKVRequest request = new DeleteKVRequest()
                 .setKey(key.get());
         WrapRequest req = new BatchRequest() {
@@ -210,7 +224,9 @@ public class ControllerKVClient implements KVClient {
             Errors code = Errors.forCode(response.errorCode());
             switch (code) {
                 case NONE:
-                    LOGGER.trace("[ControllerKVClient]: Delete KV: {}, result: {}", key, response);
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ControllerKVClient]: Delete KV: {}, result: {}", key, response);
+                    }
                     return ResponseHandleResult.withSuccess(Value.of(response.value()));
                 case KEY_NOT_EXIST:
                     LOGGER.info("[ControllerKVClient]: Delete KV: {}, result: KEY_NOT_EXIST", key);

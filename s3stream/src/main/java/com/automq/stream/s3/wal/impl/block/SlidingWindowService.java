@@ -498,7 +498,7 @@ public class SlidingWindowService {
                 scaleOutLock.unlock();
                 if (scaleWindowHappened) {
                     LOGGER.info("window scale out to {}", newMaxLength);
-                } else {
+                } else if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("window already scale out, ignore");
                 }
             }

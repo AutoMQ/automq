@@ -726,10 +726,14 @@ class LogManager(logDirs: Seq[File],
             val logs = logsInDir(localLogsByDir, dir)
 
             // update the last flush point
-            debug(s"Updating recovery points at $dir")
+            if (isDebugEnabled) {
+              debug(s"Updating recovery points at $dir")
+            }
             checkpointRecoveryOffsetsInDir(dir, logs)
 
-            debug(s"Updating log start offsets at $dir")
+            if (isDebugEnabled) {
+              debug(s"Updating log start offsets at $dir")
+            }
             checkpointLogStartOffsetsInDir(dir, logs)
 
             // mark that the shutdown was clean by creating marker file for log dirs that:
@@ -739,7 +743,9 @@ class LogManager(logDirs: Seq[File],
             if (hadCleanShutdownFlags.getOrDefault(logDirAbsolutePath, false) ||
                 loadLogsCompletedFlags.getOrDefault(logDirAbsolutePath, false)) {
               val cleanShutdownFileHandler = new CleanShutdownFileHandler(dir.getPath)
-              debug(s"Writing clean shutdown marker at $dir with broker epoch=$brokerEpoch")
+              if (isDebugEnabled) {
+                debug(s"Writing clean shutdown marker at $dir with broker epoch=$brokerEpoch")
+              }
               CoreUtils.swallow(cleanShutdownFileHandler.write(brokerEpoch), this)
             }
           }
