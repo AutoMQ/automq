@@ -119,7 +119,7 @@ class KRaftMetadataCache(
       streamMetadata.state == StreamState.OPENED &&
       streamMetadata.lastRange().nodeId() == tpRegistration.leader
 
-    if (!result) {
+    if (!result && isDebugEnabled) {
       debug(s"Failover failed for topicPartition $topicPartition, tpEpoch $tpRegistration, streamMetadata ${streamMetadata}")
     }
 

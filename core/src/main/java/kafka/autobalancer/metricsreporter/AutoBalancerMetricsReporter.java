@@ -285,6 +285,7 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         }, metricsReporterCreateRetries);
     }
 
+    @SuppressWarnings("NPathComplexity")
     @Override
     public void run() {
         LOGGER.info("Starting auto balancer metrics reporter with reporting interval of {} ms.", reportingIntervalMs);
@@ -292,7 +293,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         try {
             while (!shutdown) {
                 long now = System.currentTimeMillis();
-                LOGGER.debug("Reporting metrics for time {}.", now);
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("Reporting metrics for time {}.", now);
+                }
                 try {
                     if (now > lastReportingTime + reportingIntervalMs) {
                         numMetricSendFailure = 0;
@@ -343,7 +346,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     public void sendAutoBalancerMetric(AutoBalancerMetrics ccm) {
         ProducerRecord<String, AutoBalancerMetrics> producerRecord =
                 new ProducerRecord<>(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, null, ccm.time(), ccm.key(), ccm);
-        LOGGER.debug("Sending auto balancer metric {}.", ccm);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Sending auto balancer metric {}.", ccm);
+        }
         producer.send(producerRecord, (recordMetadata, e) -> {
             if (e != null) {
                 numMetricSendFailure++;
@@ -356,7 +361,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     }
 
     private void reportMetrics(long now) throws Exception {
-        LOGGER.debug("Reporting metrics.");
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Reporting metrics.");
+        }
 
         YammerMetricProcessor.Context context = new YammerMetricProcessor.Context(now, brokerId, brokerRack, reportingIntervalMs);
         processMetrics(context);
@@ -366,7 +373,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
             sendAutoBalancerMetric(entry.getValue());
         }
 
-        LOGGER.debug("Finished reporting metrics, total metrics size: {}, merged size: {}.", interestedMetrics.size(), context.getMetricMap().size());
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Finished reporting metrics, total metrics size: {}, merged size: {}.", interestedMetrics.size(), context.getMetricMap().size());
+        }
     }
 
     protected void checkMetricCompleteness(YammerMetricProcessor.Context context) {
@@ -403,7 +412,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
     protected void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {
         for (Map.Entry<MetricName, Metric> entry : interestedMetrics.entrySet()) {
-            LOGGER.trace("Processing yammer metric {}, scope = {}", entry.getKey(), entry.getKey().getScope());
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Processing yammer metric {}, scope = {}", entry.getKey(), entry.getKey().getScope());
+            }
             entry.getValue().processWith(yammerMetricProcessor, entry.getKey(), context);
         }
         Iterator<Map.Entry<String, AutoBalancerMetrics>> iterator = context.getMetricMap().entrySet().iterator();
@@ -430,7 +441,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
     protected void addMetricIfInterested(MetricName name, Metric metric) {
         if (isInterestedMetric(name)) {
-            LOGGER.debug("Added new metric {} to auto balancer metrics reporter.", name);
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Added new metric {} to auto balancer metrics reporter.", name);
+            }
             interestedMetrics.put(name, metric);
         }
     }

@@ -403,7 +403,9 @@ class DefaultAlterPartitionManager(
       return
     }
     val request = new ElectLeadersRequest.Builder(ElectionType.PREFERRED, topicPartitions, 1000)
-    debug(s"sending elect leader to controller $request")
+    if (isDebugEnabled) {
+      debug(s"sending elect leader to controller $request")
+    }
     controllerChannelManager.sendRequest(request, new ControllerRequestCompletionHandler {
       override def onTimeout(): Unit = {
         inflightElectLeadersRequest.set(false)
@@ -413,7 +415,9 @@ class DefaultAlterPartitionManager(
       }
 
       override def onComplete(response: ClientResponse): Unit = {
-        debug(s"Received elect leader response $response")
+        if (isDebugEnabled) {
+          debug(s"Received elect leader response $response")
+        }
         // no need retry, controller have backup logic to elect leader when timeout
         // In the normal case, check for pending updates to send immediately
         inflightElectLeadersRequest.set(false)

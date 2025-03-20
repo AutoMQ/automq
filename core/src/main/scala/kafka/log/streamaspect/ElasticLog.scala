@@ -298,9 +298,11 @@ class ElasticLog(val metaStream: MetaStream,
         maxOffsetMetadata: LogOffsetMetadata,
         includeAbortedTxns: Boolean): CompletableFuture[FetchDataInfo] = {
         maybeHandleIOExceptionAsync(s"Exception while reading from $topicPartition in dir ${dir.getParent}") {
-            trace(s"Reading maximum $maxLength bytes at offset $startOffset from log with " +
-                s"total length ${segments.sizeInBytes} bytes")
-            // get LEO from super class
+            if (isTraceEnabled) {
+                trace(s"Reading maximum $maxLength bytes at offset $startOffset from log with " +
+                    s"total length ${segments.sizeInBytes} bytes")
+            }
+          // get LEO from super class
             val endOffsetMetadata = nextOffsetMetadata
             val endOffset = endOffsetMetadata.messageOffset
             val segmentOpt = segments.lastSegment

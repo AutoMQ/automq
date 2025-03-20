@@ -73,8 +73,10 @@ public class TimeIndex extends AbstractIndex {
         // AutoMQ inject start
         if (!noopFile) {
             this.lastEntry = lastEntryFromIndexFile();
-            log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
-                file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastEntry.offset, mmap().position());
+            if (log.isDebugEnabled()) {
+                log.debug("Loaded index file {} with maxEntries = {}, maxIndexSize = {}, entries = {}, lastOffset = {}, file position = {}",
+                    file.getAbsolutePath(), maxEntries(), maxIndexSize, entries(), lastEntry.offset, mmap().position());
+            }
         }
         // AutoMQ inject end
     }
