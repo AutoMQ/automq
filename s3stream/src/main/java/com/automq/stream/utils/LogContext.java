@@ -26,7 +26,7 @@ public class LogContext {
     private final String logPrefix;
 
     public LogContext(String logPrefix) {
-        this.logPrefix = logPrefix == null ? "" : logPrefix;
+        this.logPrefix = (logPrefix == null ? "" : logPrefix) + " ";
     }
 
     public LogContext() {
