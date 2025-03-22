@@ -106,6 +106,17 @@ public class ConsumerService implements AutoCloseable {
         ).join();
     }
 
+    public void startImmediately(ConsumerCallback callback, int pollRate) {
+        BlockingBucket bucket = rateLimitBucket(pollRate);
+        ConsumerCallback callbackWithRateLimit = (tp, p, st) -> {
+            callback.messageReceived(tp, p, st);
+            bucket.consume(1);
+        };
+        groups.forEach(group -> 
+            group.startImmediately(callbackWithRateLimit)
+        );
+    }
+
     public void pause() {
         groups.forEach(Group::pause);
     }
@@ -196,6 +207,17 @@ public class ConsumerService implements AutoCloseable {
             return CompletableFuture.allOf(consumers()
                 .map(Consumer::started)
                 .toArray(CompletableFuture[]::new));
+        }
+
+        // 新增立即启动方法
+        // Group类中的立即启动方法调整
+        public void startImmediately(ConsumerCallback callback) {
+            consumers.values().forEach(consumerList -> 
+                consumerList.forEach(consumer -> 
+                    // 直接调用start()方法（原startConsuming改为start）
+                    consumer.start(callback)
+                )
+            );
         }
 
         public void pause() {
@@ -289,8 +311,15 @@ public class ConsumerService implements AutoCloseable {
             consumer.subscribe(List.of(topic), subscribeListener());
         }
 
+        // 修复立即启动方法（原startConsuming不存在）
+        public void startConsuming(ConsumerCallback callback) {
+        // 复用原有的start方法逻辑
+        this.task = this.executor.submit(() -> pollRecords(consumer, callback));
+        }
+
+        // 原start方法保持不变
         public void start(ConsumerCallback callback) {
-            this.task = this.executor.submit(() -> pollRecords(consumer, callback));
+        this.task = this.executor.submit(() -> pollRecords(consumer, callback));
         }
 
         public CompletableFuture<Void> started() {

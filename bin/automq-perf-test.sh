@@ -16,6 +16,26 @@
 
 base_dir=$(dirname "$0")
 
+# The prefix of the topic used for catchup.
+CATCHUP_TOPIC_PREFIX=""
+
+while [[$# -gt 0 ]]; do
+  case $1 in
+    --catchup-topic-prefix)
+      CATCHUP_TOPIC_PREFIX="$2"
+      shift 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+NEW_ARGS=()
+if [ -n "$CATCHUP_TOPIC_PREFIX"]; then
+  NEW_ARGS+=("--catchup-topic-prefix" "$CATCHUP_TOPIC_PREFIX")
+fi
+
 if [ "x$KAFKA_LOG4J_OPTS" = "x" ]; then
     export KAFKA_LOG4J_OPTS="-Dlog4j.configuration=file:$base_dir/../config/perf-log4j.properties"
 fi
@@ -23,4 +43,5 @@ fi
 if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
     export KAFKA_HEAP_OPTS="-Xmx1024M"
 fi
-exec "$(dirname "$0")/kafka-run-class.sh" -name kafkaClient -loggc org.apache.kafka.tools.automq.PerfCommand "$@"
+
+exec "$(dirname "$0")/kafka-run-class.sh" -name kafkaClient -loggc org.apache.kafka.tools.automq.PerfCommand "${NEW_ARGS[@]}" "$@"
