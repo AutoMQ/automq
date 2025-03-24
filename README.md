@@ -1,4 +1,4 @@
-# AutoMQ: A cloud-first alternative of Kafka by decoupling durability to S3 and EBS
+# AutoMQ: A cloud-native alternative of Kafka by decoupling durability to S3 and EBS
 
 
 <div align="center">
@@ -235,7 +235,7 @@ No need to bind a credit card, no cost at all. We look forward to receiving valu
 
 ## 🐱 The relationship with Apache Kafka
 
-AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). Based on the Apache Kafka codebase, we found an aspect at the LogSegment level, and replaced Kafka's storage layer with our self-developed cloud-first stream storage engine, [S3Stream](https://github.com/AutoMQ/automq/tree/main/s3stream). This engine can provide customers with high-performance, low-cost, and unlimited stream storage capabilities based on cloud storage like EBS WAL and S3. As such, AutoMQ completely retains the code of Kafka's computing layer and is 100% fully compatible with Apache Kafka. We appreciate the work done by the Apache Kafka community and will continue to embrace the Kafka community.
+AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). Based on the Apache Kafka codebase, we found an aspect at the LogSegment level, and replaced Kafka's storage layer with our self-developed cloud-native stream storage engine, [S3Stream](https://github.com/AutoMQ/automq/tree/main/s3stream). This engine can provide customers with high-performance, low-cost, and unlimited stream storage capabilities based on cloud storage like EBS WAL and S3. As such, AutoMQ completely retains the code of Kafka's computing layer and is 100% fully compatible with Apache Kafka. We appreciate the work done by the Apache Kafka community and will continue to embrace the Kafka community.
 
 ## 🙋 Contact Us
 Want to learn more, [Talk with our product experts](https://www.automq.com/contact).
