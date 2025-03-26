@@ -1,4 +1,4 @@
-# AutoMQ: A cloud-first alternative of Kafka by decoupling durability to S3 and EBS
+# AutoMQ: A cloud-native alternative of Kafka by decoupling durability to cloud storage services like S3
 
 
 <div align="center">
@@ -20,7 +20,6 @@
 
 [![Linkedin Badge](https://img.shields.io/badge/-LinkedIn-blue?style=flat-square&logo=Linkedin&logoColor=white&link=https://www.linkedin.com/company/automq)](https://www.linkedin.com/company/automq)
 [![Twitter URL](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)
-[![](https://img.shields.io/badge/-%20Wechat%20-red?style=social&logo=discourse)](docs/images/automq-wechat.png)
 [![](https://badgen.net/badge/Slack/Join%20AutoMQ/0abd59?icon=slack)](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA)
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison)
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd)
@@ -35,11 +34,6 @@
 ![](https://img.shields.io/badge/Azure-%E2%9C%85-lightgray?logo=microsoftazure)
 ![](https://img.shields.io/badge/Aliyun-%E2%9C%85-lightgray?logo=alibabacloud)
 </div>
-
-## 📺 Youtube Video Introduction
-<b>Watch this video to learn what is AutoMQ. ⬇️ ⬇️ ⬇️ </b>
-
-[![What is AutoMQ?](https://img.youtube.com/vi/3JQrclZlie4/0.jpg)](https://www.youtube.com/watch?v=3JQrclZlie4)
 
 ## 👥 Big Companies Worldwide are Using AutoMQ
 > Here are some of our customers who are using AutoMQ from all over the world.
@@ -145,7 +139,7 @@ Table Topic feature for unified stream and data analysis, which now supports the
   </tr>
   <tr>
     <td>Durability</td>
-    <td>Guaranteed by S3/EBS[2]</td>
+    <td>Guaranteed by cloud storage services[2]</td>
     <td colspan="2">Guaranteed by ISR </td>
     <td>Guaranteed by Bookkeeper</td>
     <td>Guaranteed by Raft</td>
@@ -162,12 +156,12 @@ Table Topic feature for unified stream and data analysis, which now supports the
 
 > [1] Apache Kafka Compatibility's definition is coming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
 
-> [2] EBS Durability: On Azure, GCP, and Alibaba Cloud, Regional EBS replicas span multiple AZs. On AWS, ensure durability by double writing to EBS and S3 Express One Zone in different AZs.
+> [2] AutoMQ's flexible architecture can utilize the durability of various cloud storage services like S3, Regional EBS, and EFS, all offering multi-AZ durability.
 
 ## 🔶 Why AutoMQ
 
 - **Cost effective**: The first true cloud-native streaming storage system, designed for optimal cost and efficiency on the cloud. Refer to [this report](https://docs.automq.com/docs/automq-opensource/EV6mwoC95ihwRckMsUKcppnqnJb) to see how we cut Apache Kafka billing by 90% on the cloud.
-- **High Reliability**: Leverage cloud-shared storage services(EBS and S3) to achieve zero RPO, RTO in seconds and 99.999999999% durability.
+- **High Reliability**: Leverage cloud-shared storage services to achieve zero RPO, RTO in seconds and 99.999999999% durability.
 - **Serverless**:
   - Auto Scaling: Monitor cluster metrics and automatically scale in/out to align with your workload, enabling a pay-as-you-go model.
   - Scaling in seconds: The computing layer (broker) is stateless and can scale in/out within seconds, making AutoMQ a truly serverless solution.
@@ -181,11 +175,17 @@ Table Topic feature for unified stream and data analysis, which now supports the
 
 ## ✨Architecture
 
-![image](./docs/images/automq_vs_kafka.gif)
+![image](./docs/images/automq_simple_arch.png)
 
-AutoMQ adopts a Shared-Storage architecture, replacing the storage layer of Apache Kafka with a shared streaming storage library called [S3Stream](https://github.com/AutoMQ/automq/tree/main/s3stream) in a storage-compute separation manner, making the Broker completely stateless.
+AutoMQ's Shared Storage architecture revolutionizes the storage layer of Apache Kafka by offloading data to cloud storage, thereby rendering the Broker stateless. This architecture incorporates both WAL (Write-Ahead Logging) storage and object storage, storing all data in object storage in near real-time.
 
-Compared to the classic Kafka Shared-Nothing or Tiered-Storage architectures, AutoMQ's computing layer (Broker) is truly stateless, enabling features such as Auto-Scaling, Self-Balancing, and Partition Reassignment in Seconds that significantly reduce costs and improve efficiency.
+In this setup:
+
+- Object storage is the primary data repository, providing a flexible, cost-effective, and scalable storage solution.
+- AutoMQ introduces a WAL storage layer to counter the high latency and low IOPS associated with Object storage, thereby improving data write efficiency and lowering IOPS usage.
+- The WAL storage layer is adaptable, allowing for the selection of various storage services across different cloud providers to cater to diverse durability and performance needs. Azure Zone-redundant Disk, GCP Regional Persistent Disk, and Alibaba Cloud Regional ESSD are ideal for ensuring multi-AZ durability. For cost-effective solutions on AWS with relaxed latency scenarios, S3 can serve as WAL. Additionally, AWS EFS/FSx can balance latency and cost for critical workloads when used as WAL.
+
+AutoMQ has developed a shared streaming storage library, S3Stream, which encapsulates these storage modules. By replacing the native Apache Kafka® Log storage with S3Stream, the entire Broker node becomes entirely stateless. This transformation significantly streamlines operations such as second-level partition reassignment, automatic scaling, and traffic self-balancing. To facilitate this, AutoMQ has integrated Controller components like Auto Scaling and Auto Balancing within its kernel, which oversee cluster scaling operations and traffic rebalancing, respectively. Please refer to [here](https://docs.automq.com/automq/architecture/overview) for more architecture details.
 
 ## ⛄ Get started with AutoMQ
 
@@ -235,7 +235,7 @@ No need to bind a credit card, no cost at all. We look forward to receiving valu
 
 ## 🐱 The relationship with Apache Kafka
 
-AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). Based on the Apache Kafka codebase, we found an aspect at the LogSegment level, and replaced Kafka's storage layer with our self-developed cloud-first stream storage engine, [S3Stream](https://github.com/AutoMQ/automq/tree/main/s3stream). This engine can provide customers with high-performance, low-cost, and unlimited stream storage capabilities based on cloud storage like EBS WAL and S3. As such, AutoMQ completely retains the code of Kafka's computing layer and is 100% fully compatible with Apache Kafka. We appreciate the work done by the Apache Kafka community and will continue to embrace the Kafka community.
+AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). Based on the Apache Kafka codebase, we found an aspect at the LogSegment level, and replaced Kafka's storage layer with our self-developed cloud-native stream storage engine, [S3Stream](https://github.com/AutoMQ/automq/tree/main/s3stream). This engine can provide customers with high-performance, low-cost, and unlimited stream storage capabilities based on cloud storage like EBS WAL and S3. As such, AutoMQ completely retains the code of Kafka's computing layer and is 100% fully compatible with Apache Kafka. We appreciate the work done by the Apache Kafka community and will continue to embrace the Kafka community.
 
 ## 🙋 Contact Us
 Want to learn more, [Talk with our product experts](https://www.automq.com/contact).
