@@ -181,6 +181,31 @@ public class S3StorageTest {
     }
 
     /**
+     * WALCallbackSequencer - Test after() when a stream's queue becomes empty
+     */
+    @Test
+    public void testAfterWhenQueueBecomesEmpty() {
+        S3Storage.WALCallbackSequencer seq = new S3Storage.WALCallbackSequencer();
+        long streamId = 700L;
+
+        WalWriteRequest request = new WalWriteRequest(newRecord(streamId, 70L), 700L, new CompletableFuture<>());
+        seq.before(request);
+
+        // Process the request, making the queue empty
+        List<WalWriteRequest> result = seq.after(request);
+        assertEquals(List.of(request), result);
+
+        // Verify that subsequent processing works correctly after the queue became empty
+        // Add a new request to the same stream
+        WalWriteRequest newRequest = new WalWriteRequest(newRecord(streamId, 71L), 701L, new CompletableFuture<>());
+        seq.before(newRequest);
+
+        // Process the new request
+        List<WalWriteRequest> newResult = seq.after(newRequest);
+        assertEquals(List.of(newRequest), newResult);
+    }
+
+    /**
      * WALCallbackSequencer
      */
     @Test
