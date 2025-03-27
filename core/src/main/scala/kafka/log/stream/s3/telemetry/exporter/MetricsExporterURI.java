@@ -47,14 +47,14 @@ public class MetricsExporterURI {
                 return null;
             }
             Map<String, List<String>> queries = URIUtils.splitQuery(uri);
-            return parseExporter(clusterId, kafkaConfig, type, queries);
+            return parseExporter(clusterId, kafkaConfig, type, queries, uriStr);
         } catch (Exception e) {
             LOGGER.warn("Parse metrics exporter URI {} failed", uriStr, e);
             return null;
         }
     }
 
-    public static MetricsExporter parseExporter(String clusterId, KafkaConfig kafkaConfig, String type, Map<String, List<String>> queries) {
+    public static MetricsExporter parseExporter(String clusterId, KafkaConfig kafkaConfig, String type, Map<String, List<String>> queries, String uriStr) {
         MetricsExporterType exporterType = MetricsExporterType.fromString(type);
         switch (exporterType) {
             case OTLP:
@@ -64,6 +64,8 @@ public class MetricsExporterURI {
             case OPS:
                 return buildOpsExporter(clusterId, kafkaConfig.nodeId(), kafkaConfig.s3ExporterReportIntervalMs(),
                     kafkaConfig.automq().opsBuckets(), kafkaConfig.automq().baseLabels());
+            case KAFKA:
+                return buildKafkaExporter(kafkaConfig.s3ExporterReportIntervalMs(), uriStr);
             default:
                 return null;
         }
@@ -105,8 +107,12 @@ public class MetricsExporterURI {
     }
 
     public static MetricsExporter buildOpsExporter(String clusterId, int nodeId, int intervalMs, List<BucketURI> opsBuckets,
-        List<Pair<String, String>> baseLabels) {
+                                                   List<Pair<String, String>> baseLabels) {
         return new OpsMetricsExporter(clusterId, nodeId, intervalMs, opsBuckets, baseLabels);
+    }
+
+    public static MetricsExporter buildKafkaExporter(int intervalMs, String uriStr) {
+        return new KafkaMetricsExporter(intervalMs, uriStr);
     }
 
     public List<MetricsExporter> metricsExporters() {
