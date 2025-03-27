@@ -324,7 +324,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (cause instanceof S3Exception) {
             S3Exception s3Ex = (S3Exception) cause;
             switch (s3Ex.statusCode()) {
-                case HttpStatusCode.FORBIDDEN:
                 case HttpStatusCode.NOT_FOUND:
                     strategy = RetryStrategy.ABORT;
                     break;
