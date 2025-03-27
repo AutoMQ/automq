@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "未知的key: $1" >&2
+            echo "Error: unknown arg Key: $1" >&2
             exit 1
             ;;
     esac
