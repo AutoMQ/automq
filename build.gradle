@@ -1285,6 +1285,10 @@ project(':core') {
         dependsOn 'generateProto'
     }
 
+    tasks.named('spotlessJava') {
+        dependsOn tasks.named('generateProto')
+    }
+
     sourceSets {
         main {
             java {
