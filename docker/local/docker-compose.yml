@@ -35,21 +35,6 @@ services:
     networks:
       - automq_net
 
-  test:
-    container_name: test
-    hostname: test
-    image: automqinc/automq-basic:2025.03.27
-    volumes:
-      - ../../core/build/distributions:/opt/volume_libs:ro
-      - ../scripts:/opt/volume_scripts:ro
-    command:
-      - bash
-      - -c
-      - |
-        cp -r /opt/volume_scripts/ /opt/automq/scripts && chmod +x /opt/automq/scripts/*.sh
-        /opt/automq/scripts/pre_start.sh -s /opt/volume_libs -t /opt/kafka && \
-        tail -f /dev/null
-
   controller:
     container_name: "${CONTROLLER_DOCKER_NAME-controller}"
     hostname: "${CONTROLLER_DOCKER_NAME-controller}"
