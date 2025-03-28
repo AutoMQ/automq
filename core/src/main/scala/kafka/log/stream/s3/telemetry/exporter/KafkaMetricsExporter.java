@@ -1,7 +1,8 @@
 package kafka.log.stream.s3.telemetry.exporter;
 
-import com.automq.stream.utils.URIUtils;
 import org.apache.kafka.common.utils.Utils;
+
+import com.automq.stream.utils.URIUtils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

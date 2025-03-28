@@ -80,7 +80,7 @@ ext {
 
   maxTestForks = project.hasProperty('maxParallelForks') ? maxParallelForks.toInteger() : Runtime.runtime.availableProcessors()
   maxScalacThreads = project.hasProperty('maxScalacThreads') ? maxScalacThreads.toInteger() :
-    Math.min(Runtime.runtime.availableProcessors(), 8)
+      Math.min(Runtime.runtime.availableProcessors(), 8)
   userIgnoreFailures = project.hasProperty('ignoreFailures') ? ignoreFailures : false
 
   userMaxTestRetries = project.hasProperty('maxTestRetries') ? maxTestRetries.toInteger() : 0
@@ -371,7 +371,7 @@ subprojects {
       def tid = testId(td)
       // truncate the file name if it's too long
       def logFile = new File(
-        "${projectDir}/build/reports/testOutput/${tid.substring(0, Math.min(tid.size(),240))}.test.stdout"
+              "${projectDir}/build/reports/testOutput/${tid.substring(0, Math.min(tid.size(),240))}.test.stdout"
       )
       logFile.parentFile.mkdirs()
       logFiles.put(tid, logFile)
@@ -392,8 +392,8 @@ subprojects {
         return
       } else if (logStreams.get(tid) == null) {
         println "WARNING: unexpectedly got output for a test [${tid}]" +
-          " that we didn't previously see in the beforeTest hook." +
-          " Message for debugging: [" + toe.message + "]."
+                " that we didn't previously see in the beforeTest hook." +
+                " Message for debugging: [" + toe.message + "]."
         return
       }
       try {
@@ -1354,10 +1354,10 @@ project(':metadata') {
              "-i", "src/main/resources/common/metadata",
              "-m", "MessageDataGenerator", "JsonConverterGenerator",
              "-t", "MetadataRecordTypeGenerator", "MetadataJsonConvertersGenerator"
-    ]
+           ]
     inputs.dir("src/main/resources/common/metadata")
-      .withPropertyName("messages")
-      .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("messages")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.cacheIf { true }
     outputs.dir("src/generated/java/org/apache/kafka/common/metadata")
   }
@@ -1404,8 +1404,8 @@ project(':group-coordinator:group-coordinator-api') {
 
     doLast {
       def data = [
-        commitId: commitId,
-        version: version,
+              commitId: commitId,
+              version: version,
       ]
 
       receiptFile.parentFile.mkdirs()
@@ -1508,8 +1508,8 @@ project(':group-coordinator') {
              "-m", "MessageDataGenerator", "JsonConverterGenerator"
     ]
     inputs.dir("src/main/resources/common/message")
-      .withPropertyName("messages")
-      .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("messages")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.cacheIf { true }
     outputs.dir("src/generated/java/org/apache/kafka/coordinator/group/generated")
   }
@@ -1559,8 +1559,8 @@ project(':transaction-coordinator') {
              "-m", "MessageDataGenerator", "JsonConverterGenerator"
     ]
     inputs.dir("src/main/resources/common/message")
-      .withPropertyName("messages")
-      .withPathSensitivity(PathSensitivity.RELATIVE)
+            .withPropertyName("messages")
+            .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.cacheIf { true }
     outputs.dir("src/generated/java/org/apache/kafka/coordinator/transaction/generated")
   }
@@ -1715,10 +1715,10 @@ project(':clients') {
              "-i", "src/main/resources/common/message",
              "-t", "ApiMessageTypeGenerator",
              "-m", "MessageDataGenerator", "JsonConverterGenerator"
-    ]
+           ]
     inputs.dir("src/main/resources/common/message")
-      .withPropertyName("messages")
-      .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("messages")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.cacheIf { true }
     outputs.dir("src/generated/java/org/apache/kafka/common/message")
   }
@@ -1730,10 +1730,10 @@ project(':clients') {
              "-o", "src/generated-test/java/org/apache/kafka/common/message",
              "-i", "src/test/resources/common/message",
              "-m", "MessageDataGenerator", "JsonConverterGenerator"
-    ]
+           ]
     inputs.dir("src/test/resources/common/message")
-      .withPropertyName("testMessages")
-      .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("testMessages")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.cacheIf { true }
     outputs.dir("src/generated-test/java/org/apache/kafka/common/message")
   }
@@ -1865,7 +1865,7 @@ project(':raft') {
   jar {
     dependsOn createVersionFile
     from("$buildDir") {
-      include "kafka/$buildVersionFileName"
+        include "kafka/$buildVersionFileName"
     }
   }
 
@@ -2065,8 +2065,8 @@ project(':storage') {
 
     doLast {
       def data = [
-        commitId: commitId,
-        version: version,
+              commitId: commitId,
+              version: version,
       ]
 
       receiptFile.parentFile.mkdirs()
@@ -2225,8 +2225,8 @@ project(':tools:tools-api') {
 
     doLast {
       def data = [
-        commitId: commitId,
-        version: version,
+              commitId: commitId,
+              version: version,
       ]
 
       receiptFile.parentFile.mkdirs()
@@ -2533,7 +2533,7 @@ project(':streams') {
              "-o", "src/generated/java/org/apache/kafka/streams/internals/generated",
              "-i", "src/main/resources/common/message",
              "-m", "MessageDataGenerator"
-    ]
+           ]
     inputs.dir("src/main/resources/common/message")
         .withPropertyName("messages")
         .withPathSensitivity(PathSensitivity.RELATIVE)
