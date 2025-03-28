@@ -1,18 +1,5 @@
 package kafka.log.stream.s3.telemetry.exporter;
 
-import io.opentelemetry.sdk.metrics.data.DoubleExemplarData;
-import io.opentelemetry.sdk.metrics.data.DoublePointData;
-import io.opentelemetry.sdk.metrics.data.ExemplarData;
-import io.opentelemetry.sdk.metrics.data.ExponentialHistogramBuckets;
-import io.opentelemetry.sdk.metrics.data.ExponentialHistogramData;
-import io.opentelemetry.sdk.metrics.data.ExponentialHistogramPointData;
-import io.opentelemetry.sdk.metrics.data.GaugeData;
-import io.opentelemetry.sdk.metrics.data.HistogramData;
-import io.opentelemetry.sdk.metrics.data.HistogramPointData;
-import io.opentelemetry.sdk.metrics.data.LongExemplarData;
-import io.opentelemetry.sdk.metrics.data.LongPointData;
-import io.opentelemetry.sdk.metrics.data.PointData;
-import io.opentelemetry.sdk.metrics.data.SumData;
 import kafka.automq.telemetry.proto.common.v1.AnyValue;
 import kafka.automq.telemetry.proto.common.v1.ArrayValue;
 import kafka.automq.telemetry.proto.common.v1.InstrumentationScope;
@@ -40,7 +27,20 @@ import java.util.stream.Collectors;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.sdk.common.InstrumentationScopeInfo;
+import io.opentelemetry.sdk.metrics.data.DoubleExemplarData;
+import io.opentelemetry.sdk.metrics.data.DoublePointData;
+import io.opentelemetry.sdk.metrics.data.ExemplarData;
+import io.opentelemetry.sdk.metrics.data.ExponentialHistogramBuckets;
+import io.opentelemetry.sdk.metrics.data.ExponentialHistogramData;
+import io.opentelemetry.sdk.metrics.data.ExponentialHistogramPointData;
+import io.opentelemetry.sdk.metrics.data.GaugeData;
+import io.opentelemetry.sdk.metrics.data.HistogramData;
+import io.opentelemetry.sdk.metrics.data.HistogramPointData;
+import io.opentelemetry.sdk.metrics.data.LongExemplarData;
+import io.opentelemetry.sdk.metrics.data.LongPointData;
 import io.opentelemetry.sdk.metrics.data.MetricData;
+import io.opentelemetry.sdk.metrics.data.PointData;
+import io.opentelemetry.sdk.metrics.data.SumData;
 
 /**
  * OpenTelemetry metric data converter in OTLP Protobuf format.

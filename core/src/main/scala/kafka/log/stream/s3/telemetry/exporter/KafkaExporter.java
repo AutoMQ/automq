@@ -1,16 +1,5 @@
 package kafka.log.stream.s3.telemetry.exporter;
 
-import io.opentelemetry.sdk.metrics.data.AggregationTemporality;
-import io.opentelemetry.sdk.metrics.data.DoublePointData;
-import io.opentelemetry.sdk.metrics.data.HistogramPointData;
-import io.opentelemetry.sdk.metrics.data.LongPointData;
-import io.opentelemetry.sdk.metrics.data.MetricData;
-import io.opentelemetry.sdk.metrics.data.SummaryPointData;
-import io.opentelemetry.sdk.metrics.internal.data.ImmutableGaugeData;
-import io.opentelemetry.sdk.metrics.internal.data.ImmutableHistogramData;
-import io.opentelemetry.sdk.metrics.internal.data.ImmutableMetricData;
-import io.opentelemetry.sdk.metrics.internal.data.ImmutableSumData;
-import io.opentelemetry.sdk.metrics.internal.data.ImmutableSummaryData;
 import kafka.automq.telemetry.proto.metrics.v1.ResourceMetrics;
 
 import org.apache.kafka.clients.CommonClientConfigs;
@@ -45,7 +34,18 @@ import java.util.concurrent.TimeUnit;
 
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.metrics.InstrumentType;
+import io.opentelemetry.sdk.metrics.data.AggregationTemporality;
+import io.opentelemetry.sdk.metrics.data.DoublePointData;
+import io.opentelemetry.sdk.metrics.data.HistogramPointData;
+import io.opentelemetry.sdk.metrics.data.LongPointData;
+import io.opentelemetry.sdk.metrics.data.MetricData;
+import io.opentelemetry.sdk.metrics.data.SummaryPointData;
 import io.opentelemetry.sdk.metrics.export.MetricExporter;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableGaugeData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableHistogramData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableMetricData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableSumData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableSummaryData;
 
 /**
  * Kafka Metrics Exporter implementation to export OpenTelemetry metrics to a Kafka topic.
