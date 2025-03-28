@@ -35,23 +35,6 @@ services:
     networks:
       - automq_net
 
-  test:
-    container_name: test
-    hostname: test
-#    image: amazoncorretto:17.0.14
-#    image: gradle:jdk17
-    image: eclipse-temurin:17-jdk-noble
-    working_dir: /opt/automq
-    volumes:
-      - ../../core/build/local:/opt/volume_libs:ro
-      - ../scripts:/opt/volume_scripts:ro
-    command:
-      - bash
-      - -c
-      - |
-        /opt/volume_scripts/pre_start.sh && \
-        tail -f /dev/null
-
   controller:
     container_name: "${CONTROLLER_DOCKER_NAME-controller}"
     hostname: "${CONTROLLER_DOCKER_NAME-controller}"
