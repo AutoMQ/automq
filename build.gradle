@@ -731,7 +731,7 @@ subprojects {
       jacoco {
         toolVersion = versions.jacoco
       }
-
+      
       jacocoTestReport {
         dependsOn tasks.test
         sourceSets sourceSets.main
@@ -755,8 +755,8 @@ subprojects {
     skipProjects = [ ":jmh-benchmarks", ":trogdor" ]
     skipConfigurations = [ "zinc" ]
   }
-  //  the task `removeUnusedImports` is implemented by google-java-format,
-  //  and unfortunately the google-java-format version used by spotless 6.14.0 can't work with JDK 21.
+  //  the task `removeUnusedImports` is implemented by google-java-format, 
+  //  and unfortunately the google-java-format version used by spotless 6.14.0 can't work with JDK 21. 
   //  Hence, we apply spotless tasks only if the env is either JDK11 or JDK17
   if ((JavaVersion.current().isJava11() || (JavaVersion.current() == JavaVersion.VERSION_17))) {
     apply plugin: 'com.diffplug.spotless'
@@ -895,54 +895,6 @@ project(':server') {
   javadoc {
     enabled = false
   }
-}
-
-def copyToTask(AbstractCopyTask task) {
-    task.from(project.file("$rootDir/bin")) { into "bin/" }
-    task.from(project.file("$rootDir/config")) { into "config/" }
-    task.from(project.file("$rootDir/licenses")) { into "licenses/" }
-    task.from(project.file("$rootDir/docker/docker-compose.yaml")) { into "docker/" }
-    task.from(project.file("$rootDir/docker/telemetry")) { into "docker/telemetry/" }
-    task.from(project.file("$rootDir/LICENSE")) { into "" }
-    task.from(project.file("$rootDir/LICENSE.S3Stream")) { into "" }
-    task.from "$rootDir/NOTICE-binary" rename {String filename -> filename.replace("-binary", "")}
-    task.from(configurations.runtimeClasspath) { into("libs/") }
-    task.from(configurations.archives.artifacts.files) { into("libs/") }
-    task.from(project(':tools').jar) { into("libs/") }
-    task.from(project(':tools').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':trogdor').jar) { into("libs/") }
-    task.from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':automq-shell').jar) { into("libs/") }
-    task.from(project(':automq-shell').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':shell').jar) { into("libs/") }
-    task.from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':connect:api').jar) { into("libs/") }
-    task.from(project(':connect:api').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':connect:runtime').jar) { into("libs/") }
-    task.from(project(':connect:runtime').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':connect:transforms').jar) { into("libs/") }
-    task.from(project(':connect:transforms').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':connect:json').jar) { into("libs/") }
-    task.from(project(':connect:json').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':connect:file').jar) { into("libs/") }
-    task.from(project(':connect:file').configurations.runtimeClasspath) { into("libs/") }
-    task.from(project(':connect:basic-auth-extension').jar) { into "libs/" }
-    task.from(project(':connect:basic-auth-extension').configurations.runtimeClasspath) { into "libs/" }
-    task.from(project(':connect:mirror').jar) { into "libs/" }
-    task.from(project(':connect:mirror').configurations.runtimeClasspath) { into "libs/" }
-    task.from(project(':connect:mirror-client').jar) { into "libs/" }
-    task.from(project(':connect:mirror-client').configurations.runtimeClasspath) { into "libs/" }
-    task.from(project(':streams').jar) { into "libs/" }
-    task.from(project(':streams').configurations.runtimeClasspath) { into "libs/" }
-    task.from(project(':streams:streams-scala').jar) { into "libs/" }
-    task.from(project(':streams:streams-scala').configurations.runtimeClasspath) { into "libs/" }
-    task.from(project(':streams:test-utils').jar) { into "libs/" }
-    task.from(project(':streams:test-utils').configurations.runtimeClasspath) { into "libs/" }
-    task.from(project(':streams:examples').jar) { into "libs/" }
-    task.from(project(':streams:examples').configurations.runtimeClasspath) { into "libs/" }
-    task.from(project(':tools:tools-api').jar) { into "libs/" }
-    task.from(project(':tools:tools-api').configurations.runtimeClasspath) { into "libs/" }
-    task.duplicatesStrategy 'exclude'
 }
 
 project(':core') {
@@ -1205,14 +1157,52 @@ project(':core') {
 
     into "${prefix}kafka-${archiveVersion.get()}"
     compression = Compression.GZIP
-
+    from(project.file("$rootDir/bin")) { into "bin/" }
+    from(project.file("$rootDir/config")) { into "config/" }
+    from(project.file("$rootDir/licenses")) { into "licenses/" }
+    from(project.file("$rootDir/docker/docker-compose.yaml")) { into "docker/" }
+    from(project.file("$rootDir/docker/telemetry")) { into "docker/telemetry/" }
+    from(project.file("$rootDir/LICENSE")) { into "" }
+    from(project.file("$rootDir/LICENSE.S3Stream")) { into "" }
+    from "$rootDir/NOTICE-binary" rename {String filename -> filename.replace("-binary", "")}
+    from(configurations.runtimeClasspath) { into("libs/") }
+    from(configurations.archives.artifacts.files) { into("libs/") }
     from(project.siteDocsTar) { into("site-docs/") }
-    copyToTask(it)
-  }
-
-  tasks.create(name: "buildLocal", dependsOn: configurations.archives.artifacts, type: Copy) {
-    into layout.buildDirectory.dir("local")
-    copyToTask(it)
+    from(project(':tools').jar) { into("libs/") }
+    from(project(':tools').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':trogdor').jar) { into("libs/") }
+    from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':automq-shell').jar) { into("libs/") }
+    from(project(':automq-shell').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':shell').jar) { into("libs/") }
+    from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':connect:api').jar) { into("libs/") }
+    from(project(':connect:api').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':connect:runtime').jar) { into("libs/") }
+    from(project(':connect:runtime').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':connect:transforms').jar) { into("libs/") }
+    from(project(':connect:transforms').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':connect:json').jar) { into("libs/") }
+    from(project(':connect:json').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':connect:file').jar) { into("libs/") }
+    from(project(':connect:file').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':connect:basic-auth-extension').jar) { into("libs/") }
+    from(project(':connect:basic-auth-extension').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':connect:mirror').jar) { into("libs/") }
+    from(project(':connect:mirror').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':connect:mirror-client').jar) { into("libs/") }
+    from(project(':connect:mirror-client').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':streams').jar) { into("libs/") }
+    from(project(':streams').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':streams:streams-scala').jar) { into("libs/") }
+    from(project(':streams:streams-scala').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':streams:test-utils').jar) { into("libs/") }
+    from(project(':streams:test-utils').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':streams:examples').jar) { into("libs/") }
+    from(project(':streams:examples').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':tools:tools-api').jar) { into("libs/") }
+    from(project(':tools:tools-api').configurations.runtimeClasspath) { into("libs/") }
+    duplicatesStrategy 'exclude'
   }
 
   jar {
@@ -1233,7 +1223,7 @@ project(':core') {
     //By default gradle does not handle test dependencies between the sub-projects
     //This line is to include clients project test jar to dependant-testlibs
     from (project(':clients').testJar ) { "$buildDir/dependant-testlibs" }
-    // log4j-appender is not in core dependencies,
+    // log4j-appender is not in core dependencies, 
     // so we add it to dependant-testlibs to avoid ClassNotFoundException in running kafka_log4j_appender.py
     from (project(':log4j-appender').jar ) { "$buildDir/dependant-testlibs" }
     duplicatesStrategy 'exclude'
@@ -1493,7 +1483,7 @@ project(':transaction-coordinator') {
     implementation project(':clients')
     generator project(':generator')
   }
-
+  
   sourceSets {
     main {
       java {
