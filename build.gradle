@@ -817,15 +817,15 @@ if (userEnableTestCoverage) {
 }
 
 def connectPkgs = [
-  'connect:api',
-  'connect:basic-auth-extension',
-  'connect:file',
-  'connect:json',
-  'connect:runtime',
-  'connect:test-plugins',
-  'connect:transforms',
-  'connect:mirror',
-  'connect:mirror-client'
+    'connect:api',
+    'connect:basic-auth-extension',
+    'connect:file',
+    'connect:json',
+    'connect:runtime',
+    'connect:test-plugins',
+    'connect:transforms',
+    'connect:mirror',
+    'connect:mirror-client'
 ]
 
 tasks.create(name: "jarConnect", dependsOn: connectPkgs.collect { it + ":jar" }) {}
@@ -1917,8 +1917,8 @@ project(':server-common') {
 
     doLast {
       def data = [
-        commitId: commitId,
-        version: version,
+              commitId: commitId,
+              version: version,
       ]
 
       receiptFile.parentFile.mkdirs()
@@ -1975,8 +1975,8 @@ project(':storage:storage-api') {
 
     doLast {
       def data = [
-        commitId: commitId,
-        version: version,
+              commitId: commitId,
+              version: version,
       ]
 
       receiptFile.parentFile.mkdirs()
@@ -2084,8 +2084,8 @@ project(':storage') {
              "-m", "MessageDataGenerator", "JsonConverterGenerator",
              "-t", "MetadataRecordTypeGenerator", "MetadataJsonConvertersGenerator" ]
     inputs.dir("src/main/resources/message")
-      .withPropertyName("messages")
-      .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("messages")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.cacheIf { true }
     outputs.dir("src/generated/java/org/apache/kafka/server/log/remote/metadata/storage/generated")
   }
@@ -2535,8 +2535,8 @@ project(':streams') {
              "-m", "MessageDataGenerator"
     ]
     inputs.dir("src/main/resources/common/message")
-      .withPropertyName("messages")
-      .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("messages")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.cacheIf { true }
     outputs.dir("src/generated/java/org/apache/kafka/streams/internals/generated")
   }
@@ -2578,8 +2578,8 @@ project(':streams') {
 
     doLast {
       def data = [
-        commitId: commitId,
-        version: version,
+              commitId: commitId,
+              version: version,
       ]
 
       receiptFile.parentFile.mkdirs()
@@ -2609,33 +2609,33 @@ project(':streams') {
 
   task testAll(
     dependsOn: [
-      ':streams:test',
-      ':streams:test-utils:test',
-      ':streams:streams-scala:test',
-      ':streams:upgrade-system-tests-0100:test',
-      ':streams:upgrade-system-tests-0101:test',
-      ':streams:upgrade-system-tests-0102:test',
-      ':streams:upgrade-system-tests-0110:test',
-      ':streams:upgrade-system-tests-10:test',
-      ':streams:upgrade-system-tests-11:test',
-      ':streams:upgrade-system-tests-20:test',
-      ':streams:upgrade-system-tests-21:test',
-      ':streams:upgrade-system-tests-22:test',
-      ':streams:upgrade-system-tests-23:test',
-      ':streams:upgrade-system-tests-24:test',
-      ':streams:upgrade-system-tests-25:test',
-      ':streams:upgrade-system-tests-26:test',
-      ':streams:upgrade-system-tests-27:test',
-      ':streams:upgrade-system-tests-28:test',
-      ':streams:upgrade-system-tests-30:test',
-      ':streams:upgrade-system-tests-31:test',
-      ':streams:upgrade-system-tests-32:test',
-      ':streams:upgrade-system-tests-33:test',
-      ':streams:upgrade-system-tests-34:test',
-      ':streams:upgrade-system-tests-35:test',
-      ':streams:upgrade-system-tests-36:test',
-      ':streams:upgrade-system-tests-37:test',
-      ':streams:examples:test'
+            ':streams:test',
+            ':streams:test-utils:test',
+            ':streams:streams-scala:test',
+            ':streams:upgrade-system-tests-0100:test',
+            ':streams:upgrade-system-tests-0101:test',
+            ':streams:upgrade-system-tests-0102:test',
+            ':streams:upgrade-system-tests-0110:test',
+            ':streams:upgrade-system-tests-10:test',
+            ':streams:upgrade-system-tests-11:test',
+            ':streams:upgrade-system-tests-20:test',
+            ':streams:upgrade-system-tests-21:test',
+            ':streams:upgrade-system-tests-22:test',
+            ':streams:upgrade-system-tests-23:test',
+            ':streams:upgrade-system-tests-24:test',
+            ':streams:upgrade-system-tests-25:test',
+            ':streams:upgrade-system-tests-26:test',
+            ':streams:upgrade-system-tests-27:test',
+            ':streams:upgrade-system-tests-28:test',
+            ':streams:upgrade-system-tests-30:test',
+            ':streams:upgrade-system-tests-31:test',
+            ':streams:upgrade-system-tests-32:test',
+            ':streams:upgrade-system-tests-33:test',
+            ':streams:upgrade-system-tests-34:test',
+            ':streams:upgrade-system-tests-35:test',
+            ':streams:upgrade-system-tests-36:test',
+            ':streams:upgrade-system-tests-37:test',
+            ':streams:examples:test'
     ]
   )
 }
@@ -3196,14 +3196,14 @@ project(':jmh-benchmarks') {
 
     doFirst {
       if (System.getProperty("jmhArgs")) {
-        args System.getProperty("jmhArgs").split(' ')
+          args System.getProperty("jmhArgs").split(' ')
       }
       args = [shadowJar.archivePath, *args]
     }
   }
 
   javadoc {
-    enabled = false
+     enabled = false
   }
 }
 
