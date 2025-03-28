@@ -52,6 +52,7 @@ import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -177,6 +178,119 @@ public class S3StorageTest {
         assertEquals(List.of(r2, r3), seq.after(r2));
         assertEquals(List.of(r0), seq.after(r0));
         assertEquals(List.of(r1), seq.after(r1));
+    }
+
+    /**
+     * WALCallbackSequencer - Test after() when a stream's queue becomes empty
+     */
+    @Test
+    public void testAfterWhenQueueBecomesEmpty() {
+        S3Storage.WALCallbackSequencer seq = new S3Storage.WALCallbackSequencer();
+        long streamId = 700L;
+
+        WalWriteRequest request = new WalWriteRequest(newRecord(streamId, 70L), 700L, new CompletableFuture<>());
+        seq.before(request);
+
+        // Process the request, making the queue empty
+        List<WalWriteRequest> result = seq.after(request);
+        assertEquals(List.of(request), result);
+
+        // Verify that subsequent processing works correctly after the queue became empty
+        // Add a new request to the same stream
+        WalWriteRequest newRequest = new WalWriteRequest(newRecord(streamId, 71L), 701L, new CompletableFuture<>());
+        seq.before(newRequest);
+
+        // Process the new request
+        List<WalWriteRequest> newResult = seq.after(newRequest);
+        assertEquals(List.of(newRequest), newResult);
+    }
+
+    /**
+     * WALCallbackSequencer
+     */
+    @Test
+    public void testTryFreeWithEmptyQueue() {
+        S3Storage.WALCallbackSequencer seq = new S3Storage.WALCallbackSequencer();
+        long streamId = 200L;
+
+        // Create a request and process it, emptying the queue
+        WalWriteRequest request = new WalWriteRequest(newRecord(streamId, 20L), 200L, new CompletableFuture<>());
+        seq.before(request);
+        seq.after(request);
+
+        // Call tryFree to remove the empty queue
+        seq.tryFree(streamId);
+
+        // If the queue was removed correctly, a new queue will be created and processed normally
+        WalWriteRequest newRequest = new WalWriteRequest(newRecord(streamId, 21L), 201L, new CompletableFuture<>());
+        seq.before(newRequest);
+        List<WalWriteRequest> result = seq.after(newRequest);
+        assertEquals(List.of(newRequest), result);
+    }
+
+    /**
+     * WALCallbackSequencer
+     */
+    @Test
+    public void testTryFreeWithNonEmptyQueue() {
+        S3Storage.WALCallbackSequencer seq = new S3Storage.WALCallbackSequencer();
+        long streamId = 300L;
+
+        // Add multiple requests
+        WalWriteRequest r0 = new WalWriteRequest(newRecord(streamId, 30L), 300L, new CompletableFuture<>());
+        WalWriteRequest r1 = new WalWriteRequest(newRecord(streamId, 31L), 301L, new CompletableFuture<>());
+
+        seq.before(r0);
+        seq.before(r1);
+
+        // Only process the first request, the queue should be non-empty
+        seq.after(r0);
+
+        // Call tryFree, but the queue should not be removed
+        seq.tryFree(streamId);
+
+        // The second request should still in the queue
+        List<WalWriteRequest> result = seq.after(r1);
+        assertEquals(List.of(r1), result);
+    }
+
+    /**
+     * WALCallbackSequencer
+     */
+    @Test
+    public void testBeforeExceptionHandling() {
+        S3Storage.WALCallbackSequencer seq = new S3Storage.WALCallbackSequencer();
+
+        // Create a request that will cause the before method to throw an exception,
+        // For example, let record be null
+        WalWriteRequest request = new WalWriteRequest(null, 500L, new CompletableFuture<>());
+
+        seq.before(request);
+
+        // Verify that the future has been completed abnormally
+        assertTrue(request.cf.isCompletedExceptionally());
+    }
+
+    /**
+     * WALCallbackSequencer
+     */
+    @Test
+    public void testAfterWithDifferentOffset() {
+        S3Storage.WALCallbackSequencer seq = new S3Storage.WALCallbackSequencer();
+        long streamId = 600L;
+
+        WalWriteRequest r0 = new WalWriteRequest(newRecord(streamId, 60L), 600L, new CompletableFuture<>());
+        seq.before(r0);
+
+        // Create a request with the same streamId but a different offset
+        WalWriteRequest r1 = new WalWriteRequest(newRecord(streamId, 61L), 601L, new CompletableFuture<>());
+
+        // Process r1, but it is not in the queue, so after should return an empty list
+        List<WalWriteRequest> result = seq.after(r1);
+        assertEquals(Collections.emptyList(), result);
+
+        // Verify that r1 is marked as persistent
+        assertTrue(r1.persisted);
     }
 
     @Test
