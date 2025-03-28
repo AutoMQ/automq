@@ -17,7 +17,6 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
 
-import java.util.concurrent.TimeoutException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
@@ -32,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
