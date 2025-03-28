@@ -1,13 +1,15 @@
 package kafka.log.stream.s3.telemetry.exporter;
 
-import io.opentelemetry.sdk.metrics.export.MetricReader;
-import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
-import io.opentelemetry.sdk.metrics.export.PeriodicMetricReaderBuilder;
 import org.apache.kafka.common.utils.Utils;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+
+import io.opentelemetry.sdk.metrics.export.MetricReader;
+import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
+import io.opentelemetry.sdk.metrics.export.PeriodicMetricReaderBuilder;
 
 public class KafkaMetricsExporter implements MetricsExporter {
 

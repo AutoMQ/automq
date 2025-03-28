@@ -1,17 +1,14 @@
 package kafka.log.stream.s3.telemetry.exporter;
 
-import io.opentelemetry.sdk.common.CompletableResultCode;
-import io.opentelemetry.sdk.metrics.InstrumentType;
-import io.opentelemetry.sdk.metrics.data.*;
-import io.opentelemetry.sdk.metrics.export.MetricExporter;
-import io.opentelemetry.sdk.metrics.internal.data.*;
 import kafka.automq.telemetry.proto.metrics.v1.ResourceMetrics;
+
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +16,12 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+
+import io.opentelemetry.sdk.common.CompletableResultCode;
+import io.opentelemetry.sdk.metrics.InstrumentType;
+import io.opentelemetry.sdk.metrics.data.*;
+import io.opentelemetry.sdk.metrics.export.MetricExporter;
+import io.opentelemetry.sdk.metrics.internal.data.*;
 
 /**
  * Kafka Metrics Exporter 实现 OpenTelemetry 指标导出到 Kafka Topic

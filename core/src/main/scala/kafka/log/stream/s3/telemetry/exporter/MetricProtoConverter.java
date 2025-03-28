@@ -1,9 +1,5 @@
 package kafka.log.stream.s3.telemetry.exporter;
 
-import com.google.protobuf.ByteString;
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.sdk.common.InstrumentationScopeInfo;
-import io.opentelemetry.sdk.metrics.data.*;
 import kafka.automq.telemetry.proto.common.v1.AnyValue;
 import kafka.automq.telemetry.proto.common.v1.ArrayValue;
 import kafka.automq.telemetry.proto.common.v1.InstrumentationScope;
@@ -12,10 +8,16 @@ import kafka.automq.telemetry.proto.metrics.v1.*;
 import kafka.automq.telemetry.proto.metrics.v1.AggregationTemporality;
 import kafka.automq.telemetry.proto.resource.v1.Resource;
 
+import com.google.protobuf.ByteString;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.sdk.common.InstrumentationScopeInfo;
+import io.opentelemetry.sdk.metrics.data.*;
 
 /**
  * OTLP Protobuf 格式的 OpenTelemetry 指标数据转换器
