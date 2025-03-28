@@ -213,3 +213,16 @@ python generate_kafka_pr_template.py --image-type=jvm
 - image-type - This is the type of image that we intend to build. This will be dropdown menu type selection in the workflow. `jvm` image type is for official docker image (to be hosted on apache/kafka) as described in [KIP-975](https://cwiki.apache.org/confluence/display/KAFKA/KIP-975%3A+Docker+Image+for+Apache+Kafka). 
   - **NOTE:** As of now [KIP-1028](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1028%3A+Docker+Official+Image+for+Apache+Kafka) only aims to release JVM based Docker Official Images and not GraalVM based native Apache Kafka docker image.
 
+Using local docker container for run and debug
+----------------------------------------------
+
+- First, make sure the project has been [built](/CONTRIBUTING_GUIDE.md#build).
+
+- Run `docker-compose` command with `docker/docker_for_local_develop/docker-compose.yml` file.
+
+```shell
+# Create and start the docker container
+docker-compose -f docker/docker_for_local_develop/docker-compose.yml up -d
+# Stop and remove the docker container
+docker-compose -f docker/docker_for_local_develop/docker-compose.yml down -v
+```
