@@ -1245,7 +1245,6 @@ project(':core') {
 
     apply plugin: 'com.google.protobuf'
 
-
     protobuf {
         protoc {
             // The artifact spec for the Protobuf Compiler
@@ -1280,6 +1279,10 @@ project(':core') {
 
     checkstyle {
         configProperties = checkstyleConfigProperties("import-control-core.xml")
+    }
+
+    tasks.named('compileJava') {
+        dependsOn 'generateProto'
     }
 
     sourceSets {
