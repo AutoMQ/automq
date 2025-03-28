@@ -1289,6 +1289,15 @@ project(':core') {
         dependsOn tasks.named('generateProto')
     }
 
+    spotless {
+        java {
+            // 仅添加排除目录的逻辑，其他配置保持不变
+            targetExclude(
+                "build/generated/source/proto/main/java/**/*.java"
+            )
+        }
+    }
+
     sourceSets {
         main {
             java {
