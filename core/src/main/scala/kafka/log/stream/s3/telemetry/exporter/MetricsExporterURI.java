@@ -65,7 +65,7 @@ public class MetricsExporterURI {
                 return buildOpsExporter(clusterId, kafkaConfig.nodeId(), kafkaConfig.s3ExporterReportIntervalMs(),
                     kafkaConfig.automq().opsBuckets(), kafkaConfig.automq().baseLabels());
             case KAFKA:
-                return buildKafkaExporter(kafkaConfig.s3ExporterReportIntervalMs(), uriStr);
+                return buildKafkaExporter(uriStr);
             default:
                 return null;
         }
@@ -111,8 +111,8 @@ public class MetricsExporterURI {
         return new OpsMetricsExporter(clusterId, nodeId, intervalMs, opsBuckets, baseLabels);
     }
 
-    public static MetricsExporter buildKafkaExporter(int intervalMs, String uriStr) {
-        return new KafkaMetricsExporter(intervalMs, uriStr);
+    public static MetricsExporter buildKafkaExporter(String uriStr) {
+        return new KafkaMetricsExporter(uriStr);
     }
 
     public List<MetricsExporter> metricsExporters() {
