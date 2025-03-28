@@ -35,6 +35,24 @@ services:
     networks:
       - automq_net
 
+# Only comment out, do not remove. For easier future testing
+#  test:
+#    container_name: test
+#    hostname: test
+#    #    image: amazoncorretto:17.0.14
+#    #    image: gradle:jdk17
+#    image: eclipse-temurin:17-jdk-noble
+#    working_dir: /opt/automq
+#    volumes:
+#      - ../../core/build/distributions:/opt/volume_libs:ro
+#      - ../scripts:/opt/volume_scripts:ro
+#    command:
+#      - bash
+#      - -c
+#      - |
+#        /opt/volume_scripts/pre_start.sh && \
+#        tail -f /dev/null
+
   controller:
     container_name: "${CONTROLLER_DOCKER_NAME-controller}"
     hostname: "${CONTROLLER_DOCKER_NAME-controller}"
@@ -45,7 +63,7 @@ services:
       - KAFKA_S3_SECRET_KEY=test
       - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m
     volumes:
-      - ../../core/build/local:/opt/volume_libs:ro
+      - ../../core/build/distributions:/opt/volume_libs:ro
       - ../scripts:/opt/volume_scripts:ro
     command:
       - bash
@@ -78,7 +96,7 @@ services:
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker1:9092,EXTERNAL://localhost:9094
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
     volumes:
-      - ../../core/build/local:/opt/volume_libs:ro
+      - ../../core/build/distributions:/opt/volume_libs:ro
       - ../scripts:/opt/volume_scripts:ro
     command:
       - bash
@@ -112,7 +130,7 @@ services:
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker2:9092,EXTERNAL://localhost:9095
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
     volumes:
-      - ../../core/build/local:/opt/volume_libs:ro
+      - ../../core/build/distributions:/opt/volume_libs:ro
       - ../scripts:/opt/volume_scripts:ro
     command:
       - bash

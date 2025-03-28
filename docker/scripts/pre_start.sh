@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 
-echo "[PreStart] shell check"
-(hostname -I | awk '{print $1}') || exit 1
 echo "[PreStart] mkdir"
 rm -rf /opt/automq
 mkdir -p /opt/kafka || exit 1
 ln -s /opt/kafka /opt/automq || exit 1
-echo "[PreStart] copy"
-cp -r /opt/volume_libs /opt/kafka/kafka || exit 1
+echo "[PreStart] file"
+for f in /opt/volume_libs/*.tgz; do
+  tar -xzf "$f" -C /opt/kafka --one-top-level=kafka --strip-components=1 --overwrite
+done
 cp -r /opt/volume_scripts /opt/kafka/scripts || exit 1
-echo "[PreStart] chmod"
 find /opt/kafka -type f -name "*.sh" -exec chmod a+x {} \;
 echo "[PreStart] env"
 echo "export DEBIAN_FRONTEND=noninteractive" >> ~/.bashrc
