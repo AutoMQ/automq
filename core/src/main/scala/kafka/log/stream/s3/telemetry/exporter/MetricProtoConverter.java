@@ -1,11 +1,34 @@
 package kafka.log.stream.s3.telemetry.exporter;
 
+import io.opentelemetry.sdk.metrics.data.DoubleExemplarData;
+import io.opentelemetry.sdk.metrics.data.DoublePointData;
+import io.opentelemetry.sdk.metrics.data.ExemplarData;
+import io.opentelemetry.sdk.metrics.data.ExponentialHistogramBuckets;
+import io.opentelemetry.sdk.metrics.data.ExponentialHistogramData;
+import io.opentelemetry.sdk.metrics.data.ExponentialHistogramPointData;
+import io.opentelemetry.sdk.metrics.data.GaugeData;
+import io.opentelemetry.sdk.metrics.data.HistogramData;
+import io.opentelemetry.sdk.metrics.data.HistogramPointData;
+import io.opentelemetry.sdk.metrics.data.LongExemplarData;
+import io.opentelemetry.sdk.metrics.data.LongPointData;
+import io.opentelemetry.sdk.metrics.data.PointData;
+import io.opentelemetry.sdk.metrics.data.SumData;
 import kafka.automq.telemetry.proto.common.v1.AnyValue;
 import kafka.automq.telemetry.proto.common.v1.ArrayValue;
 import kafka.automq.telemetry.proto.common.v1.InstrumentationScope;
 import kafka.automq.telemetry.proto.common.v1.KeyValue;
-import kafka.automq.telemetry.proto.metrics.v1.*;
 import kafka.automq.telemetry.proto.metrics.v1.AggregationTemporality;
+import kafka.automq.telemetry.proto.metrics.v1.Exemplar;
+import kafka.automq.telemetry.proto.metrics.v1.ExponentialHistogram;
+import kafka.automq.telemetry.proto.metrics.v1.ExponentialHistogramDataPoint;
+import kafka.automq.telemetry.proto.metrics.v1.Gauge;
+import kafka.automq.telemetry.proto.metrics.v1.Histogram;
+import kafka.automq.telemetry.proto.metrics.v1.HistogramDataPoint;
+import kafka.automq.telemetry.proto.metrics.v1.Metric;
+import kafka.automq.telemetry.proto.metrics.v1.NumberDataPoint;
+import kafka.automq.telemetry.proto.metrics.v1.ResourceMetrics;
+import kafka.automq.telemetry.proto.metrics.v1.ScopeMetrics;
+import kafka.automq.telemetry.proto.metrics.v1.Sum;
 import kafka.automq.telemetry.proto.resource.v1.Resource;
 
 import com.google.protobuf.ByteString;
@@ -17,48 +40,51 @@ import java.util.stream.Collectors;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.sdk.common.InstrumentationScopeInfo;
-import io.opentelemetry.sdk.metrics.data.*;
+import io.opentelemetry.sdk.metrics.data.MetricData;
 
 /**
- * OTLP Protobuf 格式的 OpenTelemetry 指标数据转换器
+ * OpenTelemetry metric data converter in OTLP Protobuf format.
  *
- * <p>该工具类用于将 {@link MetricData} 对象转换为符合
- * <a href="https://github.com/open-telemetry/opentelemetry-proto">OTLP/Protobuf</a> 规范的
- * {@link org.apache.kafka.shaded.io.opentelemetry.proto.metrics.v1.ResourceMetrics} 对象，适用于需直接序列化/发送指标数据的场景。
+ * <p>This utility class is used to convert {@link MetricData} objects into
+ * {@link org.apache.kafka.shaded.io.opentelemetry.proto.metrics.v1.ResourceMetrics} objects
+ * that comply with the <a href="https://github.com/open-telemetry/opentelemetry-proto">OTLP/Protobuf</a> specification.
+ * It is suitable for scenarios where metric data needs to be directly serialized and sent.
  *
- * <h2>主要功能</h2>
+ * <h2>Main Features</h2>
  * <ul>
- *   <li>支持全部 OpenTelemetry 指标类型（Gauge/Sum/Histogram/ExponentialHistogram）</li>
- *   <li>自动处理 Long/Double 类型数据点的差异</li>
- *   <li>正确映射资源（Resource）、监控项（Metric）、范围信息（Instrumentation Scope）等元数据</li>
- *   <li>适配 OpenTelemetry Java SDK 1.32.0 及以上版本的 API</li>
+ *   <li>Supports all OpenTelemetry metric types (Gauge/Sum/Histogram/ExponentialHistogram)</li>
+ *   <li>Automatically handles differences between Long and Double type data points</li>
+ *   <li>Correctly maps metadata such as resources, metrics, and instrumentation scope information</li>
+ *   <li>Is compatible with the OpenTelemetry Java SDK version 1.32.0 and above</li>
  * </ul>
  *
- * <h2>使用示例</h2>
+ * <h2>Usage Example</h2>
  * <pre>{@code
- * // 转换 MetricData
+ * // Convert MetricData
  * MetricProtoConverter converter = new MetricProtoConverter();
  * ResourceMetrics protoMetrics = converter.convertToResourceMetrics(metricData);
  *
- * // 序列化为字节流
+ * // Serialize to a byte stream
  * byte[] bytes = protoMetrics.toByteArray();
  * }
  * </pre>
  *
- * <h2>版本兼容性</h2>
+ * <h2>Version Compatibility</h2>
  * <ul>
- *   <li><strong>OpenTelemetry SDK</strong>: 要求版本 {@code >= 1.32.0} （因指标 API 重构）</li>
- *   <li><strong>Protobuf 依赖</strong>: 使用 {@code opentelemetry-proto 1.4.0-alpha} </li>
+ *   <li><strong>OpenTelemetry SDK</strong>: Requires version {@code >= 1.32.0} (due to metric API refactoring)</li>
+ *   <li><strong>Protobuf Dependency</strong>: Uses {@code opentelemetry-proto 1.4.0-alpha}</li>
  * </ul>
  *
- * <h2>线程安全</h2>
- * 该类无内部状态，所有方法均为无副作用纯函数，<strong>可线程安全调用</strong>。
+ * <h2>Thread Safety</h2>
+ * This class has no internal state, and all methods are pure functions without side effects.
+ * <strong>It can be called thread-safely</strong>.
  *
- * <h2>错误处理</h2>
- * 当遇到不支持的指标类型时会抛出 {@link IllegalArgumentException}，调用方需捕获处理。
+ * <h2>Error Handling</h2>
+ * When an unsupported metric type is encountered, an {@link IllegalArgumentException} will be thrown.
+ * The caller needs to catch and handle it.
  *
- * @see <a href="https://opentelemetry.io/docs/specs/otel/protocol/">OTLP 协议规范</a>
- * @see org.apache.kafka.shaded.io.opentelemetry.proto.metrics.v1.ResourceMetrics Protobuf 数据结构
+ * @see <a href="https://opentelemetry.io/docs/specs/otel/protocol/">OTLP Protocol Specification</a>
+ * @see org.apache.kafka.shaded.io.opentelemetry.proto.metrics.v1.ResourceMetrics Protobuf data structure
  */
 public class MetricProtoConverter {
 
@@ -67,12 +93,12 @@ public class MetricProtoConverter {
             return ResourceMetrics.getDefaultInstance();
         }
 
-        // 假定同一批 MetricData 属于同一 Resource
+        // Assume that all MetricData in the same batch belong to the same Resource
         io.opentelemetry.sdk.resources.Resource resource = metrics.get(0).getResource();
         ResourceMetrics.Builder builder = ResourceMetrics.newBuilder()
                 .setResource(convertResource(resource));
 
-        // 按 InstrumentationScope 分组
+        // Group by InstrumentationScope
         Map<InstrumentationScopeInfo, List<MetricData>> grouped = metrics.stream()
                 .collect(Collectors.groupingBy(MetricData::getInstrumentationScopeInfo));
 
@@ -89,8 +115,8 @@ public class MetricProtoConverter {
     }
 
     /**
-     * 使用Public API: 单个 MetricData → ResourceMetrics
-     * @param metricData 单个 MetricData
+     * Use the Public API: Single MetricData → ResourceMetrics
+     * @param metricData A single MetricData
      * @return ResourceMetrics
      */
     public ResourceMetrics convertToResourceMetrics(MetricData metricData) {
@@ -181,7 +207,7 @@ public class MetricProtoConverter {
                 .addAllAttributes(convertAttributes(point.getAttributes()))
                 .addAllExemplars(convertExemplars(point.getExemplars(), point instanceof LongPointData));
 
-        // 根据类型处理数值（兼容新旧版本）
+        // Handle values based on type (compatible with old and new versions)
         if (point instanceof LongPointData) {
             protoPoint.setAsInt(((LongPointData) point).getValue());
         } else if (point instanceof DoublePointData) {
@@ -273,10 +299,9 @@ public class MetricProtoConverter {
     }
 
     /**
-     *
-     * 根据父级指标点的数据类型（Long 或 Double）判断 Exemplar.Value 的编码方式
-     * - LongPointData（LONG_GAUGE / LONG_SUM） → as_int
-     * - DoublePointData（其余类型） → as_double
+     * Determine the encoding method of Exemplar.Value based on the data type (Long or Double) of the parent metric point.
+     * - LongPointData (LONG_GAUGE / LONG_SUM) → as_int
+     * - DoublePointData (other types) → as_double
      */
     private List<Exemplar> convertExemplars(List<? extends ExemplarData> exemplars, boolean isParentLongType) {
         List<Exemplar> protoExemplars = new ArrayList<>();
@@ -290,7 +315,7 @@ public class MetricProtoConverter {
                     long value = ((LongExemplarData) exemplar).getValue();
                     protoExemplar.setAsInt(value);
                 }
-                // SDK 保证：来自 LongPoint 的 Exemplar.Value 已被安全转换为无精度丢失的 double
+                // The SDK ensures that the Exemplar.Value from a LongPoint has been safely converted to a double without loss of precision.
             } else {
                 if (exemplar instanceof DoubleExemplarData) {
                     double value = ((DoubleExemplarData) exemplar).getValue();
@@ -298,7 +323,7 @@ public class MetricProtoConverter {
                 }
             }
 
-            // 添加 SpanContext（如果存在）
+            // Add SpanContext (if it exists)
             if (exemplar.getSpanContext() != null && exemplar.getSpanContext().isValid()) {
                 protoExemplar.setSpanId(ByteString.copyFrom(exemplar.getSpanContext().getSpanIdBytes()));
                 protoExemplar.setTraceId(ByteString.copyFrom(exemplar.getSpanContext().getTraceIdBytes()));
@@ -334,17 +359,17 @@ public class MetricProtoConverter {
         } else if (value instanceof Double) {
             builder.setDoubleValue((Double) value);
         } else if (value instanceof List) {
-            // 处理数组类型
+            // Handle array types
             ArrayValue.Builder arrayBuilder = ArrayValue.newBuilder();
             for (Object element : (List<?>) value) {
                 arrayBuilder.addValues(convertAnyValue(element));
             }
             builder.setArrayValue(arrayBuilder.build());
         } else if (value instanceof byte[]) {
-            // 处理字节数组
+            // Handle byte arrays
             builder.setBytesValue(ByteString.copyFrom((byte[]) value));
         } else {
-            // Fallback 逻辑
+            // Fallback logic
             builder.setStringValue(value.toString());
         }
         return builder.build();

@@ -1,9 +1,24 @@
 package kafka.log.stream.s3.telemetry.exporter;
 
+import io.opentelemetry.sdk.metrics.data.AggregationTemporality;
+import io.opentelemetry.sdk.metrics.data.DoublePointData;
+import io.opentelemetry.sdk.metrics.data.HistogramPointData;
+import io.opentelemetry.sdk.metrics.data.LongPointData;
+import io.opentelemetry.sdk.metrics.data.MetricData;
+import io.opentelemetry.sdk.metrics.data.SummaryPointData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableGaugeData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableHistogramData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableMetricData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableSumData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableSummaryData;
 import kafka.automq.telemetry.proto.metrics.v1.ResourceMetrics;
 
 import org.apache.kafka.clients.CommonClientConfigs;
-import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.clients.producer.Callback;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.config.SaslConfigs;
@@ -14,35 +29,44 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.metrics.InstrumentType;
-import io.opentelemetry.sdk.metrics.data.*;
 import io.opentelemetry.sdk.metrics.export.MetricExporter;
-import io.opentelemetry.sdk.metrics.internal.data.*;
 
 /**
- * Kafka Metrics Exporter 实现 OpenTelemetry 指标导出到 Kafka Topic
+ * Kafka Metrics Exporter implementation to export OpenTelemetry metrics to a Kafka topic.
  */
 public class KafkaExporter implements MetricExporter {
 
-    private static final Logger logger = LoggerFactory.getLogger(KafkaExporter.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(KafkaExporter.class);
 
     private static final int MAX_SAMPLES_PER_RECORD = 1000;
     // 1MB
     private static final int MAX_RECORD_SIZE = 1024 * 1024;
 
-    // region 配置常量
+    // region Configuration constants
     private static final Map<String, Object> DEFAULT_CONFIG = Map.of(
             ProducerConfig.ACKS_CONFIG, "all",
             ProducerConfig.RETRIES_CONFIG, 3,
             ProducerConfig.LINGER_MS_CONFIG, 500,
             ProducerConfig.BATCH_SIZE_CONFIG, 1_048_576,
-            // 显式设置缓冲区大小（32MB）
+            // Explicitly set the buffer size (32MB)
             ProducerConfig.BUFFER_MEMORY_CONFIG, 32_000_000,
-            // 发送前的最大阻塞时间（5秒）
+            // Maximum blocking time before sending (5 seconds)
             ProducerConfig.MAX_BLOCK_MS_CONFIG, 5_000
     );
 
@@ -52,15 +76,15 @@ public class KafkaExporter implements MetricExporter {
     private final ExecutorService callbackExecutor;
 
     /**
-     * 生产环境必须使用的构造方法
+     * Constructor required for production environments.
      */
     public KafkaExporter(KafkaExportURI config) {
         this.topic = validateTopic(config.topic());
         this.serializer = new ProtoMetricsSerializer();
 
         Map<String, Object> producerConfig = new HashMap<>(DEFAULT_CONFIG);
-        // 关键：必须强制指定关键配置
-        // 由于配置 kafka.automq.AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_DOC 要求，不能用,分割broker server配置时使用;创建producer时则要按照kafka格式规范将;转为,
+        // Key: Must forcefully specify key configurations
+        // Due to the requirement of kafka.automq.AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_DOC, when the broker server configuration cannot be separated by ',', ';' is used. When creating the producer, ';' should be converted to ',' according to the Kafka format specification.
         producerConfig.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServers().replaceAll(";", ","));
         producerConfig.put(ProducerConfig.CLIENT_ID_CONFIG, "otel-kafka-exporter-" + UUID.randomUUID());
         configureSecurity(producerConfig, config);
@@ -71,7 +95,7 @@ public class KafkaExporter implements MetricExporter {
                 new ByteArraySerializer()
         );
 
-        // 使用有界队列防止内存溢出
+        // Use a bounded queue to prevent memory overflow
         this.callbackExecutor = new ThreadPoolExecutor(
                 1, 1,
                 0L, TimeUnit.MILLISECONDS,
@@ -81,7 +105,7 @@ public class KafkaExporter implements MetricExporter {
         );
     }
 
-    // KafkaExporter 类中添加方法：
+    // Add a method to the KafkaExporter class:
     private boolean isProducerOverloaded() {
         try {
             Map<MetricName, ? extends Metric> metrics = producer.metrics();
@@ -92,11 +116,11 @@ public class KafkaExporter implements MetricExporter {
             double bufferTotal = -1;
             double bufferAvailable = -1;
 
-            // 遍历所有指标，按名称匹配（避免直接构造 MetricName）
+            // Iterate through all metrics and match by name (avoid directly constructing MetricName)
             for (Map.Entry<MetricName, ? extends Metric> entry : metrics.entrySet()) {
                 MetricName metricName = entry.getKey();
                 Metric metric = entry.getValue();
-                // 筛选属于 producer-metrics 组的关键指标
+                // Filter key metrics belonging to the producer-metrics group
                 if ("producer-metrics".equals(metricName.group())) {
                     Object value = metric.metricValue();
                     switch (metricName.name()) {
@@ -121,13 +145,13 @@ public class KafkaExporter implements MetricExporter {
             }
             return false;
         } catch (Exception e) {
-            logger.error("Failed to check producer buffer state", e);
+            LOGGER.error("Failed to check producer buffer state", e);
             return false;
         }
     }
 
     /**
-     * 安全协议配置（支持多机制）
+     * Security protocol configuration (supports multiple mechanisms).
      */
     private void configureSecurity(Map<String, Object> config, KafkaExportURI exportConfig) {
         String protocol = exportConfig.securityProtocol().toUpperCase(Locale.ROOT);
@@ -135,7 +159,7 @@ public class KafkaExporter implements MetricExporter {
 
         if (protocol.startsWith("SASL_")) {
             String saslMechanism = exportConfig.saslMechanism();
-            // 根据机制动态生成JAAS配置
+            // Dynamically generate JAAS configuration based on the mechanism
             switch (saslMechanism) {
                 case "PLAIN":
                     config.put(SaslConfigs.SASL_MECHANISM, saslMechanism);
@@ -153,16 +177,16 @@ public class KafkaExporter implements MetricExporter {
 
     @Override
     public CompletableResultCode export(@NotNull Collection<MetricData> metrics) {
-        // 使用独立ResultCode跟踪每个批次
+        // Use an independent ResultCode to track each batch
         CompletableResultCode resultCode = new CompletableResultCode();
         if (metrics.isEmpty()) {
             return resultCode.succeed();
         }
 
-        // 检查背压
+        // Check for backpressure
         if (isProducerOverloaded()) {
-            logger.warn("Producer buffer overloaded, discarding metrics to protect memory");
-            // 丢弃数据，返回失败让 OpenTelemetry 暂时静默
+            LOGGER.warn("Producer buffer overloaded, discarding metrics to protect memory");
+            // Discard data and return failure to make OpenTelemetry temporarily silent
             return CompletableResultCode.ofFailure();
         }
 
@@ -172,20 +196,20 @@ public class KafkaExporter implements MetricExporter {
                 List<byte[]> serializedChunks = splitMetricData(metric);
                 for (byte[] value : serializedChunks) {
                     if (value == null || value.length == 0) {
-                        logger.warn("Skipping invalid metric: {}", metric.getName());
+                        LOGGER.warn("Skipping invalid metric: {}", metric.getName());
                         continue;
                     }
                     if (value.length > MAX_RECORD_SIZE) {
-                        logger.warn("Metric data size exceeds 1MB, discarding: {}", metric.getName());
+                        LOGGER.warn("Metric data size exceeds 1MB, discarding: {}", metric.getName());
                         continue;
                     }
                     ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topic, null, value);
-                    // 添加回调跟踪
+                    // Add callback tracking
                     futures.add(producer.send(record, new LoggingCallback(metric)));
                 }
             }
 
-            // 异步跟踪发送状态
+            // Asynchronously track the sending status
             callbackExecutor.submit(() -> {
                 boolean allSuccess = true;
                 for (Future<?> future : futures) {
@@ -195,7 +219,7 @@ public class KafkaExporter implements MetricExporter {
                         Thread.currentThread().interrupt();
                         allSuccess = false;
                     } catch (Exception e) {
-                        logger.error("Failed to send metric batch", e);
+                        LOGGER.error("Failed to send metric batch", e);
                         allSuccess = false;
                     }
                 }
@@ -208,10 +232,10 @@ public class KafkaExporter implements MetricExporter {
 
             return resultCode;
         } catch (RejectedExecutionException e) {
-            logger.error("Callback queue is full, metrics export rejected", e);
+            LOGGER.error("Callback queue is full, metrics export rejected", e);
             return CompletableResultCode.ofFailure();
         } catch (Exception e) {
-            logger.error("Metric serialization failed", e);
+            LOGGER.error("Metric serialization failed", e);
             return CompletableResultCode.ofFailure();
         }
     }
@@ -223,7 +247,7 @@ public class KafkaExporter implements MetricExporter {
             producer.flush();
             result.succeed();
         } catch (Exception e) {
-            logger.warn("Flush failed", e);
+            LOGGER.warn("Flush failed", e);
             result.fail();
         }
         return result;
@@ -233,25 +257,25 @@ public class KafkaExporter implements MetricExporter {
     public CompletableResultCode shutdown() {
         CompletableResultCode result = new CompletableResultCode();
         try {
-            // 分阶段关闭
+            // Shutdown in stages
             callbackExecutor.shutdown();
             if (!callbackExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
-                logger.warn("Force shutdown callback executor");
+                LOGGER.warn("Force shutdown callback executor");
                 callbackExecutor.shutdownNow();
             }
 
-            // 关键：必须关闭producer！
-            // 允许缓冲数据发送完成
+            // Key: Must close the producer!
+            // Allow buffered data to be sent
             producer.close(Duration.ofSeconds(30));
             result.succeed();
         } catch (Exception e) {
-            logger.error("Shutdown failed", e);
+            LOGGER.error("Shutdown failed", e);
             result.fail();
         }
         return result;
     }
 
-    // region 辅助方法
+    // Helper methods
     @Override
     public AggregationTemporality getAggregationTemporality(@NotNull InstrumentType instrumentType) {
         return AggregationTemporality.CUMULATIVE;
@@ -265,7 +289,7 @@ public class KafkaExporter implements MetricExporter {
     }
 
     /**
-     * 增强型回调（绑定原始指标信息）
+     * Enhanced callback (binds original metric information).
      */
     private static class LoggingCallback implements Callback {
         private final String metricName;
@@ -277,12 +301,12 @@ public class KafkaExporter implements MetricExporter {
         @Override
         public void onCompletion(RecordMetadata metadata, Exception exception) {
             if (exception != null) {
-                // 关键：正确处理metadata可能为null的情况
+                // Key: Correctly handle the case where metadata may be null
                 String topicInfo = metadata != null ? metadata.topic() : "unknown-topic";
-                logger.error("Failed to send metric [{}] to {}: {}",
+                LOGGER.error("Failed to send metric [{}] to {}: {}",
                         metricName, topicInfo, exception.getMessage());
-            } else if (logger.isTraceEnabled()) {
-                logger.trace("Sent [{}] to {}-{}@{}",
+            } else if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Sent [{}] to {}-{}@{}",
                         metricName, metadata.topic(), metadata.partition(), metadata.offset());
             }
         }
@@ -310,13 +334,13 @@ public class KafkaExporter implements MetricExporter {
                 processSummary(metric, chunks);
                 break;
             default:
-                logger.warn("Unsupported metric type: {}", metric.getType());
+                LOGGER.warn("Unsupported metric type: {}", metric.getType());
                 break;
         }
         return chunks;
     }
 
-    // LongGauge处理器
+    // LongGauge processor
     private void processLongGauge(MetricData metric, List<byte[]> chunks) {
         List<LongPointData> points = new ArrayList<>(metric.getLongGaugeData().getPoints());
         int pointCount = points.size();
@@ -344,7 +368,7 @@ public class KafkaExporter implements MetricExporter {
         );
     }
 
-    // DoubleGauge处理器
+    // DoubleGauge processor
     private void processDoubleGauge(MetricData metric, List<byte[]> chunks) {
         List<DoublePointData> points = new ArrayList<>(metric.getDoubleGaugeData().getPoints());
         int pointCount = points.size();
@@ -372,7 +396,7 @@ public class KafkaExporter implements MetricExporter {
         );
     }
 
-    // LongSum处理器
+    // LongSum processor
     private void processLongSum(MetricData metric, List<byte[]> chunks) {
         List<LongPointData> points = new ArrayList<>(metric.getLongSumData().getPoints());
         int pointCount = points.size();
@@ -404,7 +428,7 @@ public class KafkaExporter implements MetricExporter {
         );
     }
 
-    // DoubleSum处理器
+    // DoubleSum processor
     private void processDoubleSum(MetricData metric, List<byte[]> chunks) {
         List<DoublePointData> points = new ArrayList<>(metric.getDoubleSumData().getPoints());
         int pointCount = points.size();
@@ -436,7 +460,7 @@ public class KafkaExporter implements MetricExporter {
         );
     }
 
-    // Histogram处理器
+    // Histogram processor
     private void processHistogram(MetricData metric, List<byte[]> chunks) {
         List<HistogramPointData> points = new ArrayList<>(metric.getHistogramData().getPoints());
         int pointCount = points.size();
@@ -467,7 +491,7 @@ public class KafkaExporter implements MetricExporter {
         );
     }
 
-    // Summary处理器
+    // Summary processor
     private void processSummary(MetricData metric, List<byte[]> chunks) {
         List<SummaryPointData> points = new ArrayList<>(metric.getSummaryData().getPoints());
         int pointCount = points.size();
@@ -495,21 +519,21 @@ public class KafkaExporter implements MetricExporter {
         );
     }
 
-    // region 公共工具方法
+    // region Common utility methods
     private <T> List<T> getSubList(List<T> points, int startIndex) {
         int endIndex = Math.min(startIndex + MAX_SAMPLES_PER_RECORD, points.size());
         return points.subList(startIndex, endIndex);
     }
 
     /**
-     * 指标序列化接口（支持扩展多种格式）
+     * Metric serialization interface (supports extending multiple formats).
      */
     interface MetricsSerializer {
         byte[] serialize(MetricData metric);
     }
 
     /**
-     * Protobuf 序列化实现（与 OTLP 格式兼容）
+     * Protobuf serialization implementation (compatible with OTLP format).
      */
     static class ProtoMetricsSerializer implements MetricsSerializer {
 
@@ -519,12 +543,12 @@ public class KafkaExporter implements MetricExporter {
         @Override
         public byte[] serialize(MetricData metric) {
             try {
-                // 调用内部工具类将 MetricData 转换为 Proto ResourceMetrics
-                // 直接调用内部工具类转换数据
+                // Call the internal utility class to convert MetricData to Proto ResourceMetrics
+                // Directly call the internal utility class to convert data
                 ResourceMetrics resourceMetrics = new MetricProtoConverter().convertToResourceMetrics(metric);
                 return resourceMetrics.toByteArray();
             } catch (Throwable e) {
-                logger.error("Fail to serialize metric to OTLP format", e);
+                LOGGER.error("Fail to serialize metric to OTLP format", e);
                 return new byte[0];
             }
         }
