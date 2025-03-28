@@ -61,7 +61,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.ReferenceCounted;
-import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -845,7 +844,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return s3Ex.statusCode() == HttpStatusCode.THROTTLING || s3Ex.statusCode() == HttpStatusCode.SERVICE_UNAVAILABLE;
         }
         // regard timeout as throttled except for the first try
-        return ex instanceof ApiCallAttemptTimeoutException && retryCount > 0;
+        return ex instanceof TimeoutException && retryCount > 0;
     }
 
     /**
