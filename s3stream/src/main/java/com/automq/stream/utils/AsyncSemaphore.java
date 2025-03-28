@@ -47,6 +47,7 @@ public class AsyncSemaphore {
                 task.get().whenComplete((nil, ex) -> release(requiredPermits));
             } catch (Throwable e) {
                 LOGGER.error("Error in task", e);
+                release(requiredPermits);
             }
             return true;
         } else {
