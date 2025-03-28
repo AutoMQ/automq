@@ -134,6 +134,8 @@ public class KafkaExporter implements MetricExporter {
                                 bufferAvailable = (double) value;
                             }
                             break;
+                        default:
+                            break;
                     }
 
                 }
