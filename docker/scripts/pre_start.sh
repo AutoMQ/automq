@@ -1,38 +1,17 @@
 #!/usr/bin/env bash
 
-source=""
-target=""
-
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -s)
-            source="$2"
-            shift 2
-            ;;
-        -t)
-            target="$2"
-            shift 2
-            ;;
-        *)
-            echo "Error: unknown arg Key: $1" >&2
-            exit 1
-            ;;
-    esac
-done
-
-if [ -z "$source" ]; then
-    echo "Error: source invalid" >&2
-    exit 1
-fi
-
-if [ -z "$target" ]; then
-    echo "Error: target invalid" >&2
-    exit 1
-fi
-
-echo "[PreStart] ungzip"
-for f in $source/*.tgz; do
-  tar -xzf "$f" -C "$target" --one-top-level=kafka --strip-components=1 --overwrite
-done
+echo "[PreStart] shell check"
+(hostname -I | awk '{print $1}') || exit 1
+echo "[PreStart] mkdir"
+rm -rf /opt/automq
+mkdir -p /opt/kafka || exit 1
+ln -s /opt/kafka /opt/automq || exit 1
+echo "[PreStart] copy"
+cp -r /opt/volume_libs /opt/kafka/kafka || exit 1
+cp -r /opt/volume_scripts /opt/kafka/scripts || exit 1
 echo "[PreStart] chmod"
-find "$target" -type f -name "*.sh" -exec chmod a+x {} \;
+find /opt/kafka -type f -name "*.sh" -exec chmod a+x {} \;
+echo "[PreStart] env"
+echo "export DEBIAN_FRONTEND=noninteractive" >> ~/.bashrc
+echo "export AWS_DEFAULT_REGION=us-east-1" >> ~/.bashrc
+echo "export KAFKA_JVM_PERFORMANCE_OPTS=\"-server -XX:+UseZGC -XX:ZCollectionInterval=5\"" >> ~/.bashrc

@@ -35,24 +35,40 @@ services:
     networks:
       - automq_net
 
-  controller:
-    container_name: "${CONTROLLER_DOCKER_NAME-controller}"
-    hostname: "${CONTROLLER_DOCKER_NAME-controller}"
-    stop_grace_period: 2m
-    image: automqinc/automq-basic:2025.03.27
-    environment:
-      - KAFKA_S3_ACCESS_KEY=test
-      - KAFKA_S3_SECRET_KEY=test
-      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m
+  test:
+    container_name: test
+    hostname: test
+#    image: amazoncorretto:17.0.14
+#    image: gradle:jdk17
+    image: eclipse-temurin:17-jdk-noble
+    working_dir: /opt/automq
     volumes:
-      - ../../core/build/distributions:/opt/volume_libs:ro
+      - ../../core/build/local:/opt/volume_libs:ro
       - ../scripts:/opt/volume_scripts:ro
     command:
       - bash
       - -c
       - |
-        cp -r /opt/volume_scripts/ /opt/automq/scripts && chmod +x /opt/automq/scripts/*.sh
-        /opt/automq/scripts/pre_start.sh -s /opt/volume_libs -t /opt/kafka && \
+        /opt/volume_scripts/pre_start.sh && \
+        tail -f /dev/null
+
+  controller:
+    container_name: "${CONTROLLER_DOCKER_NAME-controller}"
+    hostname: "${CONTROLLER_DOCKER_NAME-controller}"
+    stop_grace_period: 2m
+    image: eclipse-temurin:17-jdk-noble
+    environment:
+      - KAFKA_S3_ACCESS_KEY=test
+      - KAFKA_S3_SECRET_KEY=test
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m
+    volumes:
+      - ../../core/build/local:/opt/volume_libs:ro
+      - ../scripts:/opt/volume_scripts:ro
+    command:
+      - bash
+      - -c
+      - |
+        /opt/volume_scripts/pre_start.sh && \
         /opt/automq/scripts/start.sh up --process.roles controller --node.id 0 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
       - automq_net
@@ -64,7 +80,7 @@ services:
     container_name: "${BROKER1_DOCKER_NAME-broker1}"
     hostname: "${BROKER1_DOCKER_NAME-broker1}"
     stop_grace_period: 2m
-    image: automqinc/automq-basic:2025.03.27
+    image: eclipse-temurin:17-jdk-noble
     ports:
       - "9094:9094"
     environment:
@@ -79,14 +95,13 @@ services:
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker1:9092,EXTERNAL://localhost:9094
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
     volumes:
-      - ../../core/build/distributions:/opt/volume_libs:ro
+      - ../../core/build/local:/opt/volume_libs:ro
       - ../scripts:/opt/volume_scripts:ro
     command:
       - bash
       - -c
       - |
-        cp -r /opt/volume_scripts/ /opt/automq/scripts && chmod +x /opt/automq/scripts/*.sh
-        /opt/automq/scripts/pre_start.sh -s /opt/volume_libs -t /opt/kafka && \
+        /opt/volume_scripts/pre_start.sh && \
         /opt/automq/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
       - automq_net
@@ -99,7 +114,7 @@ services:
     container_name: "${BROKER2_DOCKER_NAME-broker2}"
     hostname: "${BROKER2_DOCKER_NAME-broker2}"
     stop_grace_period: 2m
-    image: automqinc/automq-basic:2025.03.27
+    image: eclipse-temurin:17-jdk-noble
     ports:
       - "9095:9095"
     environment:
@@ -114,14 +129,13 @@ services:
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker2:9092,EXTERNAL://localhost:9095
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
     volumes:
-      - ../../core/build/distributions:/opt/volume_libs:ro
+      - ../../core/build/local:/opt/volume_libs:ro
       - ../scripts:/opt/volume_scripts:ro
     command:
       - bash
       - -c
       - |
-        cp -r /opt/volume_scripts/ /opt/automq/scripts && chmod +x /opt/automq/scripts/*.sh
-        /opt/automq/scripts/pre_start.sh -s /opt/volume_libs -t /opt/kafka && \
+        /opt/volume_scripts/pre_start.sh && \
         /opt/automq/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@controller:9093 --s3.bucket ko3 --s3.endpoint http://10.6.0.2:4566 --s3.region us-east-1
     networks:
       - automq_net
