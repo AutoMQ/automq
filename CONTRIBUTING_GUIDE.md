@@ -95,13 +95,13 @@ Format Metadata Catalog:
 bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties
 ```
 ### IDE Start Configuration
-| Item            | Value    |
-|------------------------|------------|
-| Main | core/src/main/scala/kafka/Kafka.scala     |
-| ClassPath | -cp kafka.core.main |
-| VM Options   | -Xmx1 -Xms1G -server -XX:+UseZGC -XX:MaxDirectMemorySize=2G -Dkafka.logs.dir=logs/ -Dlog4j.configuration=file:config/log4j.properties -Dio.netty.leakDetection.level=paranoid    |
-| CLI Arguments | config/kraft/server.properties|
-| Environment | KAFKA_S3_ACCESS_KEY=test;KAFKA_S3_SECRET_KEY=test |
+| Item            | Value                                                                                                                                                                          |
+|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Main | core/src/main/scala/kafka/Kafka.scala                                                                                                                                          |
+| ClassPath | -cp kafka.core.main                                                                                                                                                            |
+| VM Options   | -Xmx1G -Xms1G -server -XX:+UseZGC -XX:MaxDirectMemorySize=2G -Dkafka.logs.dir=logs/ -Dlog4j.configuration=file:config/log4j.properties -Dio.netty.leakDetection.level=paranoid |
+| CLI Arguments | config/kraft/server.properties                                                                                                                                                 |
+| Environment | KAFKA_S3_ACCESS_KEY=test;KAFKA_S3_SECRET_KEY=test                                                                                                                              |
 
 > tips: If you are using localstack, just use any value of access key and secret key. If you are using real S3 service, set `KAFKA_S3_ACCESS_KEY` and `KAFKA_S3_SECRET_KEY` to the real access key and secret key that have read/write permission of S3 service.
 
