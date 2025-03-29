@@ -14,7 +14,8 @@ package kafka.log.stream.s3.telemetry.exporter;
 public enum MetricsExporterType {
     OTLP("otlp"),
     PROMETHEUS("prometheus"),
-    OPS("ops");
+    OPS("ops"),
+    KAFKA("kafka");
 
     private final String type;
 
