@@ -114,6 +114,29 @@ Run `pip install -r requirements.txt` to get all the requirements for running th
 
 Make sure you have docker installed with support for buildx enabled. (For pushing multi-architecture image to docker registry)
 
+Use local code run in docker 
+---------------------------------------
+
+- command run in project root folders
+
+1. generate tgz
+```shell
+# For example only, can be modified based on your compilation requirements
+./gradlew releaseTarGz -x test -x check
+```
+2. run
+```shell
+docker-compose -f docker/local/docker-compose.yml up -d
+```
+
+- After modifying your code, simply regenerate the tgz and restart the specified service.
+```shell
+# For example only, can be modified based on your compilation requirements
+./gradlew releaseTarGz -x test -x check
+# eg: restart broker
+docker-compose -f docker/local/docker-compose.yml up broker1 broker2 -d --force-recreate 
+```
+
 Building image and running tests locally
 ---------------------------------------
 

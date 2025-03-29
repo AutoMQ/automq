@@ -15,6 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+source ~/.bashrc
+
 script_path="${0}"
 
 # The absolute path to the directory which this script is in.
