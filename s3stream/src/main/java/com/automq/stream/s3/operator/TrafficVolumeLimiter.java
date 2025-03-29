@@ -11,8 +11,8 @@
 
 package com.automq.stream.s3.operator;
 
-import com.ibm.asyncutil.locks.AsyncSemaphore;
-import com.ibm.asyncutil.locks.FairAsyncSemaphore;
+import com.ibm.async.asyncutil.locks.AsyncSemaphore;
+import com.ibm.async.asyncutil.locks.FairAsyncSemaphore;
 
 import java.util.concurrent.CompletableFuture;
 
