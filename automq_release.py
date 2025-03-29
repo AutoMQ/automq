@@ -70,7 +70,7 @@ def cmd(action, cmd_arg, *args, **kwargs):
             return
 
         print("*************************************************")
-        print("*** First command failure occurred here.      ***")
+        print("***    First command failure occurred here.   ***")
         print("*************************************************")
         fail("")
 
