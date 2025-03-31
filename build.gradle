@@ -166,8 +166,8 @@ allprojects {
           // ZooKeeper (potentially older and containing CVEs)
           libs.nettyHandler,
           libs.nettyTransportNativeEpoll,
-          // be explicit about the reload4j version instead of relying on the transitive versions
-          libs.reload4j
+      // be explicit about the reload4j version instead of relying on the transitive versions
+      libs.reload4j
         )
       }
     }
@@ -1249,7 +1249,6 @@ project(':core') {
     }
 
     generateProtoTasks {
-      // 生成main和test的Proto任务
       all().each { task ->
         task.builtins {
           java {}
@@ -1268,7 +1267,6 @@ project(':core') {
 
   spotless {
     java {
-      // 仅添加排除目录的逻辑，其他配置保持不变
       targetExclude(
         "build/generated/source/proto/main/java/**/*.java"
       )
@@ -1296,7 +1294,7 @@ project(':core') {
       }
       scala {
         srcDirs = [
-          "build/generated/source/proto/test/java", // <- 新增这里
+          "build/generated/source/proto/test/java",
           "src/test/java",
           "src/test/scala"
         ]
@@ -1840,8 +1838,8 @@ project(':raft') {
              "-i", "src/main/resources/common/message",
              "-m", "MessageDataGenerator", "JsonConverterGenerator"]
     inputs.dir("src/main/resources/common/message")
-      .withPropertyName("messages")
-      .withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("messages")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.cacheIf { true }
     outputs.dir("src/generated/java/org/apache/kafka/raft/generated")
   }

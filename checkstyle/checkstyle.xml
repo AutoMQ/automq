@@ -27,7 +27,6 @@
 <!--  <module name="Header">-->
 <!--    <property name="headerFile" value="${config_loc}/java.header" />-->
 <!--  </module>-->
-<!--     动态排除生成目录 -->
     <module name="BeforeExecutionExclusionFileFilter">
         <property name="fileNamePattern" value=".*[/\\]generated[/\\]source[/\\]proto[/\\]main[/\\]java[/\\].*"/>
     </module>
