@@ -3,10 +3,12 @@
  *
  * The use of this file is governed by the Business Source License,
  * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ *
  * As of the Change Date specified in that file, in accordance with
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+
 package com.automq.stream.s3.operator;
 
 import com.google.common.collect.EvictingQueue;
@@ -18,7 +20,9 @@ import org.slf4j.Logger;
 import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 class TrafficRegulatorTest {
@@ -184,8 +188,13 @@ class TrafficRegulatorTest {
         assertTrue(queue.isEmpty(), "Queue should be empty as failure occurred");
     }
 
+    @SuppressWarnings("unchecked")
     private EvictingQueue<Double> getSuccessRateQueue() {
-        return (EvictingQueue<Double>) getField(regulator, "successRateQueue");
+        Object field = getField(regulator, "successRateQueue");
+        if (field instanceof EvictingQueue) {
+            return (EvictingQueue<Double>) field;
+        }
+        throw new IllegalStateException("Field 'successRateQueue' is not of expected type EvictingQueue<Double>");
     }
 
     /**
