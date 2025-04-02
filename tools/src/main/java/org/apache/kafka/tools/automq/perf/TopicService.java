@@ -33,6 +33,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import org.apache.kafka.clients.admin.TopicDescription;
+
 public class TopicService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicService.class);
@@ -78,7 +80,30 @@ public class TopicService implements AutoCloseable {
             .map(name -> new Topic(name, config.partitionsPerTopic))
             .collect(Collectors.toList());
     }
-
+    /**
+     * List all performance test topics.
+     */
+    public List<Topic> listTopicsByPrefix(String prefix) {
+        try {
+            // Automatically add the unified prefix for performance test topics
+            String fullPrefix = COMMON_TOPIC_PREFIX + prefix;
+            
+            List<String> topicNames = admin.listTopics().names().get()
+                .stream()
+                // Fix filter condition: use full prefix matching
+                .filter(name -> name.startsWith(fullPrefix))
+                .collect(Collectors.toList());
+                
+            // Fix deprecated all() method invocation
+            Map<String, TopicDescription> descriptions = admin.describeTopics(topicNames).allTopicNames().get();
+            
+            return descriptions.values().stream()
+                .map(desc -> new Topic(desc.name(), desc.partitions().size()))
+                .collect(Collectors.toList());
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException("Failed to list topics with prefix: " + prefix, e);
+        }
+    }
     /**
      * Delete all historical performance test topics.
      */
