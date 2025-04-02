@@ -32,6 +32,7 @@ import com.automq.stream.s3.wal.exception.UnmarshalException;
 import com.automq.stream.s3.wal.util.WALCachedChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -128,6 +129,7 @@ public class BlockWALService implements WriteAheadLog {
     private WALCachedChannel walChannel;
     private SlidingWindowService slidingWindowService;
     private BlockWALHeader walHeader;
+    private int timeoutSeconds;
     private boolean recoveryMode;
     private boolean firstStart;
     private int nodeId = NOOP_NODE_ID;
@@ -159,6 +161,7 @@ public class BlockWALService implements WriteAheadLog {
         Optional.ofNullable(uri.extensionString("iops")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeRateLimit(Integer.parseInt(v)));
         Optional.ofNullable(uri.extensionString("iodepth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.ioThreadNums(Integer.parseInt(v)));
         Optional.ofNullable(uri.extensionString("iobandwidth")).filter(StringUtils::isNumeric).ifPresent(v -> builder.writeBandwidthLimit(Long.parseLong(v)));
+        Optional.ofNullable(uri.extensionString("timeout")).filter(StringUtils::isNumeric).ifPresent(v -> builder.timeoutSeconds(Integer.parseInt(v)));
         return builder;
     }
 
@@ -463,7 +466,8 @@ public class BlockWALService implements WriteAheadLog {
         }
         slidingWindowService.tryWriteBlock();
 
-        final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, appendResultFuture);
+        CompletableFuture<AppendResult.CallbackResult> timedFuture = FutureUtil.timeoutWithNewReturn(appendResultFuture, timeoutSeconds, TimeUnit.SECONDS, () -> walChannel.markFailed());
+        final AppendResult appendResult = new AppendResultImpl(expectedWriteOffset, timedFuture);
         appendResult.future().whenComplete((nil, ex) -> StorageOperationStats.getInstance().appendWALCompleteStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
         StorageOperationStats.getInstance().appendWALBeforeStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         return appendResult;
@@ -568,6 +572,7 @@ public class BlockWALService implements WriteAheadLog {
         private int writeRateLimit = 3000;
         // wal io bandwidth limit
         private long writeBandwidthLimit = Long.MAX_VALUE; // no limitation
+        private int timeoutSeconds = 30;
         private int nodeId = NOOP_NODE_ID;
         private long epoch = NOOP_EPOCH;
         private boolean recoveryMode = false;
@@ -647,6 +652,11 @@ public class BlockWALService implements WriteAheadLog {
             return this;
         }
 
+        public BlockWALServiceBuilder timeoutSeconds(int timeoutSeconds) {
+            this.timeoutSeconds = timeoutSeconds;
+            return this;
+        }
+
         public BlockWALServiceBuilder nodeId(int nodeId) {
             this.nodeId = nodeId;
             return this;
@@ -711,6 +721,8 @@ public class BlockWALService implements WriteAheadLog {
                 );
             }
 
+            blockWALService.timeoutSeconds = timeoutSeconds;
+
             blockWALService.recoveryMode = recoveryMode;
 
             if (nodeId != NOOP_NODE_ID) {
@@ -738,6 +750,7 @@ public class BlockWALService implements WriteAheadLog {
                 + ", blockSoftLimit=" + blockSoftLimit
                 + ", writeRateLimit=" + writeRateLimit
                 + ", writeBandwidthLimit=" + writeBandwidthLimit
+                + ", timeoutSeconds=" + timeoutSeconds
                 + ", nodeId=" + nodeId
                 + ", epoch=" + epoch
                 + ", recoveryMode=" + recoveryMode
