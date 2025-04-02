@@ -109,7 +109,7 @@ public class PerfConfig {
         catchupTopicPrefix = ns.getString("catchupTopicPrefix");
 
         if (catchupTopicPrefix != null && !catchupTopicPrefix.isEmpty())  {
-            if (reset){
+            if (reset) {
                 throw new IllegalArgumentException(
                     "Cannot use --reset with --catchup-topic-prefix"
                 );
@@ -271,12 +271,12 @@ public class PerfConfig {
             .metavar("VALUES_FILE")
             .help("The avro value file. Example file content {\"f1\": \"value1\"}");
         parser.addArgument("--catchup-topic-prefix")
-           .type(String.class)
-           .dest("catchupTopicPrefix")
-           .metavar("CATCHUP_TOPIC_PREFIX")
-           .help("Prefix of existing topics to reuse for catchup testing");
+            .type(String.class)
+            .dest("catchupTopicPrefix")
+            .metavar("CATCHUP_TOPIC_PREFIX")
+            .help("Prefix of existing topics to reuse for catchup testing");
         
-           return parser;
+        return parser;
     }
 
     public String bootstrapServer() {

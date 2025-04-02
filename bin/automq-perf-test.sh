@@ -19,7 +19,7 @@ base_dir=$(dirname "$0")
 # The prefix of the topic used for catchup.
 CATCHUP_TOPIC_PREFIX=""
 
-while [[$# -gt 0 ]]; do
+while [[ $# -gt 0 ]]; do
   case $1 in
     --catchup-topic-prefix)
       CATCHUP_TOPIC_PREFIX="$2"
@@ -32,7 +32,7 @@ while [[$# -gt 0 ]]; do
 done
 
 NEW_ARGS=()
-if [ -n "$CATCHUP_TOPIC_PREFIX"]; then
+if [ -n "$CATCHUP_TOPIC_PREFIX" ]; then
   NEW_ARGS+=("--catchup-topic-prefix" "$CATCHUP_TOPIC_PREFIX")
 fi
 

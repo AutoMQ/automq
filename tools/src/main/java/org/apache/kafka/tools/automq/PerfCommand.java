@@ -132,7 +132,7 @@ public class PerfCommand implements AutoCloseable {
         Function<String, List<byte[]>> payloads = payloads(config, topics);
         if (config.catchupTopicPrefix != null) {
             LOGGER.info("Starting catchup test with existing topics");
-            producerService.start(payloads, 0); // Set rate to 0 to skip message accumulation
+            producerService.start(payloads, config.sendRate); 
         } else {
             LOGGER.info("Starting normal test with new topics");
             producerService.start(payloads, config.sendRate);

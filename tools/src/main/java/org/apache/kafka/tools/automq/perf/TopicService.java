@@ -83,28 +83,25 @@ public class TopicService implements AutoCloseable {
     /**
      * List all performance test topics.
      */
-    /**
-     * 新增方法：根据前缀查询主题列表（包含实际分区数）
-     */
     public List<Topic> listTopicsByPrefix(String prefix) {
         try {
-            // 获取所有主题名称
-            List<String> topicNames = admin.listTopics().names().get().stream()
-                .filter(name -> name.startsWith(prefix))
+            // Automatically add the unified prefix for performance test topics
+            String fullPrefix = COMMON_TOPIC_PREFIX + prefix;
+            
+            List<String> topicNames = admin.listTopics().names().get()
+                .stream()
+                // Fix filter condition: use full prefix matching
+                .filter(name -> name.startsWith(fullPrefix))
                 .collect(Collectors.toList());
-
-            // 批量获取主题描述信息
-            Map<String, TopicDescription> descriptions = admin.describeTopics(topicNames).all().get();
-
+                
+            // Fix deprecated all() method invocation
+            Map<String, TopicDescription> descriptions = admin.describeTopics(topicNames).allTopicNames().get();
+            
             return descriptions.values().stream()
                 .map(desc -> new Topic(desc.name(), desc.partitions().size()))
                 .collect(Collectors.toList());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while listing topics", e);
-        } catch (ExecutionException e) {
-            LOGGER.error("Failed to list topics with prefix: {}", prefix, e);
-            throw new RuntimeException(e);
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException("Failed to list topics with prefix: " + prefix, e);
         }
     }
     /**
