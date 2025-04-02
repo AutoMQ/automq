@@ -33,6 +33,11 @@ public abstract class AbstractWALChannel implements WALChannel {
     private volatile boolean failed = false;
 
     @Override
+    public void markFailed() {
+        this.failed = true;
+    }
+
+    @Override
     public void write(ByteBuf src, long position) throws IOException {
         checkFailed();
         doWrite(src, position);
