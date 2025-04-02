@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -48,6 +49,7 @@ import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
@@ -324,7 +326,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (cause instanceof S3Exception) {
             S3Exception s3Ex = (S3Exception) cause;
             switch (s3Ex.statusCode()) {
-                case HttpStatusCode.FORBIDDEN:
                 case HttpStatusCode.NOT_FOUND:
                     strategy = RetryStrategy.ABORT;
                     break;
@@ -341,6 +342,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     cause = new ObjectNotExistException(cause);
                 }
             }
+        } else if (cause instanceof ApiCallAttemptTimeoutException) {
+            cause = new TimeoutException(cause.getMessage());
         }
         return Pair.of(strategy, cause);
     }

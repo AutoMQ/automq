@@ -61,7 +61,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.ReferenceCounted;
-import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
+import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @SuppressWarnings("this-escape")
@@ -378,14 +378,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             int retryCount = retryOptions.retryCountGetAndAdd();
             if (isThrottled(cause, retryCount)) {
                 failedWriteMonitor.record(objectSize);
-            }
-            if (isFirstTimeout(cause, retryCount)) {
+                logger.warn("PutObject for object {} fail, retry count {}, queued and retry later", path, retryCount, cause);
+                queuedWrite0(retryOptions, path, data, finalCf);
+            } else {
                 int delay = retryDelay(S3Operation.PUT_OBJECT, retryCount);
                 logger.warn("PutObject for object {} fail, retry count {}, retry in {}ms", path, retryCount, delay, cause);
                 delayedWrite0(retryOptions, path, data, finalCf, delay);
-            } else {
-                logger.warn("PutObject for object {} fail, retry count {}, queued and retry later", path, retryCount, cause);
-                queuedWrite0(retryOptions, path, data, finalCf);
             }
             return null;
         });
@@ -508,14 +506,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             int retryCount = options.retryCountGetAndAdd();
             if (isThrottled(cause, retryCount)) {
                 failedWriteMonitor.record(size);
-            }
-            if (isFirstTimeout(cause, retryCount)) {
+                logger.warn("UploadPart for object {}-{} fail, retry count {}, queued and retry later", path, partNumber, retryCount, cause);
+                queuedUploadPart0(options, path, uploadId, partNumber, data, finalCf);
+            } else {
                 int delay = retryDelay(S3Operation.UPLOAD_PART, retryCount);
                 logger.warn("UploadPart for object {}-{} fail, retry count {}, retry in {}ms", path, partNumber, retryCount, delay, cause);
                 delayedUploadPart0(options, path, uploadId, partNumber, data, finalCf, delay);
-            } else {
-                logger.warn("UploadPart for object {}-{} fail, retry count {}, queued and retry later", path, partNumber, retryCount, cause);
-                queuedUploadPart0(options, path, uploadId, partNumber, data, finalCf);
             }
             return null;
         });
@@ -845,14 +841,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private static boolean isThrottled(Throwable ex, int retryCount) {
         if (ex instanceof S3Exception) {
             S3Exception s3Ex = (S3Exception) ex;
-            return s3Ex.statusCode() == 429 || s3Ex.statusCode() == 503;
+            return s3Ex.statusCode() == HttpStatusCode.THROTTLING || s3Ex.statusCode() == HttpStatusCode.SERVICE_UNAVAILABLE;
         }
         // regard timeout as throttled except for the first try
-        return ex instanceof ApiCallAttemptTimeoutException && retryCount > 0;
-    }
-
-    private static boolean isFirstTimeout(Throwable ex, int retryCount) {
-        return ex instanceof ApiCallAttemptTimeoutException && retryCount == 0;
+        return ex instanceof TimeoutException && retryCount > 0;
     }
 
     /**
