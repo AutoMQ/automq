@@ -46,6 +46,11 @@ public class WALCachedChannel implements WALChannel {
     }
 
     @Override
+    public void markFailed() {
+        channel.markFailed();
+    }
+
+    @Override
     public int read(ByteBuf dst, long position, int length) throws IOException {
         return read(channel::read, dst, position, length);
     }
