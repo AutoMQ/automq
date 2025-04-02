@@ -12,6 +12,7 @@
 package com.automq.stream.s3.operator;
 
 import com.google.common.collect.EvictingQueue;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
