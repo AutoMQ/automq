@@ -57,6 +57,12 @@ public interface WALChannel {
 
     void close();
 
+    /**
+     * Mark the channel as failed.
+     * Note: Once this method is called, the channel cannot be used anymore.
+     */
+    void markFailed();
+
     long capacity();
 
     String path();
