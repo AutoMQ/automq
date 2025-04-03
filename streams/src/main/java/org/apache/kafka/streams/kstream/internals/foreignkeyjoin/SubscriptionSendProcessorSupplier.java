@@ -132,7 +132,7 @@ public class SubscriptionSendProcessorSupplier<K, KO, V> implements ProcessorSup
                 final KO oldForeignKey = foreignKeyExtractor.apply(record.value().oldValue);
                 final KO newForeignKey = record.value().newValue == null ? null : foreignKeyExtractor.apply(record.value().newValue);
                 if (oldForeignKey != null && !Arrays.equals(serialize(newForeignKey), serialize(oldForeignKey))) {
-                    forward(record, oldForeignKey, DELETE_KEY_AND_PROPAGATE);
+                    forward(record, oldForeignKey, DELETE_KEY_NO_PROPAGATE);
                 }
                 forward(record, newForeignKey, PROPAGATE_NULL_IF_NO_FK_VAL_AVAILABLE);
             } else if (record.value().newValue != null) {
