@@ -154,6 +154,11 @@
             <artifactId>HdrHistogram</artifactId>
             <version>2.2.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.ibm.async</groupId>
+            <artifactId>asyncutil</artifactId>
+            <version>0.1.0</version>
+        </dependency>
     </dependencies>
 
     <build>
