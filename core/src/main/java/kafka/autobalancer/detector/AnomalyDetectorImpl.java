@@ -44,6 +44,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements LeaderChangeListener {
@@ -56,6 +57,7 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
     private final Lock configChangeLock = new ReentrantLock();
     private List<Goal> goalsByPriority;
     private Set<Integer> excludedBrokers;
+    private Supplier<Set<Integer>> lockedNodes = Collections::emptySet;
     private Set<String> excludedTopics;
     private long detectInterval;
     private long maxTolerateMetricsDelayMs;
@@ -266,6 +268,10 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
         this.executorService.schedule(this::detect, nextExecutionDelay, TimeUnit.MILLISECONDS);
     }
 
+    public void lockedNodes(Supplier<Set<Integer>> lockedNodes) {
+        this.lockedNodes = lockedNodes;
+    }
+
     private boolean isRunnable() {
         return this.running.get() && this.isLeader;
     }
@@ -283,6 +289,7 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
         try {
             detectInterval = this.detectInterval;
             excludedBrokers = new HashSet<>(this.excludedBrokers);
+            excludedBrokers.addAll(lockedNodes.get());
             excludedTopics = new HashSet<>(this.excludedTopics);
             maxTolerateMetricsDelayMs = this.maxTolerateMetricsDelayMs;
             maxExecutionConcurrency = this.executionConcurrency;

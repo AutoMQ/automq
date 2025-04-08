@@ -49,7 +49,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
-public class DeltaWALUploadTaskTest {
+public class DefaultUploadWriteAheadLogTaskTest {
     ObjectManager objectManager;
     ObjectStorage objectStorage;
     DefaultUploadWriteAheadLogTask deltaWALUploadTask;

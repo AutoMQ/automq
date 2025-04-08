@@ -72,6 +72,7 @@ import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -1523,7 +1524,7 @@ public class StreamControlManagerTest {
     private Optional<ObjectReader> mockObjectReader(
         List<StreamOffsetRange> ranges) throws ExecutionException, InterruptedException {
         MemoryObjectStorage objectStorage = new MemoryObjectStorage();
-        ObjectWriter objectWriter = new ObjectWriter.DefaultObjectWriter(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        ObjectWriter objectWriter = new ObjectWriter.DefaultObjectWriter(1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE, new ObjectStorage.WriteOptions());
         ranges.forEach(range ->
             objectWriter.write(
                 range.streamId(),

@@ -27,8 +27,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class URIUtils {
-    public static final Pattern URI_LIST_PATTERN = Pattern.compile("\\d+@.*?(?=,\\d+@|$)");
-    public static final Pattern URI_PATTERN = Pattern.compile("(\\d+)@(.+)");
+    public static final Pattern URI_LIST_PATTERN = Pattern.compile("[-]?\\d+@.*?(?=,[-]?\\d+@|$)");
+    public static final Pattern URI_PATTERN = Pattern.compile("([-]?\\d+)@(.+)");
 
     public static List<String> parseIdURIList(String uriList) {
         if (StringUtils.isBlank(uriList)) {
