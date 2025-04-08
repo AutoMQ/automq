@@ -25,7 +25,7 @@ import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.log._
 import org.apache.kafka.storage.internals.utils.Throttler
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.{BeforeEach, Tag, Test}
+import org.junit.jupiter.api.{BeforeEach, Tag, Test, Timeout}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
@@ -33,6 +33,7 @@ import java.io.File
 import java.util.Optional
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
+@Timeout(60)
 @Tag("S3Unit")
 class ElasticUnifiedLogTest extends UnifiedLogTest {
     var client: Client = _

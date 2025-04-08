@@ -29,6 +29,7 @@ import org.apache.kafka.server.config.QuotaConfigs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
@@ -41,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Timeout(60)
 @Tag("s3Unit")
 public class BrokerQuotaManagerTest {
     private final Time time = Time.SYSTEM;

@@ -16,9 +16,11 @@ import com.automq.stream.s3.ByteBufAlloc;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import io.netty.buffer.ByteBuf;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class UtilsTest {
 

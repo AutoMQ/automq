@@ -19,6 +19,7 @@ package org.apache.kafka.metadata.stream;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.Collections;
 import java.util.List;
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class SortedStreamSetObjectsListTest {
 

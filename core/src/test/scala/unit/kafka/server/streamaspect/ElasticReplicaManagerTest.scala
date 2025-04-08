@@ -30,7 +30,7 @@ import org.apache.kafka.server.util.timer.MockTimer
 import org.apache.kafka.server.util.{MockScheduler, Scheduler}
 import org.apache.kafka.storage.internals.log._
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.{BeforeEach, Disabled, Tag, Test}
+import org.junit.jupiter.api.{BeforeEach, Disabled, Tag, Test, Timeout}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentMatchers
@@ -46,6 +46,7 @@ import scala.collection.{Map, Seq}
 import scala.compat.java8.OptionConverters.RichOptionForJava8
 import scala.jdk.CollectionConverters.{MapHasAsJava, PropertiesHasAsScala}
 
+@Timeout(60)
 @Tag("S3Unit")
 class ElasticReplicaManagerTest extends ReplicaManagerTest {
 
@@ -93,14 +94,12 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
     threadNamePrefix: Option[String] = None,
     brokerEpochSupplier: () => Long = () => -1,
     addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
-    directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP): ElasticReplicaManager = {
-    new ElasticReplicaManager(config, metrics, time, scheduler, logManager, remoteLogManager, quotaManagers,
+    directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP) = new ElasticReplicaManager(config, metrics, time, scheduler, logManager, remoteLogManager, quotaManagers,
       metadataCache, logDirFailureChannel, alterPartitionManager, brokerTopicStats, isShuttingDown, zkClient,
       delayedProducePurgatoryParam, delayedFetchPurgatoryParam, delayedDeleteRecordsPurgatoryParam,
       delayedElectLeaderPurgatoryParam, delayedRemoteFetchPurgatoryParam, threadNamePrefix, brokerEpochSupplier,
       addPartitionsToTxnManager, directoryEventHandler,
       MoreExecutors.newDirectExecutorService(), MoreExecutors.newDirectExecutorService())
-  }
 
   override protected def setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager: AddPartitionsToTxnManager,
       transactionalTopicPartitions: List[TopicPartition],
@@ -149,15 +148,11 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
     if (enableRemoteStorage) {
       props.put("log.dirs", path1)
       props.put(RemoteLogManagerConfig.REMOTE_LOG_STORAGE_SYSTEM_ENABLE_PROP, enableRemoteStorage.toString)
-    } else {
-      props.put("log.dirs", path1 + "," + path2)
-    }
+    } else props.put("log.dirs", path1 + "," + path2)
     propsModifier.apply(props)
     val config = KafkaConfig.fromProps(props)
     val logProps = new Properties()
-    if (enableRemoteStorage && defaultTopicRemoteLogStorageEnable) {
-      logProps.put(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "true")
-    }
+    if (enableRemoteStorage && defaultTopicRemoteLogStorageEnable) logProps.put(TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG, "true")
     val mockLog = setupMockLog(path1)
     if (setupLogDirMetaProperties) {
       // add meta.properties file in each dir
@@ -180,7 +175,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
     val aliveBrokers = aliveBrokerIds.map(brokerId => new Node(brokerId, s"host$brokerId", brokerId))
     brokerTopicStats = new BrokerTopicStats()
 
-    val metadataCache: MetadataCache = mock(classOf[MetadataCache])
+    val metadataCache = mock(classOf[MetadataCache])
     when(metadataCache.topicIdInfo()).thenReturn((topicIds.asJava, topicNames.asJava))
     when(metadataCache.topicNamesToIds()).thenReturn(topicIds.asJava)
     when(metadataCache.topicIdsToNames()).thenReturn(topicNames.asJava)
@@ -226,12 +221,10 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
       threadNamePrefix = Option(this.getClass.getName),
       addPartitionsToTxnManager = Some(addPartitionsToTxnManager),
       directoryEventHandler = directoryEventHandler,
-      remoteLogManager = if (enableRemoteStorage) {
-        if (remoteLogManager.isDefined)
-          remoteLogManager
-        else
-          Some(mockRemoteLogManager)
-      } else None,
+      remoteLogManager = if (enableRemoteStorage) if (remoteLogManager.isDefined)
+        remoteLogManager
+      else
+        Some(mockRemoteLogManager) else None,
       fastFetchExecutor = MoreExecutors.newDirectExecutorService(),
       slowFetchExecutor = MoreExecutors.newDirectExecutorService()) {
 
@@ -240,66 +233,58 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
         time: Time,
         threadNamePrefix: Option[String],
         quotaManager: ReplicationQuotaManager
-      ): ReplicaFetcherManager = {
-        mockReplicaFetcherManager.getOrElse {
-          if (buildRemoteLogAuxState) {
-            super.createReplicaFetcherManager(
-              metrics,
-              time,
-              threadNamePrefix,
-              quotaManager
-            )
-            val config = this.config
-            val metadataCache = this.metadataCache
-            new ReplicaFetcherManager(config, this, metrics, time, threadNamePrefix, quotaManager, () => metadataCache.metadataVersion(), () => 1) {
-              override def createFetcherThread(fetcherId: Int, sourceBroker: BrokerEndPoint): ReplicaFetcherThread = {
-                val prefix = threadNamePrefix.map(tp => s"$tp:").getOrElse("")
-                val threadName = s"${prefix}ReplicaFetcherThread-$fetcherId-${sourceBroker.id}"
+      ): ReplicaFetcherManager = mockReplicaFetcherManager.getOrElse {
+        if (buildRemoteLogAuxState) {
+          super.createReplicaFetcherManager(
+            metrics,
+            time,
+            threadNamePrefix,
+            quotaManager
+          )
+          val config = this.config
+          val metadataCache = this.metadataCache
+          new ReplicaFetcherManager(config, this, metrics, time, threadNamePrefix, quotaManager, () => metadataCache.metadataVersion(), () => 1) {
+            override def createFetcherThread(fetcherId: Int, sourceBroker: BrokerEndPoint): ReplicaFetcherThread = {
+              val prefix = threadNamePrefix.map(tp => s"$tp:").getOrElse("")
+              val threadName = s"${prefix}ReplicaFetcherThread-$fetcherId-${sourceBroker.id}"
 
-                val tp = new TopicPartition(topic, 0)
-                val leader = new MockLeaderEndPoint() {
-                  override def fetch(fetchRequest: FetchRequest.Builder): Map[TopicPartition, FetchData] = {
-                    Map(tp -> new FetchData().setErrorCode(Errors.OFFSET_MOVED_TO_TIERED_STORAGE.code))
-                  }
-                }
-                leader.setLeaderState(tp, PartitionState(leaderEpoch = 0))
-                leader.setReplicaPartitionStateCallback(tp => PartitionState(leaderEpoch = 0))
-
-                val fetcher = new ReplicaFetcherThread(threadName, leader, config, failedPartitions, replicaManager,
-                  quotaManager, "", () => config.interBrokerProtocolVersion)
-
-                val initialFetchState = InitialFetchState(
-                  topicId = Some(Uuid.randomUuid()),
-                  leader = leader.brokerEndPoint(),
-                  currentLeaderEpoch = 0,
-                  initOffset = 0)
-
-                fetcher.addPartitions(Map(tp -> initialFetchState))
-
-                fetcher
+              val tp = new TopicPartition(topic, 0)
+              val leader = new MockLeaderEndPoint() {
+                override def fetch(fetchRequest: FetchRequest.Builder): Map[TopicPartition, FetchData] = Map(tp -> new FetchData().setErrorCode(Errors.OFFSET_MOVED_TO_TIERED_STORAGE.code))
               }
+              leader.setLeaderState(tp, PartitionState(leaderEpoch = 0))
+              leader.setReplicaPartitionStateCallback(tp => PartitionState(leaderEpoch = 0))
+
+              val fetcher = new ReplicaFetcherThread(threadName, leader, config, failedPartitions, replicaManager,
+                quotaManager, "", () => config.interBrokerProtocolVersion)
+
+              val initialFetchState = InitialFetchState(
+                topicId = Some(Uuid.randomUuid()),
+                leader = leader.brokerEndPoint(),
+                currentLeaderEpoch = 0,
+                initOffset = 0)
+
+              fetcher.addPartitions(Map(tp -> initialFetchState))
+
+              fetcher
             }
-          } else {
-            super.createReplicaFetcherManager(
-              metrics,
-              time,
-              threadNamePrefix,
-              quotaManager
-            )
           }
-        }
+        } else super.createReplicaFetcherManager(
+            metrics,
+            time,
+            threadNamePrefix,
+            quotaManager
+          )
       }
 
       override def createReplicaAlterLogDirsManager(
         quotaManager: ReplicationQuotaManager,
         brokerTopicStats: BrokerTopicStats
-      ): ReplicaAlterLogDirsManager = {
-        mockReplicaAlterLogDirsManager.getOrElse {
-          super.createReplicaAlterLogDirsManager(
-            quotaManager,
-            brokerTopicStats
-          )
-        }
+      ): ReplicaAlterLogDirsManager = mockReplicaAlterLogDirsManager.getOrElse {
+        super.createReplicaAlterLogDirsManager(
+          quotaManager,
+          brokerTopicStats
+        )
       }
     }
   }
@@ -375,7 +360,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
 
     // Expect to call LogManager.truncateTo exactly once
     val topicPartitionObj = new TopicPartition(topic, topicPartition)
-    val mockLogMgr: LogManager = mock(classOf[LogManager])
+    val mockLogMgr = mock(classOf[LogManager])
     when(mockLogMgr.liveLogDirs).thenReturn(config.logDirs.map(new File(_).getAbsoluteFile))
     when(mockLogMgr.getOrCreateLog(ArgumentMatchers.eq(topicPartitionObj), ArgumentMatchers.eq(false), ArgumentMatchers.eq(false), any(), any(), any())).thenReturn(mockLog)
     when(mockLogMgr.getLog(topicPartitionObj, isFuture = false)).thenReturn(Some(mockLog))
@@ -388,7 +373,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
     val aliveBrokerIds = Seq[Integer](followerBrokerId, leaderBrokerId)
     val aliveBrokers = aliveBrokerIds.map(brokerId => new Node(brokerId, s"host$brokerId", brokerId))
 
-    val metadataCache: MetadataCache = mock(classOf[MetadataCache])
+    val metadataCache = mock(classOf[MetadataCache])
     mockGetAliveBrokerFunctions(metadataCache, aliveBrokers)
     when(metadataCache.getPartitionReplicaEndpoints(
       any[TopicPartition], any[ListenerName])).
@@ -476,7 +461,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
   @Test
   override def testReplicaNotAvailable(): Unit = {
 
-    def createReplicaManager(): ElasticReplicaManager = {
+    def createReplicaManager() = {
       val props = TestUtils.createBrokerConfig(1, TestUtils.MockZkConnect)
       val config = KafkaConfig.fromProps(props)
       val mockLogMgr = TestUtils.createLogManager(config.logDirs.map(new File(_)))
@@ -492,9 +477,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
         alterPartitionManager = alterPartitionManager,
         fastFetchExecutor = MoreExecutors.newDirectExecutorService(),
         slowFetchExecutor = MoreExecutors.newDirectExecutorService()) {
-        override def getPartitionOrException(topicPartition: TopicPartition): Partition = {
-          throw Errors.NOT_LEADER_OR_FOLLOWER.exception()
-        }
+        override def getPartitionOrException(topicPartition: TopicPartition): Partition = throw Errors.NOT_LEADER_OR_FOLLOWER.exception()
       }
     }
 
@@ -504,9 +487,7 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
       val dir = replicaManager.logManager.liveLogDirs.head.getAbsolutePath
       val errors = replicaManager.alterReplicaLogDirs(Map(tp -> dir))
       assertEquals(Errors.REPLICA_NOT_AVAILABLE, errors(tp))
-    } finally {
-      replicaManager.shutdown(checkpointHW = false)
-    }
+    } finally replicaManager.shutdown(checkpointHW = false)
   }
 
   // Disable test preferred fetching

@@ -23,6 +23,7 @@ import kafka.autobalancer.metricsreporter.exception.UnknownVersionException;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.Map;
 
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class MetricSerdeTest {
     private static final long TIME = 123L;

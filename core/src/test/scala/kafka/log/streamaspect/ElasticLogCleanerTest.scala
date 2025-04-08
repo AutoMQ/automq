@@ -14,6 +14,7 @@ import java.io.File
 import java.util.Properties
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
+@Timeout(60)
 @Tag("S3Unit")
 class ElasticLogCleanerTest extends LogCleanerTest {
   var client: Client = _
