@@ -26,6 +26,7 @@ import kafka.autobalancer.model.TopicPartitionReplicaUpdater.TopicPartitionRepli
 import org.apache.kafka.common.TopicPartition;
 
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -36,6 +37,7 @@ import java.util.StringJoiner;
 import static kafka.autobalancer.common.types.Resource.NW_IN;
 import static kafka.autobalancer.common.types.Resource.NW_OUT;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class GoalTestBase {
     private final Map<String, Goal> goalMap = new HashMap<>();
