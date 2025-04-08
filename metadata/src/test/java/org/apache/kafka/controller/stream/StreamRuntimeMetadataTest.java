@@ -21,12 +21,14 @@ import com.automq.stream.s3.metadata.StreamState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class StreamRuntimeMetadataTest {
     private static final long STREAM_ID = 233L;

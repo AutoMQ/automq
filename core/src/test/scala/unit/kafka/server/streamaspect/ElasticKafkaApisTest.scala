@@ -11,13 +11,14 @@ import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
 import org.apache.kafka.server.config.KRaftConfigs
-import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.{Tag, Timeout}
 import org.mockito.Mockito.mock
 
 import java.util.Collections
 import scala.collection.Map
 import scala.jdk.CollectionConverters.SetHasAsScala
 
+@Timeout(60)
 @Tag("S3Unit")
 class ElasticKafkaApisTest extends KafkaApisTest {
   override protected val replicaManager: ElasticReplicaManager = mock(classOf[ElasticReplicaManager])

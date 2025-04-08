@@ -24,7 +24,7 @@ import org.apache.kafka.coordinator.transaction.TransactionLogConfigs
 import org.apache.kafka.server.util.{MockTime, Scheduler}
 import org.apache.kafka.storage.internals.log._
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.{AfterEach, BeforeEach, Tag, Test}
+import org.junit.jupiter.api.{AfterEach, BeforeEach, Tag, Test, Timeout}
 
 import java.io.{File, IOException}
 import java.nio.charset.StandardCharsets
@@ -33,6 +33,7 @@ import java.util.regex.Pattern
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
 // TODO: extends the LocalLogTest
+@Timeout(60)
 @Tag("S3Unit")
 class ElasticLogTest {
     val kafkaConfig: KafkaConfig = KafkaConfig.fromProps(TestUtils.createBrokerConfig(0, "127.0.0.1:1", port = -1))
