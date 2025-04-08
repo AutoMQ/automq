@@ -20,11 +20,10 @@ import org.apache.kafka.common.utils.{MockTime, Utils}
 import org.apache.kafka.coordinator.transaction.TransactionLogConfigs
 import org.apache.kafka.storage.internals.log._
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.{AfterEach, BeforeEach, Tag, Test}
+import org.junit.jupiter.api.{AfterEach, BeforeEach, Tag, Test, Timeout}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.Mockito.{mock, when}
-
 import kafka.log.streamaspect.ElasticProducerStateManager.AWAIT_SEQ_ZERO_TIMEOUT
 
 import java.io.File
@@ -36,6 +35,7 @@ import java.util.{Collections, Optional, OptionalLong}
 import scala.compat.java8.OptionConverters.RichOptionalGeneric
 import scala.jdk.CollectionConverters._
 
+@Timeout(60)
 @Tag("S3Unit")
 class ElasticProducerStateManagerTest {
 

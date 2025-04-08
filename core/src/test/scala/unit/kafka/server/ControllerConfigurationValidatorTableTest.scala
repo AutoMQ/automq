@@ -18,10 +18,11 @@ import org.apache.kafka.common.config.TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG
 import org.apache.kafka.common.errors.InvalidConfigurationException
 import org.apache.kafka.server.record.TableTopicSchemaType
 import org.junit.jupiter.api.Assertions.{assertEquals, assertThrows}
-import org.junit.jupiter.api.{Tag, Test}
+import org.junit.jupiter.api.{Tag, Test, Timeout}
 
 import java.util
 
+@Timeout(60)
 @Tag("S3Unit")
 class ControllerConfigurationValidatorTableTest {
     val config = new KafkaConfig(TestUtils.createDummyBrokerConfig())

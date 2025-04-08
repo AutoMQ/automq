@@ -32,6 +32,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -45,6 +46,7 @@ import java.util.Set;
 import static kafka.autobalancer.common.types.Resource.NW_IN;
 import static kafka.autobalancer.common.types.Resource.NW_OUT;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class ResourceUsageDistributionGoalTest extends GoalTestBase {
 
