@@ -65,6 +65,10 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_BACKGROUND;
+import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_KEY;
+import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_MAIN;
+
 public class DefaultS3Client implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     protected final Config config;
@@ -74,8 +78,8 @@ public class DefaultS3Client implements Client {
 
     protected ControllerRequestSender requestSender;
 
-    protected ObjectStorage objectStorage;
-    protected ObjectStorage compactionObjectStorage;
+    protected ObjectStorage mainObjectStorage;
+    protected ObjectStorage backgroundObjectStorage;
 
     protected WriteAheadLog writeAheadLog;
     protected StorageFailureHandlerChain storageFailureHandlerChain;
@@ -109,7 +113,6 @@ public class DefaultS3Client implements Client {
 
     @Override
     public void start() {
-        BucketURI dataBucket = config.dataBuckets().get(0);
         long refillToken = (long) (config.networkBaselineBandwidth() * ((double) config.refillPeriodMs() / 1000));
         if (refillToken <= 0) {
             throw new IllegalArgumentException(String.format("refillToken must be greater than 0, bandwidth: %d, refill period: %dms",
@@ -127,34 +130,30 @@ public class DefaultS3Client implements Client {
         S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, () ->
             config.networkBaselineBandwidth() - (long) networkOutboundRate.derive(
                 TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkOutboundUsageTotal().get()));
-        this.objectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
-            .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter).readWriteIsolate(true)
-            .threadPrefix("dataflow").build();
-        if (!objectStorage.readinessCheck()) {
+
+        this.localIndexCache = new LocalStreamRangeIndexCache();
+        this.objectReaderFactory = new DefaultObjectReaderFactory(() -> this.mainObjectStorage);
+        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
+        this.requestSender = new ControllerRequestSender(brokerServer, new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
+            config.controllerRequestRetryBaseDelayMs()));
+        this.streamManager = newStreamManager(config.nodeId(), config.nodeEpoch(), false);
+        this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
+        this.mainObjectStorage = newMainObjectStorage();
+        if (!mainObjectStorage.readinessCheck()) {
             throw new IllegalArgumentException(String.format("%s is not ready", config.dataBuckets()));
         }
-        this.compactionObjectStorage = ObjectStorageFactory.instance().builder(dataBucket).tagging(config.objectTagging())
-            .inboundLimiter(networkInboundLimiter).outboundLimiter(networkOutboundLimiter)
-            .threadPrefix("compaction").build();
-        ControllerRequestSender.RetryPolicyContext retryPolicyContext = new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
-            config.controllerRequestRetryBaseDelayMs());
-        localIndexCache = new LocalStreamRangeIndexCache();
-        localIndexCache.init(config.nodeId(), objectStorage);
+        this.backgroundObjectStorage = newBackgroundObjectStorage();
+        localIndexCache.init(config.nodeId(), backgroundObjectStorage);
         localIndexCache.start();
-        this.objectReaderFactory = new DefaultObjectReaderFactory(objectStorage);
-        this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
-        this.requestSender = new ControllerRequestSender(brokerServer, retryPolicyContext);
-        this.streamManager = newStreamManager(config.nodeId(), config.nodeEpoch(), false);
         this.streamManager.setStreamCloseHook(streamId -> localIndexCache.uploadOnStreamClose());
-        this.objectManager = newObjectManager(config.nodeId(), config.nodeEpoch(), false);
         this.objectManager.setCommitStreamSetObjectHook(localIndexCache::updateIndexFromRequest);
-        this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, objectStorage, objectReaderFactory);
-        this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, compactionObjectStorage);
+        this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, mainObjectStorage, objectReaderFactory);
+        this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, backgroundObjectStorage);
         this.writeAheadLog = buildWAL();
         this.storageFailureHandlerChain = new StorageFailureHandlerChain();
         this.storage = newS3Storage();
         // stream object compactions share the same object storage with stream set object compactions
-        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, compactionObjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
+        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, backgroundObjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
         storageFailureHandlerChain.addHandler(new ForceCloseStorageFailureHandler(streamClient));
         storageFailureHandlerChain.addHandler(new HaltStorageFailureHandler());
         this.streamClient.registerStreamLifeCycleListener(localIndexCache);
@@ -221,6 +220,22 @@ public class DefaultS3Client implements Client {
         }
     }
 
+    protected ObjectStorage newMainObjectStorage() {
+        return ObjectStorageFactory.instance().builder()
+            .buckets(config.dataBuckets())
+            .extension(EXTENSION_TYPE_KEY, EXTENSION_TYPE_MAIN)
+            .readWriteIsolate(true)
+            .build();
+    }
+
+    protected ObjectStorage newBackgroundObjectStorage() {
+        return ObjectStorageFactory.instance().builder()
+            .buckets(config.dataBuckets())
+            .extension(EXTENSION_TYPE_KEY, EXTENSION_TYPE_BACKGROUND)
+            .readWriteIsolate(false)
+            .build();
+    }
+
     protected StreamManager newStreamManager(int nodeId, long nodeEpoch, boolean failoverMode) {
         return new ControllerStreamManager(this.metadataManager, this.requestSender, nodeId, nodeEpoch,
             this::getAutoMQVersion, failoverMode);
@@ -232,7 +247,7 @@ public class DefaultS3Client implements Client {
     }
 
     protected S3Storage newS3Storage() {
-        return new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache, objectStorage, storageFailureHandlerChain);
+        return new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache, mainObjectStorage, storageFailureHandlerChain);
     }
 
     protected Failover failover() {

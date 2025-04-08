@@ -259,6 +259,9 @@ public class ControllerStreamManager implements StreamManager {
                 case STREAM_NOT_CLOSED:
                     logger.warn("open stream fail: {}, epoch {}, code: STREAM_NOT_CLOSED, retry later", streamId, epoch);
                     return ResponseHandleResult.withRetry();
+                case NODE_LOCKED:
+                    logger.warn("[NODE_LOCKED]open stream fail: {}, epoch {}", streamId, epoch);
+                    throw code.exception();
                 default:
                     logger.error("Error while opening stream: {}, epoch {}, code: {}, retry later", streamId, epoch, code);
                     return ResponseHandleResult.withRetry();

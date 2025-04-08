@@ -48,6 +48,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectAttributes.Type;
 import com.automq.stream.s3.operator.AwsObjectStorage;
+import com.automq.stream.s3.operator.LocalFileObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.utils.CollectionHelper;
@@ -316,6 +317,26 @@ public class S3ObjectControlManager {
         return ControllerResult.atomicOf(records, true);
     }
 
+    public ControllerResult<Errors> replaceCommittedObject(long objectId, int attributes) {
+        S3Object object = this.objectsMetadata.get(objectId);
+        if (object == null) {
+            return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_EXIST);
+        }
+        // verify the state
+        if (object.getS3ObjectState() != S3ObjectState.COMMITTED) {
+            return ControllerResult.of(Collections.emptyList(), Errors.OBJECT_NOT_COMMITED);
+        }
+        AutoMQVersion version = this.version.get();
+        S3ObjectRecord record = new S3ObjectRecord()
+            .setObjectId(objectId)
+            .setObjectSize(object.getObjectSize())
+            .setObjectState(S3ObjectState.COMMITTED.toByte());
+        record.setTimestamp(object.getObjectSize());
+        record.setAttributes(attributes);
+        return ControllerResult.of(List.of(
+            new ApiMessageAndVersion(record, version.objectRecordVersion())), Errors.NONE);
+    }
+
     public void replay(AssignedS3ObjectIdRecord record) {
         nextAssignedObjectId.set(record.assignedS3ObjectId() + 1);
     }
@@ -521,11 +542,14 @@ public class S3ObjectControlManager {
 
     class ObjectCleaner {
         CompletableFuture<Void> clean(List<S3Object> objects) {
+            List<S3Object> ignoredObjects = new LinkedList<>();
             List<S3Object> deepDeleteCompositeObjects = new LinkedList<>();
             List<S3Object> shallowDeleteObjects = new ArrayList<>(objects.size());
             for (S3Object object : objects) {
                 ObjectAttributes attributes = ObjectAttributes.from(object.getAttributes());
-                if (attributes.deepDelete() && attributes.type() == Type.Composite) {
+                if (attributes.bucket() == LocalFileObjectStorage.BUCKET_ID) {
+                    ignoredObjects.add(object);
+                } else if (attributes.deepDelete() && attributes.type() == Type.Composite) {
                     deepDeleteCompositeObjects.add(object);
                 } else {
                     shallowDeleteObjects.add(object);
@@ -537,6 +561,8 @@ public class S3ObjectControlManager {
             batchDelete(shallowDeleteObjects, this::shallowlyDelete, cfList);
             // Delete the composite object and it's linked objects
             batchDelete(deepDeleteCompositeObjects, this::deepDelete, cfList);
+            // Delete the local file objects
+            batchDelete(ignoredObjects, this::noopDelete, cfList);
 
             return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
         }
@@ -580,6 +606,11 @@ public class S3ObjectControlManager {
                 notifyS3ObjectDeleted(deletedObjectIds);
             });
             return allCf;
+        }
+
+        private CompletableFuture<Void> noopDelete(List<S3Object> s3objects) {
+            List<Long> deletedObjectIds = s3objects.stream().map(S3Object::getObjectId).collect(Collectors.toList());
+            return CompletableFuture.completedFuture(null).thenAccept(rst -> notifyS3ObjectDeleted(deletedObjectIds));
         }
 
         private void notifyS3ObjectDeleted(List<Long> deletedObjectIds) {
