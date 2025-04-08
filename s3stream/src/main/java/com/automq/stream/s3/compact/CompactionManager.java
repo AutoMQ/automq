@@ -226,7 +226,7 @@ public class CompactionManager {
                 return CompletableFuture.completedFuture(null);
             }
             if (objectMetadataList.stream().anyMatch(o -> o.bucket() == LocalFileObjectStorage.BUCKET_ID)) {
-                logger.info("Skip the compaction, because the s3 is in CIRCUIT_CLOSED status");
+                logger.info("Skip the compaction, because main storage circuit breaker isn't in closed status");
                 return CompletableFuture.completedFuture(null);
             }
             updateStreamDataBlockMap(objectMetadataList);

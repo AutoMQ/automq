@@ -126,7 +126,7 @@ public class NodeControlManager {
                 int nodeId = Integer.parseInt(kv.key().substring(KEY_PREFIX.length()));
                 NodeMetadata nodeMetadata = NodeMetadataCodec.decode(kv.value());
                 nodeMetadataMap.put(nodeId, nodeMetadata);
-                if ("OPEN".equals(nodeMetadata.getTags().getOrDefault("circuit", "OPEN"))) {
+                if ("CLOSED".equals(nodeMetadata.getTags().getOrDefault("CIRCUIT_BREAKER", "CLOSED"))) {
                     nodeRuntimeInfoManager.unlock(nodeId);
                     lockedNodes.remove(nodeId);
                 } else {
@@ -139,7 +139,7 @@ public class NodeControlManager {
         }
     }
 
-    public Set<Integer> lockedNodes() {
+    public synchronized Set<Integer> lockedNodes() {
         return new HashSet<>(lockedNodes);
     }
 

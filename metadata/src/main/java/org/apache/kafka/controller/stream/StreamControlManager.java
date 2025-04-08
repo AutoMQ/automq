@@ -1298,12 +1298,12 @@ public class StreamControlManager {
                 return;
             }
             List<S3StreamSetObject> objects = new ArrayList<>(nodeRuntimeMetadata.streamSetObjects().values());
-            boolean isNotCircuitOpen = objects.stream().anyMatch(sso -> {
+            boolean inMainStorageCircuitBreakerOpenStatus = objects.stream().anyMatch(sso -> {
                 return Optional.ofNullable(s3ObjectControlManager.getObject(sso.objectId()))
                     .map(o -> ObjectAttributes.from(o.getAttributes()).bucket() == LocalFileObjectStorage.BUCKET_ID)
                     .orElse(false);
             });
-            if (objects.isEmpty() || isNotCircuitOpen) {
+            if (objects.isEmpty() || inMainStorageCircuitBreakerOpenStatus) {
                 return;
             }
             CleanUpScaleInNodeContext ctx = new CleanUpScaleInNodeContext(nodeId, objects);
