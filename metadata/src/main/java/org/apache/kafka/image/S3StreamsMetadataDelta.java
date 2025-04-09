@@ -108,6 +108,9 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(S3StreamObjectRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+        // https://github.com/AutoMQ/automq/issues/2333
+        // try to fix the old stream end offset
+        updateStreamEndOffset(record.streamId(), record.endOffset());
     }
 
     public void replay(RemoveS3StreamObjectRecord record) {
@@ -130,6 +133,13 @@ public final class S3StreamsMetadataDelta {
         for (StreamEndOffset streamEndOffset : S3StreamEndOffsetsCodec.decode(record.endOffsets())) {
             updateStreamEndOffset(streamEndOffset.streamId(), streamEndOffset.endOffset());
         }
+    }
+
+    public Set<Long> changedStreams() {
+        Set<Long> set = new HashSet<>();
+        set.addAll(changedStreams.keySet());
+        set.addAll(changedStreamEndOffsets.keySet());
+        return set;
     }
 
     private void updateStreamEndOffset(long streamId, long newEndOffset) {

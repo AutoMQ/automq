@@ -45,7 +45,7 @@ import java.util
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.locks.ReentrantLock
 import java.util.function.Supplier
-import java.util.{Collections, Properties}
+import java.util.{Collections, OptionalLong, Properties}
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
@@ -666,6 +666,10 @@ class KRaftMetadataCache(
 
   override def getValue(key: String): ByteBuffer = {
     _currentImage.kv().getValue(key)
+  }
+
+  override def getStreamEndOffset(streamId: Long): OptionalLong = {
+    _currentImage.streamsMetadata().streamEndOffset(streamId)
   }
   // AutoMQ inject end
 
