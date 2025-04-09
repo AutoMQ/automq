@@ -99,7 +99,7 @@ bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properti
 |------------------------|------------|
 | Main | core/src/main/scala/kafka/Kafka.scala     |
 | ClassPath | -cp kafka.core.main |
-| VM Options   | -Xmx1 -Xms1G -server -XX:+UseZGC -XX:MaxDirectMemorySize=2G -Dkafka.logs.dir=logs/ -Dlog4j.configuration=file:config/log4j.properties -Dio.netty.leakDetection.level=paranoid    |
+| VM Options   | -Xmx1G -Xms1G -server -XX:+UseZGC -XX:MaxDirectMemorySize=2G -Dkafka.logs.dir=logs/ -Dlog4j.configuration=file:config/log4j.properties -Dio.netty.leakDetection.level=paranoid    |
 | CLI Arguments | config/kraft/server.properties|
 | Environment | KAFKA_S3_ACCESS_KEY=test;KAFKA_S3_SECRET_KEY=test |
 
