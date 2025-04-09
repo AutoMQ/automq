@@ -9,20 +9,14 @@
  * by the Apache License, Version 2.0
  */
 
-package com.automq.stream.s3.exceptions;
+package org.apache.kafka.common.errors.s3;
 
-public class ObjectNotExistException extends AutoMQException {
+import org.apache.kafka.common.errors.ApiException;
 
-    public ObjectNotExistException() {
-    }
+public class NodeLockedException extends ApiException {
 
-    public ObjectNotExistException(long objectId) {
-        super("Object not exist: " + objectId);
-    }
-
-    public ObjectNotExistException(Throwable cause) {
-        super(cause.getMessage());
-        this.addSuppressed(cause);
+    public NodeLockedException(String message) {
+        super(message);
     }
 
 }

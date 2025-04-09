@@ -630,7 +630,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         for (ObjectPath objectPath : objectPaths) {
             if (!bucketCheck(objectPath.bucketId(), cf)) {
-                logger.error("[BUG] {} bucket check fail, expect {}", objectPath, bucketId());
+                logger.error("[BUG] {} bucket check fail, expect {}", objectPath, bucketURI.bucketId());
                 return cf;
             }
         }
@@ -657,7 +657,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public short bucketId() {
-        return bucketURI == null ? 0 : bucketURI.bucketId();
+        return bucketURI.bucketId();
     }
 
     @Override

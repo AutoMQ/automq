@@ -34,6 +34,8 @@ import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.exceptions.AutoMQException;
+import com.automq.stream.s3.exceptions.CompactedObjectsNotFoundException;
+import com.automq.stream.s3.exceptions.ObjectNotCommittedException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.CommitStreamSetObjectHook;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
@@ -180,7 +182,7 @@ public class ControllerObjectManager implements ObjectManager {
                     throw Errors.forCode(resp.errorCode()).exception();
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:
-                    throw code.exception();
+                    throw new CompactedObjectsNotFoundException();
                 default:
                     LOGGER.error("Error while committing stream set object: {}, code: {}, retry later", request, code);
                     return ResponseHandleResult.withRetry();
@@ -231,7 +233,9 @@ public class ControllerObjectManager implements ObjectManager {
                     throw Errors.forCode(resp.errorCode()).exception();
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:
-                    throw code.exception();
+                    throw new CompactedObjectsNotFoundException();
+                case OBJECT_NOT_COMMITED:
+                    throw new ObjectNotCommittedException();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                     LOGGER.warn("Stream fenced or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));

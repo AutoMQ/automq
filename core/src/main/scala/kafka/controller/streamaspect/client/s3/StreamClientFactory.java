@@ -18,7 +18,11 @@ import kafka.log.stream.s3.ConfigUtils;
 import org.apache.kafka.controller.stream.StreamClient;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
+
+import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_BACKGROUND;
+import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_KEY;
 
 public class StreamClientFactory {
 
@@ -27,14 +31,14 @@ public class StreamClientFactory {
      */
     public static StreamClient get(Context context) {
         Config streamConfig = ConfigUtils.to(context.kafkaConfig);
+        ObjectStorage objectStorage = ObjectStorageFactory.instance().builder()
+            .buckets(streamConfig.dataBuckets())
+            .tagging(streamConfig.objectTagging())
+            .extension(EXTENSION_TYPE_KEY, EXTENSION_TYPE_BACKGROUND)
+            .build();
         return StreamClient.builder()
             .streamConfig(streamConfig)
-            .objectStorage(
-                ObjectStorageFactory.instance()
-                    .builder(streamConfig.dataBuckets().get(0))
-                    .tagging(streamConfig.objectTagging())
-                    .build()
-            )
+            .objectStorage(objectStorage)
             .build();
     }
 }
