@@ -12,7 +12,7 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
-import com.automq.stream.utils.FutureUtil
+import com.automq.stream.utils.{FutureUtil, Threads}
 import kafka.cluster.PartitionSnapshot
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
@@ -27,6 +27,7 @@ import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
 import org.apache.kafka.storage.internals.log._
+import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -291,8 +292,11 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 }
 
 object ElasticUnifiedLog extends Logging {
-    private val CheckpointExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("checkpoint-executor", true))
-    private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
+    private val Logger = LoggerFactory.getLogger(classOf[ElasticUnifiedLog])
+    private val CheckpointExecutor = {
+      Threads.newSingleThreadScheduledExecutor("checkpoint-executor", true, Logger)
+    }
+  private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
     private val MinCheckpointIntervalMs = 10 * 1000
     private val Logs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
     // fuzzy dirty bytes for checkpoint, it's ok not thread safe

@@ -15,6 +15,7 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 
@@ -56,7 +57,8 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         this.availableTokens = this.tokenSize;
         this.maxTokens = maxTokens;
         this.queuedCallbacks = new PriorityQueue<>();
-        this.refillThreadPool = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"));
+        this.refillThreadPool =
+            Threads.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"), LOGGER);
         this.callbackThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("callback-thread"));
         this.callbackThreadPool.execute(this::run);
         this.refillThreadPool.scheduleAtFixedRate(this::refillToken, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);

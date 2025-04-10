@@ -45,6 +45,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import com.automq.stream.utils.Threads;
+
 import static org.apache.kafka.tools.automq.perf.UniformRateLimiter.uninterruptibleSleepNs;
 
 public class ProducerService implements AutoCloseable {
@@ -56,7 +58,8 @@ public class ProducerService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
 
     private final List<Producer> producers = new LinkedList<>();
-    private final ScheduledExecutorService adjustRateExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("perf-producer-rate-adjust", true));
+    private final ScheduledExecutorService adjustRateExecutor =
+        Threads.newSingleThreadScheduledExecutor("perf-producer-rate-adjust", true, LOGGER);
     private final ExecutorService executor = Executors.newCachedThreadPool(ThreadUtils.createThreadFactory("perf-producer", false));
 
     /**

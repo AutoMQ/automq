@@ -38,6 +38,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
+import com.automq.stream.utils.Threads;
+
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 public class ControllerRequestSender {
@@ -55,7 +57,8 @@ public class ControllerRequestSender {
         this.retryPolicyContext = retryPolicyContext;
         this.channelManager = brokerServer.newNodeToControllerChannelManager("s3stream-to-controller", 60000);
         this.channelManager.start();
-        this.retryService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("controller-request-retry-sender"));
+        this.retryService =
+            Threads.newSingleThreadScheduledExecutor("controller-request-retry-sender", false, LOGGER);
         this.requestAccumulatorMap = new ConcurrentHashMap<>();
     }
 
