@@ -27,7 +27,6 @@ import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
 import org.apache.kafka.storage.internals.log._
-import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.nio.ByteBuffer
