@@ -292,9 +292,8 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 }
 
 object ElasticUnifiedLog extends Logging {
-    private val Logger = LoggerFactory.getLogger(classOf[ElasticUnifiedLog])
     private val CheckpointExecutor = {
-      Threads.newSingleThreadScheduledExecutor("checkpoint-executor", true, Logger)
+      Threads.newSingleThreadScheduledExecutor("checkpoint-executor", true, logger.underlying)
     }
   private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
     private val MinCheckpointIntervalMs = 10 * 1000

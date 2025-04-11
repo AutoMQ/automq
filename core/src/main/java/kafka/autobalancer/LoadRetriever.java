@@ -107,10 +107,8 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         this.lock = new ReentrantLock();
         this.cond = lock.newCondition();
         this.mainExecutorService =
-            // may need to be reviewed， is it correct？
             Threads.newSingleThreadScheduledExecutor(
-                new AutoBalancerThreadFactory("load-retriever-main"),
-                logContext.logger(LoadRetriever.class));
+                new AutoBalancerThreadFactory("load-retriever-main"), logger);
         leaderEpochInitialized = false;
         staticConfig = new StaticAutoBalancerConfig(config.originals(), false);
         listenerName = staticConfig.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG);
