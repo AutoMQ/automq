@@ -12,7 +12,7 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
-import com.automq.stream.utils.FutureUtil
+import com.automq.stream.utils.{FutureUtil, Threads}
 import kafka.cluster.PartitionSnapshot
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
@@ -21,7 +21,7 @@ import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
-import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
@@ -33,7 +33,7 @@ import java.nio.ByteBuffer
 import java.nio.file.Path
 import java.util
 import java.util.concurrent.atomic.LongAdder
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList, Executors}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.util.{Failure, Success, Try}
 
@@ -291,8 +291,10 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 }
 
 object ElasticUnifiedLog extends Logging {
-    private val CheckpointExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("checkpoint-executor", true))
-    private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
+    private val CheckpointExecutor = {
+      Threads.newSingleThreadScheduledExecutor("checkpoint-executor", true, logger.underlying)
+    }
+  private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
     private val MinCheckpointIntervalMs = 10 * 1000
     private val Logs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
     // fuzzy dirty bytes for checkpoint, it's ok not thread safe

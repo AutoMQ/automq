@@ -12,6 +12,7 @@
 package com.automq.stream.utils.threads;
 
 import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
@@ -30,9 +30,9 @@ import java.util.function.Function;
 
 public class S3StreamThreadPoolMonitor {
     private static final List<ThreadPoolWrapper> MONITOR_EXECUTOR = new CopyOnWriteArrayList<>();
-    private static final ScheduledExecutorService MONITOR_SCHEDULED = Executors.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("ThreadPoolMonitor-%d", true));
     private static Logger waterMarkLogger = LoggerFactory.getLogger(S3StreamThreadPoolMonitor.class);
+    private static final ScheduledExecutorService MONITOR_SCHEDULED =
+        Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("ThreadPoolMonitor-%d", true), waterMarkLogger);
     private static volatile long threadPoolStatusPeriodTime = TimeUnit.SECONDS.toMillis(3);
 
     public static void config(Logger waterMarkLoggerConfig, long threadPoolStatusPeriodTimeConfig) {

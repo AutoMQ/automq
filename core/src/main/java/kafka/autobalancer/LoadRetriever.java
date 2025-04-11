@@ -52,6 +52,7 @@ import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.server.config.QuotaConfigs;
 
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.Threads;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -65,7 +66,6 @@ import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -105,7 +105,9 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         this.bootstrapServerMapInUse = new HashMap<>();
         this.lock = new ReentrantLock();
         this.cond = lock.newCondition();
-        this.mainExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-main"));
+        this.mainExecutorService =
+            Threads.newSingleThreadScheduledExecutor(
+                new AutoBalancerThreadFactory("load-retriever-main"), logger);
         leaderEpochInitialized = false;
         staticConfig = new StaticAutoBalancerConfig(config.originals(), false);
         listenerName = staticConfig.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG);

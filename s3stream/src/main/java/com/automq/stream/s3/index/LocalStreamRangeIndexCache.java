@@ -22,7 +22,7 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.Systems;
-import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +40,6 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,8 +61,8 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     private final Lock readLock = lock.readLock();
     private final Lock writeLock = lock.writeLock();
-    private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("upload-index", true));
+    private final ScheduledExecutorService executorService =
+        Threads.newSingleThreadScheduledExecutor("upload-index", true, LOGGER);
     private final Queue<CompletableFuture<Void>> uploadQueue = new LinkedList<>();
     private final CompletableFuture<Void> initCf = new CompletableFuture<>();
     private final AtomicBoolean pruned = new AtomicBoolean(false);
