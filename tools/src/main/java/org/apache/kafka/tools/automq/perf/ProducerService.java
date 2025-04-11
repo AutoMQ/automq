@@ -22,6 +22,8 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 
+import com.automq.stream.utils.Threads;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,8 +46,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
-import com.automq.stream.utils.Threads;
 
 import static org.apache.kafka.tools.automq.perf.UniformRateLimiter.uninterruptibleSleepNs;
 
