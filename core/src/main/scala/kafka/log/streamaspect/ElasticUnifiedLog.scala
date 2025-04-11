@@ -21,7 +21,7 @@ import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
-import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
@@ -33,7 +33,7 @@ import java.nio.ByteBuffer
 import java.nio.file.Path
 import java.util
 import java.util.concurrent.atomic.LongAdder
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList, Executors}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.util.{Failure, Success, Try}
 
