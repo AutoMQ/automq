@@ -43,6 +43,7 @@ import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
@@ -91,6 +92,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String AUTH_TYPE_KEY = "authType";
     public static final String STATIC_AUTH_TYPE = "static";
     public static final String INSTANCE_AUTH_TYPE = "instance";
+    public static final String DEFAULT_AUTH_TYPE = "default";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
 
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
@@ -372,22 +374,30 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     protected List<AwsCredentialsProvider> credentialsProviders() {
-        String authType = bucketURI.extensionString(AUTH_TYPE_KEY, STATIC_AUTH_TYPE);
+        String authType = bucketURI.extensionString(AUTH_TYPE_KEY, DEFAULT_AUTH_TYPE);
         switch (authType) {
             case STATIC_AUTH_TYPE: {
-                String accessKey = bucketURI.extensionString(BucketURI.ACCESS_KEY_KEY, System.getenv("KAFKA_S3_ACCESS_KEY"));
-                String secretKey = bucketURI.extensionString(BucketURI.SECRET_KEY_KEY, System.getenv("KAFKA_S3_SECRET_KEY"));
-                if (StringUtils.isBlank(accessKey) || StringUtils.isBlank(secretKey)) {
-                    return Collections.emptyList();
-                }
-                return List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
+                AwsCredentialsProvider acp = staticProfileCredentialsProvider();
+                return acp != null ? List.of(acp) : Collections.emptyList();
             }
             case INSTANCE_AUTH_TYPE: {
                 return List.of(instanceProfileCredentialsProvider());
             }
+            case DEFAULT_AUTH_TYPE: {
+                return List.of(DefaultCredentialsProvider.create());
+            }
             default:
                 throw new UnsupportedOperationException("Unsupported auth type: " + authType);
         }
+    }
+
+    protected AwsCredentialsProvider staticProfileCredentialsProvider() {
+        String accessKey = bucketURI.extensionString(BucketURI.ACCESS_KEY_KEY, System.getenv("KAFKA_S3_ACCESS_KEY"));
+        String secretKey = bucketURI.extensionString(BucketURI.SECRET_KEY_KEY, System.getenv("KAFKA_S3_SECRET_KEY"));
+        if (StringUtils.isBlank(accessKey) || StringUtils.isBlank(secretKey)) {
+            return null;
+        }
+        return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey));
     }
 
     protected AwsCredentialsProvider instanceProfileCredentialsProvider() {
@@ -438,7 +448,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private AwsCredentialsProvider newCredentialsProviderChain(List<AwsCredentialsProvider> credentialsProviders) {
         List<AwsCredentialsProvider> providers = new ArrayList<>(credentialsProviders);
         // Add default providers to the end of the chain
-        providers.add(InstanceProfileCredentialsProvider.create());
         providers.add(AnonymousCredentialsProvider.create());
         return AwsCredentialsProviderChain.builder()
             .reuseLastProviderEnabled(true)
