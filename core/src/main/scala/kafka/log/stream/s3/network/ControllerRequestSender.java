@@ -23,6 +23,8 @@ import org.apache.kafka.common.requests.s3.AbstractBatchResponse;
 import org.apache.kafka.server.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.NodeToControllerChannelManager;
 
+import com.automq.stream.utils.Threads;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,8 +38,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
-
-import com.automq.stream.utils.Threads;
 
 public class ControllerRequestSender {
 
