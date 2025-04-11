@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -40,11 +39,12 @@ import java.util.function.Function;
 
 import com.automq.stream.utils.Threads;
 
-import io.netty.util.concurrent.DefaultThreadFactory;
-
 public class ControllerRequestSender {
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
+
     private static final long MAX_RETRY_DELAY_MS = 10 * 1000; // 10s
+
     private final RetryPolicyContext retryPolicyContext;
 
     private final NodeToControllerChannelManager channelManager;
