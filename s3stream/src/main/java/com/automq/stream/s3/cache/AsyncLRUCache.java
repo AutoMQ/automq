@@ -46,10 +46,12 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
             throw new IllegalArgumentException("maxSize must be positive");
         }
         this.maxSize = maxSize;
+    }
 
-        S3StreamMetricsManager.registerAsyncCacheSizeSupplier(this::totalSize, cacheName);
-        S3StreamMetricsManager.registerAsyncCacheMaxSizeSupplier(() -> maxSize, cacheName);
-        S3StreamMetricsManager.registerAsyncCacheItemNumberSupplier(this::size, cacheName);
+    public void init() {
+    S3StreamMetricsManager.registerAsyncCacheSizeSupplier(this::totalSize, cacheName);
+    S3StreamMetricsManager.registerAsyncCacheMaxSizeSupplier(() -> maxSize, cacheName);
+    S3StreamMetricsManager.registerAsyncCacheItemNumberSupplier(this::size, cacheName);
     }
 
     public synchronized void put(K key, V value) {

@@ -113,6 +113,9 @@ public class S3Stream implements Stream, StreamMetadataListener {
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
         this.options = options;
+    }
+
+    public void init() {
         if (snapshotRead()) {
             listenerHandle = streamManager.addMetadataListener(streamId, this);
         }

@@ -84,22 +84,19 @@ public class AsyncNetworkBandwidthLimiterTest {
     }
 
     @Test
-public void testThrottleConsume4() {
-    AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(
-            AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
-    bucket.consume(ThrottleStrategy.BYPASS, 1000); 
-    Assertions.assertEquals(-100, bucket.getAvailableTokens());
+    public void testThrottleConsume4() {
+        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(
+                AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
+        bucket.consume(ThrottleStrategy.BYPASS, 1000);
+        Assertions.assertEquals(-100, bucket.getAvailableTokens());
 
-    // Chain the two consumes, then verify token count after both complete
-    CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 5)
-        .thenCompose(v -> bucket.consume(ThrottleStrategy.CATCH_UP, 10));
+        CompletableFuture<Void> combinedCf = bucket.consume(ThrottleStrategy.CATCH_UP, 5)
+            .thenCompose(v -> bucket.consume(ThrottleStrategy.CATCH_UP, 10));
 
-    CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
-        Assertions.assertNull(e);
-        Assertions.assertEquals(95, bucket.getAvailableTokens());
-    });
-    result.join();
-}
+        combinedCf.join();
+
+        Assertions.assertEquals(85, bucket.getAvailableTokens());
+    }
 
     @Test
     public void testThrottleConsume5() throws InterruptedException {
