@@ -89,12 +89,10 @@ public class AsyncNetworkBandwidthLimiterTest {
                 AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
         bucket.consume(ThrottleStrategy.BYPASS, 1000);
         Assertions.assertEquals(-100, bucket.getAvailableTokens());
-
         CompletableFuture<Void> combinedCf = bucket.consume(ThrottleStrategy.CATCH_UP, 5)
             .thenCompose(v -> bucket.consume(ThrottleStrategy.CATCH_UP, 10));
 
         combinedCf.join();
-
         Assertions.assertEquals(85, bucket.getAvailableTokens());
     }
 
