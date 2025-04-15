@@ -178,8 +178,9 @@ public class LocalFileObjectStorage implements ObjectStorage {
             try {
                 for (ObjectPath objectPath : objectPaths) {
                     Path dataPath = dataPath(objectPath.key());
-                    size += fileSize(dataPath);
+                    long fileSize = fileSize(dataPath);
                     deleteFileAndEmptyParents(dataPath);
+                    size += fileSize;
                 }
                 cf.complete(null);
             } catch (Throwable e) {
