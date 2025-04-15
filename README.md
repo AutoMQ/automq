@@ -1,4 +1,4 @@
-# AutoMQ: A cloud-native alternative of Kafka by decoupling durability to cloud storage services like S3
+# AutoMQ is a modern version of Kafka designed for the cloud. It saves data in cloud storage systems like Amazon S3, making it more flexible, cost-effective, and easy to scale
 
 
 <div align="center">
