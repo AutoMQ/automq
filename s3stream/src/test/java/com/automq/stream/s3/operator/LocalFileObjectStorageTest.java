@@ -28,13 +28,16 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @Tag("S3Unit")
 public class LocalFileObjectStorageTest {
@@ -113,6 +116,24 @@ public class LocalFileObjectStorageTest {
             Collections.emptyList(),
             objectStorage.list("abc/deh").get().stream().map(ObjectStorage.ObjectPath::key).sorted().collect(Collectors.toList())
         );
+    }
+
+    @Test
+    public void testDiskFull() throws Throwable {
+        objectStorage.availableSpace.set(10);
+        String key = ObjectUtils.genKey(0, 100);
+        objectStorage.write(new ObjectStorage.WriteOptions(), "abc/def/100", Unpooled.wrappedBuffer("hhhhhhhhh".getBytes(StandardCharsets.UTF_8))).get();
+        CompletableFuture<?> w2 = objectStorage.write(new ObjectStorage.WriteOptions(), "abc/def/101", Unpooled.wrappedBuffer("h2".getBytes(StandardCharsets.UTF_8)));
+        CompletableFuture<?> w3 = objectStorage.write(new ObjectStorage.WriteOptions(), "abc/def/102", Unpooled.wrappedBuffer("h3".getBytes(StandardCharsets.UTF_8)));
+        assertEquals(2, objectStorage.waitingTasks.size());
+        assertEquals(1, objectStorage.availableSpace.get());
+        assertFalse(w2.isDone());
+        assertFalse(w3.isDone());
+        objectStorage.delete(List.of(new ObjectStorage.ObjectInfo(objectStorage.bucketId(), "abc/def/100", 0, 0))).get();
+        w2.get(1, TimeUnit.SECONDS);
+        w3.get(1, TimeUnit.SECONDS);
+        assertEquals(0, objectStorage.waitingTasks.size());
+        assertEquals(6, objectStorage.availableSpace.get());
     }
 
     private String substr(ByteBuf buf, int start, int end) {
