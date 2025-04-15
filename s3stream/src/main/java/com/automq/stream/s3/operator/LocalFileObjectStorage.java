@@ -13,6 +13,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
@@ -35,8 +36,10 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
 import io.netty.buffer.ByteBuf;
@@ -50,6 +53,9 @@ public class LocalFileObjectStorage implements ObjectStorage {
     private final String dataParentPathStr;
     private final String atomicWriteParentPathStr;
     private final AtomicLong atomicWriteCounter = new AtomicLong(0);
+    // thread-safe is guarded by synchronized(availableSpace)
+    final AtomicLong availableSpace = new AtomicLong();
+    final Queue<WriteTask> waitingTasks = new LinkedBlockingQueue<>();
     private final ExecutorService ioExecutor = Threads.newFixedThreadPoolWithMonitor(8, "LOCAL_FILE_OBJECT_STORAGE_IO", true, LOGGER);
 
     public LocalFileObjectStorage(BucketURI bucketURI) {
@@ -61,6 +67,14 @@ public class LocalFileObjectStorage implements ObjectStorage {
         this.dataParentPath = Path.of(dataParentPathStr);
         this.atomicWriteParentPathStr = bucketURI.bucket() + File.separator + "atomic";
 
+        try {
+            if (!dataParentPath.toFile().isDirectory()) {
+                Files.createDirectories(dataParentPath);
+            }
+            availableSpace.set(new File(dataParentPathStr).getFreeSpace() - 2L * 1024 * 1024 * 1024);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(Path.of(atomicWriteParentPathStr))) {
             for (Path file : stream) {
                 if (Files.isRegularFile(file)) {
@@ -160,13 +174,19 @@ public class LocalFileObjectStorage implements ObjectStorage {
     public CompletableFuture<Void> delete(List<ObjectPath> objectPaths) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         ioExecutor.submit(() -> {
+            long size = 0;
             try {
                 for (ObjectPath objectPath : objectPaths) {
-                    deleteFileAndEmptyParents(dataPath(objectPath.key()));
+                    Path dataPath = dataPath(objectPath.key());
+                    long fileSize = fileSize(dataPath);
+                    deleteFileAndEmptyParents(dataPath);
+                    size += fileSize;
                 }
                 cf.complete(null);
             } catch (Throwable e) {
                 cf.completeExceptionally(e);
+            } finally {
+                freeSpace(size);
             }
         });
         return cf;
@@ -198,6 +218,40 @@ public class LocalFileObjectStorage implements ObjectStorage {
                 parentDir = parentDir.getParent();
             } catch (DirectoryNotEmptyException | NoSuchFileException e) {
                 break;
+            }
+        }
+    }
+
+    private void acquireSpace(int size, Runnable task) {
+        boolean acquired = false;
+        synchronized (availableSpace) {
+            if (availableSpace.get() > size) {
+                availableSpace.addAndGet(-size);
+                acquired = true;
+            } else {
+                waitingTasks.add(new WriteTask(size, task));
+                LOGGER.info("[LOCAL_FILE_OBJECT_STORAGE_FULL]");
+            }
+        }
+        if (acquired) {
+            task.run();
+        }
+    }
+
+    private void freeSpace(long size) {
+        synchronized (availableSpace) {
+            availableSpace.addAndGet(size);
+            for (;;) {
+                WriteTask task = waitingTasks.peek();
+                if (task == null) {
+                    break;
+                }
+                if (task.writeSize > availableSpace.get()) {
+                    break;
+                }
+                waitingTasks.poll();
+                availableSpace.addAndGet(-task.writeSize);
+                FutureUtil.suppress(task.task::run, LOGGER);
             }
         }
     }
@@ -243,8 +297,9 @@ public class LocalFileObjectStorage implements ObjectStorage {
                 return retCf;
             }
             long startWritePosition = nextWritePosition;
-            nextWritePosition += data.readableBytes();
-            ioExecutor.execute(() -> {
+            int dataSize = data.readableBytes();
+            nextWritePosition += dataSize;
+            acquireSpace(dataSize, () -> ioExecutor.execute(() -> {
                 long position = startWritePosition;
                 try {
                     ByteBuffer[] buffers = data.nioBuffers();
@@ -257,7 +312,7 @@ public class LocalFileObjectStorage implements ObjectStorage {
                 } catch (Throwable e) {
                     cf.completeExceptionally(e);
                 }
-            });
+            }));
             writeCfList.add(retCf);
             return retCf;
         }
@@ -321,6 +376,14 @@ public class LocalFileObjectStorage implements ObjectStorage {
         return new Builder();
     }
 
+    private static long fileSize(Path filePath) {
+        try {
+            return Files.size(filePath);
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
     public static class Builder {
         private BucketURI bucketURI;
 
@@ -331,6 +394,17 @@ public class LocalFileObjectStorage implements ObjectStorage {
 
         public LocalFileObjectStorage build() {
             return new LocalFileObjectStorage(bucketURI);
+        }
+    }
+
+    static class WriteTask {
+        final long writeSize;
+        // The task should be a none blocking task
+        final Runnable task;
+
+        public WriteTask(long writeSize, Runnable task) {
+            this.writeSize = writeSize;
+            this.task = task;
         }
     }
 }
