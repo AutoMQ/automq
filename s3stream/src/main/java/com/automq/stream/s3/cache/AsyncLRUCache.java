@@ -49,9 +49,9 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     }
 
     public void init() {
-    S3StreamMetricsManager.registerAsyncCacheSizeSupplier(this::totalSize, cacheName);
-    S3StreamMetricsManager.registerAsyncCacheMaxSizeSupplier(() -> maxSize, cacheName);
-    S3StreamMetricsManager.registerAsyncCacheItemNumberSupplier(this::size, cacheName);
+        S3StreamMetricsManager.registerAsyncCacheSizeSupplier(this::totalSize, cacheName);
+        S3StreamMetricsManager.registerAsyncCacheMaxSizeSupplier(() -> maxSize, cacheName);
+        S3StreamMetricsManager.registerAsyncCacheItemNumberSupplier(this::size, cacheName);
     }
 
     public synchronized void put(K key, V value) {
