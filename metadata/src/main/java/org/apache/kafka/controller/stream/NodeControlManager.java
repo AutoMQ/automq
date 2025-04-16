@@ -11,6 +11,7 @@
 
 package org.apache.kafka.controller.stream;
 
+import org.apache.kafka.common.errors.s3.NodeLockedException;
 import org.apache.kafka.common.errors.s3.UnregisterNodeWithOpenStreamsException;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.AutomqRegisterNodeRequestData;
@@ -170,6 +171,9 @@ public class NodeControlManager {
     public ApiMessageAndVersion unregisterNodeRecord(int nodeId) {
         if (hasOpeningStreams(nodeId)) {
             throw new UnregisterNodeWithOpenStreamsException(String.format("Node %d has opening streams", nodeId));
+        }
+        if (lockedNodes.contains(nodeId)) {
+            throw new NodeLockedException(String.format("Node %d is locked", nodeId));
         }
         RemoveKVRecord removeKVRecord = new RemoveKVRecord().setKeys(List.of(KEY_PREFIX + nodeId));
         return new ApiMessageAndVersion(removeKVRecord, (short) 0);
