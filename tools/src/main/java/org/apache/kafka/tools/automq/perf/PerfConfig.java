@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
+import java.security.SecureRandom;
 
 import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.between;
@@ -334,7 +335,7 @@ public class PerfConfig {
 
     private String randomString(int length) {
         final String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        Random r = ThreadLocalRandom.current();
+        Random r = new SecureRandom();
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
             sb.append(characters.charAt(r.nextInt(characters.length())));
