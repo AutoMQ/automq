@@ -14,8 +14,10 @@ package kafka.automq.interceptor;
 import com.automq.stream.utils.URIUtils;
 
 import java.net.InetAddress;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public class ClientIdMetadata {
     private final String clientId;
@@ -60,6 +62,19 @@ public class ClientIdMetadata {
 
     public String connectionId() {
         return connectionId;
+    }
+
+    public InetAddress clientAddress() {
+        return clientAddress;
+    }
+
+    public List<String> metadata(String key) {
+        List<String> value = metadata.get(key);
+        return Objects.requireNonNullElse(value, Collections.emptyList());
+    }
+
+    public void metadata(String key, List<String> valueList) {
+        metadata.put(key, valueList);
     }
 
     @Override
