@@ -523,6 +523,7 @@ public class RecordAccumulator implements Closeable {
                     objectMap.put(endOffset, new WALObject(result.bucket(), path, firstOffset, objectLength));
                     objectDataBytes.addAndGet(objectLength);
 
+                    // TODO: only remove records when all upload tasks before `firstOffset` is finished
                     List<Record> uploadedRecords = uploadMap.remove(firstOffset);
 
                     // Update flushed offset

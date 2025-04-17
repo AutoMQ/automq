@@ -200,6 +200,7 @@ public class ObjectWALService implements WriteAheadLog {
 
         public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
             int readAheadObjectSize) {
+            // TODO: check and drop discontinuous objects.
             this.objectList = objectList;
             this.objectStorage = objectStorage;
             this.readAheadObjectSize = readAheadObjectSize;
