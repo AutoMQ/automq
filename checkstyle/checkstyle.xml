@@ -27,6 +27,9 @@
 <!--  <module name="Header">-->
 <!--    <property name="headerFile" value="${config_loc}/java.header" />-->
 <!--  </module>-->
+    <module name="BeforeExecutionExclusionFileFilter">
+        <property name="fileNamePattern" value=".*[/\\]generated[/\\]source[/\\]proto[/\\]main[/\\]java[/\\].*"/>
+    </module>
 
   <module name="TreeWalker">
 
@@ -152,7 +155,7 @@
     <module name="SuppressWarningsHolder"/>
 
     <module name="ModifierOrder"/>
-    
+
   </module>
 
   <module name="SuppressionFilter">
