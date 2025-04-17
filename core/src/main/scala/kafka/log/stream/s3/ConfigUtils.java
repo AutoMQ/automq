@@ -26,6 +26,7 @@ public class ConfigUtils {
             .walConfig(config.walConfig())
             .walCacheSize(s.s3WALCacheSize())
             .walUploadThreshold(s.s3WALUploadThreshold())
+            .walUploadIntervalMs(s.s3WALUploadIntervalMs())
             .streamSplitSize(s.s3StreamSplitSize())
             .objectBlockSize(s.s3ObjectBlockSize())
             .objectPartSize(s.s3ObjectPartSize())

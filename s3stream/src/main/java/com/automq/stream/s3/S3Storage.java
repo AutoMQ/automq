@@ -150,6 +150,9 @@ public class S3Storage implements Storage {
         this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
         S3StreamMetricsManager.registerDeltaWalPendingUploadBytesSupplier(this.pendingUploadBytes::get);
+        if (config.walUploadIntervalMs() > 0) {
+            this.backgroundExecutor.scheduleWithFixedDelay(this::maybeForceUpload, config.walUploadIntervalMs(), config.walUploadIntervalMs(), TimeUnit.MILLISECONDS);
+        }
     }
 
     /**
@@ -634,7 +637,6 @@ public class S3Storage implements Storage {
     }
 
     private CompletableFuture<Void> forceUpload() {
-        LOGGER.info("force upload all streams");
         CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
         cf.whenComplete((nil, ignored) -> forceUploadCallback());
         return cf;
