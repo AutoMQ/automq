@@ -336,6 +336,10 @@ class Partition(val topicPartition: TopicPartition,
   // If ReplicaAlterLogDir command is in progress, this is future location of the log
   @volatile var futureLog: Option[UnifiedLog] = None
 
+  // AutoMQ inject start
+  @volatile var snapshotRead = false
+  // AutoMQ inject end
+
   // Partition listeners
   private val listeners = new CopyOnWriteArrayList[PartitionListener]()
 
@@ -533,6 +537,7 @@ class Partition(val topicPartition: TopicPartition,
           val initialHighWatermark = log.logEndOffset
           // the high watermark is the same as the log end offset
           log.updateHighWatermark(initialHighWatermark)
+          snapshotRead = elasticUnifiedLog.snapshotRead
           info(s"Log loaded for partition $topicPartition with initial high watermark $initialHighWatermark")
         case _ =>
           updateHighWatermark(log)
@@ -1512,6 +1517,13 @@ class Partition(val topicPartition: TopicPartition,
       // AutoMQ for Kafka inject end
       leaderLogIfLocal match {
         case Some(leaderLog) =>
+          // AutoMQ inject start
+          if (snapshotRead) {
+            throw new NotLeaderOrFollowerException("Cannot write snapshot read partition %s on broker %d"
+              .format(topicPartition, localBrokerId))
+          }
+          // AutoMQ inject end
+
           val minIsr = effectiveMinIsr(leaderLog)
           val inSyncSize = partitionState.isr.size
 
