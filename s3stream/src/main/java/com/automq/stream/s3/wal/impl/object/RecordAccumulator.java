@@ -118,12 +118,12 @@ public class RecordAccumulator implements Closeable {
                     }
 
                     long length = object.size();
-                    long endOffset = firstOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
+                    WALObject walObject = new WALObject(object.bucketId(), path, firstOffset, length);
 
                     if (epoch != config.epoch()) {
-                        previousObjectMap.put(Pair.of(epoch, endOffset), new WALObject(object.bucketId(), path, firstOffset, length));
+                        previousObjectMap.put(Pair.of(epoch, walObject.endOffset()), walObject);
                     } else {
-                        objectMap.put(endOffset, new WALObject(object.bucketId(), path, firstOffset, length));
+                        objectMap.put(walObject.endOffset(), walObject);
                     }
                     objectDataBytes.addAndGet(length);
                 } catch (NumberFormatException e) {
@@ -645,6 +645,20 @@ public class RecordAccumulator implements Closeable {
 
         public long length() {
             return length;
+        }
+
+        public long endOffset() {
+            return startOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
+        }
+
+        @Override
+        public String toString() {
+            return "WALObject{" +
+                "bucketId=" + bucketId +
+                ", path='" + path + '\'' +
+                ", startOffset=" + startOffset +
+                ", length=" + length +
+                '}';
         }
     }
 }

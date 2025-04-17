@@ -44,6 +44,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -200,8 +202,7 @@ public class ObjectWALService implements WriteAheadLog {
 
         public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
             int readAheadObjectSize) {
-            // TODO: check and drop discontinuous objects.
-            this.objectList = objectList;
+            this.objectList = getContinuousFromStart(objectList);
             this.objectStorage = objectStorage;
             this.readAheadObjectSize = readAheadObjectSize;
             this.readAheadQueue = new ArrayDeque<>(readAheadObjectSize);
@@ -211,6 +212,26 @@ public class ObjectWALService implements WriteAheadLog {
                 tryReadAhead();
             }
         }
+
+        public static List<RecordAccumulator.WALObject> getContinuousFromStart(List<RecordAccumulator.WALObject> objectList) {
+            if (objectList.isEmpty()) {
+                return Collections.emptyList();
+            }
+            int endIndex = 1;
+            for (int i = 1; i < objectList.size(); i++) {
+                if (objectList.get(i - 1).endOffset() != objectList.get(i).startOffset()) {
+                    break;
+                }
+                endIndex = i + 1;
+            }
+            if (endIndex < objectList.size()) {
+                for (int i = endIndex; i < objectList.size(); i++) {
+                    log.warn("dropped discontinuous object: {}", objectList.get(i));
+                }
+            }
+            return new ArrayList<>(objectList.subList(0, endIndex));
+        }
+
 
         @Override
         public boolean hasNext() {
