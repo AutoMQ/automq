@@ -42,6 +42,7 @@ import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,7 +69,7 @@ public class RecordAccumulator implements Closeable {
     protected final Time time;
     protected final ObjectStorage objectStorage;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-    private final ConcurrentNavigableMap<Long /* inclusive first offset */, List<Record>> uploadMap = new ConcurrentSkipListMap<>();
+    private final ConcurrentNavigableMap<Long /* inclusive first offset */, UploadTask> uploadMap = new ConcurrentSkipListMap<>();
     private final ConcurrentNavigableMap<Pair<Long /* epoch */, Long /* exclusive end offset */>, WALObject> previousObjectMap = new ConcurrentSkipListMap<>();
     private final ConcurrentNavigableMap<Long /* exclusive end offset */, WALObject> objectMap = new ConcurrentSkipListMap<>();
     private final String nodePrefix;
@@ -117,12 +118,12 @@ public class RecordAccumulator implements Closeable {
                     }
 
                     long length = object.size();
-                    long endOffset = firstOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
+                    WALObject walObject = new WALObject(object.bucketId(), path, firstOffset, length);
 
                     if (epoch != config.epoch()) {
-                        previousObjectMap.put(Pair.of(epoch, endOffset), new WALObject(object.bucketId(), path, firstOffset, length));
+                        previousObjectMap.put(Pair.of(epoch, walObject.endOffset()), walObject);
                     } else {
-                        objectMap.put(endOffset, new WALObject(object.bucketId(), path, firstOffset, length));
+                        objectMap.put(walObject.endOffset(), walObject);
                     }
                     objectDataBytes.addAndGet(length);
                 } catch (NumberFormatException e) {
@@ -499,7 +500,7 @@ public class RecordAccumulator implements Closeable {
 
         // Trigger upload.
         int objectLength = objectBuffer.readableBytes();
-        uploadMap.put(firstOffset, recordList);
+        uploadMap.put(firstOffset, new UploadTask(recordList));
 
         // Enable fast retry.
         ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().enableFastRetry(true);
@@ -518,7 +519,13 @@ public class RecordAccumulator implements Closeable {
                     objectMap.put(endOffset, new WALObject(result.bucket(), path, firstOffset, objectLength));
                     objectDataBytes.addAndGet(objectLength);
 
-                    List<Record> uploadedRecords = uploadMap.remove(firstOffset);
+                    uploadMap.get(firstOffset).markFinished();
+                    List<UploadTask> finishedTasks = new ArrayList<>();
+                    // Remove consecutive completed tasks from head.
+                    Map.Entry<Long, UploadTask> entry;
+                    while ((entry = uploadMap.firstEntry()) != null && entry.getValue().isFinished()) {
+                        finishedTasks.add(uploadMap.remove(entry.getKey()));
+                    }
 
                     // Update flushed offset
                     if (!uploadMap.isEmpty()) {
@@ -530,7 +537,11 @@ public class RecordAccumulator implements Closeable {
                     }
 
                     // Release lock and complete future in callback thread.
-                    callbackService.submit(() -> uploadedRecords.forEach(record -> record.future.complete(flushedOffset::get)));
+                    for (UploadTask task : finishedTasks) {
+                        callbackService.submit(() ->
+                            task.records().forEach(record -> record.future.complete(flushedOffset::get))
+                        );
+                    }
                 } finally {
                     lock.writeLock().unlock();
                 }
@@ -539,7 +550,7 @@ public class RecordAccumulator implements Closeable {
                 bufferedDataBytes.addAndGet(-dataLength);
                 throwable = ExceptionUtils.getRootCause(throwable);
                 if (throwable instanceof WALFencedException) {
-                    List<Record> uploadedRecords = uploadMap.remove(firstOffset);
+                    List<Record> uploadedRecords = uploadMap.remove(firstOffset).records();
                     Throwable finalThrowable = throwable;
                     // Release lock and complete future in callback thread.
                     callbackService.submit(() -> uploadedRecords.forEach(record -> record.future.completeExceptionally(finalThrowable)));
@@ -561,6 +572,27 @@ public class RecordAccumulator implements Closeable {
             ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "upload", throwable == null);
             ObjectWALMetricsManager.recordOperationDataSize(objectLength, "upload");
         });
+    }
+
+    private static class UploadTask {
+        private final List<Record> records;
+        private boolean finished = false;
+
+        public UploadTask(List<Record> records) {
+            this.records = records;
+        }
+
+        public List<Record> records() {
+            return records;
+        }
+
+        public void markFinished() {
+            this.finished = true;
+        }
+
+        public boolean isFinished() {
+            return finished;
+        }
     }
 
     protected static class Record {
@@ -608,6 +640,20 @@ public class RecordAccumulator implements Closeable {
 
         public long length() {
             return length;
+        }
+
+        public long endOffset() {
+            return startOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
+        }
+
+        @Override
+        public String toString() {
+            return "WALObject{" +
+                "bucketId=" + bucketId +
+                ", path='" + path + '\'' +
+                ", startOffset=" + startOffset +
+                ", length=" + length +
+                '}';
         }
     }
 }
