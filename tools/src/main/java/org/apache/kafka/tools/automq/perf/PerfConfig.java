@@ -65,6 +65,7 @@ public class PerfConfig {
     public final int reportingIntervalSeconds;
     public final String valueSchema;
     public final String valuesFile;
+    public final String catchupTopicPrefix;
 
     public PerfConfig(String[] args) {
         ArgumentParser parser = parser();
@@ -105,7 +106,16 @@ public class PerfConfig {
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
         valueSchema = ns.getString("valueSchema");
         valuesFile = ns.get("valuesFile");
+        catchupTopicPrefix = ns.getString("catchupTopicPrefix");
 
+        if (catchupTopicPrefix != null && !catchupTopicPrefix.isEmpty())  {
+            if (reset) {
+                throw new IllegalArgumentException(
+                    "Cannot use --reset with --catchup-topic-prefix"
+                );
+            }
+        }
+            
         if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
                 backlogDurationSeconds, groupsPerTopic, groupStartDelaySeconds));
@@ -260,6 +270,12 @@ public class PerfConfig {
             .dest("valuesFile")
             .metavar("VALUES_FILE")
             .help("The avro value file. Example file content {\"f1\": \"value1\"}");
+        parser.addArgument("--catchup-topic-prefix")
+            .type(String.class)
+            .dest("catchupTopicPrefix")
+            .metavar("CATCHUP_TOPIC_PREFIX")
+            .help("Prefix of existing topics to reuse for catchup testing");
+        
         return parser;
     }
 

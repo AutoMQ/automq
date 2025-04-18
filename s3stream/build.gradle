@@ -1,0 +1,3 @@
+tasks.withType(JavaCompile) {
+    options.compilerArgs += ["-Xlint:-this-escape"]
+}
