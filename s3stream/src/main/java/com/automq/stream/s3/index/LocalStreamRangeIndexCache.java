@@ -317,36 +317,24 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         return exec(() -> {
             writeLock.lock();
             try {
-                if (rangeIndexMap == null || rangeIndexMap.isEmpty()) {
-                    Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
-                    while (iterator.hasNext()) {
-                        Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
-                        totalSize += entry.getValue().compact(null, compactedObjectIds);
-                        if (entry.getValue().length() == 0) {
-                            iterator.remove();
-                        }
-                    }
-                    return null;
-                }
-                for (Map.Entry<Long, Optional<RangeIndex>> entry : rangeIndexMap.entrySet()) {
+                // compact existing stream range index
+                Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
                     long streamId = entry.getKey();
-                    Optional<RangeIndex> rangeIndex = entry.getValue();
-                    streamRangeIndexMap.compute(streamId, (k, v) -> {
-                        if (v == null) {
-                            v = new SparseRangeIndex(COMPACT_NUM);
-                        }
-                        totalSize += v.compact(rangeIndex.orElse(null), compactedObjectIds);
-                        if (v.length() == 0) {
-                            // remove stream with empty index
-                            return null;
-                        }
-                        return v;
-                    });
+                    RangeIndex newRangeIndex = null;
+                    if (rangeIndexMap.containsKey(streamId)) {
+                        newRangeIndex = rangeIndexMap.get(streamId).orElse(null);
+                    }
+                    totalSize += entry.getValue().compact(newRangeIndex, compactedObjectIds);
+                    if (entry.getValue().length() == 0) {
+                        iterator.remove();
+                    }
                 }
+                return null;
             } finally {
                 writeLock.unlock();
             }
-            return null;
         });
     }
 
