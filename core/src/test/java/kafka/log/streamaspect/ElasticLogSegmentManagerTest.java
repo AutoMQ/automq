@@ -13,6 +13,7 @@ package kafka.log.streamaspect;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -31,6 +32,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class ElasticLogSegmentManagerTest {
     @Test

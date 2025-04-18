@@ -18,6 +18,7 @@
 package org.apache.kafka.controller.stream;
 
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.message.AlterPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.CloseStreamsRequestData.CloseStreamRequest;
 import org.apache.kafka.common.message.CloseStreamsResponseData.CloseStreamResponse;
 import org.apache.kafka.common.message.CommitStreamObjectRequestData;
@@ -56,6 +57,7 @@ import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.controller.ClusterControlManager;
+import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.controller.QuorumController;
@@ -72,6 +74,7 @@ import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
+import org.apache.kafka.timeline.TimelineHashSet;
 import org.apache.kafka.timeline.TimelineLong;
 
 import com.automq.stream.s3.ObjectReader;
@@ -79,6 +82,9 @@ import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.operator.LocalFileObjectStorage;
+import com.google.common.base.Strings;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -122,6 +128,7 @@ public class StreamControlManager {
     private final TimelineHashMap<Long/*streamId*/, StreamRuntimeMetadata> streamsMetadata;
 
     private final TimelineHashMap<Integer/*nodeId*/, NodeRuntimeMetadata> nodesMetadata;
+    private final TimelineHashSet<Integer> lockedNodes;
 
     private final TimelineHashMap<Long, Integer> stream2node;
     private final TimelineHashMap<Integer/* nodeId */, /* streams */DeltaList<Long>> node2streams;
@@ -152,6 +159,7 @@ public class StreamControlManager {
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 100000);
         this.nodesMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
+        this.lockedNodes = new TimelineHashSet<>(snapshotRegistry, 100);
         this.stream2node = new TimelineHashMap<>(snapshotRegistry, 100000);
         this.node2streams = new TimelineHashMap<>(snapshotRegistry, 100);
 
@@ -291,6 +299,16 @@ public class StreamControlManager {
             resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
+        int currentRangeOwner = streamMetadata.currentRangeOwner();
+        if (nodeId != currentRangeOwner && lockedNodes.contains(currentRangeOwner)) {
+            // Forbidden other nodes to open the stream if the last range is owned by a locked node
+            resp.setErrorCode(Errors.NODE_LOCKED.code());
+            log.warn("[OpenStream] the stream's last range is owned by a locked node {}. streamId={}, streamEpoch={}, requestEpoch={}, nodeId={}, nodeEpoch={}",
+                currentRangeOwner, streamId, streamMetadata.currentEpoch(), epoch, nodeId, nodeEpoch);
+            tryReassignPartitionBack(streamMetadata);
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+
         // now the request is valid, update the stream's epoch and create a new range for this node
         List<ApiMessageAndVersion> records = new ArrayList<>();
         int newRangeIndex = streamMetadata.currentRangeIndex() + 1;
@@ -629,6 +647,11 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
 
+        if (data.compactedObjectIds().size() == 1 && data.objectId() == data.compactedObjectIds().get(0)) {
+            // replace the stream set object
+            return replace(data);
+        }
+
         List<ObjectStreamRange> streamRanges = data.objectStreamRanges();
         List<Long> compactedObjectIds = data.compactedObjectIds();
         List<StreamObject> streamObjects = data.streamObjects();
@@ -660,10 +683,14 @@ public class StreamControlManager {
             records.addAll(destroyResult.records());
             // update dataTs to the min compacted object's dataTs
             //noinspection OptionalGetWithoutIsPresent
+            NodeRuntimeMetadata nodeMetadata = this.nodesMetadata.get(nodeId);
             dataTs = compactedObjectIds.stream()
-                .map(id -> this.nodesMetadata.get(nodeId).streamSetObjects().get(id))
+                .map(id -> nodeMetadata.streamSetObjects().get(id))
                 .map(S3StreamSetObject::dataTimeInMs)
                 .min(Long::compareTo).get();
+            if (orderId == -1L && !data.compactedObjectIds().isEmpty()) {
+                orderId = data.compactedObjectIds().stream().mapToLong(id -> nodeMetadata.streamSetObjects().get(id).orderId()).min().getAsLong();
+            }
         }
         if (objectId != NOOP_OBJECT_ID) {
             // generate node's stream set object record
@@ -713,6 +740,20 @@ public class StreamControlManager {
         }
         logCommitStreamSetObject(data);
         return ControllerResult.atomicOf(records, resp);
+    }
+
+    private ControllerResult<CommitStreamSetObjectResponseData> replace(CommitStreamSetObjectRequestData data) {
+        CommitStreamSetObjectResponseData resp = new CommitStreamSetObjectResponseData();
+        List<ApiMessageAndVersion> records = new ArrayList<>(1);
+        long objectId = data.objectId();
+        ControllerResult<Errors> rst = s3ObjectControlManager.replaceCommittedObject(objectId, data.attributes());
+        if (rst.response() == Errors.NONE) {
+            records.addAll(rst.records());
+            return ControllerResult.of(records, resp);
+        } else {
+            resp.setErrorCode(rst.response().code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
     }
 
     private ControllerResult<CommitStreamSetObjectResponseData> generateStreamObject(List<StreamObject> streamObjects,
@@ -802,6 +843,10 @@ public class StreamControlManager {
         CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
         long committedTs = System.currentTimeMillis();
 
+        if (data.sourceObjectIds().size() == 1 && streamObjectId == data.sourceObjectIds().get(0)) {
+            return replace(data);
+        }
+
         // verify node epoch
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch);
         if (nodeEpochCheckResult != Errors.NONE) {
@@ -871,6 +916,20 @@ public class StreamControlManager {
         log.info("[CommitStreamObject]: successfully commit stream object. streamObjectId={}, streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, compactedObjects={}",
             streamObjectId, streamId, streamEpoch, nodeId, nodeEpoch, sourceObjectIds);
         return ControllerResult.atomicOf(records, resp);
+    }
+
+    private ControllerResult<CommitStreamObjectResponseData> replace(CommitStreamObjectRequestData data) {
+        CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
+        List<ApiMessageAndVersion> records = new ArrayList<>(1);
+        long objectId = data.objectId();
+        ControllerResult<Errors> rst = s3ObjectControlManager.replaceCommittedObject(objectId, data.attributes());
+        if (rst.response() == Errors.NONE) {
+            records.addAll(rst.records());
+            return ControllerResult.of(records, resp);
+        } else {
+            resp.setErrorCode(rst.response().code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
     }
 
     private DescribeStreamsResponseData bulidDescribeStreamsResponseData(
@@ -1073,7 +1132,7 @@ public class StreamControlManager {
     public List<StreamRuntimeMetadata> getOpeningStreams(int nodeId) {
         List<Long> streamIdList = Optional.ofNullable(node2streams.get(nodeId)).map(l -> l.toList()).orElse(Collections.emptyList());
         List<StreamRuntimeMetadata> streams = new ArrayList<>(streamIdList.size());
-        for (Long streamId: streamIdList) {
+        for (Long streamId : streamIdList) {
             StreamRuntimeMetadata streamRuntimeMetadata = streamsMetadata.get(streamId);
             if (streamRuntimeMetadata == null) {
                 continue;
@@ -1239,7 +1298,12 @@ public class StreamControlManager {
                 return;
             }
             List<S3StreamSetObject> objects = new ArrayList<>(nodeRuntimeMetadata.streamSetObjects().values());
-            if (objects.isEmpty()) {
+            boolean inMainStorageCircuitBreakerOpenStatus = objects.stream().anyMatch(sso -> {
+                return Optional.ofNullable(s3ObjectControlManager.getObject(sso.objectId()))
+                    .map(o -> ObjectAttributes.from(o.getAttributes()).bucket() == LocalFileObjectStorage.BUCKET_ID)
+                    .orElse(false);
+            });
+            if (objects.isEmpty() || inMainStorageCircuitBreakerOpenStatus) {
                 return;
             }
             CleanUpScaleInNodeContext ctx = new CleanUpScaleInNodeContext(nodeId, objects);
@@ -1254,6 +1318,14 @@ public class StreamControlManager {
 
         });
         return ControllerResult.of(records, null);
+    }
+
+    public void lock(int nodeId) {
+        lockedNodes.add(nodeId);
+    }
+
+    public void unlock(int nodeId) {
+        lockedNodes.remove(nodeId);
     }
 
     public void replay(AssignedStreamIdRecord record) {
@@ -1554,5 +1626,35 @@ public class StreamControlManager {
         records.addAll(this.s3ObjectControlManager.markDestroyObjects(List.of(object.objectId())).records());
         LOGGER.info("clean up scaled-in node={} object={}", object.nodeId(), object.objectId());
         return ControllerResult.of(records, true);
+    }
+
+    private void tryReassignPartitionBack(StreamRuntimeMetadata stream) {
+        ControllerRequestContext context = new ControllerRequestContext(null, null, OptionalLong.empty());
+        AlterPartitionReassignmentsRequestData request = new AlterPartitionReassignmentsRequestData();
+        String rawTopicId = stream.tags().get(StreamTags.Topic.KEY);
+        String rawPartitionIndex = stream.tags().get(StreamTags.Partition.KEY);
+        if (Strings.isNullOrEmpty(rawTopicId) || Strings.isNullOrEmpty(rawPartitionIndex)) {
+            return;
+        }
+        Uuid topicId = Uuid.fromString(rawTopicId);
+        int partitionIndex = StreamTags.Partition.decode(rawPartitionIndex);
+        int nodeId = stream.currentRangeOwner();
+        quorumController.findTopicNames(context, List.of(topicId)).thenAccept(uuid2name -> {
+            String topicName = Optional.ofNullable(uuid2name.get(topicId)).filter(r -> !r.isError()).map(r -> r.result()).orElse(null);
+            if (topicName == null) {
+                return;
+            }
+            request.setTopics(List.of(new AlterPartitionReassignmentsRequestData.ReassignableTopic()
+                .setName(topicName)
+                .setPartitions(List.of(
+                    new AlterPartitionReassignmentsRequestData.ReassignablePartition()
+                        .setPartitionIndex(partitionIndex)
+                        .setReplicas(List.of(nodeId))
+                ))));
+            quorumController.alterPartitionReassignments(context, request)
+                .thenAccept(rst -> {
+                    LOGGER.info("[REASSIGN_PARTITION_BACK_TO_LOCKED_NODE],req={},resp={}", request, rst);
+                });
+        });
     }
 }

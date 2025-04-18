@@ -39,6 +39,7 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,7 +53,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
@@ -77,7 +77,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         this.pendingGetObjectsTasks = new LinkedList<>();
         this.objectReaderFactory = objectReaderFactory;
         this.indexCache = indexCache;
-        this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
+        this.pendingExecutorService =
+            Threads.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"), LOGGER);
         broker.metadataLoader().installPublishers(List.of(this)).join();
     }
 

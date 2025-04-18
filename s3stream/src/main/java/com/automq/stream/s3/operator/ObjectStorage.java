@@ -56,12 +56,13 @@ public interface ObjectStorage {
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
     // Low level API
-    CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf);
+    default CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf) {
+        Writer writer = writer(options, objectPath);
+        writer.write(buf);
+        return writer.close().thenApply(nil -> new WriteResult(bucketId()));
+    }
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
-
-    // NOTE: this is a temporary method to get bucketId for direct read with object storage interface
-    short bucketId();
 
     /**
      * The deleteObjects API have max batch limit.
@@ -71,6 +72,8 @@ public interface ObjectStorage {
      * The caller may do the batch split logic if the delete operation need fine-grained control
      */
     CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
+
+    short bucketId();
 
     class ObjectPath {
         private final short bucketId;
@@ -179,7 +182,7 @@ public interface ObjectStorage {
             return apiCallAttemptTimeout;
         }
 
-        // The value will be set by writer
+        // Writer will set the value
         WriteOptions bucketId(short bucketId) {
             this.bucketId = bucketId;
             return this;

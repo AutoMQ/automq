@@ -11,6 +11,7 @@
 
 package org.apache.kafka.controller.stream;
 
+import org.apache.kafka.common.errors.s3.NodeLockedException;
 import org.apache.kafka.common.errors.s3.UnregisterNodeWithOpenStreamsException;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.AutomqRegisterNodeRequestData;
@@ -24,6 +25,7 @@ import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
+import org.apache.kafka.timeline.TimelineHashSet;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,8 +33,10 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class NodeControlManager {
@@ -40,12 +44,14 @@ public class NodeControlManager {
     private static final String KEY_PREFIX = "__automq_node/";
 
     final TimelineHashMap<Integer, NodeMetadata> nodeMetadataMap;
+    final TimelineHashSet<Integer> lockedNodes;
 
-    private final NodeRuntimeInfoGetter nodeRuntimeInfoGetter;
+    private final NodeRuntimeInfoManager nodeRuntimeInfoManager;
 
-    public NodeControlManager(SnapshotRegistry registry, NodeRuntimeInfoGetter nodeRuntimeInfoGetter) {
+    public NodeControlManager(SnapshotRegistry registry, NodeRuntimeInfoManager nodeRuntimeInfoManager) {
         this.nodeMetadataMap = new TimelineHashMap<>(registry, 100);
-        this.nodeRuntimeInfoGetter = nodeRuntimeInfoGetter;
+        this.lockedNodes = new TimelineHashSet<>(registry, 100);
+        this.nodeRuntimeInfoManager = nodeRuntimeInfoManager;
     }
 
     public ControllerResult<AutomqRegisterNodeResponseData> register(AutomqRegisterNodeRequest req) {
@@ -102,17 +108,17 @@ public class NodeControlManager {
     }
 
     public NodeState state(int nodeId) {
-        return nodeRuntimeInfoGetter.state(nodeId);
+        return nodeRuntimeInfoManager.state(nodeId);
     }
 
     /**
      * Note: It is costly to check if a node has opening streams, so it is recommended to use this method only when necessary.
      */
     public boolean hasOpeningStreams(int nodeId) {
-        return nodeRuntimeInfoGetter.hasOpeningStreams(nodeId);
+        return nodeRuntimeInfoManager.hasOpeningStreams(nodeId);
     }
 
-    public void replay(KVRecord kvRecord) {
+    public synchronized void replay(KVRecord kvRecord) {
         for (KVRecord.KeyValue kv : kvRecord.keyValues()) {
             if (!(kv.key() != null && kv.key().startsWith(KEY_PREFIX))) {
                 continue;
@@ -121,10 +127,21 @@ public class NodeControlManager {
                 int nodeId = Integer.parseInt(kv.key().substring(KEY_PREFIX.length()));
                 NodeMetadata nodeMetadata = NodeMetadataCodec.decode(kv.value());
                 nodeMetadataMap.put(nodeId, nodeMetadata);
+                if ("CLOSED".equals(nodeMetadata.getTags().getOrDefault("CIRCUIT_BREAKER", "CLOSED"))) {
+                    nodeRuntimeInfoManager.unlock(nodeId);
+                    lockedNodes.remove(nodeId);
+                } else {
+                    nodeRuntimeInfoManager.lock(nodeId);
+                    lockedNodes.add(nodeId);
+                }
             } catch (Throwable e) {
                 LOGGER.error("[FATAL] replay NodeMetadata from KV fail", e);
             }
         }
+    }
+
+    public synchronized Set<Integer> lockedNodes() {
+        return new HashSet<>(lockedNodes);
     }
 
     ApiMessageAndVersion registerNodeRecord(int nodeId, NodeMetadata newNodeMetadata) {
@@ -144,6 +161,7 @@ public class NodeControlManager {
             try {
                 int nodeId = Integer.parseInt(key.substring(KEY_PREFIX.length()));
                 nodeMetadataMap.remove(nodeId);
+                nodeRuntimeInfoManager.unlock(nodeId);
             } catch (Throwable e) {
                 LOGGER.error("[FATAL] replay NodeMetadata from KV fail", e);
             }
@@ -153,6 +171,9 @@ public class NodeControlManager {
     public ApiMessageAndVersion unregisterNodeRecord(int nodeId) {
         if (hasOpeningStreams(nodeId)) {
             throw new UnregisterNodeWithOpenStreamsException(String.format("Node %d has opening streams", nodeId));
+        }
+        if (lockedNodes.contains(nodeId)) {
+            throw new NodeLockedException(String.format("Node %d is locked", nodeId));
         }
         RemoveKVRecord removeKVRecord = new RemoveKVRecord().setKeys(List.of(KEY_PREFIX + nodeId));
         return new ApiMessageAndVersion(removeKVRecord, (short) 0);

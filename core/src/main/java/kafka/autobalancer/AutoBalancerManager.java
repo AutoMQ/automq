@@ -75,6 +75,7 @@ public class AutoBalancerManager extends AutoBalancerService {
 
         this.anomalyDetector = new AnomalyDetectorImpl(config.originals(),
             new LogContext(String.format("[AnomalyDetector id=%d] ", nodeId)), clusterModel, actionExecutorService);
+        ((AnomalyDetectorImpl) this.anomalyDetector).lockedNodes(() -> quorumController.nodeControlManager().lockedNodes());
 
         this.reconfigurables.add(anomalyDetector);
 

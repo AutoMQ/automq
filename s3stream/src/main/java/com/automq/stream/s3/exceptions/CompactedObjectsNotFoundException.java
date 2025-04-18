@@ -11,18 +11,5 @@
 
 package com.automq.stream.s3.exceptions;
 
-public class ObjectNotExistException extends AutoMQException {
-
-    public ObjectNotExistException() {
-    }
-
-    public ObjectNotExistException(long objectId) {
-        super("Object not exist: " + objectId);
-    }
-
-    public ObjectNotExistException(Throwable cause) {
-        super(cause.getMessage());
-        this.addSuppressed(cause);
-    }
-
+public class CompactedObjectsNotFoundException extends AutoMQException {
 }

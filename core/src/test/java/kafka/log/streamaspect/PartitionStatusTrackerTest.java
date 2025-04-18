@@ -16,9 +16,11 @@ import org.apache.kafka.common.utils.MockTime;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class PartitionStatusTrackerTest {
 

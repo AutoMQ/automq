@@ -22,6 +22,8 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 
+import com.automq.stream.utils.Threads;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +58,8 @@ public class ProducerService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
 
     private final List<Producer> producers = new LinkedList<>();
-    private final ScheduledExecutorService adjustRateExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("perf-producer-rate-adjust", true));
+    private final ScheduledExecutorService adjustRateExecutor =
+        Threads.newSingleThreadScheduledExecutor("perf-producer-rate-adjust", true, LOGGER);
     private final ExecutorService executor = Executors.newCachedThreadPool(ThreadUtils.createThreadFactory("perf-producer", false));
 
     /**

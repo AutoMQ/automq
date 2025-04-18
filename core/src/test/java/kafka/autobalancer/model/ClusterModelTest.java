@@ -37,12 +37,14 @@ import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class ClusterModelTest {
 
