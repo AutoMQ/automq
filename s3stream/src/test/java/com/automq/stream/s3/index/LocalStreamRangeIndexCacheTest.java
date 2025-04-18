@@ -249,6 +249,42 @@ public class LocalStreamRangeIndexCacheTest {
         Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 300).join());
     }
 
+    @Test
+    public void testCompactWithStreamDeleted() {
+        ObjectStorage objectStorage = new MemoryObjectStorage();
+        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        cache.start();
+        cache.init(NODE_0, objectStorage);
+        CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
+        long startOffset = 50;
+        for (int i = 0; i < 10; i++) {
+            request.setObjectId(88 + i);
+            request.setStreamRanges(List.of(
+                new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100, 100),
+                new ObjectStreamRange(STREAM_1, 0, startOffset, startOffset + 100, 100)));
+            cache.updateIndexFromRequest(request).join();
+            startOffset += 100;
+        }
+        Assertions.assertEquals(10, cache.getStreamRangeIndexMap().get(STREAM_0).length());
+        Assertions.assertEquals(10, cache.getStreamRangeIndexMap().get(STREAM_1).length());
+        Assertions.assertEquals(20 * RangeIndex.OBJECT_SIZE, cache.totalSize());
+
+        // mock STREAM_0 deleted
+        request.setObjectId(256);
+        request.setStreamRanges(List.of(
+            new ObjectStreamRange(STREAM_1, 0, 50, 1050, 1000)
+        ));
+        request.setCompactedObjectIds(List.of(88L, 89L, 90L, 91L, 92L, 93L, 94L, 95L, 96L, 97L));
+        request.setStreamObjects(Collections.emptyList());
+        cache.updateIndexFromRequest(request).join();
+
+        Assertions.assertNull(cache.getStreamRangeIndexMap().get(STREAM_0));
+        Assertions.assertEquals(1, cache.getStreamRangeIndexMap().get(STREAM_1).getRangeIndexList().size());
+        Assertions.assertEquals(RangeIndex.OBJECT_SIZE, cache.totalSize());
+        Assertions.assertEquals(new RangeIndex(50, 1050, 256),
+            cache.getStreamRangeIndexMap().get(STREAM_1).getRangeIndexList().get(0));
+    }
+
     private StreamObject newStreamObject(long objectId, long objectSize, long streamId, long startOffset, long endOffset) {
         StreamObject streamObject = new StreamObject();
         streamObject.setObjectId(objectId);
