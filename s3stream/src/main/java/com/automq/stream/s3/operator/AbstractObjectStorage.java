@@ -662,10 +662,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public void close() {
-        writeLimiterCallbackExecutor.shutdown();
-        readCallbackExecutor.shutdown();
-        writeCallbackExecutor.shutdown();
-        scheduler.shutdown();
+        ThreadUtils.shutdownExecutor(writeLimiterCallbackExecutor, 1, TimeUnit.SECONDS);
+        ThreadUtils.shutdownExecutor(readCallbackExecutor, 1, TimeUnit.SECONDS);
+        ThreadUtils.shutdownExecutor(writeCallbackExecutor, 1, TimeUnit.SECONDS);
+        ThreadUtils.shutdownExecutor(scheduler, 1, TimeUnit.SECONDS);
         fastRetryTimer.stop();
         doClose();
     }

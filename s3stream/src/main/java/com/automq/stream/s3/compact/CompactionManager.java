@@ -207,16 +207,7 @@ public class CompactionManager {
     }
 
     private void shutdownAndAwaitTermination(ExecutorService executor, int timeout, TimeUnit timeUnit) {
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(timeout, timeUnit)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException ex) {
-            executor.shutdownNow();
-            // Preserve interrupt status
-            Thread.currentThread().interrupt();
-        }
+        ThreadUtils.shutdownExecutor(executor, timeout, timeUnit, logger);
     }
 
     public CompletableFuture<Void> compact() {

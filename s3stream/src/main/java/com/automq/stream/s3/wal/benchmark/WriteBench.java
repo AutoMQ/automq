@@ -116,14 +116,7 @@ public class WriteBench implements AutoCloseable {
         }
         Runnable stopLog = logIt(config, stat);
 
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(config.durationSeconds + 10, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-        }
+        ThreadUtils.shutdownExecutor(executor, config.durationSeconds + 10, TimeUnit.SECONDS);
         stopLog.run();
         stopTrim.run();
 
