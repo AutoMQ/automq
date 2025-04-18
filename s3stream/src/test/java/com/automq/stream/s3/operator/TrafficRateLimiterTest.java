@@ -18,6 +18,8 @@
  */
 
 package com.automq.stream.s3.operator;
+import com.automq.stream.utils.ThreadUtils;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -29,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -84,7 +87,7 @@ public class TrafficRateLimiterTest {
         } catch (InterruptedException | ExecutionException e) {
             throw new RuntimeException(e);
         } finally {
-            executor.shutdown();
+            ThreadUtils.shutdownExecutor(executor, 1, TimeUnit.SECONDS);
         }
     }
 }

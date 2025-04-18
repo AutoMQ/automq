@@ -120,7 +120,6 @@ public class WALBlockDeviceChannelTest {
         }
         executor.shutdown();
         assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
-
         channel.close();
     }
 
