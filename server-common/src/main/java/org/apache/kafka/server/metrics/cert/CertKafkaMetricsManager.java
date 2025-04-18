@@ -11,9 +11,6 @@
 
 package org.apache.kafka.server.metrics.cert;
 
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.metrics.Meter;
-import io.opentelemetry.api.metrics.ObservableLongGauge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +22,10 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.metrics.ObservableLongGauge;
 
 public class CertKafkaMetricsManager {
     // Logger for logging messages related to this class
