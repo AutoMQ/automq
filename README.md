@@ -1,4 +1,4 @@
-# AutoMQ: A Stateless Kafka on S3, offering 10x cost savings and scaling in seconds.
+# AutoMQ: A stateless Kafka on S3, offering 10x cost savings and scaling in seconds.
 
 <div align="center">
 <p align="center">
