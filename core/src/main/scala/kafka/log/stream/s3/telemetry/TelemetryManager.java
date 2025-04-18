@@ -18,6 +18,7 @@ import kafka.server.KafkaConfig;
 
 import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
+import org.apache.kafka.server.metrics.cert.CertKafkaMetricsManager;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
@@ -151,6 +152,10 @@ public class TelemetryManager {
 
         // kraft controller may not have s3WALPath config.
         ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
+        // Obtain the certificate chain and truststore certificates.
+        String certChain = kafkaConfig.getPassword("ssl.keystore.certificate.chain").value();
+        String truststoreCerts = kafkaConfig.getPassword("ssl.truststore.certificates").value();
+        CertKafkaMetricsManager.initMetrics(meter, truststoreCerts, certChain, TelemetryConstants.KAFKA_CERT_METRICS_PREFIX);
         this.oTelHistogramReporter.start(meter);
     }
 
