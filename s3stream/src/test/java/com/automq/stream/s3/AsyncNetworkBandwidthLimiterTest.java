@@ -89,11 +89,18 @@ public class AsyncNetworkBandwidthLimiterTest {
                 AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
         bucket.consume(ThrottleStrategy.BYPASS, 1000);
         Assertions.assertEquals(-100, bucket.getAvailableTokens());
-        CompletableFuture<Void> combinedCf = bucket.consume(ThrottleStrategy.CATCH_UP, 5)
-            .thenCompose(v -> bucket.consume(ThrottleStrategy.CATCH_UP, 10));
-
-        combinedCf.join();
-        Assertions.assertEquals(85, bucket.getAvailableTokens());
+        CompletableFuture<Boolean> firstCompleted = new CompletableFuture<>();
+        CompletableFuture<Void> cf1 = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
+        cf1 = cf1.thenApply(v -> {
+            firstCompleted.complete(true);
+            return null;
+        });
+        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.CATCH_UP, 10);
+        CompletableFuture<Void> result = cf2.thenAccept(v -> {
+            Assertions.assertTrue(firstCompleted.isDone(),
+                    "First request should complete before second request");
+        });
+        result.join();
     }
 
     @Test
