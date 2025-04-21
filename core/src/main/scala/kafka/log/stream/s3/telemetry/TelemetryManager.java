@@ -19,7 +19,6 @@ import kafka.server.KafkaConfig;
 import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
-import org.apache.kafka.server.metrics.cert.CertKafkaMetricsManager;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
 import com.automq.stream.s3.metrics.MetricsConfig;
@@ -145,6 +144,25 @@ public class TelemetryManager {
     }
 
     protected void initializeMetricsManager(Meter meter) {
+        S3StreamKafkaMetricsManager.setTruststoreCertsSupplier(() -> {
+            try {
+                Password truststoreCertsPassword = kafkaConfig.getPassword("ssl.truststore.certificates");
+                return truststoreCertsPassword != null ? truststoreCertsPassword.value() : null;
+            } catch (Exception e) {
+                LOGGER.error("Failed to get truststore certs", e);
+                return null;
+            }
+        });
+
+        S3StreamKafkaMetricsManager.setCertChainSupplier(() -> {
+            try {
+                Password certChainPassword = kafkaConfig.getPassword("ssl.keystore.certificate.chain");
+                return certChainPassword != null ? certChainPassword.value() : null;
+            } catch (Exception e) {
+                LOGGER.error("Failed to get cert chain", e);
+                return null;
+            }
+        });
         S3StreamMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
         S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
 
@@ -153,17 +171,6 @@ public class TelemetryManager {
 
         // kraft controller may not have s3WALPath config.
         ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
-        // Obtain the certificate chain and truststore certificates.
-        try {
-            Password certChainPassword = kafkaConfig.getPassword("ssl.keystore.certificate.chain");
-            Password truststoreCertsPassword = kafkaConfig.getPassword("ssl.truststore.certificates");
-
-            String certChain = certChainPassword != null ? certChainPassword.value() : null;
-            String truststoreCerts = truststoreCertsPassword != null ? truststoreCertsPassword.value() : null;
-            CertKafkaMetricsManager.initMetrics(meter, truststoreCerts, certChain, TelemetryConstants.KAFKA_CERT_METRICS_PREFIX);
-        } catch (Exception e) {
-            LOGGER.error("Failed to initialize cert metrics", e);
-        }
         this.oTelHistogramReporter.start(meter);
     }
 
