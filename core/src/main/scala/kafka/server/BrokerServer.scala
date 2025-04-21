@@ -822,6 +822,7 @@ class BrokerServer(
   protected def newTrafficInterceptor(): TrafficInterceptor = {
     val trafficInterceptor = new NoopTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
     dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
+    replicaManager.setTrafficInterceptor(trafficInterceptor)
     trafficInterceptor
   }
 

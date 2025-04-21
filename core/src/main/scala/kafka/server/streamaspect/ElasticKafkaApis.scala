@@ -822,15 +822,14 @@ class ElasticKafkaApis(
     trafficInterceptor.handleMetadataResponse(clientId, topics)
   }
 
-  def setTrafficInterceptor(produceRouter: TrafficInterceptor): Unit = {
-    this.trafficInterceptor = produceRouter
-  }
-
   def handleGetPartitionSnapshotRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val req = request.body[AutomqGetPartitionSnapshotRequest]
     val resp = replicaManager.asInstanceOf[ElasticReplicaManager].handleGetPartitionSnapshotRequest(req)
     requestHelper.sendMaybeThrottle(request, resp)
   }
 
+  def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {
+    this.trafficInterceptor = trafficInterceptor
+  }
 
 }
