@@ -1069,7 +1069,15 @@ class KafkaApis(val requestChannel: RequestChannel,
           request.context.principal,
           request.context.listenerName.value))
       } else {
-        Optional.empty()
+        // AutoMQ inject start
+        // Both leader partition and snapshot-read partition can handle the fetch request.
+        Optional.of(new DefaultClientMetadata(
+          null,
+          clientId,
+          request.context.clientAddress,
+          request.context.principal,
+          request.context.listenerName.value))
+        // AutoMQ inject end
       }
 
       val params = new FetchParams(
