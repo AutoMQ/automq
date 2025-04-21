@@ -21,7 +21,6 @@ public class TelemetryConstants {
     public static final String CONTROLLER_JMX_YAML_CONFIG_PATH = "/jmx/rules/controller.yaml";
     public static final String TELEMETRY_SCOPE_NAME = "automq_for_kafka";
     public static final String KAFKA_METRICS_PREFIX = "kafka_stream_";
-    public static final String KAFKA_CERT_METRICS_PREFIX = "kafka_cert_";
     public static final String KAFKA_WAL_METRICS_PREFIX = "kafka_wal_";
     public static final AttributeKey<Long> STREAM_ID_NAME = AttributeKey.longKey("streamId");
     public static final AttributeKey<Long> START_OFFSET_NAME = AttributeKey.longKey("startOffset");
