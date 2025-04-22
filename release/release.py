@@ -299,8 +299,6 @@ git.commit(f"Bump version to {release_version}")
 git.create_tag(rc_tag)
 git.switch_branch(starting_branch)
 git.merge_ref(rc_tag)
-git.push_ref(rc_tag)
-git.push_ref(starting_branch)
 
 # Note that we don't use tempfile here because mkdtemp causes problems with being able to determine the absolute path to a file.
 # Instead we rely on a fixed path
