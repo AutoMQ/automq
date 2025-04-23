@@ -2231,7 +2231,9 @@ project(':tools') {
     }
     // AutoMQ inject start
     implementation project(':automq-shell')
-    implementation libs.kafkaAvroSerializer
+    implementation (libs.kafkaAvroSerializer) {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
     implementation libs.bucket4j
     // AutoMQ inject end
 
