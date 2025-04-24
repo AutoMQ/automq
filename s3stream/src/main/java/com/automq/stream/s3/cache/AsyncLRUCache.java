@@ -40,7 +40,7 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     final Set<V> completedSet = new HashSet<>();
     final Set<V> removedSet = new HashSet<>();
 
-    public AsyncLRUCache(String cacheName, long maxSize) {
+    protected AsyncLRUCache(String cacheName, long maxSize) {
         this.cacheName = cacheName;
         if (maxSize <= 0) {
             throw new IllegalArgumentException("maxSize must be positive");
@@ -48,7 +48,13 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
         this.maxSize = maxSize;
     }
 
-    public void init() {
+    public static <K, V extends AsyncMeasurable> AsyncLRUCache<K, V> create(String cacheName, long maxSize) {
+        AsyncLRUCache<K, V> asyncLRUCache = new AsyncLRUCache<>(cacheName, maxSize);
+        asyncLRUCache.completeInitialization();
+        return asyncLRUCache;
+    }
+
+    private void completeInitialization() {
         S3StreamMetricsManager.registerAsyncCacheSizeSupplier(this::totalSize, cacheName);
         S3StreamMetricsManager.registerAsyncCacheMaxSizeSupplier(() -> maxSize, cacheName);
         S3StreamMetricsManager.registerAsyncCacheItemNumberSupplier(this::size, cacheName);

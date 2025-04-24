@@ -72,11 +72,17 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private CompletableFuture<Void> uploadCf = CompletableFuture.completedFuture(null);
     private long lastUploadTime = 0L;
 
-    public LocalStreamRangeIndexCache() {
-
+    private LocalStreamRangeIndexCache() {
+        
     }
-    
-    public void initMetrics() {
+
+    public static LocalStreamRangeIndexCache create() {
+        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        cache.completeInitialization();
+        return cache;
+    }
+
+    private void completeInitialization() {
         S3StreamMetricsManager.registerLocalStreamRangeIndexCacheSizeSupplier(this::totalSize);
         S3StreamMetricsManager.registerLocalStreamRangeIndexCacheStreamNumSupplier(() -> {
             readLock.lock();
@@ -221,7 +227,6 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
                     initCf.complete(null);
                     LOGGER.info("Loaded sparse index from object storage for {} streams at node {}", streamRangeIndexMap.size(), nodeId);
                 });
-            initMetrics();
         } finally {
             writeLock.unlock();
         }
