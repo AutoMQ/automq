@@ -121,9 +121,11 @@ public class PerfCommand implements AutoCloseable {
         int producers = producerService.createProducers(topics, config.producersConfig(), this::messageSent);
         LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
-        LOGGER.info("Waiting for topics to be ready...");
-        waitTopicsReady(consumerService.consumerCount() > 0);
-        LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+        if (config.awaitTopicReady) {
+            LOGGER.info("Waiting for topics to be ready...");
+            waitTopicsReady(consumerService.consumerCount() > 0);
+            LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+        }
 
         Function<String, List<byte[]>> payloads = payloads(config, topics);
         producerService.start(payloads, config.sendRate);

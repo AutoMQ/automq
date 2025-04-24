@@ -27,6 +27,7 @@ public class ReadOptions {
     private boolean fastRead;
     private boolean pooledBuf;
     private boolean prioritizedRead;
+    private boolean snapshotRead;
 
     public static Builder builder() {
         return new Builder();
@@ -42,6 +43,15 @@ public class ReadOptions {
 
     public boolean prioritizedRead() {
         return prioritizedRead;
+    }
+
+    public boolean snapshotRead() {
+        return snapshotRead;
+    }
+
+    public ReadOptions snapshotRead(boolean snapshotRead) {
+        this.snapshotRead = snapshotRead;
+        return this;
     }
 
     public static class Builder {
@@ -65,6 +75,11 @@ public class ReadOptions {
 
         public Builder prioritizedRead(boolean prioritizedRead) {
             options.prioritizedRead = prioritizedRead;
+            return this;
+        }
+
+        public Builder snapshotRead(boolean snapshotRead) {
+            options.snapshotRead = snapshotRead;
             return this;
         }
 

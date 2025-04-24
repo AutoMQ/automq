@@ -42,6 +42,7 @@ import org.slf4j.Logger;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -732,6 +733,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (waitingReadTasks.isEmpty()) {
                 return;
             }
+            waitingReadTasks.sort(Comparator.comparing(ReadTask::objectPath).thenComparingLong(ReadTask::start));
             int readPermit = availableReadPermit();
             while (readPermit > 0 && !waitingReadTasks.isEmpty()) {
                 Iterator<AbstractObjectStorage.ReadTask> it = waitingReadTasks.iterator();

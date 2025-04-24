@@ -268,7 +268,7 @@ public class ConsumerService implements AutoCloseable {
         }
 
         private String groupId(Topic topic) {
-            return String.format("sub-%s-%s-%03d", topic.name, groupSuffix, index);
+            return String.format("sub-%s-%03d", topic.name, index);
         }
 
         private Map<TopicPartition, OffsetAndMetadata> resetOffsetsRequest(Topic topic, long offset) {
