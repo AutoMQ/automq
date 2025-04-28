@@ -623,7 +623,7 @@ class KRaftMetadataCache(
     _currentImage.features().autoMQVersion()
   }
 
-  def safeRun[T](func: Function[MetadataImage, T]): T = {
+  override def safeRun[T](func: Function[MetadataImage, T]): T = {
     val image = retainedImage()
     try {
       func.apply(image)
