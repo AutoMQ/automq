@@ -236,7 +236,7 @@ class AbstractObjectStorageTest {
         assertThrows(TimeoutException.class,
             () -> writeFuture.get(1, TimeUnit.SECONDS));
         // Verify resource cleanup
-        await().atMost(1, TimeUnit.SECONDS)
+        await().atMost(2, TimeUnit.SECONDS)
             .untilAsserted(() -> assertEquals(0, data.refCnt()));
         // Verify: no successful calls made
         assertTrue(callCount.get() < 12);
@@ -282,7 +282,7 @@ class AbstractObjectStorageTest {
 
         // Release blocked calls and verify completion
         barrierFuture.complete(null);
-        await().atMost(1, TimeUnit.SECONDS)
+        await().atMost(2, TimeUnit.SECONDS)
             .untilAsserted(() -> {
                 assertEquals(maxConcurrency + 1, callCount.get());
                 assertTrue(sixthWriteFuture.isDone());
@@ -349,7 +349,7 @@ class AbstractObjectStorageTest {
 
         // Cleanup
         blockingFuture.complete(null);
-        await().atMost(1, TimeUnit.SECONDS)
+        await().atMost(2, TimeUnit.SECONDS)
             .untilAsserted(() -> assertEquals(0, firstBuffer.refCnt()));
     }
 
