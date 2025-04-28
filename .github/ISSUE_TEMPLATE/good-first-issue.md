@@ -1,7 +1,7 @@
 ---
-name: "⭐ Good first issue"
+name: "⭐ Good First Issue"
 about: Design good first issue for new contributors
-title: "[Good first issue] "
+title: "[Good First Issue] "
 labels: good first issue
 assignees: ''
 
@@ -11,33 +11,35 @@ assignees: ''
 
 <!--
 
-Please give your issue background.
-e.g. Now AutoMQ Kafka's logs are only stored in the local disk. We want to store them in the cloud object storage as well to offer the ability to query logs from object storage. Store logs on the object storage is cheaper and more reliable.
+Please provide the background for this issue.
+
+For example, currently, Kafka's logs are only stored on the local disk. We want to store them in cloud object storage as well to offer the ability to query logs from object storage. Storing logs in object storage is cheaper and more reliable.
 
 -->
 
-### What's our expectation for the issue
+### What's Our Expectation for This Issue
 
 <!--
 
-e.g. Local file logs still exist. When log is flushed to local file system, the log data will upload to object storage as well. The log path will be like `s3://bucket-name/automq/cluster-id/broker-id/logs/xx`. 
+For example, Local file logs should still exist. When logs are flushed to the local file system, the log data should also be uploaded to object storage. The log path should be like `s3://bucket-name/automq/cluster-id/broker-id/logs/xx`.
 
 -->
 
-### How to started
+### How to Get Started
+
 <!--
 
-Guide the developer how to complete the issue,including:
+Guide the developer on how to complete the issue, including:
 
-e.g.
-- Precondition: 
-    - You need to know the principal of how AutoMQ print logs to local file system.
-- What main classes are involved when you are coding:
+For example:
+- Precondition:
+    - You need to understand how AutoMQ prints logs to the local file system.
+- Main classes involved when coding:
     - `ExampleClassA`
     - `ExampleClassB`
-- Other tips: 
-    - You can refer to the `ExampleClassA` and `ExampleClassB` of AutoMQ Kafka to get some inspiration.
+- Other tips:
+    - You can refer to the `ExampleClassA` and `ExampleClassB` in AutoMQ for inspiration.
 -->
 
 ### Reference
-- [Kafka Official Document](https://kafka.apache.org/documentation/)
+- [Kafka Official Documentation](https://kafka.apache.org/documentation/)
