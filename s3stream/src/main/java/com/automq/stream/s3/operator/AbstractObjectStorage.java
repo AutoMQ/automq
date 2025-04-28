@@ -322,6 +322,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         if (checkTimeout(options, finalCf)) {
             attemptCf.completeExceptionally(new TimeoutException());
+            data.release();
             return;
         }
 
