@@ -36,14 +36,9 @@ import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.ReferenceCounted;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
-import software.amazon.awssdk.http.HttpStatusCode;
-import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -69,6 +64,13 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.ReferenceCounted;
+import software.amazon.awssdk.http.HttpStatusCode;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
