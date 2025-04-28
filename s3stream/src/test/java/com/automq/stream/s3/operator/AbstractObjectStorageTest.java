@@ -293,6 +293,65 @@ class AbstractObjectStorageTest {
             });
     }
 
+    @Test
+    void testWaitWritePermit() throws Exception {
+        final int maxConcurrency = 1;
+        objectStorage = spy(new MemoryObjectStorage(maxConcurrency));
+
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .enableFastRetry(false)
+            .retry(false);
+
+        // Block first call using completable future
+        CompletableFuture<Void> blockingFuture = new CompletableFuture<>();
+        AtomicInteger callCount = new AtomicInteger();
+
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            callCount.incrementAndGet();
+            return blockingFuture; // Always return blocking future for first call
+        });
+
+        // Phase 1: Acquire the only permit
+        ByteBuf firstBuffer = TestUtils.randomPooled(1024);
+        objectStorage.write(options, "testKey", firstBuffer);
+
+        // Verify permit acquisition
+        await().until(() -> callCount.get() == 1);
+
+        // Phase 2: Verify blocking behavior with interrupt
+        Thread blockingThread = new Thread(() -> {
+            ByteBuf byteBuf = TestUtils.randomPooled(1024);
+            try {
+                CompletableFuture<ObjectStorage.WriteResult> future =
+                    objectStorage.write(options, "testKey", byteBuf);
+                ExecutionException exception = assertThrows(ExecutionException.class, () -> future.get());
+                assertTrue(exception.getCause() instanceof InterruptedException);
+            } catch (Exception e) {
+                // Ignore
+            } finally {
+                await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
+                    assertEquals(0, byteBuf.refCnt());
+                });
+            }
+        });
+
+        blockingThread.start();
+
+        Thread.sleep(1000);
+
+        // Interrupt and verify
+        blockingThread.interrupt();
+        blockingThread.join();
+
+        // Verify resource cleanup
+        assertEquals(2, firstBuffer.refCnt());
+
+        // Cleanup
+        blockingFuture.complete(null);
+        await().atMost(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertEquals(0, firstBuffer.refCnt()));
+    }
+
 
     @Test
     void testReadToEndOfObject() throws ExecutionException, InterruptedException {
