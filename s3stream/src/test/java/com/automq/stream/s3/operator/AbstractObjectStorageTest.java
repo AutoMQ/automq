@@ -24,24 +24,30 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
-
+import io.netty.buffer.ByteBuf;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import io.netty.buffer.ByteBuf;
-
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -148,6 +154,87 @@ class AbstractObjectStorageTest {
                 buf.release();
                 return CompletableFuture.completedFuture(null);
             }).get();
+    }
+
+
+    @Test
+    void testFastRetry() throws Throwable {
+        // Initialize memory storage and spy to track method calls
+        objectStorage = new MemoryObjectStorage();
+        objectStorage = spy(objectStorage);
+
+        // Configure write options: enable fast retry, disable normal retry
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .enableFastRetry(true)
+            .retry(false);
+
+        // Mock S3 latency calculator via reflection to force fast retry condition
+        Field latencyCalculatorField = AbstractObjectStorage.class.getDeclaredField("s3LatencyCalculator");
+        latencyCalculatorField.setAccessible(true);
+        S3LatencyCalculator mockCalculator = mock(S3LatencyCalculator.class);
+        when(mockCalculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(100L); // Force low latency to trigger fast retry
+        latencyCalculatorField.set(objectStorage, mockCalculator);
+
+        // Track doWrite() calls: first call hangs, second completes immediately
+        AtomicInteger callCount = new AtomicInteger();
+        CompletableFuture<Void> firstFuture = new CompletableFuture<>();
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            int count = callCount.getAndIncrement();
+            return (count == 0) ? firstFuture : CompletableFuture.completedFuture(null);
+        });
+
+        // Execute write operation
+        ByteBuf data = TestUtils.randomPooled( 1024);
+        assertEquals(1, data.refCnt()); // Verify initial ref count
+
+        CompletableFuture<ObjectStorage.WriteResult> writeFuture = objectStorage.write(options, "testKey", data);
+        writeFuture.get(200, TimeUnit.MILLISECONDS); // Wait for write completion
+
+        // Verify: two calls made (initial + retry), data ref count maintained during retry
+        assertEquals(1, data.refCnt());
+        assertEquals(2, callCount.get());
+
+        // Complete initial future and verify data release
+        firstFuture.complete(null);
+        await().untilAsserted(() -> assertEquals(0, data.refCnt())); // Ensure buffer released
+    }
+
+    @Test
+    void testWriteRetryTimeout() throws Throwable {
+        // Setup storage with 100ms timeout (clearer time unit)
+        objectStorage = spy(new MemoryObjectStorage());
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .retry(true)
+            .timeout(1000L);
+
+        // Mock hanging write operation
+        AtomicInteger callCount = new AtomicInteger();
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            int count = callCount.getAndIncrement();
+            if (count < 12) {
+                // First call: timeout after 1s
+                CompletableFuture<Void> future = new CompletableFuture<>();
+                Executors.newSingleThreadScheduledExecutor().schedule(
+                    () -> future.completeExceptionally(new TimeoutException("Simulated timeout")),
+                    100, TimeUnit.MILLISECONDS
+                );
+                return future;
+            }
+            // Second call: immediate success
+            return CompletableFuture.completedFuture(null);
+        });
+
+        // Execute test
+        ByteBuf data = TestUtils.randomPooled(1024);
+        CompletableFuture<ObjectStorage.WriteResult> writeFuture =
+            objectStorage.write(options, "testKey", data);
+        // Verify timeout exception
+        assertThrows(TimeoutException.class,
+            () -> writeFuture.get(1, TimeUnit.SECONDS));
+        // Verify resource cleanup
+        await().untilAsserted(() -> assertEquals(0, data.refCnt()));
+        // Verify: no successful calls made
+        assertTrue(callCount.get() < 12);
     }
 
     @Test
