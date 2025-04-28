@@ -1,5 +1,4 @@
-# AutoMQ is a modern version of Kafka designed for the cloud. It saves data in cloud storage systems like Amazon S3, making it more flexible, cost-effective, and easy to scale
-
+# AutoMQ: A stateless Kafka on S3, offering 10x cost savings and scaling in seconds.
 
 <div align="center">
 <p align="center">

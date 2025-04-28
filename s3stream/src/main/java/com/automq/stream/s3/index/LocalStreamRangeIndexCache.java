@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.index;
@@ -316,36 +324,24 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         return exec(() -> {
             writeLock.lock();
             try {
-                if (rangeIndexMap == null || rangeIndexMap.isEmpty()) {
-                    Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
-                    while (iterator.hasNext()) {
-                        Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
-                        totalSize += entry.getValue().compact(null, compactedObjectIds);
-                        if (entry.getValue().length() == 0) {
-                            iterator.remove();
-                        }
-                    }
-                    return null;
-                }
-                for (Map.Entry<Long, Optional<RangeIndex>> entry : rangeIndexMap.entrySet()) {
+                // compact existing stream range index
+                Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
                     long streamId = entry.getKey();
-                    Optional<RangeIndex> rangeIndex = entry.getValue();
-                    streamRangeIndexMap.compute(streamId, (k, v) -> {
-                        if (v == null) {
-                            v = new SparseRangeIndex(COMPACT_NUM);
-                        }
-                        totalSize += v.compact(rangeIndex.orElse(null), compactedObjectIds);
-                        if (v.length() == 0) {
-                            // remove stream with empty index
-                            return null;
-                        }
-                        return v;
-                    });
+                    RangeIndex newRangeIndex = null;
+                    if (rangeIndexMap.containsKey(streamId)) {
+                        newRangeIndex = rangeIndexMap.get(streamId).orElse(null);
+                    }
+                    totalSize += entry.getValue().compact(newRangeIndex, compactedObjectIds);
+                    if (entry.getValue().length() == 0) {
+                        iterator.remove();
+                    }
                 }
+                return null;
             } finally {
                 writeLock.unlock();
             }
-            return null;
         });
     }
 
