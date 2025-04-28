@@ -186,7 +186,7 @@ class AbstractObjectStorageTest {
         });
 
         // Execute write operation
-        ByteBuf data = TestUtils.randomPooled( 1024);
+        ByteBuf data = TestUtils.randomPooled(1024);
         assertEquals(1, data.refCnt()); // Verify initial ref count
 
         CompletableFuture<ObjectStorage.WriteResult> writeFuture = objectStorage.write(options, "testKey", data);
