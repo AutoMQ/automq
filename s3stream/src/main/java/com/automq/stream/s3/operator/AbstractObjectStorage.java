@@ -367,15 +367,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         writeCf.thenAccept(nil -> {
             recordWriteStats(path, objectSize, timerUtil);
-        }).whenComplete((result, ex) -> {
             data.release();
-
-            if (ex == null) {
-                if (completedFlag.compareAndSet(false, true)) {
-                    finalCf.complete(null);
-                }
-                return;
+            if (completedFlag.compareAndSet(false, true)) {
+                finalCf.complete(null);
             }
+        }).exceptionally(ex -> {
             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.PUT_OBJECT);
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
@@ -384,10 +380,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 // no need to retry
                 logger.error("PutObject for object {} fail", path, cause);
+                data.release();
                 if (completedFlag.compareAndSet(false, true)) {
                     finalCf.completeExceptionally(cause);
                 }
-                return;
+                return null;
             }
 
             int retryCount = retryOptions.retryCountGetAndAdd();
@@ -400,6 +397,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 logger.warn("PutObject for object {} fail, retry count {}, retry in {}ms", path, retryCount, delay, cause);
                 delayedWrite0(retryOptions, path, data, finalCf, delay);
             }
+            return null;
         });
     }
 
