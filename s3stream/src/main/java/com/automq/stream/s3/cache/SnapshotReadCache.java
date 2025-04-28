@@ -152,8 +152,8 @@ public class SnapshotReadCache {
                 loadingTasks.poll();
                 task.close();
                 inflightLoadBytes.addAndGet(-task.reader.metadata().objectSize());
-            } else {
                 tryLoad();
+            } else {
                 break;
             }
         }
