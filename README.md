@@ -2,20 +2,15 @@
 
 <div align="center">
 <p align="center">
-  🔥&nbsp <a
-    href="https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud"
-    target="_blank"
-  ><b>Free trial of AutoMQ Business Edition</b></a>&nbsp&nbsp&nbsp
   📑&nbsp <a
     href="https://docs.automq.com/docs/automq-opensource/HSiEwHVfdiO7rWk34vKcVvcvn2Z?utm_source=github"
     target="_blank"
   ><b>Documentation</b></a>&nbsp&nbsp&nbsp
-  📃&nbsp <a
-    href="https://www.automq.com/blog/introducing-automq-cloud-native-replacement-of-apache-kafka?utm_source=github"
+  🔥&nbsp <a
+    href="https://www.automq.com/docs/automq-cloud/getting-started/install-byoc-environment/aws/install-env-from-marketplace"
     target="_blank"
-  ><b>AutoMQ Introduction</b></a>
+  ><b>Free trial of AutoMQ on AWS</b></a>&nbsp&nbsp&nbsp
 </p>
-
 
 [![Linkedin Badge](https://img.shields.io/badge/-LinkedIn-blue?style=flat-square&logo=Linkedin&logoColor=white&link=https://www.linkedin.com/company/automq)](https://www.linkedin.com/company/automq)
 [![Twitter URL](https://img.shields.io/twitter/follow/AutoMQ)](https://twitter.com/intent/follow?screen_name=AutoMQ_Lab)
@@ -23,6 +18,7 @@
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison)
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd)
 [![Gurubase](https://img.shields.io/badge/Gurubase-Ask%20AutoMQ%20Guru-006BFF)](https://gurubase.io/g/automq)
+[![DeepWiki](https://img.shields.io/badge/DeepWiki-AutoMQ%2Fautomq-blue.svg?logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAyCAYAAAAnWDnqAAAAAXNSR0IArs4c6QAAA05JREFUaEPtmUtyEzEQhtWTQyQLHNak2AB7ZnyXZMEjXMGeK/AIi+QuHrMnbChYY7MIh8g01fJoopFb0uhhEqqcbWTp06/uv1saEDv4O3n3dV60RfP947Mm9/SQc0ICFQgzfc4CYZoTPAswgSJCCUJUnAAoRHOAUOcATwbmVLWdGoH//PB8mnKqScAhsD0kYP3j/Yt5LPQe2KvcXmGvRHcDnpxfL2zOYJ1mFwrryWTz0advv1Ut4CJgf5uhDuDj5eUcAUoahrdY/56ebRWeraTjMt/00Sh3UDtjgHtQNHwcRGOC98BJEAEymycmYcWwOprTgcB6VZ5JK5TAJ+fXGLBm3FDAmn6oPPjR4rKCAoJCal2eAiQp2x0vxTPB3ALO2CRkwmDy5WohzBDwSEFKRwPbknEggCPB/imwrycgxX2NzoMCHhPkDwqYMr9tRcP5qNrMZHkVnOjRMWwLCcr8ohBVb1OMjxLwGCvjTikrsBOiA6fNyCrm8V1rP93iVPpwaE+gO0SsWmPiXB+jikdf6SizrT5qKasx5j8ABbHpFTx+vFXp9EnYQmLx02h1QTTrl6eDqxLnGjporxl3NL3agEvXdT0WmEost648sQOYAeJS9Q7bfUVoMGnjo4AZdUMQku50McDcMWcBPvr0SzbTAFDfvJqwLzgxwATnCgnp4wDl6Aa+Ax283gghmj+vj7feE2KBBRMW3FzOpLOADl0Isb5587h/U4gGvkt5v60Z1VLG8BhYjbzRwyQZemwAd6cCR5/XFWLYZRIMpX39AR0tjaGGiGzLVyhse5C9RKC6ai42ppWPKiBagOvaYk8lO7DajerabOZP46Lby5wKjw1HCRx7p9sVMOWGzb/vA1hwiWc6jm3MvQDTogQkiqIhJV0nBQBTU+3okKCFDy9WwferkHjtxib7t3xIUQtHxnIwtx4mpg26/HfwVNVDb4oI9RHmx5WGelRVlrtiw43zboCLaxv46AZeB3IlTkwouebTr1y2NjSpHz68WNFjHvupy3q8TFn3Hos2IAk4Ju5dCo8B3wP7VPr/FGaKiG+T+v+TQqIrOqMTL1VdWV1DdmcbO8KXBz6esmYWYKPwDL5b5FA1a0hwapHiom0r/cKaoqr+27/XcrS5UwSMbQAAAABJRU5ErkJggg==)](https://deepwiki.com/AutoMQ/automq)
 
 <a href="https://trendshift.io/repositories/9782" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9782" alt="AutoMQ%2Fautomq | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -31,14 +27,16 @@
 ![](https://img.shields.io/badge/AWS-%E2%9C%85-lightgray?logo=amazonaws)
 ![](https://img.shields.io/badge/Google-%E2%9C%85-lightgray?logo=googlecloud)
 ![](https://img.shields.io/badge/Azure-%E2%9C%85-lightgray?logo=microsoftazure)
-![](https://img.shields.io/badge/Aliyun-%E2%9C%85-lightgray?logo=alibabacloud)
+![](https://img.shields.io/badge/Alibaba%20Cloud-%E2%9C%85-lightgray?logo=alibabacloud)
 </div>
 
 ## 👥 Big Companies Worldwide are Using AutoMQ
-> Here are some of our customers who are using AutoMQ from all over the world.
+> Here are some of our major customers worldwide using AutoMQ.
+
 <img width="1151" alt="image" src="https://github.com/user-attachments/assets/a2668e5e-eebf-479a-b85a-9611de1b60c8" />
 
 - [Grab: Driving Efficiency with AutoMQ in DataStreaming Platform](https://www.youtube.com/watch?v=IB8sh639Rsg)
+- [JD.com x AutoMQ x CubeFS: A Cost-Effective Journey](https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging)
 - [Palmpay Uses AutoMQ to Replace Kafka, Optimizing Costs by 50%+](https://www.automq.com/blog/palmpay-uses-automq-to-replace-kafka)
 - [AutoMQ help Geely Auto(Fortune Global 500) solve the pain points of Kafka elasticity in the V2X scenario](https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario)
 - [How Asia’s Quora Zhihu uses AutoMQ to reduce Kafka cost and maintenance complexity](https://www.automq.com/blog/how-asias-quora-zhihu-use-automq-to-reduce-kafka-cost-and-maintenance-complexity)
@@ -46,129 +44,39 @@
 - [Asia's GOAT, Poizon uses AutoMQ Kafka to build observability platform for massive data(30 GB/s)](https://www.automq.com/blog/asiax27s-goat-poizon-uses-automq-kafka-to-build-a-new-generation-observability-platform-for-massive-data)
 - [AutoMQ Helps CaoCao Mobility Address Kafka Scalability During Holidays](https://www.automq.com/blog/automq-helps-caocao-mobility-address-kafka-scalability-issues-during-mid-autumn-and-national-day)
 
+## ⛄ Get started with AutoMQ
+
+### Deploy Locally on a Single Host
+```
+curl https://download.automq.com/community_edition/standalone_deployment/install_run.sh | bash
+```
+
+The easiest way to run AutoMQ. You can experience features like [**Partition Reassignment in Seconds**](https://www.automq.com/docs/automq/getting-started/example-partition-reassignment-in-seconds) and [**Continuous Self-Balancing**](https://www.automq.com/docs/automq/getting-started/example-self-balancing-when-cluster-nodes-change) in your local machine.
+
+There are more deployment options available:
+- [Deploy on Linux with 5 Nodes](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux)
+- [Deploy on Kubernetes (Enterprise only now, open source soon)](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-kubernetes)
+- [Run on Ceph / MinIO / CubeFS / HDFS](https://www.automq.com/docs/automq/deployment/overview)
+- [Try AutoMQ on AWS Marketplace (Two Weeks Free Trial)](https://docs.automq.com/automq-cloud/getting-started/install-byoc-environment/aws/install-env-from-marketplace)
+- [Try AutoMQ on Alibaba Cloud Marketplace (Two Weeks Free Trial)](https://market.aliyun.com/products/55530001/cmgj00065841.html)
+
 ## 🗞️ Newest Feature
-Table Topic feature for unified stream and data analysis, which now supports the S3 table feature announced at the 2024 re:Invent. [Learn more](https://www.automq.com/blog/automq-table-topic-seamless-integration-with-s3-tables-and-iceberg). 
+Table Topic feature for unified stream and data analysis, which now supports the S3 table feature announced at the 2024 re:Invent. [Learn more](https://www.automq.com/blog/automq-table-topic-seamless-integration-with-s3-tables-and-iceberg).
+
 ![image](https://github.com/user-attachments/assets/6b2a514a-cc3e-442e-84f6-d953206865e0)
-
-
-## 🍵 AutoMQ vs Other Streaming Platforms
-
-<table>
-  <tr>
-    <th>Feature</th>
-    <th>AutoMQ</th>
-    <th>Apache Kafka</th>
-    <th>Confluent</th>
-    <th>Apache Pulsar</th>
-    <th>Redpanda</th>
-    <th>Warpstream</th>
-  </tr>
-  <tr>
-    <td>Apache Kafka Compatibility[1]</td>
-    <td colspan="3">Native Kafka</td>
-    <td>Non-Kafka</td>
-    <td colspan="2">Kafka Protocol</td>
-  </tr>
-  <tr>
-    <td>Source Code Availability</td>
-    <td>Yes</td>
-    <td>Yes</td>
-    <td>No</td>
-    <td>Yes</td>
-    <td>Yes</td>
-    <td>No</td>
-  </tr>
-  <tr>
-    <td>Stateless Broker</td>
-    <td>Yes</td>
-    <td>No</td>
-    <td>No</td>
-    <td>Yes</td>
-    <td>No</td>
-    <td>Yes</td>
-  </tr>
-  <tr>
-    <td>Publisher Latency(P99)</td>
-    <td colspan="5">Single-digit ms latency</td>
-    <td><a href="https://www.warpstream.com/blog/warpstream-benchmarks-and-tco">> 620ms</a></td>
-  </tr>
-  <tr>
-    <td>Continuous Self-Balancing</td>
-    <td>Yes</td>
-    <td>No</td>
-    <td>Yes</td>
-    <td>Yes</td>
-    <td>Yes</td>
-    <td>Yes</td>
-  </tr>
-  <tr>
-    <td>Scale in/out</td>
-    <td>In seconds</td>
-    <td>In hours/days</td>
-    <td>In hours</td>
-    <td>In hours<br>(scale-in);<br> In seconds<br>(scale-out)</td>
-    <td>In hours<br>In seconds (Enterprise Only)</td>
-    <td>In seconds</td>
-  </tr>
-  <tr>
-    <td>Spot Instance Support</td>
-    <td>Yes</td>
-    <td>No</td>
-    <td>No</td>
-    <td>No</td>
-    <td>No</td>
-    <td>Yes</td>
-  </tr>
-  <tr>
-    <td>Partition Reassignment</td>
-    <td>In seconds</td>
-    <td>In hours/days</td>
-    <td>In hours</td>
-    <td>In seconds</td>
-    <td>In hours<br>In seconds (Enterprise Only)</td>
-    <td>In seconds</td>
-  </tr>
-  <tr>
-    <td>Component</td>
-    <td>Broker</td>
-    <td colspan="2">Broker<br>Zookeeper<br>(Non-KRaft)</td>
-    <td>Broker<br>Zookeeper<br>Bookkeeper<br>Proxy(Optional)</td>
-    <td>Broker</td>
-    <td>Agent<br>MetadataServer</td>
-  </tr>
-  <tr>
-    <td>Durability</td>
-    <td>Guaranteed by cloud storage services[2]</td>
-    <td colspan="2">Guaranteed by ISR </td>
-    <td>Guaranteed by Bookkeeper</td>
-    <td>Guaranteed by Raft</td>
-    <td>Guaranteed by S3</td>
-  </tr>
-  <tr>
-    <td>Inter-AZ Networking Fees</td>
-    <td>No</td>
-    <td colspan="4">Yes</td>
-    <td>No</td>
-  </tr>
-</table>
-
-
-> [1] Apache Kafka Compatibility's definition is coming from this [blog](https://www.kai-waehner.de/blog/2021/05/09/kafka-api-de-facto-standard-event-streaming-like-amazon-s3-object-storage/).
-
-> [2] AutoMQ's flexible architecture can utilize the durability of various cloud storage services like S3, Regional EBS, and EFS, all offering multi-AZ durability.
 
 ## 🔶 Why AutoMQ
 
 - **Cost effective**: The first true cloud-native streaming storage system, designed for optimal cost and efficiency on the cloud. Refer to [this report](https://docs.automq.com/docs/automq-opensource/EV6mwoC95ihwRckMsUKcppnqnJb) to see how we cut Apache Kafka billing by 90% on the cloud.
 - **High Reliability**: Leverage cloud-shared storage services to achieve zero RPO, RTO in seconds and 99.999999999% durability.
 - **Serverless**:
-  - Auto Scaling: Monitor cluster metrics and automatically scale in/out to align with your workload, enabling a pay-as-you-go model.
-  - Scaling in seconds: The computing layer (broker) is stateless and can scale in/out within seconds, making AutoMQ a truly serverless solution.
-  - Infinite scalable: Utilize cloud object storage as the primary storage solution, eliminating concerns about storage capacity.
+    - Auto Scaling: Monitor cluster metrics and automatically scale in/out to align with your workload, enabling a pay-as-you-go model.
+    - Scaling in seconds: The computing layer (broker) is stateless and can scale in/out within seconds, making AutoMQ a truly serverless solution.
+    - Infinite scalable: Utilize cloud object storage as the primary storage solution, eliminating concerns about storage capacity.
 - **Manage-less**: The built-in auto-balancer component automatically schedules partitions and network traffic between brokers, eliminating manual partition reassignment.
 - **High performance**:
-  - Low latency: Accelerate writing with high-performance EBS as WAL, achieving single-digit millisecond latency.
-  - High throughput: Leverage pre-fetching, batch processing, and parallel technologies to maximize the capabilities of cloud object storage.
+    - Low latency: Accelerate writing with high-performance EBS as WAL, achieving single-digit millisecond latency.
+    - High throughput: Leverage pre-fetching, batch processing, and parallel technologies to maximize the capabilities of cloud object storage.
   > Refer to the [AutoMQ Performance White Paper](https://docs.automq.com/docs/automq-opensource/IJLQwnVROiS5cUkXfF0cuHnWnNd) to see how we achieve this.
 - **A superior alternative to Apache Kafka**: 100% compatible with Apache Kafka and does not lose any key features, but cheaper and better.
 
@@ -185,22 +93,6 @@ In this setup:
 - The WAL storage layer is adaptable, allowing for the selection of various storage services across different cloud providers to cater to diverse durability and performance needs. Azure Zone-redundant Disk, GCP Regional Persistent Disk, and Alibaba Cloud Regional ESSD are ideal for ensuring multi-AZ durability. For cost-effective solutions on AWS with relaxed latency scenarios, S3 can serve as WAL. Additionally, AWS EFS/FSx can balance latency and cost for critical workloads when used as WAL.
 
 AutoMQ has developed a shared streaming storage library, S3Stream, which encapsulates these storage modules. By replacing the native Apache Kafka® Log storage with S3Stream, the entire Broker node becomes entirely stateless. This transformation significantly streamlines operations such as second-level partition reassignment, automatic scaling, and traffic self-balancing. To facilitate this, AutoMQ has integrated Controller components like Auto Scaling and Auto Balancing within its kernel, which oversee cluster scaling operations and traffic rebalancing, respectively. Please refer to [here](https://docs.automq.com/automq/architecture/overview) for more architecture details.
-
-## ⛄ Get started with AutoMQ
-
-### Deploy Locally on a Single Host
-```
-curl https://download.automq.com/community_edition/standalone_deployment/install_run.sh | bash
-```
-
-The easiest way to run AutoMQ. You can experience features like **Partition Reassignment in Seconds** and **Continuous Self-Balancing** in your local machine. [Learn more](https://docs.automq.com/docs/automq-opensource/EsUBwQei4ilCDjkWb8WcbOZInwc)
-
-There are more deployment options available:
-- [Deploy on Linux with 5 Nodes](https://docs.automq.com/docs/automq-opensource/IyXrw3lHriVPdQkQLDvcPGQdnNh)
-- [Deploy on Kubernetes(Enterprise Edition Only)](https://docs.automq.com/docs/automq-opensource/KJtLwvdaPi7oznkX3lkcCR7fnte)
-- [Runs on Ceph / MinIO / CubeFS / HDFS](https://docs.automq.com/docs/automq-opensource/RexrwfhKuiGChfk237QcEBIwnND)
-- [Try AutoMQ on Alibaba Cloud Marketplace (Two Weeks Free Trial)](https://market.aliyun.com/products/55530001/cmgj00065841.html)
-- [Try AutoMQ on AWS Marketplace (Two Weeks Free Trial)](https://docs.automq.com/automq-cloud/getting-started/install-byoc-environment/aws/install-env-from-marketplace)
 
 ## 💬 Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
@@ -228,7 +120,7 @@ The business edition of AutoMQ provides a powerful and easy-to-use control plane
 
 
 ### Free trial of AutoMQ Business Edition
-To allow users to experience the capabilities of the AutoMQ business edition without any barriers, click [here](https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud) to apply for a no-obligation cluster trial, and note `AutoMQ Cloud Free Trial` in the message input box. We will immediately initialize an AutoMQ Cloud control panel for you soon in the cloud and give you the address of the control panel. Then, you can use the control panel to create a AutoMQ cluster or perform operations like scale in/out. 
+To allow users to experience the capabilities of the AutoMQ business edition without any barriers, click [here](https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud) to apply for a no-obligation cluster trial, and note `AutoMQ Cloud Free Trial` in the message input box. We will immediately initialize an AutoMQ Cloud control panel for you soon in the cloud and give you the address of the control panel. Then, you can use the control panel to create a AutoMQ cluster or perform operations like scale in/out.
 
 No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://www.automq.com/contact). We will further support your official POC.
 
