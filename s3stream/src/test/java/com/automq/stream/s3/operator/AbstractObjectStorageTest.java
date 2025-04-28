@@ -215,7 +215,6 @@ class AbstractObjectStorageTest {
         when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
             int count = callCount.getAndIncrement();
             if (count < 12) {
-                // First call: timeout after 1s
                 CompletableFuture<Void> future = new CompletableFuture<>();
                 Executors.newSingleThreadScheduledExecutor().schedule(
                     () -> future.completeExceptionally(new TimeoutException("Simulated timeout")),
@@ -344,7 +343,7 @@ class AbstractObjectStorageTest {
         blockingThread.join();
 
         // Verify resource cleanup
-        assertEquals(2, firstBuffer.refCnt());
+        assertEquals(1, firstBuffer.refCnt());
 
         // Cleanup
         blockingFuture.complete(null);

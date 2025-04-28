@@ -36,9 +36,14 @@ import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Utils;
-
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.ReferenceCounted;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
+import software.amazon.awssdk.http.HttpStatusCode;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -64,13 +69,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
-
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.util.HashedWheelTimer;
-import io.netty.util.ReferenceCounted;
-import software.amazon.awssdk.http.HttpStatusCode;
-import software.amazon.awssdk.services.s3.model.S3Exception;
 
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
@@ -272,23 +270,25 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     public CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf data) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
-        retCf = retCf.whenComplete((nil, ex) -> data.release());
         if (retCf.isDone()) {
+            data.release();
             return retCf;
         }
         TimerUtil timerUtil = new TimerUtil();
         networkOutboundBandwidthLimiter
             .consume(options.throttleStrategy(), data.readableBytes())
             .whenCompleteAsync((v, ex) -> {
+                NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, options.throttleStrategy())
+                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 if (ex != null) {
                     cf.completeExceptionally(ex);
+                    data.release();
                     return;
                 }
                 if (checkTimeout(options, cf)) {
+                    data.release();
                     return;
                 }
-                NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, options.throttleStrategy())
-                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 queuedWrite0(options, objectPath, data, cf);
             }, writeLimiterCallbackExecutor);
         return retCf;
@@ -323,7 +323,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return;
         }
 
-        data.retain();
         CompletableFuture<Void> writeCf = doWrite(options, path, data);
         FutureUtil.propagate(writeCf, attemptCf);
         AtomicBoolean completedFlag = new AtomicBoolean(false);
