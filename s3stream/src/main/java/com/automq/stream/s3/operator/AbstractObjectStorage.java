@@ -274,6 +274,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
         retCf = retCf.whenComplete((nil, ex) -> data.release());
         if (retCf.isDone()) {
+            data.release();
             return retCf;
         }
         TimerUtil timerUtil = new TimerUtil();
@@ -323,6 +324,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return;
         }
 
+        data.retain();
         CompletableFuture<Void> writeCf = doWrite(options, path, data);
         FutureUtil.propagate(writeCf, attemptCf);
         AtomicBoolean completedFlag = new AtomicBoolean(false);
@@ -365,10 +367,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         writeCf.thenAccept(nil -> {
             recordWriteStats(path, objectSize, timerUtil);
+            data.release();
             if (completedFlag.compareAndSet(false, true)) {
                 finalCf.complete(null);
             }
         }).exceptionally(ex -> {
+            data.release();
+
             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.PUT_OBJECT);
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
