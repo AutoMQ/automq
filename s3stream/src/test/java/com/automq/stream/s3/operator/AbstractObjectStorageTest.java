@@ -31,6 +31,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -196,7 +198,8 @@ class AbstractObjectStorageTest {
 
         // Complete initial future and verify data release
         firstFuture.complete(null);
-        await().untilAsserted(() -> assertEquals(0, data.refCnt())); // Ensure buffer released
+        await().atMost(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertEquals(0, data.refCnt())); // Ensure buffer released
     }
 
     @Test
@@ -232,10 +235,64 @@ class AbstractObjectStorageTest {
         assertThrows(TimeoutException.class,
             () -> writeFuture.get(1, TimeUnit.SECONDS));
         // Verify resource cleanup
-        await().untilAsserted(() -> assertEquals(0, data.refCnt()));
+        await().atMost(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertEquals(0, data.refCnt()));
         // Verify: no successful calls made
         assertTrue(callCount.get() < 12);
     }
+
+    @Test
+    void testWritePermit() throws Exception {
+        final int maxConcurrency = 5;
+        objectStorage = spy(new MemoryObjectStorage(maxConcurrency));
+
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .enableFastRetry(false)
+            .retry(false);
+
+        // Use completable future to block first 5 calls
+        CompletableFuture<Void> barrierFuture = new CompletableFuture<>();
+        AtomicInteger callCount = new AtomicInteger();
+
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            int count = callCount.getAndIncrement();
+            return (count < maxConcurrency)
+                ? barrierFuture // Block first 5 calls
+                : CompletableFuture.completedFuture(null); // Immediate success for 6th
+        });
+
+        // Phase 1: Submit max concurrency requests
+        List<ByteBuf> buffers = new ArrayList<>();
+        for (int i = 0; i < maxConcurrency; i++) {
+            ByteBuf data = TestUtils.randomPooled(1024);
+            buffers.add(data);
+            objectStorage.write(options, "testKey", data);
+        }
+
+        // Verify initial calls reached max concurrency
+        await().atMost(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertEquals(maxConcurrency, callCount.get()));
+
+        // Phase 2: Submit 6th request beyond concurrency limit
+        CompletableFuture<ObjectStorage.WriteResult> sixthWriteFuture =
+            CompletableFuture.supplyAsync(() ->
+                objectStorage.write(options, "testKey", TestUtils.random(1024))
+            ).thenCompose(f -> f);
+
+        // Release blocked calls and verify completion
+        barrierFuture.complete(null);
+        await().atMost(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertEquals(maxConcurrency + 1, callCount.get());
+                assertTrue(sixthWriteFuture.isDone());
+
+                // Verify: all buffers released
+                for (ByteBuf buffer : buffers) {
+                    assertEquals(0, buffer.refCnt());
+                }
+            });
+    }
+
 
     @Test
     void testReadToEndOfObject() throws ExecutionException, InterruptedException {
