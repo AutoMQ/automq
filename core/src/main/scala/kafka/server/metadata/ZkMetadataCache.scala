@@ -40,6 +40,7 @@ import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{AbstractControlRequest, ApiVersionsResponse, MetadataResponse, UpdateMetadataRequest}
 import org.apache.kafka.common.security.auth.SecurityProtocol
+import org.apache.kafka.image.MetadataImage
 import org.apache.kafka.metadata.BrokerRegistration
 import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
@@ -734,6 +735,10 @@ class ZkMetadataCache(
   }
 
   override def getStreamEndOffset(streamId: Long): OptionalLong = {
+    throw new UnsupportedOperationException()
+  }
+
+  override def safeRun[T](func: Function[MetadataImage, T]): T = {
     throw new UnsupportedOperationException()
   }
   // AutoMQ inject end

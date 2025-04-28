@@ -76,7 +76,7 @@ class MultiPartWriterTest {
 
     @Test
     void testWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "test-path", 100);
+        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "test-path", 100, 100);
 
         List<UploadPartRequest> requests = new ArrayList<>();
         List<Long> contentLengths = new ArrayList<>();

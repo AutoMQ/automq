@@ -22,6 +22,7 @@ import org.apache.kafka.admin.BrokerMetadata
 import org.apache.kafka.common.message.{MetadataResponseData, UpdateMetadataRequestData}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.{Cluster, Node, TopicPartition, Uuid}
+import org.apache.kafka.image.MetadataImage
 import org.apache.kafka.metadata.BrokerRegistration
 import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{FinalizedFeatures, KRaftVersion, MetadataVersion}
@@ -126,6 +127,8 @@ trait MetadataCache {
   def getValue(key: String): ByteBuffer
 
   def getStreamEndOffset(streamId: Long): OptionalLong
+
+  def safeRun[T](func: Function[MetadataImage, T]): T
   // AutoMQ inject end
 }
 
