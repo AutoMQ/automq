@@ -59,6 +59,7 @@ public class Config {
     private int refillPeriodMs = 10;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
+    private boolean snapshotReadEnable = false;
     private Supplier<Version> version = () -> {
         throw new UnsupportedOperationException();
     };
@@ -322,6 +323,15 @@ public class Config {
 
     public boolean failoverEnable() {
         return failoverEnable;
+    }
+
+    public Config snapshotReadEnable(boolean snapshotReadEnable) {
+        this.snapshotReadEnable = snapshotReadEnable;
+        return this;
+    }
+
+    public boolean snapshotReadEnable() {
+        return snapshotReadEnable;
     }
 
     public Config version(Supplier<Version> version) {

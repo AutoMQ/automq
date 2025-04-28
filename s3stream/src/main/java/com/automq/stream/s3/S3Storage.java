@@ -24,6 +24,7 @@ import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.cache.SnapshotReadCache;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.Failover;
@@ -99,6 +100,7 @@ public class S3Storage implements Storage {
      * WAL log cache
      */
     private final LogCache deltaWALCache;
+    private final LogCache snapshotReadCache;
     /**
      * WAL out of order callback sequencer. {@link #streamCallbackLocks} will ensure the memory safety.
      */
@@ -150,7 +152,16 @@ public class S3Storage implements Storage {
         this.maxDeltaWALCacheSize = config.walCacheSize();
         this.deltaWAL = deltaWAL;
         this.blockCache = blockCache;
-        this.deltaWALCache = new LogCache(config.walCacheSize(), config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
+        long deltaWALCacheSize = config.walCacheSize();
+        long snapshotReadCacheSize = 0;
+        if (config.snapshotReadEnable()) {
+            deltaWALCacheSize = Math.max(config.walCacheSize() / 3, 10L * 1024 * 1024);
+            snapshotReadCacheSize = Math.max(config.walCacheSize() / 3 * 2, 10L * 1024 * 1024);
+        }
+        this.deltaWALCache = new LogCache(deltaWALCacheSize, config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
+        this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
+        S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
+        SnapshotReadCache.instance().setup(this.snapshotReadCache, objectStorage);
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
@@ -555,13 +566,15 @@ public class S3Storage implements Storage {
         return cf;
     }
 
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
     @WithSpan
     private CompletableFuture<ReadDataBlock> read0(FetchContext context,
         @SpanAttribute long streamId,
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
-        List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
+        LogCache firstCache = context.readOptions().snapshotRead() ? snapshotReadCache : deltaWALCache;
+        List<StreamRecordBatch> logCacheRecords = firstCache.get(context, streamId, startOffset, endOffset, maxBytes);
         if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords, CacheAccessType.DELTA_WAL_CACHE_HIT));
         }

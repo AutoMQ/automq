@@ -159,7 +159,7 @@ public interface ObjectReader extends AsyncMeasurable {
         }
 
         void asyncGetBasicObjectInfo() {
-            int guessIndexBlockSize = 1024 + (int) (metadata.objectSize() / (1024 * 1024 /* 1MB */) * 36 /* index unit size*/);
+            int guessIndexBlockSize = 8192 + (int) (metadata.objectSize() / (1024 * 1024 /* 1MB */) * 36 /* index unit size*/);
             asyncGetBasicObjectInfo0(Math.max(0, metadata.objectSize() - guessIndexBlockSize), true);
         }
 
@@ -578,6 +578,10 @@ public interface ObjectReader extends AsyncMeasurable {
         }
 
         public CloseableIterator<StreamRecordBatch> iterator() {
+            return iterator(true);
+        }
+
+        public CloseableIterator<StreamRecordBatch> iterator(boolean copy) {
             ByteBuf buf = this.buf.duplicate();
             AtomicInteger currentBlockRecordCount = new AtomicInteger(0);
             AtomicInteger remainingRecordCount = new AtomicInteger(recordCount);
@@ -599,7 +603,7 @@ public interface ObjectReader extends AsyncMeasurable {
                         buf.skipBytes(4);
                     }
                     currentBlockRecordCount.decrementAndGet();
-                    return StreamRecordBatchCodec.duplicateDecode(buf);
+                    return copy ? StreamRecordBatchCodec.duplicateDecode(buf) : StreamRecordBatchCodec.sliceRetainDecode(buf);
                 }
 
                 @Override

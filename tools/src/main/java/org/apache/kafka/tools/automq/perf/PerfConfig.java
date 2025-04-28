@@ -60,6 +60,7 @@ public class PerfConfig {
     public final int producersPerTopic;
     public final int groupsPerTopic;
     public final int consumersPerGroup;
+    public final boolean awaitTopicReady;
     public final int recordSize;
     public final double randomRatio;
     public final int randomPoolSize;
@@ -100,6 +101,7 @@ public class PerfConfig {
         producersPerTopic = ns.getInt("producersPerTopic");
         groupsPerTopic = ns.getInt("groupsPerTopic");
         consumersPerGroup = ns.getInt("consumersPerGroup");
+        awaitTopicReady = ns.getBoolean("awaitTopicReady");
         recordSize = ns.getInt("recordSize");
         randomRatio = ns.getDouble("randomRatio");
         randomPoolSize = ns.getInt("randomPoolSize");
@@ -193,6 +195,12 @@ public class PerfConfig {
             .dest("consumersPerGroup")
             .metavar("CONSUMERS_PER_GROUP")
             .help("The number of consumers per group.");
+        parser.addArgument("--await-topic-ready")
+            .setDefault(true)
+            .type(Boolean.class)
+            .dest("awaitTopicReady")
+            .metavar("AWAIT_TOPIC_READY")
+            .help("Use produce / consume detect to check topic readiness.");
         parser.addArgument("-s", "--record-size")
             .setDefault(1024)
             .type(positiveInteger())
