@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Single-node AutoMQ setup with MinIO for quick start
 version: "3.8"
 
 services:
-  # MinIO service instead of LocalStack
+  # MinIO service for S3 storage
   minio:
     container_name: "${MINIO_DOCKER_NAME-minio}"
     hostname: "${MINIO_DOCKER_NAME-minio}"
@@ -30,7 +31,6 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
-    # use a static ip
     networks:
       automq_net:
         ipv4_address: 10.6.0.2
@@ -40,7 +40,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # create needed buckets
+  # Create needed buckets
   mc:
     container_name: "${MC_DOCKER_NAME-mc}"
     hostname: "${MC_DOCKER_NAME-mc}"
@@ -58,85 +58,34 @@ services:
     networks:
       - automq_net
 
-  controller:
-    container_name: "${CONTROLLER_DOCKER_NAME-controller}"
-    hostname: "${CONTROLLER_DOCKER_NAME-controller}"
-    stop_grace_period: 2m
-    image: automqinc/automq:latest
-    environment:
-      - KAFKA_S3_ACCESS_KEY=minioadmin
-      - KAFKA_S3_SECRET_KEY=minioadmin
-      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m
-    command:
-      - bash
-      - -c
-      - |
-        /opt/kafka/scripts/start.sh up --process.roles controller --node.id 0 --controller.quorum.voters 0@controller:9093 --s3.bucket automq-data --s3.endpoint http://10.6.0.2:9000 --s3.region us-east-1 --s3.path-style-access true
-    networks:
-      - automq_net
-    depends_on:
-      - minio
-      - mc
-
-  broker1:
-    container_name: "${BROKER1_DOCKER_NAME-broker1}"
-    hostname: "${BROKER1_DOCKER_NAME-broker1}"
+  # Single-node AutoMQ server (combines controller and broker roles)
+  automq-server:
+    container_name: "${AUTOMQ_SERVER_DOCKER_NAME-automq-server}"
+    hostname: "${AUTOMQ_SERVER_DOCKER_NAME-automq-server}"
     stop_grace_period: 2m
     image: automqinc/automq:latest
     ports:
-      - "9094:9094"
+      - "9092:9092"  # Kafka API
+      - "9093:9093"  # Controller API
     environment:
       - KAFKA_S3_ACCESS_KEY=minioadmin
       - KAFKA_S3_SECRET_KEY=minioadmin
       - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
       - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_IN_CAPACITY=5120
       - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_OUT_CAPACITY=5120
-      - KAFKA_CFG_AUTOBALANCER_REPORTER_METRICS_REPORTING_INTERVAL_MS=5000
-      # override listener settings
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:9094
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker1:9092,EXTERNAL://localhost:9094
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
     command:
       - bash
       - -c
       - |
-        /opt/kafka/scripts/start.sh up --process.roles broker --node.id 1 --controller.quorum.voters 0@controller:9093 --s3.bucket automq-data --s3.endpoint http://10.6.0.2:9000 --s3.region us-east-1 --s3.path-style-access true --storage.mode s3wal
+        /opt/kafka/scripts/start.sh up --process.roles broker,controller --node.id 0 --controller.quorum.voters 0@automq-server:9093 --s3.data.buckets 0@s3://automq-data?region=us-east-1 --s3.ops.buckets 1@s3://automq-data?region=us-east-1 --s3.wal.path 0@s3://automq-data?region=us-east-1 --s3.endpoint http://10.6.0.2:9000 --s3.path-style-access true
     networks:
       - automq_net
     depends_on:
       - minio
       - mc
-      - controller
-
-  broker2:
-    container_name: "${BROKER2_DOCKER_NAME-broker2}"
-    hostname: "${BROKER2_DOCKER_NAME-broker2}"
-    stop_grace_period: 2m
-    image: automqinc/automq:latest
-    ports:
-      - "9095:9095"
-    environment:
-      - KAFKA_S3_ACCESS_KEY=minioadmin
-      - KAFKA_S3_SECRET_KEY=minioadmin
-      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
-      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_IN_CAPACITY=5120
-      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_OUT_CAPACITY=5120
-      - KAFKA_CFG_AUTOBALANCER_REPORTER_METRICS_REPORTING_INTERVAL_MS=5000
-      # override listener settings
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:9095
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker2:9092,EXTERNAL://localhost:9095
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
-    command:
-      - bash
-      - -c
-      - |
-        /opt/kafka/scripts/start.sh up --process.roles broker --node.id 2 --controller.quorum.voters 0@controller:9093 --s3.bucket automq-data --s3.endpoint http://10.6.0.2:9000 --s3.region us-east-1 --s3.path-style-access true --storage.mode s3wal
-    networks:
-      - automq_net
-    depends_on:
-      - minio
-      - mc
-      - controller
 
 volumes:
   minio_data:
