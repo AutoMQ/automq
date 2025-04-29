@@ -2,7 +2,7 @@ name: "⭐ Good First Issue"
 description: Design and describe a task suitable for first-time contributors
 title: "[Good First Issue] "
 labels: [good first issue]
-assignees: ""
+assignees: [your-github-username]
 body:
   - type: markdown
     attributes:
