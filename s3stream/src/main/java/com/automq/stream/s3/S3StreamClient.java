@@ -195,7 +195,7 @@ public class S3StreamClient implements StreamClient {
     }
 
     S3Stream newStream(StreamMetadata metadata, OpenStreamOptions options) {
-        return new S3Stream(
+        return S3Stream.create(
             metadata.streamId(), metadata.epoch(),
             metadata.startOffset(), metadata.endOffset(),
             storage, streamManager, networkInboundBucket, networkOutboundBucket, options);
