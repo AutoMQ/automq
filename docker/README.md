@@ -236,3 +236,54 @@ python generate_kafka_pr_template.py --image-type=jvm
 - image-type - This is the type of image that we intend to build. This will be dropdown menu type selection in the workflow. `jvm` image type is for official docker image (to be hosted on apache/kafka) as described in [KIP-975](https://cwiki.apache.org/confluence/display/KAFKA/KIP-975%3A+Docker+Image+for+Apache+Kafka). 
   - **NOTE:** As of now [KIP-1028](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1028%3A+Docker+Official+Image+for+Apache+Kafka) only aims to release JVM based Docker Official Images and not GraalVM based native Apache Kafka docker image.
 
+AutoMQ Docker Compose Configurations
+====================================
+
+This directory contains Docker Compose configurations for deploying AutoMQ in different scenarios.
+
+Quick Start (Single Node)
+-------------------------
+
+The main `docker-compose.yaml` in the root directory provides a simple single-node setup for quick evaluation and development:
+
+```bash
+# From the root directory
+docker-compose up -d
+```
+
+This configuration:
+- Deploys a single AutoMQ node that acts as both controller and broker
+- Includes MinIO for S3 storage
+- Uses the latest bucket URI pattern (s3.data.buckets, s3.ops.buckets, s3.wal.path)
+- All services run in a single Docker network
+
+Production-like Cluster
+-----------------------
+
+For a more production-like setup, use the cluster configuration:
+
+```bash
+# From the root directory
+docker-compose -f docker/docker-compose-cluster.yaml up -d
+```
+
+This configuration:
+- Deploys a 3-controller + 3-broker cluster
+- Includes MinIO for S3 storage
+- Uses the latest bucket URI pattern (s3.data.buckets, s3.ops.buckets, s3.wal.path)
+- Provides proper redundancy for both controller and broker services
+- Port forwarding is configured to allow access to all services from the host
+
+Configuration Notes
+-------------------
+
+Both configurations use the new bucket URI pattern as recommended in the AutoMQ documentation:
+
+- `s3.data.buckets` for data storage
+- `s3.ops.buckets` for logs and metrics storage
+- `s3.wal.path` for S3 WAL
+
+The older `storage.mode=s3wal` parameter is deprecated and no longer used.
+
+For more details, see the [AutoMQ documentation](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux#step-2-edit-the-cluster-configuration-template).
+
