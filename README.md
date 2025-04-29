@@ -46,75 +46,6 @@ curl https://download.automq.com/community_edition/standalone_deployment/install
 
 The easiest way to run AutoMQ. You can experience features like [**Partition Reassignment in Seconds**](https://www.automq.com/docs/automq/getting-started/example-partition-reassignment-in-seconds) and [**Continuous Self-Balancing**](https://www.automq.com/docs/automq/getting-started/example-self-balancing-when-cluster-nodes-change) in your local machine.
 
-### Quick Start with Docker Compose
-
-You can quickly set up a local AutoMQ cluster using Docker Compose with the following steps:
-
-#### Prerequisites
-- Docker and Docker Compose installed on your machine
-- At least 4GB of available memory
-
-#### Step 1: Clone the repository
-```bash
-git clone https://github.com/AutoMQ/automq.git
-cd automq
-```
-
-#### Step 2: Start the AutoMQ cluster
-```bash
-docker-compose up -d
-```
-
-This will start a cluster with:
-- MinIO (S3-compatible storage)
-- 1 AutoMQ controller node
-- 2 AutoMQ broker nodes using S3WAL storage mode
-
-#### Step 3: Verify the installation
-After a few moments, you can verify that all containers are running:
-```bash
-docker-compose ps
-```
-
-#### Step 4: Connect to the cluster
-You can connect to the AutoMQ cluster using any Kafka client. The broker endpoints are:
-- `localhost:9094` (Broker 1)
-- `localhost:9095` (Broker 2)
-
-Example using the `kafka-console-producer` and `kafka-console-consumer`:
-```bash
-# Create a topic
-docker exec -it broker1 /opt/kafka/bin/kafka-topics.sh --create --topic test-topic --bootstrap-server localhost:9092 --partitions 3 --replication-factor 2
-
-# Produce messages
-docker exec -it broker1 /opt/kafka/bin/kafka-console-producer.sh --topic test-topic --bootstrap-server localhost:9092
-
-# Consume messages (in a separate terminal)
-docker exec -it broker1 /opt/kafka/bin/kafka-console-consumer.sh --topic test-topic --bootstrap-server localhost:9092 --from-beginning
-```
-
-#### Step 5: Access the MinIO console
-You can access the MinIO console in your browser at [http://localhost:9001](http://localhost:9001) with the following credentials:
-- Username: `minioadmin`
-- Password: `minioadmin`
-
-#### Step 6: Stop the cluster
-When you're done, you can stop the cluster with:
-```bash
-docker-compose down
-```
-
-To completely clean up, including volumes:
-```bash
-docker-compose down -v
-```
-
-This quick start setup demonstrates these core AutoMQ features:
-- Stateless Kafka using S3 storage (S3WAL mode)
-- Fast partition reassignment (seconds instead of minutes/hours)
-- Continuous self-balancing
-- Cost-effective operation (reduced storage overhead compared to traditional Kafka)
-
 There are more deployment options available:
 - [Deploy on Linux with 5 Nodes](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux)
 - [Deploy on Kubernetes (Enterprise only now, open source soon)](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-kubernetes)
@@ -187,7 +118,7 @@ The business edition of AutoMQ provides a powerful and easy-to-use control plane
 ### Free trial of AutoMQ Business Edition
 To allow users to experience the capabilities of the AutoMQ business edition without any barriers, click [here](https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud) to apply for a no-obligation cluster trial, and note `AutoMQ Cloud Free Trial` in the message input box. We will immediately initialize an AutoMQ Cloud control panel for you soon in the cloud and give you the address of the control panel. Then, you can use the control panel to create a AutoMQ cluster or perform operations like scale in/out.
 
-No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://www.automq.com/contact).
+No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://www.automq.com/contact). We will further support your official POC.
 
 ## 🐱 The relationship with Apache Kafka
 
