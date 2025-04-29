@@ -2,7 +2,7 @@ name: "🐛 Bug Report"
 description: Report a problem or unexpected behavior in AutoMQ
 title: "[BUG] "
 labels: [bug]
-assignees: ""
+assignees: [your-github-username]
 body:
   - type: markdown
     attributes:
