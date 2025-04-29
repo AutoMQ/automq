@@ -1,6 +1,6 @@
-name: 🚀 Enhancement Request
+name: 🚀 Feature Request
 description: Suggest a new idea or improvement for AutoMQ
-title: "[Enhancement Request] "
+title: "[Feature Request] "
 labels: 
   - enhancement
 body:
