@@ -39,12 +39,24 @@
 
 ## ⛄ Get started with AutoMQ
 
-### Deploy Locally on a Single Host
-```
-curl https://download.automq.com/community_edition/standalone_deployment/install_run.sh | bash
-```
+> [!Tip]
+> Deploying a production-ready AutoMQ cluster is challenging. This Quick Start is only for evaluating AutoMQ features and is not suitable for production use. For production deployment best practices, please [contact](https://www.automq.com/contact) our community for support.
 
-The easiest way to run AutoMQ. You can experience features like [**Partition Reassignment in Seconds**](https://www.automq.com/docs/automq/getting-started/example-partition-reassignment-in-seconds) and [**Continuous Self-Balancing**](https://www.automq.com/docs/automq/getting-started/example-self-balancing-when-cluster-nodes-change) in your local machine.
+The `docker/docker-compose.yaml` file provides a simple single-node setup for quick evaluation and development:
+```shell
+docker compose -f docker/docker-compose.yaml up -d
+```
+This setup features a single AutoMQ node serving as both controller and broker, alongside MinIO for S3 storage. All services operate within a Docker bridge network called `automq_net`, allowing you to start a Kafka producer in this network to test AutoMQ:
+```shell
+docker run --network automq_net automqinc/automq:latest /bin/bash -c \
+"/opt/automq/kafka/bin/kafka-producer-perf-test.sh --topic test-topic --num-records=1024000 --throughput 5120 --record-size 1024 \
+--producer-props bootstrap.servers=server1:9092 linger.ms=100 batch.size=524288 buffer.memory=134217728 max.request.size=67108864"
+```
+After testing, you can destroy the setup with:
+```shell
+docker compose -f docker/docker-compose.yaml down
+```
+The `docker/docker-compose-cluster.yaml` file offers a more complex setup with three AutoMQ nodes, ideal for testing AutoMQ's cluster features, and can be run in the same way.
 
 There are more deployment options available:
 - [Deploy on Linux with 5 Nodes](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux)
