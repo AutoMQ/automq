@@ -1,0 +1,105 @@
+name: "🐛 Bug Report"
+description: Report a problem or unexpected behavior in AutoMQ
+title: "[BUG] "
+labels: [bug]
+assignees: [your-github-username]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill out the form below to help us diagnose and fix the issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: AutoMQ Version
+      description: Run `automq --version` to find this.
+      placeholder: e.g., v0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: Use `uname` or check `/etc/os-release`.
+      placeholder: e.g., Ubuntu 20.04
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Installation Method
+      description: How did you install AutoMQ?
+      options:
+        - source
+        - binary
+        - docker
+        - package manager
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware Configuration
+      description: Describe CPU, memory, disk, and other relevant hardware specs.
+      placeholder: e.g., 4-core CPU, 16GB RAM, SSD
+    validations:
+      required: false
+
+  - type: textarea
+    id: software
+    attributes:
+      label: Other Relevant Software
+      description: Include any additional tools or versions (e.g., Kafka version, monitoring tools).
+      placeholder: e.g., Kafka v3.6.0, Prometheus v2.45.0
+    validations:
+      required: false
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What Went Wrong?
+      description: Describe the unexpected behavior or error message.
+      placeholder: |
+        e.g. Broker crashes when receiving a large number of messages.
+        Error: "Connection refused: No available brokers"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What Should Have Happened Instead?
+      description: Describe what you expected to happen.
+      placeholder: e.g., The broker should have handled the load gracefully.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Provide step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Start AutoMQ broker with default config.
+        2. Send a large number of messages.
+        3. Observe the broker behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: Add logs, stack traces, metrics, configuration, or screenshots here.
+      placeholder: |
+        - Logs
+        - Backtraces
+        - Configuration files
+        - Screenshots
+    validations:
+      required: false
