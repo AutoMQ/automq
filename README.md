@@ -1,4 +1,4 @@
-# AutoMQ: A stateless Kafka on S3, offering 10x cost savings and scaling in seconds.
+# AutoMQ: A stateless Kafka® on S3, offering 10x cost savings and scaling in seconds.
 
 <div align="center">
 <p align="center">
@@ -65,8 +65,8 @@ There are more deployment options available:
 - [Try AutoMQ on AWS Marketplace (Two Weeks Free Trial)](https://docs.automq.com/automq-cloud/getting-started/install-byoc-environment/aws/install-env-from-marketplace)
 - [Try AutoMQ on Alibaba Cloud Marketplace (Two Weeks Free Trial)](https://market.aliyun.com/products/55530001/cmgj00065841.html)
 
-## 🗞️ Newest Feature
-Table Topic feature for unified stream and data analysis, which now supports the S3 table feature announced at the 2024 re:Invent. [Learn more](https://www.automq.com/blog/automq-table-topic-seamless-integration-with-s3-tables-and-iceberg).
+## 🗞️ Newest Feature - Table Topic
+Table Topic is a new feature in AutoMQ that combines stream and table functionalities to unify streaming and data analysis. Currently, it supports Apache Iceberg and integrates with catalog services such as AWS Glue, HMS, and the Rest catalog. Additionally, it natively supports S3 tables, a new AWS product announced at the 2024 re:Invent. [Learn more](https://www.automq.com/blog/automq-table-topic-seamless-integration-with-s3-tables-and-iceberg).
 
 ![image](https://github.com/user-attachments/assets/6b2a514a-cc3e-442e-84f6-d953206865e0)
 
@@ -89,18 +89,17 @@ Here are some key highlights of AutoMQ that make it an ideal choice to replace y
 - **100% Kafka Compatible**: Fully compatible with Apache Kafka, offering all features with greater cost-effectiveness and operational efficiency.
 
 ## ✨Architecture
+AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). We've introduced a new storage engine based on object storage, transforming the classic shared-nothing architecture into a shared storage architecture.
 
 ![image](./docs/images/automq_simple_arch.png)
 
-AutoMQ's Shared Storage architecture revolutionizes the storage layer of Apache Kafka by offloading data to cloud storage, thereby rendering the Broker stateless. This architecture incorporates both WAL (Write-Ahead Logging) storage and object storage, storing all data in object storage in near real-time.
+Regarding the architecture of AutoMQ, it is fundamentally different from Kafka. The core difference lies in the storage layer of Apache Kafka and how we leverage object storage to achieve a stateless broker architecture. AutoMQ consists of below key components:
+- S3 Storage Adapter: an adapter layer that reimplements the UnifiedLog, LocalLog, and LogSegment classes to create logs on S3 instead of a local disk. Traditional local disk storage is still supported if desired.
+- S3Stream: a shared streaming storage library that encapsulates various storage modules, including WAL and object storage. WAL is a write-ahead log optimized for frequent writes and low IOPS to reduce S3 API costs. To boost read performance, we use LogCache and BlockCache for improved efficiency.
+- Auto Balancer: a component that automatically balances traffic and partitions between brokers, eliminating the need for manual reassignment. Unlike Kafka, this built-in feature removes the need for cruise control.
+- Rack-aware Router: Kafka has long faced cross-AZ traffic fees on AWS and GCP. Our shared storage architecture addresses this by using a rack-aware router to provide clients in different AZs with specific partition metadata, avoiding cross-AZ fees while exchanging data through object storage.
 
-In this setup:
-
-- Object storage is the primary data repository, providing a flexible, cost-effective, and scalable storage solution.
-- AutoMQ introduces a WAL storage layer to counter the high latency and low IOPS associated with Object storage, thereby improving data write efficiency and lowering IOPS usage.
-- The WAL storage layer is adaptable, allowing for the selection of various storage services across different cloud providers to cater to diverse durability and performance needs. Azure Zone-redundant Disk, GCP Regional Persistent Disk, and Alibaba Cloud Regional ESSD are ideal for ensuring multi-AZ durability. For cost-effective solutions on AWS with relaxed latency scenarios, S3 can serve as WAL. Additionally, AWS EFS/FSx can balance latency and cost for critical workloads when used as WAL.
-
-AutoMQ has developed a shared streaming storage library, S3Stream, which encapsulates these storage modules. By replacing the native Apache Kafka® Log storage with S3Stream, the entire Broker node becomes entirely stateless. This transformation significantly streamlines operations such as second-level partition reassignment, automatic scaling, and traffic self-balancing. To facilitate this, AutoMQ has integrated Controller components like Auto Scaling and Auto Balancing within its kernel, which oversee cluster scaling operations and traffic rebalancing, respectively. Please refer to [here](https://docs.automq.com/automq/architecture/overview) for more architecture details.
+For more on AutoMQ's architecture, visit [AutoMQ Architecture](https://docs.automq.com/automq/architecture/overview) or explore the source code directly.
 
 ## 💬 Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
@@ -111,30 +110,16 @@ You can join the following groups or channels to discuss or ask questions about 
 ## 👥 How to contribute
 If you've found a problem with AutoMQ, please open a [GitHub Issues](https://github.com/AutoMQ/automq/issues).
 To contribute to AutoMQ please see [Code of Conduct](CODE_OF_CONDUCT.md) and [Contributing Guide](CONTRIBUTING_GUIDE.md).
-We have a list of [good first issues](https://github.com/AutoMQ/automq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process. To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. If you have any questions about the 'good first issue' please feel free to ask. We will do our best to clarify any doubts you may have.
+We have a list of [good first issues](https://github.com/AutoMQ/automq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) that help you to get started, gain experience, and get familiar with our contribution process.
 
-## 👍 AutoMQ Business Edition
-The business edition of AutoMQ provides a powerful and easy-to-use control plane to help you manage clusters effortlessly. Meanwhile, the control plane is more powerful in terms of availability and observability compared to the community edition.
+## 👍 AutoMQ Enterprise Edition
+The enterprise edition of AutoMQ offers a robust, user-friendly control plane for seamless cluster management, with enhanced availability and observability over the open-source version. Additionally, we offer [Kafka Linking](https://www.automq.com/solutions/kafka-linking) for zero-downtime migration from any Kafka-compatible cluster to AutoMQ.
 
-> You can check the difference between the community and business editions [here](https://www.automq.com/product).
+[Contact us](https://www.automq.com/contact) for more information about the AutoMQ enterprise edition, and we'll gladly assist with your free trial.
 
+## 📜 License
+AutoMQ is under the Apache 2.0 license. See the [LICENSE](https://github.com/AutoMQ/automq/blob/main/LICENSE) file for details.
 
-<b>Watch the following video and refer to our [docs](https://docs.automq.com/automq-cloud/getting-started/install-byoc-environment/aws/install-env-via-terraform-module) to see how to deploy AutoMQ Business Edition with 2 weeks free license for PoC.</b>
+## 📝 Trademarks
+Apache®, Apache Kafka®, Kafka®, Apache Iceberg®, Iceberg® and associated open source project names are trademarks of the Apache Software Foundation
 
-<b> ⬇️ ⬇️ ⬇️ </b>
-
-[![Deploy AutoMQ Business Edition with Terraform](https://img.youtube.com/vi/O40zp81x97w/0.jpg)](https://www.youtube.com/watch?v=O40zp81x97w)
-
-
-
-### Free trial of AutoMQ Business Edition
-To allow users to experience the capabilities of the AutoMQ business edition without any barriers, click [here](https://www.automq.com/quick-start#Cloud?utm_source=github_automq_cloud) to apply for a no-obligation cluster trial, and note `AutoMQ Cloud Free Trial` in the message input box. We will immediately initialize an AutoMQ Cloud control panel for you soon in the cloud and give you the address of the control panel. Then, you can use the control panel to create a AutoMQ cluster or perform operations like scale in/out.
-
-No need to bind a credit card, no cost at all. We look forward to receiving valuable feedback from you to make our product better. If you want to proceed with a formal POC, you can also contact us through [Contact Us](https://www.automq.com/contact). We will further support your official POC.
-
-## 🐱 The relationship with Apache Kafka
-
-AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). Based on the Apache Kafka codebase, we found an aspect at the LogSegment level, and replaced Kafka's storage layer with our self-developed cloud-native stream storage engine, [S3Stream](https://github.com/AutoMQ/automq/tree/main/s3stream). This engine can provide customers with high-performance, low-cost, and unlimited stream storage capabilities based on cloud storage like EBS WAL and S3. As such, AutoMQ completely retains the code of Kafka's computing layer and is 100% fully compatible with Apache Kafka. We appreciate the work done by the Apache Kafka community and will continue to embrace the Kafka community.
-
-## 🙋 Contact Us
-Want to learn more, [Talk with our product experts](https://www.automq.com/contact).
