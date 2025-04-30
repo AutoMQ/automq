@@ -1,0 +1,235 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Three-node AutoMQ cluster setup with MinIO for production-like environments
+version: "3.8"
+
+services:
+  # MinIO service for S3 storage
+  minio:
+    container_name: "${MINIO_DOCKER_NAME-minio}"
+    hostname: "${MINIO_DOCKER_NAME-minio}"
+    image: minio/minio:RELEASE.2023-09-04T19-57-37Z
+    ports:
+      - "9000:9000"  # MinIO API
+      - "9001:9001"  # MinIO Console
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      automq_net:
+        ipv4_address: 10.6.0.2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  # Create needed buckets
+  mc:
+    container_name: "${MC_DOCKER_NAME-mc}"
+    hostname: "${MC_DOCKER_NAME-mc}"
+    image: minio/mc:RELEASE.2023-09-07T22-48-55Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/automq-data;
+      /usr/bin/mc policy set public myminio/automq-data;
+      exit 0;
+      "
+    networks:
+      - automq_net
+
+  # Controller node 1 (first controller in the cluster)
+  controller1:
+    container_name: "${CONTROLLER1_DOCKER_NAME-controller1}"
+    hostname: "${CONTROLLER1_DOCKER_NAME-controller1}"
+    stop_grace_period: 2m
+    image: automqinc/automq:latest
+    ports:
+      - "9093:9093"  # Controller API
+    environment:
+      - KAFKA_S3_ACCESS_KEY=minioadmin
+      - KAFKA_S3_SECRET_KEY=minioadmin
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
+      - KAFKA_CFG_LISTENERS=CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles controller --node.id 0 --controller.quorum.voters 0@controller1:9093,1@controller2:9093,2@controller3:9093 --s3.data.buckets 0@s3://automq-data?region=us-east-1 --s3.ops.buckets 1@s3://automq-data?region=us-east-1 --s3.wal.path 0@s3://automq-data?region=us-east-1 --s3.endpoint http://10.6.0.2:9000 --s3.path-style-access true
+    networks:
+      automq_net:
+        ipv4_address: 10.6.0.3
+    depends_on:
+      - minio
+      - mc
+
+  # Controller node 2
+  controller2:
+    container_name: "${CONTROLLER2_DOCKER_NAME-controller2}"
+    hostname: "${CONTROLLER2_DOCKER_NAME-controller2}"
+    stop_grace_period: 2m
+    image: automqinc/automq:latest
+    ports:
+      - "9094:9093"  # Controller API (mapped to different port on host)
+    environment:
+      - KAFKA_S3_ACCESS_KEY=minioadmin
+      - KAFKA_S3_SECRET_KEY=minioadmin
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
+      - KAFKA_CFG_LISTENERS=CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles controller --node.id 1 --controller.quorum.voters 0@controller1:9093,1@controller2:9093,2@controller3:9093 --s3.data.buckets 0@s3://automq-data?region=us-east-1 --s3.ops.buckets 1@s3://automq-data?region=us-east-1 --s3.wal.path 0@s3://automq-data?region=us-east-1 --s3.endpoint http://10.6.0.2:9000 --s3.path-style-access true
+    networks:
+      automq_net:
+        ipv4_address: 10.6.0.4
+    depends_on:
+      - controller1
+
+  # Controller node 3
+  controller3:
+    container_name: "${CONTROLLER3_DOCKER_NAME-controller3}"
+    hostname: "${CONTROLLER3_DOCKER_NAME-controller3}"
+    stop_grace_period: 2m
+    image: automqinc/automq:latest
+    ports:
+      - "9095:9093"  # Controller API (mapped to different port on host)
+    environment:
+      - KAFKA_S3_ACCESS_KEY=minioadmin
+      - KAFKA_S3_SECRET_KEY=minioadmin
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
+      - KAFKA_CFG_LISTENERS=CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles controller --node.id 2 --controller.quorum.voters 0@controller1:9093,1@controller2:9093,2@controller3:9093 --s3.data.buckets 0@s3://automq-data?region=us-east-1 --s3.ops.buckets 1@s3://automq-data?region=us-east-1 --s3.wal.path 0@s3://automq-data?region=us-east-1 --s3.endpoint http://10.6.0.2:9000 --s3.path-style-access true
+    networks:
+      automq_net:
+        ipv4_address: 10.6.0.5
+    depends_on:
+      - controller2
+
+  # Broker node 1
+  broker1:
+    container_name: "${BROKER1_DOCKER_NAME-broker1}"
+    hostname: "${BROKER1_DOCKER_NAME-broker1}"
+    stop_grace_period: 2m
+    image: automqinc/automq:latest
+    ports:
+      - "9092:9092"  # Kafka API
+    environment:
+      - KAFKA_S3_ACCESS_KEY=minioadmin
+      - KAFKA_S3_SECRET_KEY=minioadmin
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_IN_CAPACITY=5120
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_OUT_CAPACITY=5120
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles broker --node.id 3 --controller.quorum.voters 0@controller1:9093,1@controller2:9093,2@controller3:9093 --s3.data.buckets 0@s3://automq-data?region=us-east-1 --s3.ops.buckets 1@s3://automq-data?region=us-east-1 --s3.wal.path 0@s3://automq-data?region=us-east-1 --s3.endpoint http://10.6.0.2:9000 --s3.path-style-access true
+    networks:
+      automq_net:
+        ipv4_address: 10.6.0.6
+    depends_on:
+      - controller1
+      - controller2
+      - controller3
+
+  # Broker node 2
+  broker2:
+    container_name: "${BROKER2_DOCKER_NAME-broker2}"
+    hostname: "${BROKER2_DOCKER_NAME-broker2}"
+    stop_grace_period: 2m
+    image: automqinc/automq:latest
+    ports:
+      - "9096:9092"  # Kafka API (mapped to different port on host)
+    environment:
+      - KAFKA_S3_ACCESS_KEY=minioadmin
+      - KAFKA_S3_SECRET_KEY=minioadmin
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_IN_CAPACITY=5120
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_OUT_CAPACITY=5120
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9096
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles broker --node.id 4 --controller.quorum.voters 0@controller1:9093,1@controller2:9093,2@controller3:9093 --s3.data.buckets 0@s3://automq-data?region=us-east-1 --s3.ops.buckets 1@s3://automq-data?region=us-east-1 --s3.wal.path 0@s3://automq-data?region=us-east-1 --s3.endpoint http://10.6.0.2:9000 --s3.path-style-access true
+    networks:
+      automq_net:
+        ipv4_address: 10.6.0.7
+    depends_on:
+      - broker1
+
+  # Broker node 3
+  broker3:
+    container_name: "${BROKER3_DOCKER_NAME-broker3}"
+    hostname: "${BROKER3_DOCKER_NAME-broker3}"
+    stop_grace_period: 2m
+    image: automqinc/automq:latest
+    ports:
+      - "9097:9092"  # Kafka API (mapped to different port on host)
+    environment:
+      - KAFKA_S3_ACCESS_KEY=minioadmin
+      - KAFKA_S3_SECRET_KEY=minioadmin
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx1g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_IN_CAPACITY=5120
+      - KAFKA_CFG_AUTOBALANCER_REPORTER_NETWORK_OUT_CAPACITY=5120
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9097
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT
+    command:
+      - bash
+      - -c
+      - |
+        /opt/kafka/scripts/start.sh up --process.roles broker --node.id 5 --controller.quorum.voters 0@controller1:9093,1@controller2:9093,2@controller3:9093 --s3.data.buckets 0@s3://automq-data?region=us-east-1 --s3.ops.buckets 1@s3://automq-data?region=us-east-1 --s3.wal.path 0@s3://automq-data?region=us-east-1 --s3.endpoint http://10.6.0.2:9000 --s3.path-style-access true
+    networks:
+      automq_net:
+        ipv4_address: 10.6.0.8
+    depends_on:
+      - broker2
+
+volumes:
+  minio_data:
+    driver: local
+
+networks:
+  automq_net:
+    name: automq_net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: "10.6.0.0/16"
+          gateway: "10.6.0.1"
