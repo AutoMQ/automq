@@ -268,11 +268,10 @@ docker-compose -f docker/docker-compose-cluster.yaml up -d
 ```
 
 This configuration:
-- Deploys a 3-controller + 3-broker cluster
+- Deploys a 3-server cluster
 - Includes MinIO for S3 storage
 - Uses the latest bucket URI pattern (s3.data.buckets, s3.ops.buckets, s3.wal.path)
-- Provides proper redundancy for both controller and broker services
-- Port forwarding is configured to allow access to all services from the host
+- All services run in a single Docker network
 
 Configuration Notes
 -------------------
@@ -282,8 +281,6 @@ Both configurations use the new bucket URI pattern as recommended in the AutoMQ 
 - `s3.data.buckets` for data storage
 - `s3.ops.buckets` for logs and metrics storage
 - `s3.wal.path` for S3 WAL
-
-The older `storage.mode=s3wal` parameter is deprecated and no longer used.
 
 For more details, see the [AutoMQ documentation](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux#step-2-edit-the-cluster-configuration-template).
 
