@@ -11,9 +11,15 @@ follow [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Code Contributions
 
-Most of the issues open for contributions are tagged with 'good first issue.' To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. If you have any questions about the 'good first issue' please feel free to ask. We will do our best to clarify any doubts you may have.
-Start with
-this [tagged good first issue](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+### Finding or Reporting Issues
+
+-   **Find an existing issue:** Look through the [existing issues](https://github.com/AutoMQ/automq/issues). Issues open for contributions are often tagged with `good first issue`. To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. Start with
+    this [tagged good first issue](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+-   **Report a new issue:** If you've found a bug or have a feature request, please [create a new issue](https://github.com/AutoMQ/automq/issues/new/choose). Select the appropriate template (Bug Report or Feature Request) and fill out the form provided.
+
+If you have any questions about an issue, please feel free to ask in the issue comments. We will do our best to clarify any doubts you may have.
+
+### Submitting Pull Requests
 
 The usual workflow of code contribution is:
 
@@ -25,7 +31,7 @@ The usual workflow of code contribution is:
 5. Push your local branch to your fork.
 6. Submit a Pull Request so that we can review your changes.
 7. [Link an existing Issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue)
-   that does not include the `needs triage` label to your Pull Request. A pull request without a linked issue will be
+   (created via the steps above or an existing one you claimed) that does not include the `needs triage` label to your Pull Request. A pull request without a linked issue will be
    closed, otherwise.
 8. Write a PR title and description that follows the [Pull Request Template](PULL_REQUEST_TEMPLATE.md).
 9. An AutoMQ maintainer will trigger the CI tests for you and review the code.
@@ -34,7 +40,7 @@ The usual workflow of code contribution is:
 
 Pull Request reviews are done on a regular basis.
 
-> [!NOTE] 
+> [!NOTE]
 > Please make sure you respond to our feedback/questions and sign our CLA.
 >
 > Pull Requests without updates will be closed due inactivity.
@@ -42,7 +48,7 @@ Pull Request reviews are done on a regular basis.
 ## Requirement
 
 | Requirement            | Version    |
-|------------------------|------------|
+| ---------------------- | ---------- |
 | Compiling requirements | JDK 17     |
 | Compiling requirements | Scala 2.13 |
 | Running requirements   | JDK 17     |
@@ -58,17 +64,21 @@ Building AutoMQ is the same as Apache Kafka. Kafka uses Gradle as its project ma
 It is not recommended to manually install Gradle. The gradlew script in the root directory will automatically download Gradle for you, and the version is also specified by the gradlew script.
 
 ### Build
+
 ```
 ./gradlew jar -x test
 ```
 
 ### Prepare S3 service
-Refer to this [documentation](https://docs.localstack.cloud/getting-started/installation/) to install `localstack` to mock a local s3 service or use AWS S3 service directly. 
+
+Refer to this [documentation](https://docs.localstack.cloud/getting-started/installation/) to install `localstack` to mock a local s3 service or use AWS S3 service directly.
 
 If you are using localstack then create a bucket with the following command:
+
 ```
 aws s3api create-bucket --bucket ko3 --endpoint=http://127.0.0.1:4566
 ```
+
 ### Modify Configuration
 
 Modify the `config/kraft/server.properties` file. The following settings need to be changed:
@@ -83,28 +93,34 @@ s3.region=us-east-1
 # The bucket of S3 service to store data
 s3.bucket=ko3
 ```
+
 > Tips: If you're using localstack, make sure to set the s3.endpoint to http://127.0.0.1:4566, not localhost. Set the region to us-east-1. The bucket should match the one created earlier.
 
 ### Format
+
 Generated Cluster UUID:
+
 ```
 KAFKA_CLUSTER_ID="$(bin/kafka-storage.sh random-uuid)"
 ```
+
 Format Metadata Catalog:
+
 ```
 bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties
 ```
+
 ### IDE Start Configuration
-| Item            | Value    |
-|------------------------|------------|
-| Main | core/src/main/scala/kafka/Kafka.scala     |
-| ClassPath | -cp kafka.core.main |
-| VM Options   | -Xmx1G -Xms1G -server -XX:+UseZGC -XX:MaxDirectMemorySize=2G -Dkafka.logs.dir=logs/ -Dlog4j.configuration=file:config/log4j.properties -Dio.netty.leakDetection.level=paranoid    |
-| CLI Arguments | config/kraft/server.properties|
-| Environment | KAFKA_S3_ACCESS_KEY=test;KAFKA_S3_SECRET_KEY=test |
+
+| Item          | Value                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Main          | core/src/main/scala/kafka/Kafka.scala                                                                                                                                          |
+| ClassPath     | -cp kafka.core.main                                                                                                                                                            |
+| VM Options    | -Xmx1G -Xms1G -server -XX:+UseZGC -XX:MaxDirectMemorySize=2G -Dkafka.logs.dir=logs/ -Dlog4j.configuration=file:config/log4j.properties -Dio.netty.leakDetection.level=paranoid |
+| CLI Arguments | config/kraft/server.properties                                                                                                                                                 |
+| Environment   | KAFKA_S3_ACCESS_KEY=test;KAFKA_S3_SECRET_KEY=test                                                                                                                              |
 
 > tips: If you are using localstack, just use any value of access key and secret key. If you are using real S3 service, set `KAFKA_S3_ACCESS_KEY` and `KAFKA_S3_SECRET_KEY` to the real access key and secret key that have read/write permission of S3 service.
-
 
 ## Documentation
 
