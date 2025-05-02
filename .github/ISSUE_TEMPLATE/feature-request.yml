@@ -1,0 +1,58 @@
+name: 🚀 Feature Request
+description: Suggest a new idea or improvement for AutoMQ
+title: "[Feature Request] "
+labels: 
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a feature! Please fill out the form below as clearly as possible.
+
+  - type: input
+    id: target-audience
+    attributes:
+      label: Who is this feature for?
+      description: Who are the users that would benefit from this feature?
+      placeholder: e.g. Engineers needing real-time AutoMQ monitoring
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-problem
+    attributes:
+      label: What problem are they facing today?
+      description: Describe the issue or limitation they experience without this feature.
+      placeholder: e.g. No built-in dashboard to monitor metrics like throughput, latency, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Why is solving this impactful?
+      description: Explain the importance of this feature and how it benefits users, the project, or the community.
+      placeholder: e.g. Improves system visibility, reduces debugging time, enables proactive alerting...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe your proposed solution or idea in detail.
+      placeholder: |
+        - Web dashboard with real-time charts
+        - Accessible via the AutoMQ admin panel
+        - Uses minimal resources
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes
+      description: Add any related issues, dependencies, or initial work done.
+      placeholder: e.g. Related to issue #123, might require metrics export setup
+    validations:
+      required: false

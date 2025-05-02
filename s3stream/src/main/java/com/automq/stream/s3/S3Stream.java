@@ -224,12 +224,16 @@ public class S3Stream implements Stream, StreamMetadataListener {
         });
     }
 
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
     @Override
     @WithSpan
     public CompletableFuture<FetchResult> fetch(FetchContext context,
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
+        if (snapshotRead()) {
+            context.readOptions().snapshotRead(true);
+        }
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
         try {

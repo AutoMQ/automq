@@ -74,15 +74,23 @@ public class StreamRecordBatchCodec {
      * Decode a stream record batch from a byte buffer and move the reader index.
      * The returned stream record batch shares the payload buffer with the input buffer.
      */
-    public static StreamRecordBatch decode(ByteBuf buf) {
+    public static StreamRecordBatch decode(ByteBuf buf, boolean retain) {
         buf.readByte(); // magic
         long streamId = buf.readLong();
         long epoch = buf.readLong();
         long baseOffset = buf.readLong();
         int lastOffsetDelta = buf.readInt();
         int payloadLength = buf.readInt();
-        ByteBuf payload = buf.slice(buf.readerIndex(), payloadLength);
+        ByteBuf payload = retain ? buf.retainedSlice(buf.readerIndex(), payloadLength) : buf.slice(buf.readerIndex(), payloadLength);
         buf.skipBytes(payloadLength);
         return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
+    }
+
+    public static StreamRecordBatch decode(ByteBuf buf) {
+        return decode(buf, false);
+    }
+
+    public static StreamRecordBatch sliceRetainDecode(ByteBuf buf) {
+        return decode(buf, true);
     }
 }

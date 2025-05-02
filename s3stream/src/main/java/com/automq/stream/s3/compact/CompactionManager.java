@@ -78,7 +78,7 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class CompactionManager {
-    private static final int MIN_COMPACTION_DELAY_MS = 60000;
+    private static final int MIN_COMPACTION_DELAY_MS = 10000;
     // Max refill rate for Bucket: 1 token per nanosecond
     private static final int MAX_THROTTLE_BYTES_PER_SEC = 1000000000;
     private final Logger logger;
@@ -281,22 +281,16 @@ public class CompactionManager {
         long totalSize = objectsToForceSplit.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
         totalSize += objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
         // throttle compaction read to half of compaction interval because of write overhead
-        int expectCompleteTime = compactionInterval - 1 /* ahead 1min*/;
-        long expectReadBytesPerSec;
-        if (expectCompleteTime > 0) {
-            expectReadBytesPerSec = Math.max(expectCompleteTime * 60L, totalSize / expectCompleteTime / 60);
-            if (expectReadBytesPerSec < MAX_THROTTLE_BYTES_PER_SEC) {
-                compactionBucket = Bucket.builder().addLimit(limit -> limit
-                    .capacity(expectReadBytesPerSec)
-                    .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
-                logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
-                    expectReadBytesPerSec, expectCompleteTime);
-            } else {
-                logger.warn("Compaction throttle rate {} bytes/s exceeds bucket refill limit, there will be no throttle for compaction this time", expectReadBytesPerSec);
-                compactionBucket = null;
-            }
+        int expectCompleteTime = Math.max(compactionInterval - 1, 1) /* ahead 1min*/;
+        long expectReadBytesPerSec = Math.max(expectCompleteTime * 60L, totalSize / expectCompleteTime / 60);
+        if (expectReadBytesPerSec < MAX_THROTTLE_BYTES_PER_SEC) {
+            compactionBucket = Bucket.builder().addLimit(limit -> limit
+                .capacity(expectReadBytesPerSec)
+                .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
+            logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
+                expectReadBytesPerSec, expectCompleteTime);
         } else {
-            logger.warn("Compaction interval {}min is too small, there will be no throttle for compaction this time", compactionInterval);
+            logger.warn("Compaction throttle rate {} bytes/s exceeds bucket refill limit, there will be no throttle for compaction this time", expectReadBytesPerSec);
             compactionBucket = null;
         }
 

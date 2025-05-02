@@ -20,6 +20,7 @@
 package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.cache.LogCache.LogCacheBlock;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.junit.jupiter.api.Tag;
@@ -29,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
 public class LogCacheTest {
@@ -81,6 +84,83 @@ public class LogCacheTest {
         Map<Long, LogCache.IndexAndCount> offsetIndexMap = cache.blocks.get(0).map.get(233L).offsetIndexMap;
         assertEquals(1, offsetIndexMap.size());
         assertEquals(100000, offsetIndexMap.get(100000L).index);
+    }
+
+    @Test
+    public void testClearStreamRecords() {
+        LogCache logCache = new LogCache(1024 * 1024, 1024 * 1024);
+
+        logCache.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
+        logCache.put(new StreamRecordBatch(233L, 0L, 11L, 2, TestUtils.random(20)));
+
+        logCache.archiveCurrentBlock();
+        logCache.put(new StreamRecordBatch(233L, 0L, 13L, 2, TestUtils.random(20)));
+
+        long size0 = logCache.size();
+        logCache.put(new StreamRecordBatch(234L, 0L, 13L, 2, TestUtils.random(20)));
+        long size1 = logCache.size();
+
+        logCache.clearStreamRecords(233L);
+        assertEquals(size1 - size0, logCache.size());
+
+        logCache.clearStreamRecords(234L);
+        assertEquals(0, logCache.size());
+    }
+
+    @Test
+    public void testIsDiscontinuous() {
+        LogCacheBlock left = new LogCacheBlock(1024L * 1024);
+        left.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
+
+        LogCacheBlock right = new LogCacheBlock(1024L * 1024);
+        right.put(new StreamRecordBatch(233L, 0L, 13L, 1, TestUtils.random(20)));
+
+        assertTrue(LogCache.isDiscontinuous(left, right));
+
+        left = new LogCacheBlock(1024L * 1024);
+        left.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
+        left.put(new StreamRecordBatch(234L, 0L, 10L, 1, TestUtils.random(20)));
+
+        right = new LogCacheBlock(1024L * 1024);
+        right.put(new StreamRecordBatch(233L, 0L, 11L, 1, TestUtils.random(20)));
+        assertFalse(LogCache.isDiscontinuous(left, right));
+    }
+
+    @Test
+    public void testMergeBlock() {
+        long size = 0;
+        LogCacheBlock left = new LogCacheBlock(1024L * 1024);
+        left.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
+        left.put(new StreamRecordBatch(234L, 0L, 100L, 1, TestUtils.random(20)));
+        size += left.size();
+
+        LogCacheBlock right = new LogCacheBlock(1024L * 1024);
+        right.put(new StreamRecordBatch(233L, 0L, 11L, 1, TestUtils.random(20)));
+        right.put(new StreamRecordBatch(235L, 0L, 200L, 1, TestUtils.random(20)));
+        size += right.size();
+
+        LogCache.mergeBlock(left, right);
+        assertEquals(size, left.size());
+        LogCache.StreamCache stream233 = left.map.get(233L);
+        assertEquals(10, stream233.startOffset());
+        assertEquals(12, stream233.endOffset());
+        assertEquals(2, stream233.records.size());
+        assertEquals(10, stream233.records.get(0).getBaseOffset());
+        assertEquals(11, stream233.records.get(1).getBaseOffset());
+
+        LogCache.StreamCache stream234 = left.map.get(234L);
+        assertEquals(100, stream234.startOffset());
+        assertEquals(101, stream234.endOffset());
+        assertEquals(1, stream234.records.size());
+        assertEquals(100, stream234.records.get(0).getBaseOffset());
+
+        LogCache.StreamCache stream235 = left.map.get(235L);
+        assertEquals(200, stream235.startOffset());
+        assertEquals(201, stream235.endOffset());
+        assertEquals(1, stream235.records.size());
+        assertEquals(200, stream235.records.get(0).getBaseOffset());
+
+
     }
 
 }
