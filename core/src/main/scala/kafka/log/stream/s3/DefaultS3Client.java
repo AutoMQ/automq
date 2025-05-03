@@ -131,7 +131,7 @@ public class DefaultS3Client implements Client {
             config.networkBaselineBandwidth() - (long) networkOutboundRate.derive(
                 TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkOutboundUsageTotal().get()));
 
-        this.localIndexCache = new LocalStreamRangeIndexCache();
+        this.localIndexCache = LocalStreamRangeIndexCache.create();
         this.objectReaderFactory = new DefaultObjectReaderFactory(() -> this.mainObjectStorage);
         this.metadataManager = new StreamMetadataManager(brokerServer, config.nodeId(), objectReaderFactory, localIndexCache);
         this.requestSender = new ControllerRequestSender(brokerServer, new ControllerRequestSender.RetryPolicyContext(config.controllerRequestRetryMaxCount(),
