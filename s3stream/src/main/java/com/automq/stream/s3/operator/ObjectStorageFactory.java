@@ -53,6 +53,16 @@ public class ObjectStorageFactory {
                     .threadPrefix(builder.threadPrefix)
                     .build())
             .registerProtocolHandler("mem", builder -> new MemoryObjectStorage(builder.bucket.bucketId()))
+            .registerProtocolHandler("azblob", builder ->
+                new AzureObjectStorage(
+                    builder.bucket(),
+                    builder.tagging(),
+                    builder.inboundLimiter(),
+                    builder.outboundLimiter(),
+                    builder.readWriteIsolate(),
+                    builder.checkS3ApiModel(),
+                    builder.threadPrefix())
+                )
             .registerProtocolHandler("file", builder ->
                 LocalFileObjectStorage.builder()
                     .bucket(builder.bucket)

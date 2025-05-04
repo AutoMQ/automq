@@ -207,6 +207,7 @@ public class DefaultS3Client implements Client {
         switch (uri.protocol()) {
             case "file":
                 return BlockWALService.builder(uri).config(config).build();
+            case "azblob":
             case "s3":
                 ObjectStorage walObjectStorage = ObjectStorageFactory.instance()
                     .builder(BucketURI.parse(config.walConfig()))

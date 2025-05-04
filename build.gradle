@@ -1161,6 +1161,7 @@ project(':core') {
     from(project.file("$rootDir/config")) { into "config/" }
     from(project.file("$rootDir/licenses")) { into "licenses/" }
     from(project.file("$rootDir/docker/docker-compose.yaml")) { into "docker/" }
+    from(project.file("$rootDir/docker/chart")) { into "docker/chart" }
     from(project.file("$rootDir/docker/telemetry")) { into "docker/telemetry/" }
     from(project.file("$rootDir/LICENSE")) { into "" }
     from "$rootDir/NOTICE-binary" rename {String filename -> filename.replace("-binary", "")}
@@ -2143,6 +2144,17 @@ project(':s3stream') {
     implementation 'org.hdrhistogram:HdrHistogram:2.2.2'
     implementation 'software.amazon.awssdk.crt:aws-crt:0.30.8'
     implementation 'com.ibm.async:asyncutil:0.1.0'
+    //---- azure ----
+    implementation platform('com.azure:azure-sdk-bom:1.2.30')
+    implementation('com.azure:azure-identity')
+    implementation('com.azure:azure-core')
+    implementation('com.azure.resourcemanager:azure-resourcemanager-compute:2.48.0')
+    implementation('com.azure.resourcemanager:azure-resourcemanager-resources:2.48.0')
+    implementation('com.azure:azure-storage-blob')
+    implementation('com.azure:azure-storage-blob-batch')
+    implementation('com.azure:azure-security-keyvault-certificates')
+    implementation('com.azure:azure-security-keyvault-keys')
+    implementation('com.azure:azure-security-keyvault-secrets')
 
     testImplementation 'org.slf4j:slf4j-simple:2.0.9'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
