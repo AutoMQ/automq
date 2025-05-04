@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3;
@@ -16,6 +24,7 @@ import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.cache.SnapshotReadCache;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.Failover;
@@ -91,6 +100,7 @@ public class S3Storage implements Storage {
      * WAL log cache
      */
     private final LogCache deltaWALCache;
+    private final LogCache snapshotReadCache;
     /**
      * WAL out of order callback sequencer. {@link #streamCallbackLocks} will ensure the memory safety.
      */
@@ -142,7 +152,16 @@ public class S3Storage implements Storage {
         this.maxDeltaWALCacheSize = config.walCacheSize();
         this.deltaWAL = deltaWAL;
         this.blockCache = blockCache;
-        this.deltaWALCache = new LogCache(config.walCacheSize(), config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
+        long deltaWALCacheSize = config.walCacheSize();
+        long snapshotReadCacheSize = 0;
+        if (config.snapshotReadEnable()) {
+            deltaWALCacheSize = Math.max(config.walCacheSize() / 3, 10L * 1024 * 1024);
+            snapshotReadCacheSize = Math.max(config.walCacheSize() / 3 * 2, 10L * 1024 * 1024);
+        }
+        this.deltaWALCache = new LogCache(deltaWALCacheSize, config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
+        this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
+        S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
+        SnapshotReadCache.instance().setup(this.snapshotReadCache, objectStorage);
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
@@ -414,15 +433,7 @@ public class S3Storage implements Storage {
             request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
         }
         deltaWAL.shutdownGracefully();
-        backgroundExecutor.shutdown();
-        try {
-            if (!backgroundExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                LOGGER.warn("await backgroundExecutor timeout 10s");
-            }
-        } catch (InterruptedException e) {
-            backgroundExecutor.shutdownNow();
-            LOGGER.warn("await backgroundExecutor close fail", e);
-        }
+        ThreadUtils.shutdownExecutor(backgroundExecutor, 10, TimeUnit.SECONDS, LOGGER);
     }
 
     @Override
@@ -547,13 +558,15 @@ public class S3Storage implements Storage {
         return cf;
     }
 
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
     @WithSpan
     private CompletableFuture<ReadDataBlock> read0(FetchContext context,
         @SpanAttribute long streamId,
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
-        List<StreamRecordBatch> logCacheRecords = deltaWALCache.get(context, streamId, startOffset, endOffset, maxBytes);
+        LogCache firstCache = context.readOptions().snapshotRead() ? snapshotReadCache : deltaWALCache;
+        List<StreamRecordBatch> logCacheRecords = firstCache.get(context, streamId, startOffset, endOffset, maxBytes);
         if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords, CacheAccessType.DELTA_WAL_CACHE_HIT));
         }

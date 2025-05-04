@@ -1,16 +1,25 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.apache.kafka.controller.stream;
 
+import org.apache.kafka.common.errors.s3.NodeLockedException;
 import org.apache.kafka.common.errors.s3.UnregisterNodeWithOpenStreamsException;
 import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.AutomqRegisterNodeRequestData;
@@ -170,6 +179,9 @@ public class NodeControlManager {
     public ApiMessageAndVersion unregisterNodeRecord(int nodeId) {
         if (hasOpeningStreams(nodeId)) {
             throw new UnregisterNodeWithOpenStreamsException(String.format("Node %d has opening streams", nodeId));
+        }
+        if (lockedNodes.contains(nodeId)) {
+            throw new NodeLockedException(String.format("Node %d is locked", nodeId));
         }
         RemoveKVRecord removeKVRecord = new RemoveKVRecord().setKeys(List.of(KEY_PREFIX + nodeId));
         return new ApiMessageAndVersion(removeKVRecord, (short) 0);

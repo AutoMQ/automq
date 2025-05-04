@@ -1,0 +1,56 @@
+name: "⭐ Good First Issue"
+description: Design and describe a task suitable for first-time contributors
+title: "[Good First Issue] "
+labels: [good first issue]
+assignees: [your-github-username]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping us make AutoMQ better for new contributors! Please fill out the details of this good first issue.
+
+  - type: textarea
+    id: background
+    attributes:
+      label: Background
+      description: Explain why this issue is being created and any relevant context.
+      placeholder: |
+        e.g. Currently, Kafka's logs are stored only on the local disk. We want to also store them in cloud object storage like S3 to improve reliability and enable querying.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expectation
+    attributes:
+      label: What's Our Expectation for This Issue?
+      description: Describe what the desired outcome of this issue is.
+      placeholder: |
+        e.g. Log files should still exist locally, but also be uploaded to S3 using the following path format: s3://bucket-name/automq/cluster-id/broker-id/logs/xx
+    validations:
+      required: true
+
+  - type: textarea
+    id: getting-started
+    attributes:
+      label: How to Get Started
+      description: Help contributors understand how to begin working on the issue.
+      placeholder: |
+        - Precondition:
+            - Understand how AutoMQ writes logs to the local filesystem.
+        - Main Classes:
+            - `LogWriter`
+            - `CloudUploader`
+        - Tips:
+            - Refer to the `LogWriter` class to understand the current logic.
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: Reference Links
+      description: Include any helpful links, documents, or code references.
+      placeholder: |
+        e.g. [Kafka Official Documentation](https://kafka.apache.org/documentation/)
+    validations:
+      required: false

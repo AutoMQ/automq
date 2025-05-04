@@ -828,8 +828,8 @@ class ElasticKafkaApis(
     requestHelper.sendMaybeThrottle(request, resp)
   }
 
-  def setTrafficInterceptor(produceRouter: TrafficInterceptor): Unit = {
-    this.trafficInterceptor = produceRouter
+  def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {
+    this.trafficInterceptor = trafficInterceptor
   }
 
 }

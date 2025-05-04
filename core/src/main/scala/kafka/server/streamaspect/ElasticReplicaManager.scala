@@ -4,6 +4,7 @@ import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
 import com.automq.stream.utils.FutureUtil
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
+import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.partition.snapshot.PartitionSnapshotsManager
 import kafka.cluster.Partition
@@ -18,12 +19,14 @@ import kafka.server.checkpoints.{LazyOffsetCheckpoints, OffsetCheckpoints}
 import kafka.utils.Implicits.MapExtensionMethods
 import kafka.utils.{CoreUtils, Exit}
 import kafka.zk.KafkaZkClient
+import org.apache.commons.lang3.StringUtils
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.record.{MemoryRecords, PooledRecords, PooledResource}
+import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqGetPartitionSnapshotResponse}
@@ -45,6 +48,7 @@ import java.util.function.{BiFunction, Consumer}
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Seq, mutable}
 import scala.compat.java8.OptionConverters
+import scala.compat.java8.OptionConverters.RichOptionalGeneric
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala, SetHasAsJava}
 
 object ElasticReplicaManager {
@@ -190,6 +194,8 @@ class ElasticReplicaManager(
   private val partitionSnapshotsManager = new PartitionSnapshotsManager(time)
 
   private val snapshotReadPartitions = new ConcurrentHashMap[TopicPartition, Partition]()
+
+  private var trafficInterceptor: TrafficInterceptor = null
 
   addPartitionLifecycleListener(new PartitionLifecycleListener {
     override def onOpen(partition: Partition): Unit = partitionSnapshotsManager.onPartitionOpen(partition)
@@ -652,6 +658,34 @@ class ElasticReplicaManager(
     }
   }
 
+  def getSnapshotReadPreferredNode(clientMetadataOpt: Optional[ClientMetadata]): Optional[Int] = {
+    if (clientMetadataOpt.isPresent && trafficInterceptor != null) {
+      val clientMetadata = clientMetadataOpt.get()
+      val clientIdMetadata = ClientIdMetadata.of(clientMetadata.clientId(), clientMetadata.clientAddress(), null)
+      if (StringUtils.isNotBlank(clientMetadata.rackId())) {
+        clientIdMetadata.metadata(ClientIdKey.AVAILABILITY_ZONE, util.List.of(clientMetadata.rackId()))
+      }
+      val nodeOpt = trafficInterceptor.getLeaderNode(config.nodeId, clientIdMetadata, clientMetadata.listenerName())
+      if (StringUtils.isBlank(clientMetadata.rackId())) {
+        if (nodeOpt.isPresent && nodeOpt.get().id() != config.nodeId) {
+          // the consumer should directly read from the snapshot-read partition
+          Optional.of(-1)
+        } else {
+          Optional.empty()
+        }
+      } else {
+        if (nodeOpt.isPresent && nodeOpt.get().id() != config.nodeId) {
+          // return the preferred node
+          Optional.of(nodeOpt.get().id())
+        } else {
+          Optional.empty()
+        }
+      }
+    } else {
+      Optional.empty()
+    }
+  }
+
   /**
    * Parallel read from multiple topic partitions at the given offset up to maxSize bytes
    */
@@ -663,6 +697,9 @@ class ElasticReplicaManager(
     val traceEnabled = isTraceEnabled
 
     val fastReadFastFail = new AtomicReference[FastReadFailFastException]()
+
+    // snapshot-read preferred node
+    val snapshotReadPreferredNode = getSnapshotReadPreferredNode(params.clientMetadata)
 
     /**
      * Convert a throwable to [[LogReadResult]] with [[LogReadResult.exception]] set.
@@ -779,10 +816,22 @@ class ElasticReplicaManager(
 
       val fetchTimeMs = time.milliseconds
 
-      // ~~ If we are the leader, determine the preferred read-replica ~~
-      // NOTE: We do not check the preferred read-replica like Apache Kafka does in
-      // [[ReplicaManager.readFromLocalLog]], as we always have only one replica per partition.
-      val preferredReadReplica = None
+      val preferredReadReplica = snapshotReadPreferredNode.asScala
+      if (preferredReadReplica.isDefined) {
+        // If a preferred read-replica is set, skip the read
+        val offsetSnapshot = partition.fetchOffsetSnapshot(fetchInfo.currentLeaderEpoch, fetchOnlyFromLeader = false)
+        val rst = LogReadResult(info = new FetchDataInfo(LogOffsetMetadata.UNKNOWN_OFFSET_METADATA, MemoryRecords.EMPTY),
+          divergingEpoch = None,
+          highWatermark = offsetSnapshot.highWatermark.messageOffset,
+          leaderLogStartOffset = offsetSnapshot.logStartOffset,
+          leaderLogEndOffset = offsetSnapshot.logEndOffset.messageOffset,
+          followerLogStartOffset = fetchInfo.logStartOffset,
+          fetchTimeMs = -1L,
+          lastStableOffset = Some(offsetSnapshot.lastStableOffset.messageOffset),
+          preferredReadReplica = preferredReadReplica,
+          exception = None)
+        return CompletableFuture.completedFuture(rst)
+      }
 
       // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
       partition.fetchRecordsAsync(
@@ -853,6 +902,9 @@ class ElasticReplicaManager(
         val partitionData = readPartitionInfo(partitionIndex)._2
         try {
           val partition = getPartitionAndCheckTopicId(tp)
+          if (snapshotReadPreferredNode.isPresent && snapshotReadPreferredNode.get() == -1) {
+            throw new NotLeaderOrFollowerException("The consumer should read the snapshot-read partition in the same rack")
+          }
 
           val logReadInfo = partition.checkFetchOffsetAndMaybeGetInfo(params, partitionData)
           if (null != logReadInfo) {
@@ -1479,6 +1531,10 @@ class ElasticReplicaManager(
       } else {
           this.kafkaLinkingManager = Some(kafkaLinkingManager)
       }
+  }
+
+  def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {
+    this.trafficInterceptor = trafficInterceptor
   }
 
 }

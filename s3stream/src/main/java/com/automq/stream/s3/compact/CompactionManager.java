@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package com.automq.stream.s3.compact;
 
@@ -70,7 +78,7 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class CompactionManager {
-    private static final int MIN_COMPACTION_DELAY_MS = 60000;
+    private static final int MIN_COMPACTION_DELAY_MS = 10000;
     // Max refill rate for Bucket: 1 token per nanosecond
     private static final int MAX_THROTTLE_BYTES_PER_SEC = 1000000000;
     private final Logger logger;
@@ -207,16 +215,7 @@ public class CompactionManager {
     }
 
     private void shutdownAndAwaitTermination(ExecutorService executor, int timeout, TimeUnit timeUnit) {
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(timeout, timeUnit)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException ex) {
-            executor.shutdownNow();
-            // Preserve interrupt status
-            Thread.currentThread().interrupt();
-        }
+        ThreadUtils.shutdownExecutor(executor, timeout, timeUnit, logger);
     }
 
     public CompletableFuture<Void> compact() {
@@ -282,22 +281,16 @@ public class CompactionManager {
         long totalSize = objectsToForceSplit.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
         totalSize += objectsToCompact.stream().mapToLong(S3ObjectMetadata::objectSize).sum();
         // throttle compaction read to half of compaction interval because of write overhead
-        int expectCompleteTime = compactionInterval - 1 /* ahead 1min*/;
-        long expectReadBytesPerSec;
-        if (expectCompleteTime > 0) {
-            expectReadBytesPerSec = Math.max(expectCompleteTime * 60L, totalSize / expectCompleteTime / 60);
-            if (expectReadBytesPerSec < MAX_THROTTLE_BYTES_PER_SEC) {
-                compactionBucket = Bucket.builder().addLimit(limit -> limit
-                    .capacity(expectReadBytesPerSec)
-                    .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
-                logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
-                    expectReadBytesPerSec, expectCompleteTime);
-            } else {
-                logger.warn("Compaction throttle rate {} bytes/s exceeds bucket refill limit, there will be no throttle for compaction this time", expectReadBytesPerSec);
-                compactionBucket = null;
-            }
+        int expectCompleteTime = Math.max(compactionInterval - 1, 1) /* ahead 1min*/;
+        long expectReadBytesPerSec = Math.max(expectCompleteTime * 60L, totalSize / expectCompleteTime / 60);
+        if (expectReadBytesPerSec < MAX_THROTTLE_BYTES_PER_SEC) {
+            compactionBucket = Bucket.builder().addLimit(limit -> limit
+                .capacity(expectReadBytesPerSec)
+                .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
+            logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
+                expectReadBytesPerSec, expectCompleteTime);
         } else {
-            logger.warn("Compaction interval {}min is too small, there will be no throttle for compaction this time", compactionInterval);
+            logger.warn("Compaction throttle rate {} bytes/s exceeds bucket refill limit, there will be no throttle for compaction this time", expectReadBytesPerSec);
             compactionBucket = null;
         }
 
