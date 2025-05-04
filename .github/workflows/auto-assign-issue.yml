@@ -1,0 +1,25 @@
+name: Auto Assign Issue
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  assign-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if comment contains '/assign'
+        if: contains(github.event.comment.body, '/assign')
+        uses: actions/github-script@v6
+        with:
+          script: |
+            try {
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                assignees: [context.payload.comment.user.login]
+              });
+              console.log(`Assigned issue #${context.payload.issue.number} to @${context.payload.comment.user.login}`);
+            } catch (error) {
+              console.error('Error assigning issue:', error);
+            }

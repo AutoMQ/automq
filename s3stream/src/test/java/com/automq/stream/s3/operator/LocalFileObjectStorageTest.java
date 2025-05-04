@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.operator;
@@ -28,13 +36,16 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @Tag("S3Unit")
 public class LocalFileObjectStorageTest {
@@ -113,6 +124,24 @@ public class LocalFileObjectStorageTest {
             Collections.emptyList(),
             objectStorage.list("abc/deh").get().stream().map(ObjectStorage.ObjectPath::key).sorted().collect(Collectors.toList())
         );
+    }
+
+    @Test
+    public void testDiskFull() throws Throwable {
+        objectStorage.availableSpace.set(10);
+        String key = ObjectUtils.genKey(0, 100);
+        objectStorage.write(new ObjectStorage.WriteOptions(), "abc/def/100", Unpooled.wrappedBuffer("hhhhhhhhh".getBytes(StandardCharsets.UTF_8))).get();
+        CompletableFuture<?> w2 = objectStorage.write(new ObjectStorage.WriteOptions(), "abc/def/101", Unpooled.wrappedBuffer("h2".getBytes(StandardCharsets.UTF_8)));
+        CompletableFuture<?> w3 = objectStorage.write(new ObjectStorage.WriteOptions(), "abc/def/102", Unpooled.wrappedBuffer("h3".getBytes(StandardCharsets.UTF_8)));
+        assertEquals(2, objectStorage.waitingTasks.size());
+        assertEquals(1, objectStorage.availableSpace.get());
+        assertFalse(w2.isDone());
+        assertFalse(w3.isDone());
+        objectStorage.delete(List.of(new ObjectStorage.ObjectInfo(objectStorage.bucketId(), "abc/def/100", 0, 0))).get();
+        w2.get(1, TimeUnit.SECONDS);
+        w3.get(1, TimeUnit.SECONDS);
+        assertEquals(0, objectStorage.waitingTasks.size());
+        assertEquals(6, objectStorage.availableSpace.get());
     }
 
     private String substr(ByteBuf buf, int start, int end) {

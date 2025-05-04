@@ -1,17 +1,24 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -70,7 +77,6 @@ public class LogCache {
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
         this.blocks.add(activeBlock);
         this.blockFreeListener = blockFreeListener;
-        S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(size::get);
     }
 
     public LogCache(long capacity, long cacheBlockMaxSize) {
@@ -139,7 +145,8 @@ public class LogCache {
         List<StreamRecordBatch> records;
         readLock.lock();
         try {
-            records = get0(streamId, startOffset, endOffset, maxBytes);
+            Long streamIdLong = streamId;
+            records = get0(streamIdLong, startOffset, endOffset, maxBytes);
             records.forEach(StreamRecordBatch::retain);
         } finally {
             readLock.unlock();
@@ -151,7 +158,7 @@ public class LogCache {
         return records;
     }
 
-    public List<StreamRecordBatch> get0(long streamId, long startOffset, long endOffset, int maxBytes) {
+    public List<StreamRecordBatch> get0(Long streamId, long startOffset, long endOffset, int maxBytes) {
         List<StreamRecordBatch> rst = new LinkedList<>();
         long nextStartOffset = startOffset;
         int nextMaxBytes = maxBytes;
@@ -252,6 +259,7 @@ public class LogCache {
         long freeSize = 0L;
         writeLock.lock();
         try {
+            // free blocks
             currSize = size.get();
             Iterator<LogCacheBlock> iter = blocks.iterator();
             while (iter.hasNext()) {
@@ -267,7 +275,23 @@ public class LogCache {
                     break;
                 }
             }
-
+            // merge blocks to speed up the get.
+            LogCacheBlock mergedBlock = null;
+            iter = blocks.iterator();
+            while (iter.hasNext()) {
+                LogCacheBlock block = iter.next();
+                if (!block.free) {
+                    break;
+                }
+                if (mergedBlock == null
+                    || mergedBlock.size() + block.size() >= cacheBlockMaxSize
+                    || isDiscontinuous(mergedBlock, block)) {
+                    mergedBlock = block;
+                    continue;
+                }
+                mergeBlock(mergedBlock, block);
+                iter.remove();
+            }
         } finally {
             writeLock.unlock();
         }
@@ -311,6 +335,54 @@ public class LogCache {
         return size.get();
     }
 
+    public void clearStreamRecords(long streamId) {
+        readLock.lock();
+        try {
+            for (LogCacheBlock block : blocks) {
+                size.addAndGet(-block.free(streamId));
+            }
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    static boolean isDiscontinuous(LogCacheBlock left, LogCacheBlock right) {
+        for (Map.Entry<Long, StreamCache> entry : left.map.entrySet()) {
+            Long streamId = entry.getKey();
+            StreamCache leftStreamCache = entry.getValue();
+            StreamCache rightStreamCache = right.map.get(streamId);
+            if (rightStreamCache == null) {
+                continue;
+            }
+            if (leftStreamCache.endOffset() != rightStreamCache.startOffset()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Merge the right block to the left block
+     */
+    static void mergeBlock(LogCacheBlock left, LogCacheBlock right) {
+        synchronized (left) {
+            left.size.addAndGet(right.size());
+            left.confirmOffset = right.confirmOffset;
+            left.map.forEach((streamId, leftStreamCache) -> {
+                StreamCache rightStreamCache = right.map.get(streamId);
+                if (rightStreamCache != null) {
+                    leftStreamCache.records.addAll(rightStreamCache.records);
+                    leftStreamCache.endOffset(rightStreamCache.endOffset());
+                }
+            });
+            right.map.forEach((streamId, rightStreamCache) -> {
+                if (!left.map.containsKey(streamId)) {
+                    left.map.put(streamId, rightStreamCache);
+                }
+            });
+        }
+    }
+
     public static class LogCacheBlock {
         private static final AtomicLong BLOCK_ID_ALLOC = new AtomicLong();
         final Map<Long, StreamCache> map = new ConcurrentHashMap<>();
@@ -347,7 +419,7 @@ public class LogCache {
             return size.addAndGet(recordBatch.occupiedSize()) >= maxSize || map.size() >= maxStreamCount;
         }
 
-        public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
+        public List<StreamRecordBatch> get(Long streamId, long startOffset, long endOffset, int maxBytes) {
             StreamCache cache = map.get(streamId);
             if (cache == null) {
                 return Collections.emptyList();
@@ -355,7 +427,7 @@ public class LogCache {
             return cache.get(startOffset, endOffset, maxBytes);
         }
 
-        StreamRange getStreamRange(long streamId) {
+        StreamRange getStreamRange(Long streamId) {
             StreamCache streamCache = map.get(streamId);
             if (streamCache == null) {
                 return new StreamRange(NOOP_OFFSET, NOOP_OFFSET);
@@ -389,6 +461,18 @@ public class LogCache {
             }, LOGGER);
         }
 
+        public long free(long streamId) {
+            AtomicLong size = new AtomicLong();
+            suppress(() -> {
+                StreamCache streamCache = map.remove(streamId);
+                if (streamCache != null) {
+                    size.addAndGet(streamCache.free());
+                }
+            }, LOGGER);
+            this.size.addAndGet(-size.get());
+            return size.get();
+        }
+
         public long createdTimestamp() {
             return createdTimestamp;
         }
@@ -403,6 +487,7 @@ public class LogCache {
 
     static class StreamRange {
         public static final long NOOP_OFFSET = -1L;
+        public static final StreamRange NOOP = new StreamRange(NOOP_OFFSET, NOOP_OFFSET);
         long startOffset;
         long endOffset;
 
@@ -491,9 +576,26 @@ public class LogCache {
             return new StreamRange(startOffset, endOffset);
         }
 
-        synchronized void free() {
-            records.forEach(StreamRecordBatch::release);
+        synchronized long free() {
+            AtomicLong size = new AtomicLong();
+            records.forEach(record -> {
+                size.addAndGet(record.occupiedSize());
+                record.release();
+            });
             records.clear();
+            return size.get();
+        }
+
+        synchronized long startOffset() {
+            return startOffset;
+        }
+
+        synchronized long endOffset() {
+            return endOffset;
+        }
+
+        synchronized void endOffset(long endOffset) {
+            this.endOffset = endOffset;
         }
     }
 
