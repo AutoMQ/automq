@@ -260,7 +260,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testCompactWithStreamDeleted() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
