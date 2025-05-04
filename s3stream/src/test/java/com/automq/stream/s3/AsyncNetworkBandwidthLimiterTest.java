@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Timeout;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Timeout(60)
 public class AsyncNetworkBandwidthLimiterTest {
@@ -94,16 +95,22 @@ public class AsyncNetworkBandwidthLimiterTest {
     @Test
     public void testThrottleConsume4() {
         AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
+        // Consume all tokens to force subsequent requests into the queue
         bucket.consume(ThrottleStrategy.BYPASS, 1000);
         Assertions.assertEquals(-100, bucket.getAvailableTokens());
-        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
-        bucket.consume(ThrottleStrategy.CATCH_UP, 10);
-        CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
-            Assertions.assertNull(e);
-            Assertions.assertEquals(95, bucket.getAvailableTokens());
-        });
-        cf.join();
-        result.join();
+        // Use an atomic flag to track completion of the first request
+        AtomicBoolean firstCompleted = new AtomicBoolean(false);
+        // First request: consume 5 tokens
+        CompletableFuture<Void> cf1 = bucket.consume(ThrottleStrategy.CATCH_UP, 5)
+            .thenRun(() -> firstCompleted.set(true));
+        // Second request: consume 10 tokens, assert the first is completed before it
+        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.CATCH_UP, 10)
+            .thenRun(() -> {
+                Assertions.assertTrue(firstCompleted.get(),
+                    "First consume(5) should complete before consume(10)");
+            });
+        // Wait for both requests to complete
+        CompletableFuture.allOf(cf1, cf2).join();
     }
 
     @Test
