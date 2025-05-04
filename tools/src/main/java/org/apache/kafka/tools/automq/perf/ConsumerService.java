@@ -82,6 +82,17 @@ public class ConsumerService implements AutoCloseable {
         this.groupSuffix = new SimpleDateFormat("HHmmss").format(System.currentTimeMillis());
     }
 
+    public void resetToBeginning() {
+        for (Consumer<?, ?> consumer : consumers) {
+            try {
+                consumer.seekToBeginning(consumer.assignment());
+                LOGGER.info("Reset consumer to beginning: {}", consumer);
+            } catch (Exception e) {
+                LOGGER.error("Failed to reset consumer to beginning", e);
+            }
+        }
+    }
+
     /**
      * Create consumers for the given topics.
      * Note: the created consumers will start polling immediately.

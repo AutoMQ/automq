@@ -75,6 +75,10 @@ public class PerfConfig {
     public final String valueSchema;
     public final String valuesFile;
 
+    public final String catchupTopicPrefix;
+
+    
+
     public PerfConfig(String[] args) {
         ArgumentParser parser = parser();
 
@@ -120,6 +124,18 @@ public class PerfConfig {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
                 backlogDurationSeconds, groupsPerTopic, groupStartDelaySeconds));
         }
+
+        options.addOption(Option.builder()
+                .longOpt(PerfCommand.CATCHUP_TOPIC_PREFIX)
+                .hasArg()
+                .desc("Topic prefix to reuse for catch-up read testing")
+                .build());
+
+        CommandLine cmd = parser.parse(options, args);
+
+      
+        this.catchupTopicPrefix = cmd.hasOption(PerfCommand.CATCHUP_TOPIC_PREFIX) ? 
+                cmd.getOptionValue(PerfCommand.CATCHUP_TOPIC_PREFIX) : null;
     }
 
     public static ArgumentParser parser() {

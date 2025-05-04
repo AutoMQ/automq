@@ -57,6 +57,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
+import java.util.stream.Collectors;
+
 import io.confluent.kafka.schemaregistry.avro.AvroSchema;
 import io.confluent.kafka.schemaregistry.avro.AvroSchemaUtils;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
@@ -69,6 +71,10 @@ public class PerfCommand implements AutoCloseable {
 
     private static final ObjectWriter JSON = new ObjectMapper().writerWithDefaultPrettyPrinter();
     private static final Logger LOGGER = LoggerFactory.getLogger(PerfCommand.class);
+    
+    private static final String CATCHUP_TOPIC_PREFIX = "catchup-topic-prefix";
+
+    
 
     private final PerfConfig config;
     private final TopicService topicService;
