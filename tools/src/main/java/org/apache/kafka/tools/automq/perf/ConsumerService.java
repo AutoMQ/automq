@@ -359,6 +359,11 @@ public class ConsumerService implements AutoCloseable {
             }
         }
 
+        boolean isCatchup = !Strings.isNullOrEmpty(config.catchupTopicPrefix());
+if (isCatchup) {
+    LOGGER.info("Catch‑up mode enabled for prefix '{}'", config.catchupTopicPrefix());
+}
+
         /**
          * Signal the consumer to close.
          */

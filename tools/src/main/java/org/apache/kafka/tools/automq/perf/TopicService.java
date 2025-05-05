@@ -41,6 +41,13 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+
+import org.apache.kafka.clients.admin.DescribeTopicsResult;
+import org.apache.kafka.clients.admin.TopicDescription;
+import com.google.common.collect.Sets;            
+import java.util.Set;
+import java.util.stream.Collectors;
+
 public class TopicService implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TopicService.class);
@@ -53,7 +60,7 @@ public class TopicService implements AutoCloseable {
     /**
      * The common prefix for performance test topics.
      */
-    private static final String COMMON_TOPIC_PREFIX = "__automq_perf_";
+     static final String COMMON_TOPIC_PREFIX = "__automq_perf_";
 
     private final Admin admin;
 
@@ -129,6 +136,47 @@ public class TopicService implements AutoCloseable {
     private String generateTopicName(String topicPrefix, int partitions, int index) {
         return String.format("%s%s_%04d_%07d", COMMON_TOPIC_PREFIX, topicPrefix, partitions, index);
     }
+
+    public Set<String> listTestTopics(String topicPrefix) {
+    String fullPrefix = COMMON_TOPIC_PREFIX + topicPrefix;
+    try {
+        return admin
+            .listTopics()
+            .names()
+            .get()                                          
+            .stream()
+            .filter(name -> name.startsWith(fullPrefix))
+            .collect(Collectors.toSet());
+    } catch (Exception e) {
+        LOGGER.error("Failed to list topics", e);
+        return Sets.newHashSet();
+    }
+}
+
+
+    public List<Topic> describeTopics(Collection<String> names) {
+    if (names.isEmpty()) {
+        return List.of();
+    }
+    try {
+        DescribeTopicsResult desc = admin.describeTopics(names);
+        return desc
+            .all()
+            .get()                                      // Map<String,TopicDescription>
+            .entrySet()
+            .stream()
+            .map(e -> new Topic(e.getKey(), 
+                                e.getValue().partitions().size()))
+            .collect(Collectors.toList());
+    } catch (Exception e) {
+        LOGGER.error("Failed to describe topics {}", names, e);
+        // As a fallback, return Topic objects with zero partitions
+        return names.stream()
+            .map(n -> new Topic(n, 0))
+            .collect(Collectors.toList());
+    }
+}
+    
 
     public static class TopicsConfig {
         final String topicPrefix;

@@ -104,73 +104,61 @@ public class PerfCommand implements AutoCloseable {
         this.consumerService = new ConsumerService(config.bootstrapServer(), config.adminConfig());
     }
 
-    private void run() {
-        LOGGER.info("Starting perf test with config: {}", jsonStringify(config));
-        TimerUtil timer = new TimerUtil();
 
-        if (config.reset) {
-            LOGGER.info("Deleting all test topics...");
-            int deleted = topicService.deleteTopics();
-            LOGGER.info("Deleted all test topics ({} in total), took {} ms", deleted, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
-        }
+    private void run(){
 
-        LOGGER.info("Creating topics...");
-        List<Topic> topics = topicService.createTopics(config.topicsConfig());
-        LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+    
++        List<Topic> topics;
+        boolean isCatchup = !Strings.isNullOrEmpty(config.catchupTopicPrefix());
+if (isCatchup) {
+    LOGGER.info("Catch‑up mode enabled for prefix '{}'", config.catchupTopicPrefix());
+}
+        
++        if (config.reuseTopics()) {
++   
++            String prefix = config.topicPrefix;
++            LOGGER.info("Reuse-topics enabled; listing existing topics with prefix '{}'", prefix);
++            Set<String> existing = topicService.listTestTopics(prefix);
++
++            List<String> desiredNames = config.topicsConfig().topicNames();
++
++            List<String> toCreate = desiredNames.stream()
++                .filter(name -> !existing.contains(name))
++                .collect(Collectors.toList());
++
++            if (!toCreate.isEmpty()) {
++                LOGGER.info("Creating {} missing topics...", toCreate.size());
++                
++                TopicsConfig partial = new TopicsConfig(
++                    prefix,
++                    toCreate.size(),
++                    config.partitionsPerTopic,
++                    config.topicConfigs
++                );
++                topicService.createTopics(partial);
++            } else {
++                LOGGER.info("All {} topics already exist; skipping creation.", desiredNames.size());
++            }
++
++            
++            LOGGER.info("Describing all {} topics to pass to producers/consumers", desiredNames.size());
++            topics = topicService.describeTopics(desiredNames);
++            LOGGER.info("Reused {} topics in total", topics.size());
++        } else {
++            // old behavior: optional reset, then create everything fresh
++            if (config.reset) {
++                LOGGER.info("Deleting all test topics...");
++                int deleted = topicService.deleteTopics();
++                LOGGER.info("Deleted {} topics in {} ms",
++                            deleted, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
++            }
++            LOGGER.info("Creating topics...");
++            topics = topicService.createTopics(config.topicsConfig());
++            LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
++        }
 
-        LOGGER.info("Creating consumers...");
-        int consumers = consumerService.createConsumers(topics, config.consumersConfig());
-        consumerService.start(this::messageReceived, config.maxConsumeRecordRate);
-        LOGGER.info("Created {} consumers, took {} ms", consumers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
-
-        LOGGER.info("Creating producers...");
-        int producers = producerService.createProducers(topics, config.producersConfig(), this::messageSent);
-        LOGGER.info("Created {} producers, took {} ms", producers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
-
-        if (config.awaitTopicReady) {
-            LOGGER.info("Waiting for topics to be ready...");
-            waitTopicsReady(consumerService.consumerCount() > 0);
-            LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
-        }
-
-        Function<String, List<byte[]>> payloads = payloads(config, topics);
-        producerService.start(payloads, config.sendRate);
-
-        preparing = false;
-
-        if (config.warmupDurationMinutes > 0) {
-            LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
-            long warmupStart = System.nanoTime();
-            long warmupMiddle = warmupStart + TimeUnit.MINUTES.toNanos(config.warmupDurationMinutes) / 2;
-            producerService.adjustRate(warmupStart, ProducerService.MIN_RATE);
-            producerService.adjustRate(warmupMiddle, config.sendRate);
-            collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
-        }
-
-        Result result;
-        if (config.backlogDurationSeconds > 0) {
-            LOGGER.info("Pausing consumers for {} seconds to build up backlog...", config.backlogDurationSeconds);
-            consumerService.pause();
-            long backlogStart = System.currentTimeMillis();
-            collectStats(Duration.ofSeconds(config.backlogDurationSeconds));
-            long backlogEnd = System.nanoTime();
-
-            LOGGER.info("Resetting consumer offsets and resuming...");
-            consumerService.resetOffset(backlogStart, TimeUnit.SECONDS.toMillis(config.groupStartDelaySeconds));
-            consumerService.resume();
-
-            stats.reset();
-            producerService.adjustRate(config.sendRateDuringCatchup);
-            result = collectStats(backlogEnd);
-        } else {
-            LOGGER.info("Running test for {} minutes...", config.testDurationMinutes);
-            stats.reset();
-            result = collectStats(Duration.ofMinutes(config.testDurationMinutes));
-        }
-        LOGGER.info("Saving results to {}", saveResult(result));
-
-        running = false;
-    }
+}
+     
 
     private String jsonStringify(Object obj) {
         try {

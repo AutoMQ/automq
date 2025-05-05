@@ -76,6 +76,7 @@ public class PerfConfig {
     public final String valuesFile;
 
     public final String catchupTopicPrefix;
+    public final boolean reuseTopics;
 
     
 
@@ -119,6 +120,9 @@ public class PerfConfig {
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
         valueSchema = ns.getString("valueSchema");
         valuesFile = ns.get("valuesFile");
+
+        reuseTopics = ns.getBoolean("reuseTopics");
+        catchupTopicPrefix=ns.getString("catchupTopicPrefix");
 
         if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
@@ -292,6 +296,17 @@ public class PerfConfig {
             .dest("valuesFile")
             .metavar("VALUES_FILE")
             .help("The avro value file. Example file content {\"f1\": \"value1\"}");
+
+        parser.addArgument("--reuse-topics")
+            .action(storeTrue())
+            .dest("reuseTopics")
+            .help("If set, do not delete existing topics ; only create the missing ones.")
+
+        parser.addArgument("--catchup-topic-prefix")
+            .type(String.class)
+            .dest("catchupTopicPrefix")
+            .meatavar("PREFIX")
+            .help("When set, reuse the existing topics with this prefix for catchup-read test")
         return parser;
     }
 
@@ -303,6 +318,10 @@ public class PerfConfig {
         Properties properties = new Properties();
         properties.putAll(commonConfigs);
         return properties;
+    }
+
+    public boolean reuseTopics(){
+        return reuseTopics;
     }
 
     public TopicsConfig topicsConfig() {
