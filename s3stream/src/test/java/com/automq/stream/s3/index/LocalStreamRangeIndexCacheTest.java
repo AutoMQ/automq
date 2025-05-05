@@ -44,7 +44,7 @@ public class LocalStreamRangeIndexCacheTest {
     public void testInit() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
         // init with empty index
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 0).join());
@@ -55,7 +55,7 @@ public class LocalStreamRangeIndexCacheTest {
         cache.updateIndexFromRequest(request);
         cache.upload().join();
 
-        cache = new LocalStreamRangeIndexCache();
+        cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         cache.initCf().join();
@@ -69,7 +69,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testAppend() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
@@ -93,7 +93,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testPrune() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
@@ -130,7 +130,7 @@ public class LocalStreamRangeIndexCacheTest {
         Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 1500).join());
 
         // test load from object storage
-        cache = new LocalStreamRangeIndexCache();
+        cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         cache.initCf().join();
@@ -155,7 +155,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testEvict() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         int streamNum = 500;
@@ -180,7 +180,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testCompact() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
@@ -260,7 +260,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testCompactWithStreamDeleted() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();

@@ -100,12 +100,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
     private CompletableFuture<Void> closeCf;
     private StreamMetadataListener.Handle listenerHandle;
 
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager) {
-        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, null, null, OpenStreamOptions.DEFAULT);
-    }
-
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+    private S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
         StreamManager streamManager, NetworkBandwidthLimiter networkInboundLimiter,
         NetworkBandwidthLimiter networkOutboundLimiter, OpenStreamOptions options) {
         this.streamId = streamId;
@@ -121,6 +116,22 @@ public class S3Stream implements Stream, StreamMetadataListener {
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
         this.options = options;
+    }
+
+    public static S3Stream create(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager) {
+        return create(streamId, epoch, startOffset, nextOffset, storage, streamManager, null, null, OpenStreamOptions.DEFAULT);
+    }
+
+    public static S3Stream create(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager, NetworkBandwidthLimiter networkInboundLimiter,
+        NetworkBandwidthLimiter networkOutboundLimiter, OpenStreamOptions options) {
+        S3Stream s3Stream = new S3Stream(streamId, epoch, startOffset, nextOffset, storage, streamManager, networkInboundLimiter, networkOutboundLimiter, options);
+        s3Stream.completeInitialization();
+        return s3Stream;
+    }
+
+    private void completeInitialization() {
         if (snapshotRead()) {
             listenerHandle = streamManager.addMetadataListener(streamId, this);
         }
