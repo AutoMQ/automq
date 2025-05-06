@@ -264,23 +264,25 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     public CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf data) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
-        retCf = retCf.whenComplete((nil, ex) -> data.release());
         if (retCf.isDone()) {
+            data.release();
             return retCf;
         }
         TimerUtil timerUtil = new TimerUtil();
         networkOutboundBandwidthLimiter
             .consume(options.throttleStrategy(), data.readableBytes())
             .whenCompleteAsync((v, ex) -> {
+                NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, options.throttleStrategy())
+                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 if (ex != null) {
                     cf.completeExceptionally(ex);
+                    data.release();
                     return;
                 }
                 if (checkTimeout(options, cf)) {
+                    data.release();
                     return;
                 }
-                NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, options.throttleStrategy())
-                    .record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 queuedWrite0(options, objectPath, data, cf);
             }, writeLimiterCallbackExecutor);
         return retCf;
@@ -312,6 +314,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         if (checkTimeout(options, finalCf)) {
             attemptCf.completeExceptionally(new TimeoutException());
+            data.release();
             return;
         }
 
@@ -357,6 +360,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         writeCf.thenAccept(nil -> {
             recordWriteStats(path, objectSize, timerUtil);
+            data.release();
             if (completedFlag.compareAndSet(false, true)) {
                 finalCf.complete(null);
             }
@@ -369,6 +373,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
                 // no need to retry
                 logger.error("PutObject for object {} fail", path, cause);
+                data.release();
                 if (completedFlag.compareAndSet(false, true)) {
                     finalCf.completeExceptionally(cause);
                 }
