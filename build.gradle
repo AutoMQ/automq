@@ -979,6 +979,36 @@ project(':core') {
     implementation libs.opentelemetryJmx
     implementation libs.awsSdkAuth
 
+    // table topic start
+    // TODO: move to settings.dependencies
+    implementation ('org.apache.avro:avro:1.11.4')
+    implementation ('org.apache.avro:avro-protobuf:1.11.4')
+    implementation 'org.apache.iceberg:iceberg-core:1.6.1'
+    implementation 'org.apache.iceberg:iceberg-api:1.6.1'
+    implementation ('org.apache.iceberg:iceberg-data:1.6.1')
+    implementation 'org.apache.iceberg:iceberg-parquet:1.6.1'
+    implementation 'org.apache.iceberg:iceberg-common:1.6.1'
+    implementation 'org.apache.iceberg:iceberg-aws:1.6.1'
+    implementation 'software.amazon.awssdk:glue:2.29.26'
+    implementation 'software.amazon.awssdk:s3tables:2.29.26'
+    implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.0'
+    implementation 'org.apache.hadoop:hadoop-common:3.4.1'
+    implementation ('io.confluent:kafka-avro-serializer:7.8.0') {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
+
+    // add wiremock for testing
+    testImplementation('com.github.tomakehurst:wiremock:3.0.1')
+
+    // > Protobuf ext start
+    //   Wire Runtime for schema handling
+    implementation 'com.squareup.wire:wire-schema:4.9.1'
+    implementation 'com.squareup.wire:wire-runtime:4.9.1'
+    implementation 'com.google.api.grpc:proto-google-common-protos:2.52.0'
+    // > Protobuf ext end
+
+    // table topic end
+
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
     }
