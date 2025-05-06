@@ -128,7 +128,7 @@ public class BlockWALService implements WriteAheadLog {
     public static final int WAL_HEADER_COUNT = 2;
     public static final int WAL_HEADER_CAPACITY = WALUtil.BLOCK_SIZE;
     public static final int WAL_HEADER_TOTAL_CAPACITY = WAL_HEADER_CAPACITY * WAL_HEADER_COUNT;
-    private static final Logger LOGGER = LoggerFactory.getLogger(BlockWALService.class);
+    static final Logger LOGGER = LoggerFactory.getLogger(BlockWALService.class);
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean resetFinished = new AtomicBoolean(false);
     private final AtomicLong writeHeaderRoundTimes = new AtomicLong(0);
