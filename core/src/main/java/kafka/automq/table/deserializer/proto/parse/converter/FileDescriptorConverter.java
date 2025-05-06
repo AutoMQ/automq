@@ -1,9 +1,29 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.deserializer.proto.parse.converter;
 
 import kafka.automq.table.deserializer.proto.parse.converter.builder.ElementBuilder;
 import kafka.automq.table.deserializer.proto.parse.converter.builder.EnumBuilder;
 import kafka.automq.table.deserializer.proto.parse.converter.builder.MessageBuilder;
 import kafka.automq.table.deserializer.proto.parse.converter.builder.OneOfBuilder;
+
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
@@ -17,13 +37,16 @@ import com.squareup.wire.schema.internal.parser.ReservedElement;
 import com.squareup.wire.schema.internal.parser.RpcElement;
 import com.squareup.wire.schema.internal.parser.ServiceElement;
 import com.squareup.wire.schema.internal.parser.TypeElement;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+
 import kotlin.ranges.IntRange;
 
 import static kafka.automq.table.deserializer.proto.parse.converter.ProtoConstants.DEFAULT_LOCATION;
@@ -142,10 +165,10 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
         return options;
     }
 
-
-    private MessageElement convertMessage(DescriptorProtos.DescriptorProto descriptor, DescriptorProtos.FileDescriptorProto file) {
+    private MessageElement convertMessage(DescriptorProtos.DescriptorProto descriptor,
+        DescriptorProtos.FileDescriptorProto file) {
         MessageBuilder builder = new MessageBuilder(descriptor.getName());
-        
+
         // Add options
         new MessageOptionStrategy().addOption(builder, descriptor.getOptions());
 
@@ -184,7 +207,7 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
         for (String reservedName : descriptor.getReservedNameList()) {
             builder.addReserved(new ReservedElement(DEFAULT_LOCATION, "", Collections.singletonList(reservedName)));
         }
-        
+
         for (DescriptorProtos.DescriptorProto.ReservedRange range : descriptor.getReservedRangeList()) {
             List<Object> values = new ArrayList<>();
             values.add(new IntRange(range.getStart(), range.getEnd() - 1));
@@ -202,7 +225,7 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
 
     private EnumElement convertEnum(DescriptorProtos.EnumDescriptorProto enumType) {
         EnumBuilder builder = new EnumBuilder(enumType.getName());
-        
+
         // Add options
         new EnumOptionStrategy().addOption(builder, enumType.getOptions());
 
@@ -228,28 +251,28 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
     private ServiceElement convertService(DescriptorProtos.ServiceDescriptorProto sv) {
         String name = sv.getName();
         ImmutableList.Builder<RpcElement> rpcs = ImmutableList.builder();
-        
+
         // Convert methods
         for (DescriptorProtos.MethodDescriptorProto md : sv.getMethodList()) {
             // Build method options
             ImmutableList.Builder<OptionElement> methodOptions = ImmutableList.builder();
-            
+
             if (md.getOptions().hasDeprecated()) {
                 methodOptions.add(new OptionElement(ProtoConstants.DEPRECATED_OPTION, OptionElement.Kind.BOOLEAN,
                     md.getOptions().getDeprecated(), false));
             }
-            
+
             if (md.getOptions().hasIdempotencyLevel()) {
                 methodOptions.add(new OptionElement(ProtoConstants.IDEMPOTENCY_LEVEL_OPTION, OptionElement.Kind.ENUM,
                     md.getOptions().getIdempotencyLevel(), false));
             }
 
             // Create RPC element
-            rpcs.add(new RpcElement(DEFAULT_LOCATION, md.getName(), "", 
-                getTypeName(md.getInputType()), 
+            rpcs.add(new RpcElement(DEFAULT_LOCATION, md.getName(), "",
+                getTypeName(md.getInputType()),
                 getTypeName(md.getOutputType()),
-                md.getClientStreaming(), 
-                md.getServerStreaming(), 
+                md.getClientStreaming(),
+                md.getServerStreaming(),
                 methodOptions.build()));
         }
 
@@ -289,12 +312,12 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
             return field.getTypeName();
         } else {
             DescriptorProtos.FieldDescriptorProto.Type type = field.getType();
-            return Descriptors.FieldDescriptor.Type.valueOf(type).name().toLowerCase();
+            return Descriptors.FieldDescriptor.Type.valueOf(type).name().toLowerCase(Locale.ENGLISH);
         }
     }
 
-
-    private FieldElement convertField(DescriptorProtos.FileDescriptorProto file, DescriptorProtos.FieldDescriptorProto fd, boolean inOneof) {
+    private FieldElement convertField(DescriptorProtos.FileDescriptorProto file,
+        DescriptorProtos.FieldDescriptorProto fd, boolean inOneof) {
         String name = fd.getName();
         DescriptorProtos.FieldOptions fieldDescriptorOptions = fd.getOptions();
         List<OptionElement> optionElements = new ArrayList<>();
@@ -326,7 +349,6 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
         );
     }
 
-
     /**
      * Strategy interface for handling different types of options.
      */
@@ -346,7 +368,7 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
             }
             if (msgOptions.hasNoStandardDescriptorAccessor()) {
                 builder.addOption(ProtoConstants.NO_STANDARD_DESCRIPTOR_OPTION, OptionElement.Kind.BOOLEAN,
-                                  msgOptions.getNoStandardDescriptorAccessor());
+                    msgOptions.getNoStandardDescriptorAccessor());
             }
         }
     }
@@ -368,10 +390,10 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
      * Adds an option to the options list if it is present in the source.
      * Determines the appropriate OptionElement.Kind based on the value type.
      *
-     * @param options The list of options to add to
-     * @param name The name of the option
+     * @param options   The list of options to add to
+     * @param name      The name of the option
      * @param hasOption Whether the option is present
-     * @param value The value of the option
+     * @param value     The value of the option
      */
     private void addOptionIfPresent(List<OptionElement> options, String name, boolean hasOption, Object value) {
         if (hasOption) {
@@ -389,7 +411,6 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
         }
     }
 
-
     private String getTypeName(String typeName) {
         return typeName.startsWith(".") ? typeName : "." + typeName;
     }
@@ -402,7 +423,7 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
         String[] parts = fieldName.split("_");
         StringBuilder defaultJsonName = new StringBuilder(parts[0]);
         for (int i = 1; i < parts.length; ++i) {
-            defaultJsonName.append(parts[i].substring(0, 1).toUpperCase())
+            defaultJsonName.append(parts[i].substring(0, 1).toUpperCase(Locale.ENGLISH))
                 .append(parts[i].substring(1));
         }
         return defaultJsonName.toString();

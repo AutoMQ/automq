@@ -980,20 +980,19 @@ project(':core') {
     implementation libs.awsSdkAuth
 
     // table topic start
-    // TODO: move to settings.dependencies
-    implementation ('org.apache.avro:avro:1.11.4')
-    implementation ('org.apache.avro:avro-protobuf:1.11.4')
-    implementation 'org.apache.iceberg:iceberg-core:1.6.1'
-    implementation 'org.apache.iceberg:iceberg-api:1.6.1'
-    implementation ('org.apache.iceberg:iceberg-data:1.6.1')
-    implementation 'org.apache.iceberg:iceberg-parquet:1.6.1'
-    implementation 'org.apache.iceberg:iceberg-common:1.6.1'
-    implementation 'org.apache.iceberg:iceberg-aws:1.6.1'
-    implementation 'software.amazon.awssdk:glue:2.29.26'
-    implementation 'software.amazon.awssdk:s3tables:2.29.26'
+    implementation ("org.apache.avro:avro:${versions.avro}")
+    implementation ("org.apache.avro:avro-protobuf:${versions.avro}")
+    implementation ("org.apache.iceberg:iceberg-core:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-api:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-data:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-parquet:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-common:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-aws:${versions.iceberg}")
+    implementation ("software.amazon.awssdk:glue:${versions.awsSdk}")
+    implementation ("software.amazon.awssdk:s3tables:${versions.awsSdk}")
     implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.0'
     implementation 'org.apache.hadoop:hadoop-common:3.4.1'
-    implementation ('io.confluent:kafka-avro-serializer:7.8.0') {
+    implementation (libs.kafkaAvroSerializer) {
       exclude group: 'org.apache.kafka', module: 'kafka-clients'
     }
 
@@ -1002,8 +1001,8 @@ project(':core') {
 
     // > Protobuf ext start
     //   Wire Runtime for schema handling
-    implementation 'com.squareup.wire:wire-schema:4.9.1'
-    implementation 'com.squareup.wire:wire-runtime:4.9.1'
+    implementation ("com.squareup.wire:wire-schema:${versions.wire}")
+    implementation ("com.squareup.wire:wire-runtime:${versions.wire}")
     implementation 'com.google.api.grpc:proto-google-common-protos:2.52.0'
     // > Protobuf ext end
 

@@ -19,11 +19,43 @@
 
 package kafka.automq.table.coordinator;
 
+import kafka.automq.table.Channel;
+import kafka.automq.table.TableTopicMetricsManager;
+import kafka.automq.table.events.CommitRequest;
+import kafka.automq.table.events.CommitResponse;
+import kafka.automq.table.events.Envelope;
+import kafka.automq.table.events.Errors;
+import kafka.automq.table.events.Event;
+import kafka.automq.table.events.EventType;
+import kafka.automq.table.events.WorkerOffset;
+import kafka.automq.table.utils.PartitionUtil;
+import kafka.automq.table.utils.TableIdentifierUtil;
+import kafka.log.streamaspect.MetaKeyValue;
+import kafka.log.streamaspect.MetaStream;
+import kafka.server.MetadataCache;
+
+import org.apache.kafka.storage.internals.log.LogConfig;
+
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.iceberg.AppendFiles;
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DeleteFile;
+import org.apache.iceberg.RowDelta;
+import org.apache.iceberg.Snapshot;
+import org.apache.iceberg.Table;
+import org.apache.iceberg.Transaction;
+import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.exceptions.NoSuchTableException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -40,35 +72,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
-import kafka.automq.table.Channel;
-import kafka.automq.table.TableTopicMetricsManager;
-import kafka.automq.table.events.CommitRequest;
-import kafka.automq.table.events.CommitResponse;
-import kafka.automq.table.events.Envelope;
-import kafka.automq.table.events.Errors;
-import kafka.automq.table.events.Event;
-import kafka.automq.table.events.EventType;
-import kafka.automq.table.events.WorkerOffset;
-import kafka.automq.table.utils.PartitionUtil;
-import kafka.automq.table.utils.TableIdentifierUtil;
-import kafka.log.streamaspect.MetaKeyValue;
-import kafka.log.streamaspect.MetaStream;
-import kafka.server.MetadataCache;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.iceberg.AppendFiles;
-import org.apache.iceberg.DataFile;
-import org.apache.iceberg.DeleteFile;
-import org.apache.iceberg.RowDelta;
-import org.apache.iceberg.Snapshot;
-import org.apache.iceberg.Table;
-import org.apache.iceberg.Transaction;
-import org.apache.iceberg.catalog.Catalog;
-import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.exceptions.NoSuchTableException;
-import org.apache.kafka.storage.internals.log.LogConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+@SuppressWarnings({"CyclomaticComplexity", "NPathComplexity"})
 public class TableCoordinator implements Closeable {
     private static final Logger LOGGER = LoggerFactory.getLogger(TableCoordinator.class);
     private static final ScheduledExecutorService SCHEDULER = Threads.newSingleThreadScheduledExecutor("table-coordinator", true, LOGGER);
@@ -186,6 +191,8 @@ public class TableCoordinator implements Closeable {
                 case REQUEST_COMMIT:
                     commitStatusMachine.tryMoveToCommitedStatus();
                     break;
+                default:
+                    LOGGER.error("[TABLE_COORDINATOR_UNKNOWN_STATUS],{}", commitStatusMachine.status);
             }
             SCHEDULER.schedule(this::run, 1, TimeUnit.SECONDS);
         } catch (Exception e) {

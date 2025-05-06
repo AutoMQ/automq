@@ -1,21 +1,45 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.deserializer.proto;
 
 import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
+
+import org.apache.kafka.common.errors.InvalidConfigurationException;
+import org.apache.kafka.common.errors.SerializationException;
+import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.header.Headers;
+
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
-import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
-import io.confluent.kafka.schemaregistry.utils.BoundedConcurrentHashMap;
-import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 import java.util.Map;
-import org.apache.kafka.common.errors.InvalidConfigurationException;
-import org.apache.kafka.common.errors.SerializationException;
-import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.header.Headers;
+import java.util.Objects;
+
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
+import io.confluent.kafka.schemaregistry.utils.BoundedConcurrentHashMap;
+import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe;
 
 public abstract class AbstractCustomKafkaProtobufDeserializer<T extends Message>
     extends AbstractKafkaSchemaSerDe {
@@ -23,9 +47,6 @@ public abstract class AbstractCustomKafkaProtobufDeserializer<T extends Message>
     private static final int HEADER_SIZE = SCHEMA_ID_SIZE + 1; // magic byte + schema id
 
     protected final Map<SchemaKey, ProtobufSchemaWrapper> schemaCache;
-
-    protected record SchemaKey(String subject, int schemaId) {
-    }
 
     public AbstractCustomKafkaProtobufDeserializer() {
         this.schemaCache = new BoundedConcurrentHashMap<>(1000);
@@ -163,5 +184,45 @@ public abstract class AbstractCustomKafkaProtobufDeserializer<T extends Message>
             throw new SerializationException("Error retrieving Protobuf schema for id " + schemaId, e);
         }
     }
+    protected static final class SchemaKey {
+        private final String subject;
+        private final int schemaId;
 
+        protected SchemaKey(String subject, int schemaId) {
+            this.subject = subject;
+            this.schemaId = schemaId;
+        }
+
+        public String subject() {
+            return subject;
+        }
+
+        public int schemaId() {
+            return schemaId;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (SchemaKey) obj;
+            return Objects.equals(this.subject, that.subject) &&
+                this.schemaId == that.schemaId;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(subject, schemaId);
+        }
+
+        @Override
+        public String toString() {
+            return "SchemaKey[" +
+                "subject=" + subject + ", " +
+                "schemaId=" + schemaId + ']';
+        }
+
+    }
 }

@@ -18,6 +18,7 @@ package kafka.automq.table.deserializer.proto.schema;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -49,7 +50,7 @@ public class DynamicSchema {
      * @return the schema object
      */
     public static DynamicSchema parseFrom(InputStream schemaDescIn)
-            throws Descriptors.DescriptorValidationException, IOException {
+        throws Descriptors.DescriptorValidationException, IOException {
         try {
             int len;
             byte[] buf = new byte[4096];
@@ -70,7 +71,7 @@ public class DynamicSchema {
      * @return the schema object
      */
     public static DynamicSchema parseFrom(byte[] schemaDescBuf)
-            throws Descriptors.DescriptorValidationException, IOException {
+        throws Descriptors.DescriptorValidationException, IOException {
         return new DynamicSchema(DescriptorProtos.FileDescriptorSet.parseFrom(schemaDescBuf));
     }
 
@@ -117,7 +118,7 @@ public class DynamicSchema {
      * Gets the enum value for the given enum type and name
      *
      * @param enumTypeName the enum type name
-     * @param enumName the enum name
+     * @param enumName     the enum name
      * @return the enum value descriptor (null if not found)
      */
     public Descriptors.EnumValueDescriptor getEnumValue(String enumTypeName, String enumName) {
@@ -132,7 +133,7 @@ public class DynamicSchema {
      * Gets the enum value for the given enum type and number
      *
      * @param enumTypeName the enum type name
-     * @param enumNumber the enum number
+     * @param enumNumber   the enum number
      * @return the enum value descriptor (null if not found)
      */
     public Descriptors.EnumValueDescriptor getEnumValue(String enumTypeName, int enumNumber) {
@@ -198,7 +199,7 @@ public class DynamicSchema {
     // --- private ---
 
     private DynamicSchema(DescriptorProtos.FileDescriptorSet fileDescSet)
-            throws Descriptors.DescriptorValidationException {
+        throws Descriptors.DescriptorValidationException {
         mFileDescSet = fileDescSet;
         Map<String, Descriptors.FileDescriptor> fileDescMap = init(fileDescSet);
 
@@ -223,7 +224,7 @@ public class DynamicSchema {
 
     @SuppressWarnings("unchecked")
     private Map<String, Descriptors.FileDescriptor> init(DescriptorProtos.FileDescriptorSet fileDescSet)
-            throws Descriptors.DescriptorValidationException {
+        throws Descriptors.DescriptorValidationException {
         // check for dupes
         Set<String> allFdProtoNames = new HashSet<String>();
         for (DescriptorProtos.FileDescriptorProto fdProto : fileDescSet.getFileList()) {
@@ -256,7 +257,7 @@ public class DynamicSchema {
                 for (String depName : dependencyList) {
                     if (!allFdProtoNames.contains(depName)) {
                         throw new IllegalArgumentException(
-                                "cannot resolve import " + depName + " in " + fdProto.getName());
+                            "cannot resolve import " + depName + " in " + fdProto.getName());
                     }
                     Descriptors.FileDescriptor fd = resolvedFileDescMap.get(depName);
                     if (fd != null) {
@@ -267,7 +268,7 @@ public class DynamicSchema {
                 if (resolvedFdList.size() == dependencyList.size()) { // dependencies resolved
                     Descriptors.FileDescriptor[] fds = new Descriptors.FileDescriptor[resolvedFdList.size()];
                     Descriptors.FileDescriptor fd = Descriptors.FileDescriptor.buildFrom(fdProto,
-                            resolvedFdList.toArray(fds));
+                        resolvedFdList.toArray(fds));
                     resolvedFileDescMap.put(fdProto.getName(), fd);
                 }
             }
@@ -277,9 +278,9 @@ public class DynamicSchema {
     }
 
     private void addMessageType(Descriptors.Descriptor msgType, String scope, Set<String> msgDupes,
-            Set<String> enumDupes) {
+        Set<String> enumDupes) {
         String msgTypeNameFull = msgType.getFullName();
-        String msgTypeNameShort = (scope == null ? msgType.getName() : scope + "." + msgType.getName());
+        String msgTypeNameShort = scope == null ? msgType.getName() : scope + "." + msgType.getName();
 
         if (mMsgDescriptorMapFull.containsKey(msgTypeNameFull)) {
             throw new IllegalArgumentException("duplicate name: " + msgTypeNameFull);
@@ -301,7 +302,7 @@ public class DynamicSchema {
 
     private void addEnumType(Descriptors.EnumDescriptor enumType, String scope, Set<String> enumDupes) {
         String enumTypeNameFull = enumType.getFullName();
-        String enumTypeNameShort = (scope == null ? enumType.getName() : scope + "." + enumType.getName());
+        String enumTypeNameShort = scope == null ? enumType.getName() : scope + "." + enumType.getName();
 
         if (mEnumDescriptorMapFull.containsKey(enumTypeNameFull)) {
             throw new IllegalArgumentException("duplicate name: " + enumTypeNameFull);
@@ -333,7 +334,7 @@ public class DynamicSchema {
          */
         public DynamicSchema build() throws Descriptors.DescriptorValidationException {
             DescriptorProtos.FileDescriptorSet.Builder fileDescSetBuilder = DescriptorProtos.FileDescriptorSet
-                    .newBuilder();
+                .newBuilder();
             fileDescSetBuilder.addFile(mFileDescProtoBuilder.build());
             fileDescSetBuilder.mergeFrom(mFileDescSetBuilder.build());
             return new DynamicSchema(fileDescSetBuilder.build());

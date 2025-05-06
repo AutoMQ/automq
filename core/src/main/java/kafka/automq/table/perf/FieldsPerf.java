@@ -1,3 +1,22 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.perf;
 
 import kafka.automq.table.deserializer.proto.schema.DynamicSchema;
@@ -10,26 +29,18 @@ import kafka.automq.table.transformer.RegistrySchemaAvroConverter;
 import kafka.automq.table.worker.IcebergTableManager;
 import kafka.automq.table.worker.IcebergWriter;
 import kafka.automq.table.worker.WorkerConfig;
+
+import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.serialization.Deserializer;
+import org.apache.kafka.server.record.TableTopicSchemaType;
+
 import com.automq.stream.utils.Systems;
 import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
-import java.util.function.Supplier;
+
 import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
@@ -47,12 +58,26 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.inmemory.InMemoryCatalog;
-import org.apache.kafka.common.header.Header;
-import org.apache.kafka.common.record.TimestampType;
-import org.apache.kafka.common.serialization.Deserializer;
-import org.apache.kafka.server.record.TableTopicSchemaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public class FieldsPerf {
     private static final Logger LOGGER = LoggerFactory.getLogger(FieldsPerf.class.getName());
@@ -62,12 +87,6 @@ public class FieldsPerf {
     private static final List<String> FORMAT_TYPES;
     private static final long RECORDS_COUNT = Systems.getEnvLong("RECORDS_COUNT", 10000000);
     private static final Map<String, List<FormatTypeSupplier>> TASK_SUPPLIERS = new HashMap<>();
-
-    record TypeCost(String type, long cost) {
-    }
-
-    record FormatTypeSupplier(String format, Supplier<TypeCost> supplier) {
-    }
 
     static {
         // Get static field of InMemoryFileIO by reflection
@@ -97,7 +116,7 @@ public class FieldsPerf {
             new FormatTypeSupplier(
                 "avro",
                 () -> {
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type().booleanType().noDefault(),
                         () -> ThreadLocalRandom.current().nextBoolean());
                     return new TypeCost("avro", new AvroPerf(perfArgs.getLeft(), perfArgs.getRight()).run());
@@ -126,7 +145,7 @@ public class FieldsPerf {
             new FormatTypeSupplier(
                 "avro",
                 () -> {
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type().intType().noDefault(),
                         () -> ThreadLocalRandom.current().nextInt(Integer.MAX_VALUE));
                     return new TypeCost("avro", new AvroPerf(perfArgs.getLeft(), perfArgs.getRight()).run());
@@ -155,7 +174,7 @@ public class FieldsPerf {
             new FormatTypeSupplier(
                 "avro",
                 () -> {
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type().longType().noDefault(),
                         () -> ThreadLocalRandom.current().nextLong(Long.MAX_VALUE));
                     return new TypeCost("avro", new AvroPerf(perfArgs.getLeft(), perfArgs.getRight()).run());
@@ -184,7 +203,7 @@ public class FieldsPerf {
             new FormatTypeSupplier(
                 "avro",
                 () -> {
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type().doubleType().noDefault(),
                         () -> ThreadLocalRandom.current().nextDouble(Long.MAX_VALUE));
                     return new TypeCost("avro", new AvroPerf(perfArgs.getLeft(), perfArgs.getRight()).run());
@@ -213,7 +232,7 @@ public class FieldsPerf {
             new FormatTypeSupplier(
                 "avro",
                 () -> {
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type(LogicalTypes.timestampMillis()
                             .addToSchema(
                                 Schema.create(Schema.Type.LONG)
@@ -246,7 +265,7 @@ public class FieldsPerf {
             new FormatTypeSupplier(
                 "avro",
                 () -> {
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type().stringType().noDefault(),
                         () -> RandomStringUtils.randomAlphabetic(32));
                     return new TypeCost("avro", new AvroPerf(perfArgs.getLeft(), perfArgs.getRight()).run());
@@ -275,7 +294,7 @@ public class FieldsPerf {
             new FormatTypeSupplier(
                 "avro",
                 () -> {
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type().bytesType().noDefault(),
                         () -> {
                             byte[] bytes = new byte[32];
@@ -311,7 +330,7 @@ public class FieldsPerf {
                 "avro",
                 () -> {
                     Schema nestedSchema = SchemaBuilder.builder().record("nested").fields().name("nf1").type().booleanType().noDefault().endRecord();
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type(nestedSchema).noDefault(),
                         () -> {
                             GenericRecord record = new GenericData.Record(nestedSchema);
@@ -349,7 +368,7 @@ public class FieldsPerf {
             new FormatTypeSupplier(
                 "avro",
                 () -> {
-                    Pair<org.apache.avro.Schema, List<byte[]>> perfArgs = perfAvroArgs(
+                    Pair<Schema, List<byte[]>> perfArgs = perfAvroArgs(
                         s -> s.type().array().items(Schema.create(Schema.Type.BOOLEAN)).noDefault(),
                         () -> List.of(ThreadLocalRandom.current().nextBoolean()));
                     return new TypeCost("avro", new AvroPerf(perfArgs.getLeft(), perfArgs.getRight()).run());
@@ -494,12 +513,11 @@ public class FieldsPerf {
     }
 
 
-    static abstract class AbstractPerf<T> {
+    abstract static class AbstractPerf<T> {
         final T schema;
         final List<byte[]> payloads;
         long timeCost;
 
-        abstract KafkaRecordConvert<GenericRecord> getKafkaRecordConverter(T schema);
 
         public AbstractPerf(T schema, List<byte[]> payloads) {
             this.schema = schema;
@@ -551,6 +569,9 @@ public class FieldsPerf {
             }
             writer.complete();
         }
+
+        abstract KafkaRecordConvert<GenericRecord> getKafkaRecordConverter(T schema);
+
     }
 
 
@@ -743,6 +764,90 @@ public class FieldsPerf {
         public Header[] headers() {
             return new Header[0];
         }
+    }
+
+    static final class TypeCost {
+        private final String type;
+        private final long cost;
+
+        TypeCost(String type, long cost) {
+            this.type = type;
+            this.cost = cost;
+        }
+
+        public String type() {
+            return type;
+        }
+
+        public long cost() {
+            return cost;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (TypeCost) obj;
+            return Objects.equals(this.type, that.type) &&
+                this.cost == that.cost;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(type, cost);
+        }
+
+        @Override
+        public String toString() {
+            return "TypeCost[" +
+                "type=" + type + ", " +
+                "cost=" + cost + ']';
+        }
+
+    }
+
+    static final class FormatTypeSupplier {
+        private final String format;
+        private final Supplier<TypeCost> supplier;
+
+        FormatTypeSupplier(String format, Supplier<TypeCost> supplier) {
+            this.format = format;
+            this.supplier = supplier;
+        }
+
+        public String format() {
+            return format;
+        }
+
+        public Supplier<TypeCost> supplier() {
+            return supplier;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this)
+                return true;
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+            var that = (FormatTypeSupplier) obj;
+            return Objects.equals(this.format, that.format) &&
+                Objects.equals(this.supplier, that.supplier);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(format, supplier);
+        }
+
+        @Override
+        public String toString() {
+            return "FormatTypeSupplier[" +
+                "format=" + format + ", " +
+                "supplier=" + supplier + ']';
+        }
+
     }
 
 }

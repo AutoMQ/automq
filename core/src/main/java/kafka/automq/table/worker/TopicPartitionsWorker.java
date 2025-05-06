@@ -1,3 +1,22 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.worker;
 
 import kafka.automq.table.Channel;
@@ -9,8 +28,24 @@ import kafka.automq.table.events.EventType;
 import kafka.automq.table.events.PartitionMetric;
 import kafka.automq.table.events.TopicMetric;
 import kafka.automq.table.events.WorkerOffset;
+import kafka.cluster.Partition;
+import kafka.cluster.PartitionAppendListener;
+import kafka.log.UnifiedLog;
+
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.storage.internals.log.LogSegment;
+
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.utils.threads.EventLoop;
+
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DeleteFile;
+import org.apache.iceberg.io.WriteResult;
+import org.apache.iceberg.types.Types;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,18 +63,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
-import kafka.cluster.Partition;
-import kafka.cluster.PartitionAppendListener;
-import kafka.log.UnifiedLog;
-import org.apache.iceberg.DataFile;
-import org.apache.iceberg.DeleteFile;
-import org.apache.iceberg.io.WriteResult;
-import org.apache.iceberg.types.Types;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.storage.internals.log.LogSegment;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The worker manage the topic partitions iceberg sync.
@@ -307,7 +330,7 @@ class TopicPartitionsWorker {
                 long size1 = e1.getValue().end - e1.getValue().start;
                 long size2 = e2.getValue().end - e2.getValue().start;
                 return Long.compare(size2, size1);
-            }).map(Map.Entry::getKey).toList();
+            }).map(Map.Entry::getKey).collect(Collectors.toList());
 
             for (int i = 0; i < parallel; i++) {
                 EventLoops.EventLoopRef workerEventLoop = eventLoops.leastLoadEventLoop();
@@ -341,9 +364,7 @@ class TopicPartitionsWorker {
                         }
                         updateDecompressedRatio();
                         return rst;
-                    }))
-                    .toList()
-                    .toArray(new CompletableFuture[0])
+                    })).toArray(CompletableFuture[]::new)
                 )
                 .thenApply(nil -> this)
                 .whenComplete((rst, ex) -> {
@@ -353,7 +374,7 @@ class TopicPartitionsWorker {
                         TopicPartitionsWorker.this.requireReset = true;
                     } else {
                         TopicPartitionsWorker.this.writers.addAll(writers);
-                        List<OffsetBound> offsetBounds = microSyncBatchTasks.stream().flatMap(t -> t.offsetBounds().stream()).toList();
+                        List<OffsetBound> offsetBounds = microSyncBatchTasks.stream().flatMap(t -> t.offsetBounds().stream()).collect(Collectors.toList());
                         double size = avgRecordSize * offsetBounds.stream().mapToLong(bound -> bound.end - bound.start).sum();
                         LOGGER.info("[SYNC_TASK],{},size={},decompressedRatio={},parallel={},partitions={},cost={}ms", logContext, size, decompressedRatio, microSyncBatchTasks.size(), offsetBounds, timer.elapsedAs(TimeUnit.MILLISECONDS));
                     }
@@ -685,20 +706,20 @@ class TopicPartitionsWorker {
         private void cleanupCommitedWriters(List<WorkerOffset> offsets) throws IOException {
             TopicPartitionsWorker.cleanupCommitedWriters(topic, offsets, writers);
         }
+    }
 
-        static CommitResponse mismatchEpochResponse(CommitRequest request, List<Partition> partitions) {
-            return new CommitResponse(
-                Types.StructType.of(),
-                Errors.EPOCH_MISMATCH,
-                request.commitId(),
-                request.topic(),
-                partitions.stream().map(p -> new WorkerOffset(p.partitionId(), p.getLeaderEpoch(), -1)).collect(Collectors.toList()),
-                Collections.emptyList(),
-                Collections.emptyList(),
-                TopicMetric.NOOP,
-                Collections.emptyList()
-            );
-        }
+    static CommitResponse mismatchEpochResponse(CommitRequest request, List<Partition> partitions) {
+        return new CommitResponse(
+            Types.StructType.of(),
+            Errors.EPOCH_MISMATCH,
+            request.commitId(),
+            request.topic(),
+            partitions.stream().map(p -> new WorkerOffset(p.partitionId(), p.getLeaderEpoch(), -1)).collect(Collectors.toList()),
+            Collections.emptyList(),
+            Collections.emptyList(),
+            TopicMetric.NOOP,
+            Collections.emptyList()
+        );
     }
 
     static class RequestWrapper {

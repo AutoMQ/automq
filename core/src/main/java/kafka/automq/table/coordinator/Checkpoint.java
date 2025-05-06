@@ -19,6 +19,13 @@
 
 package kafka.automq.table.coordinator;
 
+import kafka.automq.table.events.AvroCodec;
+import kafka.automq.table.events.Element;
+
+import org.apache.avro.Schema;
+import org.apache.avro.SchemaBuilder;
+import org.apache.avro.generic.GenericData;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -26,11 +33,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import kafka.automq.table.events.AvroCodec;
-import kafka.automq.table.events.Element;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericData;
 
 public class Checkpoint implements Element {
     private Status status;

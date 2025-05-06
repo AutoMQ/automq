@@ -19,8 +19,7 @@
 package kafka.automq.table.worker;
 
 import com.google.common.base.Preconditions;
-import java.util.List;
-import java.util.Map;
+
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.types.Types;
@@ -28,6 +27,9 @@ import org.apache.iceberg.types.Types.ListType;
 import org.apache.iceberg.types.Types.MapType;
 import org.apache.iceberg.types.Types.NestedField;
 import org.apache.iceberg.types.Types.StructType;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * This is modified from {@link org.apache.iceberg.util.StructProjection} to support record types.

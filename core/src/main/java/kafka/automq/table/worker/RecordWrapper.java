@@ -18,10 +18,11 @@
  */
 package kafka.automq.table.worker;
 
-import java.util.Locale;
-import java.util.Map;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.types.Types.StructType;
+
+import java.util.Locale;
+import java.util.Map;
 
 public class RecordWrapper implements Record {
 

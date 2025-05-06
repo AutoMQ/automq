@@ -1,12 +1,24 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.worker.convert;
 
-import java.nio.ByteBuffer;
-import java.time.LocalTime;
-import java.time.temporal.Temporal;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import org.apache.avro.LogicalType;
 import org.apache.avro.LogicalTypes;
 import org.apache.avro.generic.GenericData;
@@ -17,6 +29,14 @@ import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.DateTimeUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
+import java.time.LocalTime;
+import java.time.temporal.Temporal;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class AvroToIcebergVisitor extends AbstractIcebergRecordVisitor<org.apache.avro.Schema, GenericRecord> {
 
@@ -142,7 +162,8 @@ public class AvroToIcebergVisitor extends AbstractIcebergRecordVisitor<org.apach
         fieldCount += 1;
         Object value = fieldValue.value();
         org.apache.avro.Schema type = fieldValue.type();
-        if (value instanceof List<?> valueList) {
+        if (value instanceof List<?>) {
+            List<?> valueList = (List<?>) value;
             List<Object> list = new ArrayList<>(valueList.size());
             for (Object item :valueList) {
                 Object o = convertValue(new FieldValue<>(type.getElementType(), item), listType.elementType());
@@ -158,7 +179,8 @@ public class AvroToIcebergVisitor extends AbstractIcebergRecordVisitor<org.apach
         fieldCount += 1;
         Object value = fieldValue.value();
         org.apache.avro.Schema type = fieldValue.type();
-        if (value instanceof GenericData.Array<?> arrayValue) {
+        if (value instanceof GenericData.Array<?>) {
+            GenericData.Array<?> arrayValue = (GenericData.Array<?>) value;
             org.apache.avro.Schema elementSchema = type.getElementType();
             List<org.apache.avro.Schema.Field> fields = elementSchema.getFields();
             int mapSize = arrayValue.size();
@@ -170,7 +192,8 @@ public class AvroToIcebergVisitor extends AbstractIcebergRecordVisitor<org.apach
                 result.put(key, val);
             }
             return result;
-        } else if (value instanceof Map<?, ?> mapValue) {
+        } else if (value instanceof Map<?, ?>) {
+            Map<?, ?> mapValue = (Map<?, ?>) value;
             int mapSize = mapValue.size();
             Map<Object, Object> result = new HashMap<>(mapSize);
             for (Map.Entry<?, ?> entry : mapValue.entrySet()) {

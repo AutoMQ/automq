@@ -19,6 +19,7 @@
 
 package kafka.log.stream.s3.telemetry;
 
+import kafka.automq.table.TableTopicMetricsManager;
 import kafka.automq.zerozone.ZoneRouterMetricsManager;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporter;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporterURI;
@@ -182,6 +183,7 @@ public class TelemetryManager {
         ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
 
         ZoneRouterMetricsManager.initMetrics(meter);
+        TableTopicMetricsManager.initMetrics(meter);
 
         this.oTelHistogramReporter.start(meter);
     }

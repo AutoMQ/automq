@@ -1,21 +1,45 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.transformer;
 
 import kafka.automq.table.deserializer.proto.ProtobufSchemaProvider;
+
+import org.apache.kafka.server.record.TableTopicSchemaType;
+
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+
+import org.apache.avro.generic.GenericRecord;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import io.confluent.kafka.schemaregistry.avro.AvroSchemaProvider;
 import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.kafka.server.record.TableTopicSchemaType;
 
 import static kafka.automq.table.transformer.SchemaFormat.AVRO;
 
@@ -51,11 +75,17 @@ public class ConverterFactory {
     }
 
     public Converter converter(TableTopicSchemaType type, String topic) {
-        return switch (type) {
-            case SCHEMALESS -> new SchemalessConverter();
-            case SCHEMA -> new LazyRegistrySchemaConvert(() -> createRegistrySchemaConverter(topic));
-            default -> throw new IllegalArgumentException("Unsupported converter type: " + type);
-        };
+        switch (type) {
+            case SCHEMALESS: {
+                return new SchemalessConverter();
+            }
+            case SCHEMA: {
+                return new LazyRegistrySchemaConvert(() -> createRegistrySchemaConverter(topic));
+            }
+            default: {
+                throw new IllegalArgumentException("Unsupported converter type: " + type);
+            }
+        }
     }
 
     private Converter createRegistrySchemaConverter(String topic) {
@@ -69,11 +99,17 @@ public class ConverterFactory {
                     }
                     topicSchemaFormatCache.put(topic, format);
                 }
-                return switch (format) {
-                    case AVRO -> createAvroConverter(topic);
-                    case PROTOBUF -> createProtobufConverter(topic);
-                    default -> throw new IllegalArgumentException("Unsupported schema format: " + format);
-                };
+                switch (format) {
+                    case AVRO: {
+                        return createAvroConverter(topic);
+                    }
+                    case PROTOBUF: {
+                        return createProtobufConverter(topic);
+                    }
+                    default: {
+                        throw new IllegalArgumentException("Unsupported schema format: " + format);
+                    }
+                }
             } catch (Exception e) {
                 throw new RuntimeException("Failed to get schema metadata for topic: " + topic, e);
             }
@@ -88,7 +124,7 @@ public class ConverterFactory {
 
     private Converter createAvroConverter(String topic) {
         KafkaRecordConvert<GenericRecord> recordConvert = recordConvertMap.computeIfAbsent(AVRO,
-                format -> createKafkaAvroRecordConvert(registryUrl));
+            format -> createKafkaAvroRecordConvert(registryUrl));
         return new RegistrySchemaAvroConverter(recordConvert, topic);
     }
 

@@ -1,7 +1,28 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.deserializer.proto.parse.converter;
 
 import kafka.automq.table.deserializer.proto.schema.EnumDefinition;
 import kafka.automq.table.deserializer.proto.schema.MessageDefinition;
+
+import com.squareup.wire.schema.Field;
 import com.squareup.wire.schema.ProtoType;
 import com.squareup.wire.schema.internal.parser.EnumConstantElement;
 import com.squareup.wire.schema.internal.parser.EnumElement;
@@ -11,10 +32,13 @@ import com.squareup.wire.schema.internal.parser.OneOfElement;
 import com.squareup.wire.schema.internal.parser.OptionElement;
 import com.squareup.wire.schema.internal.parser.ReservedElement;
 import com.squareup.wire.schema.internal.parser.TypeElement;
+
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+
 import kotlin.ranges.IntRange;
 
 public class ProtoElementSchemaConvert implements ProtoElementConvert {
@@ -30,7 +54,6 @@ public class ProtoElementSchemaConvert implements ProtoElementConvert {
 
         return builder.build();
     }
-
 
     @Override
     public MessageDefinition convert(MessageElement messageElement) {
@@ -78,7 +101,8 @@ public class ProtoElementSchemaConvert implements ProtoElementConvert {
     }
 
     private void addFieldToMessage(MessageDefinition.Builder message, FieldElement field) {
-        String label = field.getLabel() != null ? field.getLabel().toString().toLowerCase() : null;
+        Field.Label fieldLabel = field.getLabel();
+        String label = fieldLabel != null ? fieldLabel.toString().toLowerCase(Locale.ENGLISH) : null;
         String fieldType = field.getType();
         ProtoType protoType = ProtoType.get(fieldType);
 
@@ -93,12 +117,12 @@ public class ProtoElementSchemaConvert implements ProtoElementConvert {
         }
 
         message.addField(label, fieldType, field.getName(), field.getTag(),
-                         field.getDefaultValue(), field.getJsonName(),
-                         getOptionBoolean(ProtoConstants.PACKED_OPTION, field.getOptions()));
+            field.getDefaultValue(), field.getJsonName(),
+            getOptionBoolean(ProtoConstants.PACKED_OPTION, field.getOptions()));
     }
 
     private void processMapField(MessageDefinition.Builder message, FieldElement field,
-                                 ProtoType keyType, ProtoType valueType) {
+        ProtoType keyType, ProtoType valueType) {
         String mapEntryName = toMapEntryName(field.getName());
         MessageDefinition.Builder mapMessage = MessageDefinition.newBuilder(mapEntryName);
         mapMessage.setMapEntry(true);
@@ -108,12 +132,12 @@ public class ProtoElementSchemaConvert implements ProtoElementConvert {
 
         message.addMessageDefinition(mapMessage.build());
         message.addField("repeated", mapEntryName, field.getName(), field.getTag(),
-                         null, field.getJsonName(), null);
+            null, field.getJsonName(), null);
     }
 
     private void addFieldToOneof(MessageDefinition.OneofBuilder oneof, FieldElement field) {
         oneof.addField(field.getType(), field.getName(), field.getTag(),
-                       field.getDefaultValue(), field.getJsonName());
+            field.getDefaultValue(), field.getJsonName());
     }
 
     private void processReservedElements(MessageDefinition.Builder message, MessageElement messageElement) {

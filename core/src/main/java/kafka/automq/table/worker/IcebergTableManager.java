@@ -1,13 +1,28 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.worker;
 
 import kafka.automq.table.utils.PartitionUtil;
+
 import com.google.common.annotations.VisibleForTesting;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
+
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
@@ -25,6 +40,13 @@ import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.Tasks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class IcebergTableManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(IcebergTableManager.class);
@@ -62,7 +84,8 @@ public class IcebergTableManager {
                 try {
                     result.set(catalog.loadTable(tableId));
                 } catch (NoSuchTableException e) {
-                    if (catalog instanceof SupportsNamespaces namespaceCatalog) {
+                    if (catalog instanceof SupportsNamespaces) {
+                        SupportsNamespaces namespaceCatalog = (SupportsNamespaces) catalog;
                         try {
                             namespaceCatalog.loadNamespaceMetadata(tableId.namespace());
                         } catch (NoSuchNamespaceException e2) {
@@ -164,12 +187,20 @@ public class IcebergTableManager {
 
     private static boolean shouldSkipChange(org.apache.iceberg.Schema schema, SchemaChange change) {
         Types.NestedField field = schema.findField(change.getColumnFullName());
-        return switch (change.getType()) {
-            case ADD_COLUMN -> field != null;
-            case MAKE_OPTIONAL -> field.isOptional();
-            case PROMOTE_TYPE -> field.type().equals(change.getNewType());
-            default -> false;
-        };
+        switch (change.getType()) {
+            case ADD_COLUMN: {
+                return field != null;
+            }
+            case MAKE_OPTIONAL: {
+                return field.isOptional();
+            }
+            case PROMOTE_TYPE: {
+                return field.type().equals(change.getNewType());
+            }
+            default: {
+                return false;
+            }
+        }
     }
 
     private List<SchemaChange> collectSchemaChanges(Schema currentSchema, Table table) {

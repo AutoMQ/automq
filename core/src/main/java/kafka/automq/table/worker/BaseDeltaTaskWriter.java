@@ -18,9 +18,6 @@
  */
 package kafka.automq.table.worker;
 
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.Set;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionKey;
 import org.apache.iceberg.PartitionSpec;
@@ -33,6 +30,10 @@ import org.apache.iceberg.io.FileAppenderFactory;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.OutputFileFactory;
 import org.apache.iceberg.types.TypeUtil;
+
+import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
 
 abstract class BaseDeltaTaskWriter extends BaseTaskWriter<Record> {
 

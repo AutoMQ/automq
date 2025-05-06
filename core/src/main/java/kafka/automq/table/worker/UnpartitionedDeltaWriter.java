@@ -18,8 +18,6 @@
  */
 package kafka.automq.table.worker;
 
-import java.io.IOException;
-import java.util.Set;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
@@ -27,6 +25,9 @@ import org.apache.iceberg.data.Record;
 import org.apache.iceberg.io.FileAppenderFactory;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.OutputFileFactory;
+
+import java.io.IOException;
+import java.util.Set;
 
 public class UnpartitionedDeltaWriter extends BaseDeltaTaskWriter {
     private final RowDataDeltaWriter writer;

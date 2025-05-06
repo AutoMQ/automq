@@ -17,6 +17,7 @@ package kafka.automq.table.deserializer.proto.schema;
 
 import com.google.protobuf.Descriptors.FileDescriptor;
 import com.squareup.wire.schema.internal.parser.ProtoFileElement;
+
 import java.util.Objects;
 
 public class ProtobufSchema {
@@ -46,4 +47,3 @@ public class ProtobufSchema {
     }
 
 }
-

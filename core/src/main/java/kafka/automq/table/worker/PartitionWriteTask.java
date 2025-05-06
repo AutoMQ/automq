@@ -1,20 +1,44 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.worker;
 
-import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.utils.AsyncSemaphore;
-import com.automq.stream.utils.Systems;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import kafka.cluster.Partition;
 import kafka.log.streamaspect.ReadHint;
+
 import org.apache.kafka.common.record.PooledResource;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.storage.internals.log.FetchDataInfo;
 import org.apache.kafka.storage.internals.log.FetchIsolation;
+
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.utils.AsyncSemaphore;
+import com.automq.stream.utils.Systems;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+@SuppressWarnings({"CyclomaticComplexity", "NPathComplexity"})
 class PartitionWriteTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(PartitionWriteTask.class);
     private static final AsyncSemaphore READ_LIMITER = new AsyncSemaphore(Systems.CPU_CORES * 100L * 1024 * 1024);
@@ -98,7 +122,7 @@ class PartitionWriteTask {
                     writeSize += record.sizeInBytes();
                     nextOffset = recordOffset + 1;
                 } else if (recordOffset >= endOffset) {
-                    nextOffset = endOffset ;
+                    nextOffset = endOffset;
                     // Abort transactions might occupy the offsets
                     ctx.writer.setEndOffset(partition.partitionId(), nextOffset);
                     break;

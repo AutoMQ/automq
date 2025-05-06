@@ -1,24 +1,33 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.worker;
 
 import kafka.automq.table.events.PartitionMetric;
 import kafka.automq.table.events.TopicMetric;
 import kafka.automq.table.transformer.Converter;
 import kafka.automq.table.transformer.InvalidDataException;
+
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
@@ -36,10 +45,24 @@ import org.apache.iceberg.types.Types;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
 import static java.util.stream.Collectors.toSet;
 
 public class IcebergWriter implements Writer {
     private static final Logger LOGGER = LoggerFactory.getLogger(IcebergWriter.class);
+    private static final int TARGET_FILE_SIZE = 64 * 1024 * 1024;
     private static final LogSuppressor INVALID_DATA_LOGGER = new LogSuppressor(LOGGER, 60000);
     private static final int WRITER_RESULT_SIZE_LIMIT = 5;
     final List<WriteResult> results = new ArrayList<>();
@@ -55,7 +78,6 @@ public class IcebergWriter implements Writer {
     private Status status = Status.WRITABLE;
     private final WorkerConfig config;
     private final boolean deltaWrite;
-    private final int targetFileSize = 64 * 1024 * 1024;
 
     public IcebergWriter(IcebergTableManager icebergTableManager, Converter converter, WorkerConfig config) {
         this.tableId = icebergTableManager.tableId();
@@ -255,7 +277,7 @@ public class IcebergWriter implements Writer {
 
     @Override
     public int targetFileSize() {
-        return targetFileSize;
+        return TARGET_FILE_SIZE;
     }
 
     private void check() throws IOException {
@@ -314,7 +336,7 @@ public class IcebergWriter implements Writer {
             if (!deltaWrite) {
                 writer =
                     new UnpartitionedWriter<>(
-                        spec, FileFormat.PARQUET, appenderFactory, fileFactory, table.io(), targetFileSize);
+                        spec, FileFormat.PARQUET, appenderFactory, fileFactory, table.io(), TARGET_FILE_SIZE);
             } else {
                 writer =
                     new UnpartitionedDeltaWriter(
@@ -323,7 +345,7 @@ public class IcebergWriter implements Writer {
                         appenderFactory,
                         fileFactory,
                         table.io(),
-                        targetFileSize,
+                        TARGET_FILE_SIZE,
                         table.schema(),
                         identifierFieldIds);
             }
@@ -336,7 +358,7 @@ public class IcebergWriter implements Writer {
                         appenderFactory,
                         fileFactory,
                         table.io(),
-                        targetFileSize,
+                        TARGET_FILE_SIZE,
                         table.schema());
             } else {
                 writer =
@@ -346,7 +368,7 @@ public class IcebergWriter implements Writer {
                         appenderFactory,
                         fileFactory,
                         table.io(),
-                        targetFileSize,
+                        TARGET_FILE_SIZE,
                         table.schema(),
                         identifierFieldIds);
             }

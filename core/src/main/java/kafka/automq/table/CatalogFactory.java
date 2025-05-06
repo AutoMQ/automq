@@ -1,9 +1,40 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table;
+
+import kafka.server.KafkaConfig;
 
 import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.utils.IdURI;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.iceberg.CatalogUtil;
+import org.apache.iceberg.catalog.Catalog;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -13,14 +44,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
-import kafka.server.KafkaConfig;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.iceberg.CatalogUtil;
-import org.apache.iceberg.catalog.Catalog;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
@@ -124,7 +147,7 @@ public class CatalogFactory {
             IdURI uri = IdURI.parse("0@" + catalogConfigs.getOrDefault("auth", "none://?"));
             try {
                 switch (uri.protocol()) {
-                    case "kerberos" -> {
+                    case "kerberos": {
                         System.setProperty("sun.security.krb5.debug", "true");
                         String configBasePath = config.metadataLogDir();
                         System.setProperty(
@@ -140,13 +163,15 @@ public class CatalogFactory {
                         );
                         ugi = UserGroupInformation.getCurrentUser();
                         hadoopConf.set("metastore.sasl.enabled", "true");
+                        break;
                     }
-                    case "simple" -> {
+                    case "simple": {
                         ugi = UserGroupInformation.createRemoteUser(uri.extensionString("username"));
                         UserGroupInformation.setLoginUser(ugi);
                         hadoopConf.set("metastore.sasl.enabled", "true");
+                        break;
                     }
-                    default -> {
+                    default: {
                     }
                 }
             } catch (Throwable e) {
@@ -211,6 +236,6 @@ public class CatalogFactory {
     }
 
     private static String decodeBase64(String base64) {
-        return new String(Base64.getDecoder().decode(base64));
+        return new String(Base64.getDecoder().decode(base64), StandardCharsets.ISO_8859_1);
     }
 }

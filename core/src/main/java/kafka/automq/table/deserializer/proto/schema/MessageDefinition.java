@@ -16,6 +16,7 @@
 package kafka.automq.table.deserializer.proto.schema;
 
 import com.google.protobuf.DescriptorProtos;
+
 import java.util.HashMap;
 import java.util.Map;
 

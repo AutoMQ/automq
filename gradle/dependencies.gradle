@@ -174,7 +174,10 @@ versions += [
   guava:"32.0.1-jre",
   hdrHistogram:"2.1.12",
   nettyTcnativeBoringSsl: "2.0.65.Final",
-  confluentSchema: "7.4.0",
+  avro: "1.11.4",
+  confluentSchema: "7.8.0",
+  iceberg: "1.6.1",
+  wire: "4.9.1",
   // AutoMQ inject end
 
   junitPlatform: "1.10.2"

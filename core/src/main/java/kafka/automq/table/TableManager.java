@@ -1,13 +1,26 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table;
 
 import kafka.automq.table.coordinator.TableCoordinator;
 import kafka.automq.table.worker.TableWorkers;
-import com.automq.stream.utils.Systems;
-import com.automq.stream.utils.threads.EventLoop;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 import kafka.cluster.Partition;
 import kafka.log.streamaspect.ElasticLog;
 import kafka.log.streamaspect.ElasticUnifiedLog;
@@ -15,10 +28,20 @@ import kafka.log.streamaspect.MetaStream;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
 import kafka.server.streamaspect.PartitionLifecycleListener;
-import org.apache.iceberg.catalog.Catalog;
+
 import org.apache.kafka.common.TopicPartition;
+
+import com.automq.stream.utils.Systems;
+import com.automq.stream.utils.threads.EventLoop;
+
+import org.apache.iceberg.catalog.Catalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class TableManager implements PartitionLifecycleListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(TableManager.class);

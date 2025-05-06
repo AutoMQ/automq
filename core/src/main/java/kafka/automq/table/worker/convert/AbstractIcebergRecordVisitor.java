@@ -1,7 +1,36 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.table.worker.convert;
 
 import kafka.automq.table.transformer.FieldMetric;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import org.apache.iceberg.Schema;
+import org.apache.iceberg.data.GenericRecord;
+import org.apache.iceberg.types.Type;
+import org.apache.iceberg.types.Types;
+import org.apache.iceberg.util.ByteBuffers;
+import org.apache.iceberg.util.DateTimeUtil;
+import org.apache.iceberg.util.UUIDUtil;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
@@ -16,14 +45,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.apache.iceberg.Schema;
-import org.apache.iceberg.data.GenericRecord;
-import org.apache.iceberg.types.Type;
-import org.apache.iceberg.types.Types;
-import org.apache.iceberg.util.ByteBuffers;
-import org.apache.iceberg.util.DateTimeUtil;
-import org.apache.iceberg.util.UUIDUtil;
 
+@SuppressWarnings({"CyclomaticComplexity", "NPathComplexity"})
 public abstract class AbstractIcebergRecordVisitor<T, R> implements IcebergRecordConverter<R> {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private final Schema icebergSchema;
@@ -63,25 +86,59 @@ public abstract class AbstractIcebergRecordVisitor<T, R> implements IcebergRecor
         if (value == null || value.value() == null) {
             return null;
         }
-        return switch (type.typeId()) {
-            case BOOLEAN -> convertBoolean(value);
-            case INTEGER -> convertInt(value);
-            case LONG -> convertLong(value);
-            case FLOAT -> convertFloat(value);
-            case DOUBLE -> convertDouble(value);
-            case DATE -> convertDate(value);
-            case TIME -> convertTime(value);
-            case TIMESTAMP -> convertTimestamp(value, (Types.TimestampType) type);
-            case STRING -> convertString(value);
-            case UUID -> convertUUID(value);
-            case BINARY -> convertBinary(value);
-            case FIXED -> convertFixed(value);
-            case DECIMAL -> convertDecimal(value, (Types.DecimalType) type);
-            case STRUCT -> convertStruct(value, type.asStructType());
-            case LIST -> convertList(value, type.asListType());
-            case MAP -> convertMap(value, type.asMapType());
-            default -> throw new IllegalArgumentException("Unsupported type: " + type);
-        };
+        switch (type.typeId()) {
+            case BOOLEAN: {
+                return convertBoolean(value);
+            }
+            case INTEGER: {
+                return convertInt(value);
+            }
+            case LONG: {
+                return convertLong(value);
+            }
+            case FLOAT: {
+                return convertFloat(value);
+            }
+            case DOUBLE: {
+                return convertDouble(value);
+            }
+            case DATE: {
+                return convertDate(value);
+            }
+            case TIME: {
+                return convertTime(value);
+            }
+            case TIMESTAMP: {
+                return convertTimestamp(value, (Types.TimestampType) type);
+            }
+            case STRING: {
+                return convertString(value);
+            }
+            case UUID: {
+                return convertUUID(value);
+            }
+            case BINARY: {
+                return convertBinary(value);
+            }
+            case FIXED: {
+                return convertFixed(value);
+            }
+            case DECIMAL: {
+                return convertDecimal(value, (Types.DecimalType) type);
+            }
+            case STRUCT: {
+                return convertStruct(value, type.asStructType());
+            }
+            case LIST: {
+                return convertList(value, type.asListType());
+            }
+            case MAP: {
+                return convertMap(value, type.asMapType());
+            }
+            default: {
+                throw new IllegalArgumentException("Unsupported type: " + type);
+            }
+        }
     }
 
     // Type-specific conversion methods
@@ -172,7 +229,8 @@ public abstract class AbstractIcebergRecordVisitor<T, R> implements IcebergRecor
             return LocalTime.ofNanoOfDay((Long) value * 1000);
         } else if (value instanceof String) {
             return LocalTime.parse((String) value); // Assuming formatted string
-        } else if (value instanceof Date date) {
+        } else if (value instanceof Date) {
+            Date date = (Date) value;
             return date.toInstant().atZone(ZoneOffset.UTC).toLocalTime();
         }
         throw new IllegalArgumentException("Expected Long or String for time type, but received: " + value.getClass());
@@ -288,7 +346,8 @@ public abstract class AbstractIcebergRecordVisitor<T, R> implements IcebergRecor
             byte[] bytes = new byte[buf.remaining()];
             buf.get(bytes);
             return new BigDecimal(new java.math.BigInteger(bytes), type.scale());
-        } else if (value instanceof byte[] bytes) {
+        } else if (value instanceof byte[]) {
+            byte[] bytes = (byte[]) value;
             return new BigDecimal(new java.math.BigInteger(bytes), type.scale());
         } else if (value instanceof String) {
             try {
