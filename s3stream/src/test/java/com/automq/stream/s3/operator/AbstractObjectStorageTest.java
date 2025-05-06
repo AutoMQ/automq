@@ -22,18 +22,28 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.netty.buffer.ByteBuf;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -141,6 +151,200 @@ class AbstractObjectStorageTest {
                 return CompletableFuture.completedFuture(null);
             }).get();
     }
+
+
+    @Test
+    void testFastRetry() throws Throwable {
+        // Initialize memory storage and spy to track method calls
+        objectStorage = new MemoryObjectStorage();
+        objectStorage = spy(objectStorage);
+
+        // Configure write options: enable fast retry, disable normal retry
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .enableFastRetry(true)
+            .retry(false);
+
+        // Mock S3 latency calculator via reflection to force fast retry condition
+        Field latencyCalculatorField = AbstractObjectStorage.class.getDeclaredField("s3LatencyCalculator");
+        latencyCalculatorField.setAccessible(true);
+        S3LatencyCalculator mockCalculator = mock(S3LatencyCalculator.class);
+        when(mockCalculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(100L); // Force low latency to trigger fast retry
+        latencyCalculatorField.set(objectStorage, mockCalculator);
+
+        // Track doWrite() calls: first call hangs, second completes immediately
+        AtomicInteger callCount = new AtomicInteger();
+        CompletableFuture<Void> firstFuture = new CompletableFuture<>();
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            int count = callCount.getAndIncrement();
+            return (count == 0) ? firstFuture : CompletableFuture.completedFuture(null);
+        });
+
+        // Execute write operation
+        ByteBuf data = TestUtils.randomPooled(1024);
+        assertEquals(1, data.refCnt()); // Verify initial ref count
+
+        CompletableFuture<ObjectStorage.WriteResult> writeFuture = objectStorage.write(options, "testKey", data);
+        writeFuture.get(200, TimeUnit.MILLISECONDS); // Wait for write completion
+
+        // Verify: two calls made (initial + retry), data ref count maintained during retry
+        assertEquals(1, data.refCnt());
+        assertEquals(2, callCount.get());
+
+        // Complete initial future and verify data release
+        firstFuture.complete(null);
+        await().atMost(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertEquals(0, data.refCnt())); // Ensure buffer released
+    }
+
+    @Test
+    void testWriteRetryTimeout() throws Throwable {
+        // Setup storage with 100ms timeout (clearer time unit)
+        objectStorage = spy(new MemoryObjectStorage());
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .retry(true)
+            .timeout(1000L);
+
+        // Mock hanging write operation
+        AtomicInteger callCount = new AtomicInteger();
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            int count = callCount.getAndIncrement();
+            if (count < 12) {
+                CompletableFuture<Void> future = new CompletableFuture<>();
+                Executors.newSingleThreadScheduledExecutor().schedule(
+                    () -> future.completeExceptionally(new TimeoutException("Simulated timeout")),
+                    100, TimeUnit.MILLISECONDS
+                );
+                return future;
+            }
+            // Second call: immediate success
+            return CompletableFuture.completedFuture(null);
+        });
+
+        // Execute test
+        ByteBuf data = TestUtils.randomPooled(1024);
+        CompletableFuture<ObjectStorage.WriteResult> writeFuture =
+            objectStorage.write(options, "testKey", data);
+        // Verify timeout exception
+        assertThrows(TimeoutException.class,
+            () -> writeFuture.get(1, TimeUnit.SECONDS));
+        // Verify resource cleanup
+        await().atMost(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertEquals(0, data.refCnt()));
+        // Verify: no successful calls made
+        assertTrue(callCount.get() < 12);
+    }
+
+    @Test
+    void testWritePermit() throws Exception {
+        final int maxConcurrency = 5;
+        objectStorage = spy(new MemoryObjectStorage(maxConcurrency));
+
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .enableFastRetry(false)
+            .retry(false);
+
+        // Use completable future to block first 5 calls
+        CompletableFuture<Void> barrierFuture = new CompletableFuture<>();
+        AtomicInteger callCount = new AtomicInteger();
+
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            int count = callCount.getAndIncrement();
+            return (count < maxConcurrency)
+                ? barrierFuture // Block first 5 calls
+                : CompletableFuture.completedFuture(null); // Immediate success for 6th
+        });
+
+        // Phase 1: Submit max concurrency requests
+        List<ByteBuf> buffers = new ArrayList<>();
+        for (int i = 0; i < maxConcurrency; i++) {
+            ByteBuf data = TestUtils.randomPooled(1024);
+            buffers.add(data);
+            objectStorage.write(options, "testKey", data);
+        }
+
+        // Verify initial calls reached max concurrency
+        await().atMost(1, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertEquals(maxConcurrency, callCount.get()));
+
+        // Phase 2: Submit 6th request beyond concurrency limit
+        CompletableFuture<ObjectStorage.WriteResult> sixthWriteFuture =
+            CompletableFuture.supplyAsync(() ->
+                objectStorage.write(options, "testKey", TestUtils.random(1024))
+            ).thenCompose(f -> f);
+
+        // Release blocked calls and verify completion
+        barrierFuture.complete(null);
+        await().atMost(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> {
+                assertEquals(maxConcurrency + 1, callCount.get());
+                assertTrue(sixthWriteFuture.isDone());
+
+                // Verify: all buffers released
+                for (ByteBuf buffer : buffers) {
+                    assertEquals(0, buffer.refCnt());
+                }
+            });
+    }
+
+    @Test
+    void testWaitWritePermit() throws Exception {
+        final int maxConcurrency = 1;
+        objectStorage = spy(new MemoryObjectStorage(maxConcurrency));
+
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .enableFastRetry(false)
+            .retry(false);
+
+        // Block first call using completable future
+        CompletableFuture<Void> blockingFuture = new CompletableFuture<>();
+        AtomicInteger callCount = new AtomicInteger();
+
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            callCount.incrementAndGet();
+            return blockingFuture; // Always return blocking future for first call
+        });
+
+        // Phase 1: Acquire the only permit
+        ByteBuf firstBuffer = TestUtils.randomPooled(1024);
+        objectStorage.write(options, "testKey", firstBuffer);
+
+        // Verify permit acquisition
+        await().until(() -> callCount.get() == 1);
+
+        // Phase 2: Verify blocking behavior with interrupt
+        Thread blockingThread = new Thread(() -> {
+            ByteBuf byteBuf = TestUtils.randomPooled(1024);
+            try {
+                CompletableFuture<ObjectStorage.WriteResult> future =
+                    objectStorage.write(options, "testKey", byteBuf);
+                ExecutionException exception = assertThrows(ExecutionException.class, () -> future.get());
+                assertTrue(exception.getCause() instanceof InterruptedException);
+            } catch (Exception e) {
+                // Ignore
+            } finally {
+                await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
+                    assertEquals(0, byteBuf.refCnt());
+                });
+            }
+        });
+
+        blockingThread.start();
+
+        Thread.sleep(1000);
+
+        // Interrupt and verify
+        blockingThread.interrupt();
+        blockingThread.join();
+
+        // Verify resource cleanup
+        assertEquals(1, firstBuffer.refCnt());
+
+        // Cleanup
+        blockingFuture.complete(null);
+        await().atMost(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertEquals(0, firstBuffer.refCnt()));
+    }
+
 
     @Test
     void testReadToEndOfObject() throws ExecutionException, InterruptedException {

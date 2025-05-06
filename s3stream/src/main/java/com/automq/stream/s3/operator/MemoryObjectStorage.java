@@ -47,6 +47,13 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
         this.bucketId = bucketId;
     }
 
+    public MemoryObjectStorage(int concurrencyCount) {
+        super(BucketURI.parse(0 + "@s3://b"),
+            new RecordTestNetworkBandwidthLimiter(), new RecordTestNetworkBandwidthLimiter(),
+            concurrencyCount, 0, true, false, false, "memory");
+        this.bucketId = 0;
+    }
+
     public MemoryObjectStorage(short bucketId) {
         this(false, bucketId);
     }
