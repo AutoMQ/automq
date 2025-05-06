@@ -51,6 +51,7 @@ public class MultiPartWriter implements Writer {
      * The minPartSize represents the minimum size of a part for a multipart object.
      */
     private final long minPartSize;
+    private final long maxMergeWriteSize;
     private final TimerUtil timerUtil = new TimerUtil();
     private final AtomicLong totalWriteSize = new AtomicLong(0L);
     private String uploadId;
@@ -59,10 +60,16 @@ public class MultiPartWriter implements Writer {
 
     public MultiPartWriter(ObjectStorage.WriteOptions writeOptions, AbstractObjectStorage operator, String path,
         long minPartSize) {
+        this(writeOptions, operator, path, minPartSize, MAX_MERGE_WRITE_SIZE);
+    }
+
+    public MultiPartWriter(ObjectStorage.WriteOptions writeOptions, AbstractObjectStorage operator, String path,
+        long minPartSize, long maxMergeWriteSize) {
         this.writeOptions = writeOptions;
         this.operator = operator;
         this.path = path;
         this.minPartSize = minPartSize;
+        this.maxMergeWriteSize = maxMergeWriteSize;
         init();
     }
 
@@ -86,7 +93,7 @@ public class MultiPartWriter implements Writer {
         ObjectPart objectPart = this.objectPart;
 
         objectPart.write(data);
-        if (objectPart.size() > minPartSize) {
+        if (objectPart.size() > Math.max(minPartSize, maxMergeWriteSize)) {
             objectPart.upload();
             // finish current part.
             this.objectPart = null;
@@ -129,7 +136,7 @@ public class MultiPartWriter implements Writer {
                 new CopyObjectPart(sourceObjectMateData.key(), start, end);
             }
         } else {
-            if (objectPart.size() + targetSize > MAX_MERGE_WRITE_SIZE) {
+            if (objectPart.size() + targetSize > maxMergeWriteSize) {
                 long readAndWriteCopyEnd = start + minPartSize - objectPart.size();
                 objectPart.readAndWrite(sourceObjectMateData, start, readAndWriteCopyEnd);
                 objectPart.upload();

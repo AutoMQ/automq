@@ -47,7 +47,7 @@ if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
 fi
 
 if [ "x$KAFKA_OPTS" = "x" ]; then
-    export KAFKA_OPTS="-Dio.netty.allocator.maxOrder=11"
+    export KAFKA_OPTS="-XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -Dio.netty.allocator.maxOrder=11"
 fi
 
 EXTRA_ARGS=${EXTRA_ARGS-'-name kafkaServer -loggc'}

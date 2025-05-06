@@ -32,7 +32,6 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -67,7 +66,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         this.queuedCallbacks = new PriorityQueue<>();
         this.refillThreadPool =
             Threads.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"), LOGGER);
-        this.callbackThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("callback-thread"));
+        this.callbackThreadPool = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "callback-thread", true, LOGGER);
         this.callbackThreadPool.execute(this::run);
         this.refillThreadPool.scheduleAtFixedRate(this::refillToken, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerNetworkLimiterQueueSizeSupplier(type, this::getQueueSize);
