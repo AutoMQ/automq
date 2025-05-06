@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
@@ -194,6 +195,13 @@ public class AutoMQConfig {
     public static final String S3_BACK_PRESSURE_COOLDOWN_MS_DOC = "The cooldown time in milliseconds to wait between two regulator actions";
     public static final long S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT = TimeUnit.SECONDS.toMillis(15);
 
+    public static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG = "automq.table.topic.schema.registry.url";
+    private static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC = "The schema registry url for table topic";
+
+    public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
+    public static final String ZONE_ROUTER_CHANNELS_DOC = "The channels to use for cross zone router. Currently it only support object storage channel."
+        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
+
     // Deprecated config start
     public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";
     public static final String S3_ENDPOINT_DOC = "[DEPRECATED]please use s3.data.buckets. The object storage endpoint, ex. <code>https://s3.us-east-1.amazonaws.com</code>.";
@@ -245,9 +253,6 @@ public class AutoMQConfig {
     public static final String S3_TELEMETRY_OPS_ENABLED_CONFIG = "s3.telemetry.ops.enabled";
     public static final String S3_TELEMETRY_OPS_ENABLED_DOC = "[DEPRECATED] use s3.telemetry.metrics.uri instead.";
 
-    public static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG = "automq.table.topic.schema.registry.url";
-    private static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC = "The schema registry url for table topic";
-
     // Deprecated config end
 
     public static void define(ConfigDef configDef) {
@@ -285,6 +290,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
+            .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
@@ -310,6 +316,7 @@ public class AutoMQConfig {
     private String walConfig;
     private String metricsExporterURI;
     private List<Pair<String, String>> baseLabels;
+    private Optional<BucketURI> zoneRouterChannels;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
@@ -317,6 +324,7 @@ public class AutoMQConfig {
         walConfig = genWALConfig(config);
         metricsExporterURI = genMetricsExporterURI(config);
         baseLabels = parseBaseLabels(config);
+        zoneRouterChannels = genZoneRouterChannels(config);
         return this;
     }
 
@@ -338,6 +346,10 @@ public class AutoMQConfig {
 
     public List<Pair<String, String>> baseLabels() {
         return baseLabels;
+    }
+
+    public Optional<BucketURI> zoneRouterChannels() {
+        return zoneRouterChannels;
     }
 
     private static List<BucketURI> genDataBuckets(KafkaConfig config) {
@@ -462,5 +474,21 @@ public class AutoMQConfig {
             labels.add(Pair.of(kv[0], kv[1]));
         }
         return labels;
+    }
+
+
+    private static Optional<BucketURI> genZoneRouterChannels(KafkaConfig config) {
+        String str = config.getString(ZONE_ROUTER_CHANNELS_CONFIG);
+        if (StringUtils.isBlank(str)) {
+            return Optional.empty();
+        }
+        List<BucketURI> buckets = BucketURI.parseBuckets(str);
+        if (buckets.isEmpty()) {
+            return Optional.empty();
+        } else if (buckets.size() > 1) {
+            throw new IllegalArgumentException(ZONE_ROUTER_CHANNELS_CONFIG + " only supports one object storage, but it's config with " + str);
+        } else {
+            return Optional.of(buckets.get(0));
+        }
     }
 }
