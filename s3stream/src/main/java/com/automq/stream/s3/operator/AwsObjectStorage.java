@@ -33,7 +33,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -48,11 +47,10 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
@@ -96,9 +94,6 @@ import static com.automq.stream.utils.FutureUtil.cause;
 public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
     public static final String PATH_STYLE_KEY = "pathStyle";
-    public static final String AUTH_TYPE_KEY = "authType";
-    public static final String STATIC_AUTH_TYPE = "static";
-    public static final String INSTANCE_AUTH_TYPE = "instance";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
 
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
@@ -380,22 +375,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     protected List<AwsCredentialsProvider> credentialsProviders() {
-        String authType = bucketURI.extensionString(AUTH_TYPE_KEY, STATIC_AUTH_TYPE);
-        switch (authType) {
-            case STATIC_AUTH_TYPE: {
-                String accessKey = bucketURI.extensionString(BucketURI.ACCESS_KEY_KEY, System.getenv("KAFKA_S3_ACCESS_KEY"));
-                String secretKey = bucketURI.extensionString(BucketURI.SECRET_KEY_KEY, System.getenv("KAFKA_S3_SECRET_KEY"));
-                if (StringUtils.isBlank(accessKey) || StringUtils.isBlank(secretKey)) {
-                    return Collections.emptyList();
-                }
-                return List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
-            }
-            case INSTANCE_AUTH_TYPE: {
-                return List.of(instanceProfileCredentialsProvider());
-            }
-            default:
-                throw new UnsupportedOperationException("Unsupported auth type: " + authType);
-        }
+        return credentialsProviders0(bucketURI);
+    }
+
+    protected List<AwsCredentialsProvider> credentialsProviders0(BucketURI bucketURI) {
+        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), instanceProfileCredentialsProvider(), DefaultCredentialsProvider.create());
     }
 
     protected AwsCredentialsProvider instanceProfileCredentialsProvider() {
@@ -443,10 +427,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .build();
     }
 
-    private AwsCredentialsProvider newCredentialsProviderChain(List<AwsCredentialsProvider> credentialsProviders) {
+    protected AwsCredentialsProvider newCredentialsProviderChain(List<AwsCredentialsProvider> credentialsProviders) {
         List<AwsCredentialsProvider> providers = new ArrayList<>(credentialsProviders);
         // Add default providers to the end of the chain
-        providers.add(InstanceProfileCredentialsProvider.create());
         providers.add(AnonymousCredentialsProvider.create());
         return AwsCredentialsProviderChain.builder()
             .reuseLastProviderEnabled(true)
