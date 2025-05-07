@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "ProductProtos";
+
+message Product {
+  map<string, string> attributes = 1;
+}

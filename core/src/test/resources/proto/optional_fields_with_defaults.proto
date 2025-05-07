@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "UserProto";
+
+message User {
+  string name = 1;
+  optional string email = 2; // proto3的显式可选字段
+  int32 age = 3; // proto3默认不设置时为0
+}

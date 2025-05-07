@@ -982,6 +982,7 @@ project(':core') {
     // table topic start
     implementation ("org.apache.avro:avro:${versions.avro}")
     implementation ("org.apache.avro:avro-protobuf:${versions.avro}")
+    implementation('com.google.protobuf:protobuf-java:3.25.5')
     implementation ("org.apache.iceberg:iceberg-core:${versions.iceberg}")
     implementation ("org.apache.iceberg:iceberg-api:${versions.iceberg}")
     implementation ("org.apache.iceberg:iceberg-data:${versions.iceberg}")
@@ -995,9 +996,6 @@ project(':core') {
     implementation (libs.kafkaAvroSerializer) {
       exclude group: 'org.apache.kafka', module: 'kafka-clients'
     }
-
-    // add wiremock for testing
-    testImplementation('com.github.tomakehurst:wiremock:3.0.1')
 
     // > Protobuf ext start
     //   Wire Runtime for schema handling
@@ -1283,6 +1281,7 @@ project(':core') {
     }
   }
 }
+
 
 project(':metadata') {
   base {

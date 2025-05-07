@@ -1,0 +1,20 @@
+syntax = "proto3";
+package test;
+
+message MessageWithReserved {
+  // Reserved field numbers
+  reserved 2, 15, 9 to 11, 40 to 45;
+  
+  // Reserved field names
+  reserved "foo", "bar", "baz";
+  
+  // Regular fields
+  string id = 1;
+  int32 count = 3;
+  string name = 4;
+  bool active = 12;
+  
+  // Cannot use reserved fields:
+  // string foo = 5;  // Error: field name is reserved
+  // int32 value = 9; // Error: field number is reserved
+}
