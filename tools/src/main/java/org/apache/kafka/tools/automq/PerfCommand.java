@@ -101,16 +101,27 @@ public class PerfCommand implements AutoCloseable {
     private void run() {
         LOGGER.info("Starting perf test with config: {}", jsonStringify(config));
         TimerUtil timer = new TimerUtil();
-
-        if (config.reset) {
-            LOGGER.info("Deleting all test topics...");
-            int deleted = topicService.deleteTopics();
-            LOGGER.info("Deleted all test topics ({} in total), took {} ms", deleted, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+    
+        // Modified topic initialization logic
+        List<Topic> topics;
+        if (config.catchupTopicPrefix != null && !config.catchupTopicPrefix.isEmpty()) {
+            LOGGER.info("Listing existing topics with prefix {}...", config.catchupTopicPrefix);
+            topics = topicService.listTopicsByPrefix(config.catchupTopicPrefix);
+            LOGGER.info("Found {} existing topics for catchup test", topics.size());
+            
+            if (topics.isEmpty()) {
+                throw new RuntimeException("No topics found with prefix: " + config.catchupTopicPrefix);
+            }
+        } else {
+            if (config.reset) {
+                LOGGER.info("Deleting all test topics...");
+                int deleted = topicService.deleteTopics();
+                LOGGER.info("Deleted {} test topics, took {} ms", deleted, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+            }
+            LOGGER.info("Creating {} new topics...", config.topics);
+            topics = topicService.createTopics(config.topicsConfig());
+            LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
         }
-
-        LOGGER.info("Creating topics...");
-        List<Topic> topics = topicService.createTopics(config.topicsConfig());
-        LOGGER.info("Created {} topics, took {} ms", topics.size(), timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating consumers...");
         int consumers = consumerService.createConsumers(topics, config.consumersConfig());
@@ -127,8 +138,15 @@ public class PerfCommand implements AutoCloseable {
             LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
         }
 
+        // Modified producer start logic
         Function<String, List<byte[]>> payloads = payloads(config, topics);
-        producerService.start(payloads, config.sendRate);
+        if (config.catchupTopicPrefix != null) {
+            LOGGER.info("Starting catchup test with existing topics");
+            producerService.start(payloads, config.sendRate); 
+        } else {
+            LOGGER.info("Starting normal test with new topics");
+            producerService.start(payloads, config.sendRate);
+        }
 
         preparing = false;
 
@@ -142,7 +160,7 @@ public class PerfCommand implements AutoCloseable {
         }
 
         Result result;
-        if (config.backlogDurationSeconds > 0) {
+        if (config.catchupTopicPrefix == null && config.backlogDurationSeconds > 0) {
             LOGGER.info("Pausing consumers for {} seconds to build up backlog...", config.backlogDurationSeconds);
             consumerService.pause();
             long backlogStart = System.currentTimeMillis();
