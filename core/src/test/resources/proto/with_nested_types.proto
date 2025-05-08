@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package test;
+
+// Complex message with various nested types
+message ComplexNestedMessage {
+    // Nested enum type
+    enum Status {
+        UNKNOWN = 0;
+        ACTIVE = 1;
+        INACTIVE = 2;
+        PENDING = 3;
+    }
+
+    // Nested message type
+    message Address {
+        string street = 1;
+        string city = 2;
+        string country = 3;
+        
+        // Deeply nested message
+        message GeoLocation {
+            double latitude = 1;
+            double longitude = 2;
+            
+            message Accuracy {
+                float precision = 1;
+                string source = 2;
+            }
+            Accuracy accuracy = 3;
+        }
+        GeoLocation location = 4;
+    }
+
+    // Nested message with recursive type
+    message TreeNode {
+        string value = 1;
+        repeated TreeNode children = 2;
+    }
+
+    // Using nested types in the main message
+    string id = 1;
+    Status status = 2;
+    Address primary_address = 3;
+    repeated Address secondary_addresses = 4;
+    TreeNode root_node = 5;
+
+    // Message with oneof field
+    message ContactInfo {
+        oneof contact {
+            string email = 1;
+            string phone = 2;
+            Address physical_address = 3;
+        }
+        bool is_verified = 4;
+    }
+    repeated ContactInfo contacts = 6;
+
+    // Nested map fields
+    map<string, Address> labeled_addresses = 7;
+    map<string, TreeNode> labeled_nodes = 8;
+} 
