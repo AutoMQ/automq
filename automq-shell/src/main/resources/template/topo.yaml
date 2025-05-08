@@ -9,6 +9,8 @@ global:
   config: |
     s3.data.buckets=0@s3://xxx_bucket?region=us-east-1
     s3.ops.buckets=1@s3://xxx_bucket?region=us-east-1
+    s3.wal.path=0@s3://xxx_bucket?region=us-east-1
+    log.dirs=/root/kraft-logs
   envs:
     - name: AWS_ACCESS_KEY_ID
       value: 'xxxxx'
