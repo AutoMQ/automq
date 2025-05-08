@@ -48,6 +48,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -57,6 +58,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -78,6 +80,7 @@ public class S3StorageTest {
     ObjectStorage objectStorage;
     S3Storage storage;
     Config config;
+    S3Storage.WALConfirmOffsetCalculator calculator;
 
     private static StreamRecordBatch newRecord(long streamId, long offset) {
         return new StreamRecordBatch(streamId, 0, offset, 1, random(1));
@@ -94,6 +97,7 @@ public class S3StorageTest {
         storage = new S3Storage(config, wal,
             streamManager, objectManager, new StreamReaders(config.blockCacheSize(), objectManager, objectStorage,
             new DefaultObjectReaderFactory(objectStorage)), objectStorage, mock(StorageFailureHandler.class));
+        calculator = new S3Storage.WALConfirmOffsetCalculator();
     }
 
     @Test
@@ -437,5 +441,97 @@ public class S3StorageTest {
         public long recordOffset() {
             return 0;
         }
+    }
+
+    /**
+     * WALConfirmOffsetCalculator - Test calculate() returns NOOP when queue is empty
+     */
+    @Test
+    void testEmptyQueueReturnsNoop() throws Exception {
+        Method method = S3Storage.WALConfirmOffsetCalculator.class.getDeclaredMethod("calculate");
+        method.setAccessible(true);
+        long offset = (long) method.invoke(calculator);
+        assertEquals(S3Storage.WALConfirmOffsetCalculator.NOOP_OFFSET, offset);
+    }
+
+    /**
+     * WALConfirmOffsetCalculator - Test calculate() returns latest offset when all requests are confirmed
+     */
+    @Test
+    void testAllConfirmedOffsets() throws Exception {
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 10L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            10L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 20L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            20L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 30L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            30L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        Method method = S3Storage.WALConfirmOffsetCalculator.class.getDeclaredMethod("calculate");
+        method.setAccessible(true);
+        long offset = (long) method.invoke(calculator);
+        assertEquals(30, offset);
+    }
+
+    /**
+     * WALConfirmOffsetCalculator - Test calculate() stops at first unconfirmed request
+     */
+    @Test
+    void testUnconfirmedBlocksConfirmedOffset() throws Exception {
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 10L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            10L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 20L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            20L,
+            new CompletableFuture<>()
+        ) {{ confirmed = false; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 30L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            30L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        Method method = S3Storage.WALConfirmOffsetCalculator.class.getDeclaredMethod("calculate");
+        method.setAccessible(true);
+        long offset = (long) method.invoke(calculator);
+        assertEquals(10, offset);
+    }
+
+    /**
+     * WALConfirmOffsetCalculator - Test calculate() returns NOOP when all requests are unconfirmed
+     */
+    @Test
+    void testAllUnconfirmedReturnsNoop() throws Exception {
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 10L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            10L,
+            new CompletableFuture<>()
+        ) {{ confirmed = false; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 20L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            20L,
+            new CompletableFuture<>()
+        ) {{ confirmed = false; }});
+
+        Method method = S3Storage.WALConfirmOffsetCalculator.class.getDeclaredMethod("calculate");
+        method.setAccessible(true);
+        long offset = (long) method.invoke(calculator);
+        assertEquals(S3Storage.WALConfirmOffsetCalculator.NOOP_OFFSET, offset);
     }
 }
