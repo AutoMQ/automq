@@ -19,8 +19,6 @@
 
 package com.automq.shell.commands.cluster;
 
-import org.apache.kafka.common.utils.Exit;
-
 import com.automq.shell.model.ClusterTopology;
 import com.automq.shell.model.Env;
 import com.automq.shell.model.Node;
@@ -30,8 +28,9 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-
 import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.common.utils.Exit;
+import picocli.CommandLine;
 
 import java.io.File;
 import java.io.IOException;
@@ -43,8 +42,6 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
-
-import picocli.CommandLine;
 
 @CommandLine.Command(name = "deploy", description = "Deploy AutoMQ cluster", mixinStandardHelpOptions = true)
 public class Deploy implements Callable<Integer> {
@@ -142,7 +139,7 @@ public class Deploy implements Callable<Integer> {
         StringBuilder sb = new StringBuilder();
         appendEnvs(sb, topo);
         sb.append("./bin/kafka-server-start.sh -daemon config/kraft/server.properties ");
-        appendCommonConfigsOverride(sb, topo, node);
+        appendCommonConfigsOverride(sb, topo, node, true);
         appendExtConfigsOverride(sb, topo.getGlobal().getConfig());
         return sb.toString();
     }
@@ -151,7 +148,7 @@ public class Deploy implements Callable<Integer> {
         StringBuilder sb = new StringBuilder();
         appendEnvs(sb, topo);
         sb.append("./bin/kafka-server-start.sh -daemon config/kraft/broker.properties ");
-        appendCommonConfigsOverride(sb, topo, node);
+        appendCommonConfigsOverride(sb, topo, node, false);
         appendExtConfigsOverride(sb, topo.getGlobal().getConfig());
         return sb.toString();
     }
@@ -160,7 +157,7 @@ public class Deploy implements Callable<Integer> {
         topo.getGlobal().getEnvs().forEach(env -> sb.append(env.getName()).append("='").append(env.getValue()).append("' "));
     }
 
-    private static void appendCommonConfigsOverride(StringBuilder sb, ClusterTopology topo, Node node) {
+    private static void appendCommonConfigsOverride(StringBuilder sb, ClusterTopology topo, Node node, boolean isServerNode) {
         if (node.getNodeId() == Constants.NOOP_NODE_ID) {
             throw new IllegalArgumentException(String.format("The host[%s]'s nodeId is required", node.getHost()));
         }
@@ -168,7 +165,12 @@ public class Deploy implements Callable<Integer> {
         sb.append("--override node.id=").append(node.getNodeId()).append(" ");
         sb.append("--override controller.quorum.voters=").append(getQuorumVoters(topo)).append(" ");
         sb.append("--override controller.quorum.bootstrap.servers=").append(getBootstrapServers(topo)).append(" ");
-        sb.append("--override advertised.listeners=").append("PLAINTEXT://").append(node.getHost()).append(":9092").append(" ");
+        sb.append("--override advertised.listeners=").append("PLAINTEXT://").append(node.getHost()).append(":9092");
+        if (isServerNode) {
+            sb.append(",").append("CONTROLLER://").append(node.getHost()).append(":9092").append(" ");
+        } else {
+            sb.append(" ");
+        }
     }
 
     private static void appendExtConfigsOverride(StringBuilder sb, String rawConfigs) {
