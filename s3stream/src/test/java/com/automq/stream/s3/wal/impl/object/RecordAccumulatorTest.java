@@ -23,6 +23,7 @@ import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.utils.Time;
@@ -69,7 +70,7 @@ public class RecordAccumulatorTest {
             .withBatchInterval(Long.MAX_VALUE)
             .withStrictBatchLimit(true)
             .build();
-        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
+        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ReservationService.NOOP, config);
         recordAccumulator.start();
         generatedByteBufMap = new ConcurrentSkipListMap<>();
         random = new Random();
@@ -208,7 +209,7 @@ public class RecordAccumulatorTest {
             .withBatchInterval(Long.MAX_VALUE)
             .withStrictBatchLimit(false)
             .build();
-        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
+        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ReservationService.NOOP, config);
         recordAccumulator.start();
 
         assertEquals(2, recordAccumulator.objectList().size());
@@ -238,7 +239,7 @@ public class RecordAccumulatorTest {
             .withBatchInterval(Long.MAX_VALUE)
             .withStrictBatchLimit(strictBathLimit)
             .build();
-        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
+        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ReservationService.NOOP, config);
         recordAccumulator.start();
 
         int threadCount = 10;
@@ -308,7 +309,7 @@ public class RecordAccumulatorTest {
 
     @Test
     public void testUploadPeriodically() throws OverCapacityException, WALFencedException {
-        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build());
+        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ReservationService.NOOP, ObjectWALConfig.builder().build());
         recordAccumulator.start();
 
         assertTrue(recordAccumulator.objectList().isEmpty());
@@ -346,7 +347,7 @@ public class RecordAccumulatorTest {
             .withBatchInterval(Long.MAX_VALUE)
             .withStrictBatchLimit(true)
             .build();
-        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, config);
+        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ReservationService.NOOP, config);
         recordAccumulator.start();
         assertEquals(1, recordAccumulator.objectList().size());
     }
@@ -390,13 +391,13 @@ public class RecordAccumulatorTest {
 
         // Close and restart with another node id.
         recordAccumulator.close();
-        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withEpoch(System.currentTimeMillis()).build());
+        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ReservationService.NOOP, ObjectWALConfig.builder().withEpoch(System.currentTimeMillis()).build());
         recordAccumulator.start();
         assertEquals(0, recordAccumulator.objectList().size());
 
         // Close and restart with the same node id and higher node epoch.
         recordAccumulator.close();
-        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().withNodeId(100).withEpoch(System.currentTimeMillis()).build());
+        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ReservationService.NOOP, ObjectWALConfig.builder().withNodeId(100).withEpoch(System.currentTimeMillis()).build());
         recordAccumulator.start();
         assertEquals(2, recordAccumulator.objectList().size());
 
