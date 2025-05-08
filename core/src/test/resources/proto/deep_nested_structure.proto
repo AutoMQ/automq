@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "CompanyProtos";
+
+message Company {
+  Department dept = 1;
+}
+
+message Department {
+   Team team = 1;
+}
+
+message Team {
+  repeated Member members = 1;
+}
+
+message Member {
+  string name = 1;
+}

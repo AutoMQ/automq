@@ -983,6 +983,33 @@ project(':core') {
     implementation libs.opentelemetryJmx
     implementation libs.awsSdkAuth
 
+    // table topic start
+    implementation ("org.apache.avro:avro:${versions.avro}")
+    implementation ("org.apache.avro:avro-protobuf:${versions.avro}")
+    implementation('com.google.protobuf:protobuf-java:3.25.5')
+    implementation ("org.apache.iceberg:iceberg-core:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-api:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-data:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-parquet:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-common:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-aws:${versions.iceberg}")
+    implementation ("software.amazon.awssdk:glue:${versions.awsSdk}")
+    implementation ("software.amazon.awssdk:s3tables:${versions.awsSdk}")
+    implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.0'
+    implementation 'org.apache.hadoop:hadoop-common:3.4.1'
+    implementation (libs.kafkaAvroSerializer) {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
+
+    // > Protobuf ext start
+    //   Wire Runtime for schema handling
+    implementation ("com.squareup.wire:wire-schema:${versions.wire}")
+    implementation ("com.squareup.wire:wire-runtime:${versions.wire}")
+    implementation 'com.google.api.grpc:proto-google-common-protos:2.52.0'
+    // > Protobuf ext end
+
+    // table topic end
+
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
     }
@@ -1258,6 +1285,7 @@ project(':core') {
     }
   }
 }
+
 
 project(':metadata') {
   base {

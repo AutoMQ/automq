@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "TestRecordProtoV2";
+
+message TestRecordV2 {
+  string name = 1;
+  int32 age = 2;
+  string email = 3;
+}
+

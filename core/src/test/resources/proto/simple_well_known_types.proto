@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package protobuf.types;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+
+message ComplexMessage {
+  // Standard fields
+  string id = 1;
+  int32 count = 2;
+  
+  // Well-known types
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Duration elapsed_time = 4;
+  google.protobuf.Any details = 5;
+  google.protobuf.Struct attributes = 6;
+  
+  // Wrappers
+  google.protobuf.StringValue optional_name = 7;
+  google.protobuf.BoolValue is_active = 8;
+  google.protobuf.Int64Value big_count = 9;
+  google.protobuf.DoubleValue score = 10;
+  
+  // Additional types
+  google.protobuf.FieldMask update_mask = 11;
+  
+  // Empty can be used to indicate a field with no values
+  google.protobuf.Empty nothing = 12;
+} 

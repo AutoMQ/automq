@@ -20,6 +20,7 @@ package kafka.server
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
+import kafka.automq.table.TableManager
 import kafka.automq.zerozone.{DefaultClientRackProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
@@ -167,6 +168,8 @@ class BrokerServer(
   val clientRackProvider = new DefaultClientRackProvider()
   // init reconfigurable before startup
   config.addReconfigurable(clientRackProvider)
+
+  var tableManager: TableManager = _
   // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -356,7 +359,6 @@ class BrokerServer(
         addPartitionsToTxnManager = Some(addPartitionsToTxnManager),
         directoryEventHandler = directoryEventHandler
       )
-      this._replicaManager.setKafkaLinkingManager(newKafkaLinkingManager())
 
       /* start token manager */
       tokenManager = new DelegationTokenManager(config, tokenCache, time)
@@ -365,6 +367,7 @@ class BrokerServer(
       groupCoordinator = createGroupCoordinator()
 
       // AutoMQ injection start
+      this._replicaManager.setKafkaLinkingManager(newKafkaLinkingManager())
       groupCoordinator = createGroupCoordinatorWrapper(groupCoordinator)
       // AutoMQ injection end
 
@@ -562,6 +565,7 @@ class BrokerServer(
       ElasticLogManager.init(config, clusterId, this)
       trafficInterceptor = newTrafficInterceptor()
 
+      tableManager = new TableManager(metadataCache, config)
       newPartitionLifecycleListeners().forEach(l => {
         _replicaManager.addPartitionLifecycleListener(l)
       })
@@ -837,6 +841,12 @@ class BrokerServer(
     trafficInterceptor
   }
 
+  protected def newPartitionLifecycleListeners(): util.List[PartitionLifecycleListener] = {
+    val list = new util.ArrayList[PartitionLifecycleListener]()
+    list.add(tableManager)
+    list
+  }
+
   protected def newBackPressureRegulator(): Regulator = {
     new Regulator {
       override def increase(): Unit = {
@@ -845,10 +855,6 @@ class BrokerServer(
       override def decrease(): Unit = {
       }
     }
-  }
-
-  protected def newPartitionLifecycleListeners(): util.List[PartitionLifecycleListener] = {
-    new util.ArrayList[PartitionLifecycleListener]()
   }
 
   protected def newKafkaLinkingManager(): KafkaLinkingManager = {
