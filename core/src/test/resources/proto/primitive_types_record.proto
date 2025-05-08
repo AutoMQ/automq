@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "TestMessageProtos";
+
+message TestMessage {
+  string test_string = 1 [json_name = "test_str"];
+  bool test_bool = 2;
+  bytes test_bytes = 3;
+  double test_double = 4;
+  float test_float = 5;
+  fixed32 test_fixed32 = 6;
+  fixed64 test_fixed64 = 7;
+  int32 test_int32 = 8;
+  int64 test_int64 = 9;
+  sfixed32 test_sfixed32 = 10;
+  sfixed64 test_sfixed64 = 11;
+  sint32 test_sint32 = 12;
+  sint64 test_sint64 = 13;
+  uint32 test_uint32 = 14;
+  uint64 test_uint64 = 15;
+}

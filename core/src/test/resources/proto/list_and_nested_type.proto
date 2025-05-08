@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "SearchResponseProto";
+
+message SearchResponse {
+  repeated Result results = 1;
+}
+
+message Result {
+  string url = 1;
+  string title = 2;
+  repeated string snippets = 3;
+}

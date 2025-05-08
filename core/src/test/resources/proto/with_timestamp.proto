@@ -1,0 +1,11 @@
+syntax = "proto3";
+package test;
+
+import "google/protobuf/timestamp.proto";
+
+message EventWithTimestamp {
+  string name = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  int32 event_id = 4;
+}

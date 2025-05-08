@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "SearchRequestProtos";
+
+
+enum Corpus {
+  CORPUS_UNSPECIFIED = 0;
+  CORPUS_UNIVERSAL = 1;
+  CORPUS_WEB = 2;
+  CORPUS_IMAGES = 3;
+  CORPUS_LOCAL = 4;
+  CORPUS_NEWS = 5;
+  CORPUS_PRODUCTS = 6;
+  CORPUS_VIDEO = 7;
+}
+
+message SearchRequest {
+  string query = 1;
+  int32 page_number = 2;
+  int32 results_per_page = 3;
+  Corpus corpus = 4;
+}

@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package test;
+
+enum Status {
+  UNKNOWN = 0;
+  ACTIVE = 1;
+  INACTIVE = 2;
+}
+
+message MessageWithEnum {
+  string name = 1;
+  Status status = 2;
+}
