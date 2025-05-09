@@ -33,14 +33,14 @@ chmod -R g+rwX "$KAFKA_BASE_DIR" "$KAFKA_VOLUME_DIR" "$KAFKA_DATA_DIR" "$KAFKA_I
 # Move the original server.properties, so users can skip initialization logic by mounting their own server.properties directly instead of using the MOUNTED_CONF_DIR
 mv "${KAFKA_CONF_DIR}/server.properties" "${KAFKA_CONF_DIR}/server.properties.original"
 
-replace_in_file "${KAFKA_BASE_DIR}/bin/kafka-server-start.sh" " [-]loggc" " "
-if [[ -f "${KAFKA_CONF_DIR}/log4j.properties" ]]; then
-    # Enable logging to stdout and garbage collection
-    # Source: https://logging.apache.org/log4j/log4j-2.4/manual/appenders.html
-    replace_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DailyRollingFileAppender" "ConsoleAppender"
-    # Disable the default console logger in favour of KafkaAppender (which provides the exact output)
-    echo "log4j.appender.stdout.Threshold=OFF" >>"${KAFKA_CONF_DIR}/log4j.properties"
-    # Remove invalid parameters for ConsoleAppender
-    remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DatePattern"
-#    remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "Appender.File"
-fi
+# Disable logging to stdout and garbage collection
+# Source: https://logging.apache.org/log4j/log4j-2.4/manual/appenders.html
+#replace_in_file "${KAFKA_BASE_DIR}/bin/kafka-server-start.sh" " [-]loggc" " "
+#replace_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DailyRollingFileAppender" "ConsoleAppender"
+
+# Disable the default console logger in favour of KafkaAppender (which provides the exact output)
+#echo "log4j.appender.stdout.Threshold=OFF" >>"${KAFKA_CONF_DIR}/log4j.properties"
+
+# Remove invalid parameters for ConsoleAppender
+#remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DatePattern"
+#remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "Appender.File"

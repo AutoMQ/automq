@@ -11,9 +11,8 @@
 . /opt/bitnami/scripts/libfs.sh
 . /opt/bitnami/scripts/liblog.sh
 . /opt/bitnami/scripts/libos.sh
-. /opt/bitnami/scripts/libservice.sh
 . /opt/bitnami/scripts/libvalidations.sh
-. /opt/bitnami/scripts/libversion.sh
+. /opt/bitnami/scripts/libservice.sh
 
 # Functions
 
@@ -53,69 +52,6 @@ kafka_common_conf_set() {
             printf '\n%s=%s' "$key" "$value" >>"$file"
         fi
     fi
-}
-
-########################
-# Set a configuration setting value to server.properties
-# Globals:
-#   KAFKA_CONF_FILE
-# Arguments:
-#   $1 - key
-#   $2 - values (array)
-# Returns:
-#   None
-#########################
-kafka_server_conf_set() {
-    kafka_common_conf_set "$KAFKA_CONF_FILE" "$@"
-}
-
-########################
-# Set a configuration setting value to producer.properties and consumer.properties
-# Globals:
-#   KAFKA_CONF_DIR
-# Arguments:
-#   $1 - key
-#   $2 - values (array)
-# Returns:
-#   None
-#########################
-kafka_producer_consumer_conf_set() {
-    kafka_common_conf_set "$KAFKA_CONF_DIR/producer.properties" "$@"
-    kafka_common_conf_set "$KAFKA_CONF_DIR/consumer.properties" "$@"
-}
-
-########################
-# Get kafka version
-# Globals:
-#   KAFKA_*
-# Arguments:
-#   None
-# Returns:
-#   version
-#########################
-kafka_get_version() {
-    local -a cmd=("kafka-topics.sh" "--version")
-    am_i_root && cmd=("run_as_user" "$KAFKA_DAEMON_USER" "${cmd[@]}")
-
-    read -r -a ver_split <<< "$("${cmd[@]}" 2>/dev/null)"
-    echo "${ver_split[0]}"
-}
-
-########################
-# Returns true if ZooKeeper is supported as metadata storage
-# Globals:
-#   None
-# Arguments:
-#   None
-# Returns:
-#   true/false
-#########################
-kafka_is_zookeeper_supported() {
-    major_version="$(get_sematic_version "$(kafka_get_version)" 1)"
-    if [[ "$major_version" -lt "4" ]]; then
-        return
-    fi
-    return 1
 }
 
 ########################
@@ -248,18 +184,63 @@ kafka_configure_default_truststore_locations() {
         fi
     fi
     # Zookeeper truststore
-    if kafka_is_zookeeper_supported; then
-        if [[ "${KAFKA_ZOOKEEPER_PROTOCOL:-}" =~ SSL ]] && is_empty_value "${KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE:-}"; then
-            local zk_truststore_filename="zookeeper.truststore.jks"
-            [[ "$KAFKA_ZOOKEEPER_TLS_TYPE" = "PEM" ]] && zk_truststore_filename="zookeeper.truststore.pem"
-            if [[ -f "${KAFKA_CERTS_DIR}/${zk_truststore_filename}" ]]; then
-                # Mounted in /opt/bitnami/kafka/conf/certs
-                export KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE="${KAFKA_CERTS_DIR}/${zk_truststore_filename}"
-            else
-                # Mounted in /bitnami/kafka/conf/certs
-                export KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE="${KAFKA_MOUNTED_CONF_DIR}/certs/${zk_truststore_filename}"
-            fi
+    if [[ "${KAFKA_ZOOKEEPER_PROTOCOL:-}" =~ SSL ]] && is_empty_value "${KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE:-}"; then
+        local zk_truststore_filename="zookeeper.truststore.jks"
+        [[ "$KAFKA_ZOOKEEPER_TLS_TYPE" = "PEM" ]] && zk_truststore_filename="zookeeper.truststore.pem"
+        if [[ -f "${KAFKA_CERTS_DIR}/${zk_truststore_filename}" ]]; then
+            # Mounted in /opt/bitnami/kafka/conf/certs
+            export KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE="${KAFKA_CERTS_DIR}/${zk_truststore_filename}"
+        else
+            # Mounted in /bitnami/kafka/conf/certs
+            export KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE="${KAFKA_MOUNTED_CONF_DIR}/certs/${zk_truststore_filename}"
         fi
+    fi
+}
+
+########################
+# Set a configuration setting value to server.properties
+# Globals:
+#   KAFKA_CONF_FILE
+# Arguments:
+#   $1 - key
+#   $2 - values (array)
+# Returns:
+#   None
+#########################
+kafka_server_conf_set() {
+    kafka_common_conf_set "$KAFKA_CONF_FILE" "$@"
+}
+
+########################
+# Set a configuration setting value to producer.properties and consumer.properties
+# Globals:
+#   KAFKA_CONF_DIR
+# Arguments:
+#   $1 - key
+#   $2 - values (array)
+# Returns:
+#   None
+#########################
+kafka_producer_consumer_conf_set() {
+    kafka_common_conf_set "$KAFKA_CONF_DIR/producer.properties" "$@"
+    kafka_common_conf_set "$KAFKA_CONF_DIR/consumer.properties" "$@"
+}
+
+########################
+# Create alias for environment variable, so both can be used
+# Globals:
+#   None
+# Arguments:
+#   $1 - Alias environment variable name
+#   $2 - Original environment variable name
+# Returns:
+#   None
+#########################
+kafka_declare_alias_env() {
+    local -r alias="${1:?missing environment variable alias}"
+    local -r original="${2:?missing original environment variable}"
+    if printenv "${original}" >/dev/null; then
+        export "$alias"="${!original:-}"
     fi
 }
 
@@ -307,25 +288,16 @@ kafka_create_alias_environment_variables() {
         "ZOOKEEPER_CONNECT"
         "ZOOKEEPER_CONNECTION_TIMEOUT_MS"
     )
-
-    declare_alias_env() {
-        local -r alias="${1:?missing environment variable alias}"
-        local -r original="${2:?missing original environment variable}"
-        if printenv "${original}" >/dev/null; then
-            export "$alias"="${!original:-}"
-        fi
-    }
-
-    declare_alias_env "KAFKA_CFG_LOG_DIRS" "KAFKA_LOGS_DIRS"
-    declare_alias_env "KAFKA_CFG_LOG_SEGMENT_BYTES" "KAFKA_SEGMENT_BYTES"
-    declare_alias_env "KAFKA_CFG_MESSAGE_MAX_BYTES" "KAFKA_MAX_MESSAGE_BYTES"
-    declare_alias_env "KAFKA_CFG_ZOOKEEPER_CONNECTION_TIMEOUT_MS" "KAFKA_ZOOKEEPER_CONNECT_TIMEOUT_MS"
-    declare_alias_env "KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE" "KAFKA_AUTO_CREATE_TOPICS_ENABLE"
-    declare_alias_env "KAFKA_CLIENT_USERS" "KAFKA_BROKER_USER"
-    declare_alias_env "KAFKA_CLIENT_PASSWORDS" "KAFKA_BROKER_PASSWORD"
-    declare_alias_env "KAFKA_CLIENT_LISTENER_NAME" "KAFKA_CLIENT_LISTENER"
+    kafka_declare_alias_env "KAFKA_CFG_LOG_DIRS" "KAFKA_LOGS_DIRS"
+    kafka_declare_alias_env "KAFKA_CFG_LOG_SEGMENT_BYTES" "KAFKA_SEGMENT_BYTES"
+    kafka_declare_alias_env "KAFKA_CFG_MESSAGE_MAX_BYTES" "KAFKA_MAX_MESSAGE_BYTES"
+    kafka_declare_alias_env "KAFKA_CFG_ZOOKEEPER_CONNECTION_TIMEOUT_MS" "KAFKA_ZOOKEEPER_CONNECT_TIMEOUT_MS"
+    kafka_declare_alias_env "KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE" "KAFKA_AUTO_CREATE_TOPICS_ENABLE"
+    kafka_declare_alias_env "KAFKA_CLIENT_USERS" "KAFKA_BROKER_USER"
+    kafka_declare_alias_env "KAFKA_CLIENT_PASSWORDS" "KAFKA_BROKER_PASSWORD"
+    kafka_declare_alias_env "KAFKA_CLIENT_LISTENER_NAME" "KAFKA_CLIENT_LISTENER"
     for s in "${suffixes[@]}"; do
-        declare_alias_env "KAFKA_CFG_${s}" "KAFKA_${s}"
+        kafka_declare_alias_env "KAFKA_CFG_${s}" "KAFKA_${s}"
     done
 }
 
@@ -364,9 +336,6 @@ kafka_validate() {
                 fi
                 if is_empty_value "${KAFKA_CFG_LISTENERS:-}" || [[ ! "$KAFKA_CFG_LISTENERS" =~ ${KAFKA_CFG_CONTROLLER_LISTENER_NAMES} ]]; then
                     print_validation_error "Role 'controller' enabled but listener ${KAFKA_CFG_CONTROLLER_LISTENER_NAMES} not found in KAFKA_CFG_LISTENERS."
-                fi
-                if is_empty_value "${KAFKA_CFG_CONTROLLER_QUORUM_VOTERS:-}"; then
-                    print_validation_error "Role 'controller' enabled but environment variable KAFKA_CFG_CONTROLLER_QUORUM_VOTERS was not provided."
                 fi
                 ;;
             *)
@@ -448,66 +417,58 @@ kafka_validate() {
         done
     }
 
-    if kafka_is_zookeeper_supported; then
-        if is_empty_value "${KAFKA_CFG_PROCESS_ROLES:-}" && is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}"; then
-            print_validation_error "Kafka haven't been configured to work in either Raft or Zookeeper mode. Please make sure at least one of the modes is configured."
+    if is_empty_value "${KAFKA_CFG_PROCESS_ROLES:-}" && is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}"; then
+        print_validation_error "Kafka haven't been configured to work in either Raft or Zookeper mode. Please make sure at least one of the modes is configured."
+    fi
+    # Check KRaft mode
+    if ! is_empty_value "${KAFKA_CFG_PROCESS_ROLES:-}"; then
+        # Only allow Zookeeper configuration if migration mode is enabled
+        if ! is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}" &&
+            { is_empty_value "${KAFKA_CFG_ZOOKEEPER_METADATA_MIGRATION_ENABLE:-}" || ! is_boolean_yes "$KAFKA_CFG_ZOOKEEPER_METADATA_MIGRATION_ENABLE"; }; then
+            print_validation_error "Both KRaft mode and Zookeeper modes are configured, but KAFKA_CFG_ZOOKEEPER_METADATA_MIGRATION_ENABLE is not enabled"
         fi
-        # Check KRaft mode
-        if ! is_empty_value "${KAFKA_CFG_PROCESS_ROLES:-}"; then
-            # Only allow Zookeeper configuration if migration mode is enabled
-            if ! is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}" &&
-                { is_empty_value "${KAFKA_CFG_ZOOKEEPER_METADATA_MIGRATION_ENABLE:-}" || ! is_boolean_yes "$KAFKA_CFG_ZOOKEEPER_METADATA_MIGRATION_ENABLE"; }; then
-                print_validation_error "Both KRaft mode and Zookeeper modes are configured, but KAFKA_CFG_ZOOKEEPER_METADATA_MIGRATION_ENABLE is not enabled"
-            fi
-            check_kraft_process_roles
-            if is_empty_value "${KAFKA_CFG_NODE_ID:-}"; then
-                print_validation_error "KRaft mode requires an unique node.id, please set the environment variable KAFKA_CFG_NODE_ID"
-            fi
-        fi
-        # Check Zookeeper mode
-        if ! is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}"; then
-            # If SSL/SASL_SSL protocol configured, check certificates are provided
-            if [[ "$KAFKA_ZOOKEEPER_PROTOCOL" =~ SSL ]]; then
-                if [[ "$KAFKA_ZOOKEEPER_TLS_TYPE" = "JKS" ]]; then
-                    # Fail if truststore is not provided
-                    if [[ ! -f "$KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE" ]]; then
-                        print_validation_error "In order to configure the TLS encryption for Zookeeper with JKS certs you must mount your zookeeper.truststore.jks cert to the ${KAFKA_MOUNTED_CONF_DIR}/certs directory."
-                    fi
-                    # Warn if keystore is not provided, only required if Zookeeper mTLS is enabled (ZOO_TLS_CLIENT_AUTH)
-                    if [[ ! -f "${KAFKA_CERTS_DIR}/zookeeper.keystore.jks" ]] && [[ ! -f "${KAFKA_MOUNTED_CONF_DIR}/certs/zookeeper.keystore.jks" ]]; then
-                        warn "In order to configure the mTLS for Zookeeper with JKS certs you must mount your zookeeper.keystore.jks cert to the ${KAFKA_MOUNTED_CONF_DIR}/certs directory."
-                    fi
-                elif [[ "$KAFKA_ZOOKEEPER_TLS_TYPE" = "PEM" ]]; then
-                    # Fail if CA / validation cert is not provided
-                    if [[ ! -f "$KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE" ]]; then
-                        print_validation_error "In order to configure the TLS encryption for Zookeeper with PEM certs you must mount your zookeeper.truststore.pem cert to the ${KAFKA_MOUNTED_CONF_DIR}/certs directory."
-                    fi
-                    # Warn if node key or cert are not provided, only required if Zookeeper mTLS is enabled (ZOO_TLS_CLIENT_AUTH)
-                    if { [[ ! -f "${KAFKA_CERTS_DIR}/zookeeper.keystore.pem" ]] || [[ ! -f "${KAFKA_CERTS_DIR}/zookeeper.keystore.key" ]]; } &&
-                        { [[ ! -f "${KAFKA_MOUNTED_CONF_DIR}/certs/zookeeper.keystore.pem" ]] || [[ ! -f "${KAFKA_MOUNTED_CONF_DIR}/certs/zookeeper.keystore.key" ]]; }; then
-                        warn "In order to configure the mTLS for Zookeeper with PEM certs you must mount your zookeeper.keystore.pem cert and zookeeper.keystore.key key to the ${KAFKA_MOUNTED_CONF_DIR}/certs directory."
-                    fi
-                fi
-            fi
-            # If SASL/SASL_SSL protocol configured, check certificates are provided
-            if [[ "$KAFKA_ZOOKEEPER_PROTOCOL" =~ SASL ]]; then
-                if is_empty_value "${KAFKA_ZOOKEEPER_USER:-}" || is_empty_value "${KAFKA_ZOOKEEPER_PASSWORD:-}"; then
-                    print_validation_error "In order to configure SASL authentication for Kafka, you must provide the SASL credentials. Set the environment variables KAFKA_ZOOKEEPER_USER and KAFKA_ZOOKEEPER_PASSWORD, to configure the credentials for SASL authentication with
-Zookeeper."
-                fi
-            fi
-            # If using plaintext protocol, check it is explicitly allowed
-            if [[ "$KAFKA_ZOOKEEPER_PROTOCOL" = "PLAINTEXT" ]]; then
-                warn "The KAFKA_ZOOKEEPER_PROTOCOL environment variable does not configure SASL and/or SSL, this setting is not recommended for production environments."
-            fi
-        fi
-    else
-        if is_empty_value "${KAFKA_CFG_PROCESS_ROLES:-}"; then
-            print_validation_error "Kafka requires at least one process role to be set. Set the environment variable KAFKA_CFG_PROCESS_ROLES to configure the process roles for Kafka."
-        fi
-        check_kraft_process_roles
         if is_empty_value "${KAFKA_CFG_NODE_ID:-}"; then
             print_validation_error "KRaft mode requires an unique node.id, please set the environment variable KAFKA_CFG_NODE_ID"
+        fi
+        if is_empty_value "${KAFKA_CFG_CONTROLLER_QUORUM_VOTERS:-}"; then
+            print_validation_error "KRaft mode requires KAFKA_CFG_CONTROLLER_QUORUM_VOTERS to be set"
+        fi
+        check_kraft_process_roles
+    fi
+    # Check Zookeeper mode
+    if ! is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}"; then
+        # If SSL/SASL_SSL protocol configured, check certificates are provided
+        if [[ "$KAFKA_ZOOKEEPER_PROTOCOL" =~ SSL ]]; then
+            if [[ "$KAFKA_ZOOKEEPER_TLS_TYPE" = "JKS" ]]; then
+                # Fail if truststore is not provided
+                if [[ ! -f "$KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE" ]]; then
+                    print_validation_error "In order to configure the TLS encryption for Zookeeper with JKS certs you must mount your zookeeper.truststore.jks cert to the ${KAFKA_MOUNTED_CONF_DIR}/certs directory."
+                fi
+                # Warn if keystore is not provided, only required if Zookeper mTLS is enabled (ZOO_TLS_CLIENT_AUTH)
+                if [[ ! -f "${KAFKA_CERTS_DIR}/zookeeper.keystore.jks" ]] && [[ ! -f "${KAFKA_MOUNTED_CONF_DIR}/certs/zookeeper.keystore.jks" ]]; then
+                    warn "In order to configure the mTLS for Zookeeper with JKS certs you must mount your zookeeper.keystore.jks cert to the ${KAFKA_MOUNTED_CONF_DIR}/certs directory."
+                fi
+            elif [[ "$KAFKA_ZOOKEEPER_TLS_TYPE" = "PEM" ]]; then
+                # Fail if CA / validation cert is not provided
+                if [[ ! -f "$KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE" ]]; then
+                    print_validation_error "In order to configure the TLS encryption for Zookeeper with PEM certs you must mount your zookeeper.truststore.pem cert to the ${KAFKA_MOUNTED_CONF_DIR}/certs directory."
+                fi
+                # Warn if node key or cert are not provided, only required if Zookeper mTLS is enabled (ZOO_TLS_CLIENT_AUTH)
+                if { [[ ! -f "${KAFKA_CERTS_DIR}/zookeeper.keystore.pem" ]] || [[ ! -f "${KAFKA_CERTS_DIR}/zookeeper.keystore.key" ]]; } &&
+                    { [[ ! -f "${KAFKA_MOUNTED_CONF_DIR}/certs/zookeeper.keystore.pem" ]] || [[ ! -f "${KAFKA_MOUNTED_CONF_DIR}/certs/zookeeper.keystore.key" ]]; }; then
+                    warn "In order to configure the mTLS for Zookeeper with PEM certs you must mount your zookeeper.keystore.pem cert and zookeeper.keystore.key key to the ${KAFKA_MOUNTED_CONF_DIR}/certs directory."
+                fi
+            fi
+        fi
+        # If SASL/SASL_SSL protocol configured, check certificates are provided
+        if [[ "$KAFKA_ZOOKEEPER_PROTOCOL" =~ SASL ]]; then
+            if is_empty_value "${KAFKA_ZOOKEEPER_USER:-}" || is_empty_value "${KAFKA_ZOOKEEPER_PASSWORD:-}"; then
+                print_validation_error "In order to configure SASL authentication for Kafka, you must provide the SASL credentials. Set the environment variables KAFKA_ZOOKEEPER_USER and KAFKA_ZOOKEEPER_PASSWORD, to configure the credentials for SASL authentication with Zookeeper."
+            fi
+        fi
+        # If using plaintext protocol, check it is explicitly allowed
+        if [[ "$KAFKA_ZOOKEEPER_PROTOCOL" = "PLAINTEXT" ]]; then
+            warn "The KAFKA_ZOOKEEPER_PROTOCOL environment variable does not configure SASL and/or SSL, this setting is not recommended for production environments."
         fi
     fi
     # Check listener ports are unique and allowed
@@ -543,12 +504,27 @@ Zookeeper."
         print_validation_error "Specify the same number of passwords on KAFKA_CLIENT_PASSWORDS as the number of users on KAFKA_CLIENT_USERS!"
     fi
     check_multi_value "KAFKA_TLS_TYPE" "JKS PEM"
+    check_multi_value "KAFKA_ZOOKEEPER_TLS_TYPE" "JKS PEM"
+    check_multi_value "KAFKA_ZOOKEEPER_PROTOCOL" "PLAINTEXT SASL SSL SASL_SSL"
     check_multi_value "KAFKA_TLS_CLIENT_AUTH" "none requested required"
-    if kafka_is_zookeeper_supported; then
-        check_multi_value "KAFKA_ZOOKEEPER_TLS_TYPE" "JKS PEM"
-        check_multi_value "KAFKA_ZOOKEEPER_PROTOCOL" "PLAINTEXT SASL SSL SASL_SSL"
-    fi
     [[ "$error_code" -eq 0 ]] || return "$error_code"
+}
+
+########################
+# Get kafka version
+# Globals:
+#   KAFKA_*
+# Arguments:
+#   None
+# Returns:
+#   version
+#########################
+kafka_get_version() {
+    local -a cmd=("kafka-topics.sh" "--version")
+    am_i_root && cmd=("run_as_user" "$KAFKA_DAEMON_USER" "${cmd[@]}")
+
+    read -r -a ver_split <<< "$("${cmd[@]}")"
+    echo "${ver_split[0]}"
 }
 
 #########################
@@ -680,7 +656,7 @@ kafka_configure_consumer_producer_jaas(){
 }
 
 ########################
-# Create users in Zookeeper when using SASL/SCRAM mechanism
+# Create users in zookeper when using SASL/SCRAM mechanism
 # Globals:
 #   KAFKA_*
 # Arguments:
@@ -855,15 +831,15 @@ kafka_kraft_storage_initialize() {
 
     # If cluster.id found in meta.properties, use it
     if [[ -f "${KAFKA_DATA_DIR}/meta.properties" ]]; then
-        KAFKA_CLUSTER_ID=$(grep "^cluster.id=" "${KAFKA_DATA_DIR}/meta.properties" | sed -E 's/^cluster\.id=(\S+)$/\1/')
+        KAFKA_KRAFT_CLUSTER_ID=$(grep "^cluster.id=" "${KAFKA_DATA_DIR}/meta.properties" | sed -E 's/^cluster\.id=(\S+)$/\1/')
     fi
 
-    if is_empty_value "${KAFKA_CLUSTER_ID:-}"; then
-        warn "KAFKA_CLUSTER_ID not set - If using multiple nodes then you must use the same Cluster ID for each one"
-        KAFKA_CLUSTER_ID="$("${KAFKA_HOME}/bin/kafka-storage.sh" random-uuid)"
-        info "Generated Kafka cluster ID '${KAFKA_CLUSTER_ID}'"
+    if is_empty_value "${KAFKA_KRAFT_CLUSTER_ID:-}"; then
+        warn "KAFKA_KRAFT_CLUSTER_ID not set - If using multiple nodes then you must use the same Cluster ID for each one"
+        KAFKA_KRAFT_CLUSTER_ID="$("${KAFKA_HOME}/bin/kafka-storage.sh" random-uuid)"
+        info "Generated Kafka cluster ID '${KAFKA_KRAFT_CLUSTER_ID}'"
     fi
-    args+=("--cluster-id=$KAFKA_CLUSTER_ID")
+    args+=("--cluster-id=$KAFKA_KRAFT_CLUSTER_ID")
 
     # SCRAM users are configured during the cluster bootstrapping process and can later be manually updated using kafka-config.sh
     if is_boolean_yes "${KAFKA_KRAFT_BOOTSTRAP_SCRAM_USERS:-}"; then
@@ -895,21 +871,12 @@ kafka_kraft_storage_initialize() {
             args+=("--add-scram" "SCRAM-SHA-512=[name=${KAFKA_CONTROLLER_USER},password=${KAFKA_CONTROLLER_PASSWORD}]")
         fi
     fi
-    if ! kafka_is_zookeeper_supported && [[ "${KAFKA_CFG_PROCESS_ROLES:-}" =~ "controller" ]]; then
-        args+=("--feature=kraft.version=1")
-        if [[ -n "${KAFKA_INITIAL_CONTROLLERS:-}" ]]; then
-            args+=("--initial-controllers=${KAFKA_INITIAL_CONTROLLERS}")
-        else
-            args+=("--no-initial-controllers")
-        fi
-    fi
-
     info "Formatting storage directories to add metadata..."
-    debug_execute "${KAFKA_HOME}/bin/kafka-storage.sh" format "${args[@]}"
+    "${KAFKA_HOME}/bin/kafka-storage.sh" format "${args[@]}"
 }
 
 ########################
-# Detects inconsistences between the configuration at KAFKA_CONF_FILE and cluster-state file
+# Detects inconsitences between the configuration at KAFKA_CONF_FILE and cluster-state file
 # Globals:
 #   KAFKA_*
 # Arguments:
@@ -950,9 +917,7 @@ kafka_initialize() {
         cp -Lr "$KAFKA_MOUNTED_CONF_DIR"/* "$KAFKA_CONF_DIR"
     fi
     # Copy truststore to cert directory
-    local -a certs_vars=("KAFKA_TLS_TRUSTSTORE_FILE")
-    kafka_is_zookeeper_supported && certs_vars+=("KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE")
-    for cert_var in "${certs_vars[@]}"; do
+    for cert_var in KAFKA_TLS_TRUSTSTORE_FILE KAFKA_ZOOKEEPER_TLS_TRUSTSTORE_FILE; do
         # Only copy if the file exists and it is in a different location than KAFKA_CERTS_DIR (to avoid copying to the same location)
         if [[ -f "${!cert_var}" ]] && ! [[ "${!cert_var}" =~ $KAFKA_CERTS_DIR ]]; then
             info "Copying truststore ${!cert_var} to ${KAFKA_CERTS_DIR}"
@@ -972,7 +937,7 @@ kafka_initialize() {
         ! is_empty_value "${KAFKA_CFG_MAX_REQUEST_SIZE:-}" && kafka_common_conf_set "$KAFKA_CONF_DIR/producer.properties" max.request.size "$KAFKA_CFG_MAX_REQUEST_SIZE"
         ! is_empty_value "${KAFKA_CFG_MAX_PARTITION_FETCH_BYTES:-}" && kafka_common_conf_set "$KAFKA_CONF_DIR/consumer.properties" max.partition.fetch.bytes "$KAFKA_CFG_MAX_PARTITION_FETCH_BYTES"
         # Zookeeper mode additional settings
-        if kafka_is_zookeeper_supported && ! is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}"; then
+        if ! is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}"; then
             if [[ "$KAFKA_ZOOKEEPER_PROTOCOL" =~ SSL ]]; then
                 kafka_zookeeper_configure_tls
             fi
@@ -980,7 +945,6 @@ kafka_initialize() {
                 kafka_zookeeper_configure_jaas
             fi
         fi
-
         # If at least one listener uses SSL or SASL_SSL, ensure SSL is configured
         if kafka_has_ssl_listener; then
             kafka_configure_ssl
@@ -997,50 +961,48 @@ kafka_initialize() {
                         export KAFKA_KRAFT_BOOTSTRAP_SCRAM_USERS="true"
                     fi
                 fi
-                if kafka_is_zookeeper_supported && ! is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}"; then
+                if ! is_empty_value "${KAFKA_CFG_ZOOKEEPER_CONNECT:-}"; then
                     export KAFKA_ZOOKEEPER_BOOTSTRAP_SCRAM_USERS="true"
                 fi
             fi
             kafka_server_conf_set sasl.enabled.mechanisms "$KAFKA_CFG_SASL_ENABLED_MECHANISMS"
         fi
         # Settings for each Kafka Listener are configured individually
-        if ! is_empty_value "${KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP:-}"; then
-            read -r -a protocol_maps <<<"$(tr ',' ' ' <<<"$KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP")"
-            for protocol_map in "${protocol_maps[@]}"; do
-                read -r -a map <<<"$(tr ':' ' ' <<<"$protocol_map")"
-                # Obtain the listener and protocol from protocol map string, e.g. CONTROLLER:PLAINTEXT
-                listener="${map[0]}"
-                protocol="${map[1]}"
-                listener_lower="$(echo "$listener" | tr '[:upper:]' '[:lower:]')"
+        read -r -a protocol_maps <<<"$(tr ',' ' ' <<<"$KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP")"
+        for protocol_map in "${protocol_maps[@]}"; do
+            read -r -a map <<<"$(tr ':' ' ' <<<"$protocol_map")"
+            # Obtain the listener and protocol from protocol map string, e.g. CONTROLLER:PLAINTEXT
+            listener="${map[0]}"
+            protocol="${map[1]}"
+            listener_lower="$(echo "$listener" | tr '[:upper:]' '[:lower:]')"
 
-                if [[ "$protocol" = "SSL" || "$protocol" = "SASL_SSL" ]]; then
-                    listener_upper="$(echo "$listener" | tr '[:lower:]' '[:upper:]')"
-                    env_name="KAFKA_TLS_${listener_upper}_CLIENT_AUTH"
-                    [[ -n "${!env_name:-}" ]] && kafka_server_conf_set "listener.name.${listener_lower}.ssl.client.auth" "${!env_name}"
+            if [[ "$protocol" = "SSL" || "$protocol" = "SASL_SSL" ]]; then
+                listener_upper="$(echo "$listener" | tr '[:lower:]' '[:upper:]')"
+                env_name="KAFKA_TLS_${listener_upper}_CLIENT_AUTH"
+                [[ -n "${!env_name:-}" ]] && kafka_server_conf_set "listener.name.${listener_lower}.ssl.client.auth" "${!env_name}"
+            fi
+            if [[ "$protocol" = "SASL_PLAINTEXT" || "$protocol" = "SASL_SSL" ]]; then
+                local role=""
+                if [[ "$listener" = "${KAFKA_CFG_INTER_BROKER_LISTENER_NAME:-INTERNAL}" ]]; then
+                    kafka_server_conf_set sasl.mechanism.inter.broker.protocol "$KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL"
+                    role="inter-broker"
+                elif [[ "${KAFKA_CFG_CONTROLLER_LISTENER_NAMES:-CONTROLLER}" =~ $listener ]]; then
+                    kafka_server_conf_set sasl.mechanism.controller.protocol "$KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL"
+                    kafka_server_conf_set "listener.name.${listener_lower}.sasl.enabled.mechanisms" "$KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL"
+                    role="controller"
                 fi
-                if [[ "$protocol" = "SASL_PLAINTEXT" || "$protocol" = "SASL_SSL" ]]; then
-                    local role=""
-                    if [[ "$listener" = "${KAFKA_CFG_INTER_BROKER_LISTENER_NAME:-INTERNAL}" ]]; then
-                        kafka_server_conf_set sasl.mechanism.inter.broker.protocol "$KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL"
-                        role="inter-broker"
-                    elif [[ "${KAFKA_CFG_CONTROLLER_LISTENER_NAMES:-CONTROLLER}" =~ $listener ]]; then
-                        kafka_server_conf_set sasl.mechanism.controller.protocol "$KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL"
-                        kafka_server_conf_set "listener.name.${listener_lower}.sasl.enabled.mechanisms" "$KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL"
-                        role="controller"
-                    fi
-                    # If KAFKA_CLIENT_LISTENER_NAME is found in the listeners list, configure the producer/consumer accordingly
-                    if [[ "$listener" = "${KAFKA_CLIENT_LISTENER_NAME:-CLIENT}" ]]; then
-                        kafka_configure_consumer_producer_jaas
-                        kafka_producer_consumer_conf_set security.protocol "$protocol"
-                        kafka_producer_consumer_conf_set sasl.mechanism "${KAFKA_CLIENT_SASL_MECHANISM:-$(kafka_client_sasl_mechanism)}"
-                    fi
-                    # Configure inline listener jaas configuration, omitted if mounted JAAS conf file detected
-                    if [[ ! -f "${KAFKA_CONF_DIR}/kafka_jaas.conf" ]]; then
-                        kafka_configure_server_jaas "$listener_lower" "${role:-}"
-                    fi
+                # If KAFKA_CLIENT_LISTENER_NAME is found in the listeners list, configure the producer/consumer accordingly
+                if [[ "$listener" = "${KAFKA_CLIENT_LISTENER_NAME:-CLIENT}" ]]; then
+                    kafka_configure_consumer_producer_jaas
+                    kafka_producer_consumer_conf_set security.protocol "$protocol"
+                    kafka_producer_consumer_conf_set sasl.mechanism "${KAFKA_CLIENT_SASL_MECHANISM:-$(kafka_client_sasl_mechanism)}"
                 fi
-            done
-        fi
+                # Configure inline listener jaas configuration, omitted if mounted JAAS conf file detected
+                if [[ ! -f "${KAFKA_CONF_DIR}/kafka_jaas.conf" ]]; then
+                    kafka_configure_server_jaas "$listener_lower" "${role:-}"
+                fi
+            fi
+        done
         # Configure Kafka using environment variables
         # This is executed at the end, to allow users to override properties set by the initialization logic
         kafka_configure_from_environment_variables
@@ -1103,7 +1065,7 @@ kafka_server_unify_conf() {
 }
 
 ########################
-# Dynamically set node.id/broker.id/controller.quorum.voters if their alternative environment variable _COMMAND is set
+# Dinamically set node.id/broker.id/controller.quorum.voters if their alternative environment variable _COMMAND is set
 # Globals:
 #   KAFKA_*_COMMAND
 # Arguments:
@@ -1121,16 +1083,14 @@ kafka_dynamic_environment_variables() {
         KAFKA_CFG_CONTROLLER_QUORUM_VOTERS="$(eval "${KAFKA_CONTROLLER_QUORUM_VOTERS_COMMAND}")"
         export KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
     fi
-    if kafka_is_zookeeper_supported; then
-        # Zookeeper mode
-        # DEPRECATED - BROKER_ID_COMMAND has been deprecated, please use KAFKA_BROKER_ID_COMMAND instead
-        if ! is_empty_value "${KAFKA_BROKER_ID_COMMAND:-}"; then
-            KAFKA_CFG_BROKER_ID="$(eval "${KAFKA_BROKER_ID_COMMAND}")"
-            export KAFKA_CFG_BROKER_ID
-        elif ! is_empty_value "${BROKER_ID_COMMAND:-}"; then
-            KAFKA_CFG_BROKER_ID="$(eval "${BROKER_ID_COMMAND}")"
-            export KAFKA_CFG_BROKER_ID
-        fi
+    # Zookeeper mode
+    # DEPRECATED - BROKER_ID_COMMAND has been deprecated, please use KAFKA_BROKER_ID_COMMAND instead
+    if ! is_empty_value "${KAFKA_BROKER_ID_COMMAND:-}"; then
+        KAFKA_CFG_BROKER_ID="$(eval "${KAFKA_BROKER_ID_COMMAND}")"
+        export KAFKA_CFG_BROKER_ID
+    elif ! is_empty_value "${BROKER_ID_COMMAND:-}"; then
+        KAFKA_CFG_BROKER_ID="$(eval "${BROKER_ID_COMMAND}")"
+        export KAFKA_CFG_BROKER_ID
     fi
 }
 

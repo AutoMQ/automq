@@ -44,7 +44,7 @@ RUN tar -zxf "/tmp/pkg/cache/automq.tgz" -C /opt/bitnami && \
     mv /opt/bitnami/automq-* /opt/bitnami/kafka && \
     chmod g+rwX /opt/bitnami
 
-RUN apt-get update && apt-get upgrade -y && \
+RUN apt-get update && apt-get install -y ca-certificates dnsutils iputils-ping curl wget netcat-openbsd sysstat net-tools telnet htop procps zlib1g vim less openjdk-17-jdk libjemalloc-dev ipset iproute2 && \
     apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 RUN chmod g+rwX /opt/bitnami
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
@@ -52,7 +52,6 @@ RUN ln -s /opt/bitnami/scripts/kafka/entrypoint.sh /entrypoint.sh
 RUN ln -s /opt/bitnami/scripts/kafka/run.sh /run.sh
 
 COPY debian-12/rootfs /
-COPY debian-12/automq.sh /opt/bitnami/scripts/kafka/run.sh
 RUN /opt/bitnami/scripts/java/postunpack.sh
 RUN /opt/bitnami/scripts/kafka/postunpack.sh
 ENV APP_VERSION="4.0.0" \
@@ -62,6 +61,12 @@ ENV APP_VERSION="4.0.0" \
 
 EXPOSE 9092
 
+RUN arch=$(uname -m) \
+    && target_file="/usr/lib/${arch}-linux-gnu/libjemalloc.so" \
+    && { test -f "$target_file" || { echo "Error: $target_file not found"; exit 1; }; } \
+    && ln -sv "$target_file" /usr/lib/libjemalloc.so
+ENV LD_PRELOAD="/usr/lib/libjemalloc.so"
+
 USER 1001
 ENTRYPOINT [ "/opt/bitnami/scripts/kafka/entrypoint.sh" ]
-CMD [ "/opt/bitnami/scripts/kafka/run.sh", "start" ]
+CMD [ "/opt/bitnami/scripts/kafka/run.sh" ]

@@ -1,5 +1,5 @@
 rolling-tags:
-- "4.0"
-- 4.0-debian-12
-- 4.0.0
-- latest
+  - "3.9"
+  - 3.9-debian-12
+  - 3.9.0
+  - latest

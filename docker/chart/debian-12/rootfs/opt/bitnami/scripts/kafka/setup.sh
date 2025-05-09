@@ -22,7 +22,8 @@ kafka_create_alias_environment_variables
 
 # Dynamically set node.id/broker.id/controller.quorum.voters if the _COMMAND environment variable is set
 kafka_dynamic_environment_variables
-# Set the default truststore locations before validation
+
+# Set the default tuststore locations before validation
 kafka_configure_default_truststore_locations
 # Ensure Kafka user and group exist when running as 'root'
 am_i_root && ensure_user_exists "$KAFKA_DAEMON_USER" --group "$KAFKA_DAEMON_GROUP"
@@ -40,25 +41,19 @@ done
 # Kafka initialization, skipped if server.properties was mounted at $KAFKA_CONF_DIR
 [[ ! -f "$KAFKA_CONF_FILE" ]] && kafka_initialize
 
-if kafka_is_zookeeper_supported; then
-    # Initialize KRaft metadata storage if process.roles configured ...
-    if grep -q "^process.roles=" "$KAFKA_CONF_FILE"; then
-        # ... unless initialization is skipped
-        ! is_boolean_yes "$KAFKA_SKIP_KRAFT_STORAGE_INIT" && kafka_kraft_storage_initialize
-    fi
-    # Configure Zookeeper SCRAM users
-    if is_boolean_yes "${KAFKA_ZOOKEEPER_BOOTSTRAP_SCRAM_USERS:-}"; then
-        kafka_zookeeper_create_sasl_scram_users
-    fi
-else
-    # Initialize KRaft metadata unless initialization is skipped
-    ! is_boolean_yes "$KAFKA_SKIP_KRAFT_STORAGE_INIT" && kafka_kraft_storage_initialize
+# Initialise KRaft metadata storage if process.roles configured
+if grep -q "^process.roles=" "$KAFKA_CONF_FILE" && ! is_boolean_yes "$KAFKA_SKIP_KRAFT_STORAGE_INIT" ; then
+    kafka_kraft_storage_initialize
+fi
+# Configure Zookeeper SCRAM users
+if is_boolean_yes "${KAFKA_ZOOKEEPER_BOOTSTRAP_SCRAM_USERS:-}"; then
+    kafka_zookeeper_create_sasl_scram_users
 fi
 # KRaft controllers may get stuck starting when the controller quorum voters are changed.
 # Workaround: Remove quorum-state file when scaling up/down controllers (Waiting proposal KIP-853)
 # https://cwiki.apache.org/confluence/display/KAFKA/KIP-853%3A+KRaft+Voter+Changes
-if [[ -f "${KAFKA_DATA_DIR}/__cluster_metadata-0/quorum-state" ]] && kafka_is_zookeeper_supported && grep -q "^controller.quorum.voters=" "$KAFKA_CONF_FILE" && kafka_kraft_quorum_voters_changed; then
-    warn "Detected inconsistences between controller.quorum.voters and quorum-state, removing it..."
+if [[ -f "${KAFKA_DATA_DIR}/__cluster_metadata-0/quorum-state" ]] && grep -q "^controller.quorum.voters=" "$KAFKA_CONF_FILE" && kafka_kraft_quorum_voters_changed; then
+    warn "Detected inconsitences between controller.quorum.voters and quorum-state, removing it..."
     rm -f "${KAFKA_DATA_DIR}/__cluster_metadata-0/quorum-state"
 fi
 # Ensure custom initialization scripts are executed
