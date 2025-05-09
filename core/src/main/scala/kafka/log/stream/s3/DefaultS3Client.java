@@ -22,8 +22,13 @@ package kafka.log.stream.s3;
 import kafka.autobalancer.metricsreporter.metric.Derivator;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
+import kafka.log.stream.s3.node.NodeManager;
+import kafka.log.stream.s3.node.NodeManagerStub;
+import kafka.log.stream.s3.node.NoopNodeManager;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
+import kafka.log.stream.s3.wal.BootstrapWalV1;
+import kafka.log.stream.s3.wal.DefaultWalFactory;
 import kafka.server.BrokerServer;
 
 import org.apache.kafka.image.MetadataImage;
@@ -54,22 +59,20 @@ import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
-import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.wal.DefaultWalHandle;
+import com.automq.stream.s3.wal.WalFactory;
+import com.automq.stream.s3.wal.WalHandle;
 import com.automq.stream.s3.wal.WriteAheadLog;
-import com.automq.stream.s3.wal.impl.block.BlockWALService;
-import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
-import com.automq.stream.s3.wal.impl.object.ObjectWALService;
-import com.automq.stream.utils.IdURI;
 import com.automq.stream.utils.LogContext;
-import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -99,6 +102,8 @@ public class DefaultS3Client implements Client {
     protected ObjectManager objectManager;
 
     protected StreamManager streamManager;
+
+    protected NodeManager nodeManager;
 
     protected CompactionManager compactionManager;
 
@@ -203,29 +208,10 @@ public class DefaultS3Client implements Client {
     }
 
     protected WriteAheadLog buildWAL() {
-        IdURI uri = IdURI.parse(config.walConfig());
-        switch (uri.protocol()) {
-            case "file":
-                return BlockWALService.builder(uri).config(config).build();
-            case "s3":
-                ObjectStorage walObjectStorage = ObjectStorageFactory.instance()
-                    .builder(BucketURI.parse(config.walConfig()))
-                    .inboundLimiter(networkInboundLimiter)
-                    .outboundLimiter(networkOutboundLimiter)
-                    .tagging(config.objectTagging())
-                    .threadPrefix("s3-wal")
-                    .build();
-
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder()
-                    .withURI(uri)
-                    .withClusterId(brokerServer.clusterId())
-                    .withNodeId(config.nodeId())
-                    .withEpoch(config.nodeEpoch());
-
-                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
-            default:
-                throw new IllegalArgumentException("Invalid WAL schema: " + uri.protocol());
-        }
+        String clusterId = brokerServer.clusterId();
+        WalHandle walHandle = new DefaultWalHandle(clusterId);
+        WalFactory factory = new DefaultWalFactory(config.nodeId(), config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
+        return new BootstrapWalV1(config.nodeId(), config.nodeEpoch(), config.walConfig(), false, factory, getNodeManager(), walHandle);
     }
 
     protected ObjectStorage newMainObjectStorage() {
@@ -272,7 +258,12 @@ public class DefaultS3Client implements Client {
 
             @Override
             public WriteAheadLog getWal(FailoverRequest request) {
-                return BlockWALService.recoveryBuilder(request.getDevice()).build();
+                String clusterId = brokerServer.clusterId();
+                int nodeId = request.getNodeId();
+                long nodeEpoch = request.getNodeEpoch();
+                WalHandle walHandle = new DefaultWalHandle(clusterId);
+                WalFactory factory = new DefaultWalFactory(nodeId, config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
+                return new BootstrapWalV1(nodeId, nodeEpoch, request.getKraftWalConfigs(), true, factory, getNodeManager(), walHandle);
             }
         }, (wal, sm, om, logger) -> {
             try {
@@ -288,5 +279,14 @@ public class DefaultS3Client implements Client {
             throw new IllegalStateException("The image should be loaded first");
         }
         return brokerServer.metadataCache().autoMQVersion();
+    }
+
+    private NodeManager getNodeManager() {
+        if (this.nodeManager == null) {
+            this.nodeManager = config.version().isWalRegistrationSupported()
+                ? new NodeManagerStub(this.requestSender, config.nodeId(), config.nodeEpoch(), new HashMap<>())
+                : new NoopNodeManager(config.nodeId(), config.nodeEpoch());
+        }
+        return this.nodeManager;
     }
 }
