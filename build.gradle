@@ -992,7 +992,14 @@ project(':core') {
     implementation ("software.amazon.awssdk:glue:${versions.awsSdk}")
     implementation ("software.amazon.awssdk:s3tables:${versions.awsSdk}")
     implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.0'
-    implementation 'org.apache.hadoop:hadoop-common:3.4.1'
+
+    implementation ('org.apache.hadoop:hadoop-common:3.4.1') {
+      exclude group: 'org.eclipse.jetty', module: '*'
+      exclude group: 'com.sun.jersey', module: '*'
+    }
+    // for hadoop common
+    implementation ("org.eclipse.jetty:jetty-webapp:${versions.jetty}")
+
     implementation (libs.kafkaAvroSerializer) {
       exclude group: 'org.apache.kafka', module: 'kafka-clients'
     }
