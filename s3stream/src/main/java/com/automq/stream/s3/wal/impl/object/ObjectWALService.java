@@ -26,6 +26,7 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.AppendResultImpl;
 import com.automq.stream.s3.wal.common.Record;
@@ -65,13 +66,15 @@ public class ObjectWALService implements WriteAheadLog {
     protected ObjectStorage objectStorage;
     protected ObjectWALConfig config;
 
+    protected ReservationService reservationService;
     protected RecordAccumulator accumulator;
 
     public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
         this.objectStorage = objectStorage;
         this.config = config;
 
-        this.accumulator = new RecordAccumulator(time, objectStorage, config);
+        this.reservationService = new ObjectReservationService(config.clusterId(), objectStorage, objectStorage.bucketId());
+        this.accumulator = new RecordAccumulator(time, objectStorage, reservationService, config);
     }
 
     // Visible for testing.

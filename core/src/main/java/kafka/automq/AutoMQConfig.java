@@ -56,8 +56,7 @@ public class AutoMQConfig {
     public static final String ELASTIC_STREAM_ENABLE_DOC = "Whether to enable AutoMQ, it has to be set to true";
 
     public static final String ELASTIC_STREAM_ENDPOINT_CONFIG = "elasticstream.endpoint";
-    public static final String ELASTIC_STREAM_ENDPOINT_DOC = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
-        "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>";
+    public static final String ELASTIC_STREAM_ENDPOINT_DOC = "Specifies the Elastic Stream endpoint";
 
     public static final String S3_DATA_BUCKETS_CONFIG = "s3.data.buckets";
     public static final String S3_DATA_BUCKETS_DOC = "The data buckets url with format 0@s3://$bucket?region=$region. \n" +
@@ -69,8 +68,7 @@ public class AutoMQConfig {
     public static final String S3_OPS_BUCKETS_DOC = "With the same format as s3.data.buckets";
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
-    public static final String S3_WAL_PATH_DOC = "The local WAL path for AutoMQ can be set to a block device path such as 0@file:///dev/xxx?iops=3000&iodepth=8&iobandwidth=157286400 or a filesystem file path." +
-        "It is recommended to use a block device for better write performance.";
+    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
 
     public static final String S3_WAL_CACHE_SIZE_CONFIG = "s3.wal.cache.size";
     public static final String S3_WAL_CACHE_SIZE_DOC = "The WAL (Write-Ahead Log) cache is a FIFO (First In, First Out) queue that contains data that has not yet been uploaded to object storage, as well as data that has been uploaded but not yet evicted from the cache." +
