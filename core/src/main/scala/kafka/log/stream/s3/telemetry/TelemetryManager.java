@@ -19,6 +19,8 @@
 
 package kafka.log.stream.s3.telemetry;
 
+import kafka.automq.table.TableTopicMetricsManager;
+import kafka.automq.zerozone.ZoneRouterMetricsManager;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporter;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporterURI;
 import kafka.log.stream.s3.telemetry.otel.OTelHistogramReporter;
@@ -179,6 +181,10 @@ public class TelemetryManager {
 
         // kraft controller may not have s3WALPath config.
         ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
+
+        ZoneRouterMetricsManager.initMetrics(meter);
+        TableTopicMetricsManager.initMetrics(meter);
+
         this.oTelHistogramReporter.start(meter);
     }
 

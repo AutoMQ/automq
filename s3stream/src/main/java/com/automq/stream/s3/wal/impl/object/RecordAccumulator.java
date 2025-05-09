@@ -23,6 +23,7 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Constants;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.WALFencedException;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.PriorityQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
@@ -67,6 +69,7 @@ public class RecordAccumulator implements Closeable {
     protected final ObjectWALConfig config;
     protected final Time time;
     protected final ObjectStorage objectStorage;
+    protected final ReservationService reservationService;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ConcurrentNavigableMap<Long /* inclusive first offset */, List<Record>> uploadMap = new ConcurrentSkipListMap<>();
     private final ConcurrentNavigableMap<Pair<Long /* epoch */, Long /* exclusive end offset */>, WALObject> previousObjectMap = new ConcurrentSkipListMap<>();
@@ -86,10 +89,11 @@ public class RecordAccumulator implements Closeable {
     private final AtomicLong nextOffset = new AtomicLong();
     private final AtomicLong flushedOffset = new AtomicLong();
 
-    public RecordAccumulator(Time time, ObjectStorage objectStorage,
+    public RecordAccumulator(Time time, ObjectStorage objectStorage, ReservationService reservationService,
         ObjectWALConfig config) {
         this.time = time;
         this.objectStorage = objectStorage;
+        this.reservationService = reservationService;
         this.config = config;
         this.nodePrefix = DigestUtils.md5Hex(String.valueOf(config.nodeId())).toUpperCase(Locale.ROOT) + "/" + Constants.DEFAULT_NAMESPACE + config.clusterId() + "/" + config.nodeId() + "/";
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
@@ -103,6 +107,16 @@ public class RecordAccumulator implements Closeable {
     }
 
     public void start() {
+        // Verify the permission.
+        reservationService.verify(config.nodeId(), config.epoch(), config.failover())
+            .thenAccept(result -> {
+                if (!result) {
+                    fenced = true;
+                    WALFencedException exception = new WALFencedException("Failed to verify the permission with node id: " + config.nodeId() + ", node epoch: " + config.epoch() + ", failover flag: " + config.failover());
+                    throw new CompletionException(exception);
+                }
+            })
+            .join();
         objectStorage.list(nodePrefix)
             .thenAccept(objectList -> objectList.forEach(object -> {
                 String path = object.key();
@@ -507,6 +521,20 @@ public class RecordAccumulator implements Closeable {
         CompletableFuture<ObjectStorage.WriteResult> uploadFuture = objectStorage.write(writeOptions, path, objectBuffer);
 
         CompletableFuture<Void> finalFuture = recordUploadMetrics(uploadFuture, startTime, objectLength)
+            .thenCompose(writeResult -> {
+                long commitStartTime = time.nanoseconds();
+                return reservationService.verify(config.nodeId(), config.epoch(), false)
+                    .whenComplete((result, throwable) ->
+                        ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - commitStartTime, "commit", throwable == null))
+                    .thenApply(result -> {
+                        if (!result) {
+                            fenced = true;
+                            WALFencedException exception = new WALFencedException("Failed to verify the permission with node id: " + config.nodeId() + ", node epoch: " + config.epoch() + ", failover flag: " + config.failover());
+                            throw new CompletionException(exception);
+                        }
+                        return writeResult;
+                    });
+            })
             .thenAccept(result -> {
                 long lockStartTime = time.nanoseconds();
                 lock.writeLock().lock();

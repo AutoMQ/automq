@@ -21,6 +21,7 @@ import com.automq.stream.s3.Constants
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
+import kafka.automq.controller.DefaultQuorumControllerExtension
 import kafka.controller.streamaspect.client.{Context, StreamClientFactoryProxy}
 import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
@@ -577,7 +578,7 @@ class ControllerServer(
 
   // AutoMQ for Kafka inject start
   protected def quorumControllerExtension(quorumController: QuorumController): QuorumControllerExtension = {
-    QuorumControllerExtension.NOOP
+    new DefaultQuorumControllerExtension(quorumController)
   }
 
   protected def replicaPlacer(): ReplicaPlacer = {

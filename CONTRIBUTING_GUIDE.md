@@ -2,18 +2,18 @@
 
 Thank you for your interest in contributing! We love community contributions.
 Read on to learn how to contribute to AutoMQ.
-We appreciate first time contributors and we are happy to assist you in getting started. In case of questions, just
+We appreciate first-time contributors, and we are happy to assist you in getting started. In case of questions, just
 reach out to us via [Wechat Group](https://www.automq.com/img/----------------------------1.png)
 or [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA)!
 
-Before getting started, please review AutoMQ's Code of Conduct. Everyone interacting in Slack or Wechat
+Before getting started, please review AutoMQ's Code of Conduct. Everyone interacting in Slack or WeChat
 follow [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Code Contributions
 
 ### Finding or Reporting Issues
 
--   **Find an existing issue:** Look through the [existing issues](https://github.com/AutoMQ/automq/issues). Issues open for contributions are often tagged with `good first issue`. To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. Start with
+-   **Find an existing issue:** Look through the [existing issues](https://github.com/AutoMQ/automq/issues). Issues open for contributions are often tagged with `good first issue`. To claim an issue, simply reply with '/assign', and the GitHub bot will assign it to you. Start with
     this [tagged good first issue](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 -   **Report a new issue:** If you've found a bug or have a feature request, please [create a new issue](https://github.com/AutoMQ/automq/issues/new/choose). Select the appropriate template (Bug Report or Feature Request) and fill out the form provided.
 
@@ -35,7 +35,7 @@ The usual workflow of code contribution is:
    closed, otherwise.
 8. Write a PR title and description that follows the [Pull Request Template](PULL_REQUEST_TEMPLATE.md).
 9. An AutoMQ maintainer will trigger the CI tests for you and review the code.
-10. Review and respond to feedback and questions by AutoMQ maintainers.
+10. Review and respond to feedback and questions from AutoMQ maintainers.
 11. Merge the contribution.
 
 Pull Request reviews are done on a regular basis.
@@ -43,7 +43,7 @@ Pull Request reviews are done on a regular basis.
 > [!NOTE]
 > Please make sure you respond to our feedback/questions and sign our CLA.
 >
-> Pull Requests without updates will be closed due inactivity.
+> Pull Requests without updates will be closed due to inactivity.
 
 ## Requirement
 
@@ -71,7 +71,7 @@ It is not recommended to manually install Gradle. The gradlew script in the root
 
 ### Prepare S3 service
 
-Refer to this [documentation](https://docs.localstack.cloud/getting-started/installation/) to install `localstack` to mock a local s3 service or use AWS S3 service directly.
+Refer to this [documentation](https://docs.localstack.cloud/getting-started/installation/) to install `localstack` to mock a local S3 service or use AWS S3 service directly.
 
 If you are using localstack then create a bucket with the following command:
 

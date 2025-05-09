@@ -101,8 +101,8 @@ public class ObjectWALConfig {
     }
 
     public static final class Builder {
-        private long batchInterval = 100; // 100ms
-        private long maxBytesInBatch = 4 * 1024 * 1024L; // 4MB
+        private long batchInterval = 256; // 256ms
+        private long maxBytesInBatch = 8 * 1024 * 1024L; // 8MB
         private long maxUnflushedBytes = 1024 * 1024 * 1024L; // 1GB
         private int maxInflightUploadCount = 50;
         private int readAheadObjectCount = 4;

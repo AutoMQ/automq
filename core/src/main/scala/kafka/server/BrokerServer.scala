@@ -18,8 +18,11 @@
 package kafka.server
 
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
+import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
+import kafka.automq.table.TableManager
+import kafka.automq.zerozone.{DefaultClientRackProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -163,6 +166,12 @@ class BrokerServer(
   var trafficInterceptor: TrafficInterceptor = _
 
   var backPressureManager: BackPressureManager = _
+
+  val clientRackProvider = new DefaultClientRackProvider()
+  // init reconfigurable before startup
+  config.addReconfigurable(clientRackProvider)
+
+  var tableManager: TableManager = _
   // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -352,7 +361,6 @@ class BrokerServer(
         addPartitionsToTxnManager = Some(addPartitionsToTxnManager),
         directoryEventHandler = directoryEventHandler
       )
-      this._replicaManager.setKafkaLinkingManager(newKafkaLinkingManager())
 
       /* start token manager */
       tokenManager = new DelegationTokenManager(config, tokenCache, time)
@@ -361,6 +369,7 @@ class BrokerServer(
       groupCoordinator = createGroupCoordinator()
 
       // AutoMQ injection start
+      this._replicaManager.setKafkaLinkingManager(newKafkaLinkingManager())
       groupCoordinator = createGroupCoordinatorWrapper(groupCoordinator)
       // AutoMQ injection end
 
@@ -561,9 +570,12 @@ class BrokerServer(
       ElasticLogManager.init(config, clusterId, this)
       trafficInterceptor = newTrafficInterceptor()
 
+      tableManager = new TableManager(metadataCache, config)
       newPartitionLifecycleListeners().forEach(l => {
         _replicaManager.addPartitionLifecycleListener(l)
       })
+
+      newFailoverListener(ElasticLogManager.INSTANCE.get.client)
       // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
@@ -818,14 +830,22 @@ class BrokerServer(
   }
 
   protected def newTrafficInterceptor(): TrafficInterceptor = {
-    val trafficInterceptor = new NoopTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
+    val trafficInterceptor = if (config.automq.zoneRouterChannels().isEmpty) {
+      new NoopTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
+    } else {
+      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, clientRackProvider, config, config.automq.zoneRouterChannels().get())
+      metadataLoader.installPublishers(util.List.of(zeroZoneRouter))
+      zeroZoneRouter
+    }
     dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
     replicaManager.setTrafficInterceptor(trafficInterceptor)
     trafficInterceptor
   }
 
   protected def newPartitionLifecycleListeners(): util.List[PartitionLifecycleListener] = {
-    new util.ArrayList[PartitionLifecycleListener]()
+    val list = new util.ArrayList[PartitionLifecycleListener]()
+    list.add(tableManager)
+    list
   }
 
   protected def newBackPressureRegulator(): Regulator = {
@@ -840,6 +860,12 @@ class BrokerServer(
 
   protected def newKafkaLinkingManager(): KafkaLinkingManager = {
     null
+  }
+
+  protected def newFailoverListener(client: com.automq.stream.api.Client): FailoverListener = {
+    val failoverListener = new FailoverListener(config.nodeId, client)
+    metadataLoader.installPublishers(util.List.of(failoverListener));
+    failoverListener
   }
   // AutoMQ inject end
 

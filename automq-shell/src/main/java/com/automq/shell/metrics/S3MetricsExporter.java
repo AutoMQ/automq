@@ -24,6 +24,7 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
+import com.automq.stream.utils.Threads;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -161,12 +162,16 @@ public class S3MetricsExporter implements MetricExporter {
                             CompletableFuture.allOf(deleteFutures).join();
                         }
                     }
-
-                    Thread.sleep(Duration.ofMinutes(1).toMillis());
+                    if (Threads.sleep(Duration.ofMinutes(1).toMillis())) {
+                        break;
+                    }
                 } catch (InterruptedException e) {
                     break;
                 } catch (Exception e) {
                     LOGGER.error("Cleanup s3 metrics failed", e);
+                    if (Threads.sleep(Duration.ofMinutes(1).toMillis())) {
+                        break;
+                    }
                 }
             }
         }

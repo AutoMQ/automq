@@ -24,6 +24,7 @@ public class FailoverRequest {
     private long nodeEpoch;
     private String volumeId;
     private String device;
+    private String kraftWalConfigs;
 
     public int getNodeId() {
         return nodeId;
@@ -57,6 +58,14 @@ public class FailoverRequest {
         this.device = device;
     }
 
+    public String getKraftWalConfigs() {
+        return kraftWalConfigs;
+    }
+
+    public void setKraftWalConfigs(String kraftWalConfigs) {
+        this.kraftWalConfigs = kraftWalConfigs;
+    }
+
     @Override
     public String toString() {
         return "FailoverRequest{" +
@@ -64,6 +73,7 @@ public class FailoverRequest {
             ", nodeEpoch=" + nodeEpoch +
             ", volumeId='" + volumeId + '\'' +
             ", device='" + device + '\'' +
+            ", kraftWalConfigs='" + kraftWalConfigs + '\'' +
             '}';
     }
 }
