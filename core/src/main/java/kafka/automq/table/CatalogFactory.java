@@ -64,7 +64,7 @@ public class CatalogFactory {
         final Map<String, Object> catalogConfigs;
         final Map<String, Object> hadoopConfigs;
         final Map<String, String> options = new HashMap<>();
-        final Configuration hadoopConf = new Configuration();
+        Object hadoopConf = null;
         UserGroupInformation ugi = null;
         Catalog catalog = null;
 
@@ -101,10 +101,24 @@ public class CatalogFactory {
                     throw new IllegalArgumentException("Unsupported catalog type: " + catalogType);
             }
             catalogConfigs.forEach((k, v) -> options.put(k, v.toString()));
-            hadoopConfigs.forEach((k, v) -> hadoopConf.set(k, v.toString()));
+            hadoopConf = mergeHadoopConfig(hadoopConfigs, hadoopConf);
             options.remove(CATALOG_TYPE_CONFIG);
             LOGGER.info("[TABLE_MANAGER_START],catalog={},options={},hadoopConfig={}", catalogType, options, hadoopConf);
             this.catalog = runAs(() -> CatalogUtil.loadCatalog(catalogImpl, catalogType, options, hadoopConf));
+        }
+
+        private Object mergeHadoopConfig(Map<String, Object> from, Object hadoopConf) {
+            if (!from.isEmpty()) {
+                if (hadoopConf == null) {
+                    hadoopConf = new Configuration();
+                }
+                for (Map.Entry<String, Object> entry : hadoopConfigs.entrySet()) {
+                    String k = entry.getKey();
+                    Object v = entry.getValue();
+                    ((Configuration) hadoopConf).set(k, v.toString());
+                }
+            }
+            return hadoopConf;
         }
 
         public Catalog build() {
@@ -144,6 +158,7 @@ public class CatalogFactory {
             catalogImpl = "org.apache.iceberg.hive.HiveCatalog";
             putDataBucketAsWarehouse(true);
 
+            hadoopConf = new Configuration();
             IdURI uri = IdURI.parse("0@" + catalogConfigs.getOrDefault("auth", "none://?"));
             try {
                 switch (uri.protocol()) {
@@ -162,13 +177,13 @@ public class CatalogFactory {
                             base64Config2file(uri.extensionString("keytab"), configBasePath, "keytab")
                         );
                         ugi = UserGroupInformation.getCurrentUser();
-                        hadoopConf.set("metastore.sasl.enabled", "true");
+                        ((Configuration) hadoopConf).set("metastore.sasl.enabled", "true");
                         break;
                     }
                     case "simple": {
                         ugi = UserGroupInformation.createRemoteUser(uri.extensionString("username"));
                         UserGroupInformation.setLoginUser(ugi);
-                        hadoopConf.set("metastore.sasl.enabled", "true");
+                        ((Configuration) hadoopConf).set("metastore.sasl.enabled", "true");
                         break;
                     }
                     default: {
