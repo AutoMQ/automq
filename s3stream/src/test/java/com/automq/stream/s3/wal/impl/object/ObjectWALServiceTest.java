@@ -40,6 +40,7 @@ public class ObjectWALServiceTest {
             .withBatchInterval(Long.MAX_VALUE)
             .withStrictBatchLimit(true)
             .build();
+        new ObjectReservationService(config.clusterId(), objectStorage, objectStorage.bucketId()).acquire(config.nodeId(), config.epoch(), false);
         wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
         wal.start();
         random = new Random();

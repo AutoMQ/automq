@@ -18,6 +18,7 @@
 package kafka.server
 
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
+import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
 import kafka.automq.table.TableManager
@@ -569,6 +570,8 @@ class BrokerServer(
       newPartitionLifecycleListeners().forEach(l => {
         _replicaManager.addPartitionLifecycleListener(l)
       })
+
+      newFailoverListener(ElasticLogManager.INSTANCE.get.client)
       // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
@@ -859,6 +862,12 @@ class BrokerServer(
 
   protected def newKafkaLinkingManager(): KafkaLinkingManager = {
     null
+  }
+
+  protected def newFailoverListener(client: com.automq.stream.api.Client): FailoverListener = {
+    val failoverListener = new FailoverListener(config.nodeId, client)
+    metadataLoader.installPublishers(util.List.of(failoverListener));
+    failoverListener
   }
   // AutoMQ inject end
 
