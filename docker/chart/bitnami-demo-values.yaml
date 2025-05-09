@@ -1,0 +1,122 @@
+image:
+  registry: registry.cn-shanghai.aliyuncs.com
+  repository: automq/automq
+  tag: qiuzhang
+  pullPolicy: Always
+  pullSecrets:
+    - qiuzhang-registry
+controller:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: "2000m"
+      memory: "12Gi"
+    limits:
+      cpu: "4000m"
+      memory: "16Gi"
+  extraConfig: |
+    elasticstream.enable=true
+    autobalancer.client.auth.sasl.mechanism=PLAIN
+    autobalancer.client.auth.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="inter_broker_user" password="interbroker-password-placeholder" user_inter_broker_user="interbroker-password-placeholder" user_user1="password-placeholder-0";
+    autobalancer.client.auth.security.protocol=SASL_PLAINTEXT
+    autobalancer.client.listener.name=INTERNAL
+    s3.ops.buckets=1@s3://<ops-bucket>?region=<region>&endpoint=<endpoint>
+    s3.data.buckets=0@s3://<data-bucket>?region=<region>&endpoint=<endpoint>
+    s3.wal.path=0@s3://<data-bucket>?region=<region>&endpoint=<endpoint>
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                  - qiuzhang-bitnami
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - controller
+                  - broker
+          topologyKey: kubernetes.io/hostname
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: "kubernetes.azure.com/agentpool"
+                operator: In
+                values:
+                  - "benchmark"
+              - key: "node.kubernetes.io/instance-type"
+                operator: In
+                values:
+                  - "Standard_D4as_v5"
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: qiuzhang-bitnami
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "automq"
+      effect: "NoSchedule"
+
+broker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "2000m"
+      memory: "12Gi"
+    limits:
+      cpu: "4000m"
+      memory: "16Gi"
+  extraConfig: |
+    elasticstream.enable=true
+    autobalancer.client.auth.sasl.mechanism=PLAIN
+    autobalancer.client.auth.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="inter_broker_user" password="interbroker-password-placeholder" user_inter_broker_user="interbroker-password-placeholder" user_user1="password-placeholder-0";
+    autobalancer.client.auth.security.protocol=SASL_PLAINTEXT
+    autobalancer.client.listener.name=INTERNAL
+    s3.ops.buckets=1@s3://<ops-bucket>?region=<region>&endpoint=<endpoint>
+    s3.data.buckets=0@s3://<data-bucket>?region=<region>&endpoint=<endpoint>
+    s3.wal.path=0@s3://<data-bucket>?region=<region>&endpoint=<endpoint>
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                  - qiuzhang-bitnami
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - controller
+                  - broker
+          topologyKey: kubernetes.io/hostname
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: "kubernetes.azure.com/agentpool"
+                operator: In
+                values:
+                  - "benchmark"
+              - key: "node.kubernetes.io/instance-type"
+                operator: In
+                values:
+                  - "Standard_D4as_v5"
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: qiuzhang-bitnami
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "automq"
+      effect: "NoSchedule"
