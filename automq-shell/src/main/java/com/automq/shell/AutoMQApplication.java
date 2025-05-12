@@ -41,9 +41,8 @@ public class AutoMQApplication {
         if (override) {
             CONTAINER.put(type, singleton);
             return true;
-        } else {
-            return CONTAINER.putIfAbsent(type, singleton) == null;
         }
+        return CONTAINER.putIfAbsent(type, singleton) == null;
     }
 
     public static <T> T getBean(Class<T> type) {
