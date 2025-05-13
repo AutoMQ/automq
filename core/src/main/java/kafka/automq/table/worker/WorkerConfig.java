@@ -27,7 +27,7 @@ import org.apache.kafka.storage.internals.log.LogConfig;
 
 import java.util.List;
 
-import static kafka.automq.table.utils.PartitionUtil.stringToList;
+import static org.apache.kafka.server.common.automq.TableTopicConfigValidator.stringToList;
 
 public class WorkerConfig {
     static final String COMMA_NO_PARENS_REGEX = ",(?![^()]*+\\))";

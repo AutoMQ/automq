@@ -34,7 +34,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static kafka.automq.table.utils.PartitionUtil.COMMA_NO_PARENS_REGEX;
 
 @Tag("S3Unit")
 public class PartitionUtilTest {
@@ -61,11 +60,6 @@ public class PartitionUtilTest {
         // drop partition
         PartitionUtil.evolve(List.of("bucket(name, 8)", "day(timestamp)"), table);
         Assertions.assertEquals(List.of("name_bucket_8", "timestamp_day"), table.spec().fields().stream().map(PartitionField::name).toList());
-    }
-
-    @Test
-    public void testStringToList() {
-        Assertions.assertEquals(List.of("a", "b", "c"), PartitionUtil.stringToList("[a, b, c]", COMMA_NO_PARENS_REGEX));
     }
 
 }
