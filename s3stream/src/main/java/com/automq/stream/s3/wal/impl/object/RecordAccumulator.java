@@ -30,6 +30,8 @@ import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -65,6 +67,8 @@ public class RecordAccumulator implements Closeable {
 
     private static final long DEFAULT_LOCK_WARNING_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(5);
     private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
+    private static final String OBJECT_PATH_OFFSET_DELIMITER = "-";
+    private static final String OBJECT_PATH_FORMAT = "%s%d" + OBJECT_PATH_OFFSET_DELIMITER + "%d"; // {objectPrefix}/{startOffset}-{endOffset}
     protected final ObjectWALConfig config;
     protected final Time time;
     protected final ObjectStorage objectStorage;
@@ -109,16 +113,27 @@ public class RecordAccumulator implements Closeable {
                 String path = object.key();
                 String[] parts = path.split("/");
                 try {
-                    long firstOffset = Long.parseLong(parts[parts.length - 1]);
-                    long epoch = Long.parseLong(parts[parts.length - 3]);
+                    WALObject walObject;
 
+                    long epoch = Long.parseLong(parts[parts.length - 3]);
                     // Skip the object if it belongs to a later epoch.
                     if (epoch > config.epoch()) {
                         return;
                     }
 
                     long length = object.size();
-                    WALObject walObject = new WALObject(object.bucketId(), path, firstOffset, length);
+
+                    String rawOffset = parts[parts.length - 1];
+                    if (rawOffset.contains(OBJECT_PATH_OFFSET_DELIMITER)) {
+                        // new format: {startOffset}-{endOffset}
+                        long startOffset = Long.parseLong(rawOffset.substring(0, rawOffset.indexOf(OBJECT_PATH_OFFSET_DELIMITER)));
+                        long endOffset = Long.parseLong(rawOffset.substring(rawOffset.indexOf(OBJECT_PATH_OFFSET_DELIMITER) + 1));
+                        walObject = new WALObject(object.bucketId(), path, startOffset, endOffset, length);
+                    } else {
+                        // old format: {startOffset}
+                        long startOffset = Long.parseLong(rawOffset);
+                        walObject = new WALObject(object.bucketId(), path, startOffset, length);
+                    }
 
                     if (epoch != config.epoch()) {
                         previousObjectMap.put(Pair.of(epoch, walObject.endOffset()), walObject);
@@ -205,7 +220,11 @@ public class RecordAccumulator implements Closeable {
         // Wait for all upload tasks to complete.
         if (!pendingFutureMap.isEmpty()) {
             log.info("Wait for {} pending upload tasks to complete.", pendingFutureMap.size());
-            CompletableFuture.allOf(pendingFutureMap.keySet().toArray(new CompletableFuture[0])).join();
+            try {
+                CompletableFuture.allOf(pendingFutureMap.keySet().toArray(new CompletableFuture[0])).get(30, TimeUnit.SECONDS);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                log.error("Failed to wait for pending upload tasks to complete.", e);
+            }
         }
 
         if (utilityService != null && !utilityService.isShutdown()) {
@@ -509,7 +528,7 @@ public class RecordAccumulator implements Closeable {
 
         // Enable fast retry.
         ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().enableFastRetry(true);
-        String path = objectPrefix + firstOffset;
+        String path = String.format(OBJECT_PATH_FORMAT, objectPrefix, firstOffset, endOffset);
         CompletableFuture<ObjectStorage.WriteResult> uploadFuture = objectStorage.write(writeOptions, path, objectBuffer);
 
         CompletableFuture<Void> finalFuture = recordUploadMetrics(uploadFuture, startTime, objectLength)
@@ -521,7 +540,7 @@ public class RecordAccumulator implements Closeable {
                         log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - lockStartTime));
                     }
 
-                    objectMap.put(endOffset, new WALObject(result.bucket(), path, firstOffset, objectLength));
+                    objectMap.put(endOffset, new WALObject(result.bucket(), path, firstOffset, endOffset, objectLength));
                     objectDataBytes.addAndGet(objectLength);
 
                     uploadMap.get(firstOffset).markFinished();
@@ -617,12 +636,23 @@ public class RecordAccumulator implements Closeable {
         private final short bucketId;
         private final String path;
         private final long startOffset;
+        private final long endOffset;
         private final long length;
 
         public WALObject(short bucketId, String path, long startOffset, long length) {
             this.bucketId = bucketId;
             this.path = path;
             this.startOffset = startOffset;
+            // TODO: comment this line to avoid confusion
+            this.endOffset = startOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
+            this.length = length;
+        }
+
+        public WALObject(short bucketId, String path, long startOffset, long endOffset, long length) {
+            this.bucketId = bucketId;
+            this.path = path;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
             this.length = length;
         }
 
@@ -648,7 +678,7 @@ public class RecordAccumulator implements Closeable {
         }
 
         public long endOffset() {
-            return startOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
+            return endOffset;
         }
 
         @Override

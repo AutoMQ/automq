@@ -439,21 +439,21 @@ public class RecordAccumulatorTest {
         assertFalse(future2.isDone());
         assertFalse(future3.isDone());
 
-        objectStorage.triggerWrite("1");
+        objectStorage.triggerWrite("1-3");
         Thread.sleep(10);
         assertFalse(future0.isDone());
         assertFalse(future1.isDone());
         assertFalse(future2.isDone());
         assertFalse(future3.isDone());
 
-        objectStorage.triggerWrite("0");
+        objectStorage.triggerWrite("0-1");
         Thread.sleep(10);
         assertTrue(future0.isDone());
         assertTrue(future1.isDone());
         assertTrue(future2.isDone());
         assertFalse(future3.isDone());
 
-        objectStorage.triggerWrite("3");
+        objectStorage.triggerWrite("3-4");
         Thread.sleep(10);
         assertTrue(future0.isDone());
         assertTrue(future1.isDone());

@@ -40,9 +40,6 @@ public class WALObjectHeader {
     private int nodeId4;
     private long epoch5;
 
-    public WALObjectHeader() {
-    }
-
     public WALObjectHeader(long startOffset, long length, long stickyRecordLength, int nodeId, long epoch) {
         this.startOffset1 = startOffset;
         this.length2 = length;
@@ -56,21 +53,22 @@ public class WALObjectHeader {
             throw new UnmarshalException(String.format("WALHeader does not have enough bytes, Recovered: [%d] expect: [%d]", buf.readableBytes(), WAL_HEADER_SIZE));
         }
 
-        WALObjectHeader walObjectHeader = new WALObjectHeader();
         buf.markReaderIndex();
-        walObjectHeader.magicCode0 = buf.readInt();
-        if (walObjectHeader.magicCode0 != WAL_HEADER_MAGIC_CODE) {
-            throw new UnmarshalException(String.format("WALHeader magic code not match, Recovered: [%d] expect: [%d]", walObjectHeader.magicCode0, WAL_HEADER_MAGIC_CODE));
+
+        int magicCode = buf.readInt();
+        if (magicCode != WAL_HEADER_MAGIC_CODE) {
+            throw new UnmarshalException(String.format("WALHeader magic code not match, Recovered: [%d] expect: [%d]", magicCode, WAL_HEADER_MAGIC_CODE));
         }
 
-        walObjectHeader.startOffset1 = buf.readLong();
-        walObjectHeader.length2 = buf.readLong();
-        walObjectHeader.stickyRecordLength3 = buf.readLong();
-        walObjectHeader.nodeId4 = buf.readInt();
-        walObjectHeader.epoch5 = buf.readLong();
+        long startOffset = buf.readLong();
+        long length = buf.readLong();
+        long stickyRecordLength = buf.readLong();
+        int nodeId = buf.readInt();
+        long epoch = buf.readLong();
+
         buf.resetReaderIndex();
 
-        return walObjectHeader;
+        return new WALObjectHeader(startOffset, length, stickyRecordLength, nodeId, epoch);
     }
 
     public ByteBuf marshal() {
