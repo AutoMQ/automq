@@ -22,7 +22,8 @@ public class MockObjectStorage extends MemoryObjectStorage {
         }
 
         CompletableFuture<WriteResult> mockFuture = new CompletableFuture<>();
-        pendingWrites.put(objectPath, new PendingWrite(mockFuture, pendingWrite));
+        String offset = objectPath.substring(objectPath.lastIndexOf('/') + 1);
+        pendingWrites.put(offset, new PendingWrite(mockFuture, pendingWrite));
 
         return mockFuture;
     }

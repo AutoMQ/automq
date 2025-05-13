@@ -19,7 +19,6 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
@@ -54,7 +53,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 public class RecordAccumulatorTest {
     private RecordAccumulator recordAccumulator;
-    private ObjectStorage objectStorage;
+    private MockObjectStorage objectStorage;
     private ConcurrentSkipListMap<Long, ByteBuf> generatedByteBufMap;
     private Random random;
 
@@ -413,5 +412,52 @@ public class RecordAccumulatorTest {
 
         recordAccumulator.reset().join();
         assertEquals(0, recordAccumulator.objectList().size());
+    }
+
+    @Test
+    public void testSequentiallyComplete() throws WALFencedException, OverCapacityException, InterruptedException {
+        objectStorage.markManualWrite();
+        ByteBuf byteBuf = generateByteBuf(1);
+
+        CompletableFuture<AppendResult.CallbackResult> future0 = new CompletableFuture<>();
+        CompletableFuture<AppendResult.CallbackResult> future1 = new CompletableFuture<>();
+        CompletableFuture<AppendResult.CallbackResult> future2 = new CompletableFuture<>();
+        CompletableFuture<AppendResult.CallbackResult> future3 = new CompletableFuture<>();
+
+        recordAccumulator.append(byteBuf.readableBytes(), offset -> byteBuf.retainedSlice().asReadOnly(), future0);
+        recordAccumulator.unsafeUpload(true);
+        recordAccumulator.append(byteBuf.readableBytes(), offset -> byteBuf.retainedSlice().asReadOnly(), future1);
+        recordAccumulator.append(byteBuf.readableBytes(), offset -> byteBuf.retainedSlice().asReadOnly(), future2);
+        recordAccumulator.unsafeUpload(true);
+        recordAccumulator.append(byteBuf.readableBytes(), offset -> byteBuf.retainedSlice().asReadOnly(), future3);
+        recordAccumulator.unsafeUpload(true);
+
+        // sleep to wait for potential async callback
+        Thread.sleep(10);
+        assertFalse(future0.isDone());
+        assertFalse(future1.isDone());
+        assertFalse(future2.isDone());
+        assertFalse(future3.isDone());
+
+        objectStorage.triggerWrite("1");
+        Thread.sleep(10);
+        assertFalse(future0.isDone());
+        assertFalse(future1.isDone());
+        assertFalse(future2.isDone());
+        assertFalse(future3.isDone());
+
+        objectStorage.triggerWrite("0");
+        Thread.sleep(10);
+        assertTrue(future0.isDone());
+        assertTrue(future1.isDone());
+        assertTrue(future2.isDone());
+        assertFalse(future3.isDone());
+
+        objectStorage.triggerWrite("3");
+        Thread.sleep(10);
+        assertTrue(future0.isDone());
+        assertTrue(future1.isDone());
+        assertTrue(future2.isDone());
+        assertTrue(future3.isDone());
     }
 }
