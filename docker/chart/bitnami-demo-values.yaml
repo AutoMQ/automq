@@ -56,6 +56,9 @@ controller:
       operator: "Equal"
       value: "automq"
       effect: "NoSchedule"
+  persistence:
+    storageClass: "<your-storage-class>"
+    size: 20Gi
 
 broker:
   replicaCount: 1
