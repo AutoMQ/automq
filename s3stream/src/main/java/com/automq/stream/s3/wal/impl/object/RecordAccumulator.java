@@ -63,7 +63,7 @@ public class RecordAccumulator implements Closeable {
     private final String nodePrefix;
     private final String objectPrefix;
     private final ScheduledExecutorService executorService;
-    private final ScheduledExecutorService monitorService;
+    private final ScheduledExecutorService utilityService;
     private final ExecutorService callbackService;
     private final ConcurrentMap<CompletableFuture<Void>, Long> pendingFutureMap = new ConcurrentHashMap<>();
     private final AtomicLong objectDataBytes = new AtomicLong();
@@ -83,7 +83,7 @@ public class RecordAccumulator implements Closeable {
         this.nodePrefix = DigestUtils.md5Hex(String.valueOf(config.nodeId())).toUpperCase(Locale.ROOT) + "/" + Constants.DEFAULT_NAMESPACE + config.clusterId() + "/" + config.nodeId() + "/";
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
         this.executorService = Threads.newSingleThreadScheduledExecutor("s3-wal-schedule", true, log);
-        this.monitorService = Threads.newSingleThreadScheduledExecutor("s3-wal-monitor", true, log);
+        this.utilityService = Threads.newSingleThreadScheduledExecutor("s3-wal-utility", true, log);
         this.callbackService = Threads.newFixedThreadPoolWithMonitor(4, "s3-wal-callback", false, log);
 
         ObjectWALMetricsManager.setInflightUploadCountSupplier(() -> (long) pendingFutureMap.size());
@@ -148,7 +148,7 @@ public class RecordAccumulator implements Closeable {
             }
         }, config.batchInterval(), config.batchInterval(), TimeUnit.MILLISECONDS);
 
-        monitorService.scheduleWithFixedDelay(() -> {
+        utilityService.scheduleWithFixedDelay(() -> {
             try {
                 long count = pendingFutureMap.values()
                     .stream()
@@ -196,16 +196,16 @@ public class RecordAccumulator implements Closeable {
             CompletableFuture.allOf(pendingFutureMap.keySet().toArray(new CompletableFuture[0])).join();
         }
 
-        if (monitorService != null && !monitorService.isShutdown()) {
-            monitorService.shutdown();
+        if (utilityService != null && !utilityService.isShutdown()) {
+            utilityService.shutdown();
             try {
-                if (!monitorService.awaitTermination(30, TimeUnit.SECONDS)) {
+                if (!utilityService.awaitTermination(30, TimeUnit.SECONDS)) {
                     log.error("Monitor executor {} did not terminate in time", executorService);
-                    monitorService.shutdownNow();
+                    utilityService.shutdownNow();
                 }
             } catch (InterruptedException e) {
                 log.error("Failed to shutdown monitor executor service.", e);
-                monitorService.shutdownNow();
+                utilityService.shutdownNow();
             }
         }
 
@@ -396,6 +396,11 @@ public class RecordAccumulator implements Closeable {
                 if (throwable != null) {
                     log.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
                 }
+
+                utilityService.schedule(() -> {
+                    // Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
+                    objectStorage.delete(deleteObjectList);
+                }, 30, TimeUnit.SECONDS);
             });
     }
 
