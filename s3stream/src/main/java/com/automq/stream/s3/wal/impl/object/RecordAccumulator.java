@@ -255,7 +255,7 @@ public class RecordAccumulator implements Closeable {
     }
 
     // Visible for testing
-    public ScheduledExecutorService executorService() {
+    ScheduledExecutorService executorService() {
         return executorService;
     }
 
@@ -418,7 +418,7 @@ public class RecordAccumulator implements Closeable {
 
     // Not thread safe, caller should hold lock.
     // Visible for testing.
-    public void unsafeUpload(boolean force) throws WALFencedException {
+    void unsafeUpload(boolean force) throws WALFencedException {
         if (!force) {
             checkWriteStatus();
         }

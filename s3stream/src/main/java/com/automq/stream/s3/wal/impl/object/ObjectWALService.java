@@ -77,7 +77,7 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     // Visible for testing.
-    protected RecordAccumulator accumulator() {
+    RecordAccumulator accumulator() {
         return accumulator;
     }
 
