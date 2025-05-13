@@ -37,6 +37,7 @@ import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.common.MetadataVersionValidator;
+import org.apache.kafka.server.common.automq.TableTopicConfigValidator;
 import org.apache.kafka.server.config.QuotaConfigs;
 import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.config.ServerTopicConfigSynonyms;
@@ -339,9 +340,8 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, LONG, TimeUnit.MINUTES.toMillis(5), between(1, TimeUnit.MINUTES.toMillis(15)), MEDIUM, TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_DOC)
                 .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.SCHEMALESS.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
-                // TODO: add validator
-                .define(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_ID_COLUMNS_DOC)
-                .define(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_PARTITION_BY_DOC)
+                .define(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG, STRING, null, TableTopicConfigValidator.IdColumnsValidator.INSTANCE, MEDIUM, TopicConfig.TABLE_TOPIC_ID_COLUMNS_DOC)
+                .define(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG, STRING, null, TableTopicConfigValidator.PartitionValidator.INSTANCE, MEDIUM, TopicConfig.TABLE_TOPIC_PARTITION_BY_DOC)
                 .define(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_CDC_FIELD_DOC)
                 .define(TopicConfig.KAFKA_LINKS_ID_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_ID_DOC)
