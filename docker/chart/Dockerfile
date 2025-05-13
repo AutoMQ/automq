@@ -38,7 +38,8 @@ RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ || exit 1 ; \
       sha256sum -c "${COMPONENT}.tar.gz.sha256" ; \
       tar -zxf "${COMPONENT}.tar.gz" -C /opt/bitnami --strip-components=2 --no-same-owner ; \
       rm -rf "${COMPONENT}".tar.gz{,.sha256} ; \
-    done
+    done \
+# AutoMQ inject start
 COPY automq-*.tgz /tmp/pkg/cache/automq.tgz
 RUN tar -zxf "/tmp/pkg/cache/automq.tgz" -C /opt/bitnami && \
     mv /opt/bitnami/automq-* /opt/bitnami/kafka && \
@@ -66,7 +67,7 @@ RUN arch=$(uname -m) \
     && { test -f "$target_file" || { echo "Error: $target_file not found"; exit 1; }; } \
     && ln -sv "$target_file" /usr/lib/libjemalloc.so
 ENV LD_PRELOAD="/usr/lib/libjemalloc.so"
-
+# AutoMQ inject end
 USER 1001
 ENTRYPOINT [ "/opt/bitnami/scripts/kafka/entrypoint.sh" ]
 CMD [ "/opt/bitnami/scripts/kafka/run.sh" ]

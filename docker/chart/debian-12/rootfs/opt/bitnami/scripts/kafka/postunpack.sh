@@ -35,6 +35,7 @@ mv "${KAFKA_CONF_DIR}/server.properties" "${KAFKA_CONF_DIR}/server.properties.or
 
 # Disable logging to stdout and garbage collection
 # Source: https://logging.apache.org/log4j/log4j-2.4/manual/appenders.html
+# AutoMQ inject start
 #replace_in_file "${KAFKA_BASE_DIR}/bin/kafka-server-start.sh" " [-]loggc" " "
 #replace_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DailyRollingFileAppender" "ConsoleAppender"
 
@@ -44,3 +45,4 @@ mv "${KAFKA_CONF_DIR}/server.properties" "${KAFKA_CONF_DIR}/server.properties.or
 # Remove invalid parameters for ConsoleAppender
 #remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DatePattern"
 #remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "Appender.File"
+# AutoMQ inject end
