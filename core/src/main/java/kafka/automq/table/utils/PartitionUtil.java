@@ -19,6 +19,9 @@
 
 package kafka.automq.table.utils;
 
+import org.apache.kafka.server.common.automq.TableTopicConfigValidator;
+
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.iceberg.PartitionField;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
@@ -30,10 +33,7 @@ import org.apache.iceberg.expressions.Term;
 import org.apache.iceberg.expressions.UnboundTransform;
 import org.apache.iceberg.transforms.Transforms;
 import org.apache.iceberg.types.Types;
-import org.apache.iceberg.util.Pair;
 
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -42,17 +42,15 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static java.util.stream.Collectors.toList;
 import static org.apache.iceberg.expressions.Expressions.bucket;
+import static org.apache.kafka.server.common.automq.TableTopicConfigValidator.PartitionValidator.transformArgPair;
 
 @SuppressWarnings({"CyclomaticComplexity", "NPathComplexity"})
 public class PartitionUtil {
-    private static final Pattern LIST_STRING_REGEX = Pattern.compile("\\[(.*)\\]");
-    static final String COMMA_NO_PARENS_REGEX = ",(?![^()]*+\\))";
-    private static final Pattern TRANSFORM_REGEX = Pattern.compile("(\\w+)\\((.+)\\)");
+    public static final Pattern TRANSFORM_REGEX = Pattern.compile("(\\w+)\\((.+)\\)");
 
     public static List<String> parsePartitionBy(String str) {
-        return stringToList(str, COMMA_NO_PARENS_REGEX);
+        return TableTopicConfigValidator.PartitionValidator.parsePartitionBy(str);
     }
 
     public static PartitionSpec buildPartitionSpec(List<String> partitions, Schema schema) {
@@ -80,12 +78,12 @@ public class PartitionUtil {
                             break;
                         case "bucket": {
                             Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                            specBuilder.bucket(args.first(), args.second());
+                            specBuilder.bucket(args.getLeft(), args.getRight());
                             break;
                         }
                         case "truncate": {
                             Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                            specBuilder.truncate(args.first(), args.second());
+                            specBuilder.truncate(args.getLeft(), args.getRight());
                             break;
                         }
                         default:
@@ -119,7 +117,7 @@ public class PartitionUtil {
                 transformer = matcher.group(1);
                 if ("bucket".equals(transformer) || "truncate".equals(transformer)) {
                     Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                    fieldName = args.first();
+                    fieldName = args.getLeft();
                 } else {
                     fieldName = matcher.group(2);
                 }
@@ -151,12 +149,12 @@ public class PartitionUtil {
                 }
                 case "bucket": {
                     Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                    changeCount += addOrUpdate(nestedField, bucket(args.first(), args.second()), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, bucket(args.getLeft(), args.getRight()), updateSpec, id2field);
                     break;
                 }
                 case "truncate": {
                     Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                    changeCount += addOrUpdate(nestedField, Expressions.truncate(args.first(), args.second()), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, Expressions.truncate(args.getLeft(), args.getRight()), updateSpec, id2field);
                     break;
                 }
                 case "identity": {
@@ -200,22 +198,4 @@ public class PartitionUtil {
         return 1;
     }
 
-    private static Pair<String, Integer> transformArgPair(String argsStr) {
-        String[] parts = argsStr.split(",");
-        if (parts.length != 2) {
-            throw new IllegalArgumentException("Invalid argument " + argsStr + ", should have 2 parts");
-        }
-        return Pair.of(parts[0].trim(), Integer.parseInt(parts[1].trim()));
-    }
-
-    public static List<String> stringToList(String value, String regex) {
-        if (value == null || value.isEmpty()) {
-            return Collections.emptyList();
-        }
-        Matcher matcher = LIST_STRING_REGEX.matcher(value);
-        if (matcher.matches()) {
-            value = matcher.group(1);
-        }
-        return Arrays.stream(value.split(regex)).map(String::trim).collect(toList());
-    }
 }
