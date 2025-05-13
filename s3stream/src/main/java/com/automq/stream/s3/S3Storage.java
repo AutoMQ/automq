@@ -713,7 +713,7 @@ public class S3Storage implements Storage {
 
     protected UploadWriteAheadLogTask newUploadWriteAheadLogTask(Map<Long, List<StreamRecordBatch>> streamRecordsMap, ObjectManager objectManager, double rate) {
         return DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(streamRecordsMap)
-            .objectManager(objectManager).objectStorage(objectStorage).executor(uploadWALExecutor).build();
+            .objectManager(objectManager).objectStorage(objectStorage).executor(uploadWALExecutor).rate(rate).build();
     }
 
     @SuppressWarnings("UnusedReturnValue")
