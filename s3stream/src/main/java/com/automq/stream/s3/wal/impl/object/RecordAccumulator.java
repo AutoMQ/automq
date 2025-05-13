@@ -480,7 +480,7 @@ public class RecordAccumulator implements Closeable {
 
         while (!recordQueue.isEmpty()) {
             // The retained bytes in the batch must larger than record header size.
-            long retainedBytesInBatch = config.maxBytesInBatch() - dataBuffer.readableBytes() - WALObjectHeader.WAL_HEADER_SIZE;
+            long retainedBytesInBatch = config.maxBytesInBatch() - dataBuffer.readableBytes() - WALObjectHeader.WAL_HEADER_SIZE_V0;
             if (config.strictBatchLimit() && retainedBytesInBatch <= RecordHeader.RECORD_HEADER_SIZE) {
                 break;
             }
@@ -489,7 +489,7 @@ public class RecordAccumulator implements Closeable {
 
             // Records larger than the batch size will be uploaded immediately.
             assert record != null;
-            if (config.strictBatchLimit() && record.record.readableBytes() >= config.maxBytesInBatch() - WALObjectHeader.WAL_HEADER_SIZE) {
+            if (config.strictBatchLimit() && record.record.readableBytes() >= config.maxBytesInBatch() - WALObjectHeader.WAL_HEADER_SIZE_V0) {
                 dataBuffer.addComponent(true, record.record);
                 recordList.add(record);
                 break;
@@ -518,6 +518,7 @@ public class RecordAccumulator implements Closeable {
         long endOffset = firstOffset + dataLength;
 
         CompositeByteBuf objectBuffer = ByteBufAlloc.compositeByteBuffer();
+        // TODO: set trim offset
         WALObjectHeader header = new WALObjectHeader(firstOffset, dataLength, stickyRecordLength, config.nodeId(), config.epoch());
         objectBuffer.addComponent(true, header.marshal());
         objectBuffer.addComponent(true, dataBuffer);
@@ -644,7 +645,7 @@ public class RecordAccumulator implements Closeable {
             this.path = path;
             this.startOffset = startOffset;
             // TODO: comment this line to avoid confusion
-            this.endOffset = startOffset + length - WALObjectHeader.WAL_HEADER_SIZE;
+            this.endOffset = startOffset + length - WALObjectHeader.WAL_HEADER_SIZE_V0;
             this.length = length;
         }
 

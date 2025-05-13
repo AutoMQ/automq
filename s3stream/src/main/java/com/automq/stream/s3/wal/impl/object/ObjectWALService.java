@@ -245,7 +245,7 @@ public class ObjectWALService implements WriteAheadLog {
 
             // Check header
             WALObjectHeader header = WALObjectHeader.unmarshal(dataBuffer);
-            dataBuffer.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
+            dataBuffer.skipBytes(WALObjectHeader.WAL_HEADER_SIZE_V0);
 
             if (skipStickyRecord && header.stickyRecordLength() != 0) {
                 dataBuffer.skipBytes((int) header.stickyRecordLength());
