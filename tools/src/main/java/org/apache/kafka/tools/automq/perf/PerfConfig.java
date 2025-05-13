@@ -75,6 +75,8 @@ public class PerfConfig {
     public final int reportingIntervalSeconds;
     public final String valueSchema;
     public final String valuesFile;
+    public final boolean reuseTopics; // Added for --reuse-topics
+    public final String catchupTopicPrefix; // Added for --catchup-topic-prefix
 
     public PerfConfig(String[] args) {
         ArgumentParser parser = parser();
@@ -118,6 +120,8 @@ public class PerfConfig {
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
         valueSchema = ns.getString("valueSchema");
         valuesFile = ns.get("valuesFile");
+        reuseTopics = ns.getBoolean("reuseTopics"); // Added for --reuse-topics
+        catchupTopicPrefix = ns.getString("catchupTopicPrefix"); // Added for --catchup-topic-prefix
 
         if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
@@ -136,6 +140,19 @@ public class PerfConfig {
             .dest("bootstrapServer")
             .metavar("BOOTSTRAP_SERVER")
             .help("The AutoMQ bootstrap server.");
+
+        parser.addArgument("--reuse-topics")
+            .action(storeTrue())
+            .dest("reuseTopics")
+            .help("Reuse existing topics with the given prefix instead of creating new ones.");
+
+        // Add the new parameter
+        parser.addArgument("--catchup-topic-prefix")
+            .type(String.class)
+            .dest("catchupTopicPrefix")
+            .metavar("CATCHUP_TOPIC_PREFIX")
+            .help("The topic prefix for catch-up read testing. Reuses existing topics with this prefix and skips message accumulation phase.");
+
         parser.addArgument("-F", "--common-config-file")
             .type(String.class)
             .dest("commonConfigFile")
