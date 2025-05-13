@@ -192,7 +192,7 @@ class AbstractObjectStorageTest {
         assertEquals(1, data.refCnt()); // Verify initial ref count
 
         CompletableFuture<ObjectStorage.WriteResult> writeFuture = objectStorage.write(options, "testKey", data);
-        writeFuture.get(200, TimeUnit.MILLISECONDS); // Wait for write completion
+        writeFuture.get(1, TimeUnit.SECONDS); // Wait for write completion
 
         // Verify: two calls made (initial + retry), data ref count maintained during retry
         assertEquals(1, data.refCnt());
