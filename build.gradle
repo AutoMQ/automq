@@ -1882,7 +1882,12 @@ project(':server-common') {
     implementation libs.jacksonDatabind
     implementation libs.pcollections
     implementation libs.opentelemetrySdk
+
+    // AutoMQ inject start
     implementation project(':s3stream')
+    implementation libs.commonLang
+    // AutoMQ inject end
+
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output
