@@ -41,7 +41,7 @@ public class ObjectWALServiceTest {
     public void setUp() throws IOException {
         objectStorage = new MemoryObjectStorage();
         ObjectWALConfig config = ObjectWALConfig.builder()
-            .withMaxBytesInBatch(110)
+            .withMaxBytesInBatch(118)
             .withBatchInterval(Long.MAX_VALUE)
             .withStrictBatchLimit(true)
             .build();
