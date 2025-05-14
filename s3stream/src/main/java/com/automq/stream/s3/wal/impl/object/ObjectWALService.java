@@ -202,7 +202,8 @@ public class ObjectWALService implements WriteAheadLog {
 
         public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
             int readAheadObjectSize) {
-            this.objectList = getContinuousFromStart(objectList);
+            long trimOffset = getTrimOffset(objectList, objectStorage);
+            this.objectList = getContinuousFromTrimOffset(objectList, trimOffset);
             this.objectStorage = objectStorage;
             this.readAheadObjectSize = readAheadObjectSize;
             this.readAheadQueue = new ArrayDeque<>(readAheadObjectSize);
@@ -213,23 +214,56 @@ public class ObjectWALService implements WriteAheadLog {
             }
         }
 
-        public static List<RecordAccumulator.WALObject> getContinuousFromStart(List<RecordAccumulator.WALObject> objectList) {
+        /**
+         * Get the latest trim offset from the newest object.
+         */
+        private static long getTrimOffset(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage) {
+            if (objectList.isEmpty()) {
+                return -1;
+            }
+
+            RecordAccumulator.WALObject object = objectList.get(objectList.size() - 1);
+            ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions()
+                .throttleStrategy(ThrottleStrategy.BYPASS)
+                .bucket(object.bucketId());
+            ByteBuf buffer = objectStorage.rangeRead(options, object.path(), 0, WALObjectHeader.DEFAULT_WAL_HEADER_SIZE).join();
+            WALObjectHeader header = WALObjectHeader.unmarshal(buffer);
+            buffer.release();
+            return header.trimOffset();
+        }
+
+        private static List<RecordAccumulator.WALObject> getContinuousFromTrimOffset(List<RecordAccumulator.WALObject> objectList, long trimOffset) {
             if (objectList.isEmpty()) {
                 return Collections.emptyList();
             }
-            int endIndex = 1;
-            for (int i = 1; i < objectList.size(); i++) {
-                if (objectList.get(i - 1).endOffset() != objectList.get(i).startOffset()) {
+
+            int startIndex = 0;
+            for (int i = 0; i < objectList.size(); i++) {
+                if (objectList.get(i).endOffset() > trimOffset) {
+                    startIndex = i;
+                    break;
+                }
+            }
+            if (startIndex > 0) {
+                for (int i = 0; i < startIndex; i++) {
+                    log.warn("drop trimmed object: {}", objectList.get(i));
+                }
+            }
+
+            int endIndex = startIndex + 1;
+            for (int i = startIndex + 1; i < objectList.size(); i++) {
+                if (objectList.get(i).startOffset() != objectList.get(i - 1).endOffset()) {
                     break;
                 }
                 endIndex = i + 1;
             }
             if (endIndex < objectList.size()) {
                 for (int i = endIndex; i < objectList.size(); i++) {
-                    log.warn("dropped discontinuous object: {}", objectList.get(i));
+                    log.warn("drop discontinuous object: {}", objectList.get(i));
                 }
             }
-            return new ArrayList<>(objectList.subList(0, endIndex));
+
+            return new ArrayList<>(objectList.subList(startIndex, endIndex));
         }
 
 

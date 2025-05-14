@@ -115,6 +115,7 @@ public class RecordAccumulatorTest {
         assertEquals(0L, objectHeader.stickyRecordLength());
         assertEquals(100, objectHeader.nodeId());
         assertEquals(1000, objectHeader.epoch());
+        assertEquals(-1, objectHeader.trimOffset());
 
         assertEquals(byteBuf1, result);
         byteBuf1.release();

@@ -90,6 +90,7 @@ public class RecordAccumulator implements Closeable {
     private volatile long lastUploadTimestamp = System.currentTimeMillis();
     private final AtomicLong nextOffset = new AtomicLong();
     private final AtomicLong flushedOffset = new AtomicLong();
+    private final AtomicLong trimOffset = new AtomicLong(-1);
 
     public RecordAccumulator(Time time, ObjectStorage objectStorage,
         ObjectWALConfig config) {
@@ -402,6 +403,7 @@ public class RecordAccumulator implements Closeable {
             return CompletableFuture.completedFuture(null);
         }
 
+        trimOffset.set(offset);
         long startTime = time.nanoseconds();
 
         List<ObjectStorage.ObjectPath> deleteObjectList = new ArrayList<>();
@@ -518,8 +520,7 @@ public class RecordAccumulator implements Closeable {
         long endOffset = firstOffset + dataLength;
 
         CompositeByteBuf objectBuffer = ByteBufAlloc.compositeByteBuffer();
-        // TODO: set trim offset
-        WALObjectHeader header = new WALObjectHeader(firstOffset, dataLength, stickyRecordLength, config.nodeId(), config.epoch(), -1);
+        WALObjectHeader header = new WALObjectHeader(firstOffset, dataLength, stickyRecordLength, config.nodeId(), config.epoch(), trimOffset.get());
         objectBuffer.addComponent(true, header.marshal());
         objectBuffer.addComponent(true, dataBuffer);
 
