@@ -30,11 +30,11 @@ import io.netty.buffer.ByteBuf;
 public class WALObjectHeader {
     // Visible for testing.
     static final int WAL_HEADER_MAGIC_CODE_V0 = 0x12345678;
-    static final int WAL_HEADER_SIZE_V0 = 4 // magic code
-                                        + 8 // start offset
-                                        + 8 // body length
-                                        + 8 // sticky record length
-                                        + 4 // node id
+    static final int WAL_HEADER_SIZE_V0 = 4  // magic code
+                                        + 8  // start offset
+                                        + 8  // body length
+                                        + 8  // sticky record length
+                                        + 4  // node id
                                         + 8; // node epoch
     static final int WAL_HEADER_MAGIC_CODE_V1 = 0xEDCBA987;
     static final int WAL_HEADER_SIZE_V1 = WAL_HEADER_SIZE_V0
@@ -85,7 +85,7 @@ public class WALObjectHeader {
      * @return the end offset of the WAL object
      */
     public static long calculateEndOffsetV0(long startOffset, long length) {
-        return startOffset + length - WAL_HEADER_MAGIC_CODE_V0;
+        return startOffset + length - WAL_HEADER_SIZE_V0;
     }
 
     public static WALObjectHeader unmarshal(ByteBuf buf) throws UnmarshalException {

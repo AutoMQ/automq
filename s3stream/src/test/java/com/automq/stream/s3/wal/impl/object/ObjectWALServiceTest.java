@@ -1,13 +1,19 @@
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
+import com.automq.stream.s3.wal.common.RecoverResultImpl;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 
+import io.netty.buffer.CompositeByteBuf;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +32,7 @@ import java.util.stream.Stream;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.impl.object.ObjectWALService.RecoverIterator.getContinuousFromTrimOffset;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -230,15 +237,113 @@ public class ObjectWALServiceTest {
         Thread.sleep(100);
         assertEquals(2, wal.accumulator().objectList().size());
 
-        // try recover
-        WriteAheadLog wal2 = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build()).start();
-        Iterator<RecoverResult> iterator = wal2.recover();
-        RecoverResult result = iterator.next();
+        // try recover, and should only got records in the 1st object
+        List<RecoverResult> recovered = recover(objectStorage);
+        assertEquals(1, recovered.size());
+        assertEquals(byteBuf1, recovered.get(0).record());
+    }
 
-        // only got records in the 1st object
-        assertFalse(iterator.hasNext());
-        assertEquals(byteBuf1, result.record());
+    @Test
+    public void testRecoverFromV0Objects() throws IOException {
+        ByteBuf data1 = generateByteBuf(1);
+        ByteBuf data2 = generateByteBuf(1);
+        ByteBuf data3 = generateByteBuf(1);
+        ByteBuf data4 = generateByteBuf(1);
 
-        wal2.shutdownGracefully();
+        writeV0Object(objectStorage, data1.retain(), 0);
+        writeV0Object(objectStorage, data2.retain(), 25);
+        writeV0Object(objectStorage, data3.retain(), 50);
+        writeV0Object(objectStorage, data4.retain(), 100);
+
+        List<RecoverResult> recovered = recover(objectStorage);
+        assertEquals(List.of(
+            new RecoverResultImpl(data1, 0),
+            new RecoverResultImpl(data2, 25),
+            new RecoverResultImpl(data3, 50)
+        ), recovered);
+    }
+
+    @Test
+    public void testRecoverFromV1Objects() throws IOException {
+        ByteBuf data1 = generateByteBuf(1);
+        ByteBuf data2 = generateByteBuf(1);
+        ByteBuf data3 = generateByteBuf(1);
+        ByteBuf data4 = generateByteBuf(1);
+
+        writeV1Object(objectStorage, data1.retain(), 0, -1);
+        writeV1Object(objectStorage, data2.retain(), 25, -1);
+        writeV1Object(objectStorage, data3.retain(), 50, 0);
+        writeV1Object(objectStorage, data4.retain(), 100, 25);
+
+        List<RecoverResult> recovered = recover(objectStorage);
+        assertEquals(List.of(
+            new RecoverResultImpl(data2, 25),
+            new RecoverResultImpl(data3, 50)
+        ), recovered);
+    }
+
+    @Test
+    public void testRecoverFromV0AndV1Objects() throws IOException {
+        ByteBuf data1 = generateByteBuf(1);
+        ByteBuf data2 = generateByteBuf(1);
+        ByteBuf data3 = generateByteBuf(1);
+        ByteBuf data4 = generateByteBuf(1);
+
+        writeV0Object(objectStorage, data1.retain(), 0);
+        writeV0Object(objectStorage, data2.retain(), 25);
+        writeV1Object(objectStorage, data3.retain(), 50, 0);
+        writeV1Object(objectStorage, data4.retain(), 100, 25);
+
+        List<RecoverResult> recovered = recover(objectStorage);
+        assertEquals(List.of(
+            new RecoverResultImpl(data2, 25),
+            new RecoverResultImpl(data3, 50)
+        ), recovered);
+    }
+
+    private void writeV0Object(ObjectStorage objectStorage, ByteBuf data, long startOffset) {
+        data = addRecordHeader(data, startOffset);
+
+        String path = wal.accumulator().objectPrefix() + startOffset;
+
+        CompositeByteBuf buffer = ByteBufAlloc.compositeByteBuffer();
+        WALObjectHeader header = new WALObjectHeader(startOffset, data.readableBytes(), 0, 0, 0);
+        buffer.addComponents(true, header.marshal(), data);
+
+        objectStorage.write(new ObjectStorage.WriteOptions(), path, buffer).join();
+    }
+
+    private void writeV1Object(ObjectStorage objectStorage, ByteBuf data, long startOffset, long trimOffset) {
+        data = addRecordHeader(data, startOffset);
+
+        long endOffset = startOffset + data.readableBytes();
+        String path = wal.accumulator().objectPrefix() + startOffset + "-" + endOffset;
+
+        CompositeByteBuf buffer = ByteBufAlloc.compositeByteBuffer();
+        WALObjectHeader header = new WALObjectHeader(startOffset, data.readableBytes(), 0, 0, 0, trimOffset);
+        buffer.addComponents(true, header.marshal(), data);
+
+        objectStorage.write(new ObjectStorage.WriteOptions(), path, buffer).join();
+    }
+
+    private ByteBuf addRecordHeader(ByteBuf data, long startOffset) {
+        ByteBuf header = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
+        Record record = WALUtil.generateRecord(data, header, 0, startOffset, true);
+
+        CompositeByteBuf buffer = ByteBufAlloc.compositeByteBuffer();
+        buffer.addComponents(true, record.header(), record.body());
+        return buffer;
+    }
+
+    private List<RecoverResult> recover(ObjectStorage objectStorage) throws IOException {
+        WriteAheadLog wal = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build());
+        wal.start();
+        Iterator<RecoverResult> iterator = wal.recover();
+        List<RecoverResult> results = new ArrayList<>();
+        while (iterator.hasNext()) {
+            results.add(iterator.next());
+        }
+        wal.shutdownGracefully();
+        return results;
     }
 }

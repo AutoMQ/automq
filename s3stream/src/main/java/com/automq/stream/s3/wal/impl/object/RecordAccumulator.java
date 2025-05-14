@@ -232,7 +232,7 @@ public class RecordAccumulator implements Closeable {
         if (utilityService != null && !utilityService.isShutdown()) {
             utilityService.shutdown();
             try {
-                if (!utilityService.awaitTermination(30, TimeUnit.SECONDS)) {
+                if (!utilityService.awaitTermination(1, TimeUnit.SECONDS)) {
                     log.error("Monitor executor {} did not terminate in time", executorService);
                     utilityService.shutdownNow();
                 }
@@ -273,6 +273,11 @@ public class RecordAccumulator implements Closeable {
         list.addAll(previousObjectMap.values());
         list.addAll(objectMap.values());
         return list;
+    }
+
+    // Visible for testing
+    String objectPrefix() {
+        return objectPrefix;
     }
 
     // Visible for testing

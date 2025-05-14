@@ -226,7 +226,7 @@ public class ObjectWALService implements WriteAheadLog {
             ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions()
                 .throttleStrategy(ThrottleStrategy.BYPASS)
                 .bucket(object.bucketId());
-            ByteBuf buffer = objectStorage.rangeRead(options, object.path(), 0, WALObjectHeader.DEFAULT_WAL_HEADER_SIZE).join();
+            ByteBuf buffer = objectStorage.rangeRead(options, object.path(), 0, object.length()).join();
             WALObjectHeader header = WALObjectHeader.unmarshal(buffer);
             buffer.release();
             return header.trimOffset();
