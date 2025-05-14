@@ -22,26 +22,28 @@ package com.automq.stream.s3.wal.impl.object;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.exception.UnmarshalException;
 
-import io.netty.buffer.ByteBuf;
 import java.util.Map;
 
+import io.netty.buffer.ByteBuf;
+
 public class WALObjectHeader {
-    // TODO: find usage and fix
-    public static final int WAL_HEADER_MAGIC_CODE_V0 = 0x12345678;
-    // TODO: find usage and fix
-    public static final int WAL_HEADER_SIZE_V0 = 4 // magic code
+    private static final int WAL_HEADER_MAGIC_CODE_V0 = 0x12345678;
+    private static final int WAL_HEADER_SIZE_V0 = 4 // magic code
                                               + 8 // start offset
                                               + 8 // body length
                                               + 8 // sticky record length
                                               + 4 // node id
                                               + 8; // node epoch
-    public static final int WAL_HEADER_MAGIC_CODE_V1 = 0xEDCBA987;
-    public static final int WAL_HEADER_SIZE_V1 = WAL_HEADER_SIZE_V0
+    private static final int WAL_HEADER_MAGIC_CODE_V1 = 0xEDCBA987;
+    private static final int WAL_HEADER_SIZE_V1 = WAL_HEADER_SIZE_V0
                                               + 8; // trim offset
     private static final Map<Integer, Integer> WAL_HEADER_SIZES = Map.of(
             WAL_HEADER_MAGIC_CODE_V0, WAL_HEADER_SIZE_V0,
             WAL_HEADER_MAGIC_CODE_V1, WAL_HEADER_SIZE_V1
     );
+
+    public static final int DEFAULT_WAL_MAGIC_CODE = WAL_HEADER_MAGIC_CODE_V1;
+    public static final int DEFAULT_WAL_HEADER_SIZE = WAL_HEADER_SIZE_V1;
 
     private final int magicCode0;
     private final long startOffset1;
@@ -71,19 +73,32 @@ public class WALObjectHeader {
         this.trimOffset6 = trimOffset;
     }
 
+    /**
+     * In the historical version V0, the endOffset of each WAL object is calculated directly from the path and size of the object.
+     * This method is used to be compatible with this case.
+     *
+     * @param startOffset the start offset of the WAL object, get from the path
+     * @param length the size of the WAL object
+     * @return the end offset of the WAL object
+     */
+    public static long calculateEndOffsetV0(long startOffset, long length) {
+        return startOffset + length - WAL_HEADER_MAGIC_CODE_V0;
+    }
+
     public static WALObjectHeader unmarshal(ByteBuf buf) throws UnmarshalException {
         buf.markReaderIndex();
 
-        if (buf.readableBytes() < 4) {
-            throw new UnmarshalException(String.format("Insufficient bytes to read magic code, Recovered: [%d] expect: [%d]", buf.readableBytes(), 4));
+        int size = buf.readableBytes();
+        if (size < 4) {
+            throw new UnmarshalException(String.format("Insufficient bytes to read magic code, Recovered: [%d] expect: [%d]", size, 4));
         }
 
         int magicCode = buf.readInt();
         if (!WAL_HEADER_SIZES.containsKey(magicCode)) {
             throw new UnmarshalException(String.format("WALHeader magic code not match, Recovered: [%d] expect: [%s]", magicCode, WAL_HEADER_SIZES.keySet()));
         }
-        if (buf.readableBytes() < WAL_HEADER_SIZES.get(magicCode)) {
-            throw new UnmarshalException(String.format("WALHeader does not have enough bytes, Recovered: [%d] expect: [%d]", buf.readableBytes(), WAL_HEADER_SIZES.get(magicCode)));
+        if (size < WAL_HEADER_SIZES.get(magicCode)) {
+            throw new UnmarshalException(String.format("WALHeader does not have enough bytes, Recovered: [%d] expect: [%d]", size, WAL_HEADER_SIZES.get(magicCode)));
         }
 
         WALObjectHeader header = null;
@@ -128,6 +143,10 @@ public class WALObjectHeader {
         buf.writeLong(epoch5);
         buf.writeLong(trimOffset6);
         return buf;
+    }
+
+    public int size() {
+        return WAL_HEADER_SIZES.get(magicCode0);
     }
 
     public int magicCode() {

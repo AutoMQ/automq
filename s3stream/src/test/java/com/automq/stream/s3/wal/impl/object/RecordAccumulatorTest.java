@@ -61,7 +61,7 @@ public class RecordAccumulatorTest {
     public void setUp() {
         objectStorage = new MockObjectStorage();
         ObjectWALConfig config = ObjectWALConfig.builder()
-            .withMaxBytesInBatch(115)
+            .withMaxBytesInBatch(123)
             .withNodeId(100)
             .withEpoch(1000)
             .withBatchInterval(Long.MAX_VALUE)
@@ -103,12 +103,12 @@ public class RecordAccumulatorTest {
         assertEquals(1, objectList.size());
 
         RecordAccumulator.WALObject object = objectList.get(0);
-        assertEquals(WALObjectHeader.WAL_HEADER_SIZE_V0 + 50, object.length());
+        assertEquals(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE + 50, object.length());
         ByteBuf result = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
-        ByteBuf headerBuf = result.readBytes(WALObjectHeader.WAL_HEADER_SIZE_V0);
+        ByteBuf headerBuf = result.readBytes(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE);
         WALObjectHeader objectHeader = WALObjectHeader.unmarshal(headerBuf);
         headerBuf.release();
-        assertEquals(WALObjectHeader.WAL_HEADER_MAGIC_CODE_V0, objectHeader.magicCode());
+        assertEquals(WALObjectHeader.DEFAULT_WAL_MAGIC_CODE, objectHeader.magicCode());
         assertEquals(0, objectHeader.startOffset());
         assertEquals(50, objectHeader.length());
         // The last write timestamp is not set currently.
@@ -139,9 +139,9 @@ public class RecordAccumulatorTest {
         assertEquals(2, objectList.size());
 
         object = objectList.get(1);
-        assertEquals(WALObjectHeader.WAL_HEADER_SIZE_V0 + 50 + 75, object.length());
+        assertEquals(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE + 50 + 75, object.length());
         result = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
-        result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE_V0);
+        result.skipBytes(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE);
         CompositeByteBuf compositeBuffer = Unpooled.compositeBuffer();
         compositeBuffer.addComponents(true, byteBuf2);
         compositeBuffer.addComponents(true, byteBuf3);
@@ -168,16 +168,16 @@ public class RecordAccumulatorTest {
         assertEquals(4, objectList.size());
 
         object = objectList.get(2);
-        assertEquals(115, object.length());
+        assertEquals(123, object.length());
         result = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
-        result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE_V0);
+        result.skipBytes(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE);
         assertEquals(byteBuf4, result.readBytes(50));
 
         object = objectList.get(3);
         compositeBuffer = Unpooled.compositeBuffer();
         compositeBuffer.addComponents(true, result);
         result = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
-        result.skipBytes(WALObjectHeader.WAL_HEADER_SIZE_V0);
+        result.skipBytes(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE);
         compositeBuffer.addComponents(true, result);
         assertEquals(compositeBuffer, byteBuf5);
         byteBuf4.release();
@@ -295,7 +295,7 @@ public class RecordAccumulatorTest {
         CompositeByteBuf result = Unpooled.compositeBuffer();
         for (RecordAccumulator.WALObject object : recordAccumulator.objectList()) {
             ByteBuf buf = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), object.path(), 0, object.length()).join();
-            buf.skipBytes(WALObjectHeader.WAL_HEADER_SIZE_V0);
+            buf.skipBytes(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE);
             result.addComponent(true, buf);
         }
 
@@ -406,9 +406,9 @@ public class RecordAccumulatorTest {
 
         List<RecordAccumulator.WALObject> objectList = recordAccumulator.objectList();
         assertEquals(3, objectList.size());
-        assertEquals(byteBuf1, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(0).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE_V0));
-        assertEquals(byteBuf2, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(1).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE_V0));
-        assertEquals(byteBuf3, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(2).path()).join().skipBytes(WALObjectHeader.WAL_HEADER_SIZE_V0));
+        assertEquals(byteBuf1, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(0).path()).join().skipBytes(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE));
+        assertEquals(byteBuf2, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(1).path()).join().skipBytes(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE));
+        assertEquals(byteBuf3, objectStorage.read(new ReadOptions().bucket((short) 0), objectList.get(2).path()).join().skipBytes(WALObjectHeader.DEFAULT_WAL_HEADER_SIZE));
 
         recordAccumulator.reset().join();
         assertEquals(0, recordAccumulator.objectList().size());

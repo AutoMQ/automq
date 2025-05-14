@@ -30,8 +30,6 @@ import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -52,9 +50,11 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
@@ -480,7 +480,7 @@ public class RecordAccumulator implements Closeable {
 
         while (!recordQueue.isEmpty()) {
             // The retained bytes in the batch must larger than record header size.
-            long retainedBytesInBatch = config.maxBytesInBatch() - dataBuffer.readableBytes() - WALObjectHeader.WAL_HEADER_SIZE_V0;
+            long retainedBytesInBatch = config.maxBytesInBatch() - dataBuffer.readableBytes() - WALObjectHeader.DEFAULT_WAL_HEADER_SIZE;
             if (config.strictBatchLimit() && retainedBytesInBatch <= RecordHeader.RECORD_HEADER_SIZE) {
                 break;
             }
@@ -489,7 +489,7 @@ public class RecordAccumulator implements Closeable {
 
             // Records larger than the batch size will be uploaded immediately.
             assert record != null;
-            if (config.strictBatchLimit() && record.record.readableBytes() >= config.maxBytesInBatch() - WALObjectHeader.WAL_HEADER_SIZE_V0) {
+            if (config.strictBatchLimit() && record.record.readableBytes() >= config.maxBytesInBatch() - WALObjectHeader.DEFAULT_WAL_HEADER_SIZE) {
                 dataBuffer.addComponent(true, record.record);
                 recordList.add(record);
                 break;
@@ -519,7 +519,7 @@ public class RecordAccumulator implements Closeable {
 
         CompositeByteBuf objectBuffer = ByteBufAlloc.compositeByteBuffer();
         // TODO: set trim offset
-        WALObjectHeader header = new WALObjectHeader(firstOffset, dataLength, stickyRecordLength, config.nodeId(), config.epoch());
+        WALObjectHeader header = new WALObjectHeader(firstOffset, dataLength, stickyRecordLength, config.nodeId(), config.epoch(), -1);
         objectBuffer.addComponent(true, header.marshal());
         objectBuffer.addComponent(true, dataBuffer);
 
@@ -644,8 +644,7 @@ public class RecordAccumulator implements Closeable {
             this.bucketId = bucketId;
             this.path = path;
             this.startOffset = startOffset;
-            // TODO: comment this line to avoid confusion
-            this.endOffset = startOffset + length - WALObjectHeader.WAL_HEADER_SIZE_V0;
+            this.endOffset = WALObjectHeader.calculateEndOffsetV0(startOffset, length);
             this.length = length;
         }
 
