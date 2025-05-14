@@ -44,6 +44,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -75,7 +77,7 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     // Visible for testing.
-    protected RecordAccumulator accumulator() {
+    RecordAccumulator accumulator() {
         return accumulator;
     }
 
@@ -200,7 +202,8 @@ public class ObjectWALService implements WriteAheadLog {
 
         public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
             int readAheadObjectSize) {
-            this.objectList = objectList;
+            long trimOffset = getTrimOffset(objectList, objectStorage);
+            this.objectList = getContinuousFromTrimOffset(objectList, trimOffset);
             this.objectStorage = objectStorage;
             this.readAheadObjectSize = readAheadObjectSize;
             this.readAheadQueue = new ArrayDeque<>(readAheadObjectSize);
@@ -210,6 +213,63 @@ public class ObjectWALService implements WriteAheadLog {
                 tryReadAhead();
             }
         }
+
+        /**
+         * Get the latest trim offset from the newest object.
+         */
+        private static long getTrimOffset(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage) {
+            if (objectList.isEmpty()) {
+                return -1;
+            }
+
+            RecordAccumulator.WALObject object = objectList.get(objectList.size() - 1);
+            ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions()
+                .throttleStrategy(ThrottleStrategy.BYPASS)
+                .bucket(object.bucketId());
+            ByteBuf buffer = objectStorage.rangeRead(options, object.path(), 0, object.length()).join();
+            WALObjectHeader header = WALObjectHeader.unmarshal(buffer);
+            buffer.release();
+            return header.trimOffset();
+        }
+
+        // Visible for testing.
+        static List<RecordAccumulator.WALObject> getContinuousFromTrimOffset(List<RecordAccumulator.WALObject> objectList, long trimOffset) {
+            if (objectList.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            int startIndex = objectList.size();
+            for (int i = 0; i < objectList.size(); i++) {
+                if (objectList.get(i).endOffset() > trimOffset) {
+                    startIndex = i;
+                    break;
+                }
+            }
+            if (startIndex > 0) {
+                for (int i = 0; i < startIndex; i++) {
+                    log.warn("drop trimmed object: {}", objectList.get(i));
+                }
+            }
+            if (startIndex >= objectList.size()) {
+                return Collections.emptyList();
+            }
+
+            int endIndex = startIndex + 1;
+            for (int i = startIndex + 1; i < objectList.size(); i++) {
+                if (objectList.get(i).startOffset() != objectList.get(i - 1).endOffset()) {
+                    break;
+                }
+                endIndex = i + 1;
+            }
+            if (endIndex < objectList.size()) {
+                for (int i = endIndex; i < objectList.size(); i++) {
+                    log.warn("drop discontinuous object: {}", objectList.get(i));
+                }
+            }
+
+            return new ArrayList<>(objectList.subList(startIndex, endIndex));
+        }
+
 
         @Override
         public boolean hasNext() {
@@ -223,7 +283,7 @@ public class ObjectWALService implements WriteAheadLog {
 
             // Check header
             WALObjectHeader header = WALObjectHeader.unmarshal(dataBuffer);
-            dataBuffer.skipBytes(WALObjectHeader.WAL_HEADER_SIZE);
+            dataBuffer.skipBytes(header.size());
 
             if (skipStickyRecord && header.stickyRecordLength() != 0) {
                 dataBuffer.skipBytes((int) header.stickyRecordLength());
