@@ -23,20 +23,23 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.exception.UnmarshalException;
 
 import java.util.Map;
+import java.util.Objects;
 
 import io.netty.buffer.ByteBuf;
 
 public class WALObjectHeader {
-    private static final int WAL_HEADER_MAGIC_CODE_V0 = 0x12345678;
-    private static final int WAL_HEADER_SIZE_V0 = 4 // magic code
-                                              + 8 // start offset
-                                              + 8 // body length
-                                              + 8 // sticky record length
-                                              + 4 // node id
-                                              + 8; // node epoch
-    private static final int WAL_HEADER_MAGIC_CODE_V1 = 0xEDCBA987;
-    private static final int WAL_HEADER_SIZE_V1 = WAL_HEADER_SIZE_V0
-                                              + 8; // trim offset
+    // Visible for testing.
+    static final int WAL_HEADER_MAGIC_CODE_V0 = 0x12345678;
+    static final int WAL_HEADER_SIZE_V0 = 4 // magic code
+                                        + 8 // start offset
+                                        + 8 // body length
+                                        + 8 // sticky record length
+                                        + 4 // node id
+                                        + 8; // node epoch
+    static final int WAL_HEADER_MAGIC_CODE_V1 = 0xEDCBA987;
+    static final int WAL_HEADER_SIZE_V1 = WAL_HEADER_SIZE_V0
+                                        + 8; // trim offset
+
     private static final Map<Integer, Integer> WAL_HEADER_SIZES = Map.of(
             WAL_HEADER_MAGIC_CODE_V0, WAL_HEADER_SIZE_V0,
             WAL_HEADER_MAGIC_CODE_V1, WAL_HEADER_SIZE_V1
@@ -175,5 +178,18 @@ public class WALObjectHeader {
 
     public long trimOffset() {
         return trimOffset6;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof WALObjectHeader))
+            return false;
+        WALObjectHeader header = (WALObjectHeader) o;
+        return magicCode0 == header.magicCode0 && startOffset1 == header.startOffset1 && length2 == header.length2 && stickyRecordLength3 == header.stickyRecordLength3 && nodeId4 == header.nodeId4 && epoch5 == header.epoch5 && trimOffset6 == header.trimOffset6;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(magicCode0, startOffset1, length2, stickyRecordLength3, nodeId4, epoch5, trimOffset6);
     }
 }
