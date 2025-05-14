@@ -43,6 +43,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -688,8 +689,22 @@ public class RecordAccumulator implements Closeable {
                 "bucketId=" + bucketId +
                 ", path='" + path + '\'' +
                 ", startOffset=" + startOffset +
+                ", endOffset=" + endOffset +
                 ", length=" + length +
                 '}';
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof WALObject))
+                return false;
+            WALObject object = (WALObject) o;
+            return bucketId == object.bucketId && startOffset == object.startOffset && endOffset == object.endOffset && length == object.length && Objects.equals(path, object.path);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(bucketId, path, startOffset, endOffset, length);
         }
     }
 }

@@ -232,12 +232,13 @@ public class ObjectWALService implements WriteAheadLog {
             return header.trimOffset();
         }
 
-        private static List<RecordAccumulator.WALObject> getContinuousFromTrimOffset(List<RecordAccumulator.WALObject> objectList, long trimOffset) {
+        // Visible for testing.
+        static List<RecordAccumulator.WALObject> getContinuousFromTrimOffset(List<RecordAccumulator.WALObject> objectList, long trimOffset) {
             if (objectList.isEmpty()) {
                 return Collections.emptyList();
             }
 
-            int startIndex = 0;
+            int startIndex = objectList.size();
             for (int i = 0; i < objectList.size(); i++) {
                 if (objectList.get(i).endOffset() > trimOffset) {
                     startIndex = i;
@@ -248,6 +249,9 @@ public class ObjectWALService implements WriteAheadLog {
                 for (int i = 0; i < startIndex; i++) {
                     log.warn("drop trimmed object: {}", objectList.get(i));
                 }
+            }
+            if (startIndex >= objectList.size()) {
+                return Collections.emptyList();
             }
 
             int endIndex = startIndex + 1;

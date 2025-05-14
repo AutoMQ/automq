@@ -12,6 +12,9 @@ import com.automq.stream.utils.Time;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -19,10 +22,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
+import static com.automq.stream.s3.wal.impl.object.ObjectWALService.RecoverIterator.getContinuousFromTrimOffset;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -131,5 +136,74 @@ public class ObjectWALServiceTest {
             count++;
         }
         assertEquals(97, count);
+    }
+
+    public static Stream<Arguments> testRecoverIteratorGetContinuousFromTrimOffsetData() {
+        return Stream.of(
+            Arguments.of(
+                "basic",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                -1L,
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30))
+            ),
+            Arguments.of(
+                "empty",
+                List.of(),
+                -1L,
+                List.of()
+            ),
+            Arguments.of(
+                "discontinuous",
+                List.of(mockWALObject(0, 10), mockWALObject(20, 30)),
+                -1L,
+                List.of(mockWALObject(0, 10))
+            ),
+            Arguments.of(
+                "trimmed at boundary",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                10L,
+                List.of(mockWALObject(10, 20), mockWALObject(20, 30))
+            ),
+            Arguments.of(
+                "trimmed in middle",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                15L,
+                List.of(mockWALObject(10, 20), mockWALObject(20, 30))
+            ),
+            Arguments.of(
+                "trimmed nothing",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                10L,
+                List.of(mockWALObject(10, 20), mockWALObject(20, 30))
+            ),
+            Arguments.of(
+                "trimmed all",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                30L,
+                List.of()
+            ),
+            Arguments.of(
+                "trimmed and discontinuous",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(30, 40)),
+                10L,
+                List.of(mockWALObject(10, 20))
+            )
+        );
+    }
+
+    private static RecordAccumulator.WALObject mockWALObject(long start, long end) {
+        return new RecordAccumulator.WALObject((short) 0, String.format("%d-%d", start, end), start, end, end - start);
+    }
+
+    @ParameterizedTest(name = "Test {index} {0}")
+    @MethodSource("testRecoverIteratorGetContinuousFromTrimOffsetData")
+    public void testRecoverIteratorGetContinuousFromTrimOffset(
+        String name,
+        List<RecordAccumulator.WALObject> objectList,
+        long trimOffset,
+        List<RecordAccumulator.WALObject> expected
+    ) {
+        List<RecordAccumulator.WALObject> got = getContinuousFromTrimOffset(objectList, trimOffset);
+        assertEquals(expected, got, name);
     }
 }
