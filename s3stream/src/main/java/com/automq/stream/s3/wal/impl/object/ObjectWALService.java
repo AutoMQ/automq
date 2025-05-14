@@ -300,7 +300,7 @@ public class ObjectWALService implements WriteAheadLog {
                 throw new IllegalStateException("Record body crc check failed.");
             }
 
-            return new RecoverResultImpl(recordBuf, header.getRecordBodyCRC());
+            return new RecoverResultImpl(recordBuf, header.getRecordBodyOffset() - RECORD_HEADER_SIZE);
         }
     }
 }
