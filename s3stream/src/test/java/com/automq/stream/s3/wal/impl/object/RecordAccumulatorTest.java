@@ -75,6 +75,7 @@ public class RecordAccumulatorTest {
 
     @AfterEach
     public void tearDown() {
+        objectStorage.triggerAll();
         recordAccumulator.close();
         objectStorage.close();
     }
@@ -434,28 +435,28 @@ public class RecordAccumulatorTest {
         recordAccumulator.unsafeUpload(true);
 
         // sleep to wait for potential async callback
-        Thread.sleep(10);
+        Thread.sleep(100);
         assertFalse(future0.isDone());
         assertFalse(future1.isDone());
         assertFalse(future2.isDone());
         assertFalse(future3.isDone());
 
         objectStorage.triggerWrite("1-3");
-        Thread.sleep(10);
+        Thread.sleep(100);
         assertFalse(future0.isDone());
         assertFalse(future1.isDone());
         assertFalse(future2.isDone());
         assertFalse(future3.isDone());
 
         objectStorage.triggerWrite("0-1");
-        Thread.sleep(10);
+        Thread.sleep(100);
         assertTrue(future0.isDone());
         assertTrue(future1.isDone());
         assertTrue(future2.isDone());
         assertFalse(future3.isDone());
 
         objectStorage.triggerWrite("3-4");
-        Thread.sleep(10);
+        Thread.sleep(100);
         assertTrue(future0.isDone());
         assertTrue(future1.isDone());
         assertTrue(future2.isDone());

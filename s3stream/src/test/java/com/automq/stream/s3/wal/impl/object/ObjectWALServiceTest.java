@@ -1,10 +1,9 @@
 package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.s3.operator.MemoryObjectStorage;
-import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.Time;
@@ -33,13 +32,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ObjectWALServiceTest {
-    private ObjectStorage objectStorage;
+    private MockObjectStorage objectStorage;
     private ObjectWALService wal;
     private Random random;
 
     @BeforeEach
     public void setUp() throws IOException {
-        objectStorage = new MemoryObjectStorage();
+        objectStorage = new MockObjectStorage();
         ObjectWALConfig config = ObjectWALConfig.builder()
             .withMaxBytesInBatch(118)
             .withBatchInterval(Long.MAX_VALUE)
@@ -52,6 +51,7 @@ public class ObjectWALServiceTest {
 
     @AfterEach
     public void tearDown() {
+        objectStorage.triggerAll();
         wal.shutdownGracefully();
         objectStorage.close();
     }
@@ -205,5 +205,40 @@ public class ObjectWALServiceTest {
     ) {
         List<RecordAccumulator.WALObject> got = getContinuousFromTrimOffset(objectList, trimOffset);
         assertEquals(expected, got, name);
+    }
+
+    @Test
+    public void testRecoverDiscontinuousObjects() throws IOException, OverCapacityException, InterruptedException {
+        objectStorage.markManualWrite();
+        ByteBuf byteBuf1 = generateByteBuf(1);
+        ByteBuf byteBuf2 = generateByteBuf(1);
+        ByteBuf byteBuf3 = generateByteBuf(1);
+
+        // write 3 objects
+        wal.append(TraceContext.DEFAULT, byteBuf1.retainedSlice().asReadOnly(), 0);
+        wal.accumulator().unsafeUpload(true);
+        wal.append(TraceContext.DEFAULT, byteBuf2.retainedSlice().asReadOnly(), 0);
+        wal.accumulator().unsafeUpload(true);
+        wal.append(TraceContext.DEFAULT, byteBuf3.retainedSlice().asReadOnly(), 0);
+        wal.accumulator().unsafeUpload(true);
+
+        // only finish 1st and 3rd
+        objectStorage.triggerWrite("0-25");
+        objectStorage.triggerWrite("50-75");
+
+        // sleep to wait for potential async callback
+        Thread.sleep(100);
+        assertEquals(2, wal.accumulator().objectList().size());
+
+        // try recover
+        WriteAheadLog wal2 = new ObjectWALService(Time.SYSTEM, objectStorage, ObjectWALConfig.builder().build()).start();
+        Iterator<RecoverResult> iterator = wal2.recover();
+        RecoverResult result = iterator.next();
+
+        // only got records in the 1st object
+        assertFalse(iterator.hasNext());
+        assertEquals(byteBuf1, result.record());
+
+        wal2.shutdownGracefully();
     }
 }

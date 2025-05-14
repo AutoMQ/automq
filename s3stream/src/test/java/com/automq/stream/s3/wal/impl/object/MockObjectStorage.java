@@ -34,6 +34,11 @@ public class MockObjectStorage extends MemoryObjectStorage {
         manualWrite = true;
     }
 
+    public void triggerAll() {
+        pendingWrites.values().forEach(PendingWrite::trigger);
+        pendingWrites.clear();
+    }
+
     public void triggerWrite(String objectPath) {
         PendingWrite pendingWrite = pendingWrites.remove(objectPath);
         assertNotNull(pendingWrite);
