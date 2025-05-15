@@ -24,12 +24,8 @@ jobs:
 
       - name: Build and Push
         uses: docker/build-push-action@v6
-        if: ${{ github.ref_name == 'main' }}
-        env:
-          IMAGE_TAG: 'latest'
         with:
           context: docker/table_topic/spark_iceberg/
-          file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: 'latest'
