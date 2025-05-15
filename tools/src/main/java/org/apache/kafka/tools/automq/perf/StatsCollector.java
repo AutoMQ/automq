@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.text.DecimalFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +112,11 @@ public class StatsCollector {
          * @return true if the loop should stop
          */
         boolean shouldStop(long startNanos, long nowNanos);
+    }
+
+    public static long currentNanos() {
+        Instant currentTime = Instant.now();
+        return TimeUnit.SECONDS.toNanos(currentTime.getEpochSecond()) + currentTime.getNano();
     }
 
     @SuppressFBWarnings("URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
