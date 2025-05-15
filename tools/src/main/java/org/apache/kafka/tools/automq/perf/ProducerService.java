@@ -310,7 +310,7 @@ public class ProducerService implements AutoCloseable {
          * @return a future that completes when the message is sent
          */
         private CompletableFuture<Void> sendAsync(String key, byte[] payload, Integer partition) {
-            long sendTimeNanos = System.nanoTime();
+            long sendTimeNanos = StatsCollector.currentNanos();
             List<Header> headers = List.of(
                 new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Long.toString(sendTimeNanos).getBytes(HEADER_KEY_CHARSET))
             );

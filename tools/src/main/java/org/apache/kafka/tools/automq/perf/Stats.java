@@ -56,7 +56,7 @@ public class Stats {
     public final AtomicLong maxSendTimeNanos = new AtomicLong(0);
 
     public void messageSent(long bytes, long sendTimeNanos) {
-        long latencyMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - sendTimeNanos);
+        long latencyMicros = TimeUnit.NANOSECONDS.toMicros(StatsCollector.currentNanos() - sendTimeNanos);
         messagesSent.increment();
         bytesSent.add(bytes);
         sendLatencyMicros.recordValue(latencyMicros);
@@ -71,7 +71,7 @@ public class Stats {
     }
 
     public void messageReceived(long bytes, long sendTimeNanos) {
-        long latencyMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - sendTimeNanos);
+        long latencyMicros = TimeUnit.NANOSECONDS.toMicros(StatsCollector.currentNanos() - sendTimeNanos);
         messagesReceived.increment();
         bytesReceived.add(bytes);
         endToEndLatencyMicros.recordValue(latencyMicros);
