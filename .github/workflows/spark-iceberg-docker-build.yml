@@ -28,4 +28,4 @@ jobs:
           context: docker/table_topic/spark_iceberg/
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: 'latest'
+          tags: pyspark-notebook:latest
