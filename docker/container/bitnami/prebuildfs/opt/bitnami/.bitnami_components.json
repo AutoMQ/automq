@@ -1,0 +1,20 @@
+{
+    "jre": {
+        "arch": "amd64",
+        "distro": "debian-12",
+        "type": "NAMI",
+        "version": "17.0.14-10-1"
+    },
+    "kafka": {
+        "arch": "amd64",
+        "distro": "debian-12",
+        "type": "NAMI",
+        "version": "3.9.0-2"
+    },
+    "wait-for-port": {
+        "arch": "amd64",
+        "distro": "debian-12",
+        "type": "NAMI",
+        "version": "1.0.8-14"
+    }
+}
