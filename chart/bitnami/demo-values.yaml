@@ -1,0 +1,117 @@
+image:
+  registry: <automq-registry>
+  repository: <automq-repository>
+  tag: <automq-tag>
+  pullPolicy: Always
+controller:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: "<your-cpu-request>"
+      memory: "<your-memory-request>"
+    limits:
+      cpu: "<your-cpu-limit>"
+      memory: "<your-memory-limit>"
+  heapOpts: -Xmx6g -Xms6g -XX:MaxDirectMemorySize=6g -XX:MetaspaceSize=96m
+  extraConfig: |
+    elasticstream.enable=true
+    autobalancer.client.auth.sasl.mechanism=PLAIN
+    autobalancer.client.auth.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="inter_broker_user" password="interbroker-password-placeholder" user_inter_broker_user="interbroker-password-placeholder";
+    autobalancer.client.auth.security.protocol=SASL_PLAINTEXT
+    autobalancer.client.listener.name=INTERNAL
+    s3.ops.buckets=1@s3://<ops-bucket>?region=<region>&endpoint=<endpoint>
+    s3.data.buckets=0@s3://<data-bucket>?region=<region>&endpoint=<endpoint>
+    s3.wal.path=0@s3://<data-bucket>?region=<region>&endpoint=<endpoint>
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                  - <your-instance-name>
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - controller
+                  - broker
+          topologyKey: kubernetes.io/hostname
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: "<your-node-label-key>"
+                operator: In
+                values:
+                  - "<your-node-label-value>"
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: <your-instance-name>
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "automq"
+      effect: "NoSchedule"
+  persistence:
+    storageClass: "<your-storage-class>"
+    size: 20Gi
+
+broker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "2000m"
+      memory: "12Gi"
+    limits:
+      cpu: "4000m"
+      memory: "16Gi"
+  heapOpts: -Xmx6g -Xms6g -XX:MaxDirectMemorySize=6g -XX:MetaspaceSize=96m
+  extraConfig: |
+    elasticstream.enable=true
+    autobalancer.client.auth.sasl.mechanism=PLAIN
+    autobalancer.client.auth.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="inter_broker_user" password="interbroker-password-placeholder" user_inter_broker_user="interbroker-password-placeholder";
+    autobalancer.client.auth.security.protocol=SASL_PLAINTEXT
+    autobalancer.client.listener.name=INTERNAL
+    s3.ops.buckets=1@s3://<ops-bucket>?region=<region>&endpoint=<endpoint>
+    s3.data.buckets=0@s3://<data-bucket>?region=<region>&endpoint=<endpoint>
+    s3.wal.path=0@s3://<data-bucket>?region=<region>&endpoint=<endpoint>
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                  - <your-instance-name>
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - controller
+                  - broker
+          topologyKey: kubernetes.io/hostname
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: "<your-node-label-key>"
+                operator: In
+                values:
+                  - "<your-node-label-value>"
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: <your-instance-name>
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "automq"
+      effect: "NoSchedule"
