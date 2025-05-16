@@ -1,8 +1,13 @@
 image:
-  registry: ${automq-registry}
-  repository: ${automq-repository}
-  tag: ${automq-tag}
+  registry: automqinc
+  repository: automq
+  tag: 1.5.0
   pullPolicy: Always
+extraEnvVars:
+  - name: AWS_ACCESS_KEY
+    value: "${access-key}"
+  - name: AWS_SECRET_KEY
+    value: "${secret-key}"
 controller:
   replicaCount: 3
   resources:
@@ -23,6 +28,7 @@ controller:
     s3.block.cache.size=1073741824
     s3.stream.allocator.policy=POOLED_DIRECT
     s3.network.baseline.bandwidth=245366784
+    # Replace the following with your bucket config
     s3.ops.buckets=1@s3://${ops-bucket}?region=${region}&endpoint=${endpoint}
     s3.data.buckets=0@s3://${data-bucket}?region=${region}&endpoint=${endpoint}
     s3.wal.path=0@s3://${data-bucket}?region=${region}&endpoint=${endpoint}
@@ -34,8 +40,9 @@ controller:
             matchExpressions:
               - key: app.kubernetes.io/instance
                 operator: In
+                # your helm release name
                 values:
-                  - ${your-release-name}
+                  - automq-release
               - key: app.kubernetes.io/component
                 operator: In
                 values:
@@ -86,6 +93,7 @@ broker:
     s3.block.cache.size=1073741824
     s3.stream.allocator.policy=POOLED_DIRECT
     s3.network.baseline.bandwidth=245366784
+    # Replace the following with your bucket config
     s3.ops.buckets=1@s3://${ops-bucket}?region=${region}&endpoint=${endpoint}
     s3.data.buckets=0@s3://${data-bucket}?region=${region}&endpoint=${endpoint}
     s3.wal.path=0@s3://${data-bucket}?region=${region}&endpoint=${endpoint}
@@ -97,8 +105,9 @@ broker:
             matchExpressions:
               - key: app.kubernetes.io/instance
                 operator: In
+                # your helm release name
                 values:
-                  - ${your-release-name}
+                  - automq-release
               - key: app.kubernetes.io/component
                 operator: In
                 values:

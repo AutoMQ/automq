@@ -31,10 +31,12 @@ As an alternative to supplying the configuration parameters as arguments, you ca
 You can refer to the [demo-values.yaml](/chart/bitnami/demo-values.yaml)  based on the bitnami [values.yaml](https://github.com/bitnami/charts/blob/main/bitnami/kafka/values.yaml)
 we provided for deploying AutoMQ on AWS across 3 Availability Zones using m7g.xlarge instances (4 vCPUs, 16GB Mem, 156MiB/s network bandwidth).
 
+Note: You need to replace the bucket configurations in the placeholders $｛｝, such as ops-bucket, data-bucket, region, endpoint, access-key/secret-key.
+
 3. Install or upgrade the AutoMQ Helm chart using your custom yaml file:
 
 ```shell
-helm install my-release oci://registry-1.docker.io/bitnamicharts/kafka -f <your-custom-values.yaml> --namespace <namespace> --create-namespace
+helm install automq-release oci://registry-1.docker.io/bitnamicharts/kafka -f demo-values.yaml --namespace automq --create-namespace
 ```
 
 ### Upgrading
@@ -43,7 +45,7 @@ To upgrade the deployment:
 
 ```shell
 helm repo update
-helm upgrade my-release oci://registry-1.docker.io/bitnamicharts/kafka -f <your-custom-values.yaml> --namespace <namespace> --create-namespace
+helm upgrade automq-release oci://registry-1.docker.io/bitnamicharts/kafka -f demo-values.yaml --namespace automq --create-namespace
 ```
 
 ### Uninstalling the Chart
@@ -51,7 +53,7 @@ helm upgrade my-release oci://registry-1.docker.io/bitnamicharts/kafka -f <your-
 To uninstall/delete the deployment:
 
 ```shell
-helm uninstall my-release --namespace <namespace>
+helm uninstall automq-release --namespace automq
 ```
 
 This command removes all the Kubernetes components associated with the chart and deletes the release.
