@@ -1,21 +1,26 @@
 # Copyright Broadcom, Inc. All Rights Reserved.
 # SPDX-License-Identifier: APACHE-2.0
 
+FROM docker.io/bitnami/minideb:bookworm as extractor
+
+COPY automq-*.tgz /tmp/
+RUN mkdir -p /output && \
+    tar -zxf /tmp/automq-*.tgz -C /output --strip-components=1
+
 FROM docker.io/bitnami/minideb:bookworm
 
 ARG DOWNLOADS_URL="downloads.bitnami.com/files/stacksmith"
 ARG JAVA_EXTRA_SECURITY_DIR="/bitnami/java/extra-security"
 ARG TARGETARCH
 
-LABEL com.vmware.cp.artifact.flavor="sha256:c50c90cfd9d12b445b011e6ad529f1ad3daea45c26d20b00732fae3cd71f6a83" \
-      org.opencontainers.image.base.name="docker.io/bitnami/minideb:bookworm" \
-      org.opencontainers.image.created="2025-03-15T19:51:22Z" \
-      org.opencontainers.image.description="Application packaged by Broadcom, Inc." \
-      org.opencontainers.image.documentation="https://github.com/bitnami/containers/tree/main/bitnami/kafka/README.md" \
+LABEL org.opencontainers.image.base.name="docker.io/bitnami/minideb:bookworm" \
+      org.opencontainers.image.created="2025-04-27T21:51:40Z" \
+      org.opencontainers.image.description="AutoMQ Enterprise packaged by AutoMQ, Inc." \
+      org.opencontainers.image.licenses="BSL" \
       org.opencontainers.image.ref.name="3.9.0-debian-12-r13" \
-      org.opencontainers.image.source="https://github.com/bitnami/containers/tree/main/bitnami/kafka" \
-      org.opencontainers.image.title="kafka" \
-      org.opencontainers.image.vendor="Broadcom, Inc." \
+      org.opencontainers.image.source="https://github.com/AutoMQ/automq/tree/main/container" \
+      org.opencontainers.image.title="automq" \
+      org.opencontainers.image.vendor="AutoMQ, Inc." \
       org.opencontainers.image.version="3.9.0"
 
 ENV HOME="/" \
@@ -27,11 +32,9 @@ COPY prebuildfs /
 SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
 # Install required system packages and dependencies
 RUN install_packages ca-certificates curl procps zlib1g
-RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ ; \
+RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ || exit 1 ; \
     COMPONENTS=( \
-      "wait-for-port-1.0.8-14-linux-${OS_ARCH}-debian-12" \
       "jre-17.0.14-10-1-linux-${OS_ARCH}-debian-12" \
-      "kafka-3.9.0-2-linux-${OS_ARCH}-debian-12" \
     ) ; \
     for COMPONENT in "${COMPONENTS[@]}"; do \
       if [ ! -f "${COMPONENT}.tar.gz" ]; then \
@@ -39,10 +42,11 @@ RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ ; \
         curl -SsLf "https://${DOWNLOADS_URL}/${COMPONENT}.tar.gz.sha256" -O ; \
       fi ; \
       sha256sum -c "${COMPONENT}.tar.gz.sha256" ; \
-      tar -zxf "${COMPONENT}.tar.gz" -C /opt/bitnami --strip-components=2 --no-same-owner --wildcards '*/files' ; \
+      tar -zxf "${COMPONENT}.tar.gz" -C /opt/bitnami --strip-components=2 --no-same-owner ; \
       rm -rf "${COMPONENT}".tar.gz{,.sha256} ; \
     done
-RUN apt-get update && apt-get upgrade -y && \
+COPY --from=extractor --chown=1001:0 /output /opt/bitnami/kafka
+RUN apt-get update && apt-get install -y libjemalloc-dev && \
     apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 RUN chmod g+rwX /opt/bitnami
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
@@ -58,6 +62,12 @@ ENV APP_VERSION="3.9.0" \
     PATH="/opt/bitnami/common/bin:/opt/bitnami/java/bin:/opt/bitnami/kafka/bin:$PATH"
 
 EXPOSE 9092
+
+RUN arch=$(uname -m) \
+    && target_file="/usr/lib/${arch}-linux-gnu/libjemalloc.so" \
+    && { test -f "$target_file" || { echo "Error: $target_file not found"; exit 1; }; } \
+    && ln -sv "$target_file" /usr/lib/libjemalloc.so
+ENV LD_PRELOAD="/usr/lib/libjemalloc.so"
 
 USER 1001
 ENTRYPOINT [ "/opt/bitnami/scripts/kafka/entrypoint.sh" ]
