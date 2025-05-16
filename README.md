@@ -101,6 +101,10 @@ Regarding the architecture of AutoMQ, it is fundamentally different from Kafka. 
 
 For more on AutoMQ's architecture, visit [AutoMQ Architecture](https://docs.automq.com/automq/architecture/overview) or explore the source code directly.
 
+## 🌟 Stay Ahead with AutoMQ
+Star AutoMQ on GitHub for instant updates on new releases.
+![star-automq](https://github.com/user-attachments/assets/80a12561-2507-4283-8322-3512fec66f12)
+
 ## 💬 Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
 - Ask questions or report a bug by [GitHub Issues](https://github.com/AutoMQ/automq/issues)
