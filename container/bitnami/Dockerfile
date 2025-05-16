@@ -15,8 +15,7 @@ ARG TARGETARCH
 
 LABEL org.opencontainers.image.base.name="docker.io/bitnami/minideb:bookworm" \
       org.opencontainers.image.created="2025-04-27T21:51:40Z" \
-      org.opencontainers.image.description="AutoMQ Enterprise packaged by AutoMQ, Inc." \
-      org.opencontainers.image.licenses="BSL" \
+      org.opencontainers.image.description="AutoMQ packaged by AutoMQ, Inc." \
       org.opencontainers.image.ref.name="3.9.0-debian-12-r13" \
       org.opencontainers.image.source="https://github.com/AutoMQ/automq/tree/main/container" \
       org.opencontainers.image.title="automq" \
