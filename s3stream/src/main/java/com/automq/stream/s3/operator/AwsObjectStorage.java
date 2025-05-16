@@ -27,6 +27,8 @@ import com.automq.stream.utils.FutureUtil;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -92,6 +94,8 @@ import static com.automq.stream.utils.FutureUtil.cause;
 
 @SuppressWarnings({"this-escape", "NPathComplexity"})
 public class AwsObjectStorage extends AbstractObjectStorage {
+    // use the root logger to log the error to both log file and stdout
+    private static final Logger READINESS_CHECK_LOGGER = LoggerFactory.getLogger("ObjectStorageReadinessCheck");
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
     public static final String PATH_STYLE_KEY = "pathStyle";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
@@ -443,25 +447,24 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     class ReadinessCheck {
         public boolean readinessCheck() {
-            logger.info("Start readiness check for {}", bucketURI);
+            READINESS_CHECK_LOGGER.info("Start readiness check for {}", bucketURI);
             String normalPath = String.format("__automq/readiness_check/normal_obj/%d", System.nanoTime());
             try {
                 writeS3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(normalPath).build()).get();
             } catch (Throwable e) {
-                // 权限 / endpoint / xxx
                 Throwable cause = FutureUtil.cause(e);
                 if (cause instanceof SdkClientException) {
-                    logger.error("Cannot connect to s3, please check the s3 endpoint config", cause);
+                    READINESS_CHECK_LOGGER.error("Cannot connect to s3, please check the s3 endpoint config", cause);
                 } else if (cause instanceof S3Exception) {
                     int code = ((S3Exception) cause).statusCode();
                     switch (code) {
                         case HttpStatusCode.NOT_FOUND:
                             break;
                         case HttpStatusCode.FORBIDDEN:
-                            logger.error("Please check whether config is correct", cause);
+                            READINESS_CHECK_LOGGER.error("Please check whether config is correct", cause);
                             return false;
                         default:
-                            logger.error("Please check config is correct", cause);
+                            READINESS_CHECK_LOGGER.error("Please check config is correct", cause);
                     }
                 }
             }
@@ -472,9 +475,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             } catch (Throwable e) {
                 Throwable cause = FutureUtil.cause(e);
                 if (cause instanceof S3Exception && ((S3Exception) cause).statusCode() == HttpStatusCode.NOT_FOUND) {
-                    logger.error("Cannot find the bucket={}", bucket, cause);
+                    READINESS_CHECK_LOGGER.error("Cannot find the bucket={}", bucket, cause);
                 } else {
-                    logger.error("Please check the identity have the permission to do Write Object operation", cause);
+                    READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do Write Object operation", cause);
                 }
                 return false;
             }
@@ -482,7 +485,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             try {
                 doDeleteObjects(List.of(normalPath)).get();
             } catch (Throwable e) {
-                logger.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
+                READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
                 return false;
             }
 
@@ -499,15 +502,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 buf.readBytes(readContent);
                 buf.release();
                 if (!Arrays.equals(content, readContent)) {
-                    logger.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
+                    READINESS_CHECK_LOGGER.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
                 }
                 doDeleteObjects(List.of(multiPartPath)).get();
             } catch (Throwable e) {
-                logger.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
+                READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
                 return false;
             }
 
-            logger.info("Readiness check pass!");
+            READINESS_CHECK_LOGGER.info("Readiness check pass!");
             return true;
         }
 
