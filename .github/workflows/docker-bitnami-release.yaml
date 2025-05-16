@@ -15,7 +15,6 @@ jobs:
       matrix:
         platform: [ "ubuntu-24.04" ]
         jdk: ["17"]
-        registry: ["automq-docker-registry-registry.cn-hangzhou.cr.aliyuncs.com"]
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
@@ -44,16 +43,16 @@ jobs:
       # docker image release
       - name: Cp TarGz to Docker Path
         run: |
-          cp ./core/build/distributions/automq-${{ github.ref_name }}_kafka-${{ steps.get_project_version.outputs.PROJECT_VERSION }}.tgz ./docker/chart
+          cp ./core/build/distributions/automq-${{ github.ref_name }}_kafka-${{ steps.get_project_version.outputs.PROJECT_VERSION }}.tgz ./docker/chart/debian-12
       - name: Determine Image Tags
         id: image_tags
         run: |
           LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
           echo "LATEST_TAG=${LATEST_TAG}"
           if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
-            echo "tags=${{ matrix.registry }}/automq:${{ github.ref_name }}, ${{ matrix.registry }}/automq:latest" >> $GITHUB_OUTPUT
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/automq-bitnami:${{ github.ref_name }}, ${{ secrets.DOCKERHUB_USERNAME }}/automq-bitnami:latest" >> $GITHUB_OUTPUT
           else
-            echo "tags=${{ matrix.registry }}/automq:${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/automq-bitnami:${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up QEMU
@@ -63,13 +62,12 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ${{ matrix.registry }}
-          username: ${{ secrets.ALIYUN_DOCKER_REGISTRY_USERNAME }}
-          password: ${{ secrets.ALIYUN_DOCKER_REGISTRY_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_READ_WRITE_TOKEN }}
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ./docker/chart
+          context: ./docker/chart/debian-12
           push: true
           tags: ${{ steps.image_tags.outputs.tags }}
           platforms: linux/amd64,linux/arm64

@@ -1,6 +1,12 @@
 # Copyright Broadcom, Inc. All Rights Reserved.
 # SPDX-License-Identifier: APACHE-2.0
 
+FROM docker.io/bitnami/minideb:bookworm as extractor
+
+COPY automq-*.tgz /tmp/
+RUN mkdir -p /output && \
+    tar -zxf /tmp/automq-*.tgz -C /output --strip-components=1
+
 FROM docker.io/bitnami/minideb:bookworm
 
 ARG DOWNLOADS_URL="downloads.bitnami.com/files/stacksmith"
@@ -22,7 +28,7 @@ ENV HOME="/" \
     OS_FLAVOUR="debian-12" \
     OS_NAME="linux"
 
-COPY debian-12/prebuildfs /
+COPY prebuildfs /
 SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
 # Install required system packages and dependencies
 RUN install_packages ca-certificates curl procps zlib1g
@@ -38,21 +44,16 @@ RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ || exit 1 ; \
       sha256sum -c "${COMPONENT}.tar.gz.sha256" ; \
       tar -zxf "${COMPONENT}.tar.gz" -C /opt/bitnami --strip-components=2 --no-same-owner ; \
       rm -rf "${COMPONENT}".tar.gz{,.sha256} ; \
-    done \
-# AutoMQ inject start
-COPY automq-*.tgz /tmp/pkg/cache/automq.tgz
-RUN tar -zxf "/tmp/pkg/cache/automq.tgz" -C /opt/bitnami && \
-    mv /opt/bitnami/automq-* /opt/bitnami/kafka && \
-    chmod g+rwX /opt/bitnami
-
-RUN apt-get update && apt-get install -y ca-certificates dnsutils iputils-ping curl wget netcat-openbsd sysstat net-tools telnet htop procps zlib1g vim less openjdk-17-jdk libjemalloc-dev ipset iproute2 && \
+    done
+COPY --from=extractor --chown=1001:0 /output /opt/bitnami/kafka
+RUN apt-get update && apt-get install -y libjemalloc-dev && \
     apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 RUN chmod g+rwX /opt/bitnami
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
 RUN ln -s /opt/bitnami/scripts/kafka/entrypoint.sh /entrypoint.sh
 RUN ln -s /opt/bitnami/scripts/kafka/run.sh /run.sh
 
-COPY debian-12/rootfs /
+COPY rootfs /
 RUN /opt/bitnami/scripts/java/postunpack.sh
 RUN /opt/bitnami/scripts/kafka/postunpack.sh
 ENV APP_VERSION="4.0.0" \
@@ -67,7 +68,7 @@ RUN arch=$(uname -m) \
     && { test -f "$target_file" || { echo "Error: $target_file not found"; exit 1; }; } \
     && ln -sv "$target_file" /usr/lib/libjemalloc.so
 ENV LD_PRELOAD="/usr/lib/libjemalloc.so"
-# AutoMQ inject end
+
 USER 1001
 ENTRYPOINT [ "/opt/bitnami/scripts/kafka/entrypoint.sh" ]
 CMD [ "/opt/bitnami/scripts/kafka/run.sh" ]
