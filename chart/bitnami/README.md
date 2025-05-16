@@ -34,7 +34,7 @@ we provided for deploying AutoMQ on AWS across 3 Availability Zones using m7g.xl
 3. Install or upgrade the AutoMQ Helm chart using your custom yaml file:
 
 ```shell
-helm install my-release oci://registry-1.docker.io/bitnamicharts/<chart> -f <your-custom-values.yaml> --namespace <namespace> --create-namespace
+helm install my-release oci://registry-1.docker.io/bitnamicharts/kafka -f <your-custom-values.yaml> --namespace <namespace> --create-namespace
 ```
 
 ### Upgrading
@@ -43,7 +43,7 @@ To upgrade the deployment:
 
 ```shell
 helm repo update
-helm upgrade my-release oci://registry-1.docker.io/bitnamicharts/<chart> -f <your-custom-values.yaml> --namespace <namespace> --create-namespace
+helm upgrade my-release oci://registry-1.docker.io/bitnamicharts/kafka -f <your-custom-values.yaml> --namespace <namespace> --create-namespace
 ```
 
 ### Uninstalling the Chart
