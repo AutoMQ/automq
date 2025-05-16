@@ -47,13 +47,7 @@ jobs:
       - name: Determine Image Tags
         id: image_tags
         run: |
-          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
-          echo "LATEST_TAG=${LATEST_TAG}"
-          if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
-            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/automq-bitnami:${{ github.ref_name }}, ${{ secrets.DOCKERHUB_USERNAME }}/automq-bitnami:latest" >> $GITHUB_OUTPUT
-          else
-            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/automq-bitnami:${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          fi
+          echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/automq:${{ github.ref_name }}-bitnami" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
