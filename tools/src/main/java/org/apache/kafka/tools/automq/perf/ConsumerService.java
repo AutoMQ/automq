@@ -116,7 +116,9 @@ public class ConsumerService implements AutoCloseable {
 
     public void pause() {
         groups.forEach(Group::pause);
-    }    /**
+    }
+    
+    /**
      * Resume all consumer groups
      */
     public void resume() {
@@ -138,7 +140,9 @@ public class ConsumerService implements AutoCloseable {
         for (int i = 0; i < consumersToResume; i++) {
             groups.get(i).resume();
         }
-    }/**
+    }
+
+/**
      * Reset consumer offsets for catch-up reading.
      * 
      * @param startMillis     The timestamp to start seeking from

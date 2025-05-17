@@ -111,9 +111,9 @@ public class PerfConfig {
         sendRate = ns.getInt("sendRate");
         sendRateDuringCatchup = ns.getInt("sendRateDuringCatchup") == null ? sendRate : ns.getInt("sendRateDuringCatchup");
         maxConsumeRecordRate = ns.getInt("maxConsumeRecordRate");
-        backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
-        groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
-        warmupDurationMinutes = ns.getInt("warmupDurationMinutes");        testDurationMinutes = ns.getInt("testDurationMinutes");
+        backlogDurationSeconds = ns.getInt("backlogDurationSeconds");        groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
+        warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
+        testDurationMinutes = ns.getInt("testDurationMinutes");
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
         valueSchema = ns.getString("valueSchema");
         valuesFile = ns.get("valuesFile");
@@ -132,6 +132,16 @@ public class PerfConfig {
             .newArgumentParser("performance-test")
             .defaultHelp(true)
             .description("This tool is used to run performance tests.");
+        
+        addConnectionArguments(parser);
+        addTopicArguments(parser);
+        addConsumerArguments(parser);
+        addProducerArguments(parser);
+        addTestConfigArguments(parser);
+        return parser;
+    }
+    
+    private static void addConnectionArguments(ArgumentParser parser) {
         parser.addArgument("-B", "--bootstrap-server")
             .setDefault("localhost:9092")
             .type(String.class)
@@ -178,6 +188,9 @@ public class PerfConfig {
             .action(storeTrue())
             .dest("reset")
             .help("delete all topics before running the test.");
+    }
+    
+    private static void addTopicArguments(ArgumentParser parser) {
         parser.addArgument("-X", "--topic-prefix")
             .type(String.class)
             .dest("topicPrefix")
@@ -195,12 +208,9 @@ public class PerfConfig {
             .dest("partitionsPerTopic")
             .metavar("PARTITIONS_PER_TOPIC")
             .help("The number of partitions per topic.");
-        parser.addArgument("-p", "--producers-per-topic")
-            .setDefault(1)
-            .type(positiveInteger())
-            .dest("producersPerTopic")
-            .metavar("PRODUCERS_PER_TOPIC")
-            .help("The number of producers per topic.");
+    }
+    
+    private static void addConsumerArguments(ArgumentParser parser) {
         parser.addArgument("-g", "--groups-per-topic")
             .setDefault(1)
             .type(nonNegativeInteger())
@@ -219,6 +229,28 @@ public class PerfConfig {
             .dest("awaitTopicReady")
             .metavar("AWAIT_TOPIC_READY")
             .help("Use produce / consume detect to check topic readiness.");
+        parser.addArgument("-m", "--max-consume-record-rate")
+            .setDefault(1_000_000_000)
+            .type(between(0, 1_000_000_000))
+            .dest("maxConsumeRecordRate")
+            .metavar("MAX_CONSUME_RECORD_RATE")
+            .help("The max rate of consuming records per second.");
+            
+        parser.addArgument("--consumers-during-catchup")
+            .setDefault(100)
+            .type(between(0, 100))
+            .dest("consumersDuringCatchupPercentage")
+            .metavar("CONSUMERS_DURING_CATCHUP_PERCENTAGE")
+            .help("The percentage of consumers to activate during catch-up read (0-100). Default is 100 (all consumers).");
+    }
+    
+    private static void addProducerArguments(ArgumentParser parser) {
+        parser.addArgument("-p", "--producers-per-topic")
+            .setDefault(1)
+            .type(positiveInteger())
+            .dest("producersPerTopic")
+            .metavar("PRODUCERS_PER_TOPIC")
+            .help("The number of producers per topic.");
         parser.addArgument("-s", "--record-size")
             .setDefault(1024)
             .type(positiveInteger())
@@ -248,12 +280,10 @@ public class PerfConfig {
             .dest("sendRateDuringCatchup")
             .metavar("SEND_RATE_DURING_CATCHUP")
             .help("The send rate in messages per second during catchup. If not set, the send rate will be used.");
-        parser.addArgument("-m", "--max-consume-record-rate")
-            .setDefault(1_000_000_000)
-            .type(between(0, 1_000_000_000))
-            .dest("maxConsumeRecordRate")
-            .metavar("MAX_CONSUME_RECORD_RATE")
-            .help("The max rate of consuming records per second.");        parser.addArgument("-b", "--backlog-duration")
+    }
+    
+    private static void addTestConfigArguments(ArgumentParser parser) {
+        parser.addArgument("-b", "--backlog-duration")
             .setDefault(0)
             .type(notLessThan(300))
             .dest("backlogDurationSeconds")
@@ -265,12 +295,6 @@ public class PerfConfig {
             .dest("groupStartDelaySeconds")
             .metavar("GROUP_START_DELAY_SECONDS")
             .help("The group start delay in seconds.");
-        parser.addArgument("--consumers-during-catchup")
-            .setDefault(100)
-            .type(between(0, 100))
-            .dest("consumersDuringCatchupPercentage")
-            .metavar("CONSUMERS_DURING_CATCHUP_PERCENTAGE")
-            .help("The percentage of consumers to activate during catch-up read (0-100). Default is 100 (all consumers).");
         parser.addArgument("-w", "--warmup-duration")
             .setDefault(1)
             .type(nonNegativeInteger())
@@ -299,7 +323,6 @@ public class PerfConfig {
             .dest("valuesFile")
             .metavar("VALUES_FILE")
             .help("The avro value file. Example file content {\"f1\": \"value1\"}");
-        return parser;
     }
 
     public String bootstrapServer() {

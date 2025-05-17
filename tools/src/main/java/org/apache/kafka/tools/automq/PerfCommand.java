@@ -169,9 +169,9 @@ public class PerfCommand implements AutoCloseable {
         Result result;
         if (config.backlogDurationSeconds > 0) {
             LOGGER.info("Pausing consumers for {} seconds to build up backlog...", config.backlogDurationSeconds);
-            consumerService.pause();
-            long backlogStart = System.currentTimeMillis();
-            collectStats(Duration.ofSeconds(config.backlogDurationSeconds));            long backlogEnd = System.nanoTime();
+            consumerService.pause();            long backlogStart = System.currentTimeMillis();
+            collectStats(Duration.ofSeconds(config.backlogDurationSeconds));
+            long backlogEnd = System.nanoTime();
 
             LOGGER.info("Resetting consumer offsets and resuming...");
             consumerService.resetOffset(backlogStart, TimeUnit.SECONDS.toMillis(config.groupStartDelaySeconds), config.consumersDuringCatchupPercentage);
