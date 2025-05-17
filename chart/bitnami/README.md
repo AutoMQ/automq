@@ -32,12 +32,11 @@ As an alternative to supplying the configuration parameters as arguments, you ca
     we provided for deploying AutoMQ on AWS across 3 Availability Zones using m7g.xlarge instances (4 vCPUs, 16GB Mem, 156MiB/s network bandwidth).
 
 
-    Note: You need to replace the bucket configurations in the placeholders $｛｝, such as ops-bucket, data-bucket, region, endpoint, access-key/secret-key.
+    You need to replace the bucket configurations in the placeholders $｛｝, such as ops-bucket, data-bucket, region, endpoint, access-key/secret-key.
 
 3. Install or upgrade the AutoMQ Helm chart using your custom yaml file:
 
-
-    Note: we recommend using the `--version` 31.x.x (31.1.0 ~ 31.5.0) bitnami helm chart while installing AutoMQ.
+    we recommend using the `--version` [31.x.x (31.1.0 ~ 31.5.0)](https://artifacthub.io/packages/helm/bitnami/kafka) bitnami helm chart while installing AutoMQ.
 
 ```shell
 helm install automq-release oci://registry-1.docker.io/bitnamicharts/kafka -f demo-values.yaml --version 31.5.0 --namespace automq --create-namespace
