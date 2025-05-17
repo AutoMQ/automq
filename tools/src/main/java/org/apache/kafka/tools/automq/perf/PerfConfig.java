@@ -111,7 +111,8 @@ public class PerfConfig {
         sendRate = ns.getInt("sendRate");
         sendRateDuringCatchup = ns.getInt("sendRateDuringCatchup") == null ? sendRate : ns.getInt("sendRateDuringCatchup");
         maxConsumeRecordRate = ns.getInt("maxConsumeRecordRate");
-        backlogDurationSeconds = ns.getInt("backlogDurationSeconds");        groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
+        backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
+        groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
         warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
         testDurationMinutes = ns.getInt("testDurationMinutes");
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
