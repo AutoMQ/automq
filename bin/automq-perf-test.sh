@@ -23,4 +23,10 @@ fi
 if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
     export KAFKA_HEAP_OPTS="-Xmx1024M"
 fi
+# Add additional help info for the new parameter (this won't be displayed directly but documents the change)
+# --consumers-during-catchup: Percentage of consumers to activate during catch-up read (0-100, default: 100)
+#                            This allows controlling what percentage of consumer groups are activated during catch-up
+#                            reading to better simulate real-world scenarios where only a subset of consumers 
+#                            experience catch-up reads at the same time.
+
 exec "$(dirname "$0")/kafka-run-class.sh" -name kafkaClient -loggc org.apache.kafka.tools.automq.PerfCommand "$@"
