@@ -28,15 +28,19 @@ As an alternative to supplying the configuration parameters as arguments, you ca
 1. Create an empty `automq-values.yaml` file
 2. Edit the file with your specific parameters:
 
-You can refer to the [demo-values.yaml](/chart/bitnami/demo-values.yaml)  based on the bitnami [values.yaml](https://github.com/bitnami/charts/blob/main/bitnami/kafka/values.yaml)
-we provided for deploying AutoMQ on AWS across 3 Availability Zones using m7g.xlarge instances (4 vCPUs, 16GB Mem, 156MiB/s network bandwidth).
+    You can refer to the [demo-values.yaml](/chart/bitnami/demo-values.yaml)  based on the bitnami [values.yaml](https://github.com/bitnami/charts/blob/main/bitnami/kafka/values.yaml)
+    we provided for deploying AutoMQ on AWS across 3 Availability Zones using m7g.xlarge instances (4 vCPUs, 16GB Mem, 156MiB/s network bandwidth).
 
-Note: You need to replace the bucket configurations in the placeholders $｛｝, such as ops-bucket, data-bucket, region, endpoint, access-key/secret-key.
+
+    Note: You need to replace the bucket configurations in the placeholders $｛｝, such as ops-bucket, data-bucket, region, endpoint, access-key/secret-key.
 
 3. Install or upgrade the AutoMQ Helm chart using your custom yaml file:
 
+
+    Note: we recommend using the `--version` 31.x.x (31.1.0 ~ 31.5.0) bitnami helm chart while installing AutoMQ.
+
 ```shell
-helm install automq-release oci://registry-1.docker.io/bitnamicharts/kafka -f demo-values.yaml --namespace automq --create-namespace
+helm install automq-release oci://registry-1.docker.io/bitnamicharts/kafka -f demo-values.yaml --version 31.5.0 --namespace automq --create-namespace
 ```
 
 ### Upgrading
@@ -45,7 +49,7 @@ To upgrade the deployment:
 
 ```shell
 helm repo update
-helm upgrade automq-release oci://registry-1.docker.io/bitnamicharts/kafka -f demo-values.yaml --namespace automq --create-namespace
+helm upgrade automq-release oci://registry-1.docker.io/bitnamicharts/kafka -f demo-values.yaml --version 31.5.0 --namespace automq --create-namespace
 ```
 
 ### Uninstalling the Chart
