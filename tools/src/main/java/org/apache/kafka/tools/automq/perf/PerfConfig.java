@@ -70,6 +70,7 @@ public class PerfConfig {
     public final int backlogDurationSeconds;
     public final int groupStartDelaySeconds;
     public final int warmupDurationMinutes;
+    public final int consumersDuringCatchupPercentage;
     public final int testDurationMinutes;
     public final int reportingIntervalSeconds;
     public final String valueSchema;
@@ -112,13 +113,13 @@ public class PerfConfig {
         maxConsumeRecordRate = ns.getInt("maxConsumeRecordRate");
         backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
         groupStartDelaySeconds = ns.getInt("groupStartDelaySeconds");
-        warmupDurationMinutes = ns.getInt("warmupDurationMinutes");
-        testDurationMinutes = ns.getInt("testDurationMinutes");
+        warmupDurationMinutes = ns.getInt("warmupDurationMinutes");        testDurationMinutes = ns.getInt("testDurationMinutes");
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
         valueSchema = ns.getString("valueSchema");
         valuesFile = ns.get("valuesFile");
         reuseTopics = ns.getBoolean("reuseTopics"); // Added for --reuse-topics
         catchupTopicPrefix = ns.getString("catchupTopicPrefix"); // Added for --catchup-topic-prefix
+        consumersDuringCatchupPercentage = ns.getInt("consumersDuringCatchupPercentage");
 
         if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
@@ -252,8 +253,7 @@ public class PerfConfig {
             .type(between(0, 1_000_000_000))
             .dest("maxConsumeRecordRate")
             .metavar("MAX_CONSUME_RECORD_RATE")
-            .help("The max rate of consuming records per second.");
-        parser.addArgument("-b", "--backlog-duration")
+            .help("The max rate of consuming records per second.");        parser.addArgument("-b", "--backlog-duration")
             .setDefault(0)
             .type(notLessThan(300))
             .dest("backlogDurationSeconds")
@@ -265,6 +265,12 @@ public class PerfConfig {
             .dest("groupStartDelaySeconds")
             .metavar("GROUP_START_DELAY_SECONDS")
             .help("The group start delay in seconds.");
+        parser.addArgument("--consumers-during-catchup")
+            .setDefault(100)
+            .type(between(0, 100))
+            .dest("consumersDuringCatchupPercentage")
+            .metavar("CONSUMERS_DURING_CATCHUP_PERCENTAGE")
+            .help("The percentage of consumers to activate during catch-up read (0-100). Default is 100 (all consumers).");
         parser.addArgument("-w", "--warmup-duration")
             .setDefault(1)
             .type(nonNegativeInteger())
