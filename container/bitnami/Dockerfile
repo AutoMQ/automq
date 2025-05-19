@@ -30,7 +30,8 @@ ENV HOME="/" \
 COPY prebuildfs /
 SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
 # Install required system packages and dependencies
-RUN install_packages ca-certificates curl procps zlib1g
+RUN apt-get update && apt-get install -y ca-certificates curl procps zlib1g libjemalloc-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ || exit 1 ; \
     COMPONENTS=( \
       "jre-17.0.14-10-1-linux-${OS_ARCH}-debian-12" \
@@ -45,14 +46,14 @@ RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ || exit 1 ; \
       rm -rf "${COMPONENT}".tar.gz{,.sha256} ; \
     done
 COPY --from=extractor --chown=1001:0 /output /opt/bitnami/kafka
-RUN apt-get update && apt-get install -y libjemalloc-dev && \
-    apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 RUN chmod g+rwX /opt/bitnami
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
 RUN ln -s /opt/bitnami/scripts/kafka/entrypoint.sh /entrypoint.sh
 RUN ln -s /opt/bitnami/scripts/kafka/run.sh /run.sh
 
 COPY rootfs /
+RUN find /opt/bitnami/scripts -type f -exec chmod g+rwX {} \; && \
+    find /opt/bitnami/scripts -type f -exec chmod +x {} \;
 RUN /opt/bitnami/scripts/java/postunpack.sh
 RUN /opt/bitnami/scripts/kafka/postunpack.sh
 ENV APP_VERSION="3.9.0" \
