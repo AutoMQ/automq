@@ -19,6 +19,7 @@
 
 package org.apache.kafka.tools.automq.perf;
 
+import com.google.common.primitives.Longs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.AlterConsumerGroupOffsetsResult;
@@ -336,7 +337,7 @@ public class ConsumerService implements AutoCloseable {
                     }
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
                     for (ConsumerRecord<String, byte[]> record : records) {
-                        long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value(), HEADER_KEY_CHARSET));
+                        long sendTimeNanos = Longs.fromByteArray(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value());
                         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
                         callback.messageReceived(topicPartition, record.value(), sendTimeNanos);
                     }
