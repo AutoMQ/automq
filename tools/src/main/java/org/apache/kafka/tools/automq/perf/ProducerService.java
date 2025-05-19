@@ -19,7 +19,6 @@
 
 package org.apache.kafka.tools.automq.perf;
 
-import com.google.common.primitives.Longs;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -32,6 +31,7 @@ import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 
 import com.automq.stream.utils.Threads;
+import com.google.common.primitives.Longs;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
