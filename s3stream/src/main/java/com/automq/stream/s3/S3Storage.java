@@ -216,9 +216,8 @@ public class S3Storage implements Storage {
         List<StreamMetadata> openingStreams, Logger logger) {
         Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
-        Map<Long, Long> streamNextOffsets = new HashMap<>();
         Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords = new HashMap<>();
-        long logEndOffset = recoverContinuousRecords(it, openingStreamEndOffsets, streamNextOffsets, streamDiscontinuousRecords, cacheBlock, logger);
+        long logEndOffset = recoverContinuousRecords(it, openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, logger);
         // release all discontinuous records.
         streamDiscontinuousRecords.values().forEach(queue -> {
             if (queue.isEmpty()) {
@@ -265,10 +264,10 @@ public class S3Storage implements Storage {
     }
 
     private static long recoverContinuousRecords(Iterator<RecoverResult> it, Map<Long, Long> openingStreamEndOffsets,
-        Map<Long, Long> streamNextOffsets, Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
-        LogCache.LogCacheBlock cacheBlock, Logger logger) {
+        Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords, LogCache.LogCacheBlock cacheBlock,
+        Logger logger) {
         try {
-            return recoverContinuousRecords0(it, openingStreamEndOffsets, streamNextOffsets, streamDiscontinuousRecords, cacheBlock, logger);
+            return recoverContinuousRecords0(it, openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, logger);
         } catch (Throwable e) {
             streamDiscontinuousRecords.values().forEach(queue -> queue.forEach(StreamRecordBatch::release));
             cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
@@ -281,7 +280,6 @@ public class S3Storage implements Storage {
      *
      * @param it                         WAL recover iterator
      * @param openingStreamEndOffsets    the end offset of each opening stream
-     * @param streamNextOffsets          the next offset of each stream (to be filled)
      * @param streamDiscontinuousRecords the out-of-order records of each stream (to be filled)
      * @param cacheBlock                 the cache block (to be filled)
      * @return the end offset of the last record recovered
@@ -289,11 +287,11 @@ public class S3Storage implements Storage {
      */
     private static long recoverContinuousRecords0(Iterator<RecoverResult> it,
         Map<Long, Long> openingStreamEndOffsets,
-        Map<Long, Long> streamNextOffsets,
         Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
         LogCache.LogCacheBlock cacheBlock,
         Logger logger) throws RuntimeIOException {
         long logEndOffset = -1L;
+        Map<Long, Long> streamNextOffsets = new HashMap<>();
         while (it.hasNext()) {
             RecoverResult recoverResult = it.next();
             logEndOffset = recoverResult.recordOffset();
