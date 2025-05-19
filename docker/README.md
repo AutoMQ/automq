@@ -34,7 +34,7 @@ Building image and running tests using github actions
   - `native` image type is for graalvm based `native` kafka docker image (to be hosted on apache/kafka-native) as described in [KIP-974](https://cwiki.apache.org/confluence/display/KAFKA/KIP-974%3A+Docker+Image+for+GraalVM+based+Native+Kafka+Broker#KIP974:DockerImageforGraalVMbasedNativeKafkaBroker-ImageNaming)
 
 - Example(jvm):-
-To build and test a jvm image type ensuring kafka to be containerised should be https://archive.apache.org/dist/kafka/3.6.0/kafka_2.13-3.6.0.tgz (it is recommended to use scala 2.13 binary tarball), following inputs in github actions workflow are recommended.
+  To build and test a jvm image type ensuring kafka to be containerised should be https://archive.apache.org/dist/kafka/3.6.0/kafka_2.13-3.6.0.tgz (it is recommended to use scala 2.13 binary tarball), following inputs in github actions workflow are recommended.
 ```
 image_type: jvm
 kafka_url: https://archive.apache.org/dist/kafka/3.6.0/kafka_2.13-3.6.0.tgz
@@ -52,7 +52,7 @@ Creating a Release Candidate using github actions
 - Go to `Build and Push Release Candidate Docker Image` Github Actions Workflow.
 - Choose the `image_type` and provide `kafka_url` that needs to be containerised in the `rc_docker_image` that will be pushed to github.
 - Example(jvm):-
-If you want to push a jvm image which contains kafka from https://archive.apache.org/dist/kafka/3.6.0/kafka_2.13-3.6.0.tgz to dockerhub under the namespace apache, repo name as kafka and image tag as 3.6.0-rc1 then following values need to be added in Github Actions Workflow:-
+  If you want to push a jvm image which contains kafka from https://archive.apache.org/dist/kafka/3.6.0/kafka_2.13-3.6.0.tgz to dockerhub under the namespace apache, repo name as kafka and image tag as 3.6.0-rc1 then following values need to be added in Github Actions Workflow:-
 ```
 image_type: jvm
 kafka_url: https://archive.apache.org/dist/kafka/3.6.0/kafka_2.13-3.6.0.tgz
@@ -73,7 +73,7 @@ Promoting a Release Candidate using github actions
 - Go to `Promote Release Candidate Docker Image` Github Actions Workflow.
 - Choose the RC docker image (`rc_docker_image`) that you want to promote and where it needs to be pushed to (`promoted_docker_image`), i.e. the final docker image release.
 - Example(jvm):-
-If you want to promote apache/kafka:3.6.0-rc0 RC docker image to apache/kafka:3.6.0 then following parameters can be provided to the workflow.
+  If you want to promote apache/kafka:3.6.0-rc0 RC docker image to apache/kafka:3.6.0 then following parameters can be provided to the workflow.
 ```
 rc_docker_image: apache/kafka:3.6.0-rc0
 promoted_docker_image: apache/kafka:3.6.0
@@ -113,6 +113,29 @@ Make sure you have python (>= 3.7.x) and java (>= 17) (java needed only for runn
 Run `pip install -r requirements.txt` to get all the requirements for running the scripts.
 
 Make sure you have docker installed with support for buildx enabled. (For pushing multi-architecture image to docker registry)
+
+Use local code run in docker
+---------------------------------------
+
+- command run in project root folders
+
+1. generate tgz
+```shell
+# For example only, can be modified based on your compilation requirements
+./gradlew releaseTarGz -x test -x check
+```
+2. run
+```shell
+docker-compose -f docker/local/docker-compose.yml up -d
+```
+
+- After modifying your code, simply regenerate the tgz and restart the specified service.
+```shell
+# For example only, can be modified based on your compilation requirements
+./gradlew releaseTarGz -x test -x check
+# eg: restart broker
+docker-compose -f docker/local/docker-compose.yml up broker1 broker2 -d --force-recreate 
+```
 
 Building image and running tests locally
 ---------------------------------------
@@ -187,7 +210,7 @@ image_type: jvm
 kafka_version: 3.7.0
 ```
 
-- Run the `docker/extract_docker_official_image_artifact.py` script, by providing it the path to the downloaded artifact. This will create a new directory under `docker/docker_official_images/kafka_version`. 
+- Run the `docker/extract_docker_official_image_artifact.py` script, by providing it the path to the downloaded artifact. This will create a new directory under `docker/docker_official_images/kafka_version`.
 
 ```
 python extract_docker_official_image_artifact.py --path_to_downloaded_artifact=path/to/downloaded/artifact
@@ -210,6 +233,53 @@ python generate_kafka_pr_template.py --image-type=jvm
 ```
 
 - kafka-version - This is the version to create the Docker official images static Dockerfile and assets for, as well as the version to build and test the Docker official image for.
-- image-type - This is the type of image that we intend to build. This will be dropdown menu type selection in the workflow. `jvm` image type is for official docker image (to be hosted on apache/kafka) as described in [KIP-975](https://cwiki.apache.org/confluence/display/KAFKA/KIP-975%3A+Docker+Image+for+Apache+Kafka). 
+- image-type - This is the type of image that we intend to build. This will be dropdown menu type selection in the workflow. `jvm` image type is for official docker image (to be hosted on apache/kafka) as described in [KIP-975](https://cwiki.apache.org/confluence/display/KAFKA/KIP-975%3A+Docker+Image+for+Apache+Kafka).
   - **NOTE:** As of now [KIP-1028](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1028%3A+Docker+Official+Image+for+Apache+Kafka) only aims to release JVM based Docker Official Images and not GraalVM based native Apache Kafka docker image.
 
+AutoMQ Docker Compose Configurations
+====================================
+
+This directory contains Docker Compose configurations for deploying AutoMQ in different scenarios.
+
+Quick Start (Single Node)
+-------------------------
+
+The main `docker-compose.yaml` in the root directory provides a simple single-node setup for quick evaluation and development:
+
+```bash
+# From the root directory
+docker-compose up -d
+```
+
+This configuration:
+- Deploys a single AutoMQ node that acts as both controller and broker
+- Includes MinIO for S3 storage
+- Uses the latest bucket URI pattern (s3.data.buckets, s3.ops.buckets, s3.wal.path)
+- All services run in a single Docker network
+
+Production-like Cluster
+-----------------------
+
+For a more production-like setup, use the cluster configuration:
+
+```bash
+# From the root directory
+docker-compose -f docker/docker-compose-cluster.yaml up -d
+```
+
+This configuration:
+- Deploys a 3-server cluster
+- Includes MinIO for S3 storage
+- Uses the latest bucket URI pattern (s3.data.buckets, s3.ops.buckets, s3.wal.path)
+- All services run in a single Docker network
+
+Configuration Notes
+-------------------
+
+Both configurations use the new bucket URI pattern as recommended in the AutoMQ documentation:
+
+- `s3.data.buckets` for data storage
+- `s3.ops.buckets` for logs and metrics storage
+- `s3.wal.path` for S3 WAL
+
+For more details, see the [AutoMQ documentation](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux#step-2-edit-the-cluster-configuration-template).
