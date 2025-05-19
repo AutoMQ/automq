@@ -142,7 +142,39 @@ public class ConsumerService implements AutoCloseable {
         }
     }
 
-/**
+    /**
+     * Pause all consumers for the specified topics across all groups.
+     */
+    public void pauseTopics(Collection<String> topics) {
+        for (Group group : groups) {
+            for (Topic topic : group.consumers.keySet()) {
+                if (topics.contains(topic.name)) {
+                    List<Consumer> topicConsumers = group.consumers.get(topic);
+                    if (topicConsumers != null) {
+                        topicConsumers.forEach(Consumer::pause);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Resume all consumers for the specified topics across all groups.
+     */
+    public void resumeTopics(Collection<String> topics) {
+        for (Group group : groups) {
+            for (Topic topic : group.consumers.keySet()) {
+                if (topics.contains(topic.name)) {
+                    List<Consumer> topicConsumers = group.consumers.get(topic);
+                    if (topicConsumers != null) {
+                        topicConsumers.forEach(Consumer::resume);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Reset consumer offsets for catch-up reading.
      * 
      * @param startMillis     The timestamp to start seeking from

@@ -175,8 +175,24 @@ public class PerfCommand implements AutoCloseable {
             long backlogEnd = System.nanoTime();
 
             LOGGER.info("Resetting consumer offsets and resuming...");
-            consumerService.resetOffset(backlogStart, TimeUnit.SECONDS.toMillis(config.groupStartDelaySeconds), config.consumersDuringCatchupPercentage);
-            consumerService.resume(config.consumersDuringCatchupPercentage);
+            consumerService.resetOffset(backlogStart, TimeUnit.SECONDS.toMillis(config.groupStartDelaySeconds));
+
+            // Select topics for catch-up
+            int numTopics = topics.size();
+            int topicsToResume = (int) Math.ceil(numTopics * (config.consumersDuringCatchupPercentage / 100.0));
+            topicsToResume = Math.max(1, Math.min(numTopics, topicsToResume));
+            List<String> allTopicNames = topics.stream().map(t -> t.name()).collect(java.util.stream.Collectors.toList());
+            java.util.Collections.shuffle(allTopicNames);
+            List<String> resumeTopics = allTopicNames.subList(0, topicsToResume);
+            List<String> pauseTopics = allTopicNames.subList(topicsToResume, numTopics);
+
+            consumerService.pause(); // Pause all first
+            consumerService.resumeTopics(resumeTopics); // Resume only selected topics
+            LOGGER.info("Resuming consumers for topics: {} ({} out of {})", resumeTopics, topicsToResume, numTopics);
+            if (!pauseTopics.isEmpty()) {
+                consumerService.pauseTopics(pauseTopics);
+                LOGGER.info("Keeping consumers paused for topics: {} ({} out of {})", pauseTopics, pauseTopics.size(), numTopics);
+            }
 
             stats.reset();
             producerService.adjustRate(config.sendRateDuringCatchup);
