@@ -142,6 +142,7 @@ public class S3Storage implements Storage {
     private final Lock[] streamCallbackLocks = IntStream.range(0, NUM_STREAM_CALLBACK_LOCKS).mapToObj(i -> new ReentrantLock()).toArray(Lock[]::new);
     private long lastLogTimestamp = 0L;
     private volatile double maxDataWriteRate = 0.0;
+    private volatile boolean shutdown;
 
     private final AtomicLong pendingUploadBytes = new AtomicLong(0L);
 
@@ -428,6 +429,7 @@ public class S3Storage implements Storage {
 
     @Override
     public void shutdown() {
+        shutdown = true;
         drainBackoffTask.cancel(false);
         for (WalWriteRequest request : backoffRecords) {
             request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
@@ -459,7 +461,7 @@ public class S3Storage implements Storage {
      */
     @SuppressWarnings("NPathComplexity")
     public boolean append0(AppendContext context, WalWriteRequest request, boolean fromBackoff) {
-        // TODO: storage status check, fast fail the request when storage closed.
+        checkStatus(request);
         if (!fromBackoff && !backoffRecords.isEmpty()) {
             backoffRecords.offer(request);
             return true;
@@ -614,6 +616,12 @@ public class S3Storage implements Storage {
                 readDataBlock.getRecords().forEach(r -> r.release());
             });
         });
+    }
+
+    public void checkStatus(WalWriteRequest request) {
+        if (shutdown) {
+            request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
+        }
     }
 
     private void continuousCheck(List<StreamRecordBatch> records) {
