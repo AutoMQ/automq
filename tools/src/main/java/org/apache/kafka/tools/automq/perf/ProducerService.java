@@ -30,6 +30,8 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 
+import com.google.common.primitives.Longs;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,7 +60,7 @@ import static org.apache.kafka.tools.automq.perf.UniformRateLimiter.uninterrupti
 public class ProducerService implements AutoCloseable {
 
     public static final Charset HEADER_KEY_CHARSET = StandardCharsets.UTF_8;
-    public static final String HEADER_KEY_SEND_TIME_NANOS = "send_time_nanos";
+    public static final String HEADER_KEY_SEND_TIME_NANOS = "st";
     public static final double MIN_RATE = 1.0;
     private static final int ADJUST_RATE_INTERVAL_SECONDS = 5;
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
@@ -312,7 +314,7 @@ public class ProducerService implements AutoCloseable {
         private CompletableFuture<Void> sendAsync(String key, byte[] payload, Integer partition) {
             long sendTimeNanos = StatsCollector.currentNanos();
             List<Header> headers = List.of(
-                new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Long.toString(sendTimeNanos).getBytes(HEADER_KEY_CHARSET))
+                new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Longs.toByteArray(sendTimeNanos))
             );
             ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload, headers);
             int size = payload.length;
