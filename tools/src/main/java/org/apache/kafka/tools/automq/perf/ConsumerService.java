@@ -39,6 +39,8 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
 
+import com.google.common.primitives.Longs;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +65,6 @@ import java.util.stream.Stream;
 import io.github.bucket4j.BlockingBucket;
 import io.github.bucket4j.Bucket;
 
-import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_CHARSET;
 import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_SEND_TIME_NANOS;
 
 public class ConsumerService implements AutoCloseable {
@@ -415,7 +416,7 @@ public class ConsumerService implements AutoCloseable {
                     }
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
                     for (ConsumerRecord<String, byte[]> record : records) {
-                        long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value(), HEADER_KEY_CHARSET));
+                        long sendTimeNanos = Longs.fromByteArray(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value());
                         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
                         callback.messageReceived(topicPartition, record.value(), sendTimeNanos);
                     }
