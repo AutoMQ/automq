@@ -176,7 +176,21 @@ public class PerfCommand implements AutoCloseable {
 
             LOGGER.info("Resetting consumer offsets and resuming...");
             consumerService.resetOffset(backlogStart, TimeUnit.SECONDS.toMillis(config.groupStartDelaySeconds));
-            consumerService.resume();
+
+            // Select topics for catch-up
+            int numTopics = topics.size();
+            int topicsToResume = (int) Math.ceil(numTopics * (config.consumersDuringCatchupPercentage / 100.0));
+            topicsToResume = Math.max(1, Math.min(numTopics, topicsToResume));
+            List<String> allTopicNames = topics.stream().map(t -> t.name()).collect(java.util.stream.Collectors.toList());
+            java.util.Collections.shuffle(allTopicNames);
+            List<String> resumeTopics = allTopicNames.subList(0, topicsToResume);
+
+            // No need to pause all again, they're already paused from line 172
+            // Just resume the selected topics
+            consumerService.resumeTopics(resumeTopics);
+            LOGGER.info("Resuming consumers for topics: {} ({} out of {})", resumeTopics, topicsToResume, numTopics);
+            // No need to pause specific topics, they're already paused
+            LOGGER.info("Keeping remaining consumers paused ({} topics)", numTopics - topicsToResume);
 
             stats.reset();
             producerService.adjustRate(config.sendRateDuringCatchup);
