@@ -184,15 +184,13 @@ public class PerfCommand implements AutoCloseable {
             List<String> allTopicNames = topics.stream().map(t -> t.name()).collect(java.util.stream.Collectors.toList());
             java.util.Collections.shuffle(allTopicNames);
             List<String> resumeTopics = allTopicNames.subList(0, topicsToResume);
-            List<String> pauseTopics = allTopicNames.subList(topicsToResume, numTopics);
 
-            consumerService.pause(); // Pause all first
-            consumerService.resumeTopics(resumeTopics); // Resume only selected topics
+            // No need to pause all again, they're already paused from line 172
+            // Just resume the selected topics
+            consumerService.resumeTopics(resumeTopics);
             LOGGER.info("Resuming consumers for topics: {} ({} out of {})", resumeTopics, topicsToResume, numTopics);
-            if (!pauseTopics.isEmpty()) {
-                consumerService.pauseTopics(pauseTopics);
-                LOGGER.info("Keeping consumers paused for topics: {} ({} out of {})", pauseTopics, pauseTopics.size(), numTopics);
-            }
+            // No need to pause specific topics, they're already paused
+            LOGGER.info("Keeping remaining consumers paused ({} topics)", numTopics - topicsToResume);
 
             stats.reset();
             producerService.adjustRate(config.sendRateDuringCatchup);
