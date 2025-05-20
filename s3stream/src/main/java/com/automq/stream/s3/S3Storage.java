@@ -54,6 +54,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -227,7 +228,7 @@ public class S3Storage implements Storage {
                 return;
             }
             logger.info("drop discontinuous records, records={}", queue);
-            queue.forEach(StreamRecordBatch::release);
+            releaseRecords(queue);
         });
 
         if (logEndOffset >= 0L) {
@@ -243,8 +244,8 @@ public class S3Storage implements Storage {
         try {
             return recoverContinuousRecords0(it, openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, logger);
         } catch (Throwable e) {
-            streamDiscontinuousRecords.values().forEach(queue -> queue.forEach(StreamRecordBatch::release));
-            cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
+            releaseAllRecords(streamDiscontinuousRecords.values());
+            releaseAllRecords(cacheBlock.records().values());
             throw e;
         }
     }
@@ -353,10 +354,18 @@ public class S3Storage implements Storage {
                 records.forEach(newCacheBlock::put);
             } else {
                 // release invalid records.
-                records.forEach(StreamRecordBatch::release);
+                releaseRecords(records);
             }
         });
         return new RecoveryBlockResult(newCacheBlock, ExceptionUtil.combine(exceptions));
+    }
+
+    private static void releaseAllRecords(Collection<? extends Collection<StreamRecordBatch>> allRecords) {
+        allRecords.forEach(S3Storage::releaseRecords);
+    }
+
+    private static void releaseRecords(Collection<StreamRecordBatch> records) {
+        records.forEach(StreamRecordBatch::release);
     }
 
     @Override
@@ -410,7 +419,7 @@ public class S3Storage implements Storage {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
             UploadWriteAheadLogTask task = newUploadWriteAheadLogTask(cacheBlock.records(), objectManager, Long.MAX_VALUE);
             task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
-            cacheBlock.records().forEach((streamId, records) -> records.forEach(StreamRecordBatch::release));
+            releaseAllRecords(cacheBlock.records().values());
         }
         deltaWAL.reset().get();
         for (StreamMetadata stream : streams) {
@@ -576,7 +585,7 @@ public class S3Storage implements Storage {
         }
         if (context.readOptions().fastRead()) {
             // fast read fail fast when need read from block cache.
-            logCacheRecords.forEach(StreamRecordBatch::release);
+            releaseRecords(logCacheRecords);
             logCacheRecords.clear();
             return CompletableFuture.failedFuture(FAST_READ_FAIL_FAST_EXCEPTION);
         }
@@ -597,25 +606,25 @@ public class S3Storage implements Storage {
             try {
                 continuousCheck(rst);
             } catch (IllegalArgumentException e) {
-                blockCacheRst.getRecords().forEach(StreamRecordBatch::release);
+                releaseRecords(blockCacheRst.getRecords());
                 throw e;
             }
             if (readIndex < logCacheRecords.size()) {
                 // release unnecessary record
-                logCacheRecords.subList(readIndex + 1, logCacheRecords.size()).forEach(StreamRecordBatch::release);
+                releaseRecords(logCacheRecords.subList(readIndex + 1, logCacheRecords.size()));
             }
             return new ReadDataBlock(rst, blockCacheRst.getCacheAccessType());
         }).whenComplete((rst, ex) -> {
             if (ex != null) {
                 LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
                     streamId, startOffset, finalEndOffset, maxBytes, ex);
-                logCacheRecords.forEach(StreamRecordBatch::release);
+                releaseRecords(logCacheRecords);
             }
         });
         return FutureUtil.timeoutWithNewReturn(cf, 2, TimeUnit.MINUTES, () -> {
             LOGGER.error("[POTENTIAL_BUG] read from block cache timeout, stream={}, [{},{}), maxBytes: {}", streamId, startOffset, finalEndOffset, maxBytes);
             cf.thenAccept(readDataBlock -> {
-                readDataBlock.getRecords().forEach(r -> r.release());
+                releaseRecords(readDataBlock.getRecords());
             });
         });
     }
