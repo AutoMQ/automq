@@ -103,7 +103,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         AsyncSender asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time, ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext());
         this.routerOut = new RouterOut(currentNode, bucketURI, objectStorage, mapping::getRouteOutNode, kafkaApis, asyncSender, time);
 
-        this.routerIn = new RouterIn(objectStorage, kafkaApis);
+        this.routerIn = new RouterIn(objectStorage, kafkaApis, kafkaConfig.rack().get());
 
         this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache());
         mapping.registerListener(snapshotReadPartitionsManager);
@@ -156,6 +156,10 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         } catch (Throwable e) {
             LOGGER.error("Failed to handle metadata update", e);
         }
+    }
+
+    public void setRouterInProduceHandler(RouterInProduceHandler routerInProduceHandler) {
+        routerIn.setRouterInProduceHandler(routerInProduceHandler);
     }
 
     @Override
