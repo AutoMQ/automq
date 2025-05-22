@@ -1,12 +1,15 @@
+global:
+  security:
+    allowInsecureImages: true
 image:
   registry: automqinc
   repository: automq
   tag: 1.5.0-bitnami
   pullPolicy: Always
 extraEnvVars:
-  - name: AWS_ACCESS_KEY
+  - name: AWS_ACCESS_KEY_ID
     value: "${access-key}"
-  - name: AWS_SECRET_KEY
+  - name: AWS_SECRET_ACCESS_KEY
     value: "${secret-key}"
 controller:
   replicaCount: 3
