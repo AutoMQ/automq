@@ -24,24 +24,26 @@ import com.automq.stream.s3.operator.BucketURI;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
 
 
 public class CredentialProviderHolder implements AwsCredentialsProvider {
+    private static Function<BucketURI, AwsCredentialsProvider> providerSupplier = bucketURI -> newCredentialsProviderChain(
+        credentialsProviders(bucketURI));
     private static AwsCredentialsProvider provider;
 
-    public static void setup(AwsCredentialsProvider provider) {
-        CredentialProviderHolder.provider = provider;
+    public static void setup(Function<BucketURI, AwsCredentialsProvider> providerSupplier) {
+        CredentialProviderHolder.providerSupplier = providerSupplier;
     }
 
     public static void setup(BucketURI bucketURI) {
-        CredentialProviderHolder.provider = newCredentialsProviderChain(credentialsProviders(bucketURI));
+        CredentialProviderHolder.provider = providerSupplier.apply(bucketURI);
     }
 
     private static List<AwsCredentialsProvider> credentialsProviders(BucketURI bucketURI) {
@@ -51,8 +53,6 @@ public class CredentialProviderHolder implements AwsCredentialsProvider {
     private static AwsCredentialsProvider newCredentialsProviderChain(
         List<AwsCredentialsProvider> credentialsProviders) {
         List<AwsCredentialsProvider> providers = new ArrayList<>(credentialsProviders);
-        // Add default providers to the end of the chain
-        providers.add(InstanceProfileCredentialsProvider.create());
         providers.add(AnonymousCredentialsProvider.create());
         return AwsCredentialsProviderChain.builder()
             .reuseLastProviderEnabled(true)
