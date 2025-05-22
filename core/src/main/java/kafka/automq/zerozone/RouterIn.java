@@ -19,6 +19,8 @@
 
 package kafka.automq.zerozone;
 
+import kafka.automq.interceptor.ClientIdKey;
+import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
 import kafka.server.RequestLocal;
 import kafka.server.streamaspect.ElasticKafkaApis;
@@ -28,6 +30,7 @@ import org.apache.kafka.common.errors.ThrottlingQuotaExceededException;
 import org.apache.kafka.common.message.AutomqZoneRouterResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 
@@ -65,12 +68,17 @@ class RouterIn {
         }
     };
 
+    private RouterInProduceHandler routerInProduceHandler;
+
     private final ObjectStorage objectStorage;
     private final ElasticKafkaApis kafkaApis;
+    private final String rack;
 
-    public RouterIn(ObjectStorage objectStorage, ElasticKafkaApis kafkaApis) {
+    public RouterIn(ObjectStorage objectStorage, ElasticKafkaApis kafkaApis, String rack) {
         this.objectStorage = objectStorage;
         this.kafkaApis = kafkaApis;
+        this.rack = rack;
+        this.routerInProduceHandler = kafkaApis::handleProduceAppendJavaCompatible;
     }
 
     public synchronized CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(byte[] metadata) {
@@ -116,7 +124,11 @@ class RouterIn {
         return appendCf;
     }
 
-    private CompletableFuture<AutomqZoneRouterResponseData.Response> append(
+    public void setRouterInProduceHandler(RouterInProduceHandler routerInProduceHandler) {
+        this.routerInProduceHandler = routerInProduceHandler;
+    }
+
+    CompletableFuture<AutomqZoneRouterResponseData.Response> append(
         ZoneRouterProduceRequest zoneRouterProduceRequest) {
         ZoneRouterProduceRequest.Flag flag = new ZoneRouterProduceRequest.Flag(zoneRouterProduceRequest.flag());
         ProduceRequestData data = zoneRouterProduceRequest.data();
@@ -128,8 +140,9 @@ class RouterIn {
         short apiVersion = zoneRouterProduceRequest.apiVersion();
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
         // TODO: parallel request for different partitions
-        kafkaApis.handleProduceAppendJavaCompatible(
+        routerInProduceHandler.handleProduceAppend(
             ProduceRequestArgs.builder()
+                .clientId(buildClientId(realEntriesPerPartition))
                 .timeout(10000)
                 .requiredAcks(data.acks())
                 .internalTopicsAllowed(flag.internalTopicsAllowed())
@@ -149,5 +162,22 @@ class RouterIn {
                 .build()
         );
         return cf;
+    }
+
+    protected ClientIdMetadata buildClientId(Map<TopicPartition, MemoryRecords> entriesPerPartition) {
+        String clientId = String.format("%s=%s", ClientIdKey.AVAILABILITY_ZONE, rack);
+        String connectionId = getConnectionIdFrom(entriesPerPartition);
+        return ClientIdMetadata.of(clientId, null, connectionId);
+    }
+
+    protected String getConnectionIdFrom(Map<TopicPartition, MemoryRecords> entriesPerPartition) {
+        for (Map.Entry<TopicPartition, MemoryRecords> entry : entriesPerPartition.entrySet()) {
+            for (MutableRecordBatch batch : entry.getValue().batches()) {
+                if (batch.hasProducerId()) {
+                    return String.valueOf(batch.producerId());
+                }
+            }
+        }
+        return null;
     }
 }

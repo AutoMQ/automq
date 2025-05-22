@@ -569,6 +569,8 @@ class BrokerServer(
       // AutoMQ inject start
       ElasticLogManager.init(config, clusterId, this)
       trafficInterceptor = newTrafficInterceptor()
+      dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
+      replicaManager.setTrafficInterceptor(trafficInterceptor)
 
       tableManager = new TableManager(metadataCache, config)
       newPartitionLifecycleListeners().forEach(l => {
@@ -837,8 +839,6 @@ class BrokerServer(
       metadataLoader.installPublishers(util.List.of(zeroZoneRouter))
       zeroZoneRouter
     }
-    dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
-    replicaManager.setTrafficInterceptor(trafficInterceptor)
     trafficInterceptor
   }
 
