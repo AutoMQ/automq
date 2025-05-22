@@ -19,7 +19,6 @@ public class AwsObjectStorageTest {
         AwsObjectStorage storage = mock(AwsObjectStorage.class);
         doCallRealMethod().when(storage).credentialsProviders0(any());
         doCallRealMethod().when(storage).newCredentialsProviderChain(any());
-        doCallRealMethod().when(storage).instanceProfileCredentialsProvider();
 
         AwsCredentialsProvider provider = storage.newCredentialsProviderChain(storage.credentialsProviders0(
             BucketURI.parse("0@s3://bucket?region=us-east-1&accessKey=ak&secretKey=sk")));

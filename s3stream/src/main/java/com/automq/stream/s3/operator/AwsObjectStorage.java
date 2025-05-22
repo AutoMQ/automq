@@ -52,7 +52,6 @@ import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
@@ -110,8 +109,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient writeS3Client;
 
     private final ChecksumAlgorithm checksumAlgorithm;
-
-    private static volatile InstanceProfileCredentialsProvider instanceProfileCredentialsProvider;
 
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
@@ -383,18 +380,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     protected List<AwsCredentialsProvider> credentialsProviders0(BucketURI bucketURI) {
-        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), instanceProfileCredentialsProvider(), DefaultCredentialsProvider.create());
-    }
-
-    protected AwsCredentialsProvider instanceProfileCredentialsProvider() {
-        if (instanceProfileCredentialsProvider == null) {
-            synchronized (AwsObjectStorage.class) {
-                if (instanceProfileCredentialsProvider == null) {
-                    instanceProfileCredentialsProvider = InstanceProfileCredentialsProvider.builder().build();
-                }
-            }
-        }
-        return instanceProfileCredentialsProvider;
+        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.create());
     }
 
     private String range(long start, long end) {
