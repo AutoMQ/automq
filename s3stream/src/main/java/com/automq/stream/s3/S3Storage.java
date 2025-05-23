@@ -179,19 +179,6 @@ public class S3Storage implements Storage {
     }
 
     /**
-     * Only for test.
-     */
-    static LogCache.LogCacheBlock recoverContinuousRecords(Iterator<RecoverResult> it,
-        List<StreamMetadata> openingStreams) {
-        Map<Long, Long> openingStreamEndOffsets = openingStreams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
-        RecoveryBlockResult result = recoverContinuousRecords(it, openingStreamEndOffsets, 1 << 30, LOGGER);
-        if (null != result.exception) {
-            throw result.exception;
-        }
-        return result.cacheBlock;
-    }
-
-    /**
      * Recover continuous records in each stream from the WAL, and put them into the returned {@link LogCache.LogCacheBlock}.
      * <p>
      * It will filter out
@@ -223,12 +210,13 @@ public class S3Storage implements Storage {
      *     <li>all the records in the WAL have been recovered</li>
      *     <li>the cache block is full</li>
      * </ul>
+     * Visible for testing.
      * @param it                      WAL recover iterator
      * @param openingStreamEndOffsets the end offset of each opening stream
      * @param maxCacheSize            the max size of the returned {@link RecoveryBlockResult#cacheBlock}
      * @param logger                  logger
      */
-    private static RecoveryBlockResult recoverContinuousRecords(
+    static RecoveryBlockResult recoverContinuousRecords(
         Iterator<RecoverResult> it,
         Map<Long, Long> openingStreamEndOffsets,
         long maxCacheSize,
