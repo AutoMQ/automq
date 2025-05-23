@@ -260,11 +260,13 @@ public class S3Storage implements Storage {
      * @return the end offset of the last record recovered
      * @throws RuntimeIOException if any IO error occurs during recover from Block WAL
      */
-    private static long recoverContinuousRecords0(Iterator<RecoverResult> it,
+    private static long recoverContinuousRecords0(
+        Iterator<RecoverResult> it,
         Map<Long, Long> openingStreamEndOffsets,
         Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
         LogCache.LogCacheBlock cacheBlock,
-        Logger logger) throws RuntimeIOException {
+        Logger logger
+    ) throws RuntimeIOException {
         long logEndOffset = -1L;
         Map<Long, Long> streamNextOffsets = new HashMap<>();
         while (it.hasNext()) {
@@ -272,52 +274,68 @@ public class S3Storage implements Storage {
             logEndOffset = recoverResult.recordOffset();
             ByteBuf recordBuf = recoverResult.record().duplicate();
             StreamRecordBatch streamRecordBatch = StreamRecordBatchCodec.decode(recordBuf);
-            long streamId = streamRecordBatch.getStreamId();
-            Long openingStreamEndOffset = openingStreamEndOffsets.get(streamId);
-            if (openingStreamEndOffset == null) {
-                // stream is already safe closed. so skip the stream records.
-                recordBuf.release();
-                continue;
-            }
-            if (streamRecordBatch.getBaseOffset() < openingStreamEndOffset) {
-                // filter committed records.
-                recordBuf.release();
-                continue;
-            }
-
-            Long expectedNextOffset = streamNextOffsets.get(streamId);
-            Queue<StreamRecordBatch> discontinuousRecords = streamDiscontinuousRecords.get(streamId);
-            if (expectedNextOffset == null || expectedNextOffset == streamRecordBatch.getBaseOffset()) {
-                // continuous record, put it into cache.
-                cacheBlock.put(streamRecordBatch);
-                expectedNextOffset = streamRecordBatch.getLastOffset();
-                // check if there are some out of order records in the queue.
-                if (discontinuousRecords != null) {
-                    while (!discontinuousRecords.isEmpty()) {
-                        StreamRecordBatch peek = discontinuousRecords.peek();
-                        if (peek.getBaseOffset() == expectedNextOffset) {
-                            // should never happen, log it.
-                            logger.error("[BUG] recover an out of order record, streamId={}, expectedNextOffset={}, record={}", streamId, expectedNextOffset, peek);
-                            cacheBlock.put(peek);
-                            discontinuousRecords.poll();
-                            expectedNextOffset = peek.getLastOffset();
-                        } else {
-                            break;
-                        }
-                    }
-                }
-                // update next offset.
-                streamNextOffsets.put(streamRecordBatch.getStreamId(), expectedNextOffset);
-            } else {
-                // unexpected record, put it into discontinuous records queue.
-                if (discontinuousRecords == null) {
-                    discontinuousRecords = new PriorityQueue<>(Comparator.comparingLong(StreamRecordBatch::getBaseOffset));
-                    streamDiscontinuousRecords.put(streamId, discontinuousRecords);
-                }
-                discontinuousRecords.add(streamRecordBatch);
-            }
+            processRecoveredRecord(streamRecordBatch, openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, streamNextOffsets, logger);
         }
         return logEndOffset;
+    }
+
+    private static void processRecoveredRecord(
+        StreamRecordBatch streamRecordBatch,
+        Map<Long, Long> openingStreamEndOffsets,
+        Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
+        LogCache.LogCacheBlock cacheBlock,
+        Map<Long, Long> streamNextOffsets,
+        Logger logger
+    ) {
+        long streamId = streamRecordBatch.getStreamId();
+
+        Long openingStreamEndOffset = openingStreamEndOffsets.get(streamId);
+        if (openingStreamEndOffset == null || openingStreamEndOffset > streamRecordBatch.getBaseOffset()) {
+            // stream is already safe closed, or the record have been committed, skip it
+            streamRecordBatch.release();
+            return;
+        }
+
+        Long expectedNextOffset = streamNextOffsets.get(streamId);
+        Queue<StreamRecordBatch> discontinuousRecords = streamDiscontinuousRecords.get(streamId);
+        if (expectedNextOffset == null || expectedNextOffset == streamRecordBatch.getBaseOffset()) {
+            // continuous record, put it into cache.
+            cacheBlock.put(streamRecordBatch);
+            expectedNextOffset = maybePollDiscontinuousRecords(streamRecordBatch, cacheBlock, discontinuousRecords, logger);
+            streamNextOffsets.put(streamId, expectedNextOffset);
+        } else {
+            // unexpected record, put it into discontinuous records queue.
+            if (discontinuousRecords == null) {
+                discontinuousRecords = new PriorityQueue<>(Comparator.comparingLong(StreamRecordBatch::getBaseOffset));
+                streamDiscontinuousRecords.put(streamId, discontinuousRecords);
+            }
+            discontinuousRecords.add(streamRecordBatch);
+        }
+    }
+
+    private static long maybePollDiscontinuousRecords(
+        StreamRecordBatch streamRecordBatch,
+        LogCache.LogCacheBlock cacheBlock,
+        Queue<StreamRecordBatch> discontinuousRecords,
+        Logger logger
+    ) {
+        long expectedNextOffset = streamRecordBatch.getLastOffset();
+        if (discontinuousRecords == null) {
+            return expectedNextOffset;
+        }
+        // check and poll historical discontinuous records.
+        while (!discontinuousRecords.isEmpty()) {
+            StreamRecordBatch peek = discontinuousRecords.peek();
+            if (peek.getBaseOffset() != expectedNextOffset) {
+                break;
+            }
+            // should never happen, log it.
+            logger.error("[BUG] recover an out of order record, streamId={}, expectedNextOffset={}, record={}", streamRecordBatch.getStreamId(), expectedNextOffset, peek);
+            discontinuousRecords.poll();
+            cacheBlock.put(peek);
+            expectedNextOffset = peek.getLastOffset();
+        }
+        return expectedNextOffset;
     }
 
     /**
