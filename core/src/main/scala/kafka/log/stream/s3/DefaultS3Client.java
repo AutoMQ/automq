@@ -170,7 +170,9 @@ public class DefaultS3Client implements Client {
         storageFailureHandlerChain.addHandler(new ForceCloseStorageFailureHandler(streamClient));
         storageFailureHandlerChain.addHandler(new HaltStorageFailureHandler());
         this.streamClient.registerStreamLifeCycleListener(localIndexCache);
-        this.kvClient = new ControllerKVClient(this.requestSender);
+        this.kvClient = config.isNamespacedKVEnabled() ?
+            new NamespacedControllerKVClient(this.requestSender) :
+            new ControllerKVClient(this.requestSender);
         this.failover = failover();
 
         S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
