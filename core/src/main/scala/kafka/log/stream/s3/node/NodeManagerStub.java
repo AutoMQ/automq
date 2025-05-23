@@ -95,6 +95,7 @@ public class NodeManagerStub implements NodeManager {
                 return;
             }
             NodeMetadata newNodeMetadata = newNodeMetadataOpt.get();
+            newNodeMetadata.setNodeEpoch(epoch);
             this.nodeMetadata = newNodeMetadata;
             AutomqRegisterNodeRequestData.TagCollection tagCollection = new AutomqRegisterNodeRequestData.TagCollection();
             newNodeMetadata.getTags().forEach((k, v) -> tagCollection.add(new AutomqRegisterNodeRequestData.Tag().setKey(k).setValue(v)));
