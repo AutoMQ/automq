@@ -30,13 +30,7 @@ public interface NodeManager {
     CompletableFuture<Void> update(Function<NodeMetadata, Optional<NodeMetadata>> updater);
 
     default CompletableFuture<Void> updateWal(String walConfig) {
-        return update(nodeMetadata -> {
-            if (walConfig.equals(nodeMetadata.getWalConfig())) {
-                return Optional.empty();
-            } else {
-                return Optional.of(new NodeMetadata(nodeMetadata.getNodeId(), nodeMetadata.getNodeEpoch(), walConfig, nodeMetadata.getTags()));
-            }
-        });
+        return update(nodeMetadata -> Optional.of(new NodeMetadata(nodeMetadata.getNodeId(), nodeMetadata.getNodeEpoch(), walConfig, nodeMetadata.getTags())));
     }
 
     CompletableFuture<NodeMetadata> getNodeMetadata();

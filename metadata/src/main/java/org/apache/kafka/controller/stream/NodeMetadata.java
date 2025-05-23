@@ -25,6 +25,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Map;
+import java.util.Objects;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class NodeMetadata {
@@ -91,6 +92,19 @@ public class NodeMetadata {
 
     public void setTags(Map<String, String> tags) {
         this.tags = tags;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass())
+            return false;
+        NodeMetadata that = (NodeMetadata) o;
+        return nodeId == that.nodeId && nodeEpoch == that.nodeEpoch && Objects.equals(walConfig, that.walConfig) && Objects.equals(tags, that.tags);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(nodeId, nodeEpoch, walConfig, tags);
     }
 
     @Override
