@@ -422,30 +422,34 @@ public class S3Storage implements Storage {
     void recover0(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         Logger logger) throws InterruptedException, ExecutionException {
         List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
+        Map<Long, Long> streamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
+        Iterator<RecoverResult> iterator = deltaWAL.recover();
 
-        Iterator<RecoverResult> recovered = deltaWAL.recover();
-        // TODO: maybe combine these two maps
-        Map<Long, Long> openingStreamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
-        Map<Long, Long> streamEndOffsets = new HashMap<>();
-
-        // TODO: start a while loop until the returned cache block is not full
-        RecoveryBlockResult result = recoverContinuousRecords(recovered, openingStreamEndOffsets, 1 << 29, logger);
-        LogCache.LogCacheBlock cacheBlock = result.cacheBlock;
-        cacheBlock.records().forEach((streamId, records) -> {
-            if (!records.isEmpty()) {
-                streamEndOffsets.put(streamId, records.get(records.size() - 1).getLastOffset());
-            }
-        });
-        uploadRecoveredRecords(objectManager, cacheBlock, logger);
-        // TODO: end while loop
+        LogCache.LogCacheBlock cacheBlock;
+        List<RuntimeException> exceptions = new ArrayList<>();
+        do {
+            RecoveryBlockResult result = recoverContinuousRecords(iterator, streamEndOffsets, 1 << 29, logger);
+            cacheBlock = result.cacheBlock;
+            Optional.ofNullable(result.exception).ifPresent(exceptions::add);
+            updateStreamEndOffsets(cacheBlock, streamEndOffsets);
+            uploadRecoveredRecords(objectManager, cacheBlock, logger);
+        } while (cacheBlock.isFull());
 
         deltaWAL.reset().get();
         closeStreams(streamManager, streams, streamEndOffsets, logger);
 
         // fail it if there is any invalid stream.
-        if (null != result.exception) {
-            throw result.exception;
+        if (!exceptions.isEmpty()) {
+            throw ExceptionUtil.combine(exceptions);
         }
+    }
+
+    private static void updateStreamEndOffsets(LogCache.LogCacheBlock cacheBlock, Map<Long, Long> streamEndOffsets) {
+        cacheBlock.records().forEach((streamId, records) -> {
+            if (!records.isEmpty()) {
+                streamEndOffsets.put(streamId, records.get(records.size() - 1).getLastOffset());
+            }
+        });
     }
 
     private void uploadRecoveredRecords(ObjectManager objectManager, LogCache.LogCacheBlock cacheBlock, Logger logger)
