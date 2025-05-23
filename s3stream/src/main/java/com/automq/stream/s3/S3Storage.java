@@ -221,6 +221,7 @@ public class S3Storage implements Storage {
      * It will return when any of the following conditions is met:
      * <ul>
      *     <li>all the records in the WAL have been recovered</li>
+     *     <li>the cache block is full</li>
      * </ul>
      * @param it                      WAL recover iterator
      * @param openingStreamEndOffsets the end offset of each opening stream
@@ -239,7 +240,7 @@ public class S3Storage implements Storage {
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(maxCacheSize);
 
         try {
-            while (it.hasNext()) {
+            while (it.hasNext() && !cacheBlock.isFull()) {
                 RecoverResult recoverResult = it.next();
                 logEndOffset = recoverResult.recordOffset();
                 ByteBuf recordBuf = recoverResult.record().duplicate();
