@@ -408,6 +408,10 @@ public class LogCache {
             return blockId;
         }
 
+        public boolean isFull() {
+            return size.get() >= maxSize || map.size() >= maxStreamCount;
+        }
+
         public boolean put(StreamRecordBatch recordBatch) {
             map.compute(recordBatch.getStreamId(), (id, cache) -> {
                 if (cache == null) {
@@ -416,7 +420,8 @@ public class LogCache {
                 cache.add(recordBatch);
                 return cache;
             });
-            return size.addAndGet(recordBatch.occupiedSize()) >= maxSize || map.size() >= maxStreamCount;
+            size.addAndGet(recordBatch.occupiedSize());
+            return isFull();
         }
 
         public List<StreamRecordBatch> get(Long streamId, long startOffset, long endOffset, int maxBytes) {
