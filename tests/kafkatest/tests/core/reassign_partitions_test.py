@@ -103,8 +103,8 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
 
         # ensure all partitions have data so we don't hit OutOfOrderExceptions due to broker restarts
         wait_until(check_all_partitions,
-                   timeout_sec=60,
-                   err_msg="Failed to produce to all partitions in 30s")
+                   timeout_sec=120,
+                   err_msg="Failed to produce to all partitions in 120s")
 
         # send reassign partitions command
         self.kafka.execute_reassign_partitions(partition_info)

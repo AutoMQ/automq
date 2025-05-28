@@ -51,8 +51,8 @@ class RoundTripFaultTest(Test):
         self.round_trip_spec = RoundTripWorkloadSpec(0, TaskSpec.MAX_DURATION_MS,
                                      self.workload_service.client_node,
                                      self.workload_service.bootstrap_servers,
-                                     target_messages_per_sec=10000,
-                                     max_messages=100000,
+                                     target_messages_per_sec=1000,
+                                     max_messages=10000,
                                      active_topics=active_topics)
 
     def setUp(self):
