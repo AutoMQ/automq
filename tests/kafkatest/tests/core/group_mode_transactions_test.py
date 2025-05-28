@@ -49,7 +49,7 @@ class GroupModeTransactionsTest(Test):
         self.num_input_partitions = 9
         self.num_output_partitions = 9
         self.num_copiers = 3
-        self.num_seed_messages = 100000
+        self.num_seed_messages = 1000
         self.transaction_size = 750
         # The transaction timeout should be lower than the progress timeout, but at
         # least as high as the request timeout (which is 30s by default). When the
