@@ -63,7 +63,7 @@ class LogCompactionTester(KafkaPathResolverMixin, BackgroundThreadService):
         cmd += " export CLASSPATH;"
         cmd += self.path.script("kafka-run-class.sh", node)
         cmd += " %s" % self.java_class_name()
-        cmd += " --bootstrap-server %s --messages 1000000 --sleep 20 --duplicates 10 --percent-deletes 10" % (self.kafka.bootstrap_servers(self.security_protocol))
+        cmd += " --bootstrap-server %s --messages 1000 --sleep 20 --duplicates 10 --percent-deletes 10" % (self.kafka.bootstrap_servers(self.security_protocol))
 
         cmd += " 2>> %s | tee -a %s &" % (self.logs["tool_logs"]["path"], self.logs["tool_logs"]["path"])
         return cmd

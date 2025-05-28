@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix, parametrize, ignore
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 
@@ -36,7 +36,7 @@ class PerformanceServiceTest(Test):
     def setUp(self):
         if self.zk:
             self.zk.start()
-
+    @ignore #test performance send and receive in autoMQ is meaningless
     @cluster(num_nodes=5)
     # We are keeping 0.8.2 here so that we don't inadvertently break support for it. Since this is just a sanity check,
     # the overhead should be manageable.
