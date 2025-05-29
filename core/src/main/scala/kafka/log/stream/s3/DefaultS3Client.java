@@ -217,16 +217,24 @@ public class DefaultS3Client implements Client {
     protected ObjectStorage newMainObjectStorage() {
         return ObjectStorageFactory.instance().builder()
             .buckets(config.dataBuckets())
+            .tagging(config.objectTagging())
             .extension(EXTENSION_TYPE_KEY, EXTENSION_TYPE_MAIN)
             .readWriteIsolate(true)
+            .inboundLimiter(networkInboundLimiter)
+            .outboundLimiter(networkOutboundLimiter)
+            .threadPrefix("main")
             .build();
     }
 
     protected ObjectStorage newBackgroundObjectStorage() {
         return ObjectStorageFactory.instance().builder()
             .buckets(config.dataBuckets())
+            .tagging(config.objectTagging())
             .extension(EXTENSION_TYPE_KEY, EXTENSION_TYPE_BACKGROUND)
             .readWriteIsolate(false)
+            .inboundLimiter(networkInboundLimiter)
+            .outboundLimiter(networkOutboundLimiter)
+            .threadPrefix("background")
             .build();
     }
 
