@@ -61,7 +61,7 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
                                   },
                                   controller_num_nodes_override=self.num_zk)
         self.timeout_sec = 60
-        self.producer_throughput = 1000
+        self.producer_throughput = 10000
         self.num_producers = 1
         self.num_consumers = 1
 
@@ -93,6 +93,10 @@ class ReassignPartitionsTest(ProduceConsumeValidateTest):
         for i in range(0, self.num_partitions):
             partition_info["partitions"][i]["partition"] = shuffled_list[i]
         self.logger.debug("Jumbled partitions: " + str(partition_info))
+
+        acked_partitions = self.producer.acked_by_partition
+        for partition in acked_partitions:
+            self.logger.debug("Partition acked " + str(partition))
 
         def check_all_partitions():
             acked_partitions = self.producer.acked_by_partition
