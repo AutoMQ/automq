@@ -25,7 +25,7 @@ class TestJVMMemoryOccupancy(Test):
         self.consume_group = 'test_group'
         self.records_consumed = []
 
-    def create_kafka(self, num_nodes=1, partition=None, log_size=None, block_size=None, wal='file', **kwargs):
+    def create_kafka(self, num_nodes=1, partition=None, log_size=None, block_size=None, wal='s3', **kwargs):
         """
         Create and configure Kafka service.
 
