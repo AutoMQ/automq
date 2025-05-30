@@ -2275,6 +2275,7 @@ project(':tools') {
       exclude group: 'org.apache.kafka', module: 'kafka-clients'
     }
     implementation libs.bucket4j
+    implementation libs.oshi
     // AutoMQ inject end
 
     implementation project(':storage')

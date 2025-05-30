@@ -178,6 +178,7 @@ versions += [
   confluentSchema: "7.8.0",
   iceberg: "1.6.1",
   wire: "4.9.1",
+  oshi: "6.8.1",
   // AutoMQ inject end
 
   junitPlatform: "1.10.2"
@@ -305,4 +306,5 @@ libs += [
   hdrHistogram: "org.hdrhistogram:HdrHistogram:$versions.hdrHistogram",
   kafkaAvroSerializer: "io.confluent:kafka-avro-serializer:$versions.confluentSchema",
   spotbugsAnnotations: "com.github.spotbugs:spotbugs-annotations:$versions.spotbugs",
+  oshi: "com.github.oshi:oshi-core:$versions.oshi",
 ]
