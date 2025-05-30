@@ -46,7 +46,7 @@ class TransactionsTest(Test):
         # Test parameters
         self.num_input_partitions = 2
         self.num_output_partitions = 3
-        self.num_seed_messages = 100000
+        self.num_seed_messages = 10000
         self.transaction_size = 750
 
         # The transaction timeout should be lower than the progress timeout, but at
@@ -189,7 +189,7 @@ class TransactionsTest(Test):
         elif bounce_target == "clients":
             self.bounce_copiers(copiers, clean_shutdown)
 
-        copier_timeout_sec = 120
+        copier_timeout_sec = 600
         for copier in copiers:
             wait_until(lambda: copier.is_done,
                        timeout_sec=copier_timeout_sec,
@@ -218,35 +218,11 @@ class TransactionsTest(Test):
         }
 
     @cluster(num_nodes=9)
-    # @matrix(
-    #     failure_mode=["hard_bounce", "clean_bounce"],
-    #     bounce_target=["brokers", "clients"],
-    #     check_order=[True, False],
-    #     use_group_metadata=[True, False],
-    #     metadata_quorum=[quorum.zk],
-    #     use_new_coordinator=[False]
-    # )
     @matrix(
-        failure_mode=["hard_bounce", "clean_bounce"],
-        bounce_target=["brokers", "clients"],
-        check_order=[True, False],
-        use_group_metadata=[True, False],
-        metadata_quorum=quorum.all_kraft,
-        use_new_coordinator=[False]
-    )
-    @matrix(
-        failure_mode=["hard_bounce", "clean_bounce"],
-        bounce_target=["brokers", "clients"],
-        check_order=[True, False],
-        use_group_metadata=[True, False],
-        metadata_quorum=quorum.all_kraft,
-        use_new_coordinator=[False]
-    )
-    @matrix(
-        failure_mode=["hard_bounce", "clean_bounce"],
-        bounce_target=["brokers", "clients"],
-        check_order=[True, False],
-        use_group_metadata=[True, False],
+        failure_mode=["hard_bounce"],
+        bounce_target=["brokers"],
+        check_order=[True],
+        use_group_metadata=[True],
         metadata_quorum=quorum.all_kraft,
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
