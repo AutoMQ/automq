@@ -37,6 +37,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
@@ -108,7 +109,9 @@ public class PerfConfig {
         recordSize = ns.getInt("recordSize");
         randomRatio = ns.getDouble("randomRatio");
         randomPoolSize = ns.getInt("randomPoolSize");
-        sendRate = ns.getInt("sendRate");
+        sendRate = Optional.ofNullable(ns.getDouble("sendThroughput"))
+            .map(throughput -> (int) (throughput * 1024 * 1024 / recordSize))
+            .orElse(ns.getInt("sendRate"));
         sendRateDuringCatchup = ns.getInt("sendRateDuringCatchup") == null ? sendRate : ns.getInt("sendRateDuringCatchup");
         maxConsumeRecordRate = ns.getInt("maxConsumeRecordRate");
         backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
@@ -133,7 +136,7 @@ public class PerfConfig {
             .newArgumentParser("performance-test")
             .defaultHelp(true)
             .description("This tool is used to run performance tests.");
-        
+
         addConnectionArguments(parser);
         addTopicArguments(parser);
         addConsumerArguments(parser);
@@ -141,7 +144,7 @@ public class PerfConfig {
         addTestConfigArguments(parser);
         return parser;
     }
-    
+
     private static void addConnectionArguments(ArgumentParser parser) {
         parser.addArgument("-B", "--bootstrap-server")
             .setDefault("localhost:9092")
@@ -190,7 +193,7 @@ public class PerfConfig {
             .dest("reset")
             .help("delete all topics before running the test.");
     }
-    
+
     private static void addTopicArguments(ArgumentParser parser) {
         parser.addArgument("-X", "--topic-prefix")
             .type(String.class)
@@ -210,7 +213,7 @@ public class PerfConfig {
             .metavar("PARTITIONS_PER_TOPIC")
             .help("The number of partitions per topic.");
     }
-    
+
     private static void addConsumerArguments(ArgumentParser parser) {
         parser.addArgument("-g", "--groups-per-topic")
             .setDefault(1)
@@ -236,7 +239,7 @@ public class PerfConfig {
             .dest("maxConsumeRecordRate")
             .metavar("MAX_CONSUME_RECORD_RATE")
             .help("The max rate of consuming records per second.");
-            
+
         parser.addArgument("--consumers-during-catchup")
             .setDefault(100)
             .type(between(0, 100))
@@ -244,7 +247,7 @@ public class PerfConfig {
             .metavar("CONSUMERS_DURING_CATCHUP_PERCENTAGE")
             .help("The percentage of consumers to activate during catch-up read (0-100). Default is 100 (all consumers).");
     }
-    
+
     private static void addProducerArguments(ArgumentParser parser) {
         parser.addArgument("-p", "--producers-per-topic")
             .setDefault(1)
@@ -276,13 +279,18 @@ public class PerfConfig {
             .dest("sendRate")
             .metavar("SEND_RATE")
             .help("The send rate in messages per second.");
+        parser.addArgument("-f", "--send-throughput")
+            .type(Double.class)
+            .dest("sendThroughput")
+            .metavar("SEND_THROUGHPUT")
+            .help("The send throughput in MB/s. If not set, the send rate will be used. This is an alternative to --send-rate.");
         parser.addArgument("-a", "--send-rate-during-catchup")
             .type(positiveInteger())
             .dest("sendRateDuringCatchup")
             .metavar("SEND_RATE_DURING_CATCHUP")
             .help("The send rate in messages per second during catchup. If not set, the send rate will be used.");
     }
-    
+
     private static void addTestConfigArguments(ArgumentParser parser) {
         parser.addArgument("-b", "--backlog-duration")
             .setDefault(0)
