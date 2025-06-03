@@ -155,9 +155,11 @@ public class PerfCommand implements AutoCloseable {
 
             if (config.warmupDurationMinutes > 0) {
                 LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
-                stats.reset();
+                long warmupStart = System.nanoTime();
+                long warmupMiddle = warmupStart + TimeUnit.MINUTES.toNanos(config.warmupDurationMinutes) / 2;
+                producerService.adjustRate(warmupStart, ProducerService.MIN_RATE);
+                producerService.adjustRate(warmupMiddle, config.sendRate);
                 collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
-                LOGGER.info("Warmup finished, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
             }
         } else {
             // If not waiting for topic ready and not using catchup topics, start producing immediately.
