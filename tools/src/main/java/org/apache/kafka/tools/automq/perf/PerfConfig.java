@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
@@ -95,7 +96,9 @@ public class PerfConfig {
         recordSize = ns.getInt("recordSize");
         randomRatio = ns.getDouble("randomRatio");
         randomPoolSize = ns.getInt("randomPoolSize");
-        sendRate = ns.getInt("sendRate");
+        sendRate = Optional.ofNullable(ns.getDouble("sendThroughput"))
+            .map(throughput -> (int) (throughput * 1024 * 1024 / recordSize))
+            .orElse(ns.getInt("sendRate"));
         sendRateDuringCatchup = ns.getInt("sendRateDuringCatchup") == null ? sendRate : ns.getInt("sendRateDuringCatchup");
         maxConsumeRecordRate = ns.getInt("maxConsumeRecordRate");
         backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
@@ -209,6 +212,11 @@ public class PerfConfig {
             .dest("sendRate")
             .metavar("SEND_RATE")
             .help("The send rate in messages per second.");
+        parser.addArgument("-f", "--send-throughput")
+            .type(Double.class)
+            .dest("sendThroughput")
+            .metavar("SEND_THROUGHPUT")
+            .help("The send throughput in MB/s. If not set, the send rate will be used. This is an alternative to --send-rate.");
         parser.addArgument("-a", "--send-rate-during-catchup")
             .type(positiveInteger())
             .dest("sendRateDuringCatchup")
