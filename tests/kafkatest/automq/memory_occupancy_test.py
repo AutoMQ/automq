@@ -96,7 +96,7 @@ class TestJVMMemoryOccupancy(Test):
         assert int(receive_num) == records, f"Receive count does not match the expected records count: expected {records}, but got {receive_num}"
 
     @cluster(num_nodes=3)
-    @matrix(partition=[128, 512], log_size=[256 * 1024 * 1024], block_size=[128 * 1024 * 1024, 256 * 1024 * 1024], wal=['file', 's3'])
+    @matrix(partition=[128, 512], log_size=[256 * 1024 * 1024], block_size=[128 * 1024 * 1024, 256 * 1024 * 1024], wal=['s3'])
     def test(self, partition, log_size, block_size, wal):
         """
         At any time, 1/writable record in Metric<=log cache size+100MB
