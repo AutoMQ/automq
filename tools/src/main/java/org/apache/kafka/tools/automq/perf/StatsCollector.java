@@ -42,17 +42,23 @@ public class StatsCollector {
     private static final double BYTES_PER_MB = 1 << 20;
     private static final double BYTES_PER_GB = 1 << 30;
 
-    // max to 9999.9 (167 min)
+    // max to 9999.9 s (167 min)
     private static final DecimalFormat DURATION_FORMAT = new PaddingDecimalFormat("0.0", 6);
-    // max to 999999.99 (1M msg/s)
+    // max to 99.99%
+    private static final DecimalFormat PERCENT_FORMAT = new PaddingDecimalFormat("0.00", 5);
+    // max to 99999 MiB (100 GiB)
+    private static final DecimalFormat MEMORY_FORMAT =  new PaddingDecimalFormat("0", 5);
+    // max to 999999.99 msg/s (1M msg/s)
     private static final DecimalFormat RATE_FORMAT = new PaddingDecimalFormat("0.00", 9);
-    // max to 999.99 (1 GB/s)
+    // max to 999.99 MiB/s (1 GiB/s)
     private static final DecimalFormat THROUGHPUT_FORMAT = new PaddingDecimalFormat("0.00", 6);
-    // max to 99999.999 (100 s)
+    // max to 99999.999 ms (100 s)
     private static final DecimalFormat LATENCY_FORMAT = new PaddingDecimalFormat("0.000", 9);
+    // max to 999.99
     private static final DecimalFormat COUNT_FORMAT = new PaddingDecimalFormat("0.00", 6);
 
     private static final String PERIOD_LOG_FORMAT = "{}s" +
+        " | CPU {}% | Mem {} MiB heap / {} MiB direct" +
         " | Prod rate {} msg/s / {} MiB/s | Prod err {} err/s" +
         " | Cons rate {} msg/s / {} MiB/s | Backlog: {} K msg" +
         " | Prod Latency (ms) avg: {} - 50%: {} - 99%: {} - 99.9%: {} - Max: {}" +
@@ -68,6 +74,7 @@ public class StatsCollector {
     public static Result printAndCollectStats(Stats stats, StopCondition condition, long intervalNanos,
         PerfConfig config) {
         final long start = System.nanoTime();
+        CpuMonitor cpu = new CpuMonitor();
         Result result = new Result(config);
 
         long last = start;
@@ -82,7 +89,7 @@ public class StatsCollector {
             double elapsed = (periodStats.nowNanos - last) / NANOS_PER_SEC;
             double elapsedTotal = (periodStats.nowNanos - start) / NANOS_PER_SEC;
 
-            PeriodResult periodResult = new PeriodResult(periodStats, elapsed, config.groupsPerTopic);
+            PeriodResult periodResult = new PeriodResult(cpu, periodStats, elapsed, config.groupsPerTopic);
             result.update(periodResult, elapsedTotal);
             periodResult.logIt(elapsedTotal);
 
@@ -239,6 +246,9 @@ public class StatsCollector {
     }
 
     private static class PeriodResult {
+        private final double cpuUsage;
+        private final long heapMemoryUsed;
+        private final long directMemoryUsed;
         private final double produceRate;
         private final double produceThroughputBps;
         private final double errorRate;
@@ -264,7 +274,10 @@ public class StatsCollector {
         private final double endToEndLatency9999thMicros;
         private final double endToEndLatencyMaxMicros;
 
-        private PeriodResult(PeriodStats stats, double elapsed, int readWriteRatio) {
+        private PeriodResult(CpuMonitor cpu, PeriodStats stats, double elapsed, int readWriteRatio) {
+            this.cpuUsage = cpu.usage();
+            this.heapMemoryUsed = MemoryMonitor.heapUsed();
+            this.directMemoryUsed = MemoryMonitor.directUsed();
             this.produceRate = stats.messagesSent / elapsed;
             this.produceThroughputBps = stats.bytesSent / elapsed;
             this.errorRate = stats.messagesSendFailed / elapsed;
@@ -294,6 +307,9 @@ public class StatsCollector {
         private void logIt(double elapsedTotal) {
             LOGGER.info(PERIOD_LOG_FORMAT,
                 DURATION_FORMAT.format(elapsedTotal),
+                PERCENT_FORMAT.format(cpuUsage * 100),
+                MEMORY_FORMAT.format(heapMemoryUsed / BYTES_PER_MB),
+                MEMORY_FORMAT.format(directMemoryUsed / BYTES_PER_MB),
                 RATE_FORMAT.format(produceRate),
                 THROUGHPUT_FORMAT.format(produceThroughputBps / BYTES_PER_MB),
                 RATE_FORMAT.format(errorRate),
