@@ -43,32 +43,39 @@ public class StatsCollector {
     private static final double BYTES_PER_MB = 1 << 20;
     private static final double BYTES_PER_GB = 1 << 30;
 
-    // max to 9999.9 (167 min)
+    // max to 9999.9 s (167 min)
     private static final DecimalFormat DURATION_FORMAT = new PaddingDecimalFormat("0.0", 6);
-    // max to 999999.99 (1M msg/s)
+    // max to 99.99%
+    private static final DecimalFormat PERCENT_FORMAT = new PaddingDecimalFormat("0.00", 5);
+    // max to 99999 MiB (100 GiB)
+    private static final DecimalFormat MEMORY_FORMAT =  new PaddingDecimalFormat("0", 5);
+    // max to 999999.99 msg/s (1M msg/s)
     private static final DecimalFormat RATE_FORMAT = new PaddingDecimalFormat("0.00", 9);
-    // max to 999.99 (1 GB/s)
+    // max to 999.99 MiB/s (1 GiB/s)
     private static final DecimalFormat THROUGHPUT_FORMAT = new PaddingDecimalFormat("0.00", 6);
-    // max to 99999.999 (100 s)
+    // max to 99999.999 ms (100 s)
     private static final DecimalFormat LATENCY_FORMAT = new PaddingDecimalFormat("0.000", 9);
+    // max to 999.99
     private static final DecimalFormat COUNT_FORMAT = new PaddingDecimalFormat("0.00", 6);
 
     private static final String PERIOD_LOG_FORMAT = "{}s" +
+        " | CPU {}% | Mem {} MiB heap / {} MiB direct" +
         " | Prod rate {} msg/s / {} MiB/s | Prod err {} err/s" +
         " | Cons rate {} msg/s / {} MiB/s | Backlog: {} K msg" +
-        " | Prod Latency (ms) avg: {} - 50%: {} - 99%: {} - 99.9%: {} - Max: {}" +
-        " | E2E Latency (ms) avg: {} - 50%: {} - 99%: {} - 99.9%: {} - Max: {}";
+        " | Prod Latency (ms) avg: {} - min: {} - 50%: {} - 99%: {} - 99.9%: {} - max: {}" +
+        " | E2E Latency (ms) avg: {} - min: {} - 50%: {} - 99%: {} - 99.9%: {} - max: {}";
     private static final String SUMMARY_LOG_FORMAT = "Summary" +
         " | Prod rate {} msg/s / {} MiB/s | Prod total {} M msg / {} GiB / {} K err" +
         " | Cons rate {} msg/s / {} MiB/s | Cons total {} M msg / {} GiB" +
-        " | Prod Latency (ms) avg: {} - 50%: {} - 75%: {} - 90%: {} - 95%: {} - 99%: {} - 99.9%: {} - 99.99%: {} - Max: {}" +
-        " | E2E Latency (ms) avg: {} - 50%: {} - 75%: {} - 90%: {} - 95%: {} - 99%: {} - 99.9%: {} - 99.99%: {} - Max: {}";
+        " | Prod Latency (ms) avg: {} - min: {} - 50%: {} - 75%: {} - 90%: {} - 95%: {} - 99%: {} - 99.9%: {} - 99.99%: {} - max: {}" +
+        " | E2E Latency (ms) avg: {} - min: {} - 50%: {} - 75%: {} - 90%: {} - 95%: {} - 99%: {} - 99.9%: {} - 99.99%: {} - max: {}";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(StatsCollector.class);
 
     public static Result printAndCollectStats(Stats stats, StopCondition condition, long intervalNanos,
         PerfConfig config) {
         final long start = System.nanoTime();
+        CpuMonitor cpu = new CpuMonitor();
         Result result = new Result(config);
 
         long last = start;
@@ -83,7 +90,7 @@ public class StatsCollector {
             double elapsed = (periodStats.nowNanos - last) / NANOS_PER_SEC;
             double elapsedTotal = (periodStats.nowNanos - start) / NANOS_PER_SEC;
 
-            PeriodResult periodResult = new PeriodResult(periodStats, elapsed, config.groupsPerTopic);
+            PeriodResult periodResult = new PeriodResult(cpu, periodStats, elapsed, config.groupsPerTopic);
             result.update(periodResult, elapsedTotal);
             periodResult.logIt(elapsedTotal);
 
@@ -158,6 +165,7 @@ public class StatsCollector {
         public final List<Double> consumeThroughputBps = new ArrayList<>();
         public final List<Long> backlog = new ArrayList<>();
         public final List<Double> produceLatencyMeanMicros = new ArrayList<>();
+        public final List<Double> produceLatencyMinMicros = new ArrayList<>();
         public final List<Double> produceLatency50thMicros = new ArrayList<>();
         public final List<Double> produceLatency75thMicros = new ArrayList<>();
         public final List<Double> produceLatency90thMicros = new ArrayList<>();
@@ -168,6 +176,7 @@ public class StatsCollector {
         public final List<Double> produceLatencyMaxMicros = new ArrayList<>();
         public Map<Double, Long> produceLatencyQuantilesMicros;
         public final List<Double> endToEndLatencyMeanMicros = new ArrayList<>();
+        public final List<Double> endToEndLatencyMinMicros = new ArrayList<>();
         public final List<Double> endToEndLatency50thMicros = new ArrayList<>();
         public final List<Double> endToEndLatency75thMicros = new ArrayList<>();
         public final List<Double> endToEndLatency90thMicros = new ArrayList<>();
@@ -192,6 +201,7 @@ public class StatsCollector {
             this.consumeThroughputBps.add(periodResult.consumeThroughputBps);
             this.backlog.add(periodResult.backlog);
             this.produceLatencyMeanMicros.add(periodResult.produceLatencyMeanMicros);
+            this.produceLatencyMinMicros.add(periodResult.produceLatencyMinMicros);
             this.produceLatency50thMicros.add(periodResult.produceLatency50thMicros);
             this.produceLatency75thMicros.add(periodResult.produceLatency75thMicros);
             this.produceLatency90thMicros.add(periodResult.produceLatency90thMicros);
@@ -201,6 +211,7 @@ public class StatsCollector {
             this.produceLatency9999thMicros.add(periodResult.produceLatency9999thMicros);
             this.produceLatencyMaxMicros.add(periodResult.produceLatencyMaxMicros);
             this.endToEndLatencyMeanMicros.add(periodResult.endToEndLatencyMeanMicros);
+            this.endToEndLatencyMinMicros.add(periodResult.endToEndLatencyMinMicros);
             this.endToEndLatency50thMicros.add(periodResult.endToEndLatency50thMicros);
             this.endToEndLatency75thMicros.add(periodResult.endToEndLatency75thMicros);
             this.endToEndLatency90thMicros.add(periodResult.endToEndLatency90thMicros);
@@ -245,6 +256,9 @@ public class StatsCollector {
     }
 
     private static class PeriodResult {
+        private final double cpuUsage;
+        private final long heapMemoryUsed;
+        private final long directMemoryUsed;
         private final double produceRate;
         private final double produceThroughputBps;
         private final double errorRate;
@@ -252,6 +266,7 @@ public class StatsCollector {
         private final double consumeThroughputBps;
         private final long backlog;
         private final double produceLatencyMeanMicros;
+        private final double produceLatencyMinMicros;
         private final double produceLatency50thMicros;
         private final double produceLatency75thMicros;
         private final double produceLatency90thMicros;
@@ -261,6 +276,7 @@ public class StatsCollector {
         private final double produceLatency9999thMicros;
         private final double produceLatencyMaxMicros;
         private final double endToEndLatencyMeanMicros;
+        private final double endToEndLatencyMinMicros;
         private final double endToEndLatency50thMicros;
         private final double endToEndLatency75thMicros;
         private final double endToEndLatency90thMicros;
@@ -270,7 +286,10 @@ public class StatsCollector {
         private final double endToEndLatency9999thMicros;
         private final double endToEndLatencyMaxMicros;
 
-        private PeriodResult(PeriodStats stats, double elapsed, int readWriteRatio) {
+        private PeriodResult(CpuMonitor cpu, PeriodStats stats, double elapsed, int readWriteRatio) {
+            this.cpuUsage = cpu.usage();
+            this.heapMemoryUsed = MemoryMonitor.heapUsed();
+            this.directMemoryUsed = MemoryMonitor.directUsed();
             this.produceRate = stats.messagesSent / elapsed;
             this.produceThroughputBps = stats.bytesSent / elapsed;
             this.errorRate = stats.messagesSendFailed / elapsed;
@@ -278,6 +297,7 @@ public class StatsCollector {
             this.consumeThroughputBps = stats.bytesReceived / elapsed;
             this.backlog = Math.max(0, readWriteRatio * stats.totalMessagesSent - stats.totalMessagesReceived);
             this.produceLatencyMeanMicros = stats.sendLatencyMicros.getMean();
+            this.produceLatencyMinMicros = stats.sendLatencyMicros.getMinValue();
             this.produceLatency50thMicros = stats.sendLatencyMicros.getValueAtPercentile(50);
             this.produceLatency75thMicros = stats.sendLatencyMicros.getValueAtPercentile(75);
             this.produceLatency90thMicros = stats.sendLatencyMicros.getValueAtPercentile(90);
@@ -287,6 +307,7 @@ public class StatsCollector {
             this.produceLatency9999thMicros = stats.sendLatencyMicros.getValueAtPercentile(99.99);
             this.produceLatencyMaxMicros = stats.sendLatencyMicros.getMaxValue();
             this.endToEndLatencyMeanMicros = stats.endToEndLatencyMicros.getMean();
+            this.endToEndLatencyMinMicros = stats.endToEndLatencyMicros.getMinValue();
             this.endToEndLatency50thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(50);
             this.endToEndLatency75thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(75);
             this.endToEndLatency90thMicros = stats.endToEndLatencyMicros.getValueAtPercentile(90);
@@ -300,6 +321,9 @@ public class StatsCollector {
         private void logIt(double elapsedTotal) {
             LOGGER.info(PERIOD_LOG_FORMAT,
                 DURATION_FORMAT.format(elapsedTotal),
+                PERCENT_FORMAT.format(cpuUsage * 100),
+                MEMORY_FORMAT.format(heapMemoryUsed / BYTES_PER_MB),
+                MEMORY_FORMAT.format(directMemoryUsed / BYTES_PER_MB),
                 RATE_FORMAT.format(produceRate),
                 THROUGHPUT_FORMAT.format(produceThroughputBps / BYTES_PER_MB),
                 RATE_FORMAT.format(errorRate),
@@ -307,11 +331,13 @@ public class StatsCollector {
                 THROUGHPUT_FORMAT.format(consumeThroughputBps / BYTES_PER_MB),
                 COUNT_FORMAT.format(backlog / 1_000.0),
                 LATENCY_FORMAT.format(produceLatencyMeanMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatencyMinMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(produceLatency50thMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(produceLatency99thMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(produceLatency999thMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(produceLatencyMaxMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(endToEndLatencyMeanMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatencyMinMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(endToEndLatency50thMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(endToEndLatency99thMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(endToEndLatency999thMicros / MICROS_PER_MILLI),
@@ -331,6 +357,7 @@ public class StatsCollector {
         private final double consumeCountTotal;
         private final double consumeSizeTotalBytes;
         private final double produceLatencyMeanTotalMicros;
+        private final double produceLatencyMinTotalMicros;
         private final double produceLatency50thTotalMicros;
         private final double produceLatency75thTotalMicros;
         private final double produceLatency90thTotalMicros;
@@ -341,6 +368,7 @@ public class StatsCollector {
         private final double produceLatencyMaxTotalMicros;
         public final Map<Double, Long> produceLatencyQuantilesMicros = new TreeMap<>();
         private final double endToEndLatencyMeanTotalMicros;
+        private final double endToEndLatencyMinTotalMicros;
         private final double endToEndLatency50thTotalMicros;
         private final double endToEndLatency75thTotalMicros;
         private final double endToEndLatency90thTotalMicros;
@@ -362,6 +390,7 @@ public class StatsCollector {
             consumeCountTotal = stats.totalMessagesReceived;
             consumeSizeTotalBytes = stats.totalBytesReceived;
             produceLatencyMeanTotalMicros = stats.totalSendLatencyMicros.getMean();
+            produceLatencyMinTotalMicros = stats.totalSendLatencyMicros.getMinValue();
             produceLatency50thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(50);
             produceLatency75thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(75);
             produceLatency90thTotalMicros = stats.totalSendLatencyMicros.getValueAtPercentile(90);
@@ -374,6 +403,7 @@ public class StatsCollector {
                 value -> produceLatencyQuantilesMicros.put(value.getPercentile(), value.getValueIteratedTo())
             );
             endToEndLatencyMeanTotalMicros = stats.totalEndToEndLatencyMicros.getMean();
+            endToEndLatencyMinTotalMicros = stats.totalEndToEndLatencyMicros.getMinValue();
             endToEndLatency50thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(50);
             endToEndLatency75thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(75);
             endToEndLatency90thTotalMicros = stats.totalEndToEndLatencyMicros.getValueAtPercentile(90);
@@ -399,6 +429,7 @@ public class StatsCollector {
                 COUNT_FORMAT.format(consumeCountTotal / 1_000_000.0),
                 COUNT_FORMAT.format(consumeSizeTotalBytes / BYTES_PER_GB),
                 LATENCY_FORMAT.format(produceLatencyMeanTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(produceLatencyMinTotalMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(produceLatency50thTotalMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(produceLatency75thTotalMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(produceLatency90thTotalMicros / MICROS_PER_MILLI),
@@ -408,6 +439,7 @@ public class StatsCollector {
                 LATENCY_FORMAT.format(produceLatency9999thTotalMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(produceLatencyMaxTotalMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(endToEndLatencyMeanTotalMicros / MICROS_PER_MILLI),
+                LATENCY_FORMAT.format(endToEndLatencyMinTotalMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(endToEndLatency50thTotalMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(endToEndLatency75thTotalMicros / MICROS_PER_MILLI),
                 LATENCY_FORMAT.format(endToEndLatency90thTotalMicros / MICROS_PER_MILLI),
