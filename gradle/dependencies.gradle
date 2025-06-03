@@ -179,6 +179,7 @@ versions += [
   hdrHistogram:"2.1.12",
   nettyTcnativeBoringSsl: "2.0.65.Final",
   confluentSchema: "7.4.0",
+  oshi: "6.8.1",
   // AutoMQ inject end
 
   // When updating the zstd version, please do as well in docker/native/native-image-configs/resource-config.json
@@ -312,4 +313,5 @@ libs += [
   hdrHistogram: "org.hdrhistogram:HdrHistogram:$versions.hdrHistogram",
   kafkaAvroSerializer: "io.confluent:kafka-avro-serializer:$versions.confluentSchema",
   spotbugsAnnotations: "com.github.spotbugs:spotbugs-annotations:$versions.spotbugs",
+  oshi: "com.github.oshi:oshi-core:$versions.oshi",
 ]
