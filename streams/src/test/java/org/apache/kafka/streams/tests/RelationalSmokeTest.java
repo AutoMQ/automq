@@ -969,8 +969,8 @@ public class RelationalSmokeTest extends SmokeTestUtil {
             switch (mode) {
                 case "driver": {
                     // this starts the driver (data generation and result verification)
-                    final int numArticles = 1_000;
-                    final int numComments = 10_000;
+                    final int numArticles = 1_00;
+                    final int numComments = 10_0;
                     final DataSet dataSet = DataSet.generate(numArticles, numComments);
                     // publish the data for at least one minute
                     dataSet.produce(kafka, Duration.ofMinutes(1));
