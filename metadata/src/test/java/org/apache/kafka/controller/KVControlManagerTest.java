@@ -31,6 +31,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.Timeout;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static org.apache.kafka.controller.FeatureControlManagerTest.features;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -54,7 +56,12 @@ public class KVControlManagerTest {
     public void setUp() {
         LogContext logContext = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
-        this.manager = new KVControlManager(registry, logContext);
+        FeatureControlManager featureControlManager = new FeatureControlManager.Builder().
+            setQuorumFeatures(features("foo", 1, 2)).
+            setSnapshotRegistry(registry).
+            setMetadataVersion(MetadataVersion.IBP_3_3_IV0).
+            build();
+        this.manager = new KVControlManager(registry, logContext, featureControlManager);
     }
 
     @Test
@@ -111,6 +118,39 @@ public class KVControlManagerTest {
             .setKey("key1"));
         assertEquals(0, result3.records().size());
         assertEquals(Errors.KEY_NOT_EXIST.code(), result3.response().errorCode());
+    }
+
+    @Test
+    public void testNamespacedReadWrite() {
+        ControllerResult<PutKVResponse> result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value1".getBytes())
+            .setNamespace("__automq_test")
+            .setEpoch(0));
+        assertEquals(1, result.records().size());
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals("value1", new String(result.response().value()));
+        replay(manager, result.records());
+
+        result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value1-1".getBytes())
+            .setNamespace("__automq_test")
+            .setEpoch(0));
+        assertEquals(0, result.records().size());
+        assertEquals(Errors.KEY_EXIST.code(), result.response().errorCode());
+        assertEquals("value1", new String(result.response().value()));
+
+        result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value1-2".getBytes())
+            .setNamespace("__automq_test")
+            .setEpoch(0)
+            .setOverwrite(true));
+        assertEquals(1, result.records().size());
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals("value1-2", new String(result.response().value()));
+        replay(manager, result.records());
     }
 
     private void replay(KVControlManager manager, List<ApiMessageAndVersion> records) {

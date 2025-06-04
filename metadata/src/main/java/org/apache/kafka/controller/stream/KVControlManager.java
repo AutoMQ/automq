@@ -132,10 +132,9 @@ public class KVControlManager {
     public void replay(KVRecord record) {
         List<KeyValue> keyValues = record.keyValues();
         for (KeyValue keyValue : keyValues) {
-            String key = buildCompositeKey(keyValue.namespace(), keyValue.key());
-            kv.put(key, ByteBuffer.wrap(keyValue.value()));
+            kv.put(keyValue.key(), ByteBuffer.wrap(keyValue.value()));
             if (keyValue.namespace() != null && !keyValue.namespace().isEmpty()) {
-                keyMetadataMap.put(key, new KeyMetadata(keyValue.namespace(), keyValue.epoch()));
+                keyMetadataMap.put(keyValue.key(), new KeyMetadata(keyValue.namespace(), keyValue.epoch()));
             }
         }
     }
@@ -143,10 +142,9 @@ public class KVControlManager {
     public void replay(RemoveKVRecord record) {
         List<String> keys = record.keys();
         for (String key : keys) {
-            String compositeKey = buildCompositeKey(record.namepsace(), key);
-            kv.remove(compositeKey);
+            kv.remove(key);
             if (record.namepsace() != null && !record.namepsace().isEmpty()) {
-                keyMetadataMap.remove(compositeKey);
+                keyMetadataMap.remove(key);
             }
         }
     }
