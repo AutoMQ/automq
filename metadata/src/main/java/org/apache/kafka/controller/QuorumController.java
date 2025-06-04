@@ -2165,7 +2165,7 @@ public final class QuorumController implements Controller {
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
                 this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager, kvControlManager);
-        this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager), featureControl);
+        this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
         this.extension = extension.apply(this);
 
         // set the nodeControlManager here to avoid circular dependency
