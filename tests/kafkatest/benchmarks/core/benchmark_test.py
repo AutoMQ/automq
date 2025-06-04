@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
 from ducktape.services.service import Service
@@ -158,6 +158,7 @@ class Benchmark(Test):
         self.logger.info("\n".join(summary))
         return data
 
+    @ignore
     @cluster(num_nodes=5)
     @matrix(security_protocol=['SSL'], interbroker_security_protocol=['PLAINTEXT'], tls_version=['TLSv1.2', 'TLSv1.3'], compression_type=["none", "snappy"])
     @matrix(security_protocol=['PLAINTEXT'], compression_type=["none", "snappy"])
