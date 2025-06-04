@@ -25,6 +25,12 @@
       "type": "[]string",
       "versions": "0+",
       "about": "Keys"
+    },
+    {
+      "name": "Namepsace",
+      "type": "string",
+      "versions": "1+",
+      "about": "Namepsace"
     }
   ]
 }

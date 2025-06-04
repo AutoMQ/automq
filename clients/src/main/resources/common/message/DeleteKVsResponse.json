@@ -17,7 +17,7 @@
   "apiKey": 511,
   "type": "response",
   "name": "DeleteKVsResponse",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -50,7 +50,14 @@
           "versions": "0+",
           "nullableVersions": "0+",
           "about": "Value"
+        },
+        {
+          "name": "Epoch",
+          "type": "int64",
+          "versions": "1+",
+          "about": "Epoch"
         }
+
       ]
     }
   ]

@@ -74,6 +74,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static java.util.Arrays.asList;
+import static org.apache.kafka.controller.FeatureControlManagerTest.features;
 import static org.apache.kafka.server.common.MetadataVersion.IBP_3_3_IV2;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -728,7 +729,12 @@ public class ClusterControlManagerTest {
     public void testReusableNodeIds() {
         MockTime time = new MockTime(0, 0, 0);
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
-        KVControlManager kvControl = new KVControlManager(snapshotRegistry, new LogContext());
+        FeatureControlManager featureControlManager = new FeatureControlManager.Builder().
+            setQuorumFeatures(features("foo", 1, 2)).
+            setSnapshotRegistry(snapshotRegistry).
+            setMetadataVersion(MetadataVersion.IBP_3_3_IV0).
+            build();
+        KVControlManager kvControl = new KVControlManager(snapshotRegistry, new LogContext(), featureControlManager);
         FeatureControlManager featureControl = new FeatureControlManager.Builder().
             setSnapshotRegistry(snapshotRegistry).
             setQuorumFeatures(new QuorumFeatures(0,

@@ -6948,7 +6948,7 @@ public class KafkaAdminClientTest {
             assertNotNull(result.descriptions().get(1).get());
         }
     }
-    
+
     @Test
     public void testDescribeReplicaLogDirsWithNonExistReplica() throws Exception {
         int brokerId = 0;
@@ -6967,7 +6967,7 @@ public class KafkaAdminClientTest {
 
             DescribeReplicaLogDirsResult result = env.adminClient().describeReplicaLogDirs(asList(tpr1, tpr2));
             Map<TopicPartitionReplica, KafkaFuture<DescribeReplicaLogDirsResult.ReplicaLogDirInfo>> values = result.values();
-            
+
             assertEquals(logDir, values.get(tpr1).get().getCurrentReplicaLogDir());
             assertNull(values.get(tpr1).get().getFutureReplicaLogDir());
             assertEquals(offsetLag, values.get(tpr1).get().getCurrentReplicaOffsetLag());
@@ -7666,6 +7666,34 @@ public class KafkaAdminClientTest {
         assertEquals("Telemetry is not enabled. Set config `enable.metrics.push` to `true`.", exception.getMessage());
 
         admin.close();
+    }
+
+    @Test
+    public void testPutKV_NewKey() {
+
+        Properties props = new Properties();
+        props.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+
+        KafkaAdminClient admin = (KafkaAdminClient) AdminClient.create(props);
+
+        PutNamespacedKVOptions options = new PutNamespacedKVOptions();
+        options.overwrite(true);
+        options.ifMatchEpoch(0L);
+        Set<TopicPartition> multiPartitions = new HashSet<>(Arrays.asList(
+            new TopicPartition("test-topic", 0),
+            new TopicPartition("test-topic", 1)));
+
+        PutNamespacedKVResult putNamespacedKVResult = admin.putNamespacedKV(Optional.of(multiPartitions), "namespace1", "key1", "value1", options);
+        Map<TopicPartition, KafkaFuture<Void>> map;
+        try {
+            map = putNamespacedKVResult.all().get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+
+        assertNotNull(map);
     }
 
     private UnregisterBrokerResponse prepareUnregisterBrokerResponse(Errors error, int throttleTimeMs) {

@@ -17,7 +17,7 @@
   "apiKey": 510,
   "type": "response",
   "name": "PutKVsResponse",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -49,6 +49,12 @@
           "type": "bytes",
           "versions": "0+",
           "about": "Value"
+        },
+        {
+          "name": "Epoch",
+          "type": "int64",
+          "versions": "1+",
+          "about": "Epoch"
         }
       ]
     }

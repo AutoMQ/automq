@@ -1739,6 +1739,49 @@ public interface Admin extends AutoCloseable {
      * @return {@link UpdateGroupResult}
      */
     UpdateGroupResult updateGroup(String groupId, UpdateGroupSpec groupSpec, UpdateGroupOptions options);
+
+    GetNamespacedKVResult getNamespacedKV(
+        Optional<Set<TopicPartition>> partitions,
+        String namespace,
+        String key,
+        String value,
+        GetNamespacedKVOptions options
+    );
+
+    /**
+     * Put a key-value pair in the namespaced KV store.
+     * @param partitions
+     * @param namespace
+     * @param key
+     * @param value
+     * @param options
+     * @return
+     */
+    PutNamespacedKVResult putNamespacedKV(
+        Optional<Set<TopicPartition>> partitions,
+        String namespace,
+        String key,
+        String value,
+        PutNamespacedKVOptions options
+    );
+
+    /**
+     * Delete a key-value pair in the namespaced KV store.
+     * @param partitions
+     * @param namespace
+     * @param key
+     * @param options
+     * @return
+     */
+    DeleteNamespacedKVResult deleteNamespacedKV(
+        Optional<Set<TopicPartition>> partitions,
+        String namespace,
+        String key,
+        DeleteNamespacedKVOptions options
+    );
+
+
+
     // AutoMQ inject end
 
     /**

@@ -17,7 +17,7 @@
   "apiKey": 509,
   "type": "response",
   "name": "GetKVsResponse",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -50,6 +50,18 @@
           "versions": "0+",
           "nullableVersions": "0+",
           "about": "Value"
+        },
+        {
+          "name": "Namespace",
+          "type": "string",
+          "versions": "1+",
+          "about": "Namespace"
+        },
+        {
+          "name": "Epoch",
+          "type": "int64",
+          "versions": "1+",
+          "about": "Epoch"
         }
       ]
     }

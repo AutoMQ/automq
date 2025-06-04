@@ -1450,6 +1450,21 @@ public class MockAdminClient extends AdminClient {
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, GetNamespacedKVOptions options) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public PutNamespacedKVResult putNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, PutNamespacedKVOptions options) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public DeleteNamespacedKVResult deleteNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, DeleteNamespacedKVOptions options) {
+        throw new UnsupportedOperationException();
+    }
+
     // AutoMQ inject end
 
 }

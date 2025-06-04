@@ -31,10 +31,12 @@ public enum AutoMQVersion {
     // Support object bucket index
     // Support huge cluster
     // Support node registration
-    V2((short) 3);
+    V2((short) 3),
+    // Support kv record namespace
+    V3((short) 4);
 
     public static final String FEATURE_NAME = "automq.version";
-    public static final AutoMQVersion LATEST = V2;
+    public static final AutoMQVersion LATEST = V3;
 
     private final short level;
     private final Version s3streamVersion;
@@ -125,6 +127,14 @@ public enum AutoMQVersion {
         }
     }
 
+    public short namespacedKVRecordVersion() {
+        if (isAtLeast(V3)) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
     public Version s3streamVersion() {
         return s3streamVersion;
     }
@@ -139,6 +149,7 @@ public enum AutoMQVersion {
             case 2:
                 return Version.V0;
             case 3:
+            case 4:
                 return Version.V1;
             default:
                 throw new IllegalArgumentException("Unknown AutoMQVersion level: " + automqVersion);

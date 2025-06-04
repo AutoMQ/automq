@@ -19,6 +19,7 @@
 
 package kafka.log.streamaspect;
 
+
 import com.automq.stream.DefaultRecordBatch;
 import com.automq.stream.RecordBatchWithContextWrapper;
 import com.automq.stream.api.AppendResult;
@@ -28,7 +29,9 @@ import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.KeyValue;
 import com.automq.stream.api.KeyValue.Key;
+import com.automq.stream.api.KeyValue.KeyAndNamespace;
 import com.automq.stream.api.KeyValue.Value;
+import com.automq.stream.api.KeyValue.ValueAndEpoch;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
@@ -50,6 +53,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
+
+import static com.automq.stream.utils.KVRecordUtils.buildCompositeKey;
+import static org.apache.kafka.common.protocol.Errors.INVALID_KV_RECORD_EPOCH;
 
 public class MemoryClient implements Client {
     private final StreamClient streamClient = new StreamClientImpl();
@@ -180,6 +186,7 @@ public class MemoryClient implements Client {
 
     public static class KVClientImpl implements KVClient {
         private final Map<String, ByteBuffer> store = new ConcurrentHashMap<>();
+        private final Map<String, KeyMetadata> keyMetadataMap = new ConcurrentHashMap<>();
 
         @Override
         public CompletableFuture<Value> putKV(KeyValue keyValue) {
@@ -201,6 +208,78 @@ public class MemoryClient implements Client {
         @Override
         public CompletableFuture<Value> delKV(Key key) {
             return CompletableFuture.completedFuture(Value.of(store.remove(key.get())));
+        }
+
+        @Override
+        public CompletableFuture<ValueAndEpoch> putNamespacedKVIfAbsent(KeyValue keyValue) {
+            String key = buildCompositeKey(keyValue.namespace(), keyValue.key().get());
+            KeyMetadata keyMetadata = keyMetadataMap.get(key);
+            long currentEpoch = keyMetadata != null ? keyMetadata.getEpoch() : 0;
+            if (keyValue.epoch() > 0 && keyValue.epoch() != currentEpoch) {
+                return CompletableFuture.failedFuture(INVALID_KV_RECORD_EPOCH.exception());
+            }
+            long newEpoch = System.currentTimeMillis();
+
+            ByteBuffer value = store.putIfAbsent(key, keyValue.value().get().duplicate());
+            if (keyValue.namespace() != null && !keyValue.namespace().isEmpty()) {
+                keyMetadataMap.putIfAbsent(keyValue.key().get(), new KeyMetadata(keyValue.namespace(), newEpoch));
+            }
+            return CompletableFuture.completedFuture(ValueAndEpoch.of(value, newEpoch));
+        }
+
+        @Override
+        public CompletableFuture<ValueAndEpoch> putNamespacedKV(KeyValue keyValue) {
+            String key = buildCompositeKey(keyValue.namespace(), keyValue.key().get());
+            KeyMetadata keyMetadata = keyMetadataMap.get(key);
+            long currentEpoch = keyMetadata != null ? keyMetadata.getEpoch() : 0;
+            if (keyValue.epoch() > 0 && keyValue.epoch() != currentEpoch) {
+                return CompletableFuture.failedFuture(INVALID_KV_RECORD_EPOCH.exception());
+            }
+            long newEpoch = System.currentTimeMillis();
+
+            ByteBuffer value = store.put(key, keyValue.value().get().duplicate());
+            if (keyValue.namespace() != null && !keyValue.namespace().isEmpty()) {
+                keyMetadataMap.put(keyValue.key().get(), new KeyMetadata(keyValue.namespace(), newEpoch));
+            }
+            return CompletableFuture.completedFuture(ValueAndEpoch.of(value, newEpoch));
+        }
+
+        @Override
+        public CompletableFuture<ValueAndEpoch> getNamespacedKV(KeyAndNamespace keyAndNamespace) {
+            String key = buildCompositeKey(keyAndNamespace.namespace(), keyAndNamespace.key().get());
+            KeyMetadata keyMetadata = null;
+            if (keyAndNamespace.namespace() != null && !keyAndNamespace.namespace().isEmpty()) {
+                keyMetadata = keyMetadataMap.get(key);
+            }
+            return CompletableFuture.completedFuture(ValueAndEpoch.of(store.get(key), keyMetadata != null ? keyMetadata.getEpoch() : 0L));
+        }
+
+        @Override
+        public CompletableFuture<ValueAndEpoch> delNamespacedKV(KeyValue keyValue) {
+            String key = buildCompositeKey(keyValue.namespace(), keyValue.key().get());
+            KeyMetadata keyMetadata = keyMetadataMap.get(key);
+            long currentEpoch = keyMetadata != null ? keyMetadata.getEpoch() : 0;
+            if (keyValue.epoch() > 0 && keyValue.epoch() != currentEpoch) {
+                return CompletableFuture.failedFuture(INVALID_KV_RECORD_EPOCH.exception());
+            }
+            return CompletableFuture.completedFuture(ValueAndEpoch.of(store.remove(key), currentEpoch));
+        }
+
+        private static class KeyMetadata {
+            private final long epoch;
+            private final String namespace;
+            public KeyMetadata(String namespace, long epoch) {
+                this.namespace = namespace;
+                this.epoch = epoch;
+            }
+
+            public long getEpoch() {
+                return epoch;
+            }
+
+            public String getNamespace() {
+                return namespace;
+            }
         }
     }
 }

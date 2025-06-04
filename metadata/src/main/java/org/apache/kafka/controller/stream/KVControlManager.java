@@ -28,6 +28,7 @@ import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
+import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
@@ -39,6 +40,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import static com.automq.stream.utils.KVRecordUtils.buildCompositeKey;
+import static org.apache.kafka.common.protocol.Errors.INVALID_KV_RECORD_EPOCH;
 import static org.apache.kafka.common.protocol.Errors.KEY_EXIST;
 import static org.apache.kafka.common.protocol.Errors.KEY_NOT_EXIST;
 
@@ -47,30 +50,54 @@ public class KVControlManager {
     private final SnapshotRegistry registry;
     private final Logger log;
     private final TimelineHashMap<String, ByteBuffer> kv;
+    private final TimelineHashMap<String, KeyMetadata> keyMetadataMap;
+    private final FeatureControlManager featureControl;
 
-    public KVControlManager(SnapshotRegistry registry, LogContext logContext) {
+    public KVControlManager(SnapshotRegistry registry, LogContext logContext, FeatureControlManager featureControl) {
         this.registry = registry;
         this.log = logContext.logger(KVControlManager.class);
         this.kv = new TimelineHashMap<>(registry, 0);
+        this.keyMetadataMap = new TimelineHashMap<>(registry, 0);
+        this.featureControl = featureControl;
     }
 
     public GetKVResponse getKV(GetKVRequest request) {
-        String key = request.key();
+        String key = buildCompositeKey(request.namespace(), request.key());
         byte[] value = kv.containsKey(key) ? kv.get(key).array() : null;
+        KeyMetadata keyMetadata = null;
+        if (request.namespace() != null && !request.namespace().isEmpty()) {
+            keyMetadata = keyMetadataMap.get(key);
+        }
+
         return new GetKVResponse()
-            .setValue(value);
+            .setValue(value)
+            .setNamespace(request.namespace())
+            .setEpoch(keyMetadata != null ? keyMetadata.getEpoch() : 0L);
     }
 
     public ControllerResult<PutKVResponse> putKV(PutKVRequest request) {
-        String key = request.key();
+        String key = buildCompositeKey(request.namespace(), request.key());
+        KeyMetadata keyMetadata = keyMetadataMap.get(key);
+        long currentEpoch = keyMetadata != null ? keyMetadata.getEpoch() : 0;
+        if (request.epoch() > 0 && request.epoch() != currentEpoch) {
+            return ControllerResult.of(Collections.emptyList(),
+                new PutKVResponse()
+                    .setErrorCode(INVALID_KV_RECORD_EPOCH.code())
+                    .setEpoch(currentEpoch));
+        }
+
+        long newEpoch = System.currentTimeMillis();
         ByteBuffer value = kv.get(key);
         if (value == null || request.overwrite()) {
             // generate kv record
             ApiMessageAndVersion record = new ApiMessageAndVersion(new KVRecord()
                 .setKeyValues(Collections.singletonList(new KeyValue()
                     .setKey(key)
-                    .setValue(request.value()))), (short) 0);
-            return ControllerResult.of(Collections.singletonList(record), new PutKVResponse().setValue(request.value()));
+                    .setValue(request.value())
+                    .setNamespace(request.namespace())
+                    .setEpoch(newEpoch))),
+                featureControl.autoMQVersion().namespacedKVRecordVersion());
+            return ControllerResult.of(Collections.singletonList(record), new PutKVResponse().setValue(request.value()).setEpoch(newEpoch));
         }
         // exist and not allow overwriting
         return ControllerResult.of(Collections.emptyList(), new PutKVResponse()
@@ -79,14 +106,25 @@ public class KVControlManager {
     }
 
     public ControllerResult<DeleteKVResponse> deleteKV(DeleteKVRequest request) {
+        String key = buildCompositeKey(request.namespace(), request.key());
+        KeyMetadata keyMetadata = keyMetadataMap.get(key);
+        long currentEpoch = keyMetadata != null ? keyMetadata.getEpoch() : 0;
+        if (request.epoch() > 0 && request.epoch() != currentEpoch) {
+            return ControllerResult.of(Collections.emptyList(),
+                new DeleteKVResponse()
+                    .setErrorCode(INVALID_KV_RECORD_EPOCH.code())
+                    .setEpoch(currentEpoch));
+        }
         log.trace("DeleteKVRequestData: {}", request);
         DeleteKVResponse resp = new DeleteKVResponse();
         ByteBuffer value = kv.get(request.key());
         if (value != null) {
             // generate remove-kv record
             ApiMessageAndVersion record = new ApiMessageAndVersion(new RemoveKVRecord()
-                .setKeys(Collections.singletonList(request.key())), (short) 0);
-            return ControllerResult.of(Collections.singletonList(record), resp.setValue(value.array()));
+                .setKeys(Collections.singletonList(request.key()))
+                .setNamepsace(request.namespace()),
+                featureControl.autoMQVersion().namespacedKVRecordVersion());
+            return ControllerResult.of(Collections.singletonList(record), resp.setValue(value.array()).setEpoch(currentEpoch));
         }
         return ControllerResult.of(Collections.emptyList(), resp.setErrorCode(KEY_NOT_EXIST.code()));
     }
@@ -94,18 +132,43 @@ public class KVControlManager {
     public void replay(KVRecord record) {
         List<KeyValue> keyValues = record.keyValues();
         for (KeyValue keyValue : keyValues) {
-            kv.put(keyValue.key(), ByteBuffer.wrap(keyValue.value()));
+            String key = buildCompositeKey(keyValue.namespace(), keyValue.key());
+            kv.put(key, ByteBuffer.wrap(keyValue.value()));
+            if (keyValue.namespace() != null && !keyValue.namespace().isEmpty()) {
+                keyMetadataMap.put(key, new KeyMetadata(keyValue.namespace(), keyValue.epoch()));
+            }
         }
     }
 
     public void replay(RemoveKVRecord record) {
         List<String> keys = record.keys();
         for (String key : keys) {
-            kv.remove(key);
+            String compositeKey = buildCompositeKey(record.namepsace(), key);
+            kv.remove(compositeKey);
+            if (record.namepsace() != null && !record.namepsace().isEmpty()) {
+                keyMetadataMap.remove(compositeKey);
+            }
         }
     }
 
     public Map<String, ByteBuffer> kv() {
         return kv;
+    }
+
+    private static class KeyMetadata {
+        private final long epoch;
+        private final String namespace;
+        public KeyMetadata(String namespace, long epoch) {
+            this.namespace = namespace;
+            this.epoch = epoch;
+        }
+
+        public long getEpoch() {
+            return epoch;
+        }
+
+        public String getNamespace() {
+            return namespace;
+        }
     }
 }

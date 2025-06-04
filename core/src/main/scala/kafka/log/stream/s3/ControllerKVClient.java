@@ -44,7 +44,9 @@ import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.KeyValue;
 import com.automq.stream.api.KeyValue.Key;
+import com.automq.stream.api.KeyValue.KeyAndNamespace;
 import com.automq.stream.api.KeyValue.Value;
+import com.automq.stream.api.KeyValue.ValueAndEpoch;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -241,6 +243,198 @@ public class ControllerKVClient implements KVClient {
                     return ResponseHandleResult.withSuccess(Value.of((ByteBuffer) null));
                 default:
                     LOGGER.error("[ControllerKVClient]: Failed to Delete KV: {}, code: {}, retry later", key, code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<ValueAndEpoch> putNamespacedKVIfAbsent(KeyValue keyValue) {
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ControllerKVClient]: Put Namespaced KV if absent: {}", keyValue);
+        }
+        PutKVRequest request = new PutKVRequest()
+            .setKey(keyValue.key().get())
+            .setValue(keyValue.value().get().array())
+            .setNamespace(keyValue.namespace())
+            .setEpoch(keyValue.epoch());
+        WrapRequest req = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                PutKVsRequest.Builder realBuilder = (PutKVsRequest.Builder) builder;
+                return realBuilder.addSubRequest(request);
+            }
+
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.PUT_KVS;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new PutKVsRequest.Builder(
+                    new PutKVsRequestData()
+                ).addSubRequest(request);
+            }
+        };
+        CompletableFuture<ValueAndEpoch> future = new CompletableFuture<>();
+        RequestTask<PutKVResponse, ValueAndEpoch> task = new RequestTask<PutKVResponse, ValueAndEpoch>(req, future, response -> {
+            Errors code = Errors.forCode(response.errorCode());
+            switch (code) {
+                case NONE:
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ControllerKVClient]: Put Namespaced KV if absent: {}, result: {}", keyValue, response);
+                    }
+                    return ResponseHandleResult.withSuccess(ValueAndEpoch.of(response.value(), response.epoch()));
+                case KEY_EXIST:
+                    LOGGER.warn("[ControllerKVClient]: Failed to Put Namespaced KV if absent: {}, code: {}, key already exist", keyValue, code);
+                    return ResponseHandleResult.withSuccess(ValueAndEpoch.of(response.value(), response.epoch()));
+                default:
+                    LOGGER.error("[ControllerKVClient]: Failed to Put Namespaced KV if absent: {}, code: {}, retry later", keyValue, code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<ValueAndEpoch> putNamespacedKV(KeyValue keyValue) {
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ControllerKVClient]: Put Namespaced KV: {}", keyValue);
+        }
+        PutKVRequest request = new PutKVRequest()
+            .setKey(keyValue.key().get())
+            .setValue(keyValue.value().get().array())
+            .setNamespace(keyValue.namespace())
+            .setEpoch(keyValue.epoch())
+            .setOverwrite(true);
+        WrapRequest req = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                PutKVsRequest.Builder realBuilder = (PutKVsRequest.Builder) builder;
+                return realBuilder.addSubRequest(request);
+            }
+
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.PUT_KVS;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new PutKVsRequest.Builder(
+                    new PutKVsRequestData()
+                ).addSubRequest(request);
+            }
+        };
+        CompletableFuture<ValueAndEpoch> future = new CompletableFuture<>();
+        RequestTask<PutKVResponse, ValueAndEpoch> task = new RequestTask<PutKVResponse, ValueAndEpoch>(req, future, response -> {
+            Errors code = Errors.forCode(response.errorCode());
+            switch (code) {
+                case NONE:
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ControllerKVClient]: Put Namespaced KV: {}, result: {}", keyValue, response);
+                    }
+                    return ResponseHandleResult.withSuccess(ValueAndEpoch.of(response.value(), response.epoch()));
+                default:
+                    LOGGER.error("[ControllerKVClient]: Failed to Put Namespaced KV: {}, code: {}, retry later", keyValue, code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<ValueAndEpoch> getNamespacedKV(KeyAndNamespace keyAndNamespace) {
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ControllerKVClient]: Get KV: {}, Namespace: {}", keyAndNamespace.key(), keyAndNamespace.namespace());
+        }
+        GetKVRequest request = new GetKVRequest()
+            .setKey(keyAndNamespace.key().get())
+            .setNamespace(keyAndNamespace.namespace());
+        WrapRequest req = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                GetKVsRequest.Builder realBuilder = (GetKVsRequest.Builder) builder;
+                return realBuilder.addSubRequest(request);
+            }
+
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.GET_KVS;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new GetKVsRequest.Builder(
+                    new GetKVsRequestData()
+                ).addSubRequest(request);
+            }
+        };
+        CompletableFuture<ValueAndEpoch> future = new CompletableFuture<>();
+        RequestTask<GetKVResponse, ValueAndEpoch> task = new RequestTask<>(req, future, response -> {
+            Errors code = Errors.forCode(response.errorCode());
+            switch (code) {
+                case NONE:
+                    ValueAndEpoch val = ValueAndEpoch.of(response.value(), response.epoch());
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ControllerKVClient]: Get Namespaced KV: {}, result: {}", keyAndNamespace.key(), response);
+                    }
+                    return ResponseHandleResult.withSuccess(val);
+                default:
+                    LOGGER.error("[ControllerKVClient]: Failed to Get Namespaced KV: {}, code: {}, retry later", keyAndNamespace.key(), code);
+                    return ResponseHandleResult.withRetry();
+            }
+        });
+        this.requestSender.send(task);
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<ValueAndEpoch> delNamespacedKV(KeyValue keyValue) {
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ControllerKVClient]: Delete Namespaced KV: {}", keyValue.key());
+        }
+        DeleteKVRequest request = new DeleteKVRequest()
+            .setKey(keyValue.key().get());
+        WrapRequest req = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                DeleteKVsRequest.Builder realBuilder = (DeleteKVsRequest.Builder) builder;
+                return realBuilder.addSubRequest(request);
+            }
+
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.DELETE_KVS;
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new DeleteKVsRequest.Builder(
+                    new DeleteKVsRequestData()
+                ).addSubRequest(request);
+            }
+        };
+
+        CompletableFuture<ValueAndEpoch> future = new CompletableFuture<>();
+        RequestTask<DeleteKVResponse, ValueAndEpoch> task = new RequestTask<>(req, future, response -> {
+            Errors code = Errors.forCode(response.errorCode());
+            switch (code) {
+                case NONE:
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ControllerKVClient]: Delete Namespaced KV: {}, result: {}", keyValue.key(), response);
+                    }
+                    return ResponseHandleResult.withSuccess(ValueAndEpoch.of(response.value(), response.epoch()));
+                case KEY_NOT_EXIST:
+                    LOGGER.info("[ControllerKVClient]: Delete Namespaced KV: {}, result: KEY_NOT_EXIST", keyValue.key());
+                    return ResponseHandleResult.withSuccess(ValueAndEpoch.of((ByteBuffer) null, 0L));
+                default:
+                    LOGGER.error("[ControllerKVClient]: Failed to Delete Namespaced KV: {}, code: {}, retry later", keyValue.key(), code);
                     return ResponseHandleResult.withRetry();
             }
         });

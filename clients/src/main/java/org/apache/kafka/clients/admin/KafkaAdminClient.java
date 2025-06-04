@@ -47,14 +47,19 @@ import org.apache.kafka.clients.admin.internals.AlterConsumerGroupOffsetsHandler
 import org.apache.kafka.clients.admin.internals.CoordinatorKey;
 import org.apache.kafka.clients.admin.internals.DeleteConsumerGroupOffsetsHandler;
 import org.apache.kafka.clients.admin.internals.DeleteConsumerGroupsHandler;
+import org.apache.kafka.clients.admin.internals.DeleteNamespacedKVHandler;
 import org.apache.kafka.clients.admin.internals.DeleteRecordsHandler;
 import org.apache.kafka.clients.admin.internals.DescribeConsumerGroupsHandler;
 import org.apache.kafka.clients.admin.internals.DescribeProducersHandler;
 import org.apache.kafka.clients.admin.internals.DescribeTransactionsHandler;
 import org.apache.kafka.clients.admin.internals.FenceProducersHandler;
+import org.apache.kafka.clients.admin.internals.GetNamespacedKVHandler;
 import org.apache.kafka.clients.admin.internals.ListConsumerGroupOffsetsHandler;
 import org.apache.kafka.clients.admin.internals.ListOffsetsHandler;
 import org.apache.kafka.clients.admin.internals.ListTransactionsHandler;
+import org.apache.kafka.clients.admin.internals.NamespacedKVRecordsToGet;
+import org.apache.kafka.clients.admin.internals.NamespacedKVRecordsToPut;
+import org.apache.kafka.clients.admin.internals.PutNamespacedKVHandler;
 import org.apache.kafka.clients.admin.internals.RemoveMembersFromConsumerGroupHandler;
 import org.apache.kafka.clients.admin.internals.UpdateGroupHandler;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -132,6 +137,7 @@ import org.apache.kafka.common.message.DeleteAclsRequestData.DeleteAclsFilter;
 import org.apache.kafka.common.message.DeleteAclsResponseData;
 import org.apache.kafka.common.message.DeleteAclsResponseData.DeleteAclsFilterResult;
 import org.apache.kafka.common.message.DeleteAclsResponseData.DeleteAclsMatchingAcl;
+import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DeleteTopicsRequestData.DeleteTopicState;
 import org.apache.kafka.common.message.DeleteTopicsResponseData.DeletableTopicResult;
@@ -152,6 +158,8 @@ import org.apache.kafka.common.message.DescribeUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.DescribeUserScramCredentialsRequestData.UserName;
 import org.apache.kafka.common.message.DescribeUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
+import org.apache.kafka.common.message.GetKVsRequestData;
+import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetNextNodeIdRequestData;
 import org.apache.kafka.common.message.GetTelemetrySubscriptionsRequestData;
 import org.apache.kafka.common.message.LeaveGroupRequestData.MemberIdentity;
@@ -160,6 +168,7 @@ import org.apache.kafka.common.message.ListGroupsRequestData;
 import org.apache.kafka.common.message.ListGroupsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.MetadataRequestData;
+import org.apache.kafka.common.message.PutKVsRequestData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.UnregisterBrokerRequestData;
@@ -266,6 +275,7 @@ import org.apache.kafka.common.utils.Utils;
 
 import org.slf4j.Logger;
 
+import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -4864,6 +4874,86 @@ public class KafkaAdminClient extends AdminClient {
         UpdateGroupHandler handler = new UpdateGroupHandler(groupId, groupSpec, logContext);
         invokeDriver(handler, future, options.timeoutMs);
         return new UpdateGroupResult(future.get(CoordinatorKey.byGroupId(groupId)));
+    }
+
+    @Override
+    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, GetNamespacedKVOptions options) {
+        Set<TopicPartition> targetPartitions = partitions.orElseThrow(() ->
+            new IllegalArgumentException("Partitions cannot be empty")
+        );
+
+        NamespacedKVRecordsToGet.Builder recordsToGetBuilder = NamespacedKVRecordsToGet.newBuilder();
+        for (TopicPartition tp : targetPartitions) {
+            GetKVsRequestData.GetKVRequest kvRequest = new GetKVsRequestData.GetKVRequest()
+                .setKey(key)
+                .setNamespace(namespace);
+
+            recordsToGetBuilder.addRecord(tp, kvRequest);
+        }
+
+        NamespacedKVRecordsToGet recordsToGet = recordsToGetBuilder.build();
+        GetNamespacedKVHandler handler = new GetNamespacedKVHandler(logContext, recordsToGet);
+        SimpleAdminApiFuture<TopicPartition, GetKVsResponseData.GetKVResponse> future = GetNamespacedKVHandler.newFuture(targetPartitions);
+
+        invokeDriver(handler, future, options.timeoutMs);
+
+        return new GetNamespacedKVResult(future.all());
+    }
+
+    @Override
+    public PutNamespacedKVResult putNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, PutNamespacedKVOptions options) {
+        Set<TopicPartition> targetPartitions = partitions.orElseThrow(() ->
+            new IllegalArgumentException("Partitions cannot be empty")
+        );
+
+        NamespacedKVRecordsToPut.Builder recordsToPutBuilder = NamespacedKVRecordsToPut.newBuilder();
+        for (TopicPartition tp : targetPartitions) {
+            PutKVsRequestData.PutKVRequest kvRequest = new PutKVsRequestData.PutKVRequest()
+                .setKey(key)
+                .setValue(value.getBytes(StandardCharsets.UTF_8))
+                .setNamespace(namespace)
+                .setOverwrite(options.overwrite())
+                .setEpoch(options.ifMatchEpoch());
+
+            recordsToPutBuilder.addRecord(tp, kvRequest);
+        }
+
+        NamespacedKVRecordsToPut recordsToPut = recordsToPutBuilder.build();
+
+        PutNamespacedKVHandler handler = new PutNamespacedKVHandler(logContext, recordsToPut);
+        SimpleAdminApiFuture<TopicPartition, Void> future = PutNamespacedKVHandler.newFuture(targetPartitions);
+
+        invokeDriver(handler, future, options.timeoutMs);
+
+        return new PutNamespacedKVResult(future.all());
+    }
+
+
+    @Override
+    public DeleteNamespacedKVResult deleteNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, DeleteNamespacedKVOptions options) {
+
+        Set<TopicPartition> targetPartitions = partitions.orElseThrow(() ->
+            new IllegalArgumentException("Partitions cannot be empty")
+        );
+
+        NamespacedKVRecordsToDelete.Builder recordsToDeleteBuilder = NamespacedKVRecordsToDelete.newBuilder();
+        for (TopicPartition tp : targetPartitions) {
+            DeleteKVsRequestData.DeleteKVRequest kvRequest = new DeleteKVsRequestData.DeleteKVRequest()
+                .setKey(key)
+                .setNamespace(namespace)
+                .setEpoch(options.ifMatchEpoch());
+
+            recordsToDeleteBuilder.addRecord(tp, kvRequest);
+        }
+
+        NamespacedKVRecordsToDelete recordsToDelete = recordsToDeleteBuilder.build();
+
+        DeleteNamespacedKVHandler handler = new DeleteNamespacedKVHandler(logContext, recordsToDelete);
+        SimpleAdminApiFuture<TopicPartition, Void> future = DeleteNamespacedKVHandler.newFuture(targetPartitions);
+
+        invokeDriver(handler, future, options.timeoutMs);
+
+        return new DeleteNamespacedKVResult(future.all());
     }
 
     private <K, V> void invokeDriver(

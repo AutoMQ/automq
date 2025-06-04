@@ -2051,9 +2051,6 @@ public final class QuorumController implements Controller {
         this.time = time;
         this.controllerMetrics = controllerMetrics;
         this.snapshotRegistry = new SnapshotRegistry(logContext);
-        // AutoMQ for Kafka inject start
-        this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
-        // AutoMQ for Kafka inject end
         this.deferredEventQueue = new DeferredEventQueue(logContext);
         this.deferredUnstableEventQueue = new DeferredEventQueue(logContext);
         this.offsetControl = new OffsetControlManager.Builder().
@@ -2090,6 +2087,9 @@ public final class QuorumController implements Controller {
             setMetadataVersion(MetadataVersion.MINIMUM_KRAFT_VERSION).
             setClusterFeatureSupportDescriber(clusterSupportDescriber).
             build();
+        // AutoMQ for Kafka inject start
+        this.kvControlManager = new KVControlManager(snapshotRegistry, logContext, featureControl);
+        // AutoMQ for Kafka inject end
         this.clusterControl = new ClusterControlManager.Builder().
             setLogContext(logContext).
             setClusterId(clusterId).
@@ -2165,7 +2165,7 @@ public final class QuorumController implements Controller {
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
                 this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager, kvControlManager);
-        this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
+        this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager), featureControl);
         this.extension = extension.apply(this);
 
         // set the nodeControlManager here to avoid circular dependency

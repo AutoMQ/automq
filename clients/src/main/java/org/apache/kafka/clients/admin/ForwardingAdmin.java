@@ -320,5 +320,20 @@ public class ForwardingAdmin implements Admin {
         return delegate.updateGroup(groupId, groupSpec, options);
     }
 
+    @Override
+    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, GetNamespacedKVOptions options) {
+        return delegate.getNamespacedKV(partitions, namespace, key, value, options);
+    }
+
+    @Override
+    public PutNamespacedKVResult putNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, PutNamespacedKVOptions options) {
+        return delegate.putNamespacedKV(partitions, namespace, key, value, options);
+    }
+
+    @Override
+    public DeleteNamespacedKVResult deleteNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, DeleteNamespacedKVOptions options) {
+        return delegate.deleteNamespacedKV(partitions, namespace, key, options);
+    }
+
     // AutoMQ inject end
 }

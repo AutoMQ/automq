@@ -21,7 +21,7 @@
     "broker"
   ],
   "name": "GetKVsRequest",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -35,6 +35,12 @@
           "type": "string",
           "versions": "0+",
           "about": "Key is the key to get"
+        },
+        {
+          "name": "Namespace",
+          "type": "string",
+          "versions": "1+",
+          "about": "Namespace"
         }
       ]
     }
