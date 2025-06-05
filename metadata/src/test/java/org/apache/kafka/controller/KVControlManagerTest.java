@@ -128,7 +128,6 @@ public class KVControlManagerTest {
             .setKey("key1")
             .setValue("value1".getBytes())
             .setNamespace("__automq_test")
-//            .setEpoch(0)
         );
         assertEquals(1, result.records().size());
         assertEquals(Errors.NONE.code(), result.response().errorCode());
@@ -139,7 +138,6 @@ public class KVControlManagerTest {
             .setKey("key1")
             .setValue("value1-1".getBytes())
             .setNamespace("__automq_test")
-//            .setEpoch(0)
         );
         assertEquals(0, result.records().size());
         assertEquals(Errors.KEY_EXIST.code(), result.response().errorCode());
@@ -149,7 +147,6 @@ public class KVControlManagerTest {
             .setKey("key1")
             .setValue("value1-2".getBytes())
             .setNamespace("__automq_test")
-//            .setEpoch(0)
             .setOverwrite(true));
         assertEquals(1, result.records().size());
         assertEquals(Errors.NONE.code(), result.response().errorCode());
@@ -175,7 +172,6 @@ public class KVControlManagerTest {
         result3 = manager.deleteKV(new DeleteKVRequest()
             .setKey("key1")
             .setNamespace("__automq_test")
-//            .setEpoch(0)
         );
         assertEquals(1, result3.records().size());
         assertEquals(Errors.NONE.code(), result3.response().errorCode());
