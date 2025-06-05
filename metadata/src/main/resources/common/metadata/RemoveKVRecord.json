@@ -17,7 +17,7 @@
   "apiKey": 517,
   "type": "metadata",
   "name": "RemoveKVRecord",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -27,10 +27,10 @@
       "about": "Keys"
     },
     {
-      "name": "Namepsace",
+      "name": "Namespace",
       "type": "string",
       "versions": "1+",
-      "about": "Namepsace"
+      "about": "Namespace"
     }
   ]
 }

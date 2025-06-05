@@ -122,7 +122,7 @@ public class KVControlManager {
             // generate remove-kv record
             ApiMessageAndVersion record = new ApiMessageAndVersion(new RemoveKVRecord()
                 .setKeys(Collections.singletonList(key))
-                .setNamepsace(request.namespace()),
+                .setNamespace(request.namespace()),
                 featureControl.autoMQVersion().namespacedKVRecordVersion());
             return ControllerResult.of(Collections.singletonList(record), resp.setValue(value.array()).setEpoch(currentEpoch));
         }
@@ -143,7 +143,7 @@ public class KVControlManager {
         List<String> keys = record.keys();
         for (String key : keys) {
             kv.remove(key);
-            if (record.namepsace() != null && !record.namepsace().isEmpty()) {
+            if (record.namespace() != null && !record.namespace().isEmpty()) {
                 keyMetadataMap.remove(key);
             }
         }
