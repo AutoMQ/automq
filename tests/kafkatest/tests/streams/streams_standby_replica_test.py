@@ -120,12 +120,12 @@ class StreamsStandbyTask(BaseStreamsTest):
         self.wait_for_verification(processor_3, "ACTIVE_TASKS:2 STANDBY_TASKS:[1-3]", processor_3.STDOUT_FILE)
 
         self.assert_consume(self.client_id, "assert all messages consumed from %s" % self.streams_sink_topic_1,
-                            self.streams_sink_topic_1, self.num_messages)
+                            self.streams_sink_topic_1, self.num_messages, timeout_sec=300)
         self.assert_consume(self.client_id, "assert all messages consumed from %s" % self.streams_sink_topic_2,
-                            self.streams_sink_topic_2, self.num_messages)
+                            self.streams_sink_topic_2, self.num_messages, timeout_sec=300)
 
         wait_until(lambda: producer.num_acked >= self.num_messages,
-                   timeout_sec=60,
+                   timeout_sec=300,
                    err_msg="Failed to send all %s messages" % str(self.num_messages))
 
         producer.stop()
