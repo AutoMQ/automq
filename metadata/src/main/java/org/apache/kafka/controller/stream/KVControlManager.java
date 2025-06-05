@@ -117,11 +117,11 @@ public class KVControlManager {
         }
         log.trace("DeleteKVRequestData: {}", request);
         DeleteKVResponse resp = new DeleteKVResponse();
-        ByteBuffer value = kv.get(request.key());
+        ByteBuffer value = kv.get(key);
         if (value != null) {
             // generate remove-kv record
             ApiMessageAndVersion record = new ApiMessageAndVersion(new RemoveKVRecord()
-                .setKeys(Collections.singletonList(request.key()))
+                .setKeys(Collections.singletonList(key))
                 .setNamepsace(request.namespace()),
                 featureControl.autoMQVersion().namespacedKVRecordVersion());
             return ControllerResult.of(Collections.singletonList(record), resp.setValue(value.array()).setEpoch(currentEpoch));
