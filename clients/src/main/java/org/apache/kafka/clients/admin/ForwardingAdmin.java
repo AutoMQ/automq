@@ -321,8 +321,8 @@ public class ForwardingAdmin implements Admin {
     }
 
     @Override
-    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, GetNamespacedKVOptions options) {
-        return delegate.getNamespacedKV(partitions, namespace, key, value, options);
+    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, GetNamespacedKVOptions options) {
+        return delegate.getNamespacedKV(partitions, namespace, key, options);
     }
 
     @Override

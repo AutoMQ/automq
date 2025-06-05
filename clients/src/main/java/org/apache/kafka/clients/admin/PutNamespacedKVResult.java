@@ -2,33 +2,22 @@ package org.apache.kafka.clients.admin;
 
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.PutKVsResponseData.PutKVResponse;
 
 import java.util.Map;
 
 
 public class PutNamespacedKVResult {
 
-    private final Map<TopicPartition, KafkaFuture<Void>> futures;
+    private final Map<TopicPartition, KafkaFuture<PutKVResponse>> futures;
 
-    /**
-     * Return a future which succeeds only if all the records deletions succeed.
-     */
-    public PutNamespacedKVResult(Map<TopicPartition, KafkaFuture<Void>> futures) {
+    public PutNamespacedKVResult(Map<TopicPartition, KafkaFuture<PutKVResponse>> futures) {
         this.futures = futures;
     }
 
-    /**
-     * Return a future which succeeds only if all the records deletions succeed.
-     */
-    public KafkaFuture<Map<TopicPartition, KafkaFuture<Void>>> all() {
+
+    public KafkaFuture<Map<TopicPartition, KafkaFuture<PutKVResponse>>> all() {
         return KafkaFuture.completedFuture(futures);
     }
-
-//    /**
-//     * Return a future which succeeds if the put operation is successful.
-//     */
-//    public Map<TopicPartition, KafkaFuture<PutKVRecords>> all() {
-//        return futures;
-//    }
 
 }

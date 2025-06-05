@@ -60,8 +60,8 @@ public class GetNamespacedKVHandler extends AdminApiHandler.Batched<TopicPartiti
     public ApiResult<TopicPartition, GetKVResponse> handleResponse(Node broker, Set<TopicPartition> partitions, AbstractResponse response) {
 
         GetKVsResponseData data = ((GetKVsResponse) response).data();
-        Map<TopicPartition, GetKVResponse> completed = new LinkedHashMap<>();
-        Map<TopicPartition, Throwable> failed = new HashMap<>();
+        final Map<TopicPartition, GetKVResponse> completed = new LinkedHashMap<>();
+        final Map<TopicPartition, Throwable> failed = new HashMap<>();
         List<GetKVResponse> responses = data.getKVResponses();
         int responseIndex = 0;
         for (TopicPartition tp : orderedPartitions) {

@@ -13,9 +13,6 @@ public class DeleteNamespacedKVResult extends AbstractOptions<DeleteNamespacedKV
         this.futures = futures;
     }
 
-    /**
-     * Return a future which succeeds if the put operation is successful.
-     */
     public KafkaFuture<Map<TopicPartition, KafkaFuture<Void>>> all() {
         return KafkaFuture.completedFuture(futures);
     }

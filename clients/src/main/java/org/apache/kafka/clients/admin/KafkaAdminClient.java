@@ -169,6 +169,7 @@ import org.apache.kafka.common.message.ListGroupsResponseData;
 import org.apache.kafka.common.message.ListPartitionReassignmentsRequestData;
 import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.PutKVsRequestData;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.RemoveRaftVoterRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.UnregisterBrokerRequestData;
@@ -4877,7 +4878,7 @@ public class KafkaAdminClient extends AdminClient {
     }
 
     @Override
-    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, GetNamespacedKVOptions options) {
+    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, GetNamespacedKVOptions options) {
         Set<TopicPartition> targetPartitions = partitions.orElseThrow(() ->
             new IllegalArgumentException("Partitions cannot be empty")
         );
@@ -4921,7 +4922,7 @@ public class KafkaAdminClient extends AdminClient {
         NamespacedKVRecordsToPut recordsToPut = recordsToPutBuilder.build();
 
         PutNamespacedKVHandler handler = new PutNamespacedKVHandler(logContext, recordsToPut);
-        SimpleAdminApiFuture<TopicPartition, Void> future = PutNamespacedKVHandler.newFuture(targetPartitions);
+        SimpleAdminApiFuture<TopicPartition, PutKVsResponseData.PutKVResponse> future = PutNamespacedKVHandler.newFuture(targetPartitions);
 
         invokeDriver(handler, future, options.timeoutMs);
 

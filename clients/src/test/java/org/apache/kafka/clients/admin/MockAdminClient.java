@@ -1451,7 +1451,7 @@ public class MockAdminClient extends AdminClient {
     }
 
     @Override
-    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, String value, GetNamespacedKVOptions options) {
+    public GetNamespacedKVResult getNamespacedKV(Optional<Set<TopicPartition>> partitions, String namespace, String key, GetNamespacedKVOptions options) {
         throw new UnsupportedOperationException();
     }
 

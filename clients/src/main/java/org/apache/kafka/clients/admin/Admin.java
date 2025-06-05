@@ -1744,7 +1744,6 @@ public interface Admin extends AutoCloseable {
         Optional<Set<TopicPartition>> partitions,
         String namespace,
         String key,
-        String value,
         GetNamespacedKVOptions options
     );
 
