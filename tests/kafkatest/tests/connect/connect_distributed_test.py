@@ -368,12 +368,7 @@ class ConnectDistributedTest(Test):
     @matrix(
         connect_protocol=['sessioned', 'compatible', 'eager'],
         metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[False]
-    )
-    @matrix(
-        connect_protocol=['sessioned', 'compatible', 'eager'],
-        metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True],
+        use_new_coordinator=[True, False],
         group_protocol=consumer_group.all_group_protocols
     )
     def test_pause_and_resume_sink(self, connect_protocol, metadata_quorum, use_new_coordinator=False, group_protocol=None):

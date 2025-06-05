@@ -149,10 +149,6 @@ class TestSnapshots(ProduceConsumeValidateTest):
     @cluster(num_nodes=9)
     @matrix(
         metadata_quorum=quorum.all_kraft,
-        use_new_coordinator=[False]
-    )
-    @matrix(
-        metadata_quorum=quorum.all_kraft,
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
@@ -215,10 +211,6 @@ class TestSnapshots(ProduceConsumeValidateTest):
         self.validate_success(broker_topic, group_protocol=group_protocol)
 
     @cluster(num_nodes=9)
-    @matrix(
-        metadata_quorum=quorum.all_kraft,
-        use_new_coordinator=[False]
-    )
     @matrix(
         metadata_quorum=quorum.all_kraft,
         use_new_coordinator=[True],
