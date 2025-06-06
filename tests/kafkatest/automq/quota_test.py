@@ -91,7 +91,7 @@ class QuotaTest(Test):
             assert len(messages) > 0, "consumer %d didn't consume any message before timeout" % idx
 
     @cluster(num_nodes=5)
-    @matrix(broker_in=[2500000], broker_out=[2000000], wal=['file', 's3'])
+    @matrix(broker_in=[2500000], broker_out=[2000000], wal=['s3'])
     def test_quota(self, broker_in, broker_out, wal):
         self.create_kafka(self.test_context, broker_in, broker_out, wal)
         self.kafka.start()

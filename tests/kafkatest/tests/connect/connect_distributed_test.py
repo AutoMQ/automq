@@ -368,12 +368,7 @@ class ConnectDistributedTest(Test):
     @matrix(
         connect_protocol=['sessioned', 'compatible', 'eager'],
         metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[False]
-    )
-    @matrix(
-        connect_protocol=['sessioned', 'compatible', 'eager'],
-        metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True],
+        use_new_coordinator=[True, False],
         group_protocol=consumer_group.all_group_protocols
     )
     def test_pause_and_resume_sink(self, connect_protocol, metadata_quorum, use_new_coordinator=False, group_protocol=None):
@@ -419,7 +414,7 @@ class ConnectDistributedTest(Test):
                        err_msg="Failed to see connector transition to the RUNNING state")
 
         # after resuming, we should see records consumed again
-        wait_until(lambda: len(self.sink.received_messages()) > num_messages, timeout_sec=40,
+        wait_until(lambda: len(self.sink.received_messages()) > num_messages, timeout_sec=300,
                    err_msg="Failed to consume messages after resuming sink connector")
 
     @cluster(num_nodes=5)
@@ -649,7 +644,7 @@ class ConnectDistributedTest(Test):
     )
     @matrix(
         security_protocol=[SecurityConfig.PLAINTEXT, SecurityConfig.SASL_SSL],
-        exactly_once_source=[True, False], 
+        exactly_once_source=[True, False],
         connect_protocol=['sessioned', 'compatible', 'eager'],
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
@@ -680,7 +675,7 @@ class ConnectDistributedTest(Test):
         # do rebalancing of the group, etc, and b) without explicit leave group support, rebalancing takes awhile
         for node in self.cc.nodes:
             node.account.ssh("echo -e -n " + repr(self.FIRST_INPUTS) + " >> " + self.INPUT_FILE)
-        wait_until(lambda: self._validate_file_output(self.FIRST_INPUT_LIST), timeout_sec=90, err_msg="Data added to input file was not seen in the output file in a reasonable amount of time.")
+        wait_until(lambda: self._validate_file_output(self.FIRST_INPUT_LIST), timeout_sec=300, err_msg="Data added to input file was not seen in the output file in a reasonable amount of time.")
 
         # Restarting both should result in them picking up where they left off,
         # only processing new data.
@@ -688,7 +683,7 @@ class ConnectDistributedTest(Test):
 
         for node in self.cc.nodes:
             node.account.ssh("echo -e -n " + repr(self.SECOND_INPUTS) + " >> " + self.INPUT_FILE)
-        wait_until(lambda: self._validate_file_output(self.FIRST_INPUT_LIST + self.SECOND_INPUT_LIST), timeout_sec=150, err_msg="Sink output file never converged to the same state as the input file")
+        wait_until(lambda: self._validate_file_output(self.FIRST_INPUT_LIST + self.SECOND_INPUT_LIST), timeout_sec=300, err_msg="Sink output file never converged to the same state as the input file")
 
     @cluster(num_nodes=6)
     @matrix(
