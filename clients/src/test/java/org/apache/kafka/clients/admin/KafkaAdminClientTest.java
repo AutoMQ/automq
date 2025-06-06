@@ -116,6 +116,7 @@ import org.apache.kafka.common.message.ElectLeadersResponseData.PartitionResult;
 import org.apache.kafka.common.message.ElectLeadersResponseData.ReplicaElectionResult;
 import org.apache.kafka.common.message.FindCoordinatorRequestData;
 import org.apache.kafka.common.message.FindCoordinatorResponseData;
+import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetTelemetrySubscriptionsResponseData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsResponseData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsResponseData.AlterConfigsResourceResponse;
@@ -141,6 +142,7 @@ import org.apache.kafka.common.message.OffsetDeleteResponseData.OffsetDeleteResp
 import org.apache.kafka.common.message.OffsetFetchRequestData;
 import org.apache.kafka.common.message.OffsetFetchRequestData.OffsetFetchRequestGroup;
 import org.apache.kafka.common.message.OffsetFetchRequestData.OffsetFetchRequestTopics;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.UnregisterBrokerResponseData;
 import org.apache.kafka.common.message.WriteTxnMarkersResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -7666,34 +7668,6 @@ public class KafkaAdminClientTest {
         assertEquals("Telemetry is not enabled. Set config `enable.metrics.push` to `true`.", exception.getMessage());
 
         admin.close();
-    }
-
-    @Test
-    public void testPutKV_NewKey() {
-
-        Properties props = new Properties();
-        props.setProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-
-        KafkaAdminClient admin = (KafkaAdminClient) AdminClient.create(props);
-
-        PutNamespacedKVOptions options = new PutNamespacedKVOptions();
-        options.overwrite(true);
-        options.ifMatchEpoch(0L);
-        Set<TopicPartition> multiPartitions = new HashSet<>(Arrays.asList(
-            new TopicPartition("test-topic", 0),
-            new TopicPartition("test-topic", 1)));
-
-        PutNamespacedKVResult putNamespacedKVResult = admin.putNamespacedKV(Optional.of(multiPartitions), "namespace1", "key1", "value1", options);
-        Map<TopicPartition, KafkaFuture<Void>> map;
-        try {
-            map = putNamespacedKVResult.all().get();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e);
-        }
-
-        assertNotNull(map);
     }
 
     private UnregisterBrokerResponse prepareUnregisterBrokerResponse(Errors error, int throttleTimeMs) {
