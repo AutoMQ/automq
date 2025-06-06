@@ -149,7 +149,7 @@ class TestSnapshots(ProduceConsumeValidateTest):
     @cluster(num_nodes=9)
     @matrix(
         metadata_quorum=quorum.all_kraft,
-        use_new_coordinator=[True],
+        use_new_coordinator=[True, False],
         group_protocol=consumer_group.all_group_protocols
     )
     def test_broker(self, metadata_quorum=quorum.combined_kraft, use_new_coordinator=False, group_protocol=None):
@@ -213,7 +213,7 @@ class TestSnapshots(ProduceConsumeValidateTest):
     @cluster(num_nodes=9)
     @matrix(
         metadata_quorum=quorum.all_kraft,
-        use_new_coordinator=[True],
+        use_new_coordinator=[True, False],
         group_protocol=consumer_group.all_group_protocols
     )
     def test_controller(self, metadata_quorum=quorum.combined_kraft, use_new_coordinator=False, group_protocol=None):

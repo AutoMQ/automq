@@ -72,7 +72,7 @@ class ReplicaScaleTest(Test):
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
-    def test_produce_consume(self, topic_count, partition_count, replication_factor,
+    def test_produce_consume(self, topic_count, partition_count, replication_factor, 
                              metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         topics_create_start_time = time.time()
         for i in range(topic_count):

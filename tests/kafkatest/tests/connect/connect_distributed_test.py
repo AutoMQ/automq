@@ -726,8 +726,8 @@ class ConnectDistributedTest(Test):
                 # Give additional time for the consumer groups to recover. Even if it is not a hard bounce, there are
                 # some cases where a restart can cause a rebalance to take the full length of the session timeout
                 # (e.g. if the client shuts down before it has received the memberId from its initial JoinGroup).
-                # If we don't give enough time for the group to stabilize, the next bounce may cause consumers to
-                # be shut down before they have any time to process data and we can end up with zero data making it
+                # If we don't give enough time for the group to stabilize, the next bounce may cause consumers to 
+                # be shut down before they have any time to process data and we can end up with zero data making it 
                 # through the test.
                 time.sleep(15)
 
@@ -1034,8 +1034,8 @@ class ConnectDistributedTest(Test):
     # @parametrize(broker_version=str(LATEST_0_10_0), auto_create_topics=True, exactly_once_source=False, connect_protocol='eager')
     def test_broker_compatibility(self, broker_version, auto_create_topics, exactly_once_source, connect_protocol):
         """
-        Verify that Connect will start up with various broker versions with various configurations.
-        When Connect distributed starts up, it either creates internal topics (v0.10.1.0 and after)
+        Verify that Connect will start up with various broker versions with various configurations. 
+        When Connect distributed starts up, it either creates internal topics (v0.10.1.0 and after) 
         or relies upon the broker to auto-create the topics (v0.10.0.x and before).
         """
         self.EXACTLY_ONCE_SOURCE_SUPPORT = 'enabled' if exactly_once_source else 'disabled'
