@@ -219,12 +219,12 @@ class TransactionsTest(Test):
 
     @cluster(num_nodes=9)
     @matrix(
-        failure_mode=["hard_bounce"],
-        bounce_target=["brokers"],
-        check_order=[True],
-        use_group_metadata=[True],
+        failure_mode=["hard_bounce", "clean_bounce"],
+        bounce_target=["brokers", "clients"],
+        check_order=[True, False],
+        use_group_metadata=[True, False],
         metadata_quorum=quorum.all_kraft,
-        use_new_coordinator=[True],
+        use_new_coordinator=[True, False],
         group_protocol=consumer_group.all_group_protocols
     )
     def test_transactions(self, failure_mode, bounce_target, check_order, use_group_metadata, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
