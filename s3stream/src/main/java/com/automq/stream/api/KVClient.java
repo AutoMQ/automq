@@ -20,7 +20,9 @@
 package com.automq.stream.api;
 
 import com.automq.stream.api.KeyValue.Key;
+import com.automq.stream.api.KeyValue.KeyAndNamespace;
 import com.automq.stream.api.KeyValue.Value;
+import com.automq.stream.api.KeyValue.ValueAndEpoch;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -37,12 +39,28 @@ public interface KVClient {
     CompletableFuture<Value> putKVIfAbsent(KeyValue keyValue);
 
     /**
+     * Put namespaced key value if key not exist, return current key value namespace epoch after putting.
+     *
+     * @param keyValue {@link KeyValue} k-v pair namespace and epoch
+     * @return async put result. {@link ValueAndEpoch} current value and epoch after putting.
+     */
+    CompletableFuture<ValueAndEpoch> putNamespacedKVIfAbsent(KeyValue keyValue);
+
+    /**
      * Put key value, overwrite if key exist, return current key value after putting.
      *
      * @param keyValue {@link KeyValue} k-v pair
      * @return async put result. {@link KeyValue} current value after putting.
      */
     CompletableFuture<Value> putKV(KeyValue keyValue);
+
+    /**
+     * Put key value, overwrite if key exist, return current key value namespace epoch after putting.
+     *
+     * @param keyValue {@link KeyValue} k-v pair namespace and epoch
+     * @return async put result. {@link ValueAndEpoch} current value and epoch after putting.
+     */
+    CompletableFuture<ValueAndEpoch> putNamespacedKV(KeyValue keyValue);
 
     /**
      * Get value by key.
@@ -53,10 +71,26 @@ public interface KVClient {
     CompletableFuture<Value> getKV(Key key);
 
     /**
+     * Get value by key.
+     *
+     * @param keyAndNamespace key and namespace.
+     * @return async get result. {@link ValueAndEpoch} value and epoch, null if key not exist.
+     */
+    CompletableFuture<ValueAndEpoch> getNamespacedKV(KeyAndNamespace keyAndNamespace);
+
+    /**
      * Delete key value by key. If key not exist, return null.
      *
      * @param key key.
      * @return async delete result. {@link Value} deleted value, null if key not exist.
      */
     CompletableFuture<Value> delKV(Key key);
+
+    /**
+     * Delete key value by key. If key not exist, return null.
+     *
+     * @param keyValue k-v pair namespace and epoch
+     * @return async delete result. {@link ValueAndEpoch} deleted value and epoch, null if key not exist.
+     */
+    CompletableFuture<ValueAndEpoch> delNamespacedKV(KeyValue keyValue);
 }
