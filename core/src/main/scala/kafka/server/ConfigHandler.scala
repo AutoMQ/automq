@@ -273,15 +273,15 @@ class IpConfigHandler(private val connectionQuotas: ConnectionQuotas) extends Co
 class BrokerConfigHandler(private val brokerConfig: KafkaConfig,
                           private val quotaManagers: QuotaManagers) extends ConfigHandler with Logging {
   def processConfigChanges(brokerId: String, properties: Properties): Unit = {
+    // AutoMQ for Kafka inject start
+    if (brokerId == ZooKeeperInternals.DEFAULT_STRING || brokerConfig.brokerId == brokerId.trim.toInt) {
+      quotaManagers.broker.updateQuotaConfigs(Some(properties))
+    }
+    // AutoMQ for Kafka inject end
     if (brokerId == ZooKeeperInternals.DEFAULT_STRING)
       brokerConfig.dynamicConfig.updateDefaultConfig(properties)
     else if (brokerConfig.brokerId == brokerId.trim.toInt) {
       brokerConfig.dynamicConfig.updateBrokerConfig(brokerConfig.brokerId, properties)
-
-      // AutoMQ for Kafka inject start
-      quotaManagers.broker.updateQuotaConfigs(Some(properties))
-      // AutoMQ for Kafka inject end
-      
     }
     val updatedDynamicBrokerConfigs = brokerConfig.dynamicConfig.currentDynamicBrokerConfigs
     val updatedDynamicDefaultConfigs = brokerConfig.dynamicConfig.currentDynamicDefaultConfigs
