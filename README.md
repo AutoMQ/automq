@@ -60,7 +60,7 @@ The `docker/docker-compose-cluster.yaml` file offers a more complex setup with t
 
 There are more deployment options available:
 - [Deploy on Linux with 5 Nodes](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux)
-- [Deploy on Kubernetes (Enterprise only now, open source soon)](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-kubernetes)
+- [Deploy on Kubernetes](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-kubernetes)
 - [Run on Ceph / MinIO / CubeFS / HDFS](https://www.automq.com/docs/automq/deployment/overview)
 - [Try AutoMQ on AWS Marketplace (Two Weeks Free Trial)](https://docs.automq.com/automq-cloud/getting-started/install-byoc-environment/aws/install-env-from-marketplace)
 - [Try AutoMQ on Alibaba Cloud Marketplace (Two Weeks Free Trial)](https://market.aliyun.com/products/55530001/cmgj00065841.html)
