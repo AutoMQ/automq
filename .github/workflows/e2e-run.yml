@@ -54,13 +54,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
       - name: Run E2E tests with yaml
         if: ${{ inputs.test-path == '' }}
-        run: ./tests/docker/run_tests.sh
+        run: ./tests/docker/run_tests.sh --deflake 3
         env:
           ESK_TEST_YML: ${{ inputs.test-yaml }}
         shell: bash
       - name: Run E2E tests with path
         if: ${{ inputs.test-path != '' }}
-        run: ./tests/docker/run_tests.sh
+        run: ./tests/docker/run_tests.sh --deflake 3
         env:
           TC_PATHS: ${{ inputs.test-path }}
         shell: bash
