@@ -73,7 +73,7 @@ Table Topic is a new feature in AutoMQ that combines stream and table functional
 AutoMQ is a stateless Kafka alternative that runs on S3 or any S3-compatible storage, such as MinIO. It is designed to address two major issues of Apache Kafka. First, Kafka clusters are difficult to scale out or in due to the stateful nature of its brokers. Data movement is required, and even reassigning partitions between brokers is a complex process. Second, hosting Kafka in the cloud can be prohibitively expensive. You face high costs for EBS storage, cross-AZ traffic, and significant over-provisioning due to Kafka's limited scalability.
 
 Here are some key highlights of AutoMQ that make it an ideal choice to replace your Apache Kafka cluster, whether in the cloud or on-premise, as long as you have S3-compatible storage:
-- **Cost effective**: The first true cloud-native streaming storage system, designed for optimal cost and efficiency on the cloud. Refer to [this report](https://www.automq.com/docs/automq/benchmarks/cost-effective-automq-vs-apache-kafka) to see how we cut Apache Kafka billing by 90% on the cloud.
+- **Cost effective**: The first true cloud-native streaming storage system, designed for optimal cost and efficiency on the cloud. Refer to [this report](https://www.automq.com/docs/automq/benchmarks/cost-effective-automq-vs-apache-kafka?utm_source=github_automq) to see how we cut Apache Kafka billing by 90% on the cloud.
 - **High Reliability**: Leverage object storage service to achieve zero RPO, RTO in seconds and 99.999999999% durability.
 - **Zero Cross-AZ Traffic**: By using cloud object storage as the priority storage solution, AutoMQ eliminates cross-AZ traffic costs on AWS and GCP. In traditional Kafka setups, over 80% of costs arise from cross-AZ traffic, including producer, consumer, and replication sides.
 - **Serverless**:
@@ -82,8 +82,8 @@ Here are some key highlights of AutoMQ that make it an ideal choice to replace y
     - Infinite scalable: Utilize cloud object storage as the primary storage solution, eliminating concerns about storage capacity.
 - **Manage-less**: The built-in auto-balancer component automatically schedules partitions and network traffic between brokers, eliminating manual partition reassignment.
 - **High performance**:
-    - High throughput: Leverage pre-fetching, batch processing, and parallel technologies to maximize the capabilities of cloud object storage. Refer to the [AutoMQ Performance White Paper](https://www.automq.com/docs/automq/benchmarks/automq-vs-apache-kafka-benchmarks-and-cost) to see how we achieve this.
-    - Low Latency: AutoMQ defaults to running on S3 directly, resulting in hundreds of milliseconds of latency. The enterprise version offers single-digit millisecond latency. [Contact us](https://www.automq.com/contact) for more details.
+    - High throughput: Leverage pre-fetching, batch processing, and parallel technologies to maximize the capabilities of cloud object storage. Refer to the [AutoMQ Performance White Paper](https://www.automq.com/docs/automq/benchmarks/automq-vs-apache-kafka-benchmarks-and-cost?utm_source=github_automq) to see how we achieve this.
+    - Low Latency: AutoMQ defaults to running on S3 directly, resulting in hundreds of milliseconds of latency. The enterprise version offers single-digit millisecond latency. [Contact us](https://www.automq.com/contact?utm_source=github_automq) for more details.
 - **Built-in Metrics Export**: Natively export Prometheus and OpenTelemetry metrics, supporting both push and pull. Ditch inefficient JMX and monitor your cluster with modern tools. Refer to [full metrics list](https://www.automq.com/docs/automq/observability/metrics?utm_source=github_automq) provided by AutoMQ.
 - **100% Kafka Compatible**: Fully compatible with Apache Kafka, offering all features with greater cost-effectiveness and operational efficiency.
 
