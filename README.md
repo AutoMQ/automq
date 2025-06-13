@@ -82,7 +82,7 @@ Here are some key highlights of AutoMQ that make it an ideal choice to replace y
     - Infinite scalable: Utilize cloud object storage as the primary storage solution, eliminating concerns about storage capacity.
 - **Manage-less**: The built-in auto-balancer component automatically schedules partitions and network traffic between brokers, eliminating manual partition reassignment.
 - **High performance**:
-    - High throughput: Leverage pre-fetching, batch processing, and parallel technologies to maximize the capabilities of cloud object storage. Refer to the [AutoMQ Performance White Paper](https://www.automq.com/docs/automq/benchmarks/benchmark-automq-vs-apache-kafka?utm_source=github_automq) to see how we achieve this.
+    - High throughput: Leverage pre-fetching, batch processing, and parallel technologies to maximize the capabilities of cloud object storage. Refer to the [AutoMQ Performance White Paper](https://www.automq.com/docs/automq/benchmarks/automq-vs-apache-kafka-benchmarks-and-cost) to see how we achieve this.
     - Low Latency: AutoMQ defaults to running on S3 directly, resulting in hundreds of milliseconds of latency. The enterprise version offers single-digit millisecond latency. [Contact us](https://www.automq.com/contact) for more details.
 - **Built-in Metrics Export**: Natively export Prometheus and OpenTelemetry metrics, supporting both push and pull. Ditch inefficient JMX and monitor your cluster with modern tools. Refer to [full metrics list](https://www.automq.com/docs/automq/observability/metrics?utm_source=github_automq) provided by AutoMQ.
 - **100% Kafka Compatible**: Fully compatible with Apache Kafka, offering all features with greater cost-effectiveness and operational efficiency.
