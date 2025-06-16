@@ -19,17 +19,6 @@
 
 package com.automq.stream.s3.wal;
 
-import java.util.concurrent.CompletableFuture;
-
 public interface AppendResult {
-    // The pre-allocated starting offset of the record
-    long recordOffset();
-
-    CompletableFuture<CallbackResult> future();
-
-    interface CallbackResult {
-
-        // The record before this offset (exclusive) has been flushed to disk
-        long flushedOffset();
-    }
+    RecordOffset recordOffset();
 }

@@ -55,14 +55,17 @@ public class WALUtil {
     }
 
     public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start, boolean calculateCRC) {
+        return new Record(generateHeader(body, emptyHeader, crc, start, calculateCRC), body);
+    }
+
+    public static ByteBuf generateHeader(ByteBuf body, ByteBuf emptyHeader, int crc, long start, boolean calculateCRC) {
         crc = 0 == crc ? WALUtil.crc32(body) : crc;
-        ByteBuf header = new RecordHeader()
+        return new RecordHeader()
             .setMagicCode(RECORD_HEADER_MAGIC_CODE)
             .setRecordBodyLength(body.readableBytes())
             .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
             .setRecordBodyCRC(crc)
             .marshal(emptyHeader, calculateCRC);
-        return new Record(header, body);
     }
 
     /**

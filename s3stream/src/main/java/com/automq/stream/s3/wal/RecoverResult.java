@@ -19,13 +19,10 @@
 
 package com.automq.stream.s3.wal;
 
-import io.netty.buffer.ByteBuf;
+import com.automq.stream.s3.model.StreamRecordBatch;
 
 public interface RecoverResult {
-    ByteBuf record();
+    StreamRecordBatch record();
 
-    /**
-     * @see AppendResult#recordOffset()
-     */
-    long recordOffset();
+    RecordOffset recordOffset();
 }

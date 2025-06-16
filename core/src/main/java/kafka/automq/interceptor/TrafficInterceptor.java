@@ -20,6 +20,7 @@
 package kafka.automq.interceptor;
 
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 
@@ -31,7 +32,7 @@ public interface TrafficInterceptor {
 
     void handleProduceRequest(ProduceRequestArgs args);
 
-    CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(byte[] metadata);
+    CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request);
 
     List<MetadataResponseData.MetadataResponseTopic> handleMetadataResponse(ClientIdMetadata clientId,
         List<MetadataResponseData.MetadataResponseTopic> topics);

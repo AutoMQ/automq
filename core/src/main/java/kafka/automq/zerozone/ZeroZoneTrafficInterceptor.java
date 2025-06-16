@@ -30,6 +30,7 @@ import kafka.server.streamaspect.ElasticReplicaManager;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -40,7 +41,9 @@ import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.loader.LoaderManifest;
 import org.apache.kafka.image.publisher.MetadataPublisher;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
+import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
@@ -68,21 +71,25 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     private final RouterOut routerOut;
     private final RouterIn routerIn;
 
+    private final RouterOutV2 routerOutV2;
+    private final RouterInV2 routerInV2;
+
     private final SnapshotReadPartitionsManager snapshotReadPartitionsManager;
+    private volatile AutoMQVersion autoMQVersion;
 
     public ZeroZoneTrafficInterceptor(
         ElasticKafkaApis kafkaApis,
         MetadataCache metadataCache,
         ClientRackProvider clientRackProvider,
-        KafkaConfig kafkaConfig,
-        BucketURI bucketURI) {
+        KafkaConfig kafkaConfig) {
         this.kafkaApis = kafkaApis;
 
         if (kafkaConfig.rack().isEmpty()) {
             throw new IllegalArgumentException("The node rack should be set when enable cross available zone router");
         }
 
-        this.bucketURI = bucketURI;
+        //noinspection OptionalGetWithoutIsPresent
+        this.bucketURI = kafkaConfig.automq().zoneRouterChannels().get();
         this.clientRackProvider = clientRackProvider;
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(bucketURI)
             .readWriteIsolate(true)
@@ -102,11 +109,18 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         Time time = Time.SYSTEM;
         AsyncSender asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time, ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext());
         this.routerOut = new RouterOut(currentNode, bucketURI, objectStorage, mapping::getRouteOutNode, kafkaApis, asyncSender, time);
-
         this.routerIn = new RouterIn(objectStorage, kafkaApis, kafkaConfig.rack().get());
+
+        RouterChannelProvider routerChannelProvider = new DefaultRouterChannelProvider(nodeId, kafkaConfig.automq().nodeEpoch(), bucketURI, objectStorage);
+        this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode, kafkaApis, asyncSender, time);
+        this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get());
+
+        S3Storage.setLinkRecordDecoder(new LinkRecordDecoder(routerChannelProvider));
 
         this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache());
         mapping.registerListener(snapshotReadPartitionsManager);
+
+        this.autoMQVersion = metadataCache.autoMQVersion();
 
         LOGGER.info("start zero zone traffic interceptor with config={}", bucketURI);
     }
@@ -115,18 +129,26 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     public void handleProduceRequest(ProduceRequestArgs args) {
         ClientIdMetadata clientId = args.clientId();
         fillRackIfMissing(clientId);
-        if (clientId.rack() != null) {
-            routerOut.handleProduceAppendProxy(args);
+        if (autoMQVersion.isZeroZoneV2Supported()) {
+            routerOutV2.handleProduceAppendProxy(args);
         } else {
-            MismatchRecorder.instance().record(args.entriesPerPartition().entrySet().iterator().next().getKey().topic(), clientId);
-            // If the client rack isn't set, then try to handle the request in the current node.
-            kafkaApis.handleProduceAppendJavaCompatible(args);
+            if (clientId.rack() != null) {
+                routerOut.handleProduceAppendProxy(args);
+            } else {
+                MismatchRecorder.instance().record(args.entriesPerPartition().entrySet().iterator().next().getKey().topic(), clientId);
+                // If the client rack isn't set, then try to handle the request in the current node.
+                kafkaApis.handleProduceAppendJavaCompatible(args);
+            }
         }
     }
 
     @Override
-    public CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(byte[] metadata) {
-        return routerIn.handleZoneRouterRequest(metadata);
+    public CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request) {
+        if (request.version() == 0) {
+            return routerIn.handleZoneRouterRequest(request.metadata());
+        } else {
+            return routerInV2.handleZoneRouterRequest(request);
+        }
     }
 
     @Override
@@ -153,6 +175,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         try {
             mapping.onChange(delta, newImage);
             snapshotReadPartitionsManager.onChange(delta, newImage);
+            autoMQVersion = newImage.features().autoMQVersion();
         } catch (Throwable e) {
             LOGGER.error("Failed to handle metadata update", e);
         }

@@ -21,11 +21,13 @@ package com.automq.stream.s3.context;
 
 import com.automq.stream.s3.trace.context.TraceContext;
 
+import io.netty.buffer.ByteBuf;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 
 public class AppendContext extends TraceContext {
     public static final AppendContext DEFAULT = new AppendContext();
+    private ByteBuf linkRecord;
 
     public AppendContext() {
         super(false, null, null);
@@ -37,5 +39,13 @@ public class AppendContext extends TraceContext {
 
     public AppendContext(boolean isTraceEnabled, Tracer tracer, Context currentContext) {
         super(isTraceEnabled, tracer, currentContext);
+    }
+
+    public void linkRecord(ByteBuf record) {
+        this.linkRecord = record;
+    }
+
+    public ByteBuf linkRecord() {
+        return this.linkRecord;
     }
 }

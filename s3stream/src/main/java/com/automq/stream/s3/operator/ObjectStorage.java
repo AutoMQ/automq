@@ -58,7 +58,7 @@ public interface ObjectStorage {
      * @param options {@link ReadOptions}
      * @param objectPath the object path
      * @param start inclusive start position
-     * @param end inclusive end position
+     * @param end exclusive end position
      * @return read result
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);

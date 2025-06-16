@@ -23,6 +23,7 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 
 import org.slf4j.Logger;
@@ -67,7 +68,7 @@ public class LogCache {
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private LogCacheBlock activeBlock;
-    private long confirmOffset;
+    private RecordOffset lastRecordOffset;
 
     public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount,
         Consumer<LogCacheBlock> blockFreeListener) {
@@ -210,7 +211,7 @@ public class LogCache {
         writeLock.lock();
         try {
             LogCacheBlock block = activeBlock;
-            block.confirmOffset = confirmOffset;
+            block.lastRecordOffset = lastRecordOffset;
             activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
             blocks.add(activeBlock);
             return block;
@@ -327,8 +328,13 @@ public class LogCache {
         return freedBytes.get();
     }
 
-    public void setConfirmOffset(long confirmOffset) {
-        this.confirmOffset = confirmOffset;
+    public void setLastRecordOffset(RecordOffset lastRecordOffset) {
+        readLock.lock();
+        try {
+            this.lastRecordOffset = lastRecordOffset;
+        } finally {
+            readLock.unlock();
+        }
     }
 
     public long size() {
@@ -367,7 +373,7 @@ public class LogCache {
     static void mergeBlock(LogCacheBlock left, LogCacheBlock right) {
         synchronized (left) {
             left.size.addAndGet(right.size());
-            left.confirmOffset = right.confirmOffset;
+            left.lastRecordOffset = right.lastRecordOffset;
             left.map.forEach((streamId, leftStreamCache) -> {
                 StreamCache rightStreamCache = right.map.get(streamId);
                 if (rightStreamCache != null) {
@@ -392,7 +398,7 @@ public class LogCache {
         private final long createdTimestamp = System.currentTimeMillis();
         private final AtomicLong size = new AtomicLong();
         volatile boolean free;
-        private long confirmOffset;
+        private RecordOffset lastRecordOffset;
 
         public LogCacheBlock(long maxSize, int maxStreamCount) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
@@ -447,12 +453,12 @@ public class LogCache {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         }
 
-        public long confirmOffset() {
-            return confirmOffset;
+        public RecordOffset lastRecordOffset() {
+            return lastRecordOffset;
         }
 
-        public void confirmOffset(long confirmOffset) {
-            this.confirmOffset = confirmOffset;
+        public void lastRecordOffset(RecordOffset lastRecordOffset) {
+            this.lastRecordOffset = lastRecordOffset;
         }
 
         public long size() {

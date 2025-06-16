@@ -19,6 +19,8 @@
 
 package kafka.log.streamaspect;
 
+import kafka.automq.zerozone.LinkRecord;
+import kafka.automq.zerozone.ZeroZoneThreadLocalContext;
 import kafka.log.stream.s3.telemetry.ContextUtils;
 import kafka.log.stream.s3.telemetry.TelemetryConstants;
 
@@ -211,8 +213,11 @@ public class ElasticLogFileRecords implements AutoCloseable {
         // Note that the calculation of count requires strong consistency between nextOffset and the baseOffset of records.
         int count = (int) (lastOffset - nextOffset());
         com.automq.stream.DefaultRecordBatch batch = new com.automq.stream.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
-
         AppendContext context = ContextUtils.createAppendContext();
+        ByteBuf linkRecord = LinkRecord.encode(ZeroZoneThreadLocalContext.writeContext().channelOffset(), records);
+        if (linkRecord != null) {
+            context.linkRecord(linkRecord);
+        }
         CompletableFuture<?> cf;
         try {
             cf = TraceUtils.runWithSpanAsync(context, Attributes.empty(), "ElasticLogFileRecords::append",

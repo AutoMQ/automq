@@ -835,7 +835,7 @@ class BrokerServer(
     val trafficInterceptor = if (config.automq.zoneRouterChannels().isEmpty) {
       new NoopTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
     } else {
-      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, clientRackProvider, config, config.automq.zoneRouterChannels().get())
+      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, clientRackProvider, config)
       metadataLoader.installPublishers(util.List.of(zeroZoneRouter))
       zeroZoneRouter
     }

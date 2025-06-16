@@ -35,7 +35,6 @@ public class ClientFactory {
      */
     public static Client get(Context context) {
         Config config = ConfigUtils.to(context.config);
-        config.nodeEpoch(System.currentTimeMillis());
         config.version(() -> context.brokerServer.metadataCache().autoMQVersion().s3streamVersion());
         boolean zeroZoneChannelsEnabled = context.config.automq().zoneRouterChannels().isPresent();
         if (zeroZoneChannelsEnabled && config.walUploadIntervalMs() == -1) {

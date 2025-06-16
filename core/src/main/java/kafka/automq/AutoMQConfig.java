@@ -309,6 +309,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, STRING, null, MEDIUM, AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC);
     }
 
+    private final long nodeEpoch = System.currentTimeMillis();
     private List<BucketURI> dataBuckets;
     private List<BucketURI> opsBuckets;
     private String walConfig;
@@ -324,6 +325,10 @@ public class AutoMQConfig {
         baseLabels = parseBaseLabels(config);
         zoneRouterChannels = genZoneRouterChannels(config);
         return this;
+    }
+
+    public long nodeEpoch() {
+        return nodeEpoch;
     }
 
     public List<BucketURI> dataBuckets() {
