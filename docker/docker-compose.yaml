@@ -46,7 +46,7 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc config host add minio http://minio:9000 minioadmin minioadmin) do echo '...waiting...' && sleep 1; done;
+      until (/usr/bin/mc alias set minio http://minio:9000 minioadmin minioadmin) do echo '...waiting...' && sleep 1; done;
       /usr/bin/mc rm -r --force minio/automq-data;
       /usr/bin/mc rm -r --force minio/automq-ops;
       /usr/bin/mc mb minio/automq-data;
