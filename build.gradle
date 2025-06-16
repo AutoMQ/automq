@@ -1382,6 +1382,7 @@ project(':metadata') {
     implementation libs.guava
     implementation libs.awsSdkAuth
     implementation project(':s3stream')
+    implementation ("org.apache.avro:avro:${versions.avro}")
 
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
@@ -2254,7 +2255,7 @@ project(':s3stream') {
     implementation 'software.amazon.awssdk.crt:aws-crt:0.30.8'
     implementation 'com.ibm.async:asyncutil:0.1.0'
 
-    testImplementation 'org.slf4j:slf4j-simple:2.0.9'
+    testImplementation 'org.slf4j:slf4j-simple:1.7.36'
     testImplementation libs.junitJupiter
     testImplementation libs.mockitoCore
     testImplementation libs.mockitoJunitJupiter // supports MockitoExtension

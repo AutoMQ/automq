@@ -109,7 +109,7 @@ public interface AsyncSender {
                 selector,
                 new ManualMetadataUpdater(),
                 clientId,
-                5,
+                64,
                 0,
                 0,
                 Selectable.USE_DEFAULT_BUFFER_SIZE,
@@ -145,7 +145,7 @@ public interface AsyncSender {
         }
 
         private void run() {
-            Map<Node, Long> lastUnreadyTimes = new ConcurrentHashMap<>();
+            Map<Node, ConnectingState> connectingStates = new ConcurrentHashMap<>();
             while (shouldRun.get()) {
                 // TODO: graceful shutdown
                 try {
@@ -155,9 +155,9 @@ public interface AsyncSender {
                             return;
                         }
                         if (NetworkClientUtils.isReady(networkClient, node, now)) {
-                            lastUnreadyTimes.remove(node);
+                            connectingStates.remove(node);
                             Request request = queue.poll();
-                            ClientRequest clientRequest = networkClient.newClientRequest(Integer.toString(node.id()), request.requestBuilder, now, true, 3000, new RequestCompletionHandler() {
+                            ClientRequest clientRequest = networkClient.newClientRequest(Integer.toString(node.id()), request.requestBuilder, now, true, 10000, new RequestCompletionHandler() {
                                 @Override
                                 public void onComplete(ClientResponse response) {
                                     request.cf.complete(response);
@@ -165,12 +165,12 @@ public interface AsyncSender {
                             });
                             networkClient.send(clientRequest, now);
                         } else {
-                            Long lastUnreadyTime = lastUnreadyTimes.get(node);
-                            if (lastUnreadyTime == null) {
+                            ConnectingState connectingState = connectingStates.get(node);
+                            if (connectingState == null) {
                                 networkClient.ready(node, now);
-                                lastUnreadyTimes.put(node, now);
+                                connectingStates.put(node, new ConnectingState(now));
                             } else {
-                                if (now - lastUnreadyTime > 3000) {
+                                if (now - connectingState.startConnectNanos > 3000) {
                                     for (; ; ) {
                                         Request request = queue.poll();
                                         if (request == null) {
@@ -178,10 +178,12 @@ public interface AsyncSender {
                                         }
                                         request.cf.completeExceptionally(new SocketTimeoutException(String.format("Cannot connect to node=%s", node)));
                                     }
-                                    lastUnreadyTimes.remove(node);
-                                } else {
-                                    // attempt to reconnect
+                                    connectingStates.remove(node);
+                                } else if (now - connectingState.startConnectNanos > 1000 && connectingState.connectTimes < 2) {
+                                    // The broker network maybe slightly ready after the broker become UNFENCED.
+                                    // So we need to retry connect twice.
                                     networkClient.ready(node, now);
+                                    connectingState.connectTimes = connectingState.connectTimes + 1;
                                 }
                             }
                         }
@@ -212,6 +214,16 @@ public interface AsyncSender {
         public Request(AbstractRequest.Builder<?> requestBuilder, CompletableFuture<ClientResponse> cf) {
             this.requestBuilder = requestBuilder;
             this.cf = cf;
+        }
+    }
+
+    class ConnectingState {
+        final long startConnectNanos;
+        int connectTimes;
+
+        public ConnectingState(long startConnectNanos) {
+            this.startConnectNanos = startConnectNanos;
+            connectTimes = 1;
         }
     }
 

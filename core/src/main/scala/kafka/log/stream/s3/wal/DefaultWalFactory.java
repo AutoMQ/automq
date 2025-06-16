@@ -24,8 +24,10 @@ import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
+import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.WalFactory;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.impl.object.ObjectReservationService;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.IdURI;
@@ -65,8 +67,9 @@ public class DefaultWalFactory implements WalFactory {
                     .withClusterId(AutoMQApplication.getClusterId())
                     .withNodeId(nodeId)
                     .withEpoch(options.nodeEpoch())
-                    .withFailover(options.failoverMode());
-
+                    .withOpenMode(options.openMode());
+                ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(), walObjectStorage, walObjectStorage.bucketId());
+                configBuilder.withReservationService(reservationService);
                 return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
             default:
                 throw new IllegalArgumentException("Unsupported WAL protocol: " + uri.protocol());

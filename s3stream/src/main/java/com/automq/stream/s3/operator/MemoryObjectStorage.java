@@ -20,6 +20,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
@@ -78,7 +79,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
         ByteBuf value = storage.get(path);
         if (value == null) {
-            return FutureUtil.failedFuture(new IllegalArgumentException("object not exist"));
+            return FutureUtil.failedFuture(new ObjectNotExistException("object not exist"));
         }
         int length = end != -1L ? (int) (end - start) : (int) (value.readableBytes() - start);
         ByteBuf rst = value.retainedSlice(value.readerIndex() + (int) start, length);
@@ -200,7 +201,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     @Override
     Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
         Throwable cause = FutureUtil.cause(ex);
-        RetryStrategy strategy = cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException
+        RetryStrategy strategy = (cause instanceof UnsupportedOperationException || cause instanceof IllegalArgumentException || cause instanceof ObjectNotExistException)
             ? RetryStrategy.ABORT : RetryStrategy.RETRY;
         return Pair.of(strategy, cause);
     }

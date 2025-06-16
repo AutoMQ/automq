@@ -541,10 +541,6 @@ class BrokerTopicStats(remoteStorageEnabled: Boolean = false) extends Logging {
   def topicStats(topic: String): BrokerTopicMetrics =
     stats.getAndMaybePut(topic)
 
-  def topicPartitionStats(topicPartition: TopicPartition): BrokerTopicPartitionMetrics = {
-    partitionStats.getAndMaybePut(topicPartition)
-  }
-
   def updateReplicationBytesIn(value: Long): Unit = {
     allTopicsStats.replicationBytesInRate.foreach { metric =>
       metric.mark(value)
@@ -649,11 +645,31 @@ class BrokerTopicStats(remoteStorageEnabled: Boolean = false) extends Logging {
         updateReassignmentBytesOut(value)
       updateReplicationBytesOut(value)
     } else {
-      topicPartitionStats(topicPartition).bytesOutRate.mark(value)
+      // AutoMQ inject start
+      val partitionMetrics = partitionStats.getAndMaybePut(topicPartition)
+      partitionMetrics.bytesOutRate.mark(value)
+      // AutoMQ inject start
       topicStats(topicPartition.topic()).bytesOutRate.mark(value)
       allTopicsStats.bytesOutRate.mark(value)
     }
   }
+
+  // AutoMQ inject start
+  def newMetrics(topicPartition: TopicPartition): Unit = {
+    partitionStats.getAndMaybePut(topicPartition)
+  }
+
+  def updatePartitionBytesIn(topicPartition: TopicPartition, size: Int): Unit = {
+    val partitionMetrics = partitionStats.getAndMaybePut(topicPartition)
+    partitionMetrics.totalProduceRequestRate.mark()
+    partitionMetrics.bytesInRate.mark(size)
+  }
+
+  def updatePartitionFetchRequestRate(topicPartition: TopicPartition): Unit = {
+    val partitionMetrics = partitionStats.getAndMaybePut(topicPartition)
+    partitionMetrics.totalFetchRequestRate.mark()
+  }
+  // AutoMQ inject end
 
   // Update the broker-level all topic metric values so that we have a sample right for all topics metric after update of partition.
   def recordRemoteCopyLagBytes(topic: String, partition: Int, value: Long): Unit = {

@@ -320,4 +320,13 @@ public class ElasticTimeIndex extends TimeIndex {
             return entry(entries() - 1);
         }
     }
+
+    void snapshot(TimestampOffset lastTimestampOffset) {
+        if (lastTimestampOffset == null) {
+            return;
+        }
+        setEntries((int) (stream.nextOffset() / ENTRY_SIZE));
+        lastEntry(lastTimestampOffset);
+    }
+
 }

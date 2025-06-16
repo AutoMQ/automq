@@ -110,6 +110,11 @@ public class MemoryClient implements Client {
         }
 
         @Override
+        public void confirmOffset(long offset) {
+            nextOffsetAlloc.set(offset);
+        }
+
+        @Override
         public long nextOffset() {
             return nextOffsetAlloc.get();
         }

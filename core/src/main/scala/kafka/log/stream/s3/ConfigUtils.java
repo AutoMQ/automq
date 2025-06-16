@@ -30,6 +30,7 @@ public class ConfigUtils {
         AutoMQConfig config = s.automq();
         return new Config()
             .nodeId(s.nodeId())
+            .nodeEpoch(config.nodeEpoch())
             .dataBuckets(config.dataBuckets())
             .walConfig(config.walConfig())
             .walCacheSize(s.s3WALCacheSize())

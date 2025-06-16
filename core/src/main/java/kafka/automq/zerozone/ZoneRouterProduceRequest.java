@@ -23,15 +23,25 @@ import org.apache.kafka.common.message.ProduceRequestData;
 
 import java.util.Objects;
 
-public class ZoneRouterProduceRequest {
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
+
+public class ZoneRouterProduceRequest extends AbstractReferenceCounted implements AutoCloseable {
     private final short apiVersion;
     private final short flag;
     private final ProduceRequestData data;
+    private final Runnable releaseHook;
 
     public ZoneRouterProduceRequest(short apiVersion, short flag, ProduceRequestData data) {
+        this(apiVersion, flag, data, () -> {
+        });
+    }
+
+    public ZoneRouterProduceRequest(short apiVersion, short flag, ProduceRequestData data, Runnable releaseHook) {
         this.apiVersion = apiVersion;
         this.data = data;
         this.flag = flag;
+        this.releaseHook = releaseHook;
     }
 
     public short apiVersion() {
@@ -59,6 +69,21 @@ public class ZoneRouterProduceRequest {
     @Override
     public int hashCode() {
         return Objects.hash(apiVersion, data);
+    }
+
+    @Override
+    protected void deallocate() {
+        releaseHook.run();
+    }
+
+    @Override
+    public ReferenceCounted touch(Object o) {
+        return this;
+    }
+
+    @Override
+    public void close() {
+        release();
     }
 
     public static class Flag {

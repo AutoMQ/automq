@@ -39,6 +39,22 @@ public enum TimestampType {
         throw new NoSuchElementException("Invalid timestamp type " + name);
     }
 
+    public static TimestampType forId(int id) {
+        switch (id) {
+            case -1: {
+                return NO_TIMESTAMP_TYPE;
+            }
+            case 0: {
+                return CREATE_TIME;
+            }
+            case 1: {
+                return LOG_APPEND_TIME;
+            }
+            default:
+                throw new IllegalArgumentException("Invalid timestamp type " + id);
+        }
+    }
+
     @Override
     public String toString() {
         return name;

@@ -67,6 +67,12 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     var lastCheckpointTimestamp = time.milliseconds()
     var configChangeListeners = new CopyOnWriteArrayList[LogConfigChangeListener]()
 
+    override def newMetrics(): Unit = {
+        if (!snapshotRead) {
+            super.newMetrics()
+        }
+    }
+
     def getLocalLog(): ElasticLog = elasticLog
 
     def confirmOffset(): LogOffsetMetadata = {

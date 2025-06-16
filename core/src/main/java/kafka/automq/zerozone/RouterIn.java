@@ -112,7 +112,11 @@ class RouterIn {
             .thenCompose(rst -> prevLastRouterCf.thenApply(nil -> rst))
             .thenComposeAsync(produces -> {
                 List<CompletableFuture<AutomqZoneRouterResponseData.Response>> cfList = new ArrayList<>();
-                produces.stream().map(this::append).forEach(cfList::add);
+                produces.stream().map(request -> {
+                    try (request) {
+                        return append(request);
+                    }
+                }).forEach(cfList::add);
                 return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).thenApply(nil -> {
                     AutomqZoneRouterResponseData response = new AutomqZoneRouterResponseData();
                     cfList.forEach(cf -> response.responses().add(cf.join()));

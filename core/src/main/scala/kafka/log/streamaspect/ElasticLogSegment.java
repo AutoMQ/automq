@@ -19,6 +19,7 @@
 
 package kafka.log.streamaspect;
 
+import kafka.cluster.PartitionSnapshot;
 import kafka.log.streamaspect.cache.FileCache;
 
 import org.apache.kafka.common.InvalidRecordException;
@@ -608,5 +609,10 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
                 }
             };
         };
+    }
+
+    void snapshot(PartitionSnapshot snapshot) {
+        log.size(snapshot.logEndOffset().relativePositionInSegment);
+        timeIndex.snapshot(snapshot.lastTimestampOffset());
     }
 }

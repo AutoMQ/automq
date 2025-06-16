@@ -17,10 +17,37 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.cache.blockcache;
+package kafka.automq.zerozone;
 
-/**
- * All the methods in this class should be called from the same stream's eventLoop.
- */
-public @interface EventLoopSafe {
+import java.util.concurrent.CompletableFuture;
+
+import io.netty.buffer.ByteBuf;
+
+public interface RouterChannel {
+
+    CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data);
+
+    CompletableFuture<ByteBuf> get(ByteBuf channelOffset);
+
+    void nextEpoch(long epoch);
+
+    void trim(long epoch);
+
+    class AppendResult {
+        private final long epoch;
+        private final ByteBuf channelOffset;
+
+        public AppendResult(long epoch, ByteBuf channelOffset) {
+            this.epoch = epoch;
+            this.channelOffset = channelOffset;
+        }
+
+        public long epoch() {
+            return epoch;
+        }
+
+        public ByteBuf channelOffset() {
+            return channelOffset;
+        }
+    }
 }

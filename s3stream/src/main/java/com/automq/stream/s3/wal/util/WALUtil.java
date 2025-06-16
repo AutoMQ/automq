@@ -67,6 +67,12 @@ public class WALUtil {
         return new Record(header, body);
     }
 
+    public static ByteBuf generateHeader(ByteBuf body, ByteBuf emptyHeader, int crc, long start) {
+        crc = 0 == crc ? WALUtil.crc32(body) : crc;
+        return new RecordHeader(start, body.readableBytes(), crc)
+            .marshal(emptyHeader);
+    }
+
     /**
      * Get CRC32 of the given ByteBuf from current reader index to the end.
      * This method will not change the reader index of the given ByteBuf.

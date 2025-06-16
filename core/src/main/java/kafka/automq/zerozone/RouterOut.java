@@ -379,10 +379,6 @@ public class RouterOut {
         }
     }
 
-    public interface GetRouterOutNode {
-        Node getRouteOutNode(String topicName, int partition, ClientIdMetadata clientId);
-    }
-
     static class ProxyRequest {
         short apiVersion;
         short flag;

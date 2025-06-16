@@ -232,6 +232,11 @@ public class ClientWrapper implements Client {
         }
 
         @Override
+        public void confirmOffset(long offset) {
+            stream.confirmOffset(offset);
+        }
+
+        @Override
         public long nextOffset() {
             return stream.nextOffset();
         }

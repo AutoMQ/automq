@@ -174,7 +174,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             ThreadUtils.createThreadFactory(prefix + "s3-fast-retry-timer", true), 10, TimeUnit.MILLISECONDS, 1000);
 
         if (!manualMergeRead) {
-            scheduler.scheduleWithFixedDelay(this::tryMergeRead, 1, 1, TimeUnit.MILLISECONDS);
+            scheduler.scheduleWithFixedDelay(this::tryMergeRead, 5, 5, TimeUnit.MILLISECONDS);
         }
         S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
         S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);

@@ -22,6 +22,10 @@ package com.automq.stream.s3.wal.exception;
 import java.io.IOException;
 
 public class WALFencedException extends IOException {
+
+    public WALFencedException() {
+    }
+
     public WALFencedException(String message) {
         super(message);
     }

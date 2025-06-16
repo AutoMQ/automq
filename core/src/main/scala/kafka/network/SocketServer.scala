@@ -1200,7 +1200,7 @@ private[kafka] class Processor(
                 // AutoMQ will pipeline the requests to accelerate the performance and also keep the request order.
 
                 // Mute the channel if the inflight requests exceed the threshold.
-                if (channelContext.nextCorrelationId.size() >= 8 && !channel.isMuted) {
+                if (channelContext.nextCorrelationId.size() >= 64 && !channel.isMuted) {
                   if (isTraceEnabled) {
                     trace(s"Mute channel ${channel.id} because the inflight requests exceed the threshold, inflight count is ${channelContext.nextCorrelationId.size()}.")
                   }

@@ -25,8 +25,11 @@ import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.controller.stream.NodeMetadata;
 
 import com.automq.stream.s3.exceptions.AutoMQException;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.OpenMode;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WalFactory;
 import com.automq.stream.s3.wal.WalFactory.BuildOptions;
@@ -44,11 +47,12 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import io.netty.buffer.ByteBuf;
+
 
 public class BootstrapWalV1 implements WriteAheadLog {
     private static final Logger LOGGER = LoggerFactory.getLogger(BootstrapWalV1.class);
@@ -114,8 +118,23 @@ public class BootstrapWalV1 implements WriteAheadLog {
     }
 
     @Override
-    public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
-        return wal.append(context, data, crc);
+    public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return wal.append(context, streamRecordBatch);
+    }
+
+    @Override
+    public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
+        return wal.get(recordOffset);
+    }
+
+    @Override
+    public CompletableFuture<List<StreamRecordBatch>> get(RecordOffset startOffset, RecordOffset endOffset) {
+        return wal.get(startOffset, endOffset);
+    }
+
+    @Override
+    public RecordOffset confirmOffset() {
+        return wal.confirmOffset();
     }
 
     @Override
@@ -157,7 +176,7 @@ public class BootstrapWalV1 implements WriteAheadLog {
     }
 
     @Override
-    public CompletableFuture<Void> trim(long offset) {
+    public CompletableFuture<Void> trim(RecordOffset offset) {
         return wal.trim(offset);
     }
 
@@ -165,7 +184,7 @@ public class BootstrapWalV1 implements WriteAheadLog {
         IdURI uri = IdURI.parse(kraftWalConfigs);
         CompletableFuture<Void> cf = walHandle
             .acquirePermission(nodeId, oldNodeEpoch, uri, new WalHandle.AcquirePermissionOptions().failoverMode(failoverMode));
-        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(oldNodeEpoch).failoverMode(failoverMode).build()), executor);
+        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(oldNodeEpoch).openMode(failoverMode ? OpenMode.FAILOVER : OpenMode.READ_WRITE).build()), executor);
     }
 
     private CompletableFuture<? extends WriteAheadLog> buildWal(String kraftWalConfigs) {
@@ -175,7 +194,7 @@ public class BootstrapWalV1 implements WriteAheadLog {
             .failoverMode(false);
         CompletableFuture<Void> cf = walHandle
             .acquirePermission(nodeId, nodeEpoch, uri, options);
-        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(nodeEpoch).failoverMode(false).build()), executor);
+        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(nodeEpoch).openMode(OpenMode.READ_WRITE).build()), executor);
     }
 
     private CompletableFuture<Void> releasePermission(String kraftWalConfigs) {
