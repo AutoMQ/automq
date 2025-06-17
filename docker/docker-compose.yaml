@@ -20,7 +20,7 @@ services:
   # MinIO service for S3 storage
   minio:
     container_name: "minio"
-    image: minio/minio
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
@@ -40,13 +40,13 @@ services:
   # Create needed buckets
   mc:
     container_name: "mc"
-    image: minio/mc
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc config host add minio http://minio:9000 minioadmin minioadmin) do echo '...waiting...' && sleep 1; done;
+      until (/usr/bin/mc alias set minio http://minio:9000 minioadmin minioadmin) do echo '...waiting...' && sleep 1; done;
       /usr/bin/mc rm -r --force minio/automq-data;
       /usr/bin/mc rm -r --force minio/automq-ops;
       /usr/bin/mc mb minio/automq-data;
