@@ -33,7 +33,6 @@ import org.apache.kafka.image.publisher.MetadataPublisher
 import org.apache.kafka.image.{MetadataDelta, MetadataImage, TopicDelta, TopicsDelta}
 import org.apache.kafka.server.fault.FaultHandler
 
-import java.util
 import java.util.concurrent.{CompletableFuture, ExecutorService}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -343,7 +342,7 @@ class BrokerMetadataPublisher(
             )
           } catch {
             case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating group " +
-              s"coordinator with local changes in $deltaName", t)
+              s"coordinator with local changes in $deltaName for $topicPartition", t)
           }
         }
 
@@ -357,22 +356,10 @@ class BrokerMetadataPublisher(
               txnCoordinator.onResignation)
           } catch {
             case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating txn " +
-              s"coordinator with local changes in $deltaName", t)
+              s"coordinator with local changes in $deltaName for $topicPartition", t)
           }
         }
       })
-
-      try {
-        // Notify the group coordinator about deleted topics.
-        if (topicsDelta.topicWasDeleted(topicPartition.topic())) {
-          groupCoordinator.onPartitionsDeleted(
-            util.List.of(new TopicPartition(topicPartition.topic(), topicPartition.partition())),
-            RequestLocal.NoCaching.bufferSupplier)
-        }
-      } catch {
-        case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating group " +
-          s"coordinator with deleted partitions in $deltaName", t)
-      }
     }
 
     // Notify the replica manager about changes to topics.
@@ -383,6 +370,7 @@ class BrokerMetadataPublisher(
             if (ex != null) {
               metadataPublishingFaultHandler.handleFault("Error applying topics " + s"delta in $deltaName", ex)
             }
+            notifyGroupCoordinatorOfDeletedPartitions(deltaName, topicsDelta)
           })
       case _ =>
         CompletableFuture.completedFuture(replicaManager.applyDelta(topicsDelta, newImage))
@@ -413,23 +401,27 @@ class BrokerMetadataPublisher(
               case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating txn " +
                 s"coordinator with local changes in $deltaName", t)
             }
-            try {
-              // Notify the group coordinator about deleted topics.
-              val deletedTopicPartitions = new mutable.ArrayBuffer[TopicPartition]()
-              topicsDelta.deletedTopicIds().forEach { id =>
-                val topicImage = topicsDelta.image().getTopic(id)
-                topicImage.partitions().keySet().forEach {
-                  id => deletedTopicPartitions += new TopicPartition(topicImage.name(), id)
-                }
-              }
-              if (deletedTopicPartitions.nonEmpty) {
-                groupCoordinator.onPartitionsDeleted(deletedTopicPartitions.asJava, RequestLocal.NoCaching.bufferSupplier)
-              }
-            } catch {
-              case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating group " +
-                s"coordinator with deleted partitions in $deltaName", t)
-            }
+            notifyGroupCoordinatorOfDeletedPartitions(deltaName, topicsDelta)
           })
+    }
+  }
+
+  private def notifyGroupCoordinatorOfDeletedPartitions(deltaName: String, topicsDelta: TopicsDelta): Unit = {
+    try {
+      // Notify the group coordinator about deleted topics.
+      val deletedTopicPartitions = new mutable.ArrayBuffer[TopicPartition]()
+      topicsDelta.deletedTopicIds().forEach { id =>
+        val topicImage = topicsDelta.image().getTopic(id)
+        topicImage.partitions().keySet().forEach {
+          id => deletedTopicPartitions += new TopicPartition(topicImage.name(), id)
+        }
+      }
+      if (deletedTopicPartitions.nonEmpty) {
+        groupCoordinator.onPartitionsDeleted(deletedTopicPartitions.asJava, RequestLocal.NoCaching.bufferSupplier)
+      }
+    } catch {
+      case t: Throwable => metadataPublishingFaultHandler.handleFault("Error updating group " +
+        s"coordinator with deleted partitions in $deltaName", t)
     }
   }
   // AutoMQ inject end
