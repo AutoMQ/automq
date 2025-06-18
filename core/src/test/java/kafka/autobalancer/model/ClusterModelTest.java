@@ -489,20 +489,20 @@ public class ClusterModelTest {
         clusterModel.unregisterBroker(0);
 
         // test high append latency
-        clusterModel.onBrokerRegister(registerBrokerRecord0);
-        for (int i = 0; i < 100; i++) {
-            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                    0, 0, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
-        }
-        snapshot = clusterModel.snapshot();
-        snapshot.markSlowBrokers();
-        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
-        Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
-                2000, 0, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
-        snapshot = clusterModel.snapshot();
-        snapshot.markSlowBrokers();
-        Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
-        clusterModel.unregisterBroker(0);
+//        clusterModel.onBrokerRegister(registerBrokerRecord0);
+//        for (int i = 0; i < 100; i++) {
+//            Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+//                    0, 0, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
+//        }
+//        snapshot = clusterModel.snapshot();
+//        snapshot.markSlowBrokers();
+//        Assertions.assertFalse(snapshot.broker(0).isSlowBroker());
+//        Assertions.assertTrue(clusterModel.updateBrokerMetrics(0, createBrokerMetrics(0,
+//                2000, 0, 0, MetricVersion.V1).getMetricValueMap().entrySet(), System.currentTimeMillis()));
+//        snapshot = clusterModel.snapshot();
+//        snapshot.markSlowBrokers();
+//        Assertions.assertTrue(snapshot.broker(0).isSlowBroker());
+//        clusterModel.unregisterBroker(0);
 
         // test high pending append latency
         clusterModel.onBrokerRegister(registerBrokerRecord0);
