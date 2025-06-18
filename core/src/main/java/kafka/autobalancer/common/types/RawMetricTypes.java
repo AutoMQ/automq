@@ -33,7 +33,7 @@ public class RawMetricTypes {
     public static final byte BROKER_MAX_PENDING_FETCH_LATENCY_MS = (byte) 5;
     public static final byte BROKER_METRIC_VERSION = (byte) 6;
     public static final Map<Byte, AbnormalMetric> ABNORMAL_METRICS = Map.of(
-            BROKER_APPEND_LATENCY_AVG_MS, new AbnormalLatency(100), // 100ms
+//            BROKER_APPEND_LATENCY_AVG_MS, new AbnormalLatency(100), // 100ms
             BROKER_MAX_PENDING_APPEND_LATENCY_MS, new AbnormalLatency(10000), // 10s
             BROKER_MAX_PENDING_FETCH_LATENCY_MS, new AbnormalLatency(10000)  // 10s
     );
