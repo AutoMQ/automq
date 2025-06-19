@@ -64,6 +64,11 @@ public class Config {
         throw new UnsupportedOperationException();
     };
 
+    /**
+     * Whether to enable namespaced KV support
+     */
+    private boolean namespacedKVEnabled = false;
+
     public int nodeId() {
         return nodeId;
     }
@@ -341,5 +346,14 @@ public class Config {
 
     public Version version() {
         return version.get();
+    }
+
+    public boolean isNamespacedKVEnabled() {
+        return namespacedKVEnabled;
+    }
+
+    public Config namespacedKVEnabled(boolean enabled) {
+        this.namespacedKVEnabled = enabled;
+        return this;
     }
 }
