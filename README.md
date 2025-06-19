@@ -23,7 +23,7 @@
 </div>
 
 ## 👥 Big Companies Worldwide are Using AutoMQ
-> Here are some of our major customers worldwide using AutoMQ.
+> Here are some of our customers worldwide using AutoMQ.
 
 
 <a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank">
