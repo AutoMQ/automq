@@ -34,10 +34,7 @@
 </a> 
 <a href="https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario" target="_blank">
     <img alt="image" src="https://github.com/user-attachments/assets/7e6df0f2-e79d-4d97-a4fc-fb50774fd2dd" width="180" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="a4x" src="https://github.com/user-attachments/assets/f0b4870e-58e5-4692-a706-48d51dfb6302" width="180" />
-</a> 
+</a>
 <a href="https://www.automq.com/blog/dewu-builds-trillion-level-monitoring-system-based-on-automq" target="_blank">
     <img alt="Poizon" src="https://github.com/user-attachments/assets/a4d46a21-9b9d-4a95-88fd-e123b8f35063" width="180" />
 </a> 
