@@ -1,6 +1,7 @@
 package com.automq.stream.s3.wal;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
+
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
