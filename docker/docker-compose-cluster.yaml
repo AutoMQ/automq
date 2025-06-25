@@ -58,8 +58,8 @@ services:
       /usr/bin/mc rm -r --force minio/automq-ops;
       /usr/bin/mc mb minio/automq-data;
       /usr/bin/mc mb minio/automq-ops;
-      /usr/bin/mc policy set public minio/automq-data;
-      /usr/bin/mc policy set public minio/automq-ops;
+      /usr/bin/mc anonymous set public minio/automq-data;
+      /usr/bin/mc anonymous set public minio/automq-ops;
       tail -f /dev/null
       "
     networks:
