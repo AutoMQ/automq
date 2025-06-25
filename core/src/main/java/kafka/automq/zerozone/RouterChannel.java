@@ -17,26 +17,36 @@
  * limitations under the License.
  */
 
-package kafka.automq.interceptor;
+package kafka.automq.zerozone;
 
-import org.apache.kafka.common.Node;
-import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
-import org.apache.kafka.common.message.MetadataResponseData;
-import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
-
-import java.util.List;
-import java.util.Optional;
+import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
 
-public interface TrafficInterceptor {
+public interface RouterChannel {
 
-    void handleProduceRequest(ProduceRequestArgs args);
+    CompletableFuture<AppendResult> append(int targetNodeId, ByteBuf data);
 
-    CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request);
+    CompletableFuture<ByteBuf> get(ByteBuf channelOffset);
 
-    List<MetadataResponseData.MetadataResponseTopic> handleMetadataResponse(ClientIdMetadata clientId,
-        List<MetadataResponseData.MetadataResponseTopic> topics);
+    void nextEpoch(long epoch);
 
-    Optional<Node> getLeaderNode(int leaderId, ClientIdMetadata clientId, String listenerName);
+    void trim(long epoch);
 
+    class AppendResult {
+        private final long epoch;
+        private final ByteBuf channelOffset;
+
+        public AppendResult(long epoch, ByteBuf channelOffset) {
+            this.epoch = epoch;
+            this.channelOffset = channelOffset;
+        }
+
+        public long epoch() {
+            return epoch;
+        }
+
+        public ByteBuf channelOffset() {
+            return channelOffset;
+        }
+    }
 }

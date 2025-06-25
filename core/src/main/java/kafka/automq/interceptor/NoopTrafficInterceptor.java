@@ -23,6 +23,7 @@ import kafka.server.MetadataCache;
 import kafka.server.streamaspect.ElasticKafkaApis;
 
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
@@ -48,7 +49,7 @@ public class NoopTrafficInterceptor implements TrafficInterceptor {
     }
 
     @Override
-    public CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(byte[] metadata) {
+    public CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request) {
         return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
