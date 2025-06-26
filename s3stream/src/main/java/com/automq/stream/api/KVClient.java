@@ -40,7 +40,7 @@ public interface KVClient {
      * Put key value, overwrite if key exist, return current key value after putting.
      *
      * @param keyValue {@link KeyValue} k-v pair
-     * @return async put result. {@link KeyValue} current value after putting.
+     * @return async put result. {@link Value} current value after putting.
      */
     CompletableFuture<Value> putKV(KeyValue keyValue);
 
@@ -48,7 +48,7 @@ public interface KVClient {
      * Get value by key.
      *
      * @param key key.
-     * @return async get result. {@link KeyValue} k-v pair, null if key not exist.
+     * @return async get result. {@link Value} retrieved value, null if key not exist.
      */
     CompletableFuture<Value> getKV(Key key);
 
