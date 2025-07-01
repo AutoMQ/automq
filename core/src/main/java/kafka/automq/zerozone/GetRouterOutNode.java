@@ -1,6 +1,7 @@
 package kafka.automq.zerozone;
 
 import kafka.automq.interceptor.ClientIdMetadata;
+
 import org.apache.kafka.common.Node;
 
 public interface GetRouterOutNode {

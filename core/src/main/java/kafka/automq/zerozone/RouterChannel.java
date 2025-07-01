@@ -19,12 +19,13 @@
 
 package kafka.automq.zerozone;
 
-import io.netty.buffer.ByteBuf;
 import java.util.concurrent.CompletableFuture;
+
+import io.netty.buffer.ByteBuf;
 
 public interface RouterChannel {
 
-    CompletableFuture<AppendResult> append(int targetNodeId, ByteBuf data);
+    CompletableFuture<AppendResult> append(int targetNodeId, int orderHint, ByteBuf data);
 
     CompletableFuture<ByteBuf> get(ByteBuf channelOffset);
 
