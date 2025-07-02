@@ -74,7 +74,7 @@
 
 The `docker/docker-compose.yaml` file provides a simple single-node setup for quick evaluation and development:
 ```shell
-docker compose -f docker/docker-compose.yaml up -d
+curl -O https://raw.githubusercontent.com/AutoMQ/automq/refs/tags/1.5.1/docker/docker-compose.yaml && docker compose -f docker-compose.yaml up -d
 ```
 This setup features a single AutoMQ node serving as both controller and broker, alongside MinIO for S3 storage. All services operate within a Docker bridge network called `automq_net`, allowing you to start a Kafka producer in this network to test AutoMQ:
 ```shell
@@ -84,14 +84,14 @@ docker run --network automq_net automqinc/automq:latest /bin/bash -c \
 ```
 After testing, you can destroy the setup with:
 ```shell
-docker compose -f docker/docker-compose.yaml down
+docker compose -f docker-compose.yaml down
 ```
 The `docker/docker-compose-cluster.yaml` file offers a more complex setup with three AutoMQ nodes, ideal for testing AutoMQ's cluster features, and can be run in the same way.
 
 There are more deployment options available:
-- [Deploy on Linux with 5 Nodes](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux?utm_source=github_automq)
-- [Deploy on Kubernetes](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-kubernetes?utm_source=github_automq)
-- [Run on Ceph / MinIO / CubeFS / HDFS](https://www.automq.com/docs/automq/deployment/overview?utm_source=github_automq)
+- [Deploy Multi-Nodes Test Cluster on Docker](https://www.automq.com/docs/automq/getting-started/deploy-multi-nodes-test-cluster-on-docker?utm_source=github_automq)
+- [Deploy on Linux with 5 Nodes](https://www.automq.com/docs/automq/deployment/deploy-multi-nodes-cluster-on-linux?utm_source=github_automq)
+- [Deploy on Kubernetes](https://www.automq.com/docs/automq/deployment/deploy-multi-nodes-cluster-on-kubernetes?utm_source=github_automq)
 - [Try AutoMQ on AWS Marketplace (Two Weeks Free Trial)](https://docs.automq.com/automq-cloud/getting-started/install-byoc-environment/aws/install-env-from-marketplace?utm_source=github_automq)
 - [Try AutoMQ on Alibaba Cloud Marketplace (Two Weeks Free Trial)](https://market.aliyun.com/products/55530001/cmgj00065841.html)
 
