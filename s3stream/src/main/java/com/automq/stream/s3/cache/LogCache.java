@@ -328,7 +328,12 @@ public class LogCache {
     }
 
     public void setConfirmOffset(long confirmOffset) {
-        this.confirmOffset = confirmOffset;
+        readLock.lock();
+        try {
+            this.confirmOffset = confirmOffset;
+        } finally {
+            readLock.unlock();
+        }
     }
 
     public long size() {

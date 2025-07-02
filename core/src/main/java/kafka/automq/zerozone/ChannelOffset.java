@@ -17,4 +17,8 @@ public class ChannelOffset {
         return 0;
     }
 
+    public ByteBuf byteBuf() {
+        return buf;
+    }
+
 }

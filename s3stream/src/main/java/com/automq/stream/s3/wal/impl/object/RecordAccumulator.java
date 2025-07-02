@@ -22,7 +22,6 @@ package com.automq.stream.s3.wal.impl.object;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Constants;
 import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
@@ -106,7 +105,8 @@ public class RecordAccumulator implements Closeable {
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
         this.executorService = Threads.newSingleThreadScheduledExecutor("s3-wal-schedule", true, log);
         this.utilityService = Threads.newSingleThreadScheduledExecutor("s3-wal-utility", true, log);
-        this.callbackService = Threads.newFixedThreadPoolWithMonitor(4, "s3-wal-callback", false, log);
+        // TODO: orderly callback
+        this.callbackService = Threads.newFixedThreadPoolWithMonitor(1, "s3-wal-callback", false, log);
 
         ObjectWALMetricsManager.setInflightUploadCountSupplier(() -> (long) pendingFutureMap.size());
         ObjectWALMetricsManager.setBufferedDataInBytesSupplier(bufferedDataBytes::get);
@@ -328,7 +328,7 @@ public class RecordAccumulator implements Closeable {
     }
 
     public long append(long recordSize, Function<Long, ByteBuf> recordSupplier,
-        CompletableFuture<AppendResult.CallbackResult> future) throws OverCapacityException, WALFencedException {
+        CompletableFuture<Void> future) throws OverCapacityException, WALFencedException {
         long startTime = time.nanoseconds();
         checkWriteStatus();
 
@@ -599,7 +599,7 @@ public class RecordAccumulator implements Closeable {
                     // Release lock and complete future in callback thread.
                     for (UploadTask task : finishedTasks) {
                         callbackService.submit(() ->
-                            task.records().forEach(record -> record.future.complete(flushedOffset::get))
+                            task.records().forEach(record -> record.future.complete(null))
                         );
                     }
                 } finally {
@@ -657,11 +657,11 @@ public class RecordAccumulator implements Closeable {
 
     protected static class Record {
         public final ByteBuf record;
-        public final CompletableFuture<AppendResult.CallbackResult> future;
+        public final CompletableFuture<Void> future;
         public long offset;
 
         public Record(long offset, ByteBuf record,
-            CompletableFuture<AppendResult.CallbackResult> future) {
+            CompletableFuture<Void> future) {
             this.offset = offset;
             this.record = record;
             this.future = future;

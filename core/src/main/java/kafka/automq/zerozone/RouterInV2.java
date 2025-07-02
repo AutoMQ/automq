@@ -63,16 +63,6 @@ public class RouterInV2 {
     }
 
 
-    static class PartitionProduceRequest {
-        final ChannelOffset channelOffset;
-        CompletableFuture<ByteBuf> unpackLinkCf;
-        CompletableFuture<AutomqZoneRouterResponseData.Response> responseCf = new CompletableFuture<>();
-
-        public PartitionProduceRequest(ChannelOffset channelOffset) {
-            this.channelOffset = channelOffset;
-        }
-    }
-
     public CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request) {
         RouterRecordV2 routerRecord = RouterRecordV2.decode(Unpooled.wrappedBuffer(request.metadata()));
         RouterChannel routerChannel = channelProvider.routerChannel(routerRecord.nodeId());
@@ -102,7 +92,7 @@ public class RouterInV2 {
                     EventLoop eventLoop = appendEventLoops[Math.abs(req.channelOffset.orderHint() % appendEventLoops.length)];
                     req.unpackLinkCf.thenComposeAsync(buf -> {
                         ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
-                        return append(zoneRouterProduceRequest);
+                        return append(req.channelOffset, zoneRouterProduceRequest);
                     }, eventLoop).whenComplete((resp, ex) -> {
                         if (ex != null) {
                             req.responseCf.completeExceptionally(ex);
@@ -119,20 +109,23 @@ public class RouterInV2 {
     }
 
     private CompletableFuture<AutomqZoneRouterResponseData.Response> append(
-        ZoneRouterProduceRequest zoneRouterProduceRequest) {
+        ChannelOffset channelOffset,
+        ZoneRouterProduceRequest zoneRouterProduceRequest
+    ) {
         ZoneRouterProduceRequest.Flag flag = new ZoneRouterProduceRequest.Flag(zoneRouterProduceRequest.flag());
         ProduceRequestData data = zoneRouterProduceRequest.data();
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("[ROUTER_IN],[APPEND],data={}", data);
         }
 
+        ZeroZoneThreadLocalContext.writeContext().channelOffset =  channelOffset;
         Map<TopicPartition, MemoryRecords> realEntriesPerPartition = ZeroZoneTrafficInterceptor.produceRequestToMap(data);
         short apiVersion = zoneRouterProduceRequest.apiVersion();
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
         routerInProduceHandler.handleProduceAppend(
             ProduceRequestArgs.builder()
                 .clientId(buildClientId(realEntriesPerPartition))
-                .timeout(10000)
+                .timeout(data.timeoutMs())
                 .requiredAcks(data.acks())
                 .internalTopicsAllowed(flag.internalTopicsAllowed())
                 .transactionId(data.transactionalId())
@@ -172,6 +165,16 @@ public class RouterInV2 {
             }
         }
         return null;
+    }
+
+    static class PartitionProduceRequest {
+        final ChannelOffset channelOffset;
+        CompletableFuture<ByteBuf> unpackLinkCf;
+        final CompletableFuture<AutomqZoneRouterResponseData.Response> responseCf = new CompletableFuture<>();
+
+        public PartitionProduceRequest(ChannelOffset channelOffset) {
+            this.channelOffset = channelOffset;
+        }
     }
 
 }

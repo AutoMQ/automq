@@ -25,6 +25,7 @@ import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.controller.stream.NodeMetadata;
 
 import com.automq.stream.s3.exceptions.AutoMQException;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
@@ -48,7 +49,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import io.netty.buffer.ByteBuf;
 
 public class BootstrapWalV1 implements WriteAheadLog {
     private static final Logger LOGGER = LoggerFactory.getLogger(BootstrapWalV1.class);
@@ -114,8 +114,8 @@ public class BootstrapWalV1 implements WriteAheadLog {
     }
 
     @Override
-    public AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException {
-        return wal.append(context, data, crc);
+    public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return wal.append(context, streamRecordBatch);
     }
 
     @Override

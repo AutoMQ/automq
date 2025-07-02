@@ -22,15 +22,12 @@ package com.automq.stream.s3.wal.common;
 import com.automq.stream.s3.wal.AppendResult;
 
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 
 public final class AppendResultImpl implements AppendResult {
     private final long recordOffset;
-    private final CompletableFuture<CallbackResult> future;
 
-    public AppendResultImpl(long recordOffset, CompletableFuture<CallbackResult> future) {
+    public AppendResultImpl(long recordOffset) {
         this.recordOffset = recordOffset;
-        this.future = future;
     }
 
     @Override
@@ -44,11 +41,6 @@ public final class AppendResultImpl implements AppendResult {
     }
 
     @Override
-    public CompletableFuture<CallbackResult> future() {
-        return future;
-    }
-
-    @Override
     public boolean equals(Object obj) {
         if (obj == this) {
             return true;
@@ -57,13 +49,12 @@ public final class AppendResultImpl implements AppendResult {
             return false;
         }
         var that = (AppendResultImpl) obj;
-        return this.recordOffset == that.recordOffset &&
-               Objects.equals(this.future, that.future);
+        return this.recordOffset == that.recordOffset;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(recordOffset, future);
+        return Objects.hash(recordOffset);
     }
 
 }

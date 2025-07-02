@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.wal.impl;
 
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
@@ -66,30 +67,19 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
-    public AppendResult append(TraceContext traceContext, ByteBuf data, int crc) throws OverCapacityException {
+    public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) {
         if (full) {
-            data.release();
-            throw new OverCapacityException("MemoryWriteAheadLog is full");
+            streamRecordBatch.release();
+            return CompletableFuture.failedFuture(new OverCapacityException("MemoryWriteAheadLog is full"));
         }
-        int dataLength = data.readableBytes();
+        int dataLength = streamRecordBatch.encoded().readableBytes();
         long offset = offsetAlloc.getAndAdd(RecordHeader.RECORD_HEADER_SIZE + dataLength);
 
         ByteBuf buffer = Unpooled.buffer(dataLength);
-        buffer.writeBytes(data);
-        data.release();
+        buffer.writeBytes(streamRecordBatch.encoded());
+        streamRecordBatch.release();
         dataMap.put(offset, buffer);
-
-        return new AppendResult() {
-            @Override
-            public long recordOffset() {
-                return offset;
-            }
-
-            @Override
-            public CompletableFuture<CallbackResult> future() {
-                return CompletableFuture.completedFuture(null);
-            }
-        };
+        return CompletableFuture.completedFuture(() -> offset);
     }
 
     @Override
