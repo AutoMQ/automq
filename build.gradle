@@ -150,6 +150,10 @@ allprojects {
   }
 
   configurations.all {
+    // Globally exclude commons-logging and logback to ensure a single logging implementation (reload4j)
+    exclude group: "commons-logging", module: "commons-logging"
+    exclude group: "ch.qos.logback", module: "logback-classic"
+    exclude group: "ch.qos.logback", module: "logback-core"
     // zinc is the Scala incremental compiler, it has a configuration for its own dependencies
     // that are unrelated to the project dependencies, we should not change them
     if (name != "zinc") {
@@ -968,6 +972,8 @@ project(':core') {
     implementation libs.guava
     implementation libs.slf4jBridge
     implementation libs.slf4jReload4j
+    // The `jcl-over-slf4j` library is used to redirect JCL logging to SLF4J.
+    implementation libs.jclOverSlf4j
 
     implementation libs.opentelemetryJava8
     implementation libs.opentelemetryOshi
