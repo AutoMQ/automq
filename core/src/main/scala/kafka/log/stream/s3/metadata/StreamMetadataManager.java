@@ -220,19 +220,21 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         try (Image image = getImage()) {
             final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
 
-            List<StreamMetadata> streamMetadataList = new ArrayList<>();
-            for (Long streamId : streamIds) {
-                S3StreamMetadataImage streamImage = streamsImage.timelineStreamMetadata().get(streamId);
-                if (streamImage == null) {
-                    LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
-                    continue;
+            List<StreamMetadata> streamMetadataList = new ArrayList<>(streamIds.size());
+            streamsImage.inLockRun(() -> {
+                for (Long streamId : streamIds) {
+                    S3StreamMetadataImage streamImage = streamsImage.timelineStreamMetadata().get(streamId);
+                    if (streamImage == null) {
+                        LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
+                        continue;
+                    }
+                    // If there is a streamImage, it means the stream exists.
+                    @SuppressWarnings("OptionalGetWithoutIsPresent") long endOffset = streamsImage.streamEndOffset(streamId).getAsLong();
+                    StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
+                        streamImage.getStartOffset(), endOffset, streamImage.state());
+                    streamMetadataList.add(streamMetadata);
                 }
-                // If there is a streamImage, it means the stream exists.
-                @SuppressWarnings("OptionalGetWithoutIsPresent") long endOffset = streamsImage.streamEndOffset(streamId).getAsLong();
-                StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
-                    streamImage.getStartOffset(), endOffset, streamImage.state());
-                streamMetadataList.add(streamMetadata);
-            }
+            });
             return streamMetadataList;
         }
     }
