@@ -55,7 +55,7 @@ import java.util.concurrent.CompletableFuture;
 public class ControllerKVClient implements KVClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerKVClient.class);
-    private final ControllerRequestSender requestSender;
+    protected final ControllerRequestSender requestSender;
 
     public ControllerKVClient(ControllerRequestSender requestSender) {
         this.requestSender = requestSender;
