@@ -594,6 +594,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return Objects.hash(nextAssignedStreamId, streamMetadataList(), nodeMetadataList(), streamEndOffsets());
     }
 
+    // caller use this value should be protected by registryRef lock
     public TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> timelineNodeMetadata() {
         return nodeMetadataMap;
     }
@@ -609,8 +610,13 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         });
     }
 
+    // caller use this value should be protected by registryRef lock
     public TimelineHashMap<Long, S3StreamMetadataImage> timelineStreamMetadata() {
         return streamMetadataMap;
+    }
+
+    public void inLockRun(Runnable runnable) {
+        registryRef.inLock(runnable);
     }
 
     List<S3StreamMetadataImage> streamMetadataList() {
@@ -628,16 +634,14 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return nextAssignedStreamId;
     }
 
+    // caller use this value should be protected by registryRef lock
     TimelineHashMap<TopicIdPartition, Set<Long>> partition2streams() {
         return partition2streams;
     }
 
+    // caller use this value should be protected by registryRef lock
     TimelineHashMap<Long, TopicIdPartition> stream2partition() {
         return stream2partition;
-    }
-
-    RegistryRef registryRef() {
-        return registryRef;
     }
 
     // caller use this value should be protected by registryRef lock
@@ -655,6 +659,10 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             streamEndOffsets.entrySet(registryRef.epoch()).forEach(e -> map.put(e.getKey(), e.getValue()));
             return map;
         });
+    }
+
+    RegistryRef registryRef() {
+        return registryRef;
     }
 
     @Override
