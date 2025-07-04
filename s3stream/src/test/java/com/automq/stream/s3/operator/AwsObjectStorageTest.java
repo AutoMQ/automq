@@ -124,4 +124,54 @@ public class AwsObjectStorageTest {
         Assertions.assertEquals(200L, objects.get(1).size());
         Assertions.assertEquals(300L, objects.get(2).size());
     }
+
+    @Test
+    void testListObjectsNoPagination() throws Exception {
+        // Test case where all objects fit in single response (no pagination needed)
+        S3AsyncClient mockS3Client = mock(S3AsyncClient.class);
+        
+        S3Object obj1 = S3Object.builder()
+            .key("single-object")
+            .lastModified(Instant.now())
+            .size(500L)
+            .build();
+            
+        ListObjectsV2Response response = ListObjectsV2Response.builder()
+            .contents(obj1)
+            .isTruncated(false) // No pagination needed
+            .build();
+        
+        when(mockS3Client.listObjectsV2(any(Consumer.class)))
+            .thenReturn(CompletableFuture.completedFuture(response));
+        
+        AwsObjectStorage storage = new AwsObjectStorage(mockS3Client, "test-bucket");
+        
+        CompletableFuture<List<ObjectInfo>> result = storage.doList("single-prefix");
+        List<ObjectInfo> objects = result.get();
+        
+        Assertions.assertEquals(1, objects.size());
+        Assertions.assertEquals("single-object", objects.get(0).key());
+        Assertions.assertEquals(500L, objects.get(0).size());
+    }
+
+    @Test
+    void testListObjectsEmptyResult() throws Exception {
+        // Test case where no objects match the prefix
+        S3AsyncClient mockS3Client = mock(S3AsyncClient.class);
+        
+        ListObjectsV2Response response = ListObjectsV2Response.builder()
+            .contents(List.of()) // Empty list - explicit type
+            .isTruncated(false)
+            .build();
+        
+        when(mockS3Client.listObjectsV2(any(Consumer.class)))
+            .thenReturn(CompletableFuture.completedFuture(response));
+        
+        AwsObjectStorage storage = new AwsObjectStorage(mockS3Client, "test-bucket");
+        
+        CompletableFuture<List<ObjectInfo>> result = storage.doList("nonexistent-prefix");
+        List<ObjectInfo> objects = result.get();
+        
+        Assertions.assertEquals(0, objects.size());
+    }
 }
