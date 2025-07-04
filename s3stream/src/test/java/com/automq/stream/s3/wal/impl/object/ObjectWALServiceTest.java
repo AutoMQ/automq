@@ -195,19 +195,19 @@ public class ObjectWALServiceTest {
         );
     }
 
-    private static RecordAccumulator.WALObject mockWALObject(long start, long end) {
-        return new RecordAccumulator.WALObject((short) 0, String.format("%d-%d", start, end), start, end, end - start);
+    private static WALObject mockWALObject(long start, long end) {
+        return new WALObject((short) 0, String.format("%d-%d", start, end), start, end, end - start);
     }
 
     @ParameterizedTest(name = "Test {index} {0}")
     @MethodSource("testRecoverIteratorGetContinuousFromTrimOffsetData")
     public void testRecoverIteratorGetContinuousFromTrimOffset(
         String name,
-        List<RecordAccumulator.WALObject> objectList,
+        List<WALObject> objectList,
         long trimOffset,
-        List<RecordAccumulator.WALObject> expected
+        List<WALObject> expected
     ) {
-        List<RecordAccumulator.WALObject> got = getContinuousFromTrimOffset(objectList, trimOffset);
+        List<WALObject> got = getContinuousFromTrimOffset(objectList, trimOffset);
         assertEquals(expected, got, name);
     }
 

@@ -51,6 +51,7 @@ public class WALObjectHeader {
     private final int magicCode0;
     private final long startOffset1;
     private final long length2;
+    @Deprecated
     private final long stickyRecordLength3;
     private final int nodeId4;
     private final long epoch5;
@@ -162,10 +163,6 @@ public class WALObjectHeader {
 
     public long length() {
         return length2;
-    }
-
-    public long stickyRecordLength() {
-        return stickyRecordLength3;
     }
 
     public int nodeId() {

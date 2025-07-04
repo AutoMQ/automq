@@ -19,6 +19,7 @@
 
 package kafka.log.stream.s3.wal;
 
+import io.netty.buffer.ByteBuf;
 import kafka.log.stream.s3.node.NodeManager;
 
 import org.apache.kafka.common.utils.ThreadUtils;
@@ -116,6 +117,11 @@ public class BootstrapWalV1 implements WriteAheadLog {
     @Override
     public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
         return wal.append(context, streamRecordBatch);
+    }
+
+    @Override
+    public CompletableFuture<ByteBuf> get(long recordOffset) {
+        return wal.get(recordOffset);
     }
 
     @Override

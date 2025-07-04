@@ -54,6 +54,8 @@ public interface WriteAheadLog {
     // TODO: change the doc
     CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
+    CompletableFuture<ByteBuf> get(long recordOffset);
+
     /**
      * Recover log from the beginning. The iterator will return the recovered result in order.
      * It may throw a {@link RuntimeIOException} if the recovery fails.

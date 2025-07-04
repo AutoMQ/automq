@@ -507,9 +507,19 @@ public class S3Storage implements Storage {
         CompletableFuture<AppendResult> appendResult;
         try {
             try {
-                StreamRecordBatch streamRecord = request.record;
-                streamRecord.retain();
-                appendResult = deltaWAL.append(new TraceContext(context), streamRecord);
+                if (context.linkRecord() == null) {
+                    StreamRecordBatch streamRecord = request.record;
+                    streamRecord.retain();
+                    appendResult = deltaWAL.append(new TraceContext(context), streamRecord);
+                } else {
+                    StreamRecordBatch record = request.record;
+                    // TODO: add StreamRecordBatch attr to represent the link record.
+                    StreamRecordBatch linkStreamRecord = new StreamRecordBatch(record.getStreamId(), record.getEpoch(),
+                        record.getBaseOffset(), -record.getCount(), context.linkRecord());
+                    linkStreamRecord.retain();
+                    appendResult = deltaWAL.append(new TraceContext(context), linkStreamRecord);
+                }
+
             } catch (OverCapacityException e) {
                 // the WAL write data align with block, 'WAL is full but LogCacheBlock is not full' may happen.
                 maybeForceUpload();

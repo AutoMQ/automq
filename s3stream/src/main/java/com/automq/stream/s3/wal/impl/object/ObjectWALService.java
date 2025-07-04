@@ -29,8 +29,6 @@ import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.WriteAheadLog;
-import com.automq.stream.s3.wal.common.AppendResultImpl;
-import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.common.RecoverResultImpl;
 import com.automq.stream.s3.wal.common.WALMetadata;
@@ -55,7 +53,6 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
@@ -105,32 +102,13 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
-        ByteBuf header = BYTE_BUF_ALLOC.byteBuffer(RECORD_HEADER_SIZE);
-        ByteBuf data = streamRecordBatch.encoded();
         try {
-            final long recordSize = RECORD_HEADER_SIZE + data.readableBytes();
-
-            final CompletableFuture<Void> appendResultFuture = new CompletableFuture<>();
-            long expectedWriteOffset = accumulator.append(recordSize, start -> {
-                CompositeByteBuf recordByteBuf = ByteBufAlloc.compositeByteBuffer();
-                Record record = WALUtil.generateRecord(data, header, 0, start, true);
-                recordByteBuf.addComponents(true, record.header(), record.body());
-                return recordByteBuf;
-            }, appendResultFuture);
-
-            return appendResultFuture.thenApply(nil -> new AppendResultImpl(expectedWriteOffset));
+            return accumulator.append(streamRecordBatch);
         } catch (Exception e) {
-            // Make sure the header buffer and data buffer is released.
-            if (header.refCnt() > 0) {
-                header.release();
+            if (streamRecordBatch.encoded().refCnt() > 0) {
+                streamRecordBatch.release();
             } else {
-                log.error("[Bug] The header buffer is already released.", e);
-            }
-
-            if (data.refCnt() > 0) {
-                data.release();
-            } else {
-                log.error("[Bug] The data buffer is already released.", e);
+                log.error("[BUG] The data buffer is already released.", e);
             }
             Throwable cause = ExceptionUtils.getRootCause(e);
             if (cause instanceof OverCapacityException) {
@@ -146,6 +124,11 @@ public class ObjectWALService implements WriteAheadLog {
                 return CompletableFuture.failedFuture(e);
             }
         }
+    }
+
+    @Override
+    public CompletableFuture<ByteBuf> get(long recordOffset) {
+        return null;
     }
 
     @Override
@@ -194,13 +177,13 @@ public class ObjectWALService implements WriteAheadLog {
         private final ObjectStorage objectStorage;
         private final int readAheadObjectSize;
 
-        private final List<RecordAccumulator.WALObject> objectList;
+        private final List<WALObject> objectList;
         private final Queue<CompletableFuture<byte[]>> readAheadQueue;
 
         private int nextIndex = 0;
         private ByteBuf dataBuffer = Unpooled.EMPTY_BUFFER;
 
-        public RecoverIterator(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage,
+        public RecoverIterator(List<WALObject> objectList, ObjectStorage objectStorage,
             int readAheadObjectSize) {
             long trimOffset = getTrimOffset(objectList, objectStorage);
             this.objectList = getContinuousFromTrimOffset(objectList, trimOffset);
@@ -217,12 +200,12 @@ public class ObjectWALService implements WriteAheadLog {
         /**
          * Get the latest trim offset from the newest object.
          */
-        private static long getTrimOffset(List<RecordAccumulator.WALObject> objectList, ObjectStorage objectStorage) {
+        private static long getTrimOffset(List<WALObject> objectList, ObjectStorage objectStorage) {
             if (objectList.isEmpty()) {
                 return -1;
             }
 
-            RecordAccumulator.WALObject object = objectList.get(objectList.size() - 1);
+            WALObject object = objectList.get(objectList.size() - 1);
             ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions()
                 .throttleStrategy(ThrottleStrategy.BYPASS)
                 .bucket(object.bucketId());
@@ -233,7 +216,7 @@ public class ObjectWALService implements WriteAheadLog {
         }
 
         // Visible for testing.
-        static List<RecordAccumulator.WALObject> getContinuousFromTrimOffset(List<RecordAccumulator.WALObject> objectList, long trimOffset) {
+        static List<WALObject> getContinuousFromTrimOffset(List<WALObject> objectList, long trimOffset) {
             if (objectList.isEmpty()) {
                 return Collections.emptyList();
             }
@@ -284,15 +267,11 @@ public class ObjectWALService implements WriteAheadLog {
             // Check header
             WALObjectHeader header = WALObjectHeader.unmarshal(dataBuffer);
             dataBuffer.skipBytes(header.size());
-
-            if (skipStickyRecord && header.stickyRecordLength() != 0) {
-                dataBuffer.skipBytes((int) header.stickyRecordLength());
-            }
         }
 
         private void tryReadAhead() {
             if (readAheadQueue.size() < readAheadObjectSize && nextIndex < objectList.size()) {
-                RecordAccumulator.WALObject object = objectList.get(nextIndex++);
+                WALObject object = objectList.get(nextIndex++);
                 ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(object.bucketId());
                 CompletableFuture<byte[]> readFuture = objectStorage.rangeRead(options, object.path(), 0, object.length())
                     .thenApply(buffer -> {

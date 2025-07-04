@@ -83,6 +83,11 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
+    public CompletableFuture<ByteBuf> get(long recordOffset) {
+        return CompletableFuture.completedFuture(dataMap.get(recordOffset).retainedSlice());
+    }
+
+    @Override
     public Iterator<RecoverResult> recover() {
         return dataMap.entrySet()
             .stream()
