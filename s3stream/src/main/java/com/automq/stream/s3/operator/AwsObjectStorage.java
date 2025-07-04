@@ -362,12 +362,29 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<List<ObjectInfo>> doList(String prefix) {
-        return readS3Client.listObjectsV2(builder -> builder.bucket(bucket).prefix(prefix))
-            .thenApply(resp ->
-                resp.contents()
-                    .stream()
-                    .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
-                    .collect(Collectors.toList()));
+        return listObjectsWithPagination(prefix, null, new ArrayList<>());
+    }
+
+    private CompletableFuture<List<ObjectInfo>> listObjectsWithPagination(String prefix, String continuationToken, List<ObjectInfo> accumulator) {
+        return readS3Client.listObjectsV2(builder -> {
+            builder.bucket(bucket).prefix(prefix);
+            if (continuationToken != null) {
+                builder.continuationToken(continuationToken);
+            }
+        }).thenCompose(resp -> {
+            // Add current page results to accumulator
+            resp.contents()
+                .stream()
+                .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
+                .forEach(accumulator::add);
+            
+            // If response is truncated, get the next page
+            if (resp.isTruncated()) {
+                return listObjectsWithPagination(prefix, resp.nextContinuationToken(), accumulator);
+            } else {
+                return CompletableFuture.completedFuture(accumulator);
+            }
+        });
     }
 
     @Override
