@@ -69,13 +69,13 @@ public class ClientWrapper implements Client {
         ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS
     );
     private final ScheduledExecutorService streamManagerRetryScheduler = Executors.newScheduledThreadPool(1,
-        ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
+        ThreadUtils.createThreadFactory("stream-manager-retry-scheduler-%d", true));
     private final ExecutorService streamManagerCallbackExecutors = Executors.newFixedThreadPool(1,
         ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
     private final ScheduledExecutorService generalRetryScheduler = Executors.newScheduledThreadPool(1,
         ThreadUtils.createThreadFactory("general-retry-scheduler-%d", true));
     private final ExecutorService generalCallbackExecutors = Executors.newFixedThreadPool(4,
-        ThreadUtils.createThreadFactory("general-callback-scheduler-%d", true));
+        ThreadUtils.createThreadFactory("general-callback-executor-%d", true));
     private final Client innerClient;
     private volatile StreamClient streamClient;
     private final HashedWheelTimer fetchTimeout = new HashedWheelTimer(
@@ -122,6 +122,7 @@ public class ClientWrapper implements Client {
         streamManagerCallbackExecutors.shutdownNow();
         generalRetryScheduler.shutdownNow();
         generalCallbackExecutors.shutdownNow();
+        fetchTimeout.stop();
     }
 
     /**
