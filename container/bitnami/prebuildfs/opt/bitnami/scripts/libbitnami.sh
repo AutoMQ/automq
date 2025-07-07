@@ -42,13 +42,12 @@ print_welcome_page() {
 #   None
 #########################
 print_image_welcome_page() {
-    local docs_url="https://www.automq.com/docs/automq/deployment/deploy-multi-nodes-cluster-on-kubernetes"
+    local github_url="https://github.com/bitnami/containers"
 
     info ""
-    info "${BOLD}Welcome to the AutoMQ for Apache Kafka on Bitnami Container${RESET}"
-    info "${BOLD}This image is compatible with Bitnami's container standards.${RESET}"
-    info "Refer to the documentation for complete configuration and Kubernetes deployment guidelines:"
-    info "${BOLD}${docs_url}${RESET}"
+    info "${BOLD}Welcome to the Bitnami ${BITNAMI_APP_NAME} container${RESET}"
+    info "Subscribe to project updates by watching ${BOLD}${github_url}${RESET}"
+    info "Did you know there are enterprise versions of the Bitnami catalog? For enhanced secure software supply chain features, unlimited pulls from Docker, LTS support, or application customization, see Bitnami Premium or Tanzu Application Catalog. See https://www.arrow.com/globalecs/na/vendors/bitnami/ for more information."
     info ""
 }
 

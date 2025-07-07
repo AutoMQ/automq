@@ -35,12 +35,12 @@ mv "${KAFKA_CONF_DIR}/server.properties" "${KAFKA_CONF_DIR}/server.properties.or
 
 # Disable logging to stdout and garbage collection
 # Source: https://logging.apache.org/log4j/log4j-2.4/manual/appenders.html
-#replace_in_file "${KAFKA_BASE_DIR}/bin/kafka-server-start.sh" " [-]loggc" " "
-#replace_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DailyRollingFileAppender" "ConsoleAppender"
+replace_in_file "${KAFKA_BASE_DIR}/bin/kafka-server-start.sh" " [-]loggc" " "
+replace_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DailyRollingFileAppender" "ConsoleAppender"
 
 # Disable the default console logger in favour of KafkaAppender (which provides the exact output)
-#echo "log4j.appender.stdout.Threshold=OFF" >>"${KAFKA_CONF_DIR}/log4j.properties"
+echo "log4j.appender.stdout.Threshold=OFF" >>"${KAFKA_CONF_DIR}/log4j.properties"
 
 # Remove invalid parameters for ConsoleAppender
-#remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DatePattern"
-#remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "Appender.File"
+remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "DatePattern"
+remove_in_file "${KAFKA_CONF_DIR}/log4j.properties" "Appender.File"
