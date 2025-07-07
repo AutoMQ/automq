@@ -87,6 +87,28 @@ index 717a36c21f..ea5eb74efb 100644
  USER 1001
  ENTRYPOINT [ "/opt/bitnami/scripts/kafka/entrypoint.sh" ]
  CMD [ "/opt/bitnami/scripts/kafka/run.sh" ]
+diff --git a/container/bitnami/prebuildfs/opt/bitnami/scripts/libbitnami.sh b/container/bitnami/prebuildfs/opt/bitnami/scripts/libbitnami.sh
+index 00d053b521..09e3d3084d 100644
+--- a/container/bitnami/prebuildfs/opt/bitnami/scripts/libbitnami.sh
++++ b/container/bitnami/prebuildfs/opt/bitnami/scripts/libbitnami.sh
+@@ -42,12 +42,13 @@ print_welcome_page() {
+ #   None
+ #########################
+ print_image_welcome_page() {
+-    local github_url="https://github.com/bitnami/containers"
++    local docs_url="https://www.automq.com/docs/automq/deployment/deploy-multi-nodes-cluster-on-kubernetes"
+ 
+     info ""
+-    info "${BOLD}Welcome to the Bitnami ${BITNAMI_APP_NAME} container${RESET}"
+-    info "Subscribe to project updates by watching ${BOLD}${github_url}${RESET}"
+-    info "Did you know there are enterprise versions of the Bitnami catalog? For enhanced secure software supply chain features, unlimited pulls from Docker, LTS support, or application customization, see Bitnami Premium or Tanzu Application Catalog. See https://www.arrow.com/globalecs/na/vendors/bitnami/ for more information."
++    info "${BOLD}Welcome to the AutoMQ for Apache Kafka on Bitnami Container${RESET}"
++    info "${BOLD}This image is compatible with Bitnami's container standards.${RESET}"
++    info "Refer to the documentation for complete configuration and Kubernetes deployment guidelines:"
++    info "${BOLD}${docs_url}${RESET}"
+     info ""
+ }
+ 
 diff --git a/container/bitnami/rootfs/opt/bitnami/scripts/kafka/postunpack.sh b/container/bitnami/rootfs/opt/bitnami/scripts/kafka/postunpack.sh
 index 7255563236..673c84e721 100644
 --- a/container/bitnami/rootfs/opt/bitnami/scripts/kafka/postunpack.sh
