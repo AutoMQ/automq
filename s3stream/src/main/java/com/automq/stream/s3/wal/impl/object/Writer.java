@@ -24,6 +24,7 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.DefaultAppendResult;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.common.RecordHeader;
@@ -508,8 +509,9 @@ public class Writer implements Closeable {
             lastRecordOffset = record.offset;
             ByteBuf data = record.streamRecordBatch.encoded();
             ByteBuf header = BYTE_BUF_ALLOC.byteBuffer(RECORD_HEADER_SIZE);
-            nextOffset += data.readableBytes() + header.readableBytes();
             header = WALUtil.generateHeader(data, header, 0, nextOffset, true);
+            record.size = data.readableBytes() + header.readableBytes();
+            nextOffset += record.size;
             dataBuffer.addComponent(true, header);
             dataBuffer.addComponent(true, data);
         }
@@ -568,10 +570,13 @@ public class Writer implements Closeable {
                         if (task == null || !task.cf.isDone()) {
                             break;
                         }
+                        uploadQueue.poll();
                         flushedOffset.set(task.records.get(task.records.size() - 1).offset);
                         // Release lock and complete future in callback thread.
                         callbackService.submit(() ->
-                            task.records().forEach(record -> record.future.complete(null))
+                            task.records().forEach(
+                                record -> record.future.complete(new DefaultAppendResult(DefaultRecordOffset.of(record.offset, record.size)))
+                            )
                         );
                     }
                 } finally {
@@ -641,6 +646,7 @@ public class Writer implements Closeable {
         public final StreamRecordBatch streamRecordBatch;
         public final CompletableFuture<AppendResult> future;
         public long offset;
+        public int size;
 
         public Record(StreamRecordBatch streamRecordBatch, CompletableFuture<AppendResult> future) {
             this.streamRecordBatch = streamRecordBatch;

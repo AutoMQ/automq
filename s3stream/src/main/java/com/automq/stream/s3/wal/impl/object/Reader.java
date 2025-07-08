@@ -11,7 +11,6 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import com.automq.stream.utils.threads.EventLoopSafe;
-
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -84,22 +83,27 @@ public class Reader {
                 readTask.offset,
                 readTask.offset + readTask.size
             ).whenCompleteAsync((buf, ex) -> {
-                if (ex == null) {
-                    readTask.cf.complete(ObjectUtils.duplicatedDecodeRecordBuf(buf, ALLOC));
+                try {
+                    if (ex == null) {
+                        readTask.cf.complete(ObjectUtils.duplicatedDecodeRecordBuf(buf, ALLOC));
+                        return;
+                    }
+                    ex = FutureUtil.cause(ex);
+                    if (!(ex instanceof ObjectNotExistException)) {
+                        readTask.cf.completeExceptionally(ex);
+                        return;
+                    }
+                    if (readTask.notFoundTimes > 0) {
+                        readTask.cf.completeExceptionally(ex);
+                        return;
+                    }
+                    CompletableFuture<Void> rebuildCf = rebuildIndexMap();
+                    readTask.notFoundTimes++;
+                    tasks.add(readTask);
+                    rebuildCf.thenAcceptAsync(nil -> doRun(), eventLoop);
+                } catch (Throwable e) {
+                    readTask.cf.completeExceptionally(e);
                 }
-                ex = FutureUtil.cause(ex);
-                if (!(ex instanceof ObjectNotExistException)) {
-                    readTask.cf.completeExceptionally(ex);
-                    return;
-                }
-                if (readTask.notFoundTimes > 0) {
-                    readTask.cf.completeExceptionally(ex);
-                    return;
-                }
-                CompletableFuture<Void> rebuildCf = rebuildIndexMap();
-                readTask.notFoundTimes++;
-                tasks.add(readTask);
-                rebuildCf.thenAcceptAsync(nil -> doRun(), eventLoop);
             }, eventLoop);
         }
     }

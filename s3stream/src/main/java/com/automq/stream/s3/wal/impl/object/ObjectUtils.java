@@ -87,7 +87,7 @@ public class ObjectUtils {
 
     public static String genObjectPathV1(String nodePrefix, long epoch, long objectStartOffset) {
         long endOffset = objectStartOffset + DATA_FILE_ALIGN_SIZE;
-        return nodePrefix + "/" + epoch + "/wal/" + objectStartOffset + OBJECT_PATH_OFFSET_DELIMITER + endOffset;
+        return nodePrefix + epoch + "/wal/" + objectStartOffset + OBJECT_PATH_OFFSET_DELIMITER + endOffset;
     }
 
     public static long floorAlignOffset(long offset) {
