@@ -20,5 +20,5 @@
 package com.automq.stream.s3.wal;
 
 public interface AppendResult {
-    long recordOffset();
+    RecordOffset recordOffset();
 }

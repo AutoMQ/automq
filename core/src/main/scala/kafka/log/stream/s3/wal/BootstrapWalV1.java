@@ -19,7 +19,6 @@
 
 package kafka.log.stream.s3.wal;
 
-import io.netty.buffer.ByteBuf;
 import kafka.log.stream.s3.node.NodeManager;
 
 import org.apache.kafka.common.utils.ThreadUtils;
@@ -29,6 +28,7 @@ import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WalFactory;
 import com.automq.stream.s3.wal.WalFactory.BuildOptions;
@@ -49,6 +49,7 @@ import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+
 
 
 public class BootstrapWalV1 implements WriteAheadLog {
@@ -120,7 +121,7 @@ public class BootstrapWalV1 implements WriteAheadLog {
     }
 
     @Override
-    public CompletableFuture<ByteBuf> get(long recordOffset) {
+    public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         return wal.get(recordOffset);
     }
 
@@ -163,7 +164,7 @@ public class BootstrapWalV1 implements WriteAheadLog {
     }
 
     @Override
-    public CompletableFuture<Void> trim(long offset) {
+    public CompletableFuture<Void> trim(RecordOffset offset) {
         return wal.trim(offset);
     }
 

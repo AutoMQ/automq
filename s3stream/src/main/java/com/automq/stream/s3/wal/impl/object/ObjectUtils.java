@@ -1,14 +1,27 @@
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.s3.Constants;
+import com.automq.stream.s3.StreamRecordBatchCodec;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
+import com.automq.stream.s3.wal.common.RecordHeader;
+
+import org.apache.commons.codec.digest.DigestUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+
+import io.netty.buffer.ByteBuf;
+
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
+
 public class ObjectUtils {
+    public static final long DATA_FILE_ALIGN_SIZE = 128L * 1024 * 1024; // 128MiB
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectUtils.class);
     public static final String OBJECT_PATH_OFFSET_DELIMITER = "-";
 
@@ -66,5 +79,35 @@ public class ObjectUtils {
         }
         overlapObjects.forEach(objects::remove);
         return overlapObjects;
+    }
+
+    public static String nodePrefix(String clusterId, int nodeId) {
+        return DigestUtils.md5Hex(String.valueOf(nodeId)).toUpperCase(Locale.ROOT) + "/" + Constants.DEFAULT_NAMESPACE + clusterId + "/" + nodeId + "/";
+    }
+
+    public static String genObjectPathV1(String nodePrefix, long epoch, long objectStartOffset) {
+        long endOffset = objectStartOffset + DATA_FILE_ALIGN_SIZE;
+        return nodePrefix + "/" + epoch + "/wal/" + objectStartOffset + OBJECT_PATH_OFFSET_DELIMITER + endOffset;
+    }
+
+    public static long floorAlignOffset(long offset) {
+        return offset / DATA_FILE_ALIGN_SIZE * DATA_FILE_ALIGN_SIZE;
+    }
+
+    public static long ceilAlignOffset(long offset) {
+        return (offset + DATA_FILE_ALIGN_SIZE - 1) / DATA_FILE_ALIGN_SIZE * DATA_FILE_ALIGN_SIZE;
+    }
+
+    public static StreamRecordBatch duplicatedDecodeRecordBuf(ByteBuf dataBuffer, ByteBufSeqAlloc alloc) {
+        dataBuffer = dataBuffer.slice();
+        ByteBuf recordHeaderBuf = dataBuffer.readBytes(RECORD_HEADER_SIZE);
+        RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
+        if (header.getMagicCode() != RecordHeader.RECORD_HEADER_MAGIC_CODE) {
+            throw new IllegalStateException("Invalid magic code in record header.");
+        }
+        int length = header.getRecordBodyLength();
+        ByteBuf recordBuf = alloc.byteBuffer(length);
+        dataBuffer.readBytes(recordBuf, length);
+        return StreamRecordBatchCodec.decode(recordBuf);
     }
 }

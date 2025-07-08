@@ -19,9 +19,11 @@
 
 package com.automq.stream.s3.wal.impl;
 
+import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.RecordHeader;
@@ -79,12 +81,12 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
         buffer.writeBytes(streamRecordBatch.encoded());
         streamRecordBatch.release();
         dataMap.put(offset, buffer);
-        return CompletableFuture.completedFuture(() -> offset);
+        return CompletableFuture.completedFuture(() -> new RecordOffsetImpl(offset));
     }
 
     @Override
-    public CompletableFuture<ByteBuf> get(long recordOffset) {
-        return CompletableFuture.completedFuture(dataMap.get(recordOffset).retainedSlice());
+    public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
+        return CompletableFuture.completedFuture(StreamRecordBatchCodec.decode(dataMap.get(((RecordOffsetImpl) recordOffset).recordOffset()), true));
     }
 
     @Override
@@ -93,13 +95,13 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
             .stream()
             .map(e -> (RecoverResult) new RecoverResult() {
                 @Override
-                public ByteBuf record() {
-                    return e.getValue();
+                public StreamRecordBatch record() {
+                    return StreamRecordBatchCodec.decode(e.getValue());
                 }
 
                 @Override
-                public long recordOffset() {
-                    return e.getKey();
+                public RecordOffset recordOffset() {
+                    return new RecordOffsetImpl(e.getKey());
                 }
             })
             .collect(Collectors.toList())
@@ -113,12 +115,33 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
-    public CompletableFuture<Void> trim(long offset) {
-        dataMap.headMap(offset)
+    public CompletableFuture<Void> trim(RecordOffset offset) {
+        dataMap.headMap(((RecordOffsetImpl) offset).recordOffset())
             .forEach((key, value) -> {
                 dataMap.remove(key);
                 value.release();
             });
         return CompletableFuture.completedFuture(null);
+    }
+
+    static class RecordOffsetImpl implements RecordOffset {
+        private static final byte MAGIC = (byte) 0xA0;
+        private final long recordOffset;
+
+        public RecordOffsetImpl(long offset) {
+            this.recordOffset = offset;
+        }
+
+        public long recordOffset() {
+            return recordOffset;
+        }
+
+        @Override
+        public ByteBuf buffer() {
+            ByteBuf buf = Unpooled.buffer(1 + 8);
+            buf.writeByte(MAGIC);
+            buf.writeLong(recordOffset);
+            return null;
+        }
     }
 }

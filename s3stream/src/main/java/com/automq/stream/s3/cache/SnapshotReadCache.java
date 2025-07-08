@@ -2,13 +2,13 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.cache.blockcache.EventLoopSafe;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.threads.EventLoop;
+import com.automq.stream.utils.threads.EventLoopSafe;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;

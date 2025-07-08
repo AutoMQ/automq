@@ -54,7 +54,7 @@ public interface WriteAheadLog {
     // TODO: change the doc
     CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
-    CompletableFuture<ByteBuf> get(long recordOffset);
+    CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset);
 
     /**
      * Recover log from the beginning. The iterator will return the recovered result in order.
@@ -78,5 +78,5 @@ public interface WriteAheadLog {
      * @param offset inclusive trim offset.
      * @return future complete when trim done.
      */
-    CompletableFuture<Void> trim(long offset);
+    CompletableFuture<Void> trim(RecordOffset offset);
 }

@@ -31,8 +31,8 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
-public class RecordAccumulatorTest {
-    private RecordAccumulator recordAccumulator;
+public class WriterTest {
+    private Writer writer;
     private MockObjectStorage objectStorage;
     private ConcurrentSkipListMap<Long, ByteBuf> generatedByteBufMap;
     private Random random;
@@ -45,10 +45,9 @@ public class RecordAccumulatorTest {
             .withNodeId(100)
             .withEpoch(1000)
             .withBatchInterval(Long.MAX_VALUE)
-            .withStrictBatchLimit(true)
             .build();
-        recordAccumulator = new RecordAccumulator(Time.SYSTEM, objectStorage, ReservationService.NOOP, config);
-        recordAccumulator.start();
+        writer = new Writer(Time.SYSTEM, objectStorage, ReservationService.NOOP, config);
+        writer.start();
         generatedByteBufMap = new ConcurrentSkipListMap<>();
         random = new Random();
     }
@@ -56,7 +55,7 @@ public class RecordAccumulatorTest {
     @AfterEach
     public void tearDown() {
         objectStorage.triggerAll();
-        recordAccumulator.close();
+        writer.close();
         objectStorage.close();
     }
 

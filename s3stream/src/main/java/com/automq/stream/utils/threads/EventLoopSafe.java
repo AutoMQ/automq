@@ -17,10 +17,11 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.cache.blockcache;
+package com.automq.stream.utils.threads;
 
 /**
- * All the methods in this class should be called from the same stream's eventLoop.
+ * - If it's annotated to a class means that all the methods in this class should be called from the eventLoop.
+ * - If it's annotated to a method means that the method should be called in the eventLoop.
  */
 public @interface EventLoopSafe {
 }

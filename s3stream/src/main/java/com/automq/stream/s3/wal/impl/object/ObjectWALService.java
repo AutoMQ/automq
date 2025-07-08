@@ -19,13 +19,14 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.WriteAheadLog;
@@ -38,7 +39,6 @@ import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Time;
 
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,44 +55,44 @@ import java.util.concurrent.CompletableFuture;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
-import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
 public class ObjectWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
-    private static final ByteBufSeqAlloc BYTE_BUF_ALLOC = new ByteBufSeqAlloc(S3_WAL, 8);
 
     protected ObjectStorage objectStorage;
     protected ObjectWALConfig config;
 
     protected ReservationService reservationService;
-    protected RecordAccumulator accumulator;
+    protected Writer writer;
+    Reader reader;
 
     public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
         this.objectStorage = objectStorage;
         this.config = config;
 
         this.reservationService = new ObjectReservationService(config.clusterId(), objectStorage, objectStorage.bucketId());
-        this.accumulator = new RecordAccumulator(time, objectStorage, reservationService, config);
+        this.writer = new Writer(time, objectStorage, reservationService, config);
+        this.reader = new Reader(objectStorage, config.clusterId(), config.nodeId(), time);
     }
 
     // Visible for testing.
-    RecordAccumulator accumulator() {
-        return accumulator;
+    Writer writer() {
+        return writer;
     }
 
     @Override
     public WriteAheadLog start() throws IOException {
         log.info("Start S3 WAL.");
-        accumulator.start();
+        writer.start();
         return this;
     }
 
     @Override
     public void shutdownGracefully() {
         log.info("Shutdown S3 WAL.");
-        accumulator.close();
+        writer.close();
     }
 
     @Override
@@ -102,39 +102,18 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
-        try {
-            return accumulator.append(streamRecordBatch);
-        } catch (Exception e) {
-            if (streamRecordBatch.encoded().refCnt() > 0) {
-                streamRecordBatch.release();
-            } else {
-                log.error("[BUG] The data buffer is already released.", e);
-            }
-            Throwable cause = ExceptionUtils.getRootCause(e);
-            if (cause instanceof OverCapacityException) {
-                if (((OverCapacityException) cause).error()) {
-                    log.warn("Append record to S3 WAL failed, due to accumulator is full.", e);
-                } else {
-                    log.warn("S3 WAL accumulator is full, try to trigger an upload and trim the WAL", e);
-                }
-
-                throw new OverCapacityException("Append record to S3 WAL failed, due to accumulator is full: " + cause.getMessage());
-            } else {
-                log.error("Append record to S3 WAL failed, due to unrecoverable exception.", e);
-                return CompletableFuture.failedFuture(e);
-            }
-        }
+        return writer.append(streamRecordBatch);
     }
 
     @Override
-    public CompletableFuture<ByteBuf> get(long recordOffset) {
-        return null;
+    public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
+        return reader.get(recordOffset);
     }
 
     @Override
     public Iterator<RecoverResult> recover() {
         try {
-            return new RecoverIterator(accumulator.objectList(), objectStorage, config.readAheadObjectCount());
+            return new RecoverIterator(writer.objectList(), objectStorage, config.readAheadObjectCount());
         } catch (WALFencedException e) {
             log.error("Recover S3 WAL failed, due to unrecoverable exception.", e);
             return new Iterator<>() {
@@ -155,7 +134,7 @@ public class ObjectWALService implements WriteAheadLog {
     public CompletableFuture<Void> reset() {
         log.info("Reset S3 WAL");
         try {
-            return accumulator.reset();
+            return writer.reset();
         } catch (Throwable e) {
             log.error("Reset S3 WAL failed, due to unrecoverable exception.", e);
             return CompletableFuture.failedFuture(e);
@@ -163,10 +142,10 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     @Override
-    public CompletableFuture<Void> trim(long offset) {
+    public CompletableFuture<Void> trim(RecordOffset offset) {
         log.info("Trim S3 WAL to offset: {}", offset);
         try {
-            return accumulator.trim(offset);
+            return writer.trim(offset);
         } catch (Throwable e) {
             log.error("Trim S3 WAL failed, due to unrecoverable exception.", e);
             return CompletableFuture.failedFuture(e);
@@ -259,7 +238,7 @@ public class ObjectWALService implements WriteAheadLog {
             return dataBuffer.isReadable() || !readAheadQueue.isEmpty() || nextIndex < objectList.size();
         }
 
-        private void loadNextBuffer(boolean skipStickyRecord) {
+        private void loadNextBuffer() {
             // Please call hasNext() before calling loadNextBuffer().
             byte[] buffer = Objects.requireNonNull(readAheadQueue.poll()).join();
             dataBuffer = Unpooled.wrappedBuffer(buffer);
@@ -293,8 +272,10 @@ public class ObjectWALService implements WriteAheadLog {
             }
 
             if (!dataBuffer.isReadable()) {
-                loadNextBuffer(true);
+                loadNextBuffer();
             }
+
+            // TODO: simple the code without strict batch
 
             // Try to read next object.
             tryReadAhead();
@@ -324,7 +305,7 @@ public class ObjectWALService implements WriteAheadLog {
                 if (!hasNext()) {
                     throw new IllegalStateException("[Bug] There is a record part but no more data to read.");
                 }
-                loadNextBuffer(false);
+                loadNextBuffer();
                 dataBuffer.readBytes(recordBuf, length - recordBuf.readableBytes());
             } else {
                 dataBuffer.readBytes(recordBuf, length);
@@ -339,7 +320,10 @@ public class ObjectWALService implements WriteAheadLog {
                 throw new IllegalStateException("Record body crc check failed.");
             }
 
-            return new RecoverResultImpl(recordBuf, header.getRecordBodyOffset() - RECORD_HEADER_SIZE);
+            long offset = header.getRecordBodyOffset() - RECORD_HEADER_SIZE;
+            int size = recordBuf.readableBytes() + RECORD_HEADER_SIZE;
+
+            return new RecoverResultImpl(StreamRecordBatchCodec.decode(recordBuf), DefaultRecordOffset.of(offset, size));
         }
     }
 }

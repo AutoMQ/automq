@@ -39,6 +39,7 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
@@ -81,7 +82,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import io.netty.buffer.ByteBuf;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
@@ -213,7 +213,7 @@ public class S3Storage implements Storage {
         long maxCacheSize,
         Logger logger
     ) {
-        long logEndOffset = -1L;
+        RecordOffset logEndOffset = null;
         Map<Long, Long> streamNextOffsets = new HashMap<>();
         Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords = new HashMap<>();
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(maxCacheSize);
@@ -222,8 +222,7 @@ public class S3Storage implements Storage {
             while (it.hasNext() && !cacheBlock.isFull()) {
                 RecoverResult recoverResult = it.next();
                 logEndOffset = recoverResult.recordOffset();
-                ByteBuf recordBuf = recoverResult.record().duplicate();
-                StreamRecordBatch streamRecordBatch = StreamRecordBatchCodec.decode(recordBuf);
+                StreamRecordBatch streamRecordBatch = recoverResult.record();
                 processRecoveredRecord(streamRecordBatch, openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, streamNextOffsets, logger);
             }
         } catch (Throwable e) {
@@ -232,7 +231,7 @@ public class S3Storage implements Storage {
             releaseAllRecords(cacheBlock.records().values());
             throw e;
         }
-        if (logEndOffset >= 0L) {
+        if (logEndOffset != null) {
             cacheBlock.confirmOffset(logEndOffset);
         }
 
@@ -473,7 +472,7 @@ public class S3Storage implements Storage {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         // encoded before append to free heap ByteBuf.
         streamRecord.encoded();
-        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, -1L, cf, context);
+        WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, null, cf, context);
         append0(context, writeRequest, false);
         return cf.whenComplete((nil, ex) -> {
             streamRecord.release();
@@ -504,20 +503,20 @@ public class S3Storage implements Storage {
             }
             return true;
         }
-        CompletableFuture<AppendResult> appendResult;
+        CompletableFuture<AppendResult> appendCf;
         try {
             try {
                 if (context.linkRecord() == null) {
                     StreamRecordBatch streamRecord = request.record;
                     streamRecord.retain();
-                    appendResult = deltaWAL.append(new TraceContext(context), streamRecord);
+                    appendCf = deltaWAL.append(new TraceContext(context), streamRecord);
                 } else {
                     StreamRecordBatch record = request.record;
                     // TODO: add StreamRecordBatch attr to represent the link record.
                     StreamRecordBatch linkStreamRecord = new StreamRecordBatch(record.getStreamId(), record.getEpoch(),
                         record.getBaseOffset(), -record.getCount(), context.linkRecord());
                     linkStreamRecord.retain();
-                    appendResult = deltaWAL.append(new TraceContext(context), linkStreamRecord);
+                    appendCf = deltaWAL.append(new TraceContext(context), linkStreamRecord);
                 }
 
             } catch (OverCapacityException e) {
@@ -537,7 +536,7 @@ public class S3Storage implements Storage {
             request.cf.completeExceptionally(e);
             return false;
         }
-        appendResult.whenComplete((rst, ex) -> {
+        appendCf.whenComplete((rst, ex) -> {
             if (ex != null) {
                 LOGGER.error("append WAL fail, request {}", request, ex);
                 storageFailureHandler.handle(ex);
@@ -723,7 +722,6 @@ public class S3Storage implements Storage {
         request.record.retain();
         boolean full = deltaWALCache.put(request.record);
         deltaWALCache.setConfirmOffset(request.offset);
-        request.confirmed = true;
         if (full) {
             // cache block is full, trigger WAL upload.
             uploadDeltaWAL();
@@ -856,7 +854,7 @@ public class S3Storage implements Storage {
             StorageOperationStats.getInstance().uploadWALCommitStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             // 1. poll out current task
             walCommitQueue.poll();
-            if (context.cache.confirmOffset() != 0) {
+            if (context.cache.confirmOffset() != null) {
                 LOGGER.info("try trim WAL to {}", context.cache.confirmOffset());
                 deltaWAL.trim(context.cache.confirmOffset());
             }
