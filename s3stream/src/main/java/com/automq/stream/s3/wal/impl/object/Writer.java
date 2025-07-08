@@ -35,6 +35,7 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 
+import io.netty.buffer.Unpooled;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -366,14 +367,24 @@ public class Writer implements Closeable {
         List<ObjectStorage.ObjectPath> deleteObjectList = new ArrayList<>();
         AtomicLong deletedObjectSize = new AtomicLong();
         long startTime = time.nanoseconds();
+        CompletableFuture<?> persistTrimOffsetCf;
         lock.writeLock().lock();
         try {
             if (trimOffset.get() >= newStartOffset) {
                 return CompletableFuture.completedFuture(null);
             }
             trimOffset.set(newStartOffset);
+            // We cannot force upload an empty wal object cause of the recover workflow don't accept an empty wal object.
+            // So we use a fake record to trigger the wal object upload.
+            persistTrimOffsetCf = append(new StreamRecordBatch(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER));
+            unsafeUpload(false);
+        } catch (Throwable e) {
+            persistTrimOffsetCf = CompletableFuture.failedFuture(e);
+        } finally {
+            lock.writeLock().unlock();
+        }
 
-
+        return persistTrimOffsetCf.thenCompose(nil -> {
             Long lastFlushedRecordOffset = lastRecordOffset2object.lastKey();
             if (lastFlushedRecordOffset != null) {
                 lastRecordOffset2object.headMap(newStartOffset, true)
@@ -403,29 +414,26 @@ public class Writer implements Closeable {
                 previousObjects = new ArrayList<>(previousObjects.subList(list.size(), previousObjects.size()));
                 deleteObjectList.addAll(list);
             }
-        } finally {
-            lock.writeLock().unlock();
-        }
+            if (deleteObjectList.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
 
-        if (deleteObjectList.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
-        }
+            return objectStorage.delete(deleteObjectList)
+                .whenComplete((v, throwable) -> {
+                    ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
+                    objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
 
-        return objectStorage.delete(deleteObjectList)
-            .whenComplete((v, throwable) -> {
-                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
-                objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
+                    // Never fail the delete task, the under layer storage will retry forever.
+                    if (throwable != null) {
+                        log.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
+                    }
 
-                // Never fail the delete task, the under layer storage will retry forever.
-                if (throwable != null) {
-                    log.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
-                }
-
-                utilityService.schedule(() -> {
-                    // Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
-                    objectStorage.delete(deleteObjectList);
-                }, 30, TimeUnit.SECONDS);
-            });
+                    utilityService.schedule(() -> {
+                        // Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
+                        objectStorage.delete(deleteObjectList);
+                    }, 30, TimeUnit.SECONDS);
+                });
+        });
     }
 
     private void startPeriodUpload() {
@@ -469,13 +477,13 @@ public class Writer implements Closeable {
 
     // Not thread safe, caller should hold lock.
     // Visible for testing.
-    void unsafeUpload(boolean force) throws WALFencedException {
+    CompletableFuture<Void> unsafeUpload(boolean force) throws WALFencedException {
         if (!force) {
             checkWriteStatus();
         }
 
         if (bufferQueue.isEmpty()) {
-            return;
+            return CompletableFuture.completedFuture(null);
         }
 
         int size = bufferQueue.size();
@@ -483,11 +491,11 @@ public class Writer implements Closeable {
         bufferQueue.drainTo(records);
         waitingFlushDirtyBytes.set(0);
         // TODO: limit the records batch lower than DATA_FILE_ALIGN_SIZE
-        unsafeUpload(records);
+        return unsafeUpload(records);
     }
 
     // Not thread safe, caller should hold lock.
-    private void unsafeUpload(List<Record> records) {
+    private CompletableFuture<Void> unsafeUpload(List<Record> records) {
         long startTime = time.nanoseconds();
         // Order by <streamId, offset>
         records.sort((o1, o2) -> {
@@ -571,7 +579,9 @@ public class Writer implements Closeable {
                             break;
                         }
                         uploadQueue.poll();
-                        flushedOffset.set(task.records.get(task.records.size() - 1).offset);
+                        if (!task.records.isEmpty()) {
+                            flushedOffset.set(task.records.get(task.records.size() - 1).offset);
+                        }
                         // Release lock and complete future in callback thread.
                         callbackService.submit(() ->
                             task.records().forEach(
@@ -613,6 +623,7 @@ public class Writer implements Closeable {
         uploadingTasks.put(finalFuture, time.nanoseconds());
         finalFuture.whenComplete((v, throwable) -> uploadingTasks.remove(finalFuture));
         lastUploadTimestamp = System.currentTimeMillis();
+        return finalFuture;
     }
 
     protected CompletableFuture<ObjectStorage.WriteResult> recordUploadMetrics(

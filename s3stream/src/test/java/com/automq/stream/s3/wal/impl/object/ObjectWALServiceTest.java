@@ -78,6 +78,36 @@ public class ObjectWALServiceTest {
         }
     }
 
+    @Test
+    public void testTrim() throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+        ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
+        acquire(config);
+        wal.start();
+
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            appendCfList.add(wal.append(TraceContext.DEFAULT, new StreamRecordBatch(233L, 0, 100L + i, 1, generateByteBuf(1))));
+            wal.writer.unsafeUpload(true);
+        }
+
+        wal.trim(appendCfList.get(1).get().recordOffset()).get();
+
+        wal.shutdownGracefully();
+
+        wal = new ObjectWALService(time, objectStorage, config);
+        wal.start();
+
+        List<RecoverResult> records = new ArrayList<>();
+        wal.recover().forEachRemaining(records::add);
+
+        assertEquals(3, records.size());
+        assertEquals(102L, records.get(0).record().getBaseOffset());
+        assertEquals(103L, records.get(1).record().getBaseOffset());
+        assertEquals(-1L, records.get(2).record().getStreamId());
+
+    }
+
     public static Stream<Arguments> testRecoverIteratorGetContinuousFromTrimOffsetData() {
         return Stream.of(
             Arguments.of(
@@ -154,15 +184,11 @@ public class ObjectWALServiceTest {
         acquire(config);
         wal.start();
 
-        // write 3 objects
-        wal.append(TraceContext.DEFAULT, new StreamRecordBatch(233L, 0, 100L, 1, generateByteBuf(1)));
-        wal.writer.unsafeUpload(true);
-        wal.append(TraceContext.DEFAULT, new StreamRecordBatch(233L, 0, 101L, 1, generateByteBuf(1)));
-        wal.writer.unsafeUpload(true);
-        wal.append(TraceContext.DEFAULT, new StreamRecordBatch(233L, 0, 102L, 1, generateByteBuf(1)));
-        wal.writer.unsafeUpload(true);
-        wal.append(TraceContext.DEFAULT, new StreamRecordBatch(233L, 0, 103L, 1, generateByteBuf(1)));
-        wal.writer.unsafeUpload(true);
+        // write 4 objects
+        for (int i = 0; i < 4; i++) {
+            wal.append(TraceContext.DEFAULT, new StreamRecordBatch(233L, 0, 100L + i, 1, generateByteBuf(1)));
+            wal.writer.unsafeUpload(true);
+        }
 
         wal.shutdownGracefully();
 
