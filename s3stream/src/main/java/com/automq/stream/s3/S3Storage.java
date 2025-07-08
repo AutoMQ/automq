@@ -232,7 +232,7 @@ public class S3Storage implements Storage {
             throw e;
         }
         if (logEndOffset != null) {
-            cacheBlock.confirmOffset(logEndOffset);
+            cacheBlock.lastRecordOffset(logEndOffset);
         }
 
         releaseDiscontinuousRecords(streamDiscontinuousRecords, logger);
@@ -721,7 +721,7 @@ public class S3Storage implements Storage {
         final long startTime = System.nanoTime();
         request.record.retain();
         boolean full = deltaWALCache.put(request.record);
-        deltaWALCache.setConfirmOffset(request.offset);
+        deltaWALCache.setLastRecordOffset(request.offset);
         if (full) {
             // cache block is full, trigger WAL upload.
             uploadDeltaWAL();
@@ -854,9 +854,9 @@ public class S3Storage implements Storage {
             StorageOperationStats.getInstance().uploadWALCommitStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             // 1. poll out current task
             walCommitQueue.poll();
-            if (context.cache.confirmOffset() != null) {
-                LOGGER.info("try trim WAL to {}", context.cache.confirmOffset());
-                deltaWAL.trim(context.cache.confirmOffset());
+            if (context.cache.lastRecordOffset() != null) {
+                LOGGER.info("try trim WAL to {}", context.cache.lastRecordOffset());
+                deltaWAL.trim(context.cache.lastRecordOffset());
             }
             // transfer records ownership to block cache.
             freeCache(context.cache);

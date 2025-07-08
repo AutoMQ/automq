@@ -39,6 +39,7 @@ public class WALObjectHeader {
     static final int WAL_HEADER_MAGIC_CODE_V1 = 0xEDCBA987;
     static final int WAL_HEADER_SIZE_V1 = WAL_HEADER_SIZE_V0
                                         + 8; // trim offset
+    static final int MAX_WAL_HEADER_SIZE = Math.max(WAL_HEADER_SIZE_V0, WAL_HEADER_SIZE_V1);
 
     private static final Map<Integer, Integer> WAL_HEADER_SIZES = Map.of(
             WAL_HEADER_MAGIC_CODE_V0, WAL_HEADER_SIZE_V0,

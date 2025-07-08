@@ -85,6 +85,14 @@ public class ObjectUtils {
         return DigestUtils.md5Hex(String.valueOf(nodeId)).toUpperCase(Locale.ROOT) + "/" + Constants.DEFAULT_NAMESPACE + clusterId + "/" + nodeId + "/";
     }
 
+    public static String genObjectPathV0(String nodePrefix, long epoch, long objectStartOffset) {
+        return nodePrefix + epoch + "/wal/" + objectStartOffset;
+    }
+
+    public static String genObjectPathV1(String nodePrefix, long epoch, long objectStartOffset, long objectEndOffset) {
+        return nodePrefix + epoch + "/wal/" + objectStartOffset + OBJECT_PATH_OFFSET_DELIMITER + objectEndOffset;
+    }
+
     public static String genObjectPathV1(String nodePrefix, long epoch, long objectStartOffset) {
         long endOffset = objectStartOffset + DATA_FILE_ALIGN_SIZE;
         return nodePrefix + epoch + "/wal/" + objectStartOffset + OBJECT_PATH_OFFSET_DELIMITER + endOffset;

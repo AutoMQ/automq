@@ -11,6 +11,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import com.automq.stream.utils.threads.EventLoopSafe;
+
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -43,7 +44,7 @@ public class Reader {
     private CompletableFuture<Void> rebuildIndexCf = CompletableFuture.completedFuture(null);
     // the rebuild task that is waiting for sequential running.
     private CompletableFuture<Void> awaitRebuildIndexCf;
-    private NavigableMap<Long /* epoch */, Long /* epoch's startOffset */> indexMap = new TreeMap<>();
+    private NavigableMap<Long /* epoch's startOffset */, Long /* epoch */> indexMap = new TreeMap<>();
 
     private final EventLoop eventLoop;
 
@@ -75,13 +76,15 @@ public class Reader {
                 return;
             }
             tasks.poll();
-            long epoch = entry.getKey();
-            String objectPath = genObjectPathV1(nodePrefix, epoch, floorAlignOffset(readTask.offset));
+            long epoch = entry.getValue();
+            long objectStartObject = floorAlignOffset(readTask.offset);
+            String objectPath = genObjectPathV1(nodePrefix, epoch, objectStartObject);
+            long relativeStartOffset = readTask.offset - objectStartObject + WALObjectHeader.WAL_HEADER_SIZE_V1;
             objectStorage.rangeRead(
                 new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
                 objectPath,
-                readTask.offset,
-                readTask.offset + readTask.size
+                relativeStartOffset,
+                relativeStartOffset + readTask.size
             ).whenCompleteAsync((buf, ex) -> {
                 try {
                     if (ex == null) {
@@ -141,7 +144,7 @@ public class Reader {
                 if (object.epoch() == lastEpoch) {
                     continue;
                 }
-                newIndexMap.put(object.epoch(), object.startOffset());
+                newIndexMap.put(object.startOffset(), object.epoch());
                 lastEpoch = object.epoch();
             }
             this.indexMap = newIndexMap;

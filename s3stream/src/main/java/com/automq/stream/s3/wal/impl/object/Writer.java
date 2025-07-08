@@ -83,9 +83,8 @@ public class Writer implements Closeable {
     protected final ReservationService reservationService;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private List<WALObject> previousObjects = new ArrayList<>();
-    //    private final ConcurrentNavigableMap<Pair<Long /* epoch */, Long /* exclusive end offset */>, WALObject> previousObjectMap = new ConcurrentSkipListMap<>();
     private final Queue<UploadTask> uploadQueue = new ConcurrentLinkedQueue<>();
-    private final ConcurrentNavigableMap<Long /* exclusive end offset */, WALObject> lastRecordOffset2object = new ConcurrentSkipListMap<>();
+    private final ConcurrentNavigableMap<Long, WALObject> lastRecordOffset2object = new ConcurrentSkipListMap<>();
     private final String nodePrefix;
     private final String objectPrefix;
     private final ScheduledExecutorService executorService;
@@ -157,6 +156,8 @@ public class Writer implements Closeable {
 
         startPeriodUpload();
         startMonitor();
+
+        // TODO: force align before accept new data.
 
         closed = false;
     }
@@ -501,7 +502,7 @@ public class Writer implements Closeable {
         });
 
         long firstOffset = this.nextOffset.get();
-        long nextOffset = firstOffset + WALObjectHeader.WAL_HEADER_SIZE_V1;
+        long nextOffset = firstOffset;
         long lastRecordOffset = nextOffset;
         CompositeByteBuf dataBuffer = ByteBufAlloc.compositeByteBuffer();
         for (Record record : records) {
@@ -518,7 +519,7 @@ public class Writer implements Closeable {
 
         // Build object buffer.
         long dataLength = dataBuffer.readableBytes();
-        nextOffset = ObjectUtils.ceilAlignOffset(nextOffset);
+        nextOffset = ObjectUtils.ceilAlignOffset(nextOffset + WALObjectHeader.WAL_HEADER_SIZE_V1);
         long endOffset = nextOffset;
         this.nextOffset.set(nextOffset);
 
@@ -561,7 +562,6 @@ public class Writer implements Closeable {
                     if (time.nanoseconds() - lockStartTime > DEFAULT_LOCK_WARNING_TIMEOUT) {
                         log.warn("Failed to acquire lock in {}ms, cost: {}ms, operation: upload", TimeUnit.NANOSECONDS.toMillis(DEFAULT_LOCK_WARNING_TIMEOUT), TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - lockStartTime));
                     }
-                    // TODO: use which offset as key?
                     lastRecordOffset2object.put(finalLastRecordOffset, new WALObject(result.bucket(), path, config.epoch(), firstOffset, endOffset, objectLength));
                     objectDataBytes.addAndGet(objectLength);
 
