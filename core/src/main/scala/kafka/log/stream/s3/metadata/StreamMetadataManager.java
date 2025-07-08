@@ -138,12 +138,12 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     public CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit) {
         // TODO: cache the object list for next search
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
-        exec(() -> fetch0(cf, streamId, startOffset, endOffset, limit), cf, LOGGER, "fetchObjects");
+        exec(() -> fetch0(cf, streamId, startOffset, endOffset, limit, false), cf, LOGGER, "fetchObjects");
         return cf;
     }
 
     private void fetch0(CompletableFuture<InRangeObjects> cf, long streamId,
-        long startOffset, long endOffset, int limit) {
+        long startOffset, long endOffset, int limit, boolean retryFetch) {
         Image image = getImage();
         try {
             final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
@@ -179,9 +179,11 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     streamId, startOffset, endOffset, limit, rst.objects().size(), rst.endOffset());
 
                 CompletableFuture<Void> pendingCf = pendingFetch();
-                pendingCf.thenAccept(nil -> fetch0(cf, streamId, startOffset, endOffset, limit));
-                cf.whenComplete((r, ex) ->
-                    LOGGER.info("[FetchObjects],[COMPLETE_PENDING],streamId={} startOffset={} endOffset={} limit={}", streamId, startOffset, endOffset, limit));
+                pendingCf.thenAccept(nil -> fetch0(cf, streamId, startOffset, endOffset, limit, true));
+                if (!retryFetch) {
+                    cf.whenComplete((r, ex) ->
+                        LOGGER.info("[FetchObjects],[COMPLETE_PENDING],streamId={} startOffset={} endOffset={} limit={}", streamId, startOffset, endOffset, limit));
+                }
             }).exceptionally(ex -> {
                 cf.completeExceptionally(ex);
                 return null;
