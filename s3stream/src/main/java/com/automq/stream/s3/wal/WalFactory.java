@@ -27,16 +27,16 @@ public interface WalFactory {
 
 
     class BuildOptions {
-        private final boolean failoverMode;
         private final long nodeEpoch;
+        private final OpenMode openMode;
 
-        private BuildOptions(boolean failoverMode, long nodeEpoch) {
-            this.failoverMode = failoverMode;
+        private BuildOptions(long nodeEpoch, OpenMode openMode) {
             this.nodeEpoch = nodeEpoch;
+            this.openMode = openMode;
         }
 
-        public boolean failoverMode() {
-            return failoverMode;
+        public OpenMode openMode() {
+            return openMode;
         }
 
         public long nodeEpoch() {
@@ -48,11 +48,11 @@ public interface WalFactory {
         }
 
         public static class Builder {
-            private boolean failoverMode;
             private long nodeEpoch;
+            private OpenMode openMode = OpenMode.READ_WRITE;
 
-            public Builder failoverMode(boolean failoverMode) {
-                this.failoverMode = failoverMode;
+            public Builder openMode(OpenMode openMode) {
+                this.openMode = openMode;
                 return this;
             }
 
@@ -65,7 +65,7 @@ public interface WalFactory {
                 if (nodeEpoch <= 0) {
                     throw new IllegalArgumentException("The node epoch must be greater than 0");
                 }
-                return new BuildOptions(failoverMode, nodeEpoch);
+                return new BuildOptions(nodeEpoch, openMode);
             }
         }
     }

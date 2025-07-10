@@ -19,6 +19,7 @@
 
 package kafka.log.stream.s3.wal;
 
+import com.automq.stream.s3.wal.OpenMode;
 import kafka.log.stream.s3.node.NodeManager;
 
 import org.apache.kafka.common.utils.ThreadUtils;
@@ -172,7 +173,7 @@ public class BootstrapWalV1 implements WriteAheadLog {
         IdURI uri = IdURI.parse(kraftWalConfigs);
         CompletableFuture<Void> cf = walHandle
             .acquirePermission(nodeId, oldNodeEpoch, uri, new WalHandle.AcquirePermissionOptions().failoverMode(failoverMode));
-        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(oldNodeEpoch).failoverMode(failoverMode).build()), executor);
+        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(oldNodeEpoch).openMode(failoverMode ? OpenMode.FAILOVER : OpenMode.READ_WRITE).build()), executor);
     }
 
     private CompletableFuture<? extends WriteAheadLog> buildWal(String kraftWalConfigs) {
@@ -182,7 +183,7 @@ public class BootstrapWalV1 implements WriteAheadLog {
             .failoverMode(false);
         CompletableFuture<Void> cf = walHandle
             .acquirePermission(nodeId, nodeEpoch, uri, options);
-        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(nodeEpoch).failoverMode(false).build()), executor);
+        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(nodeEpoch).openMode(OpenMode.READ_WRITE).build()), executor);
     }
 
     private CompletableFuture<Void> releasePermission(String kraftWalConfigs) {

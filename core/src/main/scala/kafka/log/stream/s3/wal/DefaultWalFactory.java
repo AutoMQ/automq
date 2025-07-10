@@ -65,8 +65,7 @@ public class DefaultWalFactory implements WalFactory {
                     .withClusterId(AutoMQApplication.getClusterId())
                     .withNodeId(nodeId)
                     .withEpoch(options.nodeEpoch())
-                    .withFailover(options.failoverMode());
-
+                    .withOpenMode(options.openMode());
                 return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
             default:
                 throw new IllegalArgumentException("Unsupported WAL protocol: " + uri.protocol());

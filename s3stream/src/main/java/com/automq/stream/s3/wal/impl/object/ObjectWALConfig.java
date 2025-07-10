@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.utils.IdURI;
 
 import org.apache.commons.lang3.StringUtils;
@@ -32,7 +33,7 @@ public class ObjectWALConfig {
     private final String clusterId;
     private final int nodeId;
     private final long epoch;
-    private final boolean failover;
+    private final OpenMode openMode;
     private final short bucketId;
 
     public static Builder builder() {
@@ -40,7 +41,7 @@ public class ObjectWALConfig {
     }
 
     public ObjectWALConfig(long batchInterval, long maxBytesInBatch, long maxUnflushedBytes, int maxInflightUploadCount,
-        int readAheadObjectCount, String clusterId, int nodeId, long epoch, boolean failover, short bucketId) {
+        int readAheadObjectCount, String clusterId, int nodeId, long epoch, OpenMode openMode, short bucketId) {
         this.batchInterval = batchInterval;
         this.maxBytesInBatch = maxBytesInBatch;
         this.maxUnflushedBytes = maxUnflushedBytes;
@@ -49,7 +50,7 @@ public class ObjectWALConfig {
         this.clusterId = clusterId;
         this.nodeId = nodeId;
         this.epoch = epoch;
-        this.failover = failover;
+        this.openMode = openMode;
         this.bucketId = bucketId;
     }
 
@@ -85,8 +86,8 @@ public class ObjectWALConfig {
         return epoch;
     }
 
-    public boolean failover() {
-        return failover;
+    public OpenMode openMode() {
+        return openMode;
     }
 
     public short bucketId() {
@@ -102,7 +103,7 @@ public class ObjectWALConfig {
         private String clusterId;
         private int nodeId;
         private long epoch;
-        private boolean failover;
+        private OpenMode openMode = OpenMode.READ_WRITE;
         private short bucketId;
 
         private Builder() {
@@ -182,8 +183,8 @@ public class ObjectWALConfig {
             return this;
         }
 
-        public Builder withFailover(boolean failover) {
-            this.failover = failover;
+        public Builder withOpenMode(OpenMode openMode) {
+            this.openMode = openMode;
             return this;
         }
 
@@ -193,7 +194,7 @@ public class ObjectWALConfig {
         }
 
         public ObjectWALConfig build() {
-            return new ObjectWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, failover, bucketId);
+            return new ObjectWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, openMode, bucketId);
         }
     }
 }

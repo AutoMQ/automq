@@ -25,6 +25,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.DefaultAppendResult;
+import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.common.RecordHeader;
@@ -123,11 +124,11 @@ public class Writer implements Closeable {
 
     public void start() {
         // Verify the permission.
-        reservationService.verify(config.nodeId(), config.epoch(), config.failover())
+        reservationService.verify(config.nodeId(), config.epoch(), config.openMode() == OpenMode.FAILOVER)
             .thenAccept(result -> {
                 if (!result) {
                     fenced = true;
-                    WALFencedException exception = new WALFencedException("Failed to verify the permission with node id: " + config.nodeId() + ", node epoch: " + config.epoch() + ", failover flag: " + config.failover());
+                    WALFencedException exception = new WALFencedException("Failed to verify the permission with node id: " + config.nodeId() + ", node epoch: " + config.epoch() + ", failover flag: " + config.openMode());
                     throw new CompletionException(exception);
                 }
             })
@@ -244,16 +245,6 @@ public class Writer implements Closeable {
         return list;
     }
 
-    // Visible for testing
-    String objectPrefix() {
-        return objectPrefix;
-    }
-
-    // Visible for testing
-    ScheduledExecutorService executorService() {
-        return executorService;
-    }
-
     protected void checkStatus() throws WALFencedException {
         if (closed) {
             throw new IllegalStateException("WAL is closed.");
@@ -265,7 +256,7 @@ public class Writer implements Closeable {
     }
 
     protected void checkWriteStatus() throws WALFencedException {
-        if (config.failover()) {
+        if (config.openMode() != OpenMode.READ_WRITE) {
             throw new IllegalStateException("WAL is in failover mode.");
         }
 
@@ -557,7 +548,7 @@ public class Writer implements Closeable {
                     .thenApply(result -> {
                         if (!result) {
                             fenced = true;
-                            WALFencedException exception = new WALFencedException("Failed to verify the permission with node id: " + config.nodeId() + ", node epoch: " + config.epoch() + ", failover flag: " + config.failover());
+                            WALFencedException exception = new WALFencedException("Failed to verify the permission with node id: " + config.nodeId() + ", node epoch: " + config.epoch() + ", failover flag: " + config.openMode());
                             throw new CompletionException(exception);
                         }
                         return writeResult;
