@@ -25,14 +25,29 @@ import java.util.Objects;
 public class KeyValue {
     private final Key key;
     private final Value value;
+    private final String namespace;
+    private final long epoch;
 
     private KeyValue(Key key, Value value) {
         this.key = key;
         this.value = value;
+        this.namespace = null;
+        this.epoch = 0L;
+    }
+
+    public KeyValue(Key key, Value value, String namespace, long epoch) {
+        this.key = key;
+        this.value = value;
+        this.namespace = namespace;
+        this.epoch = epoch;
     }
 
     public static KeyValue of(String key, ByteBuffer value) {
         return new KeyValue(Key.of(key), Value.of(value));
+    }
+
+    public static KeyValue of(String key, ByteBuffer value, String namespace, long epoch) {
+        return new KeyValue(Key.of(key), Value.of(value), namespace, epoch);
     }
 
     public Key key() {
@@ -41,6 +56,14 @@ public class KeyValue {
 
     public Value value() {
         return value;
+    }
+
+    public String namespace() {
+        return namespace;
+    }
+
+    public long epoch() {
+        return epoch;
     }
 
     @Override
@@ -152,6 +175,54 @@ public class KeyValue {
             return "Value{" +
                 "value=" + value +
                 '}';
+        }
+    }
+
+    public static class KeyAndNamespace {
+        private final Key key;
+        private final String namespace;
+
+        public KeyAndNamespace(Key key, String namespace) {
+            this.key = key;
+            this.namespace = namespace;
+        }
+
+        public Key key() {
+            return key;
+        }
+
+        public String namespace() {
+            return namespace;
+        }
+
+        public static KeyAndNamespace of(String key, String namespace) {
+            return new KeyAndNamespace(Key.of(key), namespace);
+        }
+    }
+
+    public static class ValueAndEpoch {
+        private final Value value;
+        private final long epoch;
+
+        public ValueAndEpoch(Value value, long epoch) {
+            this.value = value;
+            this.epoch = epoch;
+        }
+
+        public Value value() {
+            return value;
+        }
+
+        public long epoch() {
+            return epoch;
+        }
+
+        public static ValueAndEpoch of(byte[] value, long epoch) {
+            return new ValueAndEpoch(Value.of(value), epoch);
+        }
+
+        public static ValueAndEpoch of(ByteBuffer value, long epoch) {
+            return new ValueAndEpoch(Value.of(value), epoch);
         }
     }
 }
