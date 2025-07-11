@@ -35,10 +35,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -126,9 +127,25 @@ public class SlidingWindowService {
      */
     private final Lock blockLock = new ReentrantLock();
     /**
-     * Blocks that are being written.
+     * Blocks that are waiting to be written.
+     * All blocks in this queue are ordered by the start offset.
      */
-    private final Queue<Long> writingBlocks = new PriorityQueue<>();
+    private final Queue<Block> pendingBlocks = new ArrayDeque<>();
+    /**
+     * Blocks that are being written.
+     * All blocks in this queue are ordered by the start offset.
+     */
+    private final Queue<Block> writingBlocks = new ArrayDeque<>();
+    /**
+     * The current block, records are added to this block.
+     */
+    private volatile Block currentBlock;
+
+    /**
+     * The lock to make sure that there is only at most one callback thread at a time.
+     */
+    private final Lock callbackLock = new ReentrantLock();
+
     /**
      * Whether the service is initialized.
      * After the service is initialized, data in {@link #windowCoreData} is valid.
@@ -139,15 +156,6 @@ public class SlidingWindowService {
      * The core data of the sliding window. Initialized when the service is started.
      */
     private WindowCoreData windowCoreData;
-    /**
-     * Blocks that are waiting to be written.
-     * All blocks in this queue are ordered by the start offset.
-     */
-    private volatile Queue<Block> pendingBlocks = new LinkedList<>();
-    /**
-     * The current block, records are added to this block.
-     */
-    private volatile Block currentBlock;
 
     /**
      * The thread pool for write operations.
@@ -393,16 +401,16 @@ public class SlidingWindowService {
         }
 
         if (polled != null) {
-            writingBlocks.add(polled.startOffset());
+            writingBlocks.add(polled);
         }
 
         return polled;
     }
 
     /**
-     * Finish the given block, and return the start offset of the first block which has not been flushed yet.
+     * Mark the given block as written and remove all continuous blocks that have been written.
      */
-    private long wroteBlock(Block wroteBlock) {
+    private WroteBlockResult wroteBlock(Block wroteBlock) {
         blockLock.lock();
         try {
             return wroteBlockLocked(wroteBlock);
@@ -412,26 +420,62 @@ public class SlidingWindowService {
     }
 
     /**
-     * Finish the given block, and return the start offset of the first block which has not been flushed yet.
+     * Mark the given block as written and remove all continuous blocks that have been written.
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
-    private long wroteBlockLocked(Block wroteBlock) {
-        boolean removed = writingBlocks.remove(wroteBlock.startOffset());
-        assert removed;
+    private WroteBlockResult wroteBlockLocked(Block wroteBlock) {
+        wroteBlock.markWritten();
+
+        List<Block> writtenBlocks = removeWrittenBlocksLocked();
+        assert !writtenBlocks.isEmpty();
+        long unflushedOffset = getFirstUnflushedOffsetLocked();
+
+        return new WroteBlockResult(writtenBlocks, unflushedOffset);
+    }
+
+    /**
+     * Remove all continuous blocks that have been written from the writing queue.
+     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
+     */
+    private List<Block> removeWrittenBlocksLocked() {
+        List<Block> removedBlocks = new ArrayList<>();
+        while (!writingBlocks.isEmpty()) {
+            Block block = writingBlocks.peek();
+            if (block.isWritten()) {
+                removedBlocks.add(writingBlocks.poll());
+            } else {
+                break;
+            }
+        }
+        return removedBlocks;
+    }
+
+    /**
+     * Get the start offset of the first block which has not been flushed yet.
+     */
+    private long getFirstUnflushedOffsetLocked() {
         if (writingBlocks.isEmpty()) {
             return getCurrentBlockLocked().startOffset();
         }
-        return writingBlocks.peek();
+        return writingBlocks.peek().startOffset();
+    }
+
+    private static class WroteBlockResult {
+        private final List<Block> writtenBlocks;
+        private final long unflushedOffset;
+
+        public WroteBlockResult(List<Block> writtenBlocks, long unflushedOffset) {
+            this.writtenBlocks = writtenBlocks;
+            this.unflushedOffset = unflushedOffset;
+        }
     }
 
     private void writeBlockData(Block block) throws IOException {
-        final long start = System.nanoTime();
         long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
         ByteBuf data = block.data();
         writeBandwidthBucket.consumeUninterruptibly(WALUtil.bytesToBlocks(data.readableBytes()));
         walChannel.retryWrite(data, position);
         walChannel.retryFlush();
-        StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.timeElapsedSince(start, TimeUnit.NANOSECONDS));
     }
 
     private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException {
@@ -526,7 +570,8 @@ public class SlidingWindowService {
         public void run() {
             StorageOperationStats.getInstance().appendWALAwaitStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             try {
-                writeBlock(this.block);
+                writeBlock(block);
+                completeWriteAndMaybeCallback(block);
             } catch (Exception e) {
                 // should not happen, but just in case
                 FutureUtil.completeExceptionally(block.futures().iterator(), e);
@@ -537,13 +582,30 @@ public class SlidingWindowService {
         }
 
         private void writeBlock(Block block) throws IOException {
+            final long startTime = System.nanoTime();
             makeWriteOffsetMatchWindow(block.endOffset());
             writeBlockData(block);
+            StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        }
 
+        private void completeWriteAndMaybeCallback(Block block) {
             final long startTime = System.nanoTime();
-            // Update the start offset of the sliding window after finishing writing the record.
-            windowCoreData.updateWindowStartOffset(wroteBlock(block));
+            callbackLock.lock();
+            try {
+                WroteBlockResult wroteBlockResult = wroteBlock(block);
+                // Update the start offset of the sliding window after finishing writing the record.
+                windowCoreData.updateWindowStartOffset(wroteBlockResult.unflushedOffset);
+                // Notify the futures of blocks that have been written.
+                for (Block writtenBlock : wroteBlockResult.writtenBlocks) {
+                    callback(writtenBlock);
+                    StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+                }
+            } finally {
+                callbackLock.unlock();
+            }
+        }
 
+        private void callback(Block block) {
             FutureUtil.complete(block.futures().iterator(), new AppendResult.CallbackResult() {
                 @Override
                 public long flushedOffset() {
@@ -555,7 +617,6 @@ public class SlidingWindowService {
                     return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                 }
             });
-            StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         }
     }
 }
