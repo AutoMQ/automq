@@ -134,6 +134,11 @@ public class SlidingWindowService {
     private volatile Block currentBlock;
 
     /**
+     * The lock to make sure that there is only at most one callback thread at a time.
+     */
+    private final Lock callbackLock = new ReentrantLock();
+
+    /**
      * Whether the service is initialized.
      * After the service is initialized, data in {@link #windowCoreData} is valid.
      */
@@ -558,7 +563,7 @@ public class SlidingWindowService {
             StorageOperationStats.getInstance().appendWALAwaitStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             try {
                 writeBlock(block);
-                wroteBlock(block);
+                completeWriteAndMaybeCallback(block);
             } catch (Exception e) {
                 // should not happen, but just in case
                 FutureUtil.completeExceptionally(block.futures().iterator(), e);
@@ -575,15 +580,20 @@ public class SlidingWindowService {
             StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         }
 
-        private void wroteBlock(Block block) {
+        private void completeWriteAndMaybeCallback(Block block) {
             final long startTime = System.nanoTime();
-            WroteBlockResult wroteBlockResult = SlidingWindowService.this.wroteBlock(block);
-            // Update the start offset of the sliding window after finishing writing the record.
-            windowCoreData.updateWindowStartOffset(wroteBlockResult.unflushedOffset);
-            // Notify the futures of blocks that have been written.
-            for (Block writtenBlock : wroteBlockResult.writtenBlocks) {
-                callback(writtenBlock);
-                StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+            callbackLock.lock();
+            try {
+                WroteBlockResult wroteBlockResult = wroteBlock(block);
+                // Update the start offset of the sliding window after finishing writing the record.
+                windowCoreData.updateWindowStartOffset(wroteBlockResult.unflushedOffset);
+                // Notify the futures of blocks that have been written.
+                for (Block writtenBlock : wroteBlockResult.writtenBlocks) {
+                    callback(writtenBlock);
+                    StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+                }
+            } finally {
+                callbackLock.unlock();
             }
         }
 
