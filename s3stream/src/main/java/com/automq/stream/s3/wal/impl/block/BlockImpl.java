@@ -64,6 +64,7 @@ public class BlockImpl implements Block {
      */
     private List<Record> records = null;
     private CompositeByteBuf data = null;
+    private volatile boolean written = false;
 
     /**
      * Create a block.
@@ -154,6 +155,17 @@ public class BlockImpl implements Block {
                 .map(Record::header)
                 .forEach(HEADER_POOL::release);
         }
+    }
+
+    @Override
+    public void markWritten() {
+        assert !written;
+        written = true;
+    }
+
+    @Override
+    public boolean isWritten() {
+        return written;
     }
 
     @Override

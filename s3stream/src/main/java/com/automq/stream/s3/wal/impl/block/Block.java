@@ -73,6 +73,16 @@ public interface Block {
     void release();
 
     /**
+     * Mark this block has been written to the WAL.
+     */
+    void markWritten();
+
+    /**
+     * Check if this block has been written to the WAL.
+     */
+    boolean isWritten();
+
+    /**
      * Called when this block is polled and sent to the writer.
      * Used for metrics.
      */
