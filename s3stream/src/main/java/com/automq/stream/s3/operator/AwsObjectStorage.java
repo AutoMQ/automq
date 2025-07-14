@@ -362,12 +362,33 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<List<ObjectInfo>> doList(String prefix) {
-        return readS3Client.listObjectsV2(builder -> builder.bucket(bucket).prefix(prefix))
-            .thenApply(resp ->
-                resp.contents()
-                    .stream()
-                    .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
-                    .collect(Collectors.toList()));
+        CompletableFuture<List<ObjectInfo>> resultFuture = new CompletableFuture<>();
+        List<ObjectInfo> allObjects = new ArrayList<>();
+        listNextBatch(prefix, null, allObjects, resultFuture);
+        return resultFuture;
+    }
+
+    private void listNextBatch(String prefix, String continuationToken, List<ObjectInfo> allObjects,
+        CompletableFuture<List<ObjectInfo>> resultFuture) {
+        readS3Client.listObjectsV2(builder -> {
+            builder.bucket(bucket).prefix(prefix);
+            if (continuationToken != null) {
+                builder.continuationToken(continuationToken);
+            }
+        }).thenAccept(resp -> {
+            resp.contents()
+                .stream()
+                .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
+                .forEach(allObjects::add);
+            if (resp.isTruncated()) {
+                listNextBatch(prefix, resp.nextContinuationToken(), allObjects, resultFuture);
+            } else {
+                resultFuture.complete(allObjects);
+            }
+        }).exceptionally(ex -> {
+            resultFuture.completeExceptionally(ex);
+            return null;
+        });
     }
 
     @Override
