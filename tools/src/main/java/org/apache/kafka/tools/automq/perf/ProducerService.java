@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.apache.kafka.tools.automq.perf;
@@ -21,6 +29,9 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
+
+import com.automq.stream.utils.Threads;
+import com.google.common.primitives.Longs;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,13 +61,14 @@ import static org.apache.kafka.tools.automq.perf.UniformRateLimiter.uninterrupti
 public class ProducerService implements AutoCloseable {
 
     public static final Charset HEADER_KEY_CHARSET = StandardCharsets.UTF_8;
-    public static final String HEADER_KEY_SEND_TIME_NANOS = "send_time_nanos";
+    public static final String HEADER_KEY_SEND_TIME_NANOS = "st";
     public static final double MIN_RATE = 1.0;
     private static final int ADJUST_RATE_INTERVAL_SECONDS = 5;
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerService.class);
 
     private final List<Producer> producers = new LinkedList<>();
-    private final ScheduledExecutorService adjustRateExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("perf-producer-rate-adjust", true));
+    private final ScheduledExecutorService adjustRateExecutor =
+        Threads.newSingleThreadScheduledExecutor("perf-producer-rate-adjust", true, LOGGER);
     private final ExecutorService executor = Executors.newCachedThreadPool(ThreadUtils.createThreadFactory("perf-producer", false));
 
     /**
@@ -302,9 +314,9 @@ public class ProducerService implements AutoCloseable {
          * @return a future that completes when the message is sent
          */
         private CompletableFuture<Void> sendAsync(String key, byte[] payload, Integer partition) {
-            long sendTimeNanos = System.nanoTime();
+            long sendTimeNanos = StatsCollector.currentNanos();
             List<Header> headers = List.of(
-                new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Long.toString(sendTimeNanos).getBytes(HEADER_KEY_CHARSET))
+                new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Longs.toByteArray(sendTimeNanos))
             );
             ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload, headers);
             int size = payload.length;

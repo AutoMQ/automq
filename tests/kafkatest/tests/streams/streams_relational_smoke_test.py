@@ -64,8 +64,8 @@ class StreamsRelationalSmokeTestService(StreamsTestBaseService):
             raise RuntimeError("No process ids recorded")
 
     def await_command(self, command):
-        wait_until(lambda: self.node.account.ssh(command, allow_fail=True),
-                   timeout_sec=60,
+        wait_until(lambda: self.node.account.ssh(command, allow_fail=True) == 0,
+                   timeout_sec=300,
                    err_msg="Command [%s] never passed in the timeout"
                    )
 

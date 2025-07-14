@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.apache.kafka.tools.automq.perf;
@@ -14,8 +22,11 @@ package org.apache.kafka.tools.automq.perf;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
+import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TopicDescription;
+import org.apache.kafka.clients.admin.TopicListing;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TopicExistsException;
@@ -25,6 +36,7 @@ import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,23 +72,23 @@ public class TopicService implements AutoCloseable {
      */
     public List<Topic> createTopics(TopicsConfig config) {
         List<NewTopic> newTopics = IntStream.range(0, config.topics)
-            .mapToObj(i -> generateTopicName(config.topicPrefix, config.partitionsPerTopic, i))
-            .map(name -> new NewTopic(name, config.partitionsPerTopic, (short) 1).configs(config.topicConfigs))
-            .collect(Collectors.toList());
+                .mapToObj(i -> generateTopicName(config.topicPrefix, config.partitionsPerTopic, i))
+                .map(name -> new NewTopic(name, config.partitionsPerTopic, (short) 1).configs(config.topicConfigs))
+                .collect(Collectors.toList());
 
         int topicsPerBatch = MAX_PARTITIONS_PER_BATCH / config.partitionsPerTopic;
         List<List<NewTopic>> requests = Lists.partition(newTopics, topicsPerBatch);
 
         Map<String, KafkaFuture<Void>> results = requests.stream()
-            .map(admin::createTopics)
-            .map(CreateTopicsResult::values)
-            .flatMap(map -> map.entrySet().stream())
-            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                .map(admin::createTopics)
+                .map(CreateTopicsResult::values)
+                .flatMap(map -> map.entrySet().stream())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         results.forEach(this::waitTopicCreated);
 
         return results.keySet().stream()
-            .map(name -> new Topic(name, config.partitionsPerTopic))
-            .collect(Collectors.toList());
+                .map(name -> new Topic(name, config.partitionsPerTopic))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -86,8 +98,8 @@ public class TopicService implements AutoCloseable {
         ListTopicsResult result = admin.listTopics();
         try {
             List<String> toDelete = result.names().get().stream()
-                .filter(name -> name.startsWith(COMMON_TOPIC_PREFIX))
-                .collect(Collectors.toList());
+                    .filter(name -> name.startsWith(COMMON_TOPIC_PREFIX))
+                    .collect(Collectors.toList());
             admin.deleteTopics(toDelete).all().get();
             return toDelete.size();
         } catch (InterruptedException e) {
@@ -122,6 +134,57 @@ public class TopicService implements AutoCloseable {
         return String.format("%s%s_%04d_%07d", COMMON_TOPIC_PREFIX, topicPrefix, partitions, index);
     }
 
+    /**
+     * Find existing topics with the given prefix.
+     */
+    public List<Topic> findExistingTopicsByPrefix(String prefix) {
+        ListTopicsResult listTopicsResult = admin.listTopics();
+        try {
+            String fullPrefix = COMMON_TOPIC_PREFIX + prefix;
+
+            // Get all topic listings
+            Map<String, TopicListing> topicListingsMap = listTopicsResult.namesToListings().get();
+
+            // Filter topic names by prefix
+            List<String> matchingTopicNames = topicListingsMap.keySet().stream()
+                    .filter(name -> name.startsWith(fullPrefix)) // Corrected fulalPrefix to fullPrefix
+                    .collect(Collectors.toList());
+
+            if (matchingTopicNames.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            // Describe the filtered topics to get partition info
+            DescribeTopicsResult describeTopicsResult = admin.describeTopics(matchingTopicNames);
+            Map<String, TopicDescription> topicDescriptions = describeTopicsResult.allTopicNames().get();
+
+            return matchingTopicNames.stream()
+                    .map(name -> {
+                        TopicDescription description = topicDescriptions.get(name);
+                        if (description != null) {
+                            int partitionCount = description.partitions().size();
+                            return new Topic(name, partitionCount);
+                        } else {
+                            // This case should ideally not be reached if a topic name from listTopics is
+                            // passed to describeTopics
+                            // and the topic still exists.
+                            LOGGER.warn("Could not find description for topic: {}. It might have been deleted.", name);
+                            return null;
+                        }
+                    })
+                    .filter(Objects::nonNull) // Filter out any nulls if a description was missing
+                    .collect(Collectors.toList());
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            // It's good practice to specify which operation was interrupted.
+            throw new RuntimeException("Interrupted while listing or describing topics", e);
+        } catch (ExecutionException e) {
+            // Similarly, specify the operation.
+            throw new RuntimeException("Failed to list or describe topics", e);
+        }
+    }
+
     public static class TopicsConfig {
         final String topicPrefix;
         final int topics;
@@ -151,8 +214,8 @@ public class TopicService implements AutoCloseable {
 
         public List<TopicPartition> partitions() {
             return IntStream.range(0, partitions)
-                .mapToObj(i -> new TopicPartition(name, i))
-                .collect(Collectors.toList());
+                    .mapToObj(i -> new TopicPartition(name, i))
+                    .collect(Collectors.toList());
         }
 
         public TopicPartition firstPartition() {

@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3;
@@ -41,8 +49,13 @@ public interface ObjectWriter {
     byte DATA_BLOCK_DEFAULT_FLAG = 0x02;
 
     static ObjectWriter writer(long objectId, ObjectStorage objectStorage, int blockSizeThreshold,
+        int partSizeThreshold, ObjectStorage.WriteOptions writeOptions) {
+        return new DefaultObjectWriter(objectId, objectStorage, blockSizeThreshold, partSizeThreshold, writeOptions);
+    }
+
+    static ObjectWriter writer(long objectId, ObjectStorage objectStorage, int blockSizeThreshold,
         int partSizeThreshold) {
-        return new DefaultObjectWriter(objectId, objectStorage, blockSizeThreshold, partSizeThreshold);
+        return writer(objectId, objectStorage, blockSizeThreshold, partSizeThreshold, new ObjectStorage.WriteOptions());
     }
 
     static ObjectWriter noop(long objectId) {
@@ -92,15 +105,16 @@ public interface ObjectWriter {
          * @param objectStorage      S3 operator
          * @param blockSizeThreshold the max size of a block
          * @param partSizeThreshold  the max size of a part. If it is smaller than {@link Writer#MIN_PART_SIZE}, it will be set to {@link Writer#MIN_PART_SIZE}.
+         * @param writeOptions       the object storage write options
          */
         public DefaultObjectWriter(long objectId, ObjectStorage objectStorage, int blockSizeThreshold,
-            int partSizeThreshold) {
+            int partSizeThreshold, ObjectStorage.WriteOptions writeOptions) {
             String objectKey = ObjectUtils.genKey(0, objectId);
             this.blockSizeThreshold = blockSizeThreshold;
             this.partSizeThreshold = Math.max(Writer.MIN_PART_SIZE, partSizeThreshold);
             waitingUploadBlocks = new LinkedList<>();
             completedBlocks = new LinkedList<>();
-            writer = objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, objectKey);
+            writer = objectStorage.writer(writeOptions, objectKey);
         }
 
         public synchronized void write(long streamId, List<StreamRecordBatch> records) {

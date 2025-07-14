@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package kafka.log.stream.s3.metadata;
@@ -39,6 +47,7 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,7 +61,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
@@ -77,7 +85,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         this.pendingGetObjectsTasks = new LinkedList<>();
         this.objectReaderFactory = objectReaderFactory;
         this.indexCache = indexCache;
-        this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
+        this.pendingExecutorService =
+            Threads.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"), LOGGER);
         broker.metadataLoader().installPublishers(List.of(this)).join();
     }
 
@@ -214,19 +223,21 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         try (Image image = getImage()) {
             final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
 
-            List<StreamMetadata> streamMetadataList = new ArrayList<>();
-            for (Long streamId : streamIds) {
-                S3StreamMetadataImage streamImage = streamsImage.timelineStreamMetadata().get(streamId);
-                if (streamImage == null) {
-                    LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
-                    continue;
+            List<StreamMetadata> streamMetadataList = new ArrayList<>(streamIds.size());
+            streamsImage.inLockRun(() -> {
+                for (Long streamId : streamIds) {
+                    S3StreamMetadataImage streamImage = streamsImage.timelineStreamMetadata().get(streamId);
+                    if (streamImage == null) {
+                        LOGGER.warn("[GetStreamMetadataList]: stream: {} not exists", streamId);
+                        continue;
+                    }
+                    // If there is a streamImage, it means the stream exists.
+                    @SuppressWarnings("OptionalGetWithoutIsPresent") long endOffset = streamsImage.streamEndOffset(streamId).getAsLong();
+                    StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
+                        streamImage.getStartOffset(), endOffset, streamImage.state());
+                    streamMetadataList.add(streamMetadata);
                 }
-                // If there is a streamImage, it means the stream exists.
-                @SuppressWarnings("OptionalGetWithoutIsPresent") long endOffset = streamsImage.streamEndOffset(streamId).getAsLong();
-                StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
-                    streamImage.getStartOffset(), endOffset, streamImage.state());
-                streamMetadataList.add(streamMetadata);
-            }
+            });
             return streamMetadataList;
         }
     }

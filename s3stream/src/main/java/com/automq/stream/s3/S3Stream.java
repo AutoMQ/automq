@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3;
@@ -92,12 +100,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
     private CompletableFuture<Void> closeCf;
     private StreamMetadataListener.Handle listenerHandle;
 
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager) {
-        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, null, null, OpenStreamOptions.DEFAULT);
-    }
-
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+    private S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
         StreamManager streamManager, NetworkBandwidthLimiter networkInboundLimiter,
         NetworkBandwidthLimiter networkOutboundLimiter, OpenStreamOptions options) {
         this.streamId = streamId;
@@ -113,6 +116,22 @@ public class S3Stream implements Stream, StreamMetadataListener {
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
         this.options = options;
+    }
+
+    public static S3Stream create(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager) {
+        return create(streamId, epoch, startOffset, nextOffset, storage, streamManager, null, null, OpenStreamOptions.DEFAULT);
+    }
+
+    public static S3Stream create(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager, NetworkBandwidthLimiter networkInboundLimiter,
+        NetworkBandwidthLimiter networkOutboundLimiter, OpenStreamOptions options) {
+        S3Stream s3Stream = new S3Stream(streamId, epoch, startOffset, nextOffset, storage, streamManager, networkInboundLimiter, networkOutboundLimiter, options);
+        s3Stream.completeInitialization();
+        return s3Stream;
+    }
+
+    private void completeInitialization() {
         if (snapshotRead()) {
             listenerHandle = streamManager.addMetadataListener(streamId, this);
         }
@@ -216,12 +235,16 @@ public class S3Stream implements Stream, StreamMetadataListener {
         });
     }
 
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
     @Override
     @WithSpan
     public CompletableFuture<FetchResult> fetch(FetchContext context,
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
+        if (snapshotRead()) {
+            context.readOptions().snapshotRead(true);
+        }
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
         try {

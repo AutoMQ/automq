@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.operator;
@@ -56,12 +64,13 @@ public interface ObjectStorage {
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
     // Low level API
-    CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf);
+    default CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf) {
+        Writer writer = writer(options, objectPath);
+        writer.write(buf);
+        return writer.close().thenApply(nil -> new WriteResult(bucketId()));
+    }
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
-
-    // NOTE: this is a temporary method to get bucketId for direct read with object storage interface
-    short bucketId();
 
     /**
      * The deleteObjects API have max batch limit.
@@ -71,6 +80,8 @@ public interface ObjectStorage {
      * The caller may do the batch split logic if the delete operation need fine-grained control
      */
     CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
+
+    short bucketId();
 
     class ObjectPath {
         private final short bucketId;
@@ -179,7 +190,7 @@ public interface ObjectStorage {
             return apiCallAttemptTimeout;
         }
 
-        // The value will be set by writer
+        // Writer will set the value
         WriteOptions bucketId(short bucketId) {
             this.bucketId = bucketId;
             return this;

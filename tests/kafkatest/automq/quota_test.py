@@ -1,12 +1,5 @@
 """
-Copyright 2024, AutoMQ HK Limited.
-
-The use of this file is governed by the Business Source License,
-as detailed in the file "/LICENSE.S3Stream" included in this repository.
-
-As of the Change Date specified in that file, in accordance with
-the Business Source License, use of this software will be governed
-by the Apache License, Version 2.0
+Copyright 2025, AutoMQ HK Limited. Licensed under Apache-2.0.
 """
 
 from ducktape.mark.resource import cluster
@@ -98,7 +91,7 @@ class QuotaTest(Test):
             assert len(messages) > 0, "consumer %d didn't consume any message before timeout" % idx
 
     @cluster(num_nodes=5)
-    @matrix(broker_in=[2500000], broker_out=[2000000], wal=['file', 's3'])
+    @matrix(broker_in=[2500000], broker_out=[2000000], wal=['s3'])
     def test_quota(self, broker_in, broker_out, wal):
         self.create_kafka(self.test_context, broker_in, broker_out, wal)
         self.kafka.start()

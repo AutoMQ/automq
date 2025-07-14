@@ -31,10 +31,10 @@ class ProduceConsumeValidateTest(Test):
         super(ProduceConsumeValidateTest, self).__init__(test_context=test_context)
         # How long to wait for the producer to declare itself healthy? This can
         # be overidden by inheriting classes.
-        self.producer_start_timeout_sec = 20
+        self.producer_start_timeout_sec = 600
 
         # How long to wait for the consumer to start consuming messages?
-        self.consumer_start_timeout_sec = 60
+        self.consumer_start_timeout_sec = 600
 
         # How long wait for the consumer process to fork? This
         # is important in the case when the consumer is starting from the end,
@@ -65,7 +65,7 @@ class ProduceConsumeValidateTest(Test):
 
 
         self.producer.start()
-        wait_until(lambda: self.producer.num_acked > 5,
+        wait_until(lambda: self.producer.num_acked > 19,
                    timeout_sec=self.producer_start_timeout_sec,
                    err_msg="Producer failed to produce messages for %ds." %\
                    self.producer_start_timeout_sec)

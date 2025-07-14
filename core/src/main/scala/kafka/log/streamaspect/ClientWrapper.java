@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package kafka.log.streamaspect;
@@ -61,13 +69,13 @@ public class ClientWrapper implements Client {
         ErrorCode.OFFSET_OUT_OF_RANGE_BOUNDS
     );
     private final ScheduledExecutorService streamManagerRetryScheduler = Executors.newScheduledThreadPool(1,
-        ThreadUtils.createThreadFactory("stream-manager-retry-%d", true));
+        ThreadUtils.createThreadFactory("stream-manager-retry-scheduler-%d", true));
     private final ExecutorService streamManagerCallbackExecutors = Executors.newFixedThreadPool(1,
         ThreadUtils.createThreadFactory("stream-manager-callback-executor-%d", true));
     private final ScheduledExecutorService generalRetryScheduler = Executors.newScheduledThreadPool(1,
         ThreadUtils.createThreadFactory("general-retry-scheduler-%d", true));
     private final ExecutorService generalCallbackExecutors = Executors.newFixedThreadPool(4,
-        ThreadUtils.createThreadFactory("general-callback-scheduler-%d", true));
+        ThreadUtils.createThreadFactory("general-callback-executor-%d", true));
     private final Client innerClient;
     private volatile StreamClient streamClient;
     private final HashedWheelTimer fetchTimeout = new HashedWheelTimer(
@@ -114,6 +122,7 @@ public class ClientWrapper implements Client {
         streamManagerCallbackExecutors.shutdownNow();
         generalRetryScheduler.shutdownNow();
         generalCallbackExecutors.shutdownNow();
+        fetchTimeout.stop();
     }
 
     /**

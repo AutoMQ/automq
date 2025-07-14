@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.index;
@@ -36,7 +44,7 @@ public class LocalStreamRangeIndexCacheTest {
     public void testInit() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
         // init with empty index
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 0).join());
@@ -47,7 +55,7 @@ public class LocalStreamRangeIndexCacheTest {
         cache.updateIndexFromRequest(request);
         cache.upload().join();
 
-        cache = new LocalStreamRangeIndexCache();
+        cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         cache.initCf().join();
@@ -61,7 +69,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testAppend() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
@@ -85,7 +93,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testPrune() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
@@ -122,7 +130,7 @@ public class LocalStreamRangeIndexCacheTest {
         Assertions.assertEquals(97, cache.searchObjectId(STREAM_0, 1500).join());
 
         // test load from object storage
-        cache = new LocalStreamRangeIndexCache();
+        cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         cache.initCf().join();
@@ -147,7 +155,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testEvict() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         int streamNum = 500;
@@ -172,7 +180,7 @@ public class LocalStreamRangeIndexCacheTest {
     @Test
     public void testCompact() {
         ObjectStorage objectStorage = new MemoryObjectStorage();
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
         cache.start();
         cache.init(NODE_0, objectStorage);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
@@ -247,6 +255,42 @@ public class LocalStreamRangeIndexCacheTest {
         Assertions.assertTrue(cache.getStreamRangeIndexMap().isEmpty());
         Assertions.assertEquals(0, cache.totalSize());
         Assertions.assertEquals(-1, cache.searchObjectId(STREAM_0, 300).join());
+    }
+
+    @Test
+    public void testCompactWithStreamDeleted() {
+        ObjectStorage objectStorage = new MemoryObjectStorage();
+        LocalStreamRangeIndexCache cache = LocalStreamRangeIndexCache.create();
+        cache.start();
+        cache.init(NODE_0, objectStorage);
+        CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
+        long startOffset = 50;
+        for (int i = 0; i < 10; i++) {
+            request.setObjectId(88 + i);
+            request.setStreamRanges(List.of(
+                new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100, 100),
+                new ObjectStreamRange(STREAM_1, 0, startOffset, startOffset + 100, 100)));
+            cache.updateIndexFromRequest(request).join();
+            startOffset += 100;
+        }
+        Assertions.assertEquals(10, cache.getStreamRangeIndexMap().get(STREAM_0).length());
+        Assertions.assertEquals(10, cache.getStreamRangeIndexMap().get(STREAM_1).length());
+        Assertions.assertEquals(20 * RangeIndex.OBJECT_SIZE, cache.totalSize());
+
+        // mock STREAM_0 deleted
+        request.setObjectId(256);
+        request.setStreamRanges(List.of(
+            new ObjectStreamRange(STREAM_1, 0, 50, 1050, 1000)
+        ));
+        request.setCompactedObjectIds(List.of(88L, 89L, 90L, 91L, 92L, 93L, 94L, 95L, 96L, 97L));
+        request.setStreamObjects(Collections.emptyList());
+        cache.updateIndexFromRequest(request).join();
+
+        Assertions.assertNull(cache.getStreamRangeIndexMap().get(STREAM_0));
+        Assertions.assertEquals(1, cache.getStreamRangeIndexMap().get(STREAM_1).getRangeIndexList().size());
+        Assertions.assertEquals(RangeIndex.OBJECT_SIZE, cache.totalSize());
+        Assertions.assertEquals(new RangeIndex(50, 1050, 256),
+            cache.getStreamRangeIndexMap().get(STREAM_1).getRangeIndexList().get(0));
     }
 
     private StreamObject newStreamObject(long objectId, long objectSize, long streamId, long startOffset, long endOffset) {

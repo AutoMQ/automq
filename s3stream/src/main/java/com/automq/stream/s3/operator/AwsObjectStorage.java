@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.operator;
@@ -19,13 +27,14 @@ import com.automq.stream.utils.FutureUtil;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -40,11 +49,9 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
-import software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
@@ -86,11 +93,10 @@ import static com.automq.stream.utils.FutureUtil.cause;
 
 @SuppressWarnings({"this-escape", "NPathComplexity"})
 public class AwsObjectStorage extends AbstractObjectStorage {
+    // use the root logger to log the error to both log file and stdout
+    private static final Logger READINESS_CHECK_LOGGER = LoggerFactory.getLogger("ObjectStorageReadinessCheck");
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
     public static final String PATH_STYLE_KEY = "pathStyle";
-    public static final String AUTH_TYPE_KEY = "authType";
-    public static final String STATIC_AUTH_TYPE = "static";
-    public static final String INSTANCE_AUTH_TYPE = "instance";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
 
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
@@ -103,8 +109,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient writeS3Client;
 
     private final ChecksumAlgorithm checksumAlgorithm;
-
-    private static volatile InstanceProfileCredentialsProvider instanceProfileCredentialsProvider;
 
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
@@ -358,12 +362,33 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<List<ObjectInfo>> doList(String prefix) {
-        return readS3Client.listObjectsV2(builder -> builder.bucket(bucket).prefix(prefix))
-            .thenApply(resp ->
-                resp.contents()
-                    .stream()
-                    .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
-                    .collect(Collectors.toList()));
+        CompletableFuture<List<ObjectInfo>> resultFuture = new CompletableFuture<>();
+        List<ObjectInfo> allObjects = new ArrayList<>();
+        listNextBatch(prefix, null, allObjects, resultFuture);
+        return resultFuture;
+    }
+
+    private void listNextBatch(String prefix, String continuationToken, List<ObjectInfo> allObjects,
+        CompletableFuture<List<ObjectInfo>> resultFuture) {
+        readS3Client.listObjectsV2(builder -> {
+            builder.bucket(bucket).prefix(prefix);
+            if (continuationToken != null) {
+                builder.continuationToken(continuationToken);
+            }
+        }).thenAccept(resp -> {
+            resp.contents()
+                .stream()
+                .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
+                .forEach(allObjects::add);
+            if (resp.isTruncated()) {
+                listNextBatch(prefix, resp.nextContinuationToken(), allObjects, resultFuture);
+            } else {
+                resultFuture.complete(allObjects);
+            }
+        }).exceptionally(ex -> {
+            resultFuture.completeExceptionally(ex);
+            return null;
+        });
     }
 
     @Override
@@ -372,33 +397,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     protected List<AwsCredentialsProvider> credentialsProviders() {
-        String authType = bucketURI.extensionString(AUTH_TYPE_KEY, STATIC_AUTH_TYPE);
-        switch (authType) {
-            case STATIC_AUTH_TYPE: {
-                String accessKey = bucketURI.extensionString(BucketURI.ACCESS_KEY_KEY, System.getenv("KAFKA_S3_ACCESS_KEY"));
-                String secretKey = bucketURI.extensionString(BucketURI.SECRET_KEY_KEY, System.getenv("KAFKA_S3_SECRET_KEY"));
-                if (StringUtils.isBlank(accessKey) || StringUtils.isBlank(secretKey)) {
-                    return Collections.emptyList();
-                }
-                return List.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
-            }
-            case INSTANCE_AUTH_TYPE: {
-                return List.of(instanceProfileCredentialsProvider());
-            }
-            default:
-                throw new UnsupportedOperationException("Unsupported auth type: " + authType);
-        }
+        return credentialsProviders0(bucketURI);
     }
 
-    protected AwsCredentialsProvider instanceProfileCredentialsProvider() {
-        if (instanceProfileCredentialsProvider == null) {
-            synchronized (AwsObjectStorage.class) {
-                if (instanceProfileCredentialsProvider == null) {
-                    instanceProfileCredentialsProvider = InstanceProfileCredentialsProvider.builder().build();
-                }
-            }
-        }
-        return instanceProfileCredentialsProvider;
+    protected List<AwsCredentialsProvider> credentialsProviders0(BucketURI bucketURI) {
+        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.create());
     }
 
     private String range(long start, long end) {
@@ -435,10 +438,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .build();
     }
 
-    private AwsCredentialsProvider newCredentialsProviderChain(List<AwsCredentialsProvider> credentialsProviders) {
+    protected AwsCredentialsProvider newCredentialsProviderChain(List<AwsCredentialsProvider> credentialsProviders) {
         List<AwsCredentialsProvider> providers = new ArrayList<>(credentialsProviders);
         // Add default providers to the end of the chain
-        providers.add(InstanceProfileCredentialsProvider.create());
         providers.add(AnonymousCredentialsProvider.create());
         return AwsCredentialsProviderChain.builder()
             .reuseLastProviderEnabled(true)
@@ -452,25 +454,24 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     class ReadinessCheck {
         public boolean readinessCheck() {
-            logger.info("Start readiness check for {}", bucketURI);
+            READINESS_CHECK_LOGGER.info("Start readiness check for {}", bucketURI);
             String normalPath = String.format("__automq/readiness_check/normal_obj/%d", System.nanoTime());
             try {
                 writeS3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(normalPath).build()).get();
             } catch (Throwable e) {
-                // 权限 / endpoint / xxx
                 Throwable cause = FutureUtil.cause(e);
                 if (cause instanceof SdkClientException) {
-                    logger.error("Cannot connect to s3, please check the s3 endpoint config", cause);
+                    READINESS_CHECK_LOGGER.error("Cannot connect to s3, please check the s3 endpoint config", cause);
                 } else if (cause instanceof S3Exception) {
                     int code = ((S3Exception) cause).statusCode();
                     switch (code) {
                         case HttpStatusCode.NOT_FOUND:
                             break;
                         case HttpStatusCode.FORBIDDEN:
-                            logger.error("Please check whether config is correct", cause);
+                            READINESS_CHECK_LOGGER.error("Please check whether config is correct", cause);
                             return false;
                         default:
-                            logger.error("Please check config is correct", cause);
+                            READINESS_CHECK_LOGGER.error("Please check config is correct", cause);
                     }
                 }
             }
@@ -481,9 +482,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             } catch (Throwable e) {
                 Throwable cause = FutureUtil.cause(e);
                 if (cause instanceof S3Exception && ((S3Exception) cause).statusCode() == HttpStatusCode.NOT_FOUND) {
-                    logger.error("Cannot find the bucket={}", bucket, cause);
+                    READINESS_CHECK_LOGGER.error("Cannot find the bucket={}", bucket, cause);
                 } else {
-                    logger.error("Please check the identity have the permission to do Write Object operation", cause);
+                    READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do Write Object operation", cause);
                 }
                 return false;
             }
@@ -491,7 +492,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             try {
                 doDeleteObjects(List.of(normalPath)).get();
             } catch (Throwable e) {
-                logger.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
+                READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
                 return false;
             }
 
@@ -508,15 +509,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 buf.readBytes(readContent);
                 buf.release();
                 if (!Arrays.equals(content, readContent)) {
-                    logger.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
+                    READINESS_CHECK_LOGGER.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
                 }
                 doDeleteObjects(List.of(multiPartPath)).get();
             } catch (Throwable e) {
-                logger.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
+                READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
                 return false;
             }
 
-            logger.info("Readiness check pass!");
+            READINESS_CHECK_LOGGER.info("Readiness check pass!");
             return true;
         }
 

@@ -30,10 +30,13 @@ jobs:
         uses: gradle/gradle-build-action@v2.12.0
 
       - name: Build TarGz
+        id: build-targz 
         run: |
           ./gradlew -Pprefix=automq-${{ github.ref_name }}_ --build-cache --refresh-dependencies clean releaseTarGz
           mkdir -p core/build/distributions/latest
           LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          echo "LATEST_TAG=$LATEST_TAG"
+          IS_LATEST="false"
           if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
               IS_LATEST=true
           fi
@@ -52,7 +55,7 @@ jobs:
 
       - uses: tvrcgo/oss-action@master
         name: upload-latest
-        if: ${{ github.repository_owner == 'AutoMQ' && env.IS_LATEST == 'true' }}
+        if: ${{ github.repository_owner == 'AutoMQ' && steps.build-targz.outputs.IS_LATEST == 'true' }}
         with:
           bucket:  ${{ secrets.UPLOAD_BUCKET }}
           key-id:  ${{ secrets.UPLOAD_BUCKET_AK }}

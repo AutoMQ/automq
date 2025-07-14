@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.apache.kafka.tools.automq.perf;
@@ -30,6 +38,8 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.tools.automq.perf.TopicService.Topic;
+
+import com.google.common.primitives.Longs;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +65,6 @@ import java.util.stream.Stream;
 import io.github.bucket4j.BlockingBucket;
 import io.github.bucket4j.Bucket;
 
-import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_CHARSET;
 import static org.apache.kafka.tools.automq.perf.ProducerService.HEADER_KEY_SEND_TIME_NANOS;
 
 public class ConsumerService implements AutoCloseable {
@@ -109,18 +118,97 @@ public class ConsumerService implements AutoCloseable {
     public void pause() {
         groups.forEach(Group::pause);
     }
-
+    
+    /**
+     * Resume all consumer groups
+     */
     public void resume() {
         groups.forEach(Group::resume);
     }
+    
+    /**
+     * Resume only a percentage of consumer groups
+     * 
+     * @param percentage The percentage of consumers to resume (0-100)
+     */
+    public void resume(int percentage) {
+        int size = groups.size();
+        int consumersToResume = (int) Math.ceil(size * (percentage / 100.0));
+        consumersToResume = Math.max(1, Math.min(size, consumersToResume)); // Ensure at least 1 and at most size
+        
+        LOGGER.info("Resuming {}% of consumers ({} out of {})", percentage, consumersToResume, size);
+        
+        for (int i = 0; i < consumersToResume; i++) {
+            groups.get(i).resume();
+        }
+    }
 
-    public void resetOffset(long startMillis, long intervalMillis) {
+    /**
+     * Pause all consumers for the specified topics across all groups.
+     */
+    public void pauseTopics(Collection<String> topics) {
+        for (Group group : groups) {
+            for (Topic topic : group.consumers.keySet()) {
+                if (topics.contains(topic.name)) {
+                    List<Consumer> topicConsumers = group.consumers.get(topic);
+                    if (topicConsumers != null) {
+                        topicConsumers.forEach(Consumer::pause);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Resume all consumers for the specified topics across all groups.
+     */
+    public void resumeTopics(Collection<String> topics) {
+        for (Group group : groups) {
+            for (Topic topic : group.consumers.keySet()) {
+                if (topics.contains(topic.name)) {
+                    List<Consumer> topicConsumers = group.consumers.get(topic);
+                    if (topicConsumers != null) {
+                        topicConsumers.forEach(Consumer::resume);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Reset consumer offsets for catch-up reading.
+     * 
+     * @param startMillis     The timestamp to start seeking from
+     * @param intervalMillis  The interval between group starts
+     * @param percentage      The percentage of consumers to activate (0-100)
+     */
+    public void resetOffset(long startMillis, long intervalMillis, int percentage) {
         AtomicLong timestamp = new AtomicLong(startMillis);
-        for (int i = 0, size = groups.size(); i < size; i++) {
+        int size = groups.size();
+        int consumersToActivate = (int) Math.ceil(size * (percentage / 100.0));
+        consumersToActivate = Math.max(1, Math.min(size, consumersToActivate)); // Ensure at least 1 and at most size
+        
+        LOGGER.info("Activating {}% of consumers ({} out of {})", percentage, consumersToActivate, size);
+        
+        for (int i = 0; i < consumersToActivate; i++) {
             Group group = groups.get(i);
             group.seek(timestamp.getAndAdd(intervalMillis));
-            LOGGER.info("Reset consumer group offsets: {}/{}", i + 1, size);
+            LOGGER.info("Reset consumer group offsets: {}/{}", i + 1, consumersToActivate);
         }
+        
+        // Keep the remaining consumers paused
+        if (consumersToActivate < size) {
+            LOGGER.info("Keeping {} consumer groups paused during catch-up", size - consumersToActivate);
+        }
+    }
+    
+    /**
+     * Reset all consumer offsets (100% consumers)
+     * @param startMillis    The timestamp to start seeking from
+     * @param intervalMillis The interval between group starts
+     */
+    public void resetOffset(long startMillis, long intervalMillis) {
+        resetOffset(startMillis, intervalMillis, 100);
     }
 
     public int consumerCount() {
@@ -260,7 +348,7 @@ public class ConsumerService implements AutoCloseable {
         }
 
         private String groupId(Topic topic) {
-            return String.format("sub-%s-%s-%03d", topic.name, groupSuffix, index);
+            return String.format("sub-%s-%03d", topic.name, index);
         }
 
         private Map<TopicPartition, OffsetAndMetadata> resetOffsetsRequest(Topic topic, long offset) {
@@ -328,7 +416,7 @@ public class ConsumerService implements AutoCloseable {
                     }
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
                     for (ConsumerRecord<String, byte[]> record : records) {
-                        long sendTimeNanos = Long.parseLong(new String(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value(), HEADER_KEY_CHARSET));
+                        long sendTimeNanos = Longs.fromByteArray(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value());
                         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
                         callback.messageReceived(topicPartition, record.value(), sendTimeNanos);
                     }

@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.index;
@@ -22,7 +30,7 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.Systems;
-import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +48,6 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,8 +69,8 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     private final Lock readLock = lock.readLock();
     private final Lock writeLock = lock.writeLock();
-    private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("upload-index", true));
+    private final ScheduledExecutorService executorService =
+        Threads.newSingleThreadScheduledExecutor("upload-index", true, LOGGER);
     private final Queue<CompletableFuture<Void>> uploadQueue = new LinkedList<>();
     private final CompletableFuture<Void> initCf = new CompletableFuture<>();
     private final AtomicBoolean pruned = new AtomicBoolean(false);
@@ -73,7 +80,17 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private CompletableFuture<Void> uploadCf = CompletableFuture.completedFuture(null);
     private long lastUploadTime = 0L;
 
-    public LocalStreamRangeIndexCache() {
+    private LocalStreamRangeIndexCache() {
+        
+    }
+
+    public static LocalStreamRangeIndexCache create() {
+        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
+        cache.completeInitialization();
+        return cache;
+    }
+
+    private void completeInitialization() {
         S3StreamMetricsManager.registerLocalStreamRangeIndexCacheSizeSupplier(this::totalSize);
         S3StreamMetricsManager.registerLocalStreamRangeIndexCacheStreamNumSupplier(() -> {
             readLock.lock();
@@ -108,7 +125,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
             lastUploadTime = now;
             LOGGER.info("Upload local index cache on stream close");
         }
-        return uploadCf;
+        return uploadCf.orTimeout(1, TimeUnit.SECONDS);
     }
 
     CompletableFuture<Void> initCf() {
@@ -317,36 +334,24 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         return exec(() -> {
             writeLock.lock();
             try {
-                if (rangeIndexMap == null || rangeIndexMap.isEmpty()) {
-                    Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
-                    while (iterator.hasNext()) {
-                        Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
-                        totalSize += entry.getValue().compact(null, compactedObjectIds);
-                        if (entry.getValue().length() == 0) {
-                            iterator.remove();
-                        }
-                    }
-                    return null;
-                }
-                for (Map.Entry<Long, Optional<RangeIndex>> entry : rangeIndexMap.entrySet()) {
+                // compact existing stream range index
+                Iterator<Map.Entry<Long, SparseRangeIndex>> iterator = streamRangeIndexMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<Long, SparseRangeIndex> entry = iterator.next();
                     long streamId = entry.getKey();
-                    Optional<RangeIndex> rangeIndex = entry.getValue();
-                    streamRangeIndexMap.compute(streamId, (k, v) -> {
-                        if (v == null) {
-                            v = new SparseRangeIndex(COMPACT_NUM);
-                        }
-                        totalSize += v.compact(rangeIndex.orElse(null), compactedObjectIds);
-                        if (v.length() == 0) {
-                            // remove stream with empty index
-                            return null;
-                        }
-                        return v;
-                    });
+                    RangeIndex newRangeIndex = null;
+                    if (rangeIndexMap.containsKey(streamId)) {
+                        newRangeIndex = rangeIndexMap.get(streamId).orElse(null);
+                    }
+                    totalSize += entry.getValue().compact(newRangeIndex, compactedObjectIds);
+                    if (entry.getValue().length() == 0) {
+                        iterator.remove();
+                    }
                 }
+                return null;
             } finally {
                 writeLock.unlock();
             }
-            return null;
         });
     }
 

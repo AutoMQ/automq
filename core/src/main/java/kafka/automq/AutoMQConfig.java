@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package kafka.automq;
@@ -29,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
@@ -47,8 +56,7 @@ public class AutoMQConfig {
     public static final String ELASTIC_STREAM_ENABLE_DOC = "Whether to enable AutoMQ, it has to be set to true";
 
     public static final String ELASTIC_STREAM_ENDPOINT_CONFIG = "elasticstream.endpoint";
-    public static final String ELASTIC_STREAM_ENDPOINT_DOC = "Specifies the Elastic Stream endpoint, ex. <code>es://hostname1:port1,hostname2:port2,hostname3:port3</code>.\n" +
-        "You could also PoC launch it in memory mode with endpoint <code>memory:://</code> or redis mode with <code>redis://.</code>";
+    public static final String ELASTIC_STREAM_ENDPOINT_DOC = "Specifies the Elastic Stream endpoint";
 
     public static final String S3_DATA_BUCKETS_CONFIG = "s3.data.buckets";
     public static final String S3_DATA_BUCKETS_DOC = "The data buckets url with format 0@s3://$bucket?region=$region. \n" +
@@ -60,8 +68,7 @@ public class AutoMQConfig {
     public static final String S3_OPS_BUCKETS_DOC = "With the same format as s3.data.buckets";
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
-    public static final String S3_WAL_PATH_DOC = "The local WAL path for AutoMQ can be set to a block device path such as 0@file:///dev/xxx?iops=3000&iodepth=8&iobandwidth=157286400 or a filesystem file path." +
-        "It is recommended to use a block device for better write performance.";
+    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
 
     public static final String S3_WAL_CACHE_SIZE_CONFIG = "s3.wal.cache.size";
     public static final String S3_WAL_CACHE_SIZE_DOC = "The WAL (Write-Ahead Log) cache is a FIFO (First In, First Out) queue that contains data that has not yet been uploaded to object storage, as well as data that has been uploaded but not yet evicted from the cache." +
@@ -186,6 +193,13 @@ public class AutoMQConfig {
     public static final String S3_BACK_PRESSURE_COOLDOWN_MS_DOC = "The cooldown time in milliseconds to wait between two regulator actions";
     public static final long S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT = TimeUnit.SECONDS.toMillis(15);
 
+    public static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG = "automq.table.topic.schema.registry.url";
+    private static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC = "The schema registry url for table topic";
+
+    public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
+    public static final String ZONE_ROUTER_CHANNELS_DOC = "The channels to use for cross zone router. Currently it only support object storage channel."
+        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
+
     // Deprecated config start
     public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";
     public static final String S3_ENDPOINT_DOC = "[DEPRECATED]please use s3.data.buckets. The object storage endpoint, ex. <code>https://s3.us-east-1.amazonaws.com</code>.";
@@ -237,9 +251,6 @@ public class AutoMQConfig {
     public static final String S3_TELEMETRY_OPS_ENABLED_CONFIG = "s3.telemetry.ops.enabled";
     public static final String S3_TELEMETRY_OPS_ENABLED_DOC = "[DEPRECATED] use s3.telemetry.metrics.uri instead.";
 
-    public static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG = "automq.table.topic.schema.registry.url";
-    private static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC = "The schema registry url for table topic";
-
     // Deprecated config end
 
     public static void define(ConfigDef configDef) {
@@ -277,6 +288,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
+            .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
@@ -302,6 +314,7 @@ public class AutoMQConfig {
     private String walConfig;
     private String metricsExporterURI;
     private List<Pair<String, String>> baseLabels;
+    private Optional<BucketURI> zoneRouterChannels;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
@@ -309,6 +322,7 @@ public class AutoMQConfig {
         walConfig = genWALConfig(config);
         metricsExporterURI = genMetricsExporterURI(config);
         baseLabels = parseBaseLabels(config);
+        zoneRouterChannels = genZoneRouterChannels(config);
         return this;
     }
 
@@ -330,6 +344,10 @@ public class AutoMQConfig {
 
     public List<Pair<String, String>> baseLabels() {
         return baseLabels;
+    }
+
+    public Optional<BucketURI> zoneRouterChannels() {
+        return zoneRouterChannels;
     }
 
     private static List<BucketURI> genDataBuckets(KafkaConfig config) {
@@ -454,5 +472,21 @@ public class AutoMQConfig {
             labels.add(Pair.of(kv[0], kv[1]));
         }
         return labels;
+    }
+
+
+    private static Optional<BucketURI> genZoneRouterChannels(KafkaConfig config) {
+        String str = config.getString(ZONE_ROUTER_CHANNELS_CONFIG);
+        if (StringUtils.isBlank(str)) {
+            return Optional.empty();
+        }
+        List<BucketURI> buckets = BucketURI.parseBuckets(str);
+        if (buckets.isEmpty()) {
+            return Optional.empty();
+        } else if (buckets.size() > 1) {
+            throw new IllegalArgumentException(ZONE_ROUTER_CHANNELS_CONFIG + " only supports one object storage, but it's config with " + str);
+        } else {
+            return Optional.of(buckets.get(0));
+        }
     }
 }

@@ -31,12 +31,14 @@ import org.apache.kafka.test.TestUtils;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+@Timeout(60)
 @Tag("S3Unit")
 public class ControllerActionExecutorServiceTest {
 

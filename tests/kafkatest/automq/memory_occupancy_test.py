@@ -1,12 +1,5 @@
 """
-Copyright 2024, AutoMQ HK Limited.
-
-The use of this file is governed by the Business Source License,
-as detailed in the file "/LICENSE.S3Stream" included in this repository.
-
-As of the Change Date specified in that file, in accordance with
-the Business Source License, use of this software will be governed
-by the Apache License, Version 2.0
+Copyright 2025, AutoMQ HK Limited. Licensed under Apache-2.0.
 """
 
 import time
@@ -32,7 +25,7 @@ class TestJVMMemoryOccupancy(Test):
         self.consume_group = 'test_group'
         self.records_consumed = []
 
-    def create_kafka(self, num_nodes=1, partition=None, log_size=None, block_size=None, wal='file', **kwargs):
+    def create_kafka(self, num_nodes=1, partition=None, log_size=None, block_size=None, wal='s3', **kwargs):
         """
         Create and configure Kafka service.
 
@@ -103,7 +96,7 @@ class TestJVMMemoryOccupancy(Test):
         assert int(receive_num) == records, f"Receive count does not match the expected records count: expected {records}, but got {receive_num}"
 
     @cluster(num_nodes=3)
-    @matrix(partition=[128, 512], log_size=[256 * 1024 * 1024], block_size=[128 * 1024 * 1024, 256 * 1024 * 1024], wal=['file', 's3'])
+    @matrix(partition=[128, 512], log_size=[256 * 1024 * 1024], block_size=[128 * 1024 * 1024, 256 * 1024 * 1024], wal=['s3'])
     def test(self, partition, log_size, block_size, wal):
         """
         At any time, 1/writable record in Metric<=log cache size+100MB

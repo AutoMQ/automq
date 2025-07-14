@@ -1,12 +1,5 @@
 """
-Copyright 2024, AutoMQ HK Limited.
-
-The use of this file is governed by the Business Source License,
-as detailed in the file "/LICENSE.S3Stream" included in this repository.
-
-As of the Change Date specified in that file, in accordance with
-the Business Source License, use of this software will be governed
-by the Apache License, Version 2.0
+Copyright 2025, AutoMQ HK Limited. Licensed under Apache-2.0.
 """
 
 import time
@@ -43,7 +36,7 @@ class LeakTest(Test):
         self.s3_wal_upload_threshold = 16 * 1024 * 1024
         self.automq_stream_object_compaction_jitter_max_delay = 1
 
-    def create_kafka(self, num_nodes=1, partition=1, broker_wal='file', env=None):
+    def create_kafka(self, num_nodes=1, partition=1, broker_wal='s3', env=None):
         """
         Create and configure Kafka service.
 
@@ -150,7 +143,7 @@ class LeakTest(Test):
         )
 
     @cluster(num_nodes=2)
-    @matrix(wal=['file', 's3'])
+    @matrix(wal=['s3'])
     def test_s3_leak_major_v1(self, wal):
         """
         Test S3 leak with major V1 compaction.
@@ -160,7 +153,7 @@ class LeakTest(Test):
         self.run0(stream_object_compaction_type=STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1, wal=wal, env=[f'AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD=0'])
 
     @cluster(num_nodes=2)
-    @matrix(wal=['file', 's3'])
+    @matrix(wal=['s3'])
     def test_s3_leak_minor_v1(self, wal):
         """
         Test S3 leak with minor V1 compaction.

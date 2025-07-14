@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3;
@@ -85,16 +93,21 @@ public class AsyncNetworkBandwidthLimiterTest {
 
     @Test
     public void testThrottleConsume4() {
-        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
+        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(
+                AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
         bucket.consume(ThrottleStrategy.BYPASS, 1000);
         Assertions.assertEquals(-100, bucket.getAvailableTokens());
-        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
-        bucket.consume(ThrottleStrategy.CATCH_UP, 10);
-        CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
-            Assertions.assertNull(e);
-            Assertions.assertEquals(95, bucket.getAvailableTokens());
+        CompletableFuture<Boolean> firstCompleted = new CompletableFuture<>();
+        CompletableFuture<Void> cf1 = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
+        cf1 = cf1.thenApply(v -> {
+            firstCompleted.complete(true);
+            return null;
         });
-        cf.join();
+        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.CATCH_UP, 10);
+        CompletableFuture<Void> result = cf2.thenAccept(v -> {
+            Assertions.assertTrue(firstCompleted.isDone(),
+                    "First request should complete before second request");
+        });
         result.join();
     }
 

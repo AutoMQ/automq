@@ -150,6 +150,10 @@ allprojects {
   }
 
   configurations.all {
+    // Globally exclude commons-logging and logback to ensure a single logging implementation (reload4j)
+    exclude group: "commons-logging", module: "commons-logging"
+    exclude group: "ch.qos.logback", module: "logback-classic"
+    exclude group: "ch.qos.logback", module: "logback-core"
     // zinc is the Scala incremental compiler, it has a configuration for its own dependencies
     // that are unrelated to the project dependencies, we should not change them
     if (name != "zinc") {
@@ -731,7 +735,7 @@ subprojects {
       jacoco {
         toolVersion = versions.jacoco
       }
-      
+
       jacocoTestReport {
         dependsOn tasks.test
         sourceSets sourceSets.main
@@ -755,8 +759,8 @@ subprojects {
     skipProjects = [ ":jmh-benchmarks", ":trogdor" ]
     skipConfigurations = [ "zinc" ]
   }
-  //  the task `removeUnusedImports` is implemented by google-java-format, 
-  //  and unfortunately the google-java-format version used by spotless 6.14.0 can't work with JDK 21. 
+  //  the task `removeUnusedImports` is implemented by google-java-format,
+  //  and unfortunately the google-java-format version used by spotless 6.14.0 can't work with JDK 21.
   //  Hence, we apply spotless tasks only if the env is either JDK11 or JDK17
   if ((JavaVersion.current().isJava11() || (JavaVersion.current() == JavaVersion.VERSION_17))) {
     apply plugin: 'com.diffplug.spotless'
@@ -968,6 +972,8 @@ project(':core') {
     implementation libs.guava
     implementation libs.slf4jBridge
     implementation libs.slf4jReload4j
+    // The `jcl-over-slf4j` library is used to redirect JCL logging to SLF4J.
+    implementation libs.jclOverSlf4j
 
     implementation libs.opentelemetryJava8
     implementation libs.opentelemetryOshi
@@ -978,6 +984,67 @@ project(':core') {
     implementation libs.opentelemetryExporterOTLP
     implementation libs.opentelemetryJmx
     implementation libs.awsSdkAuth
+
+    // table topic start
+    implementation ("org.apache.avro:avro:${versions.avro}")
+    implementation ("org.apache.avro:avro-protobuf:${versions.avro}")
+    implementation('com.google.protobuf:protobuf-java:3.25.5')
+    implementation ("org.apache.iceberg:iceberg-core:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-api:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-data:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-parquet:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-common:${versions.iceberg}")
+    implementation ("org.apache.iceberg:iceberg-aws:${versions.iceberg}")
+    implementation ("software.amazon.awssdk:glue:${versions.awsSdk}")
+    implementation ("software.amazon.awssdk:s3tables:${versions.awsSdk}")
+    implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.0'
+
+    implementation ('org.apache.hadoop:hadoop-common:3.4.1') {
+      exclude group: 'org.eclipse.jetty', module: '*'
+      exclude group: 'com.sun.jersey', module: '*'
+    }
+    // for hadoop common
+    implementation ("org.eclipse.jetty:jetty-webapp:${versions.jetty}")
+
+    implementation (libs.kafkaAvroSerializer) {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
+
+    // > hive ext start
+    implementation 'org.apache.iceberg:iceberg-hive-metastore:1.6.1'
+    implementation('org.apache.hive:hive-metastore:3.1.3') {
+      // Remove useless dependencies (copy from iceberg-kafka-connect)
+      exclude group: "org.apache.avro", module: "avro"
+      exclude group: "org.slf4j", module: "slf4j-log4j12"
+      exclude group: "org.pentaho" // missing dependency
+      exclude group: "org.apache.hbase"
+      exclude group: "org.apache.logging.log4j"
+      exclude group: "co.cask.tephra"
+      exclude group: "com.google.code.findbugs", module: "jsr305"
+      exclude group: "org.eclipse.jetty.aggregate", module: "jetty-all"
+      exclude group: "org.eclipse.jetty.orbit", module: "javax.servlet"
+      exclude group: "org.apache.parquet", module: "parquet-hadoop-bundle"
+      exclude group: "com.tdunning", module: "json"
+      exclude group: "javax.transaction", module: "transaction-api"
+      exclude group: "com.zaxxer", module: "HikariCP"
+      exclude group: "org.apache.hadoop", module: "hadoop-yarn-server-common"
+      exclude group: "org.apache.hadoop", module: "hadoop-yarn-server-applicationhistoryservice"
+      exclude group: "org.apache.hadoop", module: "hadoop-yarn-server-resourcemanager"
+      exclude group: "org.apache.hadoop", module: "hadoop-yarn-server-web-proxy"
+      exclude group: "org.apache.hive", module: "hive-service-rpc"
+      exclude group: "com.github.joshelser", module: "dropwizard-metrics-hadoop-metrics2-reporter"
+    }
+    implementation 'org.apache.hadoop:hadoop-mapreduce-client-core:3.4.1'
+    // > hive ext end
+
+    // > Protobuf ext start
+    //   Wire Runtime for schema handling
+    implementation ("com.squareup.wire:wire-schema:${versions.wire}")
+    implementation ("com.squareup.wire:wire-runtime:${versions.wire}")
+    implementation 'com.google.api.grpc:proto-google-common-protos:2.52.0'
+    // > Protobuf ext end
+
+    // table topic end
 
     implementation(libs.oshi) {
       exclude group: 'org.slf4j', module: '*'
@@ -1163,7 +1230,6 @@ project(':core') {
     from(project.file("$rootDir/docker/docker-compose.yaml")) { into "docker/" }
     from(project.file("$rootDir/docker/telemetry")) { into "docker/telemetry/" }
     from(project.file("$rootDir/LICENSE")) { into "" }
-    from(project.file("$rootDir/LICENSE.S3Stream")) { into "" }
     from "$rootDir/NOTICE-binary" rename {String filename -> filename.replace("-binary", "")}
     from(configurations.runtimeClasspath) { into("libs/") }
     from(configurations.archives.artifacts.files) { into("libs/") }
@@ -1223,7 +1289,7 @@ project(':core') {
     //By default gradle does not handle test dependencies between the sub-projects
     //This line is to include clients project test jar to dependant-testlibs
     from (project(':clients').testJar ) { "$buildDir/dependant-testlibs" }
-    // log4j-appender is not in core dependencies, 
+    // log4j-appender is not in core dependencies,
     // so we add it to dependant-testlibs to avoid ClassNotFoundException in running kafka_log4j_appender.py
     from (project(':log4j-appender').jar ) { "$buildDir/dependant-testlibs" }
     duplicatesStrategy 'exclude'
@@ -1255,6 +1321,7 @@ project(':core') {
     }
   }
 }
+
 
 project(':metadata') {
   base {
@@ -1483,7 +1550,7 @@ project(':transaction-coordinator') {
     implementation project(':clients')
     generator project(':generator')
   }
-  
+
   sourceSets {
     main {
       java {
@@ -1848,7 +1915,12 @@ project(':server-common') {
     implementation libs.jacksonDatabind
     implementation libs.pcollections
     implementation libs.opentelemetrySdk
+
+    // AutoMQ inject start
     implementation project(':s3stream')
+    implementation libs.commonLang
+    // AutoMQ inject end
+
 
     testImplementation project(':clients')
     testImplementation project(':clients').sourceSets.test.output
@@ -2232,8 +2304,13 @@ project(':tools') {
     }
     // AutoMQ inject start
     implementation project(':automq-shell')
-    implementation libs.kafkaAvroSerializer
+    implementation (libs.kafkaAvroSerializer) {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
     implementation libs.bucket4j
+    implementation (libs.oshi){
+      exclude group: 'org.slf4j', module: '*'
+    }
     // AutoMQ inject end
 
     implementation project(':storage')

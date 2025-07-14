@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.cache;
@@ -40,13 +48,21 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     final Set<V> completedSet = new HashSet<>();
     final Set<V> removedSet = new HashSet<>();
 
-    public AsyncLRUCache(String cacheName, long maxSize) {
+    protected AsyncLRUCache(String cacheName, long maxSize) {
         this.cacheName = cacheName;
         if (maxSize <= 0) {
             throw new IllegalArgumentException("maxSize must be positive");
         }
         this.maxSize = maxSize;
+    }
 
+    public static <K, V extends AsyncMeasurable> AsyncLRUCache<K, V> create(String cacheName, long maxSize) {
+        AsyncLRUCache<K, V> asyncLRUCache = new AsyncLRUCache<>(cacheName, maxSize);
+        asyncLRUCache.completeInitialization();
+        return asyncLRUCache;
+    }
+
+    private void completeInitialization() {
         S3StreamMetricsManager.registerAsyncCacheSizeSupplier(this::totalSize, cacheName);
         S3StreamMetricsManager.registerAsyncCacheMaxSizeSupplier(() -> maxSize, cacheName);
         S3StreamMetricsManager.registerAsyncCacheItemNumberSupplier(this::size, cacheName);

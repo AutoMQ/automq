@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package kafka.autobalancer;
@@ -52,6 +60,7 @@ import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.server.config.QuotaConfigs;
 
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.Threads;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -65,7 +74,6 @@ import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -105,7 +113,9 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         this.bootstrapServerMapInUse = new HashMap<>();
         this.lock = new ReentrantLock();
         this.cond = lock.newCondition();
-        this.mainExecutorService = Executors.newSingleThreadScheduledExecutor(new AutoBalancerThreadFactory("load-retriever-main"));
+        this.mainExecutorService =
+            Threads.newSingleThreadScheduledExecutor(
+                new AutoBalancerThreadFactory("load-retriever-main"), logger);
         leaderEpochInitialized = false;
         staticConfig = new StaticAutoBalancerConfig(config.originals(), false);
         listenerName = staticConfig.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG);

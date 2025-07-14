@@ -1,21 +1,32 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package kafka.log.stream.s3.telemetry;
 
+import kafka.automq.table.TableTopicMetricsManager;
+import kafka.automq.zerozone.ZoneRouterMetricsManager;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporter;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporterURI;
 import kafka.log.stream.s3.telemetry.otel.OTelHistogramReporter;
 import kafka.server.KafkaConfig;
 
+import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
@@ -143,6 +154,25 @@ public class TelemetryManager {
     }
 
     protected void initializeMetricsManager(Meter meter) {
+        S3StreamKafkaMetricsManager.setTruststoreCertsSupplier(() -> {
+            try {
+                Password truststoreCertsPassword = kafkaConfig.getPassword("ssl.truststore.certificates");
+                return truststoreCertsPassword != null ? truststoreCertsPassword.value() : null;
+            } catch (Exception e) {
+                LOGGER.error("Failed to get truststore certs", e);
+                return null;
+            }
+        });
+
+        S3StreamKafkaMetricsManager.setCertChainSupplier(() -> {
+            try {
+                Password certChainPassword = kafkaConfig.getPassword("ssl.keystore.certificate.chain");
+                return certChainPassword != null ? certChainPassword.value() : null;
+            } catch (Exception e) {
+                LOGGER.error("Failed to get cert chain", e);
+                return null;
+            }
+        });
         S3StreamMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
         S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
 
@@ -151,6 +181,10 @@ public class TelemetryManager {
 
         // kraft controller may not have s3WALPath config.
         ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
+
+        ZoneRouterMetricsManager.initMetrics(meter);
+        TableTopicMetricsManager.initMetrics(meter);
+
         this.oTelHistogramReporter.start(meter);
     }
 

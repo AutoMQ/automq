@@ -1,17 +1,26 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.utils.threads;
 
 import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +29,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
@@ -30,9 +38,9 @@ import java.util.function.Function;
 
 public class S3StreamThreadPoolMonitor {
     private static final List<ThreadPoolWrapper> MONITOR_EXECUTOR = new CopyOnWriteArrayList<>();
-    private static final ScheduledExecutorService MONITOR_SCHEDULED = Executors.newSingleThreadScheduledExecutor(
-        ThreadUtils.createThreadFactory("ThreadPoolMonitor-%d", true));
     private static Logger waterMarkLogger = LoggerFactory.getLogger(S3StreamThreadPoolMonitor.class);
+    private static final ScheduledExecutorService MONITOR_SCHEDULED =
+        Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("ThreadPoolMonitor-%d", true), waterMarkLogger);
     private static volatile long threadPoolStatusPeriodTime = TimeUnit.SECONDS.toMillis(3);
 
     public static void config(Logger waterMarkLoggerConfig, long threadPoolStatusPeriodTimeConfig) {

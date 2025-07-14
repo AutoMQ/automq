@@ -1,12 +1,5 @@
 """
-Copyright 2024, AutoMQ HK Limited.
-
-The use of this file is governed by the Business Source License,
-as detailed in the file "/LICENSE.S3Stream" included in this repository.
-
-As of the Change Date specified in that file, in accordance with
-the Business Source License, use of this software will be governed
-by the Apache License, Version 2.0
+Copyright 2025, AutoMQ HK Limited. Licensed under Apache-2.0.
 """
 
 import time
@@ -43,7 +36,7 @@ class CompactionTest(Test):
         self.s3_wal_upload_threshold = 50 * 1024
         self.automq_stream_object_compaction_jitter_max_delay_minute = 1
 
-    def create_kafka(self, num_nodes=1, partition=1, broker_wal='file', env=None):
+    def create_kafka(self, num_nodes=1, partition=1, broker_wal='s3', env=None):
         """
         Create and configure Kafka service.
 
@@ -91,8 +84,8 @@ class CompactionTest(Test):
 
     @cluster(num_nodes=4)
     @matrix(stream_set_object_compaction=[True, False],
-            stream_object_compaction_type=[STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1], wal=['file', 's3'])
-    @matrix(stream_set_object_compaction=[True], stream_object_compaction_type=['None'], wal=['file', 's3'])
+            stream_object_compaction_type=[STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, STREAM_OBJECT_COMPACTION_TYPE_MAJOR_V1], wal=['s3'])
+    @matrix(stream_set_object_compaction=[True], stream_object_compaction_type=['None'], wal=['s3'])
     def test_case(self, stream_set_object_compaction, stream_object_compaction_type, wal):
         '''
 
@@ -104,7 +97,7 @@ class CompactionTest(Test):
         self.run0(stream_set_object_compaction, stream_object_compaction_type, wal)
 
     def run0(self, stream_set_object_compaction=False,
-             stream_object_compaction_type=STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, wal=FILE_WAL):
+             stream_object_compaction_type=STREAM_OBJECT_COMPACTION_TYPE_MINOR_V1, wal=S3_WAL):
         """
         Run the test with specified compaction type.
 

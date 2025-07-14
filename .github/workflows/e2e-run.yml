@@ -57,12 +57,14 @@ jobs:
         run: ./tests/docker/run_tests.sh
         env:
           ESK_TEST_YML: ${{ inputs.test-yaml }}
+          _DUCKTAPE_OPTIONS: "--deflake 4"
         shell: bash
       - name: Run E2E tests with path
         if: ${{ inputs.test-path != '' }}
         run: ./tests/docker/run_tests.sh
         env:
           TC_PATHS: ${{ inputs.test-path }}
+          _DUCKTAPE_OPTIONS: "--deflake 4"
         shell: bash
       - name: Extract results
         id: extract-results

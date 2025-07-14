@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3.operator;
@@ -27,7 +35,7 @@ public class BucketURITest {
     public void testParse_valid() {
         String bucketStr = "0@s3://bucket1?region=region1&k1=v1&k2=v2&k2=v22&endpoint=https://aws.amazon.com:444," +
                            "1@gs://bucket2?region=region2&endpoint=https://gcp," +
-                           "2@azblob://bucket3";
+                           "-2@azblob://bucket3";
         List<BucketURI> buckets = BucketURI.parseBuckets(bucketStr);
         assertEquals((short) 0, buckets.get(0).bucketId());
         assertEquals("bucket1", buckets.get(0).bucket());
@@ -45,7 +53,7 @@ public class BucketURITest {
         assertEquals("https://gcp", buckets.get(1).endpoint());
         assertEquals("gs", buckets.get(1).protocol());
 
-        assertEquals((short) 2, buckets.get(2).bucketId());
+        assertEquals((short) -2, buckets.get(2).bucketId());
         assertEquals("bucket3", buckets.get(2).bucket());
         assertEquals("", buckets.get(2).region());
         assertEquals("", buckets.get(2).endpoint());

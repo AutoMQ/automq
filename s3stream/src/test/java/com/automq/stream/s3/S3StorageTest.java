@@ -1,12 +1,20 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.automq.stream.s3;
@@ -16,8 +24,6 @@ import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
 import com.automq.stream.s3.cache.blockcache.StreamReaders;
 import com.automq.stream.s3.failover.StorageFailureHandler;
-import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
@@ -32,16 +38,21 @@ import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.MemoryWriteAheadLog;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -49,9 +60,13 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -64,12 +79,15 @@ import static org.mockito.Mockito.verify;
 
 @Tag("S3Unit")
 public class S3StorageTest {
+    private static final Logger LOGGER = LoggerFactory.getLogger(S3StorageTest.class);
+
     StreamManager streamManager;
     ObjectManager objectManager;
     WriteAheadLog wal;
     ObjectStorage objectStorage;
     S3Storage storage;
     Config config;
+    S3Storage.WALConfirmOffsetCalculator calculator;
 
     private static StreamRecordBatch newRecord(long streamId, long offset) {
         return new StreamRecordBatch(streamId, 0, offset, 1, random(1));
@@ -86,6 +104,7 @@ public class S3StorageTest {
         storage = new S3Storage(config, wal,
             streamManager, objectManager, new StreamReaders(config.blockCacheSize(), objectManager, objectStorage,
             new DefaultObjectReaderFactory(objectStorage)), objectStorage, mock(StorageFailureHandler.class));
+        calculator = new S3Storage.WALConfirmOffsetCalculator();
     }
 
     @Test
@@ -343,26 +362,35 @@ public class S3StorageTest {
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 15L))),
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(234L, 20L)))
         );
+        Iterator<RecoverResult> iterator = recoverResults.iterator();
 
-        List<StreamMetadata> openingStreams = List.of(new StreamMetadata(233L, 0L, 0L, 11L, StreamState.OPENED));
-        LogCache.LogCacheBlock cacheBlock = S3Storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
+        Map<Long, Long> streamEndOffsets = Map.of(233L, 11L);
+        S3Storage.RecoveryBlockResult result = S3Storage.recoverContinuousRecords(iterator, streamEndOffsets, 1 << 30, LOGGER);
+        LogCache.LogCacheBlock cacheBlock = result.cacheBlock;
+        assertNull(result.exception);
         // ignore closed stream and noncontinuous records.
         assertEquals(1, cacheBlock.records().size());
         List<StreamRecordBatch> streamRecords = cacheBlock.records().get(233L);
         assertEquals(2, streamRecords.size());
         assertEquals(11L, streamRecords.get(0).getBaseOffset());
         assertEquals(12L, streamRecords.get(1).getBaseOffset());
+    }
+
+    @Test
+    public void testRecoverDataLoss() {
+        List<RecoverResult> recoverResults = List.of(
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 10L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 11L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(233L, 12L)))
+        );
+        Iterator<RecoverResult> iterator = recoverResults.iterator();
 
         // simulate data loss
-        openingStreams = List.of(
-            new StreamMetadata(233L, 0L, 0L, 5L, StreamState.OPENED));
-        boolean exception = false;
-        try {
-            S3Storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
-        } catch (IllegalStateException e) {
-            exception = true;
-        }
-        Assertions.assertTrue(exception);
+        Map<Long, Long> streamEndOffsets = Map.of(233L, 5L);
+        S3Storage.RecoveryBlockResult result = S3Storage.recoverContinuousRecords(iterator, streamEndOffsets, 1 << 30, LOGGER);
+        assertNotNull(result.exception);
+        LogCache.LogCacheBlock cacheBlock = result.cacheBlock;
+        assertEquals(0, cacheBlock.records().size());
     }
 
     @Test
@@ -377,8 +405,10 @@ public class S3StorageTest {
             new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 20L)))
         );
 
-        List<StreamMetadata> openingStreams = List.of(new StreamMetadata(42L, 0L, 0L, 10L, StreamState.OPENED));
-        LogCache.LogCacheBlock cacheBlock = S3Storage.recoverContinuousRecords(recoverResults.iterator(), openingStreams);
+        Map<Long, Long> streamEndOffsets = Map.of(42L, 10L);
+        S3Storage.RecoveryBlockResult result = S3Storage.recoverContinuousRecords(recoverResults.iterator(), streamEndOffsets, 1 << 30, LOGGER);
+        LogCache.LogCacheBlock cacheBlock = result.cacheBlock;
+        assertNull(result.exception);
         // ignore closed stream and noncontinuous records.
         assertEquals(1, cacheBlock.records().size());
         List<StreamRecordBatch> streamRecords = cacheBlock.records().get(42L);
@@ -388,6 +418,50 @@ public class S3StorageTest {
         assertEquals(12L, streamRecords.get(2).getBaseOffset());
         assertEquals(13L, streamRecords.get(3).getBaseOffset());
         assertEquals(14L, streamRecords.get(4).getBaseOffset());
+    }
+
+    @Test
+    public void testSegmentedRecovery() {
+        List<RecoverResult> recoverResults = List.of(
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 10L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 11L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 12L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 13L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 14L))),
+            new TestRecoverResult(StreamRecordBatchCodec.encode(newRecord(42L, 20L)))
+        );
+        Iterator<RecoverResult> iterator = recoverResults.iterator();
+
+        Map<Long, Long> streamEndOffsets = new HashMap<>();
+        S3Storage.RecoveryBlockResult result;
+        List<StreamRecordBatch> streamRecords;
+        final long maxCacheSize = 200L;
+
+        streamEndOffsets.put(42L, 10L);
+        result = S3Storage.recoverContinuousRecords(iterator, streamEndOffsets, maxCacheSize, LOGGER);
+        assertNull(result.exception);
+        assertTrue(result.cacheBlock.isFull());
+        streamRecords = result.cacheBlock.records().get(42L);
+        assertEquals(2, streamRecords.size());
+        assertEquals(10L, streamRecords.get(0).getBaseOffset());
+        assertEquals(11L, streamRecords.get(1).getBaseOffset());
+
+        streamEndOffsets.put(42L, 12L);
+        result = S3Storage.recoverContinuousRecords(iterator, streamEndOffsets, maxCacheSize, LOGGER);
+        assertNull(result.exception);
+        assertTrue(result.cacheBlock.isFull());
+        streamRecords = result.cacheBlock.records().get(42L);
+        assertEquals(2, streamRecords.size());
+        assertEquals(12L, streamRecords.get(0).getBaseOffset());
+        assertEquals(13L, streamRecords.get(1).getBaseOffset());
+
+        streamEndOffsets.put(42L, 14L);
+        result = S3Storage.recoverContinuousRecords(iterator, streamEndOffsets, maxCacheSize, LOGGER);
+        assertNull(result.exception);
+        assertFalse(result.cacheBlock.isFull());
+        streamRecords = result.cacheBlock.records().get(42L);
+        assertEquals(1, streamRecords.size());
+        assertEquals(14L, streamRecords.get(0).getBaseOffset());
     }
 
     @Test
@@ -429,5 +503,97 @@ public class S3StorageTest {
         public long recordOffset() {
             return 0;
         }
+    }
+
+    /**
+     * WALConfirmOffsetCalculator - Test calculate() returns NOOP when queue is empty
+     */
+    @Test
+    void testEmptyQueueReturnsNoop() throws Exception {
+        Method method = S3Storage.WALConfirmOffsetCalculator.class.getDeclaredMethod("calculate");
+        method.setAccessible(true);
+        long offset = (long) method.invoke(calculator);
+        assertEquals(S3Storage.WALConfirmOffsetCalculator.NOOP_OFFSET, offset);
+    }
+
+    /**
+     * WALConfirmOffsetCalculator - Test calculate() returns latest offset when all requests are confirmed
+     */
+    @Test
+    void testAllConfirmedOffsets() throws Exception {
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 10L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            10L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 20L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            20L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 30L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            30L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        Method method = S3Storage.WALConfirmOffsetCalculator.class.getDeclaredMethod("calculate");
+        method.setAccessible(true);
+        long offset = (long) method.invoke(calculator);
+        assertEquals(30, offset);
+    }
+
+    /**
+     * WALConfirmOffsetCalculator - Test calculate() stops at first unconfirmed request
+     */
+    @Test
+    void testUnconfirmedBlocksConfirmedOffset() throws Exception {
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 10L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            10L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 20L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            20L,
+            new CompletableFuture<>()
+        ) {{ confirmed = false; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 30L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            30L,
+            new CompletableFuture<>()
+        ) {{ confirmed = true; }});
+
+        Method method = S3Storage.WALConfirmOffsetCalculator.class.getDeclaredMethod("calculate");
+        method.setAccessible(true);
+        long offset = (long) method.invoke(calculator);
+        assertEquals(10, offset);
+    }
+
+    /**
+     * WALConfirmOffsetCalculator - Test calculate() returns NOOP when all requests are unconfirmed
+     */
+    @Test
+    void testAllUnconfirmedReturnsNoop() throws Exception {
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 10L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            10L,
+            new CompletableFuture<>()
+        ) {{ confirmed = false; }});
+
+        calculator.add(new WalWriteRequest(
+            new StreamRecordBatch(1L, 0L, 20L, 1, Unpooled.buffer(10).writeBytes(new byte[10])),
+            20L,
+            new CompletableFuture<>()
+        ) {{ confirmed = false; }});
+
+        Method method = S3Storage.WALConfirmOffsetCalculator.class.getDeclaredMethod("calculate");
+        method.setAccessible(true);
+        long offset = (long) method.invoke(calculator);
+        assertEquals(S3Storage.WALConfirmOffsetCalculator.NOOP_OFFSET, offset);
     }
 }

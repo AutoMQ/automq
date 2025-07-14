@@ -1,18 +1,26 @@
 /*
- * Copyright 2024, AutoMQ HK Limited.
+ * Copyright 2025, AutoMQ HK Limited.
  *
- * The use of this file is governed by the Business Source License,
- * as detailed in the file "/LICENSE.S3Stream" included in this repository.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- * As of the Change Date specified in that file, in accordance with
- * the Business Source License, use of this software will be governed
- * by the Apache License, Version 2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
-import com.automq.stream.utils.FutureUtil
+import com.automq.stream.utils.{FutureUtil, Threads}
 import kafka.cluster.PartitionSnapshot
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
@@ -21,7 +29,7 @@ import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
-import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
@@ -33,7 +41,7 @@ import java.nio.ByteBuffer
 import java.nio.file.Path
 import java.util
 import java.util.concurrent.atomic.LongAdder
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList, Executors}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.util.{Failure, Success, Try}
 
@@ -291,8 +299,10 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 }
 
 object ElasticUnifiedLog extends Logging {
-    private val CheckpointExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("checkpoint-executor", true))
-    private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
+    private val CheckpointExecutor = {
+      Threads.newSingleThreadScheduledExecutor("checkpoint-executor", true, logger.underlying)
+    }
+  private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
     private val MinCheckpointIntervalMs = 10 * 1000
     private val Logs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
     // fuzzy dirty bytes for checkpoint, it's ok not thread safe

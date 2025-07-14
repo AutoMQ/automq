@@ -1,0 +1,139 @@
+version: "3"
+
+services:
+  spark-iceberg:
+    image: automqinc/spark-iceberg:latest
+    container_name: spark-iceberg
+    build: spark/
+    networks:
+      iceberg_net:
+    depends_on:
+      - rest
+      - minio
+    volumes:
+      - ./warehouse:/home/iceberg/warehouse
+      - ./notebooks:/home/iceberg/notebooks/notebooks
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    ports:
+      - 8888:8888
+      - 8080:8080
+      - 10000:10000
+      - 10001:10001
+  rest:
+    image: apache/iceberg-rest-fixture
+    container_name: iceberg-rest
+    networks:
+      iceberg_net:
+    ports:
+      - 8181:8181
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+      - CATALOG_WAREHOUSE=s3://warehouse/
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://minio:9000
+  minio:
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_DOMAIN=minio
+    networks:
+      iceberg_net:
+        aliases:
+          - warehouse.minio
+    ports:
+      - 9001:9001
+      - 9000:9000
+    command: ["server", "/data", "--console-address", ":9001"]
+  mc:
+    depends_on:
+      - minio
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    container_name: mc
+    networks:
+      iceberg_net:
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    entrypoint: |
+      /bin/sh -c "
+      until (/usr/bin/mc alias set minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc rm -r --force minio/warehouse;
+      /usr/bin/mc mb minio/warehouse;
+      /usr/bin/mc anonymous set public minio/warehouse;
+      /usr/bin/mc rm -r --force minio/automq-data;
+      /usr/bin/mc mb minio/automq-data;
+      /usr/bin/mc anonymous set public minio/automq-data;
+      /usr/bin/mc rm -r --force minio/automq-ops;
+      /usr/bin/mc mb minio/automq-ops;
+      /usr/bin/mc anonymous set public minio/automq-ops;
+      tail -f /dev/null
+      "
+  automq:
+    container_name: "automq"
+    image: automqinc/automq:1.6.0
+    stop_grace_period: 1m
+    networks:
+      iceberg_net:
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      - KAFKA_S3_ACCESS_KEY=admin
+      - KAFKA_S3_SECRET_KEY=password
+      - KAFKA_HEAP_OPTS=-Xms1g -Xmx4g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G
+      - CLUSTER_ID=3D4fXN-yS1-vsQ8aJ_q4Mg
+    command:
+      - bash
+      - -c
+      - |
+        /opt/automq/kafka/bin/kafka-server-start.sh \
+        /opt/automq/kafka/config/kraft/server.properties \
+        --override cluster.id=$${CLUSTER_ID} \
+        --override node.id=0 \
+        --override controller.quorum.voters=0@automq:9093 \
+        --override controller.quorum.bootstrap.servers=automq:9093 \
+        --override listeners=PLAINTEXT://:9092,CONTROLLER://:9093 \
+        --override advertised.listeners=PLAINTEXT://automq:9092 \
+        --override s3.data.buckets='0@s3://automq-data?region=us-east-1&endpoint=http://minio:9000&pathStyle=true' \
+        --override s3.ops.buckets='1@s3://automq-ops?region=us-east-1&endpoint=http://minio:9000&pathStyle=true' \
+        --override s3.wal.path='0@s3://automq-data?region=us-east-1&endpoint=http://minio:9000&pathStyle=true' \
+        --override automq.table.topic.catalog.type=rest \
+        --override automq.table.topic.catalog.uri=http://rest:8181 \
+        --override automq.table.topic.catalog.warehouse=s3://warehouse/wh/ \
+        --override automq.table.topic.namespace=default \
+        --override automq.table.topic.schema.registry.url=http://schema-registry:8081
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/automq/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 | grep -q 'automq'"]
+      interval: 20s
+      timeout: 20s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      - minio
+      - mc
+      - rest
+  schema-registry:
+    image: confluentinc/cp-schema-registry:latest
+    container_name: schema-registry
+    depends_on:
+      automq:
+        condition: service_healthy
+    networks:
+      iceberg_net:
+    ports:
+      - "8081:8081"
+    restart: on-failure
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'automq:9092'
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+networks:
+  iceberg_net:

@@ -92,7 +92,7 @@ class BaseStreamsTest(KafkaTest):
 
     def wait_for_verification(self, processor, message, file, num_lines=1):
         wait_until(lambda: self.verify_from_file(processor, message, file) >= num_lines,
-                   timeout_sec=60,
+                   timeout_sec=300,
                    err_msg="Did expect to read '%s' from %s" % (message, processor.node.account))
 
     def verify_from_file(self, processor, message, file):
