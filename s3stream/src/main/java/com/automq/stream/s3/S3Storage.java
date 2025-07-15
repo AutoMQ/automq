@@ -102,6 +102,10 @@ public class S3Storage implements Storage {
         S3Storage.linkRecordDecoder = linkRecordDecoder;
     }
 
+    public static Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> getLinkRecordDecoder() {
+        return linkRecordDecoder;
+    }
+
     private final long maxDeltaWALCacheSize;
     protected final Config config;
     private final WriteAheadLog deltaWAL;

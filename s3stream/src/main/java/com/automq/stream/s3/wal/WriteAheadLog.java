@@ -27,6 +27,7 @@ import com.automq.stream.s3.wal.exception.RuntimeIOException;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
@@ -55,6 +56,11 @@ public interface WriteAheadLog {
     CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
     CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset);
+
+    default CompletableFuture<List<StreamRecordBatch>> get(long startOffset, long endOffset) {
+        // TODO: impl
+        return CompletableFuture.completedFuture(null);
+    }
 
     /**
      * Recover log from the beginning. The iterator will return the recovered result in order.

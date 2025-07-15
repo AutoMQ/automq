@@ -23,7 +23,7 @@ import kafka.automq.partition.snapshot.SnapshotOperation;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.OperationBatch;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.SnapshotWithOperation;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.Subscriber;
-import kafka.automq.zerozone.SnapshotReadPartitionsManager.SubscriberDataLoader;
+import kafka.automq.zerozone.SnapshotReadPartitionsManager.SubscriberReplayer;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.SubscriberRequester;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionSnapshot;
@@ -41,6 +41,9 @@ import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.metadata.BrokerRegistration;
+
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.wal.WriteAheadLog;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -120,15 +123,27 @@ public class SnapshotReadPartitionsManagerTest {
 
         asyncSender = mock(AsyncSender.class);
 
-        manager = new SnapshotReadPartitionsManager(config, time, replicaManager, metadataCache, objects -> CompletableFuture.completedFuture(null), asyncSender);
+        Replayer replayer = new Replayer() {
+            @Override
+            public CompletableFuture<Void> replay(List<S3ObjectMetadata> objects) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public CompletableFuture<Void> replay(WriteAheadLog confirmWAL, long startOffset, long endOffset) {
+                return CompletableFuture.completedFuture(null);
+            }
+        };
+
+        manager = new SnapshotReadPartitionsManager(config, time, replicaManager, metadataCache, replayer, asyncSender);
     }
 
     @Test
     public void testSubscriber() throws ExecutionException, InterruptedException {
         Node node = new Node(2, "127.0.0.1", 9092);
         SubscriberRequester requester = mock(SubscriberRequester.class);
-        SubscriberDataLoader dataLoader = mock(SubscriberDataLoader.class);
-        when(dataLoader.waitingDataLoaded()).thenReturn(CompletableFuture.completedFuture(null));
+        SubscriberReplayer dataLoader = mock(SubscriberReplayer.class);
+        when(dataLoader.relayObject()).thenReturn(CompletableFuture.completedFuture(null));
         Subscriber subscriber = manager.newSubscriber(node, requester, dataLoader);
         stream2offset.put(3L, 0L);
         stream2offset.put(4L, 0L);
@@ -139,14 +154,14 @@ public class SnapshotReadPartitionsManagerTest {
         subscriber.onNewOperationBatch(operationBatch);
 
         // metadata unready.
-        subscriber.checkMetadataReady();
+        subscriber.checkMetadataReadyAndTriggerReplay();
         assertEquals(1, subscriber.waitingMetadataReadyQueue.size());
         assertEquals(-1, operationBatch.readyIndex);
 
         // metadata ready.
         stream2offset.put(3L, 3L);
         stream2offset.put(4L, 6L);
-        subscriber.checkMetadataReady();
+        subscriber.checkMetadataReadyAndTriggerReplay();
         awaitEventLoopClear();
         assertEquals(2, subscriber.partitions.size());
         verify(partitions.get(new TopicPartition(topicName, 1)), times(1)).snapshot(any());
@@ -160,7 +175,7 @@ public class SnapshotReadPartitionsManagerTest {
         operationBatch.operations.add(snapshotWithOperation(2, Map.of(4L, 10L), SnapshotOperation.PATCH));
         subscriber.onNewOperationBatch(operationBatch);
         stream2offset.put(4L, 10L);
-        subscriber.checkMetadataReady();
+        subscriber.checkMetadataReadyAndTriggerReplay();
         awaitEventLoopClear();
         verify(partitions.get(new TopicPartition(topicName, 1)), times(1)).snapshot(any());
         verify(partitions.get(new TopicPartition(topicName, 2)), times(2)).snapshot(any());
@@ -169,7 +184,7 @@ public class SnapshotReadPartitionsManagerTest {
         operationBatch = new OperationBatch();
         operationBatch.operations.add(snapshotWithOperation(2, Map.of(4L, 10L), SnapshotOperation.REMOVE));
         subscriber.onNewOperationBatch(operationBatch);
-        subscriber.checkMetadataReady();
+        subscriber.checkMetadataReadyAndTriggerReplay();
         awaitEventLoopClear();
         assertEquals(1, partitions.size());
         assertEquals(1, subscriber.partitions.size());

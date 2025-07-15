@@ -49,10 +49,19 @@ import org.apache.kafka.image.loader.MetadataListener;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 
-import com.automq.stream.s3.cache.SnapshotReadCache;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
+import com.automq.stream.s3.operator.BucketURI;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
+import com.automq.stream.s3.wal.OpenMode;
+import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
+import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
@@ -77,7 +86,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import java.util.function.LongConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -90,12 +98,14 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     private final ElasticReplicaManager replicaManager;
     private final MetadataCache metadataCache;
     private final AsyncSender asyncSender;
-    private final Function<List<S3ObjectMetadata>, CompletableFuture<Void>> dataLoader;
+    private final Replayer replayer;
     private final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor("AUTOMQ_SNAPSHOT_READ", true, LOGGER);
     private final Map<Uuid, String> topicId2name = new ConcurrentHashMap<>();
     final Map<Integer, Subscriber> subscribers = new HashMap<>();
     // all snapshot read partition changes exec in a single eventloop to ensure the thread-safe.
     final EventLoop eventLoop = new EventLoop("AUTOMQ_SNAPSHOT_READ_WORKER");
+    // TODO: listening to the change
+    private final AutoMQVersion version = AutoMQVersion.V3;
 
     public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time,
         ElasticReplicaManager replicaManager, MetadataCache metadataCache) {
@@ -103,19 +113,18 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         this.time = time;
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
-        this.dataLoader = objects -> SnapshotReadCache.instance().load(objects);
+        this.replayer = new DefaultReplayer();
         this.asyncSender = new AsyncSender.BrokersAsyncSender(config, metrics, "snapshot_read", Time.SYSTEM, "AUTOMQ_SNAPSHOT_READ", new LogContext());
     }
 
     // test only
     SnapshotReadPartitionsManager(KafkaConfig config, Time time, ElasticReplicaManager replicaManager,
-        MetadataCache metadataCache, Function<List<S3ObjectMetadata>, CompletableFuture<Void>> dataLoader,
-        AsyncSender asyncSender) {
+        MetadataCache metadataCache, Replayer replayer, AsyncSender asyncSender) {
         this.config = config;
         this.time = time;
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
-        this.dataLoader = dataLoader;
+        this.replayer = replayer;
         this.asyncSender = asyncSender;
     }
 
@@ -195,7 +204,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     }
 
     // only for test
-    Subscriber newSubscriber(Node node, SubscriberRequester requester, SubscriberDataLoader dataLoader) {
+    Subscriber newSubscriber(Node node, SubscriberRequester requester, SubscriberReplayer dataLoader) {
         return new Subscriber(node, requester, dataLoader);
     }
 
@@ -209,21 +218,21 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         final Queue<WaitingDataLoadTask> waitingDataLoadedQueue = new LinkedList<>();
         final Queue<SnapshotWithOperation> snapshotWithOperations = new LinkedList<>();
         private final SubscriberRequester requester;
-        private final SubscriberDataLoader dataLoader;
+        private final SubscriberReplayer replayer;
 
         public Subscriber(Node node) {
             this.node = node;
             this.requester = new SubscriberRequester(this, node);
-            this.dataLoader = new SubscriberDataLoader(node);
+            this.replayer = new SubscriberReplayer(node);
             LOGGER.info("[SNAPSHOT_READ_SUBSCRIBE],node={}", node);
             run();
         }
 
         // only for test
-        public Subscriber(Node node, SubscriberRequester requester, SubscriberDataLoader dataLoader) {
+        public Subscriber(Node node, SubscriberRequester requester, SubscriberReplayer replayer) {
             this.node = node;
             this.requester = requester;
-            this.dataLoader = dataLoader;
+            this.replayer = replayer;
         }
 
         public void apply() {
@@ -270,8 +279,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             if (closed) {
                 return;
             }
-            // check whether the metadata is ready.
-            checkMetadataReady();
+            // check whether the metadata is ready and replay the SSO/WAL data to snapshot-read cache
+            checkMetadataReadyAndTriggerReplay();
             // after the metadata is ready and data is preload in snapshot-read cache,
             // then apply the snapshot to partition.
             applySnapshot();
@@ -284,6 +293,10 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             snapshotWithOperations.clear();
             waitingDataLoadedQueue.clear();
             requester.reset();
+        }
+
+        void onNewWalEndOffset(String walConfig, long endOffset) {
+            replayer.onNewWalEndOffset(walConfig, endOffset);
         }
 
         void onNewOperationBatch(OperationBatch batch) {
@@ -326,7 +339,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             }
         }
 
-        void checkMetadataReady() {
+        void checkMetadataReadyAndTriggerReplay() {
             // Collect all the operation which data metadata is ready in kraft.
             List<OperationBatch> batches = new ArrayList<>();
             for (; ; ) {
@@ -334,7 +347,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                 if (batch == null) {
                     break;
                 }
-                if (checkBatchMetadataReady0(batch, metadataCache)) {
+                if (version.isZeroZoneV2Supported() || checkBatchMetadataReady0(batch, metadataCache)) {
                     waitingMetadataReadyQueue.poll();
                     batches.add(batch);
                 } else {
@@ -344,8 +357,15 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             if (batches.isEmpty()) {
                 return;
             }
-            // Trigger incremental SSO data loading.
-            CompletableFuture<Void> waitingDataLoadedCf = dataLoader.waitingDataLoaded();
+
+            // TODO: dataLoader 变成去加载 confirmWAL (优化: 如果是新 subscribe 的，则尝试加载最近的 SSO，避免零散读)
+            CompletableFuture<Void> waitingDataLoadedCf;
+            if (version.isZeroZoneV2Supported()) {
+                waitingDataLoadedCf = replayer.replayWal();
+            } else {
+                // Trigger incremental SSO data loading.
+                waitingDataLoadedCf = replayer.relayObject();
+            }
             WaitingDataLoadTask task = new WaitingDataLoadTask(time.milliseconds(), batches, waitingDataLoadedCf);
             waitingDataLoadedQueue.add(task);
             // After the SSO data loads to the snapshot-read cache, then apply operations.
@@ -365,16 +385,41 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         }
     }
 
-    class SubscriberDataLoader {
+    class SubscriberReplayer {
         long loadedObjectOrderId = -1L;
         CompletableFuture<Void> lastDataLoadCf = CompletableFuture.completedFuture(null);
         private final Node node;
+        private WriteAheadLog wal;
+        private long loadedEndOffset = -1L;
 
-        public SubscriberDataLoader(Node node) {
+        public SubscriberReplayer(Node node) {
             this.node = node;
         }
 
-        public CompletableFuture<Void> waitingDataLoaded() {
+        public void onNewWalEndOffset(String walConfig, long endOffset) {
+            if (wal == null) {
+                // create a readonly confirm wal
+                // TODO: use factory to make it more extensible
+                ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(walConfig))
+                    .readWriteIsolate(true)
+                    .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
+                    .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
+                    .build();
+                ObjectWALConfig objectWALConfig = ObjectWALConfig.builder().withNodeId(node.id()).withOpenMode(OpenMode.READ_ONLY).build();
+                this.wal = new ObjectWALService(com.automq.stream.utils.Time.SYSTEM, objectStorage, objectWALConfig);
+            }
+            if (endOffset <= this.loadedEndOffset) {
+                return;
+            }
+            long startOffset = this.loadedEndOffset;
+            this.loadedEndOffset = endOffset;
+            if (startOffset > 0) {
+                return;
+            }
+            this.lastDataLoadCf = lastDataLoadCf.thenCompose(nil -> replayer.replay(wal, startOffset, endOffset));
+        }
+
+        public CompletableFuture<Void> relayObject() {
             List<S3ObjectMetadata> newObjects = nextObjects().stream().filter(object -> {
                 if (object.objectSize() > 200L * 1024 * 1024) {
                     LOGGER.warn("The object {} is bigger than 200MiB, skip load it", object);
@@ -387,11 +432,15 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                 return lastDataLoadCf;
             }
             long loadedObjectOrderId = this.loadedObjectOrderId;
-            return lastDataLoadCf = lastDataLoadCf.thenCompose(nil -> dataLoader.apply(newObjects)).thenAcceptAsync(nil -> {
+            return lastDataLoadCf = lastDataLoadCf.thenCompose(nil -> replayer.replay(newObjects)).thenAcceptAsync(nil -> {
                 if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("[LOAD_SNAPSHOT_READ_DATA],node={},loadedObjectOrderId={},newObjects={}", node, loadedObjectOrderId, newObjects);
                 }
             }, eventLoop);
+        }
+
+        public CompletableFuture<Void> replayWal() {
+            return lastDataLoadCf;
         }
 
         private List<S3ObjectMetadata> nextObjects() {
@@ -481,6 +530,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                 }
                 batch.operations.add(convert(new TopicIdPartition(topic.topicId(), partition.partitionIndex(), topicName), partition));
             }));
+            subscriber.onNewWalEndOffset(resp.confirmWalConfig(), resp.confirmWalEndOffset());
             subscriber.onNewOperationBatch(batch);
             sessionId = resp.sessionId();
             sessionEpoch = resp.sessionEpoch();

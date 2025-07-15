@@ -44,6 +44,12 @@
       "type": "int64",
       "versions": "1+",
       "about": "The confirm WAL end offset."
+    },
+    {
+      "name": "ConfirmWalConfig",
+      "type": "string",
+      "versions": "1+",
+      "about": "The confirm WAL config."
     }
   ],
   "commonStructs": [

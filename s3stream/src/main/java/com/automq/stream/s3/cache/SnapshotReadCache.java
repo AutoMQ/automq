@@ -2,9 +2,11 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.threads.EventLoop;
@@ -16,28 +18,32 @@ import com.google.common.cache.RemovalListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class SnapshotReadCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
     private static final SnapshotReadCache INSTANCE = new SnapshotReadCache();
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
-    private final AtomicLong inflightLoadBytes = new AtomicLong();
-    private final Queue<ObjectLoadTask> waitingLoadingTasks = new LinkedList<>();
-    private final Queue<ObjectLoadTask> loadingTasks = new LinkedList<>();
     private final Map<Long, AtomicLong> streamNextOffsets = new HashMap<>();
     private final Cache<Long /* streamId */, Boolean> activeStreams;
     private final EventLoop eventLoop = new EventLoop("SNAPSHOT_READ_CACHE");
+    private final ObjectReplay objectReplay = new ObjectReplay();
+    private final WalReplay walReplay = new WalReplay();
     private LogCache cache;
     private ObjectStorage objectStorage;
+    private final Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder;
 
     public static SnapshotReadCache instance() {
         return INSTANCE;
@@ -49,6 +55,8 @@ public class SnapshotReadCache {
             .removalListener((RemovalListener<Long, Boolean>) notification ->
                 eventLoop.execute(() -> clearStream(notification.getKey())))
             .build();
+        // TODO: different decoder with pooled buf
+        this.linkRecordDecoder = S3Storage.getLinkRecordDecoder();
     }
 
     public void setup(LogCache cache, ObjectStorage objectStorage) {
@@ -57,7 +65,7 @@ public class SnapshotReadCache {
     }
 
     @EventLoopSafe
-    public void put(CloseableIterator<StreamRecordBatch> it) {
+    void put(CloseableIterator<StreamRecordBatch> it) {
         try (it) {
             LogCache cache = this.cache;
             if (cache == null) {
@@ -91,23 +99,12 @@ public class SnapshotReadCache {
         }
     }
 
-    public synchronized CompletableFuture<Void> load(List<S3ObjectMetadata> objects) {
-        if (objects.isEmpty()) {
-            throw new IllegalArgumentException("The objects is an empty list");
-        }
-        CompletableFuture<Void> cf = new CompletableFuture<>();
-        eventLoop.execute(() -> {
-            ObjectLoadTask task = null;
-            for (S3ObjectMetadata object : objects) {
-                task = new ObjectLoadTask(ObjectReader.reader(object, objectStorage));
-                waitingLoadingTasks.add(task);
-            }
-            if (task != null) {
-                FutureUtil.propagate(task.cf, cf);
-            }
-            tryLoad();
-        });
-        return cf;
+    public synchronized CompletableFuture<Void> replay(List<S3ObjectMetadata> objects) {
+        return objectReplay.replay(objects);
+    }
+
+    public synchronized CompletableFuture<Void> replay(WriteAheadLog confirmWAL, long startOffset, long endOffset) {
+        return walReplay.replay(confirmWAL, startOffset, endOffset);
     }
 
     @EventLoopSafe
@@ -124,47 +121,163 @@ public class SnapshotReadCache {
         }
     }
 
-    @EventLoopSafe
-    private void tryLoad() {
-        for (; ; ) {
-            if (inflightLoadBytes.get() >= MAX_INFLIGHT_LOAD_BYTES) {
-                break;
-            }
-            ObjectLoadTask task = waitingLoadingTasks.peek();
-            if (task == null) {
-                break;
-            }
-            waitingLoadingTasks.poll();
-            loadingTasks.add(task);
-            task.run();
-            inflightLoadBytes.addAndGet(task.reader.metadata().objectSize());
-        }
-    }
+    class WalReplay {
+        private final Queue<WalReplayTask> waitingLoadTasks = new ConcurrentLinkedQueue<>();
+        private final Queue<WalReplayTask> loadingTasks = new ConcurrentLinkedQueue<>();
 
-    @EventLoopSafe
-    private void tryPutIntoCache() {
-        for (; ; ) {
-            ObjectLoadTask task = loadingTasks.peek();
-            if (task == null) {
-                break;
-            }
-            if (task.putIntoCache()) {
-                loadingTasks.poll();
-                task.close();
-                inflightLoadBytes.addAndGet(-task.reader.metadata().objectSize());
+        public CompletableFuture<Void> replay(WriteAheadLog wal, long startOffset, long endOffset) {
+            WalReplayTask task = new WalReplayTask(wal, startOffset, endOffset);
+            eventLoop.submit(() -> {
+                waitingLoadTasks.add(task);
                 tryLoad();
-            } else {
-                break;
+            });
+            return task.loadCf;
+        }
+
+        @EventLoopSafe
+        private void tryLoad() {
+            for (; ; ) {
+                // TODO: inflight limit
+                WalReplayTask task = waitingLoadTasks.poll();
+                if (task == null) {
+                    break;
+                }
+                loadingTasks.add(task);
+                task.run();
+                task.loadCf.whenCompleteAsync((rst, ex) -> tryPutIntoCache(), eventLoop);
+            }
+        }
+
+        @EventLoopSafe
+        private void tryPutIntoCache() {
+            for (; ; ) {
+                WalReplayTask task = loadingTasks.peek();
+                if (task == null || !task.loadCf.isDone()) {
+                    break;
+                }
+                loadingTasks.poll();
+                put(CloseableIterator.wrap(task.records.iterator()));
+                task.replayCf.complete(null);
+            }
+        }
+
+    }
+
+    class WalReplayTask {
+        final WriteAheadLog wal;
+        final long startOffset;
+        final long endOffset;
+        final CompletableFuture<Void> loadCf;
+        final CompletableFuture<Void> replayCf = new CompletableFuture<>();
+        final List<StreamRecordBatch> records = new ArrayList<>();
+
+        public WalReplayTask(WriteAheadLog wal, long startOffset, long endOffset) {
+            this.wal = wal;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.loadCf = new CompletableFuture<>();
+            loadCf.whenComplete((rst, ex) -> {
+                if (ex != null) {
+                    LOGGER.error("Replay WAL [{}, {}) fail", startOffset, endOffset);
+                }
+            });
+        }
+
+        public void run() {
+            // 如果 snapshot cache 里面的数据被驱逐了，需要通知对端强制上传。
+            // wal 的删除和 channel offset 的删除需要 delay 一下，尽量避免还没有 replay 完成就没了。
+            wal.get(startOffset, endOffset).thenAccept(walRecords -> {
+                List<CompletableFuture<StreamRecordBatch>> cfList = new ArrayList<>(walRecords.size());
+                for (StreamRecordBatch walRecord : walRecords) {
+                    if (walRecord.getCount() >= 0) {
+                        cfList.add(CompletableFuture.completedFuture(walRecord));
+                    } else {
+                        cfList.add(linkRecordDecoder.apply(walRecord).whenComplete((rst, ex) -> walRecord.release()));
+                    }
+                }
+                CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
+                    if (ex != null) {
+                        loadCf.completeExceptionally(ex);
+                        // release other success record
+                        cfList.forEach(cf -> cf.thenAccept(StreamRecordBatch::release));
+                        return;
+                    }
+                    records.addAll(cfList.stream().map(CompletableFuture::join).collect(Collectors.toList()));
+                    loadCf.complete(null);
+                }).exceptionally(ex -> {
+                    loadCf.completeExceptionally(ex);
+                    return null;
+                });
+            });
+        }
+    }
+
+    class ObjectReplay {
+        private final AtomicLong inflightLoadBytes = new AtomicLong();
+        private final Queue<ObjectReplayTask> waitingLoadingTasks = new LinkedList<>();
+        private final Queue<ObjectReplayTask> loadingTasks = new LinkedList<>();
+
+        public synchronized CompletableFuture<Void> replay(List<S3ObjectMetadata> objects) {
+            if (objects.isEmpty()) {
+                throw new IllegalArgumentException("The objects is an empty list");
+            }
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            eventLoop.execute(() -> {
+                ObjectReplayTask task = null;
+                for (S3ObjectMetadata object : objects) {
+                    task = new ObjectReplayTask(ObjectReader.reader(object, objectStorage));
+                    waitingLoadingTasks.add(task);
+                }
+                if (task != null) {
+                    FutureUtil.propagate(task.cf, cf);
+                }
+                tryLoad();
+            });
+            return cf;
+        }
+
+        @EventLoopSafe
+        private void tryLoad() {
+            for (; ; ) {
+                if (inflightLoadBytes.get() >= MAX_INFLIGHT_LOAD_BYTES) {
+                    break;
+                }
+                ObjectReplayTask task = waitingLoadingTasks.peek();
+                if (task == null) {
+                    break;
+                }
+                waitingLoadingTasks.poll();
+                loadingTasks.add(task);
+                task.run();
+                inflightLoadBytes.addAndGet(task.reader.metadata().objectSize());
+            }
+        }
+
+        @EventLoopSafe
+        private void tryPutIntoCache() {
+            for (; ; ) {
+                ObjectReplayTask task = loadingTasks.peek();
+                if (task == null) {
+                    break;
+                }
+                if (task.putIntoCache()) {
+                    loadingTasks.poll();
+                    task.close();
+                    inflightLoadBytes.addAndGet(-task.reader.metadata().objectSize());
+                    tryLoad();
+                } else {
+                    break;
+                }
             }
         }
     }
 
-    class ObjectLoadTask {
+    class ObjectReplayTask {
         final ObjectReader reader;
         final CompletableFuture<Void> cf;
         Queue<CompletableFuture<ObjectReader.DataBlockGroup>> blocks;
 
-        public ObjectLoadTask(ObjectReader reader) {
+        public ObjectReplayTask(ObjectReader reader) {
             this.reader = reader;
             this.cf = new CompletableFuture<>();
         }
@@ -180,7 +293,7 @@ public class SnapshotReadCache {
                         if (t != null) {
                             LOGGER.error("Failed to load object blocks {}", reader.metadata(), t);
                         }
-                        tryPutIntoCache();
+                        objectReplay.tryPutIntoCache();
                     }, eventLoop);
                 });
                 this.blocks = blocks;
