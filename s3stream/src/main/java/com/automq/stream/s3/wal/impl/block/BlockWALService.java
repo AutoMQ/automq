@@ -60,7 +60,7 @@ import io.netty.buffer.ByteBuf;
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 import static com.automq.stream.s3.Constants.NOOP_EPOCH;
 import static com.automq.stream.s3.Constants.NOOP_NODE_ID;
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_DATA_MAGIC_CODE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
@@ -225,10 +225,10 @@ public class BlockWALService implements WriteAheadLog {
         }
 
         RecordHeader readRecordHeader = new RecordHeader(recordHeader);
-        if (readRecordHeader.getMagicCode() != RECORD_HEADER_MAGIC_CODE) {
+        if (readRecordHeader.getMagicCode() != RECORD_HEADER_DATA_MAGIC_CODE) {
             throw new ReadRecordException(
                 WALUtil.alignNextBlock(recoverStartOffset),
-                String.format("magic code mismatch: expected %d, actual %d, recoverStartOffset: %d", RECORD_HEADER_MAGIC_CODE, readRecordHeader.getMagicCode(), recoverStartOffset)
+                String.format("magic code mismatch: expected %d, actual %d, recoverStartOffset: %d", RECORD_HEADER_DATA_MAGIC_CODE, readRecordHeader.getMagicCode(), recoverStartOffset)
             );
         }
 

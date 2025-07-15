@@ -18,7 +18,11 @@ import io.netty.buffer.ByteBuf;
 public class RecordHeader {
     public static final int RECORD_HEADER_SIZE = 4 + 4 + 8 + 4 + 4;
     public static final int RECORD_HEADER_WITHOUT_CRC_SIZE = RECORD_HEADER_SIZE - 4;
-    public static final int RECORD_HEADER_MAGIC_CODE = 0x87654321;
+    public static final int RECORD_HEADER_DATA_MAGIC_CODE = 0x87654321;
+    /**
+     * Magic code for record header indicating that the record body is empty (used for padding).
+     */
+    public static final int RECORD_HEADER_EMPTY_MAGIC_CODE = 0x76543210;
 
     private final int magicCode0;
     private final int recordBodyLength1;
@@ -27,10 +31,17 @@ public class RecordHeader {
     private int recordHeaderCRC4;
 
     public RecordHeader(long offset, int length, int crc) {
-        this.magicCode0 = RECORD_HEADER_MAGIC_CODE;
+        this.magicCode0 = RECORD_HEADER_DATA_MAGIC_CODE;
         this.recordBodyLength1 = length;
         this.recordBodyOffset2 = offset + RECORD_HEADER_SIZE;
         this.recordBodyCRC3 = crc;
+    }
+
+    public RecordHeader(long offset, int length) {
+        this.magicCode0 = RECORD_HEADER_EMPTY_MAGIC_CODE;
+        this.recordBodyLength1 = length;
+        this.recordBodyOffset2 = offset + RECORD_HEADER_SIZE;
+        this.recordBodyCRC3 = 0;
     }
 
     public RecordHeader(ByteBuf byteBuf) {

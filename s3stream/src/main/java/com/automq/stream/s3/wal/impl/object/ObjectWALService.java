@@ -321,7 +321,7 @@ public class ObjectWALService implements WriteAheadLog {
             }
             recordHeaderBuf.release();
 
-            if (header.getMagicCode() != RecordHeader.RECORD_HEADER_MAGIC_CODE) {
+            if (header.getMagicCode() != RecordHeader.RECORD_HEADER_DATA_MAGIC_CODE) {
                 throw new IllegalStateException("Invalid magic code in record header.");
             }
 
