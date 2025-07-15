@@ -456,8 +456,8 @@ public class SlidingWindowService {
     private WroteBlockResult wroteBlockLocked(Block wroteBlock) {
         wroteBlock.markWritten();
 
+        assert writingBlocks.contains(wroteBlock);
         List<Block> writtenBlocks = removeWrittenBlocksLocked();
-        assert !writtenBlocks.isEmpty();
         long unflushedOffset = getFirstUnflushedOffsetLocked();
 
         return new WroteBlockResult(writtenBlocks, unflushedOffset);
