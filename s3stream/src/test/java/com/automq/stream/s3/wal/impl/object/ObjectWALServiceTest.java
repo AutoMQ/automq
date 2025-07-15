@@ -89,9 +89,11 @@ public class ObjectWALServiceTest {
         wal.start();
 
         List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 8; i++) {
             appendCfList.add(wal.append(TraceContext.DEFAULT, new StreamRecordBatch(233L, 0, 100L + i, 1, generateByteBuf(1))));
-            ((DefaultWriter) (wal.writer)).unsafeUpload(true);
+            if (i % 2 == 0) {
+                ((DefaultWriter) (wal.writer)).unsafeUpload(true);
+            }
         }
 
         wal.trim(appendCfList.get(1).get().recordOffset()).get();
@@ -104,11 +106,10 @@ public class ObjectWALServiceTest {
         List<RecoverResult> records = new ArrayList<>();
         wal.recover().forEachRemaining(records::add);
 
-        assertEquals(3, records.size());
-        assertEquals(102L, records.get(0).record().getBaseOffset());
-        assertEquals(103L, records.get(1).record().getBaseOffset());
-        assertEquals(-1L, records.get(2).record().getStreamId());
-
+        assertEquals(6, records.size());
+        for (int i = 0; i < records.size(); i++) {
+            assertEquals(102L + i, records.get(i).record().getBaseOffset());
+        }
     }
 
     public static Stream<Arguments> testRecoverIteratorGetContinuousFromTrimOffsetData() {

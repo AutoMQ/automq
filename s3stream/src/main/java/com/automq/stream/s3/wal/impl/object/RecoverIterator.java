@@ -51,15 +51,17 @@ public class RecoverIterator implements Iterator<RecoverResult> {
     private final ObjectStorage objectStorage;
     private final int readAheadObjectSize;
 
+    private final long trimOffset;
     private final List<WALObject> objectList;
     private final Queue<CompletableFuture<byte[]>> readAheadQueue;
 
+    private RecoverResult nextRecord = null;
     private int nextIndex = 0;
     private ByteBuf dataBuffer = Unpooled.EMPTY_BUFFER;
 
     public RecoverIterator(List<WALObject> objectList, ObjectStorage objectStorage,
         int readAheadObjectSize) {
-        long trimOffset = getTrimOffset(objectList, objectStorage);
+        this.trimOffset = getTrimOffset(objectList, objectStorage);
         this.objectList = getContinuousFromTrimOffset(objectList, trimOffset);
         this.objectStorage = objectStorage;
         this.readAheadObjectSize = readAheadObjectSize;
@@ -129,6 +131,26 @@ public class RecoverIterator implements Iterator<RecoverResult> {
 
     @Override
     public boolean hasNext() {
+        if (nextRecord != null) {
+            return true;
+        } else {
+            while (hasNext0()) {
+                RecoverResult record = next0();
+                DefaultRecordOffset recordOffset = (DefaultRecordOffset) record.recordOffset();
+                //noinspection DataFlowIssue
+                if ((recordOffset.offset() <= trimOffset)
+                    || (record.record().getStreamId() == -1L && record.record().getEpoch() == -1L)) {
+                    record.record().release();
+                    continue;
+                }
+                nextRecord = record;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    private boolean hasNext0() {
         return dataBuffer.isReadable() || !readAheadQueue.isEmpty() || nextIndex < objectList.size();
     }
 
@@ -160,11 +182,20 @@ public class RecoverIterator implements Iterator<RecoverResult> {
 
     @Override
     public RecoverResult next() {
-        // If there is no more data to read, return null.
-        if (!hasNext()) {
+        if (nextRecord != null) {
+            RecoverResult rst = nextRecord;
+            nextRecord = null;
+            return rst;
+        }
+        if (hasNext()) {
+            return nextRecord;
+        } else {
             return null;
         }
+    }
 
+    public RecoverResult next0() {
+        // If there is no more data to read, return null.
         if (!dataBuffer.isReadable()) {
             loadNextBuffer();
         }

@@ -567,8 +567,9 @@ class BrokerServer(
 
 
       // AutoMQ inject start
-      ElasticLogManager.init(config, clusterId, this)
+      // S3Storage depends on LinkRecordDecoder injected by ZeroZoneTrafficInterceptor
       trafficInterceptor = newTrafficInterceptor()
+      ElasticLogManager.init(config, clusterId, this)
       dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
       replicaManager.setTrafficInterceptor(trafficInterceptor)
 

@@ -19,6 +19,15 @@ public class DefaultRecordOffset implements RecordOffset {
         return new DefaultRecordOffset(recordOffset, recordSize);
     }
 
+    public static DefaultRecordOffset of(ByteBuf buf) {
+        buf = buf.slice();
+        byte magic = buf.readByte();
+        if (magic != MAGIC) {
+            throw new IllegalArgumentException("Invalid magic: " + magic);
+        }
+        return new DefaultRecordOffset(buf.readLong(), buf.readInt());
+    }
+
     public long offset() {
         return offset;
     }
@@ -33,7 +42,7 @@ public class DefaultRecordOffset implements RecordOffset {
         buffer.writeByte(MAGIC);
         buffer.writeLong(this.offset);
         buffer.writeInt(this.size);
-        return null;
+        return buffer;
     }
 
     @Override

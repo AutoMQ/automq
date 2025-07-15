@@ -114,8 +114,8 @@ public class RouterInV2 {
     ) {
         ZoneRouterProduceRequest.Flag flag = new ZoneRouterProduceRequest.Flag(zoneRouterProduceRequest.flag());
         ProduceRequestData data = zoneRouterProduceRequest.data();
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("[ROUTER_IN],[APPEND],data={}", data);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ROUTER_IN],[APPEND],data={}", data);
         }
 
         ZeroZoneThreadLocalContext.writeContext().channelOffset =  channelOffset;
@@ -131,6 +131,9 @@ public class RouterInV2 {
                 .transactionId(data.transactionalId())
                 .entriesPerPartition(realEntriesPerPartition)
                 .responseCallback(rst -> {
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("[ROUTER_IN],[RESPONSE],response={}", rst);
+                    }
                     @SuppressWarnings("deprecation")
                     ProduceResponse produceResponse = new ProduceResponse(rst, 0, Collections.emptyList());
                     AutomqZoneRouterResponseData.Response response = new AutomqZoneRouterResponseData.Response()

@@ -53,6 +53,8 @@ public class ObjectWALService implements WriteAheadLog {
         this.config = config;
         if (config.openMode() == OpenMode.READ_WRITE) {
             ReservationService reservationService = new ObjectReservationService(config.clusterId(), objectStorage, objectStorage.bucketId());
+            // TODO: duplicated to BootstrapWAL. Disable acquire for RouterChannel
+            reservationService.acquire(config.nodeId(), config.epoch(), false).join();
             this.writer = new DefaultWriter(time, objectStorage, reservationService, config);
         } else {
             this.writer = new NoopWriter();

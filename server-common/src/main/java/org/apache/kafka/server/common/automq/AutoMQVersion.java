@@ -145,6 +145,7 @@ public enum AutoMQVersion {
             case 2:
                 return Version.V0;
             case 3:
+            case 4:
                 return Version.V1;
             default:
                 throw new IllegalArgumentException("Unknown AutoMQVersion level: " + automqVersion);
