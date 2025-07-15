@@ -296,6 +296,7 @@ public class SlidingWindowService {
 
             startOffset = startOffset + remainingSize;
             assert startOffset == nextBlockStartOffset(paddingBlock);
+            assert startOffset % recordSectionCapacity == 0;
         }
 
         Block newBlock = createNewBlock(minSize, startOffset, trimOffset, recordSectionCapacity);
