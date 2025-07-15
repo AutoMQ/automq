@@ -102,7 +102,7 @@ public class ObjectWALService implements WriteAheadLog {
 
             long expectedWriteOffset = accumulator.append(recordSize, start -> {
                 CompositeByteBuf recordByteBuf = ByteBufAlloc.compositeByteBuffer();
-                Record record = WALUtil.generateRecord(data, header, 0, start, true);
+                Record record = WALUtil.generateRecord(data, header, 0, start);
                 recordByteBuf.addComponents(true, record.header(), record.body());
                 return recordByteBuf;
             }, appendResultFuture);
@@ -313,7 +313,7 @@ public class ObjectWALService implements WriteAheadLog {
             tryReadAhead();
 
             ByteBuf recordHeaderBuf = dataBuffer.readBytes(RECORD_HEADER_SIZE);
-            RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
+            RecordHeader header = new RecordHeader(recordHeaderBuf);
 
             if (header.getRecordHeaderCRC() != WALUtil.crc32(recordHeaderBuf, RECORD_HEADER_WITHOUT_CRC_SIZE)) {
                 recordHeaderBuf.release();

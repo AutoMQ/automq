@@ -30,9 +30,6 @@ import io.netty.buffer.ByteBuf;
 import jnr.posix.POSIX;
 import jnr.posix.POSIXFactory;
 
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
-
 public class WALUtil {
     public static final String BLOCK_SIZE_PROPERTY = "automq.ebswal.blocksize";
     public static final int BLOCK_SIZE = Integer.parseInt(System.getProperty(
@@ -43,17 +40,8 @@ public class WALUtil {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALUtil.class);
 
     public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start) {
-        return generateRecord(body, emptyHeader, crc, start, true);
-    }
-
-    public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start, boolean calculateCRC) {
         crc = 0 == crc ? WALUtil.crc32(body) : crc;
-        ByteBuf header = new RecordHeader()
-            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-            .setRecordBodyLength(body.readableBytes())
-            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
-            .setRecordBodyCRC(crc)
-            .marshal(emptyHeader, calculateCRC);
+        ByteBuf header = new RecordHeader(start, body.readableBytes(), crc).marshal(emptyHeader);
         return new Record(header, body);
     }
 

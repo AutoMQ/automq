@@ -224,7 +224,7 @@ public class BlockWALService implements WriteAheadLog {
             );
         }
 
-        RecordHeader readRecordHeader = RecordHeader.unmarshal(recordHeader);
+        RecordHeader readRecordHeader = new RecordHeader(recordHeader);
         if (readRecordHeader.getMagicCode() != RECORD_HEADER_MAGIC_CODE) {
             throw new ReadRecordException(
                 WALUtil.alignNextBlock(recoverStartOffset),
