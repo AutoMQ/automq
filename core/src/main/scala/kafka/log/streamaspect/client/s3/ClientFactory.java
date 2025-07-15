@@ -38,10 +38,10 @@ public class ClientFactory {
         config.version(() -> context.brokerServer.metadataCache().autoMQVersion().s3streamVersion());
         boolean zeroZoneChannelsEnabled = context.config.automq().zoneRouterChannels().isPresent();
         if (zeroZoneChannelsEnabled && config.walUploadIntervalMs() == -1) {
-            config.walUploadIntervalMs(1000);
+//            config.walUploadIntervalMs(1000);
         }
         if (zeroZoneChannelsEnabled) {
-            config.streamSetObjectCompactionInterval(1);
+//            config.streamSetObjectCompactionInterval(1);
             config.snapshotReadEnable(true);
         }
 

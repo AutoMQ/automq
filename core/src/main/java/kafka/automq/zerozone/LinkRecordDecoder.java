@@ -23,18 +23,21 @@ public class LinkRecordDecoder implements Function<StreamRecordBatch, Completabl
         ChannelOffset channelOffset = linkRecord.channelOffset();
         RouterChannel routerChannel = channelProvider.readOnlyChannel(channelOffset.channelOwnerNodeId());
         return routerChannel.get(channelOffset.byteBuf()).thenApply(buf -> {
-            ZoneRouterProduceRequest req = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
-            MemoryRecords records = (MemoryRecords) (req.data().topicData().iterator().next()
-                .partitionData().iterator().next()
-                .records());
-            MutableRecordBatch recordBatch = records.batches().iterator().next();
-            recordBatch.setLastOffset(linkRecord.lastOffset());
-            recordBatch.setMaxTimestamp(linkRecord.timestampType(), linkRecord.maxTimestamp());
-            recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
-            StreamRecordBatch dest = new StreamRecordBatch(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
-                -src.getCount(), Unpooled.wrappedBuffer(records.buffer()));
-            src.release();
-            return dest;
+            try {
+                ZoneRouterProduceRequest req = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
+                MemoryRecords records = (MemoryRecords) (req.data().topicData().iterator().next()
+                    .partitionData().iterator().next()
+                    .records());
+                MutableRecordBatch recordBatch = records.batches().iterator().next();
+                recordBatch.setLastOffset(linkRecord.lastOffset());
+                recordBatch.setMaxTimestamp(linkRecord.timestampType(), linkRecord.maxTimestamp());
+                recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
+                return new StreamRecordBatch(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
+                    -src.getCount(), Unpooled.wrappedBuffer(records.buffer()));
+            } finally {
+                src.release();
+                buf.release();
+            }
         });
     }
 }

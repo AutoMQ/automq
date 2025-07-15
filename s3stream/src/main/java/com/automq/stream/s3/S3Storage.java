@@ -246,7 +246,8 @@ public class S3Storage implements Storage {
         }
 
         releaseDiscontinuousRecords(streamDiscontinuousRecords, logger);
-        return filterOutInvalidStreams(cacheBlock, openingStreamEndOffsets);
+        RecoveryBlockResult rst = filterOutInvalidStreams(cacheBlock, openingStreamEndOffsets);
+        return decodeLinkRecord(rst);
     }
 
     /**
@@ -375,7 +376,7 @@ public class S3Storage implements Storage {
         records.forEach(StreamRecordBatch::release);
     }
 
-    private static RecoveryBlockResult restoreLinkRecord(RecoveryBlockResult recoverBlockRst) {
+    private static RecoveryBlockResult decodeLinkRecord(RecoveryBlockResult recoverBlockRst) {
         if (recoverBlockRst.exception != null) {
             return recoverBlockRst;
         }
@@ -556,7 +557,6 @@ public class S3Storage implements Storage {
                     // TODO: add StreamRecordBatch attr to represent the link record.
                     StreamRecordBatch linkStreamRecord = new StreamRecordBatch(record.getStreamId(), record.getEpoch(),
                         record.getBaseOffset(), -record.getCount(), context.linkRecord());
-                    linkStreamRecord.retain();
                     appendCf = deltaWAL.append(new TraceContext(context), linkStreamRecord);
                 }
 

@@ -75,7 +75,7 @@ public class Reader {
     }
 
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
-        DefaultRecordOffset offset = (DefaultRecordOffset) recordOffset;
+        DefaultRecordOffset offset = recordOffset instanceof DefaultRecordOffset ? (DefaultRecordOffset) recordOffset : DefaultRecordOffset.of(recordOffset.buffer());
         ReadTask readTask = new ReadTask(offset.offset(), offset.size());
         tasks.add(readTask);
         eventLoop.submit(this::doRun);
@@ -108,6 +108,7 @@ public class Reader {
                 try {
                     if (ex == null) {
                         readTask.cf.complete(ObjectUtils.duplicatedDecodeRecordBuf(buf, ALLOC));
+                        buf.release();
                         return;
                     }
                     ex = FutureUtil.cause(ex);

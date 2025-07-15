@@ -119,8 +119,10 @@ public class ObjectUtils {
 
     public static StreamRecordBatch duplicatedDecodeRecordBuf(ByteBuf dataBuffer, ByteBufSeqAlloc alloc) {
         dataBuffer = dataBuffer.slice();
+        // TODO: thread local to avoid alloc
         ByteBuf recordHeaderBuf = dataBuffer.readBytes(RECORD_HEADER_SIZE);
         RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
+        recordHeaderBuf.release();
         if (header.getMagicCode() != RecordHeader.RECORD_HEADER_MAGIC_CODE) {
             throw new IllegalStateException("Invalid magic code in record header.");
         }

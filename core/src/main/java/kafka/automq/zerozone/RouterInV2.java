@@ -91,8 +91,12 @@ public class RouterInV2 {
                 if (req.unpackLinkCf.isDone()) {
                     EventLoop eventLoop = appendEventLoops[Math.abs(req.channelOffset.orderHint() % appendEventLoops.length)];
                     req.unpackLinkCf.thenComposeAsync(buf -> {
-                        ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
-                        return append(req.channelOffset, zoneRouterProduceRequest);
+                        try {
+                            ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
+                            return append(req.channelOffset, zoneRouterProduceRequest);
+                        } finally {
+                            buf.release();
+                        }
                     }, eventLoop).whenComplete((resp, ex) -> {
                         if (ex != null) {
                             req.responseCf.completeExceptionally(ex);
