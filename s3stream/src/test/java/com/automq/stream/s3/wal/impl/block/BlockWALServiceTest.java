@@ -349,7 +349,7 @@ class BlockWALServiceTest {
         return appended;
     }
 
-    public static Stream<Arguments> testRecoverFromDisasterData() {
+    public static Stream<Arguments> testRecoverFromDisasterV0Data() {
         return Stream.of(
             new RecoverFromDisasterParam(
                 WALUtil.BLOCK_SIZE + 1,
@@ -915,16 +915,17 @@ class BlockWALServiceTest {
         writeAndFlush(walChannel, record, position);
     }
 
-    private void writeWALHeader(WALChannel walChannel, long trimOffset, long maxLength) throws IOException {
+    private void writeWALHeader(WALChannel walChannel, int version, long trimOffset, long maxLength) throws IOException {
         ByteBuf header = new BlockWALHeader(walChannel.capacity(), maxLength)
+            .updateVersion(version)
             .updateTrimOffset(trimOffset)
             .marshal();
         writeAndFlush(walChannel, header, 0);
     }
 
     @ParameterizedTest(name = "Test {index} {0}")
-    @MethodSource("testRecoverFromDisasterData")
-    public void testRecoverFromDisaster(
+    @MethodSource("testRecoverFromDisasterV0Data")
+    public void testRecoverFromDisasterV0(
         String name,
         int recordSize,
         long capacity,
@@ -933,13 +934,13 @@ class BlockWALServiceTest {
         List<Long> writeOffsets,
         List<Long> recoveredOffsets
     ) throws IOException {
-        testRecoverFromDisaster0(name, recordSize, capacity, trimOffset, maxLength, writeOffsets, recoveredOffsets, false);
+        testRecoverFromDisasterV00(name, recordSize, capacity, trimOffset, maxLength, writeOffsets, recoveredOffsets, false);
     }
 
     @ParameterizedTest(name = "Test {index} {0}")
-    @MethodSource("testRecoverFromDisasterData")
+    @MethodSource("testRecoverFromDisasterV0Data")
     @EnabledOnOs({OS.LINUX})
-    public void testRecoverFromDisasterDirectIO(
+    public void testRecoverFromDisasterV0DirectIO(
         String name,
         int recordSize,
         long capacity,
@@ -948,10 +949,10 @@ class BlockWALServiceTest {
         List<Long> writeOffsets,
         List<Long> recoveredOffsets
     ) throws IOException {
-        testRecoverFromDisaster0(name, recordSize, capacity, trimOffset, maxLength, writeOffsets, recoveredOffsets, true);
+        testRecoverFromDisasterV00(name, recordSize, capacity, trimOffset, maxLength, writeOffsets, recoveredOffsets, true);
     }
 
-    private void testRecoverFromDisaster0(
+    private void testRecoverFromDisasterV00(
         String name,
         int recordSize,
         long capacity,
@@ -982,7 +983,7 @@ class BlockWALServiceTest {
 
         // Simulate disaster
         walChannel.open();
-        writeWALHeader(walChannel, trimOffset, maxLength);
+        writeWALHeader(walChannel, 0, trimOffset, maxLength);
         for (long writeOffset : writeOffsets) {
             write(walChannel, writeOffset, recordSize);
         }

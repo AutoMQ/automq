@@ -144,6 +144,20 @@ public class BlockWALHeader {
         return trimOffset2.get();
     }
 
+    /**
+     * Only used for testing purpose.
+     */
+    BlockWALHeader updateVersion(int version) {
+        if (version == 0) {
+            magicCode0 = WAL_HEADER_MAGIC_CODE_V0;
+        } else if (version == 1) {
+            magicCode0 = WAL_HEADER_MAGIC_CODE_V1;
+        } else {
+            throw new IllegalArgumentException("Unsupported version: " + version);
+        }
+        return this;
+    }
+
     // Update the trim offset if the given trim offset is larger than the current one.
     public BlockWALHeader updateTrimOffset(long trimOffset) {
         trimOffset2.accumulateAndGet(trimOffset, Math::max);
