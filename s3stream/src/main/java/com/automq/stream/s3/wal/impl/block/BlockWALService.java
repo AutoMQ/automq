@@ -1005,7 +1005,7 @@ public class BlockWALService implements WriteAheadLog {
                     return true;
                 } catch (ReadRecordException e) {
                     long newOffset = e.getJumpNextRecoverOffset();
-                    if (WALUtil.isAligned(nextRecoverOffset)) {
+                    if (WALUtil.isAligned(nextRecoverOffset) && !(e instanceof ReadPaddingRecordException)) {
                         LOGGER.info("meet the first invalid offset during recovery. offset: {}, detail: '{}'", nextRecoverOffset, e.getMessage());
                         return false;
                     }
