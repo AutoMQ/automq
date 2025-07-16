@@ -12,6 +12,7 @@
 package com.automq.stream.s3.wal.impl.block;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.common.ShutdownType;
 import com.automq.stream.s3.wal.exception.UnmarshalException;
 import com.automq.stream.s3.wal.util.WALUtil;
@@ -49,7 +50,16 @@ import io.netty.buffer.ByteBuf;
  * WAL header
  */
 public class BlockWALHeader {
-    public static final int WAL_HEADER_MAGIC_CODE = 0x12345678;
+    public static final int WAL_HEADER_MAGIC_CODE_V0 = 0x12345678;
+    /**
+     * Magic code for Block WAL version 1. In this version:
+     * <ul>
+     *     <li>Callbacks are sequentially executed based on record offsets, independent of write completion timing.</li>
+     *     <li>When there is insufficient space at the end of the block device, it will be padded with empty records {@link RecordHeader#RECORD_HEADER_EMPTY_MAGIC_CODE}.</li>
+     *     <li>When recovering data, only continuous records are recovered while all fragmented portions are discarded.</li>
+     * </ul>
+     */
+    public static final int WAL_HEADER_MAGIC_CODE_V1 = 0x01234567;
     public static final int WAL_HEADER_SIZE = 4 // magic code
         + 8 // capacity
         + 8 // trim offset
@@ -63,7 +73,7 @@ public class BlockWALHeader {
     private final AtomicLong trimOffset2 = new AtomicLong(-1);
     private final AtomicLong flushedTrimOffset = new AtomicLong(0);
     private final AtomicLong slidingWindowMaxLength4 = new AtomicLong(0);
-    private int magicCode0 = WAL_HEADER_MAGIC_CODE;
+    private int magicCode0 = WAL_HEADER_MAGIC_CODE_V0;
     private long capacity1;
     private long lastWriteTimestamp3 = System.nanoTime();
     private ShutdownType shutdownType5 = ShutdownType.UNGRACEFULLY;
@@ -92,8 +102,8 @@ public class BlockWALHeader {
         blockWalHeader.crc8 = buf.readInt();
         buf.resetReaderIndex();
 
-        if (blockWalHeader.magicCode0 != WAL_HEADER_MAGIC_CODE) {
-            throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", blockWalHeader.magicCode0, WAL_HEADER_MAGIC_CODE));
+        if (blockWalHeader.magicCode0 != WAL_HEADER_MAGIC_CODE_V0) {
+            throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", blockWalHeader.magicCode0, WAL_HEADER_MAGIC_CODE_V0));
         }
 
         int crc = WALUtil.crc32(buf, WAL_HEADER_WITHOUT_CRC_SIZE);
