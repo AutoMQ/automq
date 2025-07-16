@@ -17,6 +17,7 @@ import com.automq.stream.s3.wal.common.ShutdownType;
 import com.automq.stream.s3.wal.exception.UnmarshalException;
 import com.automq.stream.s3.wal.util.WALUtil;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import io.netty.buffer.ByteBuf;
@@ -73,7 +74,7 @@ public class BlockWALHeader {
     private final AtomicLong trimOffset2 = new AtomicLong(-1);
     private final AtomicLong flushedTrimOffset = new AtomicLong(0);
     private final AtomicLong slidingWindowMaxLength4 = new AtomicLong(0);
-    private int magicCode0 = WAL_HEADER_MAGIC_CODE_V0;
+    private int magicCode0 = WAL_HEADER_MAGIC_CODE_V1;
     private long capacity1;
     private long lastWriteTimestamp3 = System.nanoTime();
     private ShutdownType shutdownType5 = ShutdownType.UNGRACEFULLY;
@@ -81,13 +82,16 @@ public class BlockWALHeader {
     private long epoch7;
     private int crc8;
 
+    public BlockWALHeader() {
+    }
+
     public BlockWALHeader(long capacity, long windowMaxLength) {
         this.capacity1 = capacity;
         this.slidingWindowMaxLength4.set(windowMaxLength);
     }
 
     public static BlockWALHeader unmarshal(ByteBuf buf) throws UnmarshalException {
-        BlockWALHeader blockWalHeader = new BlockWALHeader(0, 0);
+        BlockWALHeader blockWalHeader = new BlockWALHeader();
         buf.markReaderIndex();
         blockWalHeader.magicCode0 = buf.readInt();
         blockWalHeader.capacity1 = buf.readLong();
@@ -102,8 +106,9 @@ public class BlockWALHeader {
         blockWalHeader.crc8 = buf.readInt();
         buf.resetReaderIndex();
 
-        if (blockWalHeader.magicCode0 != WAL_HEADER_MAGIC_CODE_V0) {
-            throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: [%d]", blockWalHeader.magicCode0, WAL_HEADER_MAGIC_CODE_V0));
+        List<Integer> validMagicCodes = List.of(WAL_HEADER_MAGIC_CODE_V0, WAL_HEADER_MAGIC_CODE_V1);
+        if (!validMagicCodes.contains(blockWalHeader.magicCode0)) {
+            throw new UnmarshalException(String.format("WALHeader MagicCode not match, Recovered: [%d] expect: %s", blockWalHeader.magicCode0, validMagicCodes));
         }
 
         int crc = WALUtil.crc32(buf, WAL_HEADER_WITHOUT_CRC_SIZE);
@@ -112,6 +117,23 @@ public class BlockWALHeader {
         }
 
         return blockWalHeader;
+    }
+
+    public int version() {
+        if (magicCode0 == WAL_HEADER_MAGIC_CODE_V0) {
+            return 0;
+        } else if (magicCode0 == WAL_HEADER_MAGIC_CODE_V1) {
+            return 1;
+        } else {
+            throw new IllegalStateException("Unknown WAL header magic code: " + magicCode0);
+        }
+    }
+
+    public void upgradeToV1() {
+        if (version() > 1) {
+            throw new IllegalStateException("Cannot upgrade WAL header to version 1, current version: " + version());
+        }
+        magicCode0 = WAL_HEADER_MAGIC_CODE_V1;
     }
 
     public long getCapacity() {

@@ -488,6 +488,10 @@ public class BlockWALService implements WriteAheadLog {
         if (recoverStartOffset < 0) {
             recoverStartOffset = 0;
         }
+
+        if (walHeader.version() >= 1) {
+            return new RecoverIteratorV1(recoverStartOffset, trimmedOffset);
+        }
         long windowLength = walHeader.getSlidingWindowMaxLength();
         return new RecoverIteratorV0(recoverStartOffset, windowLength, trimmedOffset);
     }
@@ -503,6 +507,7 @@ public class BlockWALService implements WriteAheadLog {
             slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), newStartOffset);
         }
         LOGGER.info("reset sliding window to offset: {}", newStartOffset);
+        walHeader.upgradeToV1();
         CompletableFuture<Void> cf = trim(newStartOffset - 1, true)
             .thenRun(() -> resetFinished.set(true));
 
