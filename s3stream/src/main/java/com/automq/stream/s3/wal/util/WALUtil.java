@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.wal.util;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.utils.CommandResult;
@@ -38,7 +39,6 @@ import io.netty.buffer.ByteBuf;
 import jnr.posix.POSIX;
 import jnr.posix.POSIXFactory;
 
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 
 public class WALUtil {
@@ -51,17 +51,19 @@ public class WALUtil {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALUtil.class);
 
     public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start) {
-        return generateRecord(body, emptyHeader, crc, start, true);
+        crc = 0 == crc ? WALUtil.crc32(body) : crc;
+        ByteBuf header = new RecordHeader(start, body.readableBytes(), crc).marshal(emptyHeader);
+        return new Record(header, body);
     }
 
-    public static Record generateRecord(ByteBuf body, ByteBuf emptyHeader, int crc, long start, boolean calculateCRC) {
-        crc = 0 == crc ? WALUtil.crc32(body) : crc;
-        ByteBuf header = new RecordHeader()
-            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-            .setRecordBodyLength(body.readableBytes())
-            .setRecordBodyOffset(start + RECORD_HEADER_SIZE)
-            .setRecordBodyCRC(crc)
-            .marshal(emptyHeader, calculateCRC);
+    public static Record generatePaddingRecord(ByteBuf emptyHeader, long start, int length) {
+        int bodyLength = length - RECORD_HEADER_SIZE;
+
+        ByteBuf header = new RecordHeader(start, bodyLength).marshal(emptyHeader);
+
+        ByteBuf body = ByteBufAlloc.byteBuffer(bodyLength);
+        body.writeZero(bodyLength);
+
         return new Record(header, body);
     }
 

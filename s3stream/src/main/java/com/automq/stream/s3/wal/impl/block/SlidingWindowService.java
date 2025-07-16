@@ -30,6 +30,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 
+import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -294,37 +295,74 @@ public class SlidingWindowService {
         assert initialized();
         long startOffset = nextBlockStartOffset(previousBlock);
 
-        // If the end of the physical device is insufficient for this block, jump to the start of the physical device
-        if ((recordSectionCapacity - startOffset % recordSectionCapacity) < minSize) {
-            startOffset = startOffset + recordSectionCapacity - startOffset % recordSectionCapacity;
+        int remainingSize = (int) remainingSizeOfDevice(startOffset, recordSectionCapacity);
+        if (remainingSize < minSize) {
+            // If the end of the physical device is insufficient for this block, create a padding block and jump to the start of the physical device
+            Block paddingBlock = createPaddingBlock(remainingSize, startOffset, trimOffset, recordSectionCapacity);
+            updateCurrentBlockLocked(previousBlock, paddingBlock);
+            previousBlock = paddingBlock;
+
+            startOffset = startOffset + remainingSize;
+            assert startOffset == nextBlockStartOffset(paddingBlock);
+            assert startOffset % recordSectionCapacity == 0;
         }
 
-        // Not enough space for this block
-        if (startOffset + minSize - trimOffset > recordSectionCapacity) {
+        Block newBlock = createNewBlock(minSize, startOffset, trimOffset, recordSectionCapacity);
+        updateCurrentBlockLocked(previousBlock, newBlock);
+        return newBlock;
+    }
+
+    private Block createPaddingBlock(int remainingSize, long startOffset, long trimOffset, long recordSectionCapacity) throws OverCapacityException {
+        Block paddingBlock = createNewBlock(remainingSize, startOffset, trimOffset, recordSectionCapacity);
+        paddingBlock.addRecord(
+            remainingSize,
+            (offset, header) -> WALUtil.generatePaddingRecord(header, offset, remainingSize),
+            new CompletableFuture<>()
+        );
+        return paddingBlock;
+    }
+
+    private void updateCurrentBlockLocked(Block previousBlock, Block newBlock) {
+        assert previousBlock == currentBlock;
+        if (previousBlock.isEmpty()) {
+            // The previous block is empty, so it can be released directly
+            previousBlock.release();
+        } else {
+            // There are some records to be written in the previous block
+            pendingBlocks.add(previousBlock);
+        }
+        setCurrentBlockLocked(newBlock);
+    }
+
+    private Block createNewBlock(long minSize, long startOffset, long trimOffset, long recordSectionCapacity) throws OverCapacityException {
+        long remainingSizeOfDevice = remainingSizeOfDevice(startOffset, recordSectionCapacity);
+        long remainingSizeOfRingBuffer = remainingSizeOfRingBuffer(startOffset, trimOffset, recordSectionCapacity);
+
+        if (remainingSizeOfRingBuffer < minSize) {
             LOGGER.warn("failed to allocate write offset as the ring buffer is full: startOffset: {}, minSize: {}, trimOffset: {}, recordSectionCapacity: {}",
                 startOffset, minSize, trimOffset, recordSectionCapacity);
             throw new OverCapacityException(String.format("failed to allocate write offset: ring buffer is full: startOffset: %d, minSize: %d, trimOffset: %d, recordSectionCapacity: %d",
                 startOffset, minSize, trimOffset, recordSectionCapacity));
         }
 
-        long maxSize = upperLimit;
-        // The size of the block should not be larger than writable size of the ring buffer
-        // Let capacity=100, start=148, trim=49, then maxSize=100-148+49=1
-        maxSize = Math.min(recordSectionCapacity - startOffset + trimOffset, maxSize);
-        // The size of the block should not be larger than the end of the physical device
-        // Let capacity=100, start=198, trim=198, then maxSize=100-198%100=2
-        maxSize = Math.min(recordSectionCapacity - startOffset % recordSectionCapacity, maxSize);
+        long maxSize = NumberUtils.min(upperLimit, remainingSizeOfDevice, remainingSizeOfRingBuffer);
+        return new BlockImpl(startOffset, maxSize, blockSoftLimit);
+    }
 
-        Block newBlock = new BlockImpl(startOffset, maxSize, blockSoftLimit);
-        if (!previousBlock.isEmpty()) {
-            // There are some records to be written in the previous block
-            pendingBlocks.add(previousBlock);
-        } else {
-            // The previous block is empty, so it can be released directly
-            previousBlock.release();
-        }
-        setCurrentBlockLocked(newBlock);
-        return newBlock;
+    /**
+     * The remaining size of the physical device.
+     * Let capacity=100, start=198, trim=197, then remainingSize=100-198%100=2
+     */
+    private static long remainingSizeOfDevice(long startOffset, long recordSectionCapacity) {
+        return recordSectionCapacity - startOffset % recordSectionCapacity;
+    }
+
+    /**
+     * The remaining size of the ring buffer.
+     * Let capacity=100, start=148, trim=49, then remainingSize=100-148+49=1
+     */
+    private static long remainingSizeOfRingBuffer(long startOffset, long trimOffset, long recordSectionCapacity) {
+        return recordSectionCapacity - startOffset + trimOffset;
     }
 
     /**
@@ -426,8 +464,8 @@ public class SlidingWindowService {
     private WroteBlockResult wroteBlockLocked(Block wroteBlock) {
         wroteBlock.markWritten();
 
+        assert writingBlocks.contains(wroteBlock);
         List<Block> writtenBlocks = removeWrittenBlocksLocked();
-        assert !writtenBlocks.isEmpty();
         long unflushedOffset = getFirstUnflushedOffsetLocked();
 
         return new WroteBlockResult(writtenBlocks, unflushedOffset);
@@ -486,7 +524,7 @@ public class SlidingWindowService {
         if (newWindowEndOffset > windowStartOffset + windowMaxLength) {
             // endOffset - startOffset <= block.maxSize <= upperLimit in {@link #sealAndNewBlockLocked}
             assert newWindowEndOffset - windowStartOffset <= upperLimit;
-            long newWindowMaxLength = Math.min(newWindowEndOffset - windowStartOffset + scaleUnit, upperLimit);
+            long newWindowMaxLength = Math.min(remainingSizeOfRingBuffer(windowStartOffset, scaleUnit, newWindowEndOffset), upperLimit);
             windowCoreData.scaleOutWindow(walHeaderFlusher, newWindowMaxLength);
         }
     }

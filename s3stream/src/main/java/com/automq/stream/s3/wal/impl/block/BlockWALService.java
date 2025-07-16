@@ -69,7 +69,8 @@ import io.netty.buffer.ByteBuf;
 import static com.automq.stream.s3.Constants.CAPACITY_NOT_SET;
 import static com.automq.stream.s3.Constants.NOOP_EPOCH;
 import static com.automq.stream.s3.Constants.NOOP_NODE_ID;
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_DATA_MAGIC_CODE;
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_EMPTY_MAGIC_CODE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
@@ -235,11 +236,17 @@ public class BlockWALService implements WriteAheadLog {
             );
         }
 
-        RecordHeader readRecordHeader = RecordHeader.unmarshal(recordHeader);
-        if (readRecordHeader.getMagicCode() != RECORD_HEADER_MAGIC_CODE) {
+        RecordHeader readRecordHeader = new RecordHeader(recordHeader);
+        if (readRecordHeader.getMagicCode() == RECORD_HEADER_EMPTY_MAGIC_CODE) {
+            throw new ReadPaddingRecordException(
+                recoverStartOffset + RECORD_HEADER_SIZE + readRecordHeader.getRecordBodyLength(),
+                String.format("found empty record: recoverStartOffset: %d, recordBodyLength: %d", recoverStartOffset, readRecordHeader.getRecordBodyLength())
+            );
+        }
+        if (readRecordHeader.getMagicCode() != RECORD_HEADER_DATA_MAGIC_CODE) {
             throw new ReadRecordException(
                 WALUtil.alignNextBlock(recoverStartOffset),
-                String.format("magic code mismatch: expected %d, actual %d, recoverStartOffset: %d", RECORD_HEADER_MAGIC_CODE, readRecordHeader.getMagicCode(), recoverStartOffset)
+                String.format("magic code mismatch: expected %d, actual %d, recoverStartOffset: %d", RECORD_HEADER_DATA_MAGIC_CODE, readRecordHeader.getMagicCode(), recoverStartOffset)
             );
         }
 
@@ -810,6 +817,12 @@ public class BlockWALService implements WriteAheadLog {
 
         public long getJumpNextRecoverOffset() {
             return jumpNextRecoverOffset;
+        }
+    }
+
+    static class ReadPaddingRecordException extends ReadRecordException {
+        public ReadPaddingRecordException(long offset, String message) {
+            super(offset, message);
         }
     }
 
