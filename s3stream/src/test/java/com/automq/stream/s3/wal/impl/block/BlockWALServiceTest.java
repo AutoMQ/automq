@@ -55,7 +55,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 
-import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_MAGIC_CODE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.impl.block.BlockWALService.WAL_HEADER_TOTAL_CAPACITY;
 import static com.automq.stream.s3.wal.util.WALChannelTest.TEST_BLOCK_DEVICE_KEY;
@@ -901,12 +900,8 @@ class BlockWALServiceTest {
     }
 
     private ByteBuf recordHeader(ByteBuf body, long offset) {
-        return new RecordHeader()
-            .setMagicCode(RECORD_HEADER_MAGIC_CODE)
-            .setRecordBodyLength(body.readableBytes())
-            .setRecordBodyOffset(offset + RECORD_HEADER_SIZE)
-            .setRecordBodyCRC(WALUtil.crc32(body))
-            .marshal(ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE), true);
+        return new RecordHeader(offset, body.readableBytes(), WALUtil.crc32(body))
+            .marshal(ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE));
     }
 
     private void write(WALChannel walChannel, long logicOffset, int recordSize) throws IOException {
