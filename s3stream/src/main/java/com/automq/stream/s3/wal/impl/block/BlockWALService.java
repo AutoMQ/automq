@@ -565,6 +565,13 @@ public class BlockWALService implements WriteAheadLog {
         return () -> flushWALHeader(ShutdownType.UNGRACEFULLY);
     }
 
+    /**
+     * Only used for testing purpose.
+     */
+    BlockWALHeader header() {
+        return walHeader;
+    }
+
     public static class BlockWALServiceBuilder {
         private final String blockDevicePath;
         private long blockDeviceCapacityWant = CAPACITY_NOT_SET;

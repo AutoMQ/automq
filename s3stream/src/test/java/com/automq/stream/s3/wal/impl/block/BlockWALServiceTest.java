@@ -1443,4 +1443,36 @@ class BlockWALServiceTest {
             wal.shutdownGracefully();
         }
     }
+
+    @Test
+    public void testUpgradeFromV0ToV1() throws IOException {
+        String path = TestUtils.tempFilePath();
+        WALChannel walChannel = WALChannel.builder(path)
+            .capacity(WAL_HEADER_TOTAL_CAPACITY + WALUtil.BLOCK_SIZE * 100L)
+            .direct(false)
+            .build();
+
+        walChannel.open();
+        writeWALHeader(walChannel, 0, 0, 0);
+        walChannel.close();
+
+        final BlockWALService wal = (BlockWALService) BlockWALService.builder(path, walChannel.capacity())
+            .direct(false)
+            .build()
+            .start();
+
+        try {
+            assertEquals(0, wal.header().version());
+
+            for (Iterator<RecoverResult> it = recover(wal); it.hasNext(); ) {
+                it.next().record().release();
+            }
+            assertEquals(0, wal.header().version());
+
+            wal.reset().join();
+            assertEquals(1, wal.header().version());
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
 }
