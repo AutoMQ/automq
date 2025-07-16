@@ -70,7 +70,7 @@ public class RecoverTool extends BlockWALService implements AutoCloseable {
     private Iterator<RecoverResult> recover(BlockWALHeader header, Config config) {
         long recoverOffset = config.offset != null ? config.offset : header.getTrimOffset();
         long windowLength = config.windowLength != -1 ? config.windowLength : header.getSlidingWindowMaxLength();
-        RecoverIterator iterator = new RecoverIterator(recoverOffset, windowLength, -1);
+        RecoverIteratorV0 iterator = new RecoverIteratorV0(recoverOffset, windowLength, -1);
         if (config.strict) {
             iterator.strictMode();
         }

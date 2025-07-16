@@ -21,7 +21,7 @@ import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
 import com.automq.stream.s3.wal.exception.WALNotInitializedException;
-import com.automq.stream.s3.wal.impl.block.BlockWALService.RecoverIterator;
+import com.automq.stream.s3.wal.impl.block.BlockWALService.RecoverIteratorV0;
 import com.automq.stream.s3.wal.util.WALBlockDeviceChannel;
 import com.automq.stream.s3.wal.util.WALChannel;
 import com.automq.stream.s3.wal.util.WALUtil;
@@ -627,8 +627,8 @@ class BlockWALServiceTest {
     private static Iterator<RecoverResult> recover(WriteAheadLog wal) {
         Iterator<RecoverResult> iterator = wal.recover();
         assertNotNull(iterator);
-        if (iterator instanceof RecoverIterator) {
-            ((RecoverIterator) iterator).strictMode();
+        if (iterator instanceof RecoverIteratorV0) {
+            ((RecoverIteratorV0) iterator).strictMode();
         }
         return iterator;
     }
