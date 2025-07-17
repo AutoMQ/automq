@@ -113,7 +113,7 @@ public class ObjectWALService implements WriteAheadLog {
 
             long expectedWriteOffset = accumulator.append(recordSize, start -> {
                 CompositeByteBuf recordByteBuf = ByteBufAlloc.compositeByteBuffer();
-                Record record = WALUtil.generateRecord(data, header, 0, start, true);
+                Record record = WALUtil.generateRecord(data, header, 0, start);
                 recordByteBuf.addComponents(true, record.header(), record.body());
                 return recordByteBuf;
             }, appendResultFuture);
@@ -324,7 +324,7 @@ public class ObjectWALService implements WriteAheadLog {
             tryReadAhead();
 
             ByteBuf recordHeaderBuf = dataBuffer.readBytes(RECORD_HEADER_SIZE);
-            RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);
+            RecordHeader header = new RecordHeader(recordHeaderBuf);
 
             if (header.getRecordHeaderCRC() != WALUtil.crc32(recordHeaderBuf, RECORD_HEADER_WITHOUT_CRC_SIZE)) {
                 recordHeaderBuf.release();
@@ -332,7 +332,7 @@ public class ObjectWALService implements WriteAheadLog {
             }
             recordHeaderBuf.release();
 
-            if (header.getMagicCode() != RecordHeader.RECORD_HEADER_MAGIC_CODE) {
+            if (header.getMagicCode() != RecordHeader.RECORD_HEADER_DATA_MAGIC_CODE) {
                 throw new IllegalStateException("Invalid magic code in record header.");
             }
 

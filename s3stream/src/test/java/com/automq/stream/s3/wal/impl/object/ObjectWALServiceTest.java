@@ -331,7 +331,7 @@ public class ObjectWALServiceTest {
 
     private ByteBuf addRecordHeader(ByteBuf data, long startOffset) {
         ByteBuf header = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
-        Record record = WALUtil.generateRecord(data, header, 0, startOffset, true);
+        Record record = WALUtil.generateRecord(data, header, 0, startOffset);
 
         CompositeByteBuf buffer = ByteBufAlloc.compositeByteBuffer();
         buffer.addComponents(true, record.header(), record.body());
