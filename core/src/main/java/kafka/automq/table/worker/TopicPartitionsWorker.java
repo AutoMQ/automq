@@ -685,7 +685,7 @@ class TopicPartitionsWorker {
                     .collect(Collectors.toList());
                 TopicMetric topicMetric = new TopicMetric(fieldCount);
 
-                CommitResponse commitResponse = new CommitResponse(Types.StructType.of(), fastCommit ? Errors.MORE_DATA : Errors.NONE,
+                CommitResponse commitResponse = new CommitResponse(writerFactory.partitionSpec().partitionType(), fastCommit ? Errors.MORE_DATA : Errors.NONE,
                     requestWrapper.request.commitId(), topic, nextOffsets, dataFiles, deleteFiles, topicMetric, partitionMetrics);
                 return channel.asyncSend(topic, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, commitResponse))
                     .thenAccept(rst -> LOGGER.info("[COMMIT_RESPONSE],{}", commitResponse));
