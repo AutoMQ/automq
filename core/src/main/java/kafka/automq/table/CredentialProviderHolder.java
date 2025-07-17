@@ -36,14 +36,14 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 public class CredentialProviderHolder implements AwsCredentialsProvider {
     private static Function<BucketURI, AwsCredentialsProvider> providerSupplier = bucketURI -> newCredentialsProviderChain(
         credentialsProviders(bucketURI));
-    private static AwsCredentialsProvider provider;
+    private static BucketURI bucketURI;
 
     public static void setup(Function<BucketURI, AwsCredentialsProvider> providerSupplier) {
         CredentialProviderHolder.providerSupplier = providerSupplier;
     }
 
     public static void setup(BucketURI bucketURI) {
-        CredentialProviderHolder.provider = providerSupplier.apply(bucketURI);
+        CredentialProviderHolder.bucketURI = bucketURI;
     }
 
     private static List<AwsCredentialsProvider> credentialsProviders(BucketURI bucketURI) {
@@ -62,7 +62,7 @@ public class CredentialProviderHolder implements AwsCredentialsProvider {
 
     // iceberg will invoke create with reflection.
     public static AwsCredentialsProvider create() {
-        return provider;
+        return providerSupplier.apply(bucketURI);
     }
 
     @Override
