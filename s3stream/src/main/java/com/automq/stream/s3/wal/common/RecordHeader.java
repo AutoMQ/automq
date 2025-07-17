@@ -26,60 +26,56 @@ import io.netty.buffer.ByteBuf;
 public class RecordHeader {
     public static final int RECORD_HEADER_SIZE = 4 + 4 + 8 + 4 + 4;
     public static final int RECORD_HEADER_WITHOUT_CRC_SIZE = RECORD_HEADER_SIZE - 4;
-    public static final int RECORD_HEADER_MAGIC_CODE = 0x87654321;
+    public static final int RECORD_HEADER_DATA_MAGIC_CODE = 0x87654321;
+    /**
+     * Magic code for record header indicating that the record body is empty (used for padding).
+     */
+    public static final int RECORD_HEADER_EMPTY_MAGIC_CODE = 0x76543210;
 
-    private int magicCode0 = RECORD_HEADER_MAGIC_CODE;
-    private int recordBodyLength1;
-    private long recordBodyOffset2;
-    private int recordBodyCRC3;
+    private final int magicCode0;
+    private final int recordBodyLength1;
+    private final long recordBodyOffset2;
+    private final int recordBodyCRC3;
     private int recordHeaderCRC4;
 
-    public static RecordHeader unmarshal(ByteBuf byteBuf) {
-        RecordHeader recordHeader = new RecordHeader();
+    public RecordHeader(long offset, int length, int crc) {
+        this.magicCode0 = RECORD_HEADER_DATA_MAGIC_CODE;
+        this.recordBodyLength1 = length;
+        this.recordBodyOffset2 = offset + RECORD_HEADER_SIZE;
+        this.recordBodyCRC3 = crc;
+    }
+
+    public RecordHeader(long offset, int length) {
+        this.magicCode0 = RECORD_HEADER_EMPTY_MAGIC_CODE;
+        this.recordBodyLength1 = length;
+        this.recordBodyOffset2 = offset + RECORD_HEADER_SIZE;
+        this.recordBodyCRC3 = 0;
+    }
+
+    public RecordHeader(ByteBuf byteBuf) {
         byteBuf.markReaderIndex();
-        recordHeader.magicCode0 = byteBuf.readInt();
-        recordHeader.recordBodyLength1 = byteBuf.readInt();
-        recordHeader.recordBodyOffset2 = byteBuf.readLong();
-        recordHeader.recordBodyCRC3 = byteBuf.readInt();
-        recordHeader.recordHeaderCRC4 = byteBuf.readInt();
+        this.magicCode0 = byteBuf.readInt();
+        this.recordBodyLength1 = byteBuf.readInt();
+        this.recordBodyOffset2 = byteBuf.readLong();
+        this.recordBodyCRC3 = byteBuf.readInt();
+        this.recordHeaderCRC4 = byteBuf.readInt();
         byteBuf.resetReaderIndex();
-        return recordHeader;
     }
 
     public int getMagicCode() {
         return magicCode0;
     }
 
-    public RecordHeader setMagicCode(int magicCode) {
-        this.magicCode0 = magicCode;
-        return this;
-    }
-
     public int getRecordBodyLength() {
         return recordBodyLength1;
-    }
-
-    public RecordHeader setRecordBodyLength(int recordBodyLength) {
-        this.recordBodyLength1 = recordBodyLength;
-        return this;
     }
 
     public long getRecordBodyOffset() {
         return recordBodyOffset2;
     }
 
-    public RecordHeader setRecordBodyOffset(long recordBodyOffset) {
-        this.recordBodyOffset2 = recordBodyOffset;
-        return this;
-    }
-
     public int getRecordBodyCRC() {
         return recordBodyCRC3;
-    }
-
-    public RecordHeader setRecordBodyCRC(int recordBodyCRC) {
-        this.recordBodyCRC3 = recordBodyCRC;
-        return this;
     }
 
     public int getRecordHeaderCRC() {
@@ -105,16 +101,10 @@ public class RecordHeader {
         return buf;
     }
 
-    public ByteBuf marshal(ByteBuf emptyBuf, boolean calculateCRC) {
+    public ByteBuf marshal(ByteBuf emptyBuf) {
         assert emptyBuf.writableBytes() == RECORD_HEADER_SIZE;
         ByteBuf buf = marshalHeaderExceptCRC(emptyBuf);
-
-        if (calculateCRC) {
-            buf.writeInt(WALUtil.crc32(buf, RECORD_HEADER_WITHOUT_CRC_SIZE));
-        } else {
-            buf.writeInt(-1);
-        }
-
+        buf.writeInt(WALUtil.crc32(buf, RECORD_HEADER_WITHOUT_CRC_SIZE));
         return buf;
     }
 }
