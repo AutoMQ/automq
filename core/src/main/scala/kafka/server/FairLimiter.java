@@ -21,82 +21,34 @@ package kafka.server;
 
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * A fair limiter whose {@link #acquire} method is fair, i.e. the waiting threads are served in the order of arrival.
  */
 public class FairLimiter implements Limiter {
     private final int maxPermits;
-    /**
-     * The lock used to protect @{link #acquireLocked}
-     */
-    private final Lock lock = new ReentrantLock(true);
     private final Semaphore permits;
 
     /**
      * The name of this limiter, used for metrics.
      */
     private final String name;
-    /**
-     * The number of threads waiting for permits, used for metrics.
-     */
-    private final AtomicInteger waitingThreads = new AtomicInteger(0);
 
     public FairLimiter(int size, String name) {
         this.maxPermits = size;
-        this.permits = new Semaphore(size);
+        this.permits = new Semaphore(size, true);
         this.name = name;
     }
 
     @Override
     public Handler acquire(int permit) throws InterruptedException {
-        waitingThreads.incrementAndGet();
-        try {
-            return acquire0(permit);
-        } finally {
-            waitingThreads.decrementAndGet();
-        }
-    }
-
-    private Handler acquire0(int permit) throws InterruptedException {
-        lock.lock();
-        try {
-            permits.acquire(permit);
-            return new FairHandler(permit);
-        } finally {
-            lock.unlock();
-        }
+        permits.acquire(permit);
+        return new FairHandler(permit);
     }
 
     @Override
     public Handler acquire(int permit, long timeoutMs) throws InterruptedException {
-        waitingThreads.incrementAndGet();
-        try {
-            return acquire0(permit, timeoutMs);
-        } finally {
-            waitingThreads.decrementAndGet();
-        }
-    }
-
-    private Handler acquire0(int permit, long timeoutMs) throws InterruptedException {
-        long start = System.nanoTime();
-        if (lock.tryLock(timeoutMs, TimeUnit.MILLISECONDS)) {
-            try {
-                // calculate the time left for {@code acquireLocked}
-                long elapsed = System.nanoTime() - start;
-                long left = TimeUnit.MILLISECONDS.toNanos(timeoutMs) - elapsed;
-                // note: {@code left} may be negative here, but it's OK for acquireLocked
-                return acquireLocked(permit, left);
-            } finally {
-                lock.unlock();
-            }
-        } else {
-            // tryLock timeout, return null
-            return null;
-        }
+        return acquireLocked(permit, timeoutMs);
     }
 
     @Override
@@ -111,7 +63,7 @@ public class FairLimiter implements Limiter {
 
     @Override
     public int waitingThreads() {
-        return waitingThreads.get();
+        return permits.getQueueLength();
     }
 
     @Override
