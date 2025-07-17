@@ -36,18 +36,18 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 public class CredentialProviderHolder implements AwsCredentialsProvider {
     private static Function<BucketURI, AwsCredentialsProvider> providerSupplier = bucketURI -> newCredentialsProviderChain(
         credentialsProviders(bucketURI));
-    private static AwsCredentialsProvider provider;
+    private static BucketURI bucketURI;
 
     public static void setup(Function<BucketURI, AwsCredentialsProvider> providerSupplier) {
         CredentialProviderHolder.providerSupplier = providerSupplier;
     }
 
     public static void setup(BucketURI bucketURI) {
-        CredentialProviderHolder.provider = providerSupplier.apply(bucketURI);
+        CredentialProviderHolder.bucketURI = bucketURI;
     }
 
     private static List<AwsCredentialsProvider> credentialsProviders(BucketURI bucketURI) {
-        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.create());
+        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.builder().build());
     }
 
     private static AwsCredentialsProvider newCredentialsProviderChain(
@@ -62,7 +62,10 @@ public class CredentialProviderHolder implements AwsCredentialsProvider {
 
     // iceberg will invoke create with reflection.
     public static AwsCredentialsProvider create() {
-        return provider;
+        if (bucketURI == null) {
+            throw new IllegalStateException("BucketURI must be set before calling create(). Please invoke setup(BucketURI) first.");
+        }
+        return providerSupplier.apply(bucketURI);
     }
 
     @Override
