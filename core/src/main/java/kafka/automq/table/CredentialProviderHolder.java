@@ -62,6 +62,9 @@ public class CredentialProviderHolder implements AwsCredentialsProvider {
 
     // iceberg will invoke create with reflection.
     public static AwsCredentialsProvider create() {
+        if (bucketURI == null) {
+            throw new IllegalStateException("BucketURI must be set before calling create(). Please invoke setup(BucketURI) first.");
+        }
         return providerSupplier.apply(bucketURI);
     }
 
