@@ -29,8 +29,6 @@ import kafka.automq.table.worker.TopicPartitionsWorker.OffsetBound;
 import kafka.automq.table.worker.TopicPartitionsWorker.SyncTask;
 import kafka.cluster.Partition;
 
-import org.apache.iceberg.PartitionSpec;
-import org.apache.iceberg.Table;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.storage.internals.log.FetchDataInfo;
@@ -38,6 +36,7 @@ import org.apache.kafka.storage.internals.log.FetchDataInfo;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
+import org.apache.iceberg.PartitionSpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
