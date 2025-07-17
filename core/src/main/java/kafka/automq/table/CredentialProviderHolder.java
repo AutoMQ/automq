@@ -47,7 +47,7 @@ public class CredentialProviderHolder implements AwsCredentialsProvider {
     }
 
     private static List<AwsCredentialsProvider> credentialsProviders(BucketURI bucketURI) {
-        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.create());
+        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.builder().build());
     }
 
     private static AwsCredentialsProvider newCredentialsProviderChain(
