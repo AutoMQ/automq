@@ -488,8 +488,12 @@ public class BlockWALService implements WriteAheadLog {
         if (recoverStartOffset < 0) {
             recoverStartOffset = 0;
         }
+
+        if (walHeader.version() >= 1) {
+            return new RecoverIteratorV1(recoverStartOffset, trimmedOffset);
+        }
         long windowLength = walHeader.getSlidingWindowMaxLength();
-        return new RecoverIterator(recoverStartOffset, windowLength, trimmedOffset);
+        return new RecoverIteratorV0(recoverStartOffset, windowLength, trimmedOffset);
     }
 
     @Override
@@ -503,6 +507,7 @@ public class BlockWALService implements WriteAheadLog {
             slidingWindowService.start(walHeader.getAtomicSlidingWindowMaxLength(), newStartOffset);
         }
         LOGGER.info("reset sliding window to offset: {}", newStartOffset);
+        walHeader.upgradeToV1();
         CompletableFuture<Void> cf = trim(newStartOffset - 1, true)
             .thenRun(() -> resetFinished.set(true));
 
@@ -558,6 +563,13 @@ public class BlockWALService implements WriteAheadLog {
 
     private SlidingWindowService.WALHeaderFlusher flusher() {
         return () -> flushWALHeader(ShutdownType.UNGRACEFULLY);
+    }
+
+    /**
+     * Only used for testing purpose.
+     */
+    BlockWALHeader header() {
+        return walHeader;
     }
 
     public static class BlockWALServiceBuilder {
@@ -808,7 +820,7 @@ public class BlockWALService implements WriteAheadLog {
     /**
      * Protected for testing purpose.
      */
-    protected class RecoverIterator implements Iterator<RecoverResult> {
+    protected class RecoverIteratorV0 implements Iterator<RecoverResult> {
         private final long windowLength;
         private final long skipRecordAtOffset;
         private long nextRecoverOffset;
@@ -819,7 +831,7 @@ public class BlockWALService implements WriteAheadLog {
         private long lastValidOffset = -1;
         private boolean reportError = false;
 
-        public RecoverIterator(long nextRecoverOffset, long windowLength, long skipRecordAtOffset) {
+        public RecoverIteratorV0(long nextRecoverOffset, long windowLength, long skipRecordAtOffset) {
             this.nextRecoverOffset = nextRecoverOffset;
             this.skipRecordAtOffset = skipRecordAtOffset;
             this.windowLength = windowLength;
@@ -939,6 +951,77 @@ public class BlockWALService implements WriteAheadLog {
                 return false;
             }
             return offset >= maybeFirstInvalidOffset + windowLength;
+        }
+    }
+
+    /**
+     * Protected for testing purpose.
+     */
+    protected class RecoverIteratorV1 implements Iterator<RecoverResult> {
+        private final long skipRecordAtOffset;
+        private long nextRecoverOffset;
+        private RecoverResult next;
+
+        public RecoverIteratorV1(long nextRecoverOffset, long skipRecordAtOffset) {
+            this.nextRecoverOffset = nextRecoverOffset;
+            this.skipRecordAtOffset = skipRecordAtOffset;
+        }
+
+        @Override
+        public boolean hasNext() throws RuntimeIOException {
+            boolean hasNext = tryReadNextRecord();
+            if (!hasNext) {
+                // recovery complete
+                walChannel.releaseCache();
+            }
+            return hasNext;
+        }
+
+        @Override
+        public RecoverResult next() throws RuntimeIOException {
+            if (!tryReadNextRecord()) {
+                throw new NoSuchElementException();
+            }
+
+            RecoverResult rst = next;
+            this.next = null;
+            return rst;
+        }
+
+        /**
+         * Try to read next record.
+         *
+         * @return true if read success, false if no more record. {@link #next} will be null if and only if return false.
+         */
+        private boolean tryReadNextRecord() throws RuntimeIOException {
+            if (next != null) {
+                return true;
+            }
+            while (true) {
+                boolean skip = nextRecoverOffset == skipRecordAtOffset;
+                try {
+                    ByteBuf nextRecordBody = readRecord(nextRecoverOffset, offset -> WALUtil.recordOffsetToPosition(offset, walHeader.getCapacity(), WAL_HEADER_TOTAL_CAPACITY));
+                    RecoverResultImpl recoverResult = new RecoverResultImpl(nextRecordBody, nextRecoverOffset);
+                    nextRecoverOffset += RECORD_HEADER_SIZE + nextRecordBody.readableBytes();
+
+                    if (skip) {
+                        nextRecordBody.release();
+                        continue;
+                    }
+                    next = recoverResult;
+                    return true;
+                } catch (ReadRecordException e) {
+                    long newOffset = e.getJumpNextRecoverOffset();
+                    if (WALUtil.isAligned(nextRecoverOffset) && !(e instanceof ReadPaddingRecordException)) {
+                        LOGGER.info("meet the first invalid offset during recovery. offset: {}, detail: '{}'", nextRecoverOffset, e.getMessage());
+                        return false;
+                    }
+                    nextRecoverOffset = newOffset;
+                } catch (IOException e) {
+                    LOGGER.error("failed to read record at offset {}", nextRecoverOffset, e);
+                    throw new RuntimeIOException(e);
+                }
+            }
         }
     }
 }

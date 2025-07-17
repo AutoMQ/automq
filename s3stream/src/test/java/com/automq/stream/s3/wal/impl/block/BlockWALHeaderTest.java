@@ -30,6 +30,7 @@ public class BlockWALHeaderTest {
         header.setEpoch(234);
 
         BlockWALHeader unmarshal = BlockWALHeader.unmarshal(header.marshal().duplicate());
+        assertEquals(1, unmarshal.version());
         assertEquals(header.getCapacity(), unmarshal.getCapacity());
         assertEquals(header.getTrimOffset(), unmarshal.getTrimOffset());
         assertEquals(header.getLastWriteTimestamp(), unmarshal.getLastWriteTimestamp());
