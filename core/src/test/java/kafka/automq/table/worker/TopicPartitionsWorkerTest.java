@@ -29,6 +29,8 @@ import kafka.automq.table.worker.TopicPartitionsWorker.OffsetBound;
 import kafka.automq.table.worker.TopicPartitionsWorker.SyncTask;
 import kafka.cluster.Partition;
 
+import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.Table;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.storage.internals.log.FetchDataInfo;
@@ -102,6 +104,7 @@ public class TopicPartitionsWorkerTest {
         when(channel.asyncSend(eq(TOPIC), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         writerFactory = mock(WriterFactory.class);
+        when(writerFactory.partitionSpec()).thenReturn(PartitionSpec.unpartitioned());
         writers = new ArrayList<>();
         when(writerFactory.newWriter()).thenAnswer(invocation -> {
             MemoryWriter writer = new MemoryWriter(config);
