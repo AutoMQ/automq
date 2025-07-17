@@ -89,7 +89,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
     private boolean closed = false;
 
     public StreamReader(long streamId, long nextReadOffset, EventLoop eventLoop, ObjectManager objectManager,
-        ObjectReaderFactory objectReaderFactory, DataBlockCache dataBlockCache) {
+                        ObjectReaderFactory objectReaderFactory, DataBlockCache dataBlockCache) {
         this.streamId = streamId;
         this.nextReadOffset = nextReadOffset;
         this.readahead = new Readahead();
@@ -125,7 +125,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             Throwable cause = FutureUtil.cause(ex);
             if (cause != null) {
                 readContext.records.forEach(StreamRecordBatch::release);
-                for (Block block : readContext.blocks) {
+                for (ExternalCacheBlock block : readContext.blocks) {
                     block.release();
                 }
                 if (leftRetries > 0 && isRecoverable(cause)) {
@@ -163,10 +163,10 @@ import static com.automq.stream.utils.FutureUtil.exec;
 
     void read0(ReadContext ctx, final long startOffset, final long endOffset, final int maxBytes) {
         // 1. get blocks
-        CompletableFuture<List<Block>> getBlocksCf = getBlocks(startOffset, endOffset, maxBytes, false);
+        CompletableFuture<List<ExternalCacheBlock>> getBlocksCf = getBlocks(startOffset, endOffset, maxBytes, false);
 
         // 2. wait block's data loaded
-        List<Block> blocks = new ArrayList<>();
+        List<ExternalCacheBlock> blocks = new ArrayList<>();
         CompletableFuture<Void> loadBlocksCf = getBlocksCf.thenCompose(blockList -> {
             blocks.addAll(blockList);
             return CompletableFuture.allOf(blockList.stream().map(block -> block.loadCf).toArray(CompletableFuture[]::new));
@@ -180,7 +180,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         // 3. extract records from blocks
         loadBlocksCf.thenAccept(nil -> {
             ctx.blocks.addAll(blocks);
-            Optional<Block> failedBlock = blocks.stream().filter(block -> block.exception != null).findAny();
+            Optional<ExternalCacheBlock> failedBlock = blocks.stream().filter(block -> block.exception != null).findAny();
             if (failedBlock.isPresent()) {
                 ctx.cf.completeExceptionally(failedBlock.get().exception);
                 return;
@@ -193,7 +193,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             long nextStartOffset = startOffset;
             long nextEndOffset;
             boolean fulfill = false;
-            for (Block block : blocks) {
+            for (ExternalCacheBlock block : blocks) {
                 DataBlockIndex index = block.index;
                 if (nextStartOffset < index.startOffset() || nextStartOffset >= index.endOffset()) {
                     String msg = String.format("[BUG] nextStartOffset:%d is not in the range of index:%d-%d", nextStartOffset, index.startOffset(), index.endOffset());
@@ -275,7 +275,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 break;
             }
         }
-        for (Block block : ctx.blocks) {
+        for (ExternalCacheBlock block : ctx.blocks) {
             block.release();
         }
         // try readahead to speed up the next read
@@ -290,8 +290,8 @@ import static com.automq.stream.utils.FutureUtil.exec;
         });
     }
 
-    private CompletableFuture<List<Block>> getBlocks(long startOffset, long endOffset, int maxBytes,
-        boolean readahead) {
+    private CompletableFuture<List<ExternalCacheBlock>> getBlocks(long startOffset, long endOffset, int maxBytes,
+                                                                  boolean readahead) {
         GetBlocksContext context = new GetBlocksContext(readahead);
         try {
             getBlocks0(context, startOffset, endOffset, maxBytes);
@@ -299,7 +299,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             context.cf.completeExceptionally(ex);
         }
         context.cf.exceptionally(ex -> {
-            context.blocks.forEach(Block::release);
+            context.blocks.forEach(ExternalCacheBlock::release);
             return null;
         });
         return context.cf;
@@ -340,8 +340,8 @@ import static com.automq.stream.utils.FutureUtil.exec;
                     firstBlock = false;
                 }
                 // after read the data will be return to the cache, so we need to reload the data every time
-                block = block.newBlockWithData(ctx.readahead);
-                ctx.blocks.add(block);
+                ExternalCacheBlock externalBlock = block.newBlockWithData(ctx.readahead);
+                ctx.blocks.add(externalBlock);
                 if ((endOffset != -1L && index.endOffset() >= endOffset) || remainingSize <= 0) {
                     fulfill = true;
                     break;
@@ -512,8 +512,8 @@ import static com.automq.stream.utils.FutureUtil.exec;
     }
 
     static class GetBlocksContext {
-        final List<Block> blocks = new ArrayList<>();
-        final CompletableFuture<List<Block>> cf = new CompletableFuture<>();
+        final List<ExternalCacheBlock> blocks = new ArrayList<>();
+        final CompletableFuture<List<ExternalCacheBlock>> cf = new CompletableFuture<>();
         final boolean readahead;
 
         public GetBlocksContext(boolean readahead) {
@@ -523,10 +523,34 @@ import static com.automq.stream.utils.FutureUtil.exec;
 
     static class ReadContext {
         final List<StreamRecordBatch> records = new LinkedList<>();
-        final List<Block> blocks = new ArrayList<>();
+        final List<ExternalCacheBlock> blocks = new ArrayList<>();
         final CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         CacheAccessType accessType = BLOCK_CACHE_HIT;
         final TimerUtil start = new TimerUtil();
+    }
+
+    public static class ExternalCacheBlock {
+        final S3ObjectMetadata metadata;
+        final DataBlockIndex index;
+
+        CompletableFuture<Void> loadCf;
+
+        DataBlock data;
+        Throwable exception;
+
+        public ExternalCacheBlock(S3ObjectMetadata metadata, DataBlockIndex index) {
+            this.metadata = metadata;
+            this.index = index;
+        }
+
+        public void release() {
+            loadCf.whenComplete((Void, ex) -> {
+                if (data != null) {
+                    data.release();
+                    data = null;
+                }
+            });
+        }
     }
 
     class Block {
@@ -535,9 +559,6 @@ import static com.automq.stream.utils.FutureUtil.exec;
         DataBlock data;
         DataBlock.FreeListenerHandle freeListenerHandle;
 
-        CompletableFuture<Void> loadCf;
-        Throwable exception;
-        boolean released = false;
         boolean readCompleted = false;
 
         public Block(S3ObjectMetadata metadata, DataBlockIndex index) {
@@ -545,43 +566,34 @@ import static com.automq.stream.utils.FutureUtil.exec;
             this.index = index;
         }
 
-        // TODO: use different Block type, cause of the returned Block shouldn't have markReadCompleted method
-        public Block newBlockWithData(boolean readahead) {
+        public ExternalCacheBlock newBlockWithData(boolean readahead) {
             // We need to create a new block with consistent data to avoid duplicated release or leak,
             // cause of the loaded data maybe evicted and reloaded.
-            Block newBlock = new Block(metadata, index);
+            ExternalCacheBlock externalBlock = new ExternalCacheBlock(metadata, index);
             ObjectReader objectReader = objectReaderFactory.get(metadata);
             DataBlockCache.GetOptions getOptions = DataBlockCache.GetOptions.builder().readahead(readahead).build();
-            loadCf = dataBlockCache.getBlock(getOptions, objectReader, index).thenAccept(newData -> {
-                newBlock.data = newData;
-                if (!readCompleted && data != newData) {
-                    // the data block is first loaded or evict & reload
-                    if (data != null) {
-                        freeListenerHandle.close();
-                    }
-                    data = newData;
-                    newData.markUnread();
-                    freeListenerHandle = data.registerFreeListener(b -> handleBlockFree(this));
-                }
+            // the data block is first loaded or evict & reload
+            externalBlock.loadCf = dataBlockCache.getBlock(getOptions, objectReader, index).thenAccept(newData -> {
+                externalBlock.data = newData;
+                handleDataBlockChange(newData);
             }).exceptionally(ex -> {
-                exception = ex;
-                newBlock.exception = ex;
+                externalBlock.exception = ex;
                 return null;
             }).whenComplete((nil, ex) -> objectReader.release());
-            newBlock.loadCf = loadCf;
-            return newBlock;
+
+            return externalBlock;
         }
 
-        public void release() {
-            if (released) {
-                return;
-            }
-            released = true;
-            loadCf.whenComplete((nil, ex) -> {
+        private void handleDataBlockChange(DataBlock newData) {
+            if (!readCompleted && data != newData) {
+                // the data block is first loaded or evict & reload
                 if (data != null) {
-                    data.release();
+                    freeListenerHandle.close();
                 }
-            });
+                data = newData;
+                newData.markUnread();
+                freeListenerHandle = data.registerFreeListener(b -> handleBlockFree(this));
+            }
         }
 
         /**
@@ -601,8 +613,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 "metadata=" + metadata +
                 ", index=" + index +
                 ", data=" + data +
-                ", exception=" + exception +
-                ", released=" + released +
+                ", readCompleted=" + readCompleted +
                 '}';
         }
     }
@@ -645,7 +656,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             readaheadMarkOffset = nextReadaheadOffset;
             inflightReadaheadCf = getBlocks(nextReadaheadOffset, -1L, nextReadaheadSize, true).thenAccept(blocks -> {
                 nextReadaheadOffset = blocks.isEmpty() ? nextReadaheadOffset : blocks.get(blocks.size() - 1).index.endOffset();
-                blocks.forEach(Block::release);
+                blocks.forEach(ExternalCacheBlock::release);
             });
             // For get block indexes and load data block are sync success,
             // the whenComplete will invoke first before assign CompletableFuture to inflightReadaheadCf
