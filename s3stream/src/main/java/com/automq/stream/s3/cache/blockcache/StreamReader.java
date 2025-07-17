@@ -544,7 +544,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         }
 
         public void release() {
-            loadCf.whenComplete((Void, ex) -> {
+            loadCf.whenComplete((v, ex) -> {
                 if (data != null) {
                     data.release();
                     data = null;
