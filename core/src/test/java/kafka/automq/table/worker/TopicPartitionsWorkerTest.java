@@ -36,6 +36,7 @@ import org.apache.kafka.storage.internals.log.FetchDataInfo;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
+import org.apache.iceberg.PartitionSpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -102,6 +103,7 @@ public class TopicPartitionsWorkerTest {
         when(channel.asyncSend(eq(TOPIC), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         writerFactory = mock(WriterFactory.class);
+        when(writerFactory.partitionSpec()).thenReturn(PartitionSpec.unpartitioned());
         writers = new ArrayList<>();
         when(writerFactory.newWriter()).thenAnswer(invocation -> {
             MemoryWriter writer = new MemoryWriter(config);
