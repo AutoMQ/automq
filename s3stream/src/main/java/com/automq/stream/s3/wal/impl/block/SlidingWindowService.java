@@ -30,15 +30,17 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 
+import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -126,9 +128,25 @@ public class SlidingWindowService {
      */
     private final Lock blockLock = new ReentrantLock();
     /**
-     * Blocks that are being written.
+     * Blocks that are waiting to be written.
+     * All blocks in this queue are ordered by the start offset.
      */
-    private final Queue<Long> writingBlocks = new PriorityQueue<>();
+    private final Queue<Block> pendingBlocks = new ArrayDeque<>();
+    /**
+     * Blocks that are being written.
+     * All blocks in this queue are ordered by the start offset.
+     */
+    private final Queue<Block> writingBlocks = new ArrayDeque<>();
+    /**
+     * The current block, records are added to this block.
+     */
+    private volatile Block currentBlock;
+
+    /**
+     * The lock to make sure that there is only at most one callback thread at a time.
+     */
+    private final Lock callbackLock = new ReentrantLock();
+
     /**
      * Whether the service is initialized.
      * After the service is initialized, data in {@link #windowCoreData} is valid.
@@ -139,15 +157,6 @@ public class SlidingWindowService {
      * The core data of the sliding window. Initialized when the service is started.
      */
     private WindowCoreData windowCoreData;
-    /**
-     * Blocks that are waiting to be written.
-     * All blocks in this queue are ordered by the start offset.
-     */
-    private volatile Queue<Block> pendingBlocks = new LinkedList<>();
-    /**
-     * The current block, records are added to this block.
-     */
-    private volatile Block currentBlock;
 
     /**
      * The thread pool for write operations.
@@ -286,37 +295,74 @@ public class SlidingWindowService {
         assert initialized();
         long startOffset = nextBlockStartOffset(previousBlock);
 
-        // If the end of the physical device is insufficient for this block, jump to the start of the physical device
-        if ((recordSectionCapacity - startOffset % recordSectionCapacity) < minSize) {
-            startOffset = startOffset + recordSectionCapacity - startOffset % recordSectionCapacity;
+        int remainingSize = (int) remainingSizeOfDevice(startOffset, recordSectionCapacity);
+        if (remainingSize < minSize) {
+            // If the end of the physical device is insufficient for this block, create a padding block and jump to the start of the physical device
+            Block paddingBlock = createPaddingBlock(remainingSize, startOffset, trimOffset, recordSectionCapacity);
+            updateCurrentBlockLocked(previousBlock, paddingBlock);
+            previousBlock = paddingBlock;
+
+            startOffset = startOffset + remainingSize;
+            assert startOffset == nextBlockStartOffset(paddingBlock);
+            assert startOffset % recordSectionCapacity == 0;
         }
 
-        // Not enough space for this block
-        if (startOffset + minSize - trimOffset > recordSectionCapacity) {
+        Block newBlock = createNewBlock(minSize, startOffset, trimOffset, recordSectionCapacity);
+        updateCurrentBlockLocked(previousBlock, newBlock);
+        return newBlock;
+    }
+
+    private Block createPaddingBlock(int remainingSize, long startOffset, long trimOffset, long recordSectionCapacity) throws OverCapacityException {
+        Block paddingBlock = createNewBlock(remainingSize, startOffset, trimOffset, recordSectionCapacity);
+        paddingBlock.addRecord(
+            remainingSize,
+            (offset, header) -> WALUtil.generatePaddingRecord(header, offset, remainingSize),
+            new CompletableFuture<>()
+        );
+        return paddingBlock;
+    }
+
+    private void updateCurrentBlockLocked(Block previousBlock, Block newBlock) {
+        assert previousBlock == currentBlock;
+        if (previousBlock.isEmpty()) {
+            // The previous block is empty, so it can be released directly
+            previousBlock.release();
+        } else {
+            // There are some records to be written in the previous block
+            pendingBlocks.add(previousBlock);
+        }
+        setCurrentBlockLocked(newBlock);
+    }
+
+    private Block createNewBlock(long minSize, long startOffset, long trimOffset, long recordSectionCapacity) throws OverCapacityException {
+        long remainingSizeOfDevice = remainingSizeOfDevice(startOffset, recordSectionCapacity);
+        long remainingSizeOfRingBuffer = remainingSizeOfRingBuffer(startOffset, trimOffset, recordSectionCapacity);
+
+        if (remainingSizeOfRingBuffer < minSize) {
             LOGGER.warn("failed to allocate write offset as the ring buffer is full: startOffset: {}, minSize: {}, trimOffset: {}, recordSectionCapacity: {}",
                 startOffset, minSize, trimOffset, recordSectionCapacity);
             throw new OverCapacityException(String.format("failed to allocate write offset: ring buffer is full: startOffset: %d, minSize: %d, trimOffset: %d, recordSectionCapacity: %d",
                 startOffset, minSize, trimOffset, recordSectionCapacity));
         }
 
-        long maxSize = upperLimit;
-        // The size of the block should not be larger than writable size of the ring buffer
-        // Let capacity=100, start=148, trim=49, then maxSize=100-148+49=1
-        maxSize = Math.min(recordSectionCapacity - startOffset + trimOffset, maxSize);
-        // The size of the block should not be larger than the end of the physical device
-        // Let capacity=100, start=198, trim=198, then maxSize=100-198%100=2
-        maxSize = Math.min(recordSectionCapacity - startOffset % recordSectionCapacity, maxSize);
+        long maxSize = NumberUtils.min(upperLimit, remainingSizeOfDevice, remainingSizeOfRingBuffer);
+        return new BlockImpl(startOffset, maxSize, blockSoftLimit);
+    }
 
-        Block newBlock = new BlockImpl(startOffset, maxSize, blockSoftLimit);
-        if (!previousBlock.isEmpty()) {
-            // There are some records to be written in the previous block
-            pendingBlocks.add(previousBlock);
-        } else {
-            // The previous block is empty, so it can be released directly
-            previousBlock.release();
-        }
-        setCurrentBlockLocked(newBlock);
-        return newBlock;
+    /**
+     * The remaining size of the physical device.
+     * Let capacity=100, start=198, trim=197, then remainingSize=100-198%100=2
+     */
+    private static long remainingSizeOfDevice(long startOffset, long recordSectionCapacity) {
+        return recordSectionCapacity - startOffset % recordSectionCapacity;
+    }
+
+    /**
+     * The remaining size of the ring buffer.
+     * Let capacity=100, start=148, trim=49, then remainingSize=100-148+49=1
+     */
+    private static long remainingSizeOfRingBuffer(long startOffset, long trimOffset, long recordSectionCapacity) {
+        return recordSectionCapacity - startOffset + trimOffset;
     }
 
     /**
@@ -393,16 +439,16 @@ public class SlidingWindowService {
         }
 
         if (polled != null) {
-            writingBlocks.add(polled.startOffset());
+            writingBlocks.add(polled);
         }
 
         return polled;
     }
 
     /**
-     * Finish the given block, and return the start offset of the first block which has not been flushed yet.
+     * Mark the given block as written and remove all continuous blocks that have been written.
      */
-    private long wroteBlock(Block wroteBlock) {
+    private WroteBlockResult wroteBlock(Block wroteBlock) {
         blockLock.lock();
         try {
             return wroteBlockLocked(wroteBlock);
@@ -412,26 +458,62 @@ public class SlidingWindowService {
     }
 
     /**
-     * Finish the given block, and return the start offset of the first block which has not been flushed yet.
+     * Mark the given block as written and remove all continuous blocks that have been written.
      * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
      */
-    private long wroteBlockLocked(Block wroteBlock) {
-        boolean removed = writingBlocks.remove(wroteBlock.startOffset());
-        assert removed;
+    private WroteBlockResult wroteBlockLocked(Block wroteBlock) {
+        wroteBlock.markWritten();
+
+        assert writingBlocks.contains(wroteBlock);
+        List<Block> writtenBlocks = removeWrittenBlocksLocked();
+        long unflushedOffset = getFirstUnflushedOffsetLocked();
+
+        return new WroteBlockResult(writtenBlocks, unflushedOffset);
+    }
+
+    /**
+     * Remove all continuous blocks that have been written from the writing queue.
+     * Note: this method is NOT thread safe, and it should be called with {@link #blockLock} locked.
+     */
+    private List<Block> removeWrittenBlocksLocked() {
+        List<Block> removedBlocks = new ArrayList<>();
+        while (!writingBlocks.isEmpty()) {
+            Block block = writingBlocks.peek();
+            if (block.isWritten()) {
+                removedBlocks.add(writingBlocks.poll());
+            } else {
+                break;
+            }
+        }
+        return removedBlocks;
+    }
+
+    /**
+     * Get the start offset of the first block which has not been flushed yet.
+     */
+    private long getFirstUnflushedOffsetLocked() {
         if (writingBlocks.isEmpty()) {
             return getCurrentBlockLocked().startOffset();
         }
-        return writingBlocks.peek();
+        return writingBlocks.peek().startOffset();
+    }
+
+    private static class WroteBlockResult {
+        private final List<Block> writtenBlocks;
+        private final long unflushedOffset;
+
+        public WroteBlockResult(List<Block> writtenBlocks, long unflushedOffset) {
+            this.writtenBlocks = writtenBlocks;
+            this.unflushedOffset = unflushedOffset;
+        }
     }
 
     private void writeBlockData(Block block) throws IOException {
-        final long start = System.nanoTime();
         long position = WALUtil.recordOffsetToPosition(block.startOffset(), walChannel.capacity(), WAL_HEADER_TOTAL_CAPACITY);
         ByteBuf data = block.data();
         writeBandwidthBucket.consumeUninterruptibly(WALUtil.bytesToBlocks(data.readableBytes()));
         walChannel.retryWrite(data, position);
         walChannel.retryFlush();
-        StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.timeElapsedSince(start, TimeUnit.NANOSECONDS));
     }
 
     private void makeWriteOffsetMatchWindow(long newWindowEndOffset) throws IOException {
@@ -442,7 +524,7 @@ public class SlidingWindowService {
         if (newWindowEndOffset > windowStartOffset + windowMaxLength) {
             // endOffset - startOffset <= block.maxSize <= upperLimit in {@link #sealAndNewBlockLocked}
             assert newWindowEndOffset - windowStartOffset <= upperLimit;
-            long newWindowMaxLength = Math.min(newWindowEndOffset - windowStartOffset + scaleUnit, upperLimit);
+            long newWindowMaxLength = Math.min(remainingSizeOfRingBuffer(windowStartOffset, scaleUnit, newWindowEndOffset), upperLimit);
             windowCoreData.scaleOutWindow(walHeaderFlusher, newWindowMaxLength);
         }
     }
@@ -526,7 +608,8 @@ public class SlidingWindowService {
         public void run() {
             StorageOperationStats.getInstance().appendWALAwaitStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             try {
-                writeBlock(this.block);
+                writeBlock(block);
+                completeWriteAndMaybeCallback(block);
             } catch (Exception e) {
                 // should not happen, but just in case
                 FutureUtil.completeExceptionally(block.futures().iterator(), e);
@@ -537,13 +620,30 @@ public class SlidingWindowService {
         }
 
         private void writeBlock(Block block) throws IOException {
+            final long startTime = System.nanoTime();
             makeWriteOffsetMatchWindow(block.endOffset());
             writeBlockData(block);
+            StorageOperationStats.getInstance().appendWALWriteStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        }
 
+        private void completeWriteAndMaybeCallback(Block block) {
             final long startTime = System.nanoTime();
-            // Update the start offset of the sliding window after finishing writing the record.
-            windowCoreData.updateWindowStartOffset(wroteBlock(block));
+            callbackLock.lock();
+            try {
+                WroteBlockResult wroteBlockResult = wroteBlock(block);
+                // Update the start offset of the sliding window after finishing writing the record.
+                windowCoreData.updateWindowStartOffset(wroteBlockResult.unflushedOffset);
+                // Notify the futures of blocks that have been written.
+                for (Block writtenBlock : wroteBlockResult.writtenBlocks) {
+                    callback(writtenBlock);
+                    StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+                }
+            } finally {
+                callbackLock.unlock();
+            }
+        }
 
+        private void callback(Block block) {
             FutureUtil.complete(block.futures().iterator(), new AppendResult.CallbackResult() {
                 @Override
                 public long flushedOffset() {
@@ -555,7 +655,6 @@ public class SlidingWindowService {
                     return "CallbackResult{" + "flushedOffset=" + flushedOffset() + '}';
                 }
             });
-            StorageOperationStats.getInstance().appendWALAfterStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         }
     }
 }
