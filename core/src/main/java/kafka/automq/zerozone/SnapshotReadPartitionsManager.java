@@ -51,6 +51,7 @@ import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
+import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
@@ -609,6 +610,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         snapshot.firstUnstableOffset(convert(src.firstUnstableOffset()));
         snapshot.logEndOffset(convert(src.logEndOffset()));
         src.streamMetadata().forEach(m -> snapshot.streamEndOffset(m.streamId(), m.endOffset()));
+        snapshot.lastTimestampOffset(convertTimestampOffset(src.lastTimestampOffset()));
 
         SnapshotOperation operation = SnapshotOperation.parse(src.operation());
         return new SnapshotWithOperation(topicIdPartition, snapshot.build(), operation);
@@ -647,6 +649,13 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     static ElasticStreamSegmentMeta.TimestampOffsetData convert(
         AutomqGetPartitionSnapshotResponseData.TimestampOffsetData src) {
         return ElasticStreamSegmentMeta.TimestampOffsetData.of(src.timestamp(), src.offset());
+    }
+
+    static TimestampOffset convertTimestampOffset(AutomqGetPartitionSnapshotResponseData.TimestampOffsetData src) {
+        if (src == null) {
+            return null;
+        }
+        return new TimestampOffset(src.timestamp(), src.offset());
     }
 
     static LogOffsetMetadata convert(AutomqGetPartitionSnapshotResponseData.LogOffsetMetadata src) {

@@ -40,6 +40,7 @@ import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotRequest;
 import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
+import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.utils.Threads;
 
@@ -201,6 +202,7 @@ public class PartitionSnapshotsManager {
                 if (includeSegments) {
                     snapshot.setLogMetadata(logMetadata(src.logMeta()));
                 }
+                snapshot.setLastTimestampOffset(timestampOffset(src.lastTimestampOffset()));
                 return snapshot;
             });
         }
@@ -252,6 +254,11 @@ public class PartitionSnapshotsManager {
     static AutomqGetPartitionSnapshotResponseData.TimestampOffsetData timestampOffset(
         ElasticStreamSegmentMeta.TimestampOffsetData src) {
         return new AutomqGetPartitionSnapshotResponseData.TimestampOffsetData().setTimestamp(src.timestamp()).setOffset(src.offset());
+    }
+
+    static AutomqGetPartitionSnapshotResponseData.TimestampOffsetData timestampOffset(
+        TimestampOffset src) {
+        return new AutomqGetPartitionSnapshotResponseData.TimestampOffsetData().setTimestamp(src.timestamp).setOffset(src.offset);
     }
 
     static class PartitionWithVersion {

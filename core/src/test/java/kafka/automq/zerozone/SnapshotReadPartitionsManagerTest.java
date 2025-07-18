@@ -193,7 +193,8 @@ public class SnapshotReadPartitionsManagerTest {
 
     private SnapshotWithOperation snapshotWithOperation(int partitionIndex, Map<Long /* streamId */, Long /* endOffset */> offsets,
         SnapshotOperation operation) {
-        PartitionSnapshot snapshot = new PartitionSnapshot(0, null, null, null, offsets);
+        // TODO: fix the test
+        PartitionSnapshot snapshot = new PartitionSnapshot(0, null, null, null, offsets, null);
         return new SnapshotWithOperation(new TopicIdPartition(topicId, partitionIndex, topicName), snapshot, operation);
     }
 

@@ -104,6 +104,10 @@ public class ElasticLogFileRecords implements AutoCloseable {
         return size.get();
     }
 
+    public void size(int size) {
+        this.size.set(size);
+    }
+
     public long nextOffset() {
         return baseOffset + streamSlice.nextOffset();
     }
