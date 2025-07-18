@@ -31,6 +31,7 @@ import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import com.automq.stream.utils.threads.EventLoopSafe;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -38,7 +39,9 @@ import java.util.Queue;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentSkipListMap;
 
+import static com.automq.stream.s3.wal.impl.object.ObjectUtils.DATA_FILE_ALIGN_SIZE;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.floorAlignOffset;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.genObjectPathV1;
 
@@ -57,13 +60,14 @@ public class Reader {
     private final String nodePrefix;
     private final Time time;
 
-    private final Queue<ReadTask> tasks = new ConcurrentLinkedQueue<>();
+    private final Queue<SingleReadTask> singleReadTasks = new ConcurrentLinkedQueue<>();
+    private final Queue<BatchReadTask> batchReadTasks = new ConcurrentLinkedQueue<>();
 
     // the rebuild task that is in process
     private CompletableFuture<Void> rebuildIndexCf = CompletableFuture.completedFuture(null);
     // the rebuild task that is waiting for sequential running.
     private CompletableFuture<Void> awaitRebuildIndexCf;
-    private NavigableMap<Long /* epoch's startOffset */, Long /* epoch */> indexMap = new TreeMap<>();
+    private NavigableMap<Long /* epoch's startOffset */, Long /* epoch */> indexMap = new ConcurrentSkipListMap<>();
 
     private final EventLoop eventLoop;
 
@@ -76,25 +80,39 @@ public class Reader {
 
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         DefaultRecordOffset offset = recordOffset instanceof DefaultRecordOffset ? (DefaultRecordOffset) recordOffset : DefaultRecordOffset.of(recordOffset.buffer());
-        ReadTask readTask = new ReadTask(offset.offset(), offset.size());
-        tasks.add(readTask);
-        eventLoop.submit(this::doRun);
+        SingleReadTask readTask = new SingleReadTask(offset.offset(), offset.size());
+        singleReadTasks.add(readTask);
+        eventLoop.submit(this::doRunSingleGet);
         return readTask.cf;
     }
 
-    private void doRun() {
+    public CompletableFuture<List<StreamRecordBatch>> get(long startOffset, long endOffset) {
+        BatchReadTask readTask = new BatchReadTask(startOffset, endOffset);
+        batchReadTasks.add(readTask);
+        eventLoop.submit(this::doRunBatchGet);
+        return readTask.cf;
+    }
+
+    private void doRunSingleGet() {
         for (; ; ) {
-            ReadTask readTask = tasks.peek();
+            SingleReadTask readTask = singleReadTasks.peek();
             if (readTask == null) {
                 break;
             }
             Map.Entry<Long, Long> entry = indexMap.floorEntry(readTask.offset);
             if (entry == null) {
+                if (readTask.notFoundTimes > 0) {
+                    singleReadTasks.poll();
+                    readTask.cf.completeExceptionally(new ObjectNotExistException(
+                        String.format("Cannot find object for (offset=%s, size=%s)", readTask.offset, readTask.size)
+                    ));
+                    return;
+                }
                 readTask.notFoundTimes++;
-                rebuildIndexMap().thenAcceptAsync(nil -> doRun(), eventLoop);
+                rebuildIndexMap().thenAcceptAsync(nil -> doRunSingleGet(), eventLoop);
                 return;
             }
-            tasks.poll();
+            singleReadTasks.poll();
             long epoch = entry.getValue();
             long objectStartObject = floorAlignOffset(readTask.offset);
             String objectPath = genObjectPathV1(nodePrefix, epoch, objectStartObject);
@@ -107,26 +125,112 @@ public class Reader {
             ).whenCompleteAsync((buf, ex) -> {
                 try {
                     if (ex == null) {
-                        readTask.cf.complete(ObjectUtils.duplicatedDecodeRecordBuf(buf, ALLOC));
+                        readTask.cf.complete(ObjectUtils.duplicatedDecodeRecordBuf(buf.slice(), ALLOC));
                         buf.release();
                         return;
                     }
                     ex = FutureUtil.cause(ex);
-                    if (!(ex instanceof ObjectNotExistException)) {
-                        readTask.cf.completeExceptionally(ex);
-                        return;
-                    }
-                    if (readTask.notFoundTimes > 0) {
+                    if (!(ex instanceof ObjectNotExistException) || readTask.notFoundTimes > 0) {
                         readTask.cf.completeExceptionally(ex);
                         return;
                     }
                     CompletableFuture<Void> rebuildCf = rebuildIndexMap();
                     readTask.notFoundTimes++;
-                    tasks.add(readTask);
-                    rebuildCf.thenAcceptAsync(nil -> doRun(), eventLoop);
+                    rebuildCf.thenAcceptAsync(nil -> {
+                        singleReadTasks.add(readTask);
+                        doRunSingleGet();
+                    }, eventLoop);
                 } catch (Throwable e) {
                     readTask.cf.completeExceptionally(e);
                 }
+            }, eventLoop);
+        }
+    }
+
+    @SuppressWarnings("NPathComplexity")
+    private void doRunBatchGet() {
+        for (; ; ) {
+            BatchReadTask readTask = batchReadTasks.peek();
+            if (readTask == null) {
+                break;
+            }
+            NavigableMap<Long, Long> indexMap;
+            Long floorKey = this.indexMap.floorKey(readTask.startOffset);
+            if (floorKey == null) {
+                indexMap = new TreeMap<>();
+            } else {
+                indexMap = this.indexMap.subMap(floorKey, true, readTask.endOffset, false);
+            }
+            if (indexMap.isEmpty()) {
+                if (readTask.notFoundTimes > 0) {
+                    batchReadTasks.poll();
+                    readTask.cf.completeExceptionally(new ObjectNotExistException(
+                        String.format("Cannot find object for [%s, %s)", readTask.startOffset, readTask.endOffset)
+                    ));
+                    return;
+                }
+                readTask.notFoundTimes++;
+                rebuildIndexMap().thenAcceptAsync(nil -> doRunBatchGet(), eventLoop);
+                return;
+            }
+            batchReadTasks.poll();
+            List<CompletableFuture<List<StreamRecordBatch>>> getCfList = new ArrayList<>();
+            long nextGetOffset = readTask.startOffset;
+            List<Map.Entry<Long, Long>> entries = new ArrayList<>(indexMap.entrySet());
+            for (int i = 0; i < entries.size(); i++) {
+                long epoch = entries.get(i).getValue();
+                long epochEndOffset = (i == entries.size() - 1) ? Long.MAX_VALUE : entries.get(i + 1).getKey();
+                while (nextGetOffset < epochEndOffset && nextGetOffset < readTask.endOffset) {
+                    long objectStartOffset = floorAlignOffset(nextGetOffset);
+                    String objectPath = genObjectPathV1(nodePrefix, epoch, objectStartOffset);
+                    long relativeStartOffset = nextGetOffset - objectStartOffset + WALObjectHeader.WAL_HEADER_SIZE_V1;
+                    // read to end
+                    long finalNextGetOffset = nextGetOffset;
+                    getCfList.add(objectStorage.rangeRead(
+                        new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
+                        objectPath,
+                        relativeStartOffset,
+                        -1
+                    ).thenApply(buf -> {
+                        try {
+                            List<StreamRecordBatch> batches = new ArrayList<>();
+                            buf = buf.slice();
+                            long nextRecordOffset = finalNextGetOffset;
+                            int lastReadableBytes = buf.readableBytes();
+                            while (buf.readableBytes() > 0 && nextRecordOffset < readTask.endOffset) {
+                                batches.add(ObjectUtils.duplicatedDecodeRecordBuf(buf, ALLOC));
+                                nextRecordOffset += lastReadableBytes - buf.readableBytes();
+                                lastReadableBytes = buf.readableBytes();
+                            }
+                            return batches;
+                        } finally {
+                            buf.release();
+                        }
+                    }));
+                    nextGetOffset = objectStartOffset + DATA_FILE_ALIGN_SIZE;
+                }
+            }
+            CompletableFuture.allOf(getCfList.toArray(new CompletableFuture[0])).whenCompleteAsync((nil, ex) -> {
+                if (ex == null) {
+                    List<StreamRecordBatch> batches = new ArrayList<>();
+                    for (CompletableFuture<List<StreamRecordBatch>> cf : getCfList) {
+                        batches.addAll(cf.join());
+                    }
+                    readTask.cf.complete(batches);
+                    return;
+                }
+                ex = FutureUtil.cause(ex);
+                if (!(ex instanceof ObjectNotExistException) || readTask.notFoundTimes > 0) {
+                    getCfList.forEach(cf -> cf.thenAccept(l -> l.forEach(StreamRecordBatch::release)));
+                    readTask.cf.completeExceptionally(ex);
+                    return;
+                }
+                CompletableFuture<Void> rebuildCf = rebuildIndexMap();
+                readTask.notFoundTimes++;
+                rebuildCf.thenAcceptAsync(nil2 -> {
+                    batchReadTasks.add(readTask);
+                    doRunBatchGet();
+                }, eventLoop);
             }, eventLoop);
         }
     }
@@ -171,15 +275,28 @@ public class Reader {
         }, eventLoop);
     }
 
-    static class ReadTask {
+    static class SingleReadTask {
         final long offset;
         final int size;
         final CompletableFuture<StreamRecordBatch> cf;
         int notFoundTimes = 0;
 
-        public ReadTask(long offset, int size) {
+        public SingleReadTask(long offset, int size) {
             this.offset = offset;
             this.size = size;
+            this.cf = new CompletableFuture<>();
+        }
+    }
+
+    static class BatchReadTask {
+        final long startOffset;
+        final long endOffset;
+        final CompletableFuture<List<StreamRecordBatch>> cf;
+        int notFoundTimes = 0;
+
+        public BatchReadTask(long startOffset, long endOffset) {
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
             this.cf = new CompletableFuture<>();
         }
     }

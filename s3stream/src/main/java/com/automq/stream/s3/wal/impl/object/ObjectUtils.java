@@ -118,7 +118,6 @@ public class ObjectUtils {
     }
 
     public static StreamRecordBatch duplicatedDecodeRecordBuf(ByteBuf dataBuffer, ByteBufSeqAlloc alloc) {
-        dataBuffer = dataBuffer.slice();
         // TODO: thread local to avoid alloc
         ByteBuf recordHeaderBuf = dataBuffer.readBytes(RECORD_HEADER_SIZE);
         RecordHeader header = RecordHeader.unmarshal(recordHeaderBuf);

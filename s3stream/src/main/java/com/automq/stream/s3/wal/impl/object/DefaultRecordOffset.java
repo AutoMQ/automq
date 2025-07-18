@@ -28,6 +28,13 @@ public class DefaultRecordOffset implements RecordOffset {
         return new DefaultRecordOffset(buf.readLong(), buf.readInt());
     }
 
+    public static DefaultRecordOffset of(RecordOffset recordOffset) {
+        if (recordOffset instanceof DefaultRecordOffset) {
+            return (DefaultRecordOffset) recordOffset;
+        }
+        return of(recordOffset.buffer());
+    }
+
     public long offset() {
         return offset;
     }

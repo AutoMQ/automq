@@ -28,6 +28,10 @@ public class ObjectNotExistException extends AutoMQException {
         super("Object not exist: " + objectId);
     }
 
+    public ObjectNotExistException(String msg) {
+        super(msg);
+    }
+
     public ObjectNotExistException(Throwable cause) {
         super(cause.getMessage(), cause);
     }

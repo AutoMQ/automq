@@ -59,7 +59,7 @@ public interface WriteAheadLog {
 
     default CompletableFuture<List<StreamRecordBatch>> get(long startOffset, long endOffset) {
         // TODO: impl
-        return CompletableFuture.completedFuture(null);
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
     }
 
     /**

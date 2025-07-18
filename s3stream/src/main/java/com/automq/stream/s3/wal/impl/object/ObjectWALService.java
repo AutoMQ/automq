@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class ObjectWALService implements WriteAheadLog {
@@ -88,6 +89,11 @@ public class ObjectWALService implements WriteAheadLog {
     @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         return reader.get(recordOffset);
+    }
+
+    @Override
+    public CompletableFuture<List<StreamRecordBatch>> get(long startOffset, long endOffset) {
+        return reader.get(startOffset, endOffset);
     }
 
     @Override
