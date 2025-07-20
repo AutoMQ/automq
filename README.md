@@ -27,34 +27,34 @@
 
 
 <a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank">
-    <img alt="Grab" src="https://github.com/user-attachments/assets/dc32f584-fa62-4805-9cef-bad9902b7473" width="18%" />
+    <img alt="Grab" src="https://github.com/user-attachments/assets/01668da4-3916-4f49-97af-18f91b25f8c1" width="18%" />
 </a> 
 <a href="https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging" target="_blank">
-    <img alt="JD" src="https://github.com/user-attachments/assets/fa680ea0-a078-419d-8ccd-01595732cfdf" width="18%" />
+    <img alt="JD" src="https://github.com/user-attachments/assets/a7a86d2c-66fa-4575-b181-6cf56a31f880" width="18%" />
 </a> 
 <a href="https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario" target="_blank">
-    <img alt="image" src="https://github.com/user-attachments/assets/7e6df0f2-e79d-4d97-a4fc-fb50774fd2dd" width="18%" />
+    <img alt="Geely" src="https://github.com/user-attachments/assets/450c2c7f-a0a4-43f6-b857-da14eef56f73" width="18%" />
 </a>
 <a href="https://www.automq.com/blog/dewu-builds-trillion-level-monitoring-system-based-on-automq" target="_blank">
-    <img alt="Poizon" src="https://github.com/user-attachments/assets/a4d46a21-9b9d-4a95-88fd-e123b8f35063" width="18%" />
+    <img alt="Poizon" src="https://github.com/user-attachments/assets/45f4c642-0495-4bcc-9224-d2c5c2b2f0d5" width="18%" />
 </a> 
 <a href="https://www.automq.com/customer" target="_blank">
-    <img alt="bitkub" src="https://github.com/user-attachments/assets/743dff96-f18c-4f2a-b9fe-5e90c1d03beb" width="18%" />
+    <img alt="Bitkub" src="https://github.com/user-attachments/assets/3b95cd26-973d-4405-9d2c-289c5807bb39" width="18%" />
 </a> 
 <a href="https://www.automq.com/customer" target="_blank">
-    <img alt="PalmPay" src="https://github.com/user-attachments/assets/471732df-bacd-4041-ad99-024306167f60" width="18%" />
+    <img alt="PalmPay" src="https://github.com/user-attachments/assets/b22f70f5-7553-4283-ac20-f034868b0121" width="18%" />
 </a> 
 <a href="https://www.automq.com/blog/automq-vs-kafka-evaluation-and-comparison-by-little-red-book" target="_blank">
-    <img alt="RedNote" src="https://github.com/user-attachments/assets/b7fdcda3-7670-44db-9311-6d1dd45e134b" width="18%" />
+    <img alt="RedNote" src="https://github.com/user-attachments/assets/4a62f1f3-e171-4d58-9d7e-ebabad6f8e23" width="18%" />
 </a> 
 <a href="https://www.automq.com/blog/xpeng-motors-reduces-costs-by-50-by-replacing-kafka-with-automq" target="_blank">
-    <img alt="XPENG" src="https://github.com/user-attachments/assets/4fbad4c3-d365-49dc-8dfa-ca4060a70b1a" width="18%" />
+    <img alt="XPENG" src="https://github.com/user-attachments/assets/8b32c484-a4bf-4793-80d0-f454da254337" width="18%" />
 </a> 
 <a href="https://www.automq.com/customer" target="_blank">
-    <img alt="OPPO" src="https://github.com/user-attachments/assets/ff7600fa-0776-4879-a3fd-3ad5d898e41c" width="18%" />
+    <img alt="OPPO" src="https://github.com/user-attachments/assets/2b6d3cf0-ae54-4073-bc06-c6623e31c6d0" width="18%" />
 </a> 
 <a href="https://www.automq.com/customer" target="_blank">
-    <img alt="BambuLab" src="https://github.com/user-attachments/assets/1a58f96e-df47-4a7e-b0fe-a0d51ea93586" width="18%" />
+    <img alt="BambuLab" src="https://github.com/user-attachments/assets/d09ded1b-3696-49ac-b38f-d02f9598b3bb" width="18%" />
 </a>
 
 
