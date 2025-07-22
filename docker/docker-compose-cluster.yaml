@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Single-node AutoMQ setup with MinIO for quick starts
+# AutoMQ Cluster setup with MinIO for quick starts
 version: "3.8"
 
 x-common-variables: &common-env
