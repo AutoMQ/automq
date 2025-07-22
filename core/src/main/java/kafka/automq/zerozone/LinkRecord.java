@@ -76,8 +76,8 @@ public class LinkRecord {
         TimestampType timestampType = TimestampType.forId(buf.readInt());
         long maxTimestamp = buf.readLong();
         int partitionLeaderEpoch = buf.readInt();
-        ByteBuf channelOffset = buf.readBytes(buf.readableBytes());
-        buf.readBytes(buf.readableBytes());
+        ByteBuf channelOffset = Unpooled.buffer(buf.readableBytes());
+        buf.readBytes(channelOffset);
         return new LinkRecord(lastOffset, timestampType, maxTimestamp, partitionLeaderEpoch, ChannelOffset.of(channelOffset));
     }
 }
