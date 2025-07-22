@@ -18,14 +18,16 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
     private final RouterChannel routerChannel;
     private final ObjectStorage objectStorage;
     private final Map<Integer, RouterChannel> routerChannels = new ConcurrentHashMap<>();
+    private final String clusterId;
 
-    public DefaultRouterChannelProvider(int nodeId, long epoch, BucketURI bucketURI, ObjectStorage objectStorage) {
+    public DefaultRouterChannelProvider(int nodeId, long epoch, BucketURI bucketURI, ObjectStorage objectStorage, String clusterId) {
         this.nodeId = nodeId;
         this.channelId = bucketURI.bucketId();
         this.objectStorage = objectStorage;
+        this.clusterId = clusterId;
 
         // TODO: wal without fence check
-        ObjectWALConfig config = ObjectWALConfig.builder().withNodeId(nodeId).withEpoch(epoch).withOpenMode(OpenMode.READ_WRITE).withType(WAL_TYPE).build();
+        ObjectWALConfig config = ObjectWALConfig.builder().withClusterId(clusterId).withNodeId(nodeId).withEpoch(epoch).withOpenMode(OpenMode.READ_WRITE).withType(WAL_TYPE).build();
         ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
         try {
             wal.start();
@@ -46,7 +48,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
             return routerChannel;
         }
         return routerChannels.computeIfAbsent(node, nodeId -> {
-            ObjectWALConfig config = ObjectWALConfig.builder().withNodeId(node).withOpenMode(OpenMode.READ_ONLY).withType(WAL_TYPE).build();
+            ObjectWALConfig config = ObjectWALConfig.builder().withClusterId(clusterId).withNodeId(node).withOpenMode(OpenMode.READ_ONLY).withType(WAL_TYPE).build();
             ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
             try {
                 wal.start();

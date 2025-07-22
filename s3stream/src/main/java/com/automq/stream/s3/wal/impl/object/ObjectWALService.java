@@ -97,6 +97,11 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     @Override
+    public long confirmOffset() {
+        return writer.confirmOffset();
+    }
+
+    @Override
     public Iterator<RecoverResult> recover() {
         return writer.recover();
     }

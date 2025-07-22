@@ -47,6 +47,11 @@ public class NoopWriter implements Writer {
     }
 
     @Override
+    public long confirmOffset() {
+        return 0;
+    }
+
+    @Override
     public CompletableFuture<Void> reset() throws WALFencedException {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("reset is not supported"));
     }

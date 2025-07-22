@@ -191,7 +191,7 @@ class ElasticReplicaManager(
 
   private var kafkaLinkingManager = Option.empty[KafkaLinkingManager]
 
-  private val partitionSnapshotsManager = new PartitionSnapshotsManager(time)
+  private val partitionSnapshotsManager = new PartitionSnapshotsManager(time, config.automq)
 
   private val snapshotReadPartitions = new ConcurrentHashMap[TopicPartition, Partition]()
 

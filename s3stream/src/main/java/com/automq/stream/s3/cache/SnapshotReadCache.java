@@ -43,6 +43,7 @@ public class SnapshotReadCache {
     private final WalReplay walReplay = new WalReplay();
     private LogCache cache;
     private ObjectStorage objectStorage;
+
     private final Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder;
 
     public static SnapshotReadCache instance() {
@@ -131,7 +132,7 @@ public class SnapshotReadCache {
                 waitingLoadTasks.add(task);
                 tryLoad();
             });
-            return task.loadCf;
+            return task.replayCf;
         }
 
         @EventLoopSafe
@@ -192,7 +193,7 @@ public class SnapshotReadCache {
                     if (walRecord.getCount() >= 0) {
                         cfList.add(CompletableFuture.completedFuture(walRecord));
                     } else {
-                        cfList.add(linkRecordDecoder.apply(walRecord).whenComplete((rst, ex) -> walRecord.release()));
+                        cfList.add(linkRecordDecoder.apply(walRecord));
                     }
                 }
                 CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
@@ -200,13 +201,11 @@ public class SnapshotReadCache {
                         loadCf.completeExceptionally(ex);
                         // release other success record
                         cfList.forEach(cf -> cf.thenAccept(StreamRecordBatch::release));
+                        LOGGER.error("Replay WAL [{}, {}] fail", startOffset, endOffset, ex);
                         return;
                     }
                     records.addAll(cfList.stream().map(CompletableFuture::join).collect(Collectors.toList()));
                     loadCf.complete(null);
-                }).exceptionally(ex -> {
-                    loadCf.completeExceptionally(ex);
-                    return null;
                 });
             });
         }

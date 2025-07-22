@@ -111,13 +111,13 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.routerOut = new RouterOut(currentNode, bucketURI, objectStorage, mapping::getRouteOutNode, kafkaApis, asyncSender, time);
         this.routerIn = new RouterIn(objectStorage, kafkaApis, kafkaConfig.rack().get());
 
-        RouterChannelProvider routerChannelProvider = new DefaultRouterChannelProvider(nodeId, kafkaConfig.automq().nodeEpoch(), bucketURI, objectStorage);
+        RouterChannelProvider routerChannelProvider = new DefaultRouterChannelProvider(nodeId, kafkaConfig.automq().nodeEpoch(), bucketURI, objectStorage, kafkaApis.clusterId());
         this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode, kafkaApis, asyncSender, time);
         this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get());
 
         S3Storage.setLinkRecordDecoder(new LinkRecordDecoder(routerChannelProvider));
 
-        this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache());
+        this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), kafkaApis.clusterId());
         mapping.registerListener(snapshotReadPartitionsManager);
 
         this.autoMQVersion = metadataCache.autoMQVersion();

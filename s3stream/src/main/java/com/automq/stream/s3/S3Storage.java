@@ -170,6 +170,7 @@ public class S3Storage implements Storage {
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
         S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
         SnapshotReadCache.instance().setup(this.snapshotReadCache, objectStorage);
+        ConfirmWAL.setup(deltaWAL);
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;

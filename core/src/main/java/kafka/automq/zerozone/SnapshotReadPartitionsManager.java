@@ -98,6 +98,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     private final Time time;
     private final ElasticReplicaManager replicaManager;
     private final MetadataCache metadataCache;
+    private final String clusterId;
     private final AsyncSender asyncSender;
     private final Replayer replayer;
     private final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor("AUTOMQ_SNAPSHOT_READ", true, LOGGER);
@@ -109,13 +110,14 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     private final AutoMQVersion version = AutoMQVersion.V3;
 
     public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time,
-        ElasticReplicaManager replicaManager, MetadataCache metadataCache) {
+        ElasticReplicaManager replicaManager, MetadataCache metadataCache, String clusterId) {
         this.config = config;
         this.time = time;
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
         this.replayer = new DefaultReplayer();
         this.asyncSender = new AsyncSender.BrokersAsyncSender(config, metrics, "snapshot_read", Time.SYSTEM, "AUTOMQ_SNAPSHOT_READ", new LogContext());
+        this.clusterId = clusterId;
     }
 
     // test only
@@ -127,6 +129,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         this.metadataCache = metadataCache;
         this.replayer = replayer;
         this.asyncSender = asyncSender;
+        this.clusterId = "";
     }
 
     @Override
@@ -406,7 +409,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                     .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
                     .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
                     .build();
-                ObjectWALConfig objectWALConfig = ObjectWALConfig.builder().withNodeId(node.id()).withOpenMode(OpenMode.READ_ONLY).build();
+                ObjectWALConfig objectWALConfig = ObjectWALConfig.builder().withClusterId(clusterId).withNodeId(node.id()).withOpenMode(OpenMode.READ_ONLY).build();
                 this.wal = new ObjectWALService(com.automq.stream.utils.Time.SYSTEM, objectStorage, objectWALConfig);
             }
             if (endOffset <= this.loadedEndOffset) {
@@ -414,10 +417,14 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             }
             long startOffset = this.loadedEndOffset;
             this.loadedEndOffset = endOffset;
-            if (startOffset > 0) {
+            if (startOffset < 0) {
                 return;
             }
-            this.lastDataLoadCf = lastDataLoadCf.thenCompose(nil -> replayer.replay(wal, startOffset, endOffset));
+            this.lastDataLoadCf = lastDataLoadCf.thenCompose(nil -> replayer.replay(wal, startOffset, endOffset)).thenAccept(nil -> {
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("replay {} confirm wal [{}, {})", node, startOffset, endOffset);
+                }
+            });
         }
 
         public CompletableFuture<Void> relayObject() {
@@ -433,11 +440,11 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                 return lastDataLoadCf;
             }
             long loadedObjectOrderId = this.loadedObjectOrderId;
-            return lastDataLoadCf = lastDataLoadCf.thenCompose(nil -> replayer.replay(newObjects)).thenAcceptAsync(nil -> {
-                if (LOGGER.isDebugEnabled()) {
-                    LOGGER.debug("[LOAD_SNAPSHOT_READ_DATA],node={},loadedObjectOrderId={},newObjects={}", node, loadedObjectOrderId, newObjects);
+            return lastDataLoadCf = lastDataLoadCf.thenCompose(nil -> replayer.replay(newObjects)).thenAccept(nil -> {
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("[LOAD_SNAPSHOT_READ_DATA],node={},loadedObjectOrderId={},newObjects={}", node, loadedObjectOrderId, newObjects);
                 }
-            }, eventLoop);
+            });
         }
 
         public CompletableFuture<Void> replayWal() {
@@ -481,7 +488,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                 return;
             }
             lastRequestTime = time.milliseconds();
-            AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch);
+            // TODO: version control
+            AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch).setVersion((short) 1);
             AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
             asyncSender.sendRequest(node, builder)
                 .thenAcceptAsync(rst -> {

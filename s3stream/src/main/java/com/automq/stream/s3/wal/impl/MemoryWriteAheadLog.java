@@ -32,6 +32,7 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -87,6 +88,17 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         return CompletableFuture.completedFuture(StreamRecordBatchCodec.decode(dataMap.get(((RecordOffsetImpl) recordOffset).recordOffset()), true));
+    }
+
+    @Override
+    public CompletableFuture<List<StreamRecordBatch>> get(long startOffset, long endOffset) {
+        List<StreamRecordBatch> list = dataMap.subMap(startOffset, true, endOffset, false).values().stream().map(StreamRecordBatchCodec::decode).collect(Collectors.toList());
+        return CompletableFuture.completedFuture(list);
+    }
+
+    @Override
+    public long confirmOffset() {
+        return offsetAlloc.get();
     }
 
     @Override

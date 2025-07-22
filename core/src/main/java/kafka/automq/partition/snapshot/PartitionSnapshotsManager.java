@@ -19,6 +19,7 @@
 
 package kafka.automq.partition.snapshot;
 
+import kafka.automq.AutoMQConfig;
 import kafka.cluster.LogEventListener;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionListener;
@@ -42,6 +43,7 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.apache.kafka.storage.internals.log.TimestampOffset;
 
+import com.automq.stream.s3.ConfirmWAL;
 import com.automq.stream.utils.Threads;
 
 import java.util.ArrayList;
@@ -59,9 +61,11 @@ public class PartitionSnapshotsManager {
     private final Map<Integer, Session> sessions = new HashMap<>();
     private final List<PartitionWithVersion> snapshotVersions = new CopyOnWriteArrayList<>();
     private final Time time;
+    private final String confirmWalConfig;
 
-    public PartitionSnapshotsManager(Time time) {
+    public PartitionSnapshotsManager(Time time, AutoMQConfig config) {
         this.time = time;
+        this.confirmWalConfig = config.walConfig();
         Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::cleanExpiredSessions, 1, 1, TimeUnit.MINUTES);
     }
 
@@ -162,6 +166,10 @@ public class PartitionSnapshotsManager {
                 topics.add(topic);
             });
             resp.setTopics(topics);
+            // TODO: version control
+            // TODO: skip pass wal config on following response
+            resp.setConfirmWalConfig(confirmWalConfig);
+            resp.setConfirmWalEndOffset(ConfirmWAL.instance().confirmOffset());
             lastGetSnapshotsTimestamp = time.milliseconds();
             return new AutomqGetPartitionSnapshotResponse(resp);
         }

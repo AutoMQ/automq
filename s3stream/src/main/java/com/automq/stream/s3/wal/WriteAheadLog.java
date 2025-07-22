@@ -57,10 +57,9 @@ public interface WriteAheadLog {
 
     CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset);
 
-    default CompletableFuture<List<StreamRecordBatch>> get(long startOffset, long endOffset) {
-        // TODO: impl
-        return CompletableFuture.failedFuture(new UnsupportedOperationException());
-    }
+    CompletableFuture<List<StreamRecordBatch>> get(long startOffset, long endOffset);
+
+    long confirmOffset();
 
     /**
      * Recover log from the beginning. The iterator will return the recovered result in order.

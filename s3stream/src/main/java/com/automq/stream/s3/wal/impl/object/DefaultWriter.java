@@ -155,13 +155,13 @@ public class DefaultWriter implements Writer {
 
         previousObjects.addAll(objects);
 
+        // TODO: force align before accept new data.
         flushedOffset.set(objects.isEmpty() ? 0 : objects.get(objects.size() - 1).endOffset());
         nextOffset.set(flushedOffset.get());
 
         startPeriodUpload();
         startMonitor();
 
-        // TODO: force align before accept new data.
 
         closed = false;
     }
@@ -277,6 +277,11 @@ public class DefaultWriter implements Writer {
                 return CompletableFuture.failedFuture(ex);
             }
         }
+    }
+
+    @Override
+    public long confirmOffset() {
+        return flushedOffset.get();
     }
 
     public CompletableFuture<AppendResult> append0(StreamRecordBatch streamRecordBatch) throws OverCapacityException, WALFencedException {
@@ -549,7 +554,7 @@ public class DefaultWriter implements Writer {
         String path = String.format(OBJECT_PATH_FORMAT, objectPrefix, firstOffset, endOffset);
         CompletableFuture<ObjectStorage.WriteResult> uploadFuture = objectStorage.write(writeOptions, path, objectBuffer);
 
-        UploadTask uploadTask = new UploadTask(records, uploadFuture);
+        UploadTask uploadTask = new UploadTask(records, endOffset, uploadFuture);
         uploadQueue.add(uploadTask);
 
         long finalLastRecordOffset = lastRecordOffset;
@@ -584,9 +589,7 @@ public class DefaultWriter implements Writer {
                             break;
                         }
                         uploadQueue.poll();
-                        if (!task.records.isEmpty()) {
-                            flushedOffset.set(task.records.get(task.records.size() - 1).offset);
-                        }
+                        flushedOffset.set(task.endOffset());
                         // Release lock and complete future in callback thread.
                         callbackService.submit(() ->
                             task.records().forEach(
@@ -642,15 +645,21 @@ public class DefaultWriter implements Writer {
 
     private static class UploadTask {
         private final List<Record> records;
+        private final long endOffset;
         private final CompletableFuture<ObjectStorage.WriteResult> cf;
 
-        public UploadTask(List<Record> records, CompletableFuture<ObjectStorage.WriteResult> cf) {
+        public UploadTask(List<Record> records, long endOffset, CompletableFuture<ObjectStorage.WriteResult> cf) {
             this.records = records;
+            this.endOffset = endOffset;
             this.cf = cf;
         }
 
         public List<Record> records() {
             return records;
+        }
+
+        public long endOffset() {
+            return endOffset;
         }
 
         public CompletableFuture<ObjectStorage.WriteResult> cf() {

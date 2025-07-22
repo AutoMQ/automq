@@ -47,6 +47,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -124,6 +125,16 @@ public class BootstrapWalV1 implements WriteAheadLog {
     @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         return wal.get(recordOffset);
+    }
+
+    @Override
+    public CompletableFuture<List<StreamRecordBatch>> get(long startOffset, long endOffset) {
+        return wal.get(startOffset, endOffset);
+    }
+
+    @Override
+    public long confirmOffset() {
+        return wal.confirmOffset();
     }
 
     @Override
