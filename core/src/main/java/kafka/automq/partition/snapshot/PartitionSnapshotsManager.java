@@ -51,6 +51,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -62,10 +63,12 @@ public class PartitionSnapshotsManager {
     private final List<PartitionWithVersion> snapshotVersions = new CopyOnWriteArrayList<>();
     private final Time time;
     private final String confirmWalConfig;
+    private final ConfirmWAL confirmWAL;
 
-    public PartitionSnapshotsManager(Time time, AutoMQConfig config) {
+    public PartitionSnapshotsManager(Time time, AutoMQConfig config, ConfirmWAL confirmWAL) {
         this.time = time;
         this.confirmWalConfig = config.walConfig();
+        this.confirmWAL = confirmWAL;
         Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::cleanExpiredSessions, 1, 1, TimeUnit.MINUTES);
     }
 
@@ -83,25 +86,29 @@ public class PartitionSnapshotsManager {
         }
     }
 
-    public AutomqGetPartitionSnapshotResponse handle(AutomqGetPartitionSnapshotRequest request) {
-        Session session;
-        synchronized (this) {
-            AutomqGetPartitionSnapshotRequestData requestData = request.data();
-            int sessionId = requestData.sessionId();
-            int sessionEpoch = requestData.sessionEpoch();
-            session = sessions.get(sessionId);
-            if (sessionId == NOOP_SESSION_ID
-                || session == null
-                || (sessionEpoch != session.sessionEpoch())) {
-                if (session != null) {
-                    sessions.remove(sessionId);
+    public CompletableFuture<AutomqGetPartitionSnapshotResponse> handle(AutomqGetPartitionSnapshotRequest request) {
+        CompletableFuture<Void> commitCf = request.data().requestCommit() ? confirmWAL.commit() : CompletableFuture.completedFuture(null);
+        return commitCf.exceptionally(nil -> null) // ignore exception
+            .thenApply(nil -> {
+                Session session;
+                synchronized (this) {
+                    AutomqGetPartitionSnapshotRequestData requestData = request.data();
+                    int sessionId = requestData.sessionId();
+                    int sessionEpoch = requestData.sessionEpoch();
+                    session = sessions.get(sessionId);
+                    if (sessionId == NOOP_SESSION_ID
+                        || session == null
+                        || (sessionEpoch != session.sessionEpoch())) {
+                        if (session != null) {
+                            sessions.remove(sessionId);
+                        }
+                        sessionId = nextSessionId();
+                        session = new Session(sessionId);
+                        sessions.put(sessionId, session);
+                    }
                 }
-                sessionId = nextSessionId();
-                session = new Session(sessionId);
-                sessions.put(sessionId, session);
-            }
-        }
-        return session.snapshotsDelta();
+                return session.snapshotsDelta();
+            });
     }
 
     private synchronized int nextSessionId() {
@@ -169,7 +176,7 @@ public class PartitionSnapshotsManager {
             // TODO: version control
             // TODO: skip pass wal config on following response
             resp.setConfirmWalConfig(confirmWalConfig);
-            resp.setConfirmWalEndOffset(ConfirmWAL.instance().confirmOffset());
+            resp.setConfirmWalEndOffset(confirmWAL.confirmOffset());
             lastGetSnapshotsTimestamp = time.milliseconds();
             return new AutomqGetPartitionSnapshotResponse(resp);
         }

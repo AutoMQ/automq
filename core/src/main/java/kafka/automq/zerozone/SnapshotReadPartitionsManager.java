@@ -110,12 +110,12 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     private final AutoMQVersion version = AutoMQVersion.V3;
 
     public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time,
-        ElasticReplicaManager replicaManager, MetadataCache metadataCache, String clusterId) {
+        ElasticReplicaManager replicaManager, MetadataCache metadataCache, Replayer replayer, String clusterId) {
         this.config = config;
         this.time = time;
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
-        this.replayer = new DefaultReplayer();
+        this.replayer = replayer;
         this.asyncSender = new AsyncSender.BrokersAsyncSender(config, metrics, "snapshot_read", Time.SYSTEM, "AUTOMQ_SNAPSHOT_READ", new LogContext());
         this.clusterId = clusterId;
     }
@@ -490,6 +490,10 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             lastRequestTime = time.milliseconds();
             // TODO: version control
             AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch).setVersion((short) 1);
+            if (sessionEpoch == 0) {
+                // request ConfirmWAL commit data to main storage, then the data that doesn't replay could be read from main storage.
+                data.setRequestCommit(true);
+            }
             AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
             asyncSender.sendRequest(node, builder)
                 .thenAcceptAsync(rst -> {

@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.Context;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
@@ -169,8 +170,8 @@ public class S3Storage implements Storage {
         this.deltaWALCache = new LogCache(deltaWALCacheSize, config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
         S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
-        SnapshotReadCache.instance().setup(this.snapshotReadCache, objectStorage);
-        ConfirmWAL.setup(deltaWAL);
+        Context.instance().snapshotReadCache(new SnapshotReadCache(snapshotReadCache, objectStorage, linkRecordDecoder));
+        Context.instance().confirmWAL(new ConfirmWAL(deltaWAL, nil -> forceUpload()));
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
@@ -629,6 +630,10 @@ public class S3Storage implements Storage {
         FutureUtil.propagate(read0(context, streamId, startOffset, endOffset, maxBytes), cf);
         cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().readStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
         return cf;
+    }
+
+    public LogCache snapshotReadCache() {
+        return snapshotReadCache;
     }
 
     @SuppressWarnings({"checkstyle:npathcomplexity"})

@@ -2,7 +2,6 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -34,35 +33,25 @@ import java.util.stream.Collectors;
 
 public class SnapshotReadCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
-    private static final SnapshotReadCache INSTANCE = new SnapshotReadCache();
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
     private final Map<Long, AtomicLong> streamNextOffsets = new HashMap<>();
     private final Cache<Long /* streamId */, Boolean> activeStreams;
     private final EventLoop eventLoop = new EventLoop("SNAPSHOT_READ_CACHE");
     private final ObjectReplay objectReplay = new ObjectReplay();
     private final WalReplay walReplay = new WalReplay();
-    private LogCache cache;
-    private ObjectStorage objectStorage;
-
+    private final LogCache cache;
+    private final ObjectStorage objectStorage;
     private final Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder;
 
-    public static SnapshotReadCache instance() {
-        return INSTANCE;
-    }
-
-    public SnapshotReadCache() {
+    public SnapshotReadCache(LogCache cache, ObjectStorage objectStorage, Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
         activeStreams = CacheBuilder.newBuilder()
             .expireAfterAccess(10, TimeUnit.MINUTES)
             .removalListener((RemovalListener<Long, Boolean>) notification ->
                 eventLoop.execute(() -> clearStream(notification.getKey())))
             .build();
-        // TODO: different decoder with pooled buf
-        this.linkRecordDecoder = S3Storage.getLinkRecordDecoder();
-    }
-
-    public void setup(LogCache cache, ObjectStorage objectStorage) {
         this.cache = cache;
         this.objectStorage = objectStorage;
+        this.linkRecordDecoder = linkRecordDecoder;
     }
 
     @EventLoopSafe
@@ -205,6 +194,8 @@ public class SnapshotReadCache {
                         return;
                     }
                     records.addAll(cfList.stream().map(CompletableFuture::join).collect(Collectors.toList()));
+                    // move to mem pool
+                    records.forEach(StreamRecordBatch::encoded);
                     loadCf.complete(null);
                 });
             });

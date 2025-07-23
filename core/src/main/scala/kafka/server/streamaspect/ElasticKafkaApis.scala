@@ -824,8 +824,12 @@ class ElasticKafkaApis(
 
   def handleGetPartitionSnapshotRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val req = request.body[AutomqGetPartitionSnapshotRequest]
-    val resp = replicaManager.asInstanceOf[ElasticReplicaManager].handleGetPartitionSnapshotRequest(req)
-    requestHelper.sendMaybeThrottle(request, resp)
+    replicaManager.asInstanceOf[ElasticReplicaManager].handleGetPartitionSnapshotRequest(req)
+      .thenAccept(resp => requestHelper.sendMaybeThrottle(request, resp))
+      .exceptionally(ex => {
+        handleError(request, ex)
+        null
+      })
   }
 
   def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {

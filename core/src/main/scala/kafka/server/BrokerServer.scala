@@ -572,6 +572,7 @@ class BrokerServer(
       ElasticLogManager.init(config, clusterId, this)
       dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
       replicaManager.setTrafficInterceptor(trafficInterceptor)
+      replicaManager.setS3StreamContext(com.automq.stream.Context.instance())
 
       tableManager = new TableManager(metadataCache, config)
       newPartitionLifecycleListeners().forEach(l => {

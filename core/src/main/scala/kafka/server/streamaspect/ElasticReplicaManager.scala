@@ -191,7 +191,7 @@ class ElasticReplicaManager(
 
   private var kafkaLinkingManager = Option.empty[KafkaLinkingManager]
 
-  private val partitionSnapshotsManager = new PartitionSnapshotsManager(time, config.automq)
+  private var partitionSnapshotsManager: PartitionSnapshotsManager = null
 
   private val snapshotReadPartitions = new ConcurrentHashMap[TopicPartition, Partition]()
 
@@ -1490,7 +1490,7 @@ class ElasticReplicaManager(
     }
   }
 
-  def handleGetPartitionSnapshotRequest(request: AutomqGetPartitionSnapshotRequest): AutomqGetPartitionSnapshotResponse = {
+  def handleGetPartitionSnapshotRequest(request: AutomqGetPartitionSnapshotRequest): CompletableFuture[AutomqGetPartitionSnapshotResponse] = {
     partitionSnapshotsManager.handle(request)
   }
 
@@ -1535,6 +1535,10 @@ class ElasticReplicaManager(
 
   def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {
     this.trafficInterceptor = trafficInterceptor
+  }
+
+  def setS3StreamContext(ctx: com.automq.stream.Context): Unit = {
+    this.partitionSnapshotsManager = new PartitionSnapshotsManager(time, config.automq, ctx.confirmWAL())
   }
 
 }

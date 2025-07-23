@@ -117,7 +117,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         S3Storage.setLinkRecordDecoder(new LinkRecordDecoder(routerChannelProvider));
 
-        this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), kafkaApis.clusterId());
+        Replayer replayer = new DefaultReplayer();
+        this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), replayer, kafkaApis.clusterId());
         mapping.registerListener(snapshotReadPartitionsManager);
 
         this.autoMQVersion = metadataCache.autoMQVersion();

@@ -2,21 +2,24 @@ package com.automq.stream.s3;
 
 import com.automq.stream.s3.wal.WriteAheadLog;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
+
 public class ConfirmWAL {
-    private WriteAheadLog log;
+    private final WriteAheadLog log;
+    private final Function<Void, CompletableFuture<Void>> commitHandle;
 
-    public static final ConfirmWAL INSTANCE = new ConfirmWAL();
-
-    public static void setup(WriteAheadLog log) {
-        INSTANCE.log = log;
-    }
-
-    public static ConfirmWAL instance() {
-        return INSTANCE;
+    public ConfirmWAL(WriteAheadLog log, Function<Void, CompletableFuture<Void>> commitHandle) {
+        this.log = log;
+        this.commitHandle = commitHandle;
     }
 
     public long confirmOffset() {
         return log.confirmOffset();
+    }
+
+    public CompletableFuture<Void> commit() {
+        return commitHandle.apply(null);
     }
 
 }
