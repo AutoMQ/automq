@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class DefaultReplayer implements Replayer {
+    private SnapshotReadCache.EventListener listener;
     private SnapshotReadCache snapshotReadCache;
 
     @Override
@@ -24,7 +25,17 @@ public class DefaultReplayer implements Replayer {
     private SnapshotReadCache snapshotReadCache() {
         if (snapshotReadCache == null) {
             snapshotReadCache = Context.instance().snapshotReadCache();
+            if (listener != null) {
+                snapshotReadCache.addEventListener(listener);
+            }
         }
         return snapshotReadCache;
+    }
+
+    public void setCacheEventListener(SnapshotReadCache.EventListener listener) {
+        this.listener = listener;
+        if (snapshotReadCache != null) {
+            snapshotReadCache.addEventListener(listener);
+        }
     }
 }

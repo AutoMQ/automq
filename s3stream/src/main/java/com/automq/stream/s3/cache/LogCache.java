@@ -397,6 +397,7 @@ public class LogCache {
         private final int maxStreamCount;
         private final long createdTimestamp = System.currentTimeMillis();
         private final AtomicLong size = new AtomicLong();
+        private final List<FreeListener> freeListeners = new ArrayList<>();
         volatile boolean free;
         private RecordOffset lastRecordOffset;
 
@@ -467,8 +468,13 @@ public class LogCache {
 
         public void free() {
             suppress(() -> {
-                map.forEach((streamId, records) -> records.free());
+                List<StreamRangeBound> streams = new ArrayList<>(map.size());
+                map.forEach((streamId, records) -> {
+                    streams.add(new StreamRangeBound(streamId, records.startOffset(), records.endOffset()));
+                    records.free();
+                });
                 map.clear();
+                freeListeners.forEach(listener -> listener.onFree(streams));
             }, LOGGER);
         }
 
@@ -484,6 +490,10 @@ public class LogCache {
             return size.get();
         }
 
+        public void addFreeListener(FreeListener freeListener) {
+            freeListeners.add(freeListener);
+        }
+
         public long createdTimestamp() {
             return createdTimestamp;
         }
@@ -493,6 +503,34 @@ public class LogCache {
                 return true;
             }
             return map.containsKey(streamId);
+        }
+    }
+
+    public interface FreeListener {
+        void onFree(List<StreamRangeBound> streamRanges);
+    }
+
+    public static class StreamRangeBound {
+        private final long streamId;
+        private final long startOffset;
+        private final long endOffset;
+
+        public StreamRangeBound(long streamId, long startOffset, long endOffset) {
+            this.streamId = streamId;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+        }
+
+        public long streamId() {
+            return streamId;
+        }
+
+        public long startOffset() {
+            return startOffset;
+        }
+
+        public long endOffset() {
+            return endOffset;
         }
     }
 

@@ -53,6 +53,7 @@ import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.apache.kafka.storage.internals.log.TimestampOffset;
 
+import com.automq.stream.s3.cache.SnapshotReadCache;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
@@ -103,6 +104,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     private final Replayer replayer;
     private final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor("AUTOMQ_SNAPSHOT_READ", true, LOGGER);
     private final Map<Uuid, String> topicId2name = new ConcurrentHashMap<>();
+    private final CacheEventListener cacheEventListener = new CacheEventListener();
     final Map<Integer, Subscriber> subscribers = new HashMap<>();
     // all snapshot read partition changes exec in a single eventloop to ensure the thread-safe.
     final EventLoop eventLoop = new EventLoop("AUTOMQ_SNAPSHOT_READ_WORKER");
@@ -203,6 +205,10 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         });
     }
 
+    public SnapshotReadCache.EventListener cacheEventListener() {
+        return cacheEventListener;
+    }
+
     private String getTopicName(Uuid topicId) {
         return topicId2name.computeIfAbsent(topicId, id -> metadataCache.topicIdsToNames().get(id));
     }
@@ -249,6 +255,10 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                 unsafeRun();
                 this.appliedCount = applyingCount;
             });
+        }
+
+        public void requestCommit() {
+            eventLoop.execute(() -> requester.requestCommit = true);
         }
 
         public void close() {
@@ -463,6 +473,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         private int sessionEpoch;
         private final Subscriber subscriber;
         private final Node node;
+        boolean requestCommit = false;
 
         public SubscriberRequester(Subscriber subscriber, Node node) {
             this.subscriber = subscriber;
@@ -492,6 +503,9 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch).setVersion((short) 1);
             if (sessionEpoch == 0) {
                 // request ConfirmWAL commit data to main storage, then the data that doesn't replay could be read from main storage.
+                data.setRequestCommit(true);
+            } else if (requestCommit) {
+                requestCommit = false;
                 data.setRequestCommit(true);
             }
             AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
@@ -547,6 +561,20 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             subscriber.onNewOperationBatch(batch);
             sessionId = resp.sessionId();
             sessionEpoch = resp.sessionEpoch();
+        }
+    }
+
+    class CacheEventListener implements SnapshotReadCache.EventListener {
+        @Override
+        public void onEvent(SnapshotReadCache.Event event) {
+            synchronized (SnapshotReadPartitionsManager.this) {
+                if (event instanceof SnapshotReadCache.RequestCommitEvent) {
+                    Subscriber subscriber = subscribers.get(((SnapshotReadCache.RequestCommitEvent) event).nodeId());
+                    if (subscriber != null) {
+                        subscriber.requestCommit();
+                    }
+                }
+            }
         }
     }
 

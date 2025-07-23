@@ -3,8 +3,10 @@ package com.automq.stream.s3.cache;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.FutureUtil;
@@ -19,12 +21,15 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -37,18 +42,22 @@ public class SnapshotReadCache {
     private final Map<Long, AtomicLong> streamNextOffsets = new HashMap<>();
     private final Cache<Long /* streamId */, Boolean> activeStreams;
     private final EventLoop eventLoop = new EventLoop("SNAPSHOT_READ_CACHE");
+    private final LogCacheBlockFreeListener cacheFreeListener = new LogCacheBlockFreeListener();
+
     private final ObjectReplay objectReplay = new ObjectReplay();
     private final WalReplay walReplay = new WalReplay();
+    private final StreamManager streamManager;
     private final LogCache cache;
     private final ObjectStorage objectStorage;
     private final Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder;
 
-    public SnapshotReadCache(LogCache cache, ObjectStorage objectStorage, Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
+    public SnapshotReadCache(StreamManager streamManager, LogCache cache, ObjectStorage objectStorage, Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
         activeStreams = CacheBuilder.newBuilder()
             .expireAfterAccess(10, TimeUnit.MINUTES)
             .removalListener((RemovalListener<Long, Boolean>) notification ->
                 eventLoop.execute(() -> clearStream(notification.getKey())))
             .build();
+        this.streamManager = streamManager;
         this.cache = cache;
         this.objectStorage = objectStorage;
         this.linkRecordDecoder = linkRecordDecoder;
@@ -82,6 +91,7 @@ public class SnapshotReadCache {
                 if (cache.put(batch)) {
                     // the block is full
                     LogCache.LogCacheBlock cacheBlock = cache.archiveCurrentBlock();
+                    cacheBlock.addFreeListener(cacheFreeListener);
                     cache.markFree(cacheBlock);
                 }
                 expectedNextOffset.set(batch.getLastOffset());
@@ -95,6 +105,10 @@ public class SnapshotReadCache {
 
     public synchronized CompletableFuture<Void> replay(WriteAheadLog confirmWAL, long startOffset, long endOffset) {
         return walReplay.replay(confirmWAL, startOffset, endOffset);
+    }
+
+    public void addEventListener(EventListener eventListener) {
+        cacheFreeListener.addListener(eventListener);
     }
 
     @EventLoopSafe
@@ -326,6 +340,57 @@ public class SnapshotReadCache {
 
         public void close() {
             reader.close();
+        }
+    }
+
+    class LogCacheBlockFreeListener implements LogCache.FreeListener {
+        private final List<EventListener> listeners = new CopyOnWriteArrayList<>();
+
+        @Override
+        public void onFree(List<LogCache.StreamRangeBound> bounds) {
+            List<Long> streamIdList = bounds.stream().map(LogCache.StreamRangeBound::streamId).collect(Collectors.toList());
+            Map<Long, LogCache.StreamRangeBound> streamMap = bounds.stream().collect(Collectors.toMap(LogCache.StreamRangeBound::streamId, Function.identity()));
+            List<StreamMetadata> streamMetadataList = streamManager.getStreams(streamIdList).join();
+            Set<Integer> requestCommitNodes = new HashSet<>();
+            for (StreamMetadata streamMetadata : streamMetadataList) {
+                LogCache.StreamRangeBound bound = streamMap.get(streamMetadata.streamId());
+                if (bound.endOffset() > streamMetadata.endOffset()) {
+                    requestCommitNodes.add(streamMetadata.nodeId());
+                }
+            }
+            listeners.forEach(listener ->
+                requestCommitNodes.forEach(nodeId ->
+                    FutureUtil.suppress(() -> listener.onEvent(new RequestCommitEvent(nodeId)), LOGGER)));
+        }
+
+        public void addListener(EventListener listener) {
+            this.listeners.add(listener);
+        }
+    }
+
+    public interface EventListener {
+        void onEvent(Event event);
+    }
+
+    public interface Event {
+    }
+
+    public static class RequestCommitEvent implements Event {
+        private final int nodeId;
+
+        public RequestCommitEvent(int nodeId) {
+            this.nodeId = nodeId;
+        }
+
+        public int nodeId() {
+            return nodeId;
+        }
+
+        @Override
+        public String toString() {
+            return "RequestCommitEvent{" +
+                "nodeId=" + nodeId +
+                '}';
         }
     }
 

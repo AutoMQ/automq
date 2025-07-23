@@ -87,28 +87,26 @@ public class PartitionSnapshotsManager {
     }
 
     public CompletableFuture<AutomqGetPartitionSnapshotResponse> handle(AutomqGetPartitionSnapshotRequest request) {
-        CompletableFuture<Void> commitCf = request.data().requestCommit() ? confirmWAL.commit() : CompletableFuture.completedFuture(null);
-        return commitCf.exceptionally(nil -> null) // ignore exception
-            .thenApply(nil -> {
-                Session session;
-                synchronized (this) {
-                    AutomqGetPartitionSnapshotRequestData requestData = request.data();
-                    int sessionId = requestData.sessionId();
-                    int sessionEpoch = requestData.sessionEpoch();
-                    session = sessions.get(sessionId);
-                    if (sessionId == NOOP_SESSION_ID
-                        || session == null
-                        || (sessionEpoch != session.sessionEpoch())) {
-                        if (session != null) {
-                            sessions.remove(sessionId);
-                        }
-                        sessionId = nextSessionId();
-                        session = new Session(sessionId);
-                        sessions.put(sessionId, session);
-                    }
+        Session session;
+        synchronized (this) {
+            AutomqGetPartitionSnapshotRequestData requestData = request.data();
+            int sessionId = requestData.sessionId();
+            int sessionEpoch = requestData.sessionEpoch();
+            session = sessions.get(sessionId);
+            if (sessionId == NOOP_SESSION_ID
+                || session == null
+                || (sessionEpoch != session.sessionEpoch())) {
+                if (session != null) {
+                    sessions.remove(sessionId);
                 }
-                return session.snapshotsDelta();
-            });
+                sessionId = nextSessionId();
+                session = new Session(sessionId);
+                sessions.put(sessionId, session);
+            }
+        }
+        AutomqGetPartitionSnapshotResponse resp = session.snapshotsDelta();
+        CompletableFuture<Void> commitCf = request.data().requestCommit() ? confirmWAL.commit() : CompletableFuture.completedFuture(null);
+        return commitCf.exceptionally(nil -> null).thenApply(nil -> resp);
     }
 
     private synchronized int nextSessionId() {
