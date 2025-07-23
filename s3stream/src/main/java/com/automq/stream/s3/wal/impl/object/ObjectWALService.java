@@ -26,7 +26,6 @@ import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
-import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
@@ -53,10 +52,7 @@ public class ObjectWALService implements WriteAheadLog {
         this.objectStorage = objectStorage;
         this.config = config;
         if (config.openMode() == OpenMode.READ_WRITE) {
-            ReservationService reservationService = new ObjectReservationService(config.clusterId(), objectStorage, objectStorage.bucketId());
-            // TODO: duplicated to BootstrapWAL. Disable acquire for RouterChannel
-            reservationService.acquire(config.nodeId(), config.epoch(), false).join();
-            this.writer = new DefaultWriter(time, objectStorage, reservationService, config);
+            this.writer = new DefaultWriter(time, objectStorage, config);
         } else {
             this.writer = new NoopWriter();
         }

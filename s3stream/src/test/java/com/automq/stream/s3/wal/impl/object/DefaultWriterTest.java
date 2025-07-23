@@ -19,7 +19,6 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.utils.Time;
 
 import org.junit.jupiter.api.AfterEach;
@@ -46,7 +45,7 @@ public class DefaultWriterTest {
             .withEpoch(1000)
             .withBatchInterval(Long.MAX_VALUE)
             .build();
-        writer = new DefaultWriter(Time.SYSTEM, objectStorage, ReservationService.NOOP, config);
+        writer = new DefaultWriter(Time.SYSTEM, objectStorage, config);
         writer.start();
         generatedByteBufMap = new ConcurrentSkipListMap<>();
         random = new Random();

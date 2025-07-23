@@ -106,11 +106,10 @@ public class DefaultWriter implements Writer {
     private final AtomicLong flushedOffset = new AtomicLong();
     private final AtomicLong trimOffset = new AtomicLong(-1);
 
-    public DefaultWriter(Time time, ObjectStorage objectStorage, ReservationService reservationService,
-        ObjectWALConfig config) {
+    public DefaultWriter(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
         this.time = time;
         this.objectStorage = objectStorage;
-        this.reservationService = reservationService;
+        this.reservationService = config.reservationService();
         this.config = config;
         this.nodePrefix = ObjectUtils.nodePrefix(config.clusterId(), config.nodeId(), config.type());
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";

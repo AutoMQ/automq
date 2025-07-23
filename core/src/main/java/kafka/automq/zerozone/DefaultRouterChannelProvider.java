@@ -25,8 +25,6 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         this.channelId = bucketURI.bucketId();
         this.objectStorage = objectStorage;
         this.clusterId = clusterId;
-
-        // TODO: wal without fence check
         ObjectWALConfig config = ObjectWALConfig.builder().withClusterId(clusterId).withNodeId(nodeId).withEpoch(epoch).withOpenMode(OpenMode.READ_WRITE).withType(WAL_TYPE).build();
         ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
         try {
