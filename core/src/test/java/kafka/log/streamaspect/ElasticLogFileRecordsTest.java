@@ -34,6 +34,7 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.kafka.common.utils.Time;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -298,9 +299,9 @@ class ElasticLogFileRecordsTest {
             false,
             RecordBatch.NO_PARTITION_LEADER_EPOCH, buffer.limit(), 0L);
 
-        for (Long offset : records.keySet().stream().sorted().toList()) {
-            builder.appendWithOffset(offset, records.get(offset));
-        }
+        records.keySet().stream().sorted().forEach(
+            offset -> builder.appendWithOffset(offset, records.get(offset))
+        );
         return builder.build();
     }
 
