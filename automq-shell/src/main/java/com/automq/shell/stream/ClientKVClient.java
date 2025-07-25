@@ -39,6 +39,7 @@ import org.apache.kafka.common.utils.Time;
 
 import com.automq.shell.metrics.S3MetricsExporter;
 import com.automq.stream.api.KeyValue;
+import com.automq.stream.api.KeyValue.ValueAndEpoch;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,6 +96,32 @@ public class ClientKVClient {
         throw code.exception();
     }
 
+    public ValueAndEpoch getKV(String key, String namespace) throws IOException {
+
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ClientKVClient]: Get KV: {} Namespace: {}", key, namespace);
+        }
+
+        GetKVsRequestData data = new GetKVsRequestData()
+            .setGetKeyRequests(List.of(new GetKVsRequestData.GetKVRequest().setKey(key).setNamespace(namespace)));
+
+        long now = Time.SYSTEM.milliseconds();
+        ClientRequest clientRequest = networkClient.newClientRequest(String.valueOf(bootstrapServer.id()),
+            new GetKVsRequest.Builder(data), now, true, 3000, null);
+
+        ClientResponse response = NetworkClientUtils.sendAndReceive(networkClient, clientRequest, Time.SYSTEM);
+        GetKVsResponseData responseData = (GetKVsResponseData) response.responseBody().data();
+
+        Errors code = Errors.forCode(responseData.errorCode());
+        if (Objects.requireNonNull(code) == Errors.NONE) {
+            return ValueAndEpoch.of(
+                responseData.getKVResponses().get(0).value(),
+                responseData.getKVResponses().get(0).epoch());
+        }
+
+        throw code.exception();
+    }
+
     public KeyValue.Value putKV(String key, byte[] value) throws IOException {
         long now = Time.SYSTEM.milliseconds();
 
@@ -119,6 +146,32 @@ public class ClientKVClient {
         throw code.exception();
     }
 
+    public ValueAndEpoch putKV(String key, byte[] value, String namespace, long epoch) throws IOException {
+        long now = Time.SYSTEM.milliseconds();
+
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ClientKVClient]: put KV: {}", key);
+        }
+
+        PutKVsRequestData data = new PutKVsRequestData()
+            .setPutKVRequests(List.of(new PutKVsRequestData.PutKVRequest().setKey(key).setValue(value).setNamespace(namespace).setEpoch(epoch)));
+
+        ClientRequest clientRequest = networkClient.newClientRequest(String.valueOf(bootstrapServer.id()),
+            new PutKVsRequest.Builder(data), now, true, 3000, null);
+
+        ClientResponse response = NetworkClientUtils.sendAndReceive(networkClient, clientRequest, Time.SYSTEM);
+        PutKVsResponseData responseData = (PutKVsResponseData) response.responseBody().data();
+
+        Errors code = Errors.forCode(responseData.errorCode());
+        if (Objects.requireNonNull(code) == Errors.NONE) {
+            return ValueAndEpoch.of(
+                responseData.putKVResponses().get(0).value(),
+                responseData.putKVResponses().get(0).epoch());
+        }
+
+        throw code.exception();
+    }
+
     public KeyValue.Value deleteKV(String key) throws IOException {
         long now = Time.SYSTEM.milliseconds();
 
@@ -138,6 +191,32 @@ public class ClientKVClient {
         Errors code = Errors.forCode(responseData.errorCode());
         if (Objects.requireNonNull(code) == Errors.NONE) {
             return KeyValue.Value.of(responseData.deleteKVResponses().get(0).value());
+        }
+
+        throw code.exception();
+    }
+
+    public ValueAndEpoch deleteKV(String key, String namespace, long epoch) throws IOException {
+        long now = Time.SYSTEM.milliseconds();
+
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("[ClientKVClient]: Delete KV: {}", key);
+        }
+
+        DeleteKVsRequestData data = new DeleteKVsRequestData()
+            .setDeleteKVRequests(List.of(new DeleteKVsRequestData.DeleteKVRequest().setKey(key).setNamespace(namespace).setEpoch(epoch)));
+
+        ClientRequest clientRequest = networkClient.newClientRequest(String.valueOf(bootstrapServer.id()),
+            new DeleteKVsRequest.Builder(data), now, true, 3000, null);
+
+        ClientResponse response = NetworkClientUtils.sendAndReceive(networkClient, clientRequest, Time.SYSTEM);
+        DeleteKVsResponseData responseData = (DeleteKVsResponseData) response.responseBody().data();
+
+        Errors code = Errors.forCode(responseData.errorCode());
+        if (Objects.requireNonNull(code) == Errors.NONE) {
+            return ValueAndEpoch.of(
+                responseData.deleteKVResponses().get(0).value(),
+                responseData.deleteKVResponses().get(0).epoch());
         }
 
         throw code.exception();
