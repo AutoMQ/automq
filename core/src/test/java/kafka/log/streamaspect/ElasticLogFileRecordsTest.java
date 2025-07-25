@@ -95,7 +95,7 @@ class ElasticLogFileRecordsTest {
         Map<Long, SimpleRecord> expectedRecords = prepareRecords(startOffset, recordCount);
         MemoryRecords memoryRecords = createMemoryRecords(expectedRecords);
         // The base offset for FetchResult should be the stream-relative offset.
-        FetchResult fetchResult = createFetchResult(memoryRecords, startOffset, recordCount);
+        FetchResult fetchResult = createFetchResult(memoryRecords, startOffset - BASE_OFFSET, recordCount);
 
         long relativeEndOffset = maxOffset - BASE_OFFSET;
         lenient().when(mockStreamSlice.fetch(any(FetchContext.class), eq(0L), eq(relativeEndOffset), anyInt()))
@@ -137,9 +137,7 @@ class ElasticLogFileRecordsTest {
             // The base offset for RecordBatchWithContext should be the stream-relative offset.
             s3Records.add(new com.automq.stream.RecordBatchWithContextWrapper(streamRecordBatch, currentStartOffset));
 
-            FetchResult fetchResult = mock(FetchResult.class);
-            lenient().when(fetchResult.recordBatchList()).thenReturn(s3Records);
-            lenient().when(fetchResult.getCacheAccessType()).thenReturn(CacheAccessType.BLOCK_CACHE_MISS);
+            FetchResult fetchResult = createFetchResult(memoryRecords, currentStartOffset - BASE_OFFSET, recordsPerBatch);
 
             long relativeStartOffset = currentStartOffset - BASE_OFFSET;
             long relativeEndOffset = maxOffset - BASE_OFFSET;
@@ -186,7 +184,7 @@ class ElasticLogFileRecordsTest {
 
         // 2. The S3 record batch indicates the original record count (6), but the buffer contains fewer (3).
         int originalRecordCount = 6;
-        FetchResult fetchResult = createFetchResult(memoryRecords, batchStartOffset, originalRecordCount);
+        FetchResult fetchResult = createFetchResult(memoryRecords, batchStartOffset - BASE_OFFSET, originalRecordCount);
 
         long relativeEndOffset = (lastOffsetInBatch + 1) - BASE_OFFSET;
         lenient().when(mockStreamSlice.fetch(any(FetchContext.class), eq(0L), eq(relativeEndOffset), anyInt()))
@@ -220,9 +218,8 @@ class ElasticLogFileRecordsTest {
         List<RecordBatchWithContext> s3Records = new ArrayList<>();
         long currentStartOffset = startOffset;
 
-        Random r = new Random();
         for (int i = 0; i < batchCount; i++) {
-            int skippedRecords = r.nextInt(recordsPerBatch);
+            int skippedRecords = random.nextInt(recordsPerBatch);
             Map<Long, SimpleRecord> batchRecords = prepareRecords(currentStartOffset, recordsPerBatch - skippedRecords);
             allExpectedRecords.putAll(batchRecords);
             MemoryRecords memoryRecords = createMemoryRecords(batchRecords);
@@ -230,9 +227,7 @@ class ElasticLogFileRecordsTest {
             // The base offset for RecordBatchWithContext should be the stream-relative offset.
             s3Records.add(new com.automq.stream.RecordBatchWithContextWrapper(streamRecordBatch, currentStartOffset));
 
-            FetchResult fetchResult = mock(FetchResult.class);
-            lenient().when(fetchResult.recordBatchList()).thenReturn(s3Records);
-            lenient().when(fetchResult.getCacheAccessType()).thenReturn(CacheAccessType.BLOCK_CACHE_MISS);
+            FetchResult fetchResult = createFetchResult(memoryRecords, currentStartOffset - BASE_OFFSET, recordsPerBatch);
 
             long relativeStartOffset = currentStartOffset - BASE_OFFSET;
             long relativeEndOffset = maxOffset - BASE_OFFSET;
