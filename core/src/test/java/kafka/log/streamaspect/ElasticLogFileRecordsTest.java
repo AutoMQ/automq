@@ -60,6 +60,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 @ExtendWith(MockitoExtension.class)
 class ElasticLogFileRecordsTest {
 
