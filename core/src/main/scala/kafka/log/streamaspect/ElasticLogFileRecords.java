@@ -19,6 +19,7 @@
 
 package kafka.log.streamaspect;
 
+import com.google.common.annotations.VisibleForTesting;
 import kafka.log.stream.s3.telemetry.ContextUtils;
 import kafka.log.stream.s3.telemetry.TelemetryConstants;
 
@@ -406,7 +407,8 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     static class StreamSegmentInputStream implements LogInputStream<RecordBatch> {
-        private static final int FETCH_BATCH_SIZE = 64 * 1024;
+        @VisibleForTesting
+        protected static final int FETCH_BATCH_SIZE = 64 * 1024;
         private final ElasticLogFileRecords elasticLogFileRecords;
         private final Queue<RecordBatch> remaining = new LinkedList<>();
         private final int maxSize;

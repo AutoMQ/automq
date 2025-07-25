@@ -19,10 +19,7 @@
 
 package kafka.log.streamaspect;
 
-import com.automq.stream.api.FetchResult;
-import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
-import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.context.FetchContext;
 import org.apache.kafka.common.compress.NoCompression;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -37,18 +34,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,31 +50,28 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 @Tag("S3Unit")
 @ExtendWith(MockitoExtension.class)
 class ElasticLogFileRecordsTest {
 
-    @Mock
-    private ElasticStreamSlice mockStreamSlice;
-    @Mock
-    private Stream mockStream;
+    private ElasticStreamSlice streamSlice;
+    private Stream stream;
 
     private ElasticLogFileRecords elasticLogFileRecords;
 
-    private static final long BASE_OFFSET = 1000L;
-    private static final int INITIAL_SIZE = 0;
     private final Random random = new Random();
 
     @BeforeEach
     void setUp() {
-        lenient().when(mockStreamSlice.stream()).thenReturn(mockStream);
-        lenient().when(mockStream.streamId()).thenReturn(1L);
-        elasticLogFileRecords = new ElasticLogFileRecords(mockStreamSlice, BASE_OFFSET, INITIAL_SIZE);
+        stream = spy(new MemoryClient.StreamImpl(1));
+        streamSlice = spy(new DefaultElasticStreamSlice(stream, SliceRange.of(0, Offsets.NOOP_OFFSET)));
+        elasticLogFileRecords = new ElasticLogFileRecords(streamSlice, 0, 0);
     }
 
     /**
@@ -89,20 +80,14 @@ class ElasticLogFileRecordsTest {
     @Test
     void testReadSingleBatch() throws ExecutionException, InterruptedException, IOException {
         // Arrange
-        long startOffset = BASE_OFFSET;
+        long startOffset = 0;
         int recordCount = 100;
         long maxOffset = startOffset + recordCount;
         final int MAX_READ_BYTES = 4096;
 
         Map<Long, SimpleRecord> expectedRecords = prepareRecords(startOffset, recordCount);
         MemoryRecords memoryRecords = createMemoryRecords(expectedRecords);
-        // The base offset for FetchResult should be the stream-relative offset.
-        FetchResult fetchResult = createFetchResult(memoryRecords, startOffset - BASE_OFFSET, recordCount);
-
-        long relativeEndOffset = maxOffset - BASE_OFFSET;
-        lenient().when(mockStreamSlice.fetch(any(FetchContext.class), eq(0L), eq(relativeEndOffset), anyInt()))
-            .thenReturn(CompletableFuture.completedFuture(fetchResult));
-        when(mockStreamSlice.confirmOffset()).thenReturn((long) recordCount);
+        elasticLogFileRecords.append(memoryRecords, maxOffset);
 
         // Act
         ReadHint.setReadAll(false);
@@ -112,6 +97,7 @@ class ElasticLogFileRecordsTest {
         assertNotNull(readRecords);
         assertTrue(readRecords instanceof ElasticLogFileRecords.BatchIteratorRecordsAdaptor);
         assertRecords(expectedRecords, readRecords);
+        verify(streamSlice).fetch(any(FetchContext.class), eq(0L), eq(maxOffset), eq(MAX_READ_BYTES));
     }
 
     /**
@@ -120,37 +106,25 @@ class ElasticLogFileRecordsTest {
     @Test
     void testReadAcrossMultipleBatches() throws ExecutionException, InterruptedException, IOException {
         // Arrange
-        long startOffset = BASE_OFFSET;
+        long startOffset = 0;
         int recordsPerBatch = 50;
         int batchCount = 3;
         long totalRecords = (long) recordsPerBatch * batchCount;
         long maxOffset = startOffset + totalRecords;
-        final int MAX_READ_BYTES = 8192;
+        final int MAX_READ_BYTES = Integer.MAX_VALUE;
 
         Map<Long, SimpleRecord> allExpectedRecords = new HashMap<>();
-        List<RecordBatchWithContext> s3Records = new ArrayList<>();
         long currentStartOffset = startOffset;
-
+        List<Long> nextOffsetList = new ArrayList<>();
         for (int i = 0; i < batchCount; i++) {
             Map<Long, SimpleRecord> batchRecords = prepareRecords(currentStartOffset, recordsPerBatch);
             allExpectedRecords.putAll(batchRecords);
             MemoryRecords memoryRecords = createMemoryRecords(batchRecords);
-            com.automq.stream.DefaultRecordBatch streamRecordBatch = new com.automq.stream.DefaultRecordBatch(recordsPerBatch, 0, Collections.emptyMap(), memoryRecords.buffer());
-            // The base offset for RecordBatchWithContext should be the stream-relative offset.
-            s3Records.add(new com.automq.stream.RecordBatchWithContextWrapper(streamRecordBatch, currentStartOffset));
+            elasticLogFileRecords.append(memoryRecords, currentStartOffset + recordsPerBatch);
 
-            FetchResult fetchResult = createFetchResult(memoryRecords, currentStartOffset - BASE_OFFSET, recordsPerBatch);
-
-            long relativeStartOffset = currentStartOffset - BASE_OFFSET;
-            long relativeEndOffset = maxOffset - BASE_OFFSET;
-            lenient().when(mockStreamSlice.fetch(any(FetchContext.class), eq(relativeStartOffset), eq(relativeEndOffset), anyInt()))
-                .thenReturn(CompletableFuture.completedFuture(fetchResult));
-
+            nextOffsetList.add(currentStartOffset);
             currentStartOffset += recordsPerBatch;
         }
-
-        when(mockStreamSlice.confirmOffset()).thenReturn(totalRecords);
-
 
         // Act
         ReadHint.setReadAll(false);
@@ -160,6 +134,9 @@ class ElasticLogFileRecordsTest {
         assertNotNull(readRecords);
         assertTrue(readRecords instanceof ElasticLogFileRecords.BatchIteratorRecordsAdaptor);
         assertRecords(allExpectedRecords, readRecords);
+        nextOffsetList.forEach(nextOffset -> {
+            verify(streamSlice).fetch(any(FetchContext.class), eq(nextOffset), eq(maxOffset), anyInt());
+        });
     }
 
     /**
@@ -169,29 +146,21 @@ class ElasticLogFileRecordsTest {
     @Test
     void testReadCompactedBatchWithGaps() throws ExecutionException, InterruptedException, IOException {
         // Arrange
-        long batchStartOffset = BASE_OFFSET;
-        long lastOffsetInBatch = batchStartOffset + 5; // Batch spans from 1000 to 1005
+        long batchStartOffset = 0;
+        long lastOffsetInBatch = batchStartOffset + 5; // Batch spans from 0 to 5
         final int MAX_READ_BYTES = 4096;
 
-        // 1. Create a MemoryRecords buffer with offset gaps to simulate compaction.
-        // We will only include records for offsets 1000, 1002, 1004.
+        // Create a MemoryRecords buffer with offset gaps to simulate compaction.
+        // We will only include records for offsets 0, 2, 4.
         Map<Long, SimpleRecord> expectedRecords = new HashMap<>();
         expectedRecords.put(batchStartOffset, createSimpleRecord("key" + batchStartOffset, "value" + batchStartOffset));
-        // Skip 1001
+        // Skip 1
         expectedRecords.put(batchStartOffset + 2, createSimpleRecord("key" + (batchStartOffset + 2), "value" + (batchStartOffset + 2)));
-        // Skip 1003
+        // Skip 3
         expectedRecords.put(batchStartOffset + 4, createSimpleRecord("key" + (batchStartOffset + 4), "value" + (batchStartOffset + 4)));
-        // Skip 1005
+        // Skip 5
         MemoryRecords memoryRecords = createMemoryRecords(expectedRecords);
-
-        // 2. The S3 record batch indicates the original record count (6), but the buffer contains fewer (3).
-        int originalRecordCount = 6;
-        FetchResult fetchResult = createFetchResult(memoryRecords, batchStartOffset - BASE_OFFSET, originalRecordCount);
-
-        long relativeEndOffset = (lastOffsetInBatch + 1) - BASE_OFFSET;
-        lenient().when(mockStreamSlice.fetch(any(FetchContext.class), eq(0L), eq(relativeEndOffset), anyInt()))
-            .thenReturn(CompletableFuture.completedFuture(fetchResult));
-        when(mockStreamSlice.confirmOffset()).thenReturn((long) originalRecordCount);
+        elasticLogFileRecords.append(memoryRecords, lastOffsetInBatch + 1);
 
         // Act: Read the entire range that contains the gappy batch.
         ReadHint.setReadAll(false);
@@ -201,6 +170,7 @@ class ElasticLogFileRecordsTest {
         assertNotNull(readRecords);
         assertTrue(readRecords instanceof ElasticLogFileRecords.BatchIteratorRecordsAdaptor);
         assertRecords(expectedRecords, readRecords);
+        verify(streamSlice).fetch(any(FetchContext.class), eq(batchStartOffset), eq(lastOffsetInBatch + 1), eq(MAX_READ_BYTES));
     }
 
     /**
@@ -209,37 +179,27 @@ class ElasticLogFileRecordsTest {
     @Test
     void testReadAcrossMultipleBatchesWithGaps() throws ExecutionException, InterruptedException, IOException {
         // Arrange
-        long startOffset = BASE_OFFSET;
+        long startOffset = 0;
         int recordsPerBatch = 50;
         int batchCount = 3;
         long totalRecords = (long) recordsPerBatch * batchCount;
         long maxOffset = startOffset + totalRecords;
-        final int MAX_READ_BYTES = 8192;
+        final int MAX_READ_BYTES = Integer.MAX_VALUE;
 
         Map<Long, SimpleRecord> allExpectedRecords = new HashMap<>();
-        List<RecordBatchWithContext> s3Records = new ArrayList<>();
         long currentStartOffset = startOffset;
 
+        List<Long> nextOffsetList = new ArrayList<>();
         for (int i = 0; i < batchCount; i++) {
             int skippedRecords = random.nextInt(recordsPerBatch);
             Map<Long, SimpleRecord> batchRecords = prepareRecords(currentStartOffset, recordsPerBatch - skippedRecords);
             allExpectedRecords.putAll(batchRecords);
             MemoryRecords memoryRecords = createMemoryRecords(batchRecords);
-            com.automq.stream.DefaultRecordBatch streamRecordBatch = new com.automq.stream.DefaultRecordBatch(recordsPerBatch, 0, Collections.emptyMap(), memoryRecords.buffer());
-            // The base offset for RecordBatchWithContext should be the stream-relative offset.
-            s3Records.add(new com.automq.stream.RecordBatchWithContextWrapper(streamRecordBatch, currentStartOffset));
+            elasticLogFileRecords.append(memoryRecords, currentStartOffset + recordsPerBatch);
 
-            FetchResult fetchResult = createFetchResult(memoryRecords, currentStartOffset - BASE_OFFSET, recordsPerBatch);
-
-            long relativeStartOffset = currentStartOffset - BASE_OFFSET;
-            long relativeEndOffset = maxOffset - BASE_OFFSET;
-            lenient().when(mockStreamSlice.fetch(any(FetchContext.class), eq(relativeStartOffset), eq(relativeEndOffset), anyInt()))
-                .thenReturn(CompletableFuture.completedFuture(fetchResult));
-
+            nextOffsetList.add(currentStartOffset);
             currentStartOffset += recordsPerBatch;
         }
-
-        when(mockStreamSlice.confirmOffset()).thenReturn(totalRecords);
 
         // Act
         ReadHint.setReadAll(false);
@@ -249,15 +209,32 @@ class ElasticLogFileRecordsTest {
         assertNotNull(readRecords);
         assertTrue(readRecords instanceof ElasticLogFileRecords.BatchIteratorRecordsAdaptor);
         assertRecords(allExpectedRecords, readRecords);
+        nextOffsetList.forEach(nextOffset -> {
+            verify(streamSlice).fetch(any(FetchContext.class), eq(nextOffset), eq(maxOffset), anyInt());
+        });
     }
 
 
     // Helper for preparing records to avoid code duplication
     private Map<Long, SimpleRecord> prepareRecords(long startOffset, int count) {
+        final int FETCH_BATCH_SIZE = ElasticLogFileRecords.StreamSegmentInputStream.FETCH_BATCH_SIZE;
         Map<Long, SimpleRecord> records = new HashMap<>();
+
+        // Calculate approximate size per record to ensure total size > FETCH_BATCH_SIZE
+        int estimatedRecordOverhead = 50; // Approximate overhead per record (headers, etc.)
+        int targetValueSize = Math.max(100, (FETCH_BATCH_SIZE / count) + estimatedRecordOverhead);
+
+        // Create a large value string to ensure we exceed FETCH_BATCH_SIZE
+        StringBuilder largeValue = new StringBuilder();
+        for (int j = 0; j < targetValueSize; j++) {
+            largeValue.append('a');
+        }
+        String valueTemplate = largeValue.toString();
+
         for (int i = 0; i < count; i++) {
             long currentOffset = startOffset + i;
-            records.put(currentOffset, createSimpleRecord("key" + currentOffset, "value" + currentOffset));
+            String value = valueTemplate + "_" + currentOffset; // Make each value unique
+            records.put(currentOffset, createSimpleRecord("key" + currentOffset, value));
         }
         return records;
     }
@@ -277,16 +254,37 @@ class ElasticLogFileRecordsTest {
         }
     }
 
+    /**
+     * Test reading an empty range (startOffset >= maxOffset).
+     * Expects an empty Records object and no interaction with the underlying streamSlice.
+     */
+    @Test
+    void testReadEmptyRange() throws ExecutionException, InterruptedException, IOException {
+        // Arrange
+        long startOffset = 100;
+        long maxOffset = 100; // startOffset >= maxOffset
+
+        // Act
+        ReadHint.setReadAll(false);
+        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(startOffset, maxOffset, 4096).get();
+
+        // Assert
+        assertNotNull(readRecords);
+        assertEquals(0, readRecords.sizeInBytes());
+        // Verify that streamSlice.fetch was NOT called
+        verify(streamSlice, never()).fetch(any(FetchContext.class), anyLong(), anyLong(), anyInt());
+    }
+
     // Helper methods
     private SimpleRecord createSimpleRecord(String key, String value) {
         return new SimpleRecord(System.currentTimeMillis(), key.getBytes(), value.getBytes());
     }
 
     private MemoryRecords createMemoryRecords(Map<Long, SimpleRecord> records) {
-        ByteBuffer buffer = ByteBuffer.allocate(1024);
+        ByteBuffer buffer = ByteBuffer.allocate(128 * 1024); // Increased buffer size to accommodate larger records
         long baseOffset = records.keySet().stream().min(Long::compare).get();
         ByteBufferOutputStream stream = new ByteBufferOutputStream(buffer);
-        MemoryRecordsBuilder builder = new MemoryRecordsBuilder(stream,
+        try (MemoryRecordsBuilder builder = new MemoryRecordsBuilder(stream,
             RecordBatch.CURRENT_MAGIC_VALUE,
             NoCompression.NONE,
             TimestampType.CREATE_TIME,
@@ -297,21 +295,13 @@ class ElasticLogFileRecordsTest {
             RecordBatch.NO_SEQUENCE,
             false,
             false,
-            RecordBatch.NO_PARTITION_LEADER_EPOCH, buffer.limit(), 0L);
+            RecordBatch.NO_PARTITION_LEADER_EPOCH, buffer.limit(), 0L)) {
 
-        records.keySet().stream().sorted().forEach(
-            offset -> builder.appendWithOffset(offset, records.get(offset))
-        );
-        return builder.build();
-    }
-
-    private FetchResult createFetchResult(MemoryRecords records, long baseOffset, int count) {
-        com.automq.stream.DefaultRecordBatch batch = new com.automq.stream.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
-        RecordBatchWithContext recordBatchWithContext = new com.automq.stream.RecordBatchWithContextWrapper(batch, baseOffset);
-        FetchResult result = mock(FetchResult.class);
-        lenient().when(result.recordBatchList()).thenReturn(Collections.singletonList(recordBatchWithContext));
-        lenient().when(result.getCacheAccessType()).thenReturn(CacheAccessType.BLOCK_CACHE_MISS);
-        return result;
+            records.keySet().stream().sorted().forEach(
+                offset -> builder.appendWithOffset(offset, records.get(offset))
+            );
+            return builder.build();
+        }
     }
 
     private byte[] readBytes(ByteBuffer buffer) {
