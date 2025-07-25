@@ -135,11 +135,11 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
             record.ranges(), record.orderId(), record.dataTimeInMs());
     }
 
-    public Integer nodeId() {
+    public int nodeId() {
         return nodeId;
     }
 
-    public Long objectId() {
+    public long objectId() {
         return objectId;
     }
 
