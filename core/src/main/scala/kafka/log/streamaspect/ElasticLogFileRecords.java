@@ -446,9 +446,9 @@ public class ElasticLogFileRecords implements AutoCloseable {
                                 buf = heapBuf;
                             }
                             readSize += buf.remaining();
+                            nextFetchOffset = Math.max(streamRecord.lastOffset() - elasticLogFileRecords.baseOffset, nextFetchOffset);
                             for (RecordBatch r : MemoryRecords.readableRecords(buf).batches()) {
                                 remaining.offer(r);
-                                nextFetchOffset = r.lastOffset() - elasticLogFileRecords.baseOffset + 1;
                             }
                         } catch (Throwable e) {
                             ElasticStreamSlice slice = elasticLogFileRecords.streamSlice;
