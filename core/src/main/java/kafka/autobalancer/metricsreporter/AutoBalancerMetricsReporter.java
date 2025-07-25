@@ -212,9 +212,22 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         shutdown = true;
         if (metricsReporterRunner != null) {
             metricsReporterRunner.interrupt();
+            try {
+                metricsReporterRunner.join(PRODUCER_CLOSE_TIMEOUT.toMillis());
+            } catch (InterruptedException e) {
+                LOGGER.warn("Interrupted while waiting for metrics reporter thread to finish");
+                Thread.currentThread().interrupt();
+            }
         }
         if (producer != null) {
-            producer.close(PRODUCER_CLOSE_TIMEOUT);
+            try {
+                // Try to flush remaining metrics before closing
+                producer.flush();
+            } catch (Exception e) {
+                LOGGER.warn("Failed to flush producer during shutdown: {}", e.getMessage());
+            } finally {
+                producer.close(PRODUCER_CLOSE_TIMEOUT);
+            }
         }
     }
 
@@ -248,6 +261,12 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         setIfAbsent(producerProps, ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         setIfAbsent(producerProps, ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         setIfAbsent(producerProps, ProducerConfig.ACKS_CONFIG, "all");
+        // Enable idempotence to prevent OutOfOrderSequenceException during retries
+        setIfAbsent(producerProps, ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+        // Increase delivery timeout to handle network issues and retries better
+        setIfAbsent(producerProps, ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, "120000");
+        // Set reasonable request timeout
+        setIfAbsent(producerProps, ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
         StaticAutoBalancerConfigUtils.addSslConfigs(producerProps, staticAutoBalancerConfig);
 
         metricsReporterCreateRetries = reporterConfig.getInt(
@@ -352,20 +371,51 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
      * @param ccm the auto balancer metric to send.
      */
     public void sendAutoBalancerMetric(AutoBalancerMetrics ccm) {
-        ProducerRecord<String, AutoBalancerMetrics> producerRecord =
-                new ProducerRecord<>(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, null, ccm.time(), ccm.key(), ccm);
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Sending auto balancer metric {}.", ccm);
+        if (shutdown) {
+            return; 
         }
-        producer.send(producerRecord, (recordMetadata, e) -> {
-            if (e != null) {
-                numMetricSendFailure++;
-                if (System.currentTimeMillis() - lastErrorReportTime > 10000) {
-                    lastErrorReportTime = System.currentTimeMillis();
-                    LOGGER.warn("Failed to send auto balancer metric", e);
+        
+        try {
+            ProducerRecord<String, AutoBalancerMetrics> producerRecord =
+                    new ProducerRecord<>(Topic.AUTO_BALANCER_METRICS_TOPIC_NAME, null, ccm.time(), ccm.key(), ccm);
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Sending auto balancer metric {}.", ccm);
+            }
+            producer.send(producerRecord, (recordMetadata, e) -> {
+                if (e != null) {
+                    numMetricSendFailure++;
+                    if (System.currentTimeMillis() - lastErrorReportTime > 10000) {
+                        lastErrorReportTime = System.currentTimeMillis();
+                        // Log different error types with appropriate levels
+                        if (e instanceof org.apache.kafka.common.errors.OutOfOrderSequenceException) {
+                            LOGGER.warn("OutOfOrderSequenceException when sending auto balancer metric (this should be resolved with idempotence enabled): {}", e.getMessage());
+                        } else if (e instanceof org.apache.kafka.common.errors.NotLeaderOrFollowerException) {
+                            LOGGER.warn("NotLeaderOrFollowerException when sending auto balancer metric (transient error): {}", e.getMessage());
+                        } else if (e instanceof InterruptException) {
+                            LOGGER.info("InterruptException when sending auto balancer metric (likely due to shutdown): {}", e.getMessage());
+                        } else {
+                            LOGGER.warn("Failed to send auto balancer metric: {}", e.getMessage());
+                            if (LOGGER.isDebugEnabled()) {
+                                LOGGER.debug("Full exception details for failed metric send", e);
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (Exception e) {
+            numMetricSendFailure++;
+            if (System.currentTimeMillis() - lastErrorReportTime > 10000) {
+                lastErrorReportTime = System.currentTimeMillis();
+                if (e instanceof InterruptException || shutdown) {
+                    LOGGER.info("Exception while sending auto balancer metric during shutdown: {}", e.getMessage());
+                } else {
+                    LOGGER.warn("Exception while sending auto balancer metric: {}", e.getMessage());
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("Full exception details for metric send", e);
+                    }
                 }
             }
-        });
+        }
     }
 
     private void reportMetrics(long now) throws Exception {
