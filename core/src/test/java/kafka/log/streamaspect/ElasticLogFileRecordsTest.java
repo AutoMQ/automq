@@ -19,8 +19,6 @@
 
 package kafka.log.streamaspect;
 
-import com.automq.stream.api.Stream;
-import com.automq.stream.s3.context.FetchContext;
 import org.apache.kafka.common.compress.NoCompression;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
@@ -30,6 +28,10 @@ import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.kafka.common.utils.Time;
+
+import com.automq.stream.api.Stream;
+import com.automq.stream.s3.context.FetchContext;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

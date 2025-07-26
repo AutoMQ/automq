@@ -19,7 +19,6 @@
 
 package kafka.log.streamaspect;
 
-import com.google.common.annotations.VisibleForTesting;
 import kafka.log.stream.s3.telemetry.ContextUtils;
 import kafka.log.stream.s3.telemetry.TelemetryConstants;
 
@@ -47,6 +46,7 @@ import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.trace.TraceUtils;
 import com.automq.stream.utils.FutureUtil;
+import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
