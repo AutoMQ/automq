@@ -46,6 +46,7 @@ import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.trace.TraceUtils;
 import com.automq.stream.utils.FutureUtil;
+import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -406,7 +407,8 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     static class StreamSegmentInputStream implements LogInputStream<RecordBatch> {
-        private static final int FETCH_BATCH_SIZE = 64 * 1024;
+        @VisibleForTesting
+        protected static final int FETCH_BATCH_SIZE = 64 * 1024;
         private final ElasticLogFileRecords elasticLogFileRecords;
         private final Queue<RecordBatch> remaining = new LinkedList<>();
         private final int maxSize;
@@ -446,9 +448,9 @@ public class ElasticLogFileRecords implements AutoCloseable {
                                 buf = heapBuf;
                             }
                             readSize += buf.remaining();
+                            nextFetchOffset = Math.max(streamRecord.lastOffset(), nextFetchOffset);
                             for (RecordBatch r : MemoryRecords.readableRecords(buf).batches()) {
                                 remaining.offer(r);
-                                nextFetchOffset = r.lastOffset() - elasticLogFileRecords.baseOffset + 1;
                             }
                         } catch (Throwable e) {
                             ElasticStreamSlice slice = elasticLogFileRecords.streamSlice;
