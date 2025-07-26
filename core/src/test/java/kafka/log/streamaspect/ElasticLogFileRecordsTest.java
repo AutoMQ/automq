@@ -85,7 +85,7 @@ class ElasticLogFileRecordsTest {
         long startOffset = 0;
         int recordCount = 100;
         long maxOffset = startOffset + recordCount;
-        final int MAX_READ_BYTES = 4096;
+        final int maxReadBytes = 4096;
 
         Map<Long, SimpleRecord> expectedRecords = prepareRecords(startOffset, recordCount);
         MemoryRecords memoryRecords = createMemoryRecords(expectedRecords);
@@ -93,13 +93,13 @@ class ElasticLogFileRecordsTest {
 
         // Act
         ReadHint.setReadAll(false);
-        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(startOffset, maxOffset, MAX_READ_BYTES).get();
+        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(startOffset, maxOffset, maxReadBytes).get();
 
         // Assert
         assertNotNull(readRecords);
         assertTrue(readRecords instanceof ElasticLogFileRecords.BatchIteratorRecordsAdaptor);
         assertRecords(expectedRecords, readRecords);
-        verify(streamSlice).fetch(any(FetchContext.class), eq(0L), eq(maxOffset), eq(MAX_READ_BYTES));
+        verify(streamSlice).fetch(any(FetchContext.class), eq(0L), eq(maxOffset), eq(maxReadBytes));
     }
 
     /**
@@ -113,7 +113,7 @@ class ElasticLogFileRecordsTest {
         int batchCount = 3;
         long totalRecords = (long) recordsPerBatch * batchCount;
         long maxOffset = startOffset + totalRecords;
-        final int MAX_READ_BYTES = Integer.MAX_VALUE;
+        final int maxReadBytes = Integer.MAX_VALUE;
 
         Map<Long, SimpleRecord> allExpectedRecords = new HashMap<>();
         long currentStartOffset = startOffset;
@@ -130,7 +130,7 @@ class ElasticLogFileRecordsTest {
 
         // Act
         ReadHint.setReadAll(false);
-        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(startOffset, maxOffset, MAX_READ_BYTES).get();
+        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(startOffset, maxOffset, maxReadBytes).get();
 
         // Assert
         assertNotNull(readRecords);
@@ -150,7 +150,7 @@ class ElasticLogFileRecordsTest {
         // Arrange
         long batchStartOffset = 0;
         long lastOffsetInBatch = batchStartOffset + 5; // Batch spans from 0 to 5
-        final int MAX_READ_BYTES = 4096;
+        final int maxReadBytes = 4096;
 
         // Create a MemoryRecords buffer with offset gaps to simulate compaction.
         // We will only include records for offsets 0, 2, 4.
@@ -166,13 +166,13 @@ class ElasticLogFileRecordsTest {
 
         // Act: Read the entire range that contains the gappy batch.
         ReadHint.setReadAll(false);
-        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(batchStartOffset, lastOffsetInBatch + 1, MAX_READ_BYTES).get();
+        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(batchStartOffset, lastOffsetInBatch + 1, maxReadBytes).get();
 
         // Assert: Verify that only the existing records are returned.
         assertNotNull(readRecords);
         assertTrue(readRecords instanceof ElasticLogFileRecords.BatchIteratorRecordsAdaptor);
         assertRecords(expectedRecords, readRecords);
-        verify(streamSlice).fetch(any(FetchContext.class), eq(batchStartOffset), eq(lastOffsetInBatch + 1), eq(MAX_READ_BYTES));
+        verify(streamSlice).fetch(any(FetchContext.class), eq(batchStartOffset), eq(lastOffsetInBatch + 1), eq(maxReadBytes));
     }
 
     /**
@@ -186,7 +186,7 @@ class ElasticLogFileRecordsTest {
         int batchCount = 3;
         long totalRecords = (long) recordsPerBatch * batchCount;
         long maxOffset = startOffset + totalRecords;
-        final int MAX_READ_BYTES = Integer.MAX_VALUE;
+        final int maxReadBytes = Integer.MAX_VALUE;
 
         Map<Long, SimpleRecord> allExpectedRecords = new HashMap<>();
         long currentStartOffset = startOffset;
@@ -205,7 +205,7 @@ class ElasticLogFileRecordsTest {
 
         // Act
         ReadHint.setReadAll(false);
-        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(startOffset, maxOffset, MAX_READ_BYTES).get();
+        org.apache.kafka.common.record.Records readRecords = elasticLogFileRecords.read(startOffset, maxOffset, maxReadBytes).get();
 
         // Assert
         assertNotNull(readRecords);
@@ -219,12 +219,12 @@ class ElasticLogFileRecordsTest {
 
     // Helper for preparing records to avoid code duplication
     private Map<Long, SimpleRecord> prepareRecords(long startOffset, int count) {
-        final int FETCH_BATCH_SIZE = ElasticLogFileRecords.StreamSegmentInputStream.FETCH_BATCH_SIZE;
+        final int fetchBatchSize = ElasticLogFileRecords.StreamSegmentInputStream.FETCH_BATCH_SIZE;
         Map<Long, SimpleRecord> records = new HashMap<>();
 
         // Calculate approximate size per record to ensure total size > FETCH_BATCH_SIZE
         int estimatedRecordOverhead = 50; // Approximate overhead per record (headers, etc.)
-        int targetValueSize = Math.max(100, (FETCH_BATCH_SIZE / count) + estimatedRecordOverhead);
+        int targetValueSize = Math.max(100, (fetchBatchSize / count) + estimatedRecordOverhead);
 
         // Create a large value string to ensure we exceed FETCH_BATCH_SIZE
         StringBuilder largeValue = new StringBuilder();
