@@ -399,14 +399,32 @@ public class S3StreamKafkaMetricsManager {
     private static X509Certificate[] parseCertificates(String pemContent) throws CertificateException {
         String[] pemArray = pemContent.split("-----END CERTIFICATE-----");
         CertificateFactory factory = CertificateFactory.getInstance("X.509");
-        X509Certificate[] certs = new X509Certificate[pemArray.length];
+        List<X509Certificate> certList = new ArrayList<>();
 
-        for (int i = 0; i < pemArray.length; i++) {
-            String pemPart = pemArray[i];
-            byte[] certBytes = Base64.getDecoder().decode(pemPart.replace("-----BEGIN CERTIFICATE-----", "").replaceAll("\n", ""));
-            certs[i] = (X509Certificate) factory.generateCertificate(new ByteArrayInputStream(certBytes));
+        for (String pemPart : pemArray) {
+            // Clean the PEM part by removing headers and all whitespace characters
+            String cleanedPemPart = pemPart.replace("-----BEGIN CERTIFICATE-----", "")
+                    .replaceAll("\\s", ""); // Remove all whitespace characters (spaces, tabs, newlines, etc.)
+            
+            // Skip empty parts that might result from splitting
+            if (cleanedPemPart.isEmpty()) {
+                continue;
+            }
+            
+            try {
+                byte[] certBytes = Base64.getDecoder().decode(cleanedPemPart);
+                X509Certificate cert = (X509Certificate) factory.generateCertificate(new ByteArrayInputStream(certBytes));
+                certList.add(cert);
+            } catch (IllegalArgumentException e) {
+                LOGGER.warn("Failed to decode certificate part due to invalid Base64, skipping: {}", e.getMessage());
+                // Continue processing other certificates instead of failing completely
+            } catch (CertificateException e) {
+                LOGGER.warn("Failed to parse certificate, skipping: {}", e.getMessage());
+                // Continue processing other certificates instead of failing completely
+            }
         }
-        return certs;
+        
+        return certList.toArray(new X509Certificate[0]);
     }
 
     public static void setIsActiveSupplier(Supplier<Boolean> isActiveSupplier) {
