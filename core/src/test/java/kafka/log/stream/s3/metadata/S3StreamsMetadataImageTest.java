@@ -437,10 +437,10 @@ public class S3StreamsMetadataImageTest {
             long startOffset = r.nextLong(0, Long.MAX_VALUE / 2);
             long gStreamId;
             do {
-                gStreamId = r.nextInt(0,(int) streamId * 2);
+                gStreamId = r.nextInt(0, (int) streamId * 2);
             } while (generatedStream.contains(gStreamId));
             sfrs.add(new StreamOffsetRange(gStreamId, startOffset,
-                startOffset + r.nextLong(0,1024)));
+                startOffset + r.nextLong(0, 1024)));
         }
 
         Collections.sort(sfrs);
