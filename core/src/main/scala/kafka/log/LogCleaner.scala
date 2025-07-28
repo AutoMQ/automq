@@ -1224,6 +1224,9 @@ private[log] class Cleaner(val id: Int,
     }
     for (batch <- fetchDataInfo.records.batches().asScala) {
       checkDone(topicPartition)
+
+      writeBuffer.clear();
+
       val records = MemoryRecords.readableRecords(batch.asInstanceOf[DefaultRecordBatch].buffer())
       throttler.maybeThrottle(records.sizeInBytes)
       val result = records.filterTo(topicPartition, logCleanerFilter, writeBuffer, maxLogMessageSize, decompressionBufferSupplier)
@@ -1241,7 +1244,13 @@ private[log] class Cleaner(val id: Int,
         dest.append(result.maxOffset, result.maxTimestamp, result.shallowOffsetOfMaxTimestamp(), retained)
         throttler.maybeThrottle(outputBuffer.limit())
       }
+
+      // Grow the write buffer if needed, avoid always allocate a new buffer.
+      if (result.outputBuffer.capacity() > this.writeBuffer.capacity()) {
+        this.writeBuffer = ByteBuffer.allocate(result.outputBuffer.capacity())
+      }
     }
+    restoreBuffers()
   }
 
   private def buildOffsetMapForSegmentV2(topicPartition: TopicPartition,
