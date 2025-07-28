@@ -19,6 +19,7 @@
 
 package kafka.log.stream.s3.metadata;
 
+import com.automq.stream.s3.index.lazy.StreamSetObjectRangeIndex;
 import kafka.server.BrokerServer;
 
 import org.apache.kafka.image.MetadataDelta;
@@ -37,11 +38,13 @@ import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
+import com.automq.stream.s3.cache.LRUCache;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.google.common.collect.Sets;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
@@ -49,10 +52,12 @@ import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 
+import org.apache.orc.util.BloomFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -67,6 +72,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 import static com.automq.stream.utils.FutureUtil.exec;
+import static kafka.log.stream.s3.metadata.StreamMetadataManager.DefaultRangeGetter.STREAM_ID_BLOOM_FILTER;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPublisher {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamMetadataManager.class);
@@ -77,6 +83,8 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     private final ObjectReaderFactory objectReaderFactory;
     private final LocalStreamRangeIndexCache indexCache;
     private final Map<Long, StreamMetadataListener> streamMetadataListeners = new ConcurrentHashMap<>();
+
+    private Set<Long> streamSetObjectIds = Collections.emptySet();
 
     public StreamMetadataManager(BrokerServer broker, int nodeId, ObjectReaderFactory objectReaderFactory,
         LocalStreamRangeIndexCache indexCache) {
@@ -98,6 +106,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     @Override
     public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage, LoaderManifest manifest) {
         Set<Long> changedStreams;
+        Set<Long> streamSetObjectIds = this.streamSetObjectIds;
         synchronized (this) {
             if (newImage.highestOffsetAndEpoch().equals(this.metadataImage.highestOffsetAndEpoch())) {
                 return;
@@ -105,9 +114,15 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             this.metadataImage = newImage;
             changedStreams = delta.getOrCreateStreamsMetadataDelta().changedStreams();
         }
+        this.streamSetObjectIds = Collections.unmodifiableSet(getStreamSetObjectIds());
+
+        // update streamBloomFilter
+        Set<Long> sets = Sets.difference(this.streamSetObjectIds, streamSetObjectIds);
+        sets.forEach(STREAM_ID_BLOOM_FILTER::removeObject);
+
         // retry all pending tasks
         retryPendingTasks();
-        this.indexCache.asyncPrune(this::getStreamSetObjectIds);
+        this.indexCache.asyncPrune(() -> streamSetObjectIds);
         notifyMetadataListeners(changedStreams);
     }
 
@@ -339,9 +354,74 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         }
     }
 
-    private static class DefaultRangeGetter implements S3StreamsMetadataImage.RangeGetter {
+    public static class StreamIdBloomFilter {
+        public static final double DEFAULT_FPP = 0.01;
+        private final LRUCache<Long/*objectId*/, BloomFilter> cache = new LRUCache<>();
+        private final long maxBloomFilterSize;
+        private long cacheSize = 0;
+
+        public StreamIdBloomFilter(long maxBloomFilterCacheSize) {
+            this.maxBloomFilterSize = maxBloomFilterCacheSize;
+        }
+
+        public synchronized void maintainCacheSize() {
+            while (cacheSize > maxBloomFilterSize) {
+                Map.Entry<Long, BloomFilter> entry = cache.pop();
+                if (entry != null) {
+                    cacheSize -= Long.BYTES + entry.getValue().sizeInBytes();
+                }
+            }
+        }
+
+        public synchronized boolean mightContain(long objectId, long streamId) {
+            BloomFilter bloomFilter = cache.get(objectId);
+            if (bloomFilter == null) {
+                return true; // treat as exist
+            }
+
+            cache.touchIfExist(objectId);
+            return bloomFilter.testLong(streamId);
+        }
+
+        public synchronized void removeObject(long objectId) {
+            BloomFilter filter = cache.get(objectId);
+            if (cache.remove(objectId)) {
+                cacheSize -= Long.BYTES + filter.sizeInBytes();
+            }
+        }
+
+        public synchronized void update(long objectId, List<StreamOffsetRange> streamOffsetRanges) {
+            if (cache.containsKey(objectId)) {
+                return;
+            }
+
+            BloomFilter bloomFilter = new BloomFilter(streamOffsetRanges.size(), DEFAULT_FPP);
+
+            streamOffsetRanges.forEach((range) -> bloomFilter.addLong(range.streamId()));
+            cache.put(objectId, bloomFilter);
+            cacheSize += Long.BYTES + bloomFilter.sizeInBytes();
+
+            maintainCacheSize();
+        }
+
+        public synchronized long sizeInBytes() {
+            return this.cacheSize;
+        }
+
+        public synchronized int objectNum() {
+            return this.cache.size();
+        }
+
+        public synchronized void clear() {
+            cache.clear();
+        }
+    }
+
+    public static class DefaultRangeGetter implements S3StreamsMetadataImage.RangeGetter {
         private final S3ObjectsImage objectsImage;
         private final ObjectReaderFactory objectReaderFactory;
+        public static final StreamIdBloomFilter STREAM_ID_BLOOM_FILTER = new StreamIdBloomFilter(20 * 1024 * 1024);
+        private S3StreamsMetadataImage.GetObjectsContext getObjectsContext;
 
         public DefaultRangeGetter(S3ObjectsImage objectsImage,
             ObjectReaderFactory objectReaderFactory) {
@@ -350,16 +430,46 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         }
 
         @Override
-        public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId) {
+        public void attachGetObjectsContext(S3StreamsMetadataImage.GetObjectsContext ctx) {
+            this.getObjectsContext = ctx;
+        }
+
+        public static void updateIndex(ObjectReader reader, Long nodeId, Long streamId) {
+            reader.basicObjectInfo().thenAccept(info -> {
+                Long objectId = reader.metadata().objectId();
+                List<StreamOffsetRange> streamOffsetRanges = info.indexBlock().streamOffsetRanges();
+
+                STREAM_ID_BLOOM_FILTER.update(objectId, streamOffsetRanges);
+
+                StreamSetObjectRangeIndex.getInstance().updateIndex(objectId, nodeId, streamId, streamOffsetRanges);
+            }).whenComplete((v, e) -> reader.release());
+        }
+
+        @Override
+        public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId, long nodeId, long orderId) {
             S3Object s3Object = objectsImage.getObjectMetadata(objectId);
             if (s3Object == null) {
                 return FutureUtil.failedFuture(new IllegalArgumentException("Cannot find object metadata for object: " + objectId));
             }
+
+            boolean mightContain = STREAM_ID_BLOOM_FILTER.mightContain(objectId, streamId);
+            if (!mightContain) {
+                getObjectsContext.bloomFilterSkipSSOCount++;
+                return CompletableFuture.completedFuture(Optional.empty());
+            }
+
+            getObjectsContext.searchSSOStreamOffsetRangeCount++;
             // The reader will be release after the find operation
             @SuppressWarnings("resource")
             ObjectReader reader = objectReaderFactory.get(new S3ObjectMetadata(objectId, s3Object.getObjectSize(), s3Object.getAttributes()));
-            CompletableFuture<Optional<StreamOffsetRange>> cf = reader.basicObjectInfo().thenApply(info -> info.indexBlock().findStreamOffsetRange(streamId));
-            cf.whenComplete((rst, ex) -> reader.release());
+            CompletableFuture<Optional<StreamOffsetRange>> cf = reader.basicObjectInfo()
+                .thenApply(info -> info.indexBlock().findStreamOffsetRange(streamId));
+            cf.whenCompleteAsync((rst, ex) -> {
+                if (rst.isEmpty()) {
+                    getObjectsContext.searchSSORangeEmpty.add(1);
+                }
+                updateIndex(reader, nodeId, streamId);
+            }, StreamSetObjectRangeIndex.UPDATE_INDEX_THREAD_POOL);
             return cf;
         }
 
