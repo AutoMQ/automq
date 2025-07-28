@@ -533,7 +533,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      * should be invalidated, so we can refresh the index from object storage next time
      */
     private CompletableFuture<Long> getStartStreamSetObjectId(int nodeId, long startOffset, GetObjectsContext ctx) {
-        if (StreamSetObjectRangeIndex.enabled) {
+        if (StreamSetObjectRangeIndex.ENABLED) {
             return StreamSetObjectRangeIndex.getInstance().searchObjectId(nodeId, ctx.streamId, startOffset);
         }
 

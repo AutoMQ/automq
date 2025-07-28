@@ -55,6 +55,8 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -78,7 +80,7 @@ import io.netty.buffer.ByteBuf;
 public class S3StreamsMetadataImageTest {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamsMetadataImageTest.class);
 
-    static class NodeData {
+    private static class NodeData {
         private final List<S3StreamSetObject> streamSetObjects;
 
         public NodeData(int nodeId, List<S3StreamSetObject> streamSetObjects) {
@@ -94,7 +96,7 @@ public class S3StreamsMetadataImageTest {
         }
     }
 
-    static class GeneratedStreamMetadata implements S3StreamsMetadataImage.RangeGetter {
+    private static class GeneratedStreamMetadata implements S3StreamsMetadataImage.RangeGetter {
         private final List<S3StreamObject> streamObjects;
         private final Map<Integer, NodeData> nodeData;
         private final Map<Long, List<StreamOffsetRange>> ssoRanges;
@@ -192,7 +194,7 @@ public class S3StreamsMetadataImageTest {
         }
 
         private static final Object DUMMY_OBJECT = new Object();
-        public ConcurrentHashMap<Long, Object> accessed = new ConcurrentHashMap<>();
+        private ConcurrentHashMap<Long, Object> accessed = new ConcurrentHashMap<>();
 
         public S3StreamsMetadataImage.GetObjectsContext getObjectsContext;
 
@@ -317,8 +319,8 @@ public class S3StreamsMetadataImageTest {
         }
 
         Map<Integer, NodeData> finalNodeData = new HashMap<>();
-        for (int nodeId : nodeObjectsMap.keySet()) {
-            finalNodeData.put(nodeId, new NodeData(nodeId, nodeObjectsMap.get(nodeId)));
+        for (Map.Entry<Integer, List<S3StreamSetObject>> entry : nodeObjectsMap.entrySet()) {
+            finalNodeData.put(entry.getKey(), new NodeData(entry.getKey(), entry.getValue()));
         }
 
         RegistryRef ref = new RegistryRef();
@@ -432,13 +434,13 @@ public class S3StreamsMetadataImageTest {
         generatedStream.add(streamId);
         List<StreamOffsetRange> sfrs = new ArrayList<>(s3StreamSetObject.offsetRangeList());
         for (int i = 0; i < maxStreamPerSso; i++) {
-            long startOffset = Math.abs(r.nextLong());
+            long startOffset = r.nextLong(0, Long.MAX_VALUE / 2);
             long gStreamId;
             do {
-                gStreamId = Math.abs(r.nextInt((int) streamId * 2));
+                gStreamId = r.nextInt(0,(int) streamId * 2);
             } while (generatedStream.contains(gStreamId));
             sfrs.add(new StreamOffsetRange(gStreamId, startOffset,
-                startOffset + Math.abs(r.nextInt(101024))));
+                startOffset + r.nextLong(0,1024)));
         }
 
         Collections.sort(sfrs);
@@ -482,11 +484,32 @@ public class S3StreamsMetadataImageTest {
         return ans;
     }
 
+    private static void enableStreamSetObjectRangeIndex() {
+        try {
+            Class<?> clazz = StreamSetObjectRangeIndex.class;
+            // 2. 获取 ENABLED 字段
+            Field field = clazz.getDeclaredField("ENABLED");
+
+            // 3. 确保我们可以访问该字段，即使它是私有的
+            field.setAccessible(true);
+
+            // 4. 去掉字段的 final 修饰符
+            Field modifiersField = Field.class.getDeclaredField("modifiers");
+            modifiersField.setAccessible(true);
+            modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
+
+            // 5. 设置字段的新值
+            field.set(null, true);
+        } catch (Exception e) {
+            Assertions.fail(e);
+        }
+    }
+
     @Test
     public void testGetObjectsResult() {
         Random random = new Random();
         ArrayList<Long> seedList = new ArrayList<>();
-        StreamSetObjectRangeIndex.enabled = true;
+        enableStreamSetObjectRangeIndex();
 
         StreamSetObjectRangeIndex.getInstance().clear();
 
