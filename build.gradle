@@ -1064,6 +1064,7 @@ project(':core') {
     testImplementation project(':storage:storage-api').sourceSets.test.output
     testImplementation project(':server').sourceSets.test.output
     testImplementation libs.bcpkix
+    testImplementation libs.mockitoJunitJupiter // supports MockitoExtension
     testImplementation libs.mockitoCore
     testImplementation libs.guava
     testImplementation(libs.apacheda) {
@@ -2224,9 +2225,9 @@ project(':s3stream') {
     implementation 'com.ibm.async:asyncutil:0.1.0'
 
     testImplementation 'org.slf4j:slf4j-simple:2.0.9'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
-    testImplementation 'org.mockito:mockito-core:5.5.0'
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.5.0'
+    testImplementation libs.junitJupiter
+    testImplementation libs.mockitoCore
+    testImplementation libs.mockitoJunitJupiter // supports MockitoExtension
     testImplementation 'org.awaitility:awaitility:4.2.1'
   }
 
