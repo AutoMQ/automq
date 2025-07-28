@@ -35,7 +35,6 @@ import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.index.NodeRangeIndexCache;
 import com.automq.stream.s3.index.lazy.StreamSetObjectRangeIndex;
-import com.google.common.annotations.VisibleForTesting;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
@@ -44,6 +43,7 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.MetadataStats;
 import com.automq.stream.utils.FutureUtil;
+import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -372,41 +372,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             }
 
             if (streamSetObjectIndex == loadedStreamSetObjectIndex && loadedStreamSetObjectIndex < streamSetObjects.size()) {
-                // check if index can fast skip
-                CompletableFuture<Integer> startSearchIndexCf = getStartSearchIndex(node, nextStartOffset, ctx);
-
-                NodeS3StreamSetObjectMetadataImage finalNode1 = node;
-                List<S3StreamSetObject> finalStreamSetObjects1 = streamSetObjects;
-                long finalNextStartOffset1 = nextStartOffset;
-                int finalLastRangeIndex1 = lastRangeIndex;
-                int finalStreamObjectIndex1 = streamObjectIndex;
-
-                startSearchIndexCf.whenComplete((index, ex) -> {
-                    if (ex != null) {
-                        if (!(FutureUtil.cause(ex) instanceof ObjectNotExistException)) {
-                            LOGGER.error("Failed to get start search index", ex);
-                        }
-                        index = 0;
-                    }
-
-                    if (index > loadedStreamSetObjectIndex) {
-                        ctx.fastSkipIndexCount++;
-                    }
-
-                    // load stream set object index
-                    int finalIndex = Math.max(index, loadedStreamSetObjectIndex);
-                    long startTimeNs = System.nanoTime();
-                    loadStreamSetObjectInfo(ctx, finalNode1.getNodeId(), finalStreamSetObjects1, finalIndex, ctx.loadStreamSetObjectInfo / 5 + 5)
-                        .thenAccept(newLoadedIndexExclusive -> {
-                            ctx.nextStartOffset = finalNextStartOffset1;
-                            ctx.waitLoadSSOCostMs.add(TimerUtil.timeElapsedSince(startTimeNs, TimeUnit.NANOSECONDS));
-                            fillObjects(ctx, stream, objects, finalLastRangeIndex1, finalStreamObjectIndex1, streamObjects,
-                                finalIndex, finalStreamSetObjects1, newLoadedIndexExclusive, finalNode1);
-                        }).exceptionally(exception -> {
-                            ctx.cf.completeExceptionally(exception);
-                            return null;
-                        });
-                });
+                loadMoreStreamSetObjects(ctx, stream, objects, nextStartOffset, lastRangeIndex, streamSetObjects,
+                    streamObjectIndex, loadedStreamSetObjectIndex, streamObjects, node);
                 return;
             }
 
@@ -416,6 +383,47 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 streamSetObjects = null;
             }
         }
+    }
+
+    private void loadMoreStreamSetObjects(GetObjectsContext ctx,
+                                          S3StreamMetadataImage stream,
+                                          List<S3ObjectMetadata> objects,
+                                          long nextStartOffset,
+                                          int lastRangeIndex,
+                                          List<S3StreamSetObject> streamSetObjects,
+                                          int streamObjectIndex,
+                                          int loadedStreamSetObjectIndex,
+                                          List<S3StreamObject> streamObjects,
+                                          NodeS3StreamSetObjectMetadataImage node) {
+        // check if index can fast skip
+        CompletableFuture<Integer> startSearchIndexCf = getStartSearchIndex(node, nextStartOffset, ctx);
+
+        startSearchIndexCf.whenComplete((index, ex) -> {
+            if (ex != null) {
+                if (!(FutureUtil.cause(ex) instanceof ObjectNotExistException)) {
+                    LOGGER.error("Failed to get start search index", ex);
+                }
+                index = 0;
+            }
+
+            if (index > loadedStreamSetObjectIndex) {
+                ctx.fastSkipIndexCount++;
+            }
+
+            // load stream set object index
+            int finalIndex = Math.max(index, loadedStreamSetObjectIndex);
+            long startTimeNs = System.nanoTime();
+            loadStreamSetObjectInfo(ctx, node.getNodeId(), streamSetObjects, finalIndex, ctx.loadStreamSetObjectInfo / 5 + 5)
+                .thenAccept(loadedIndexExclusive -> {
+                    ctx.nextStartOffset = nextStartOffset;
+                    ctx.waitLoadSSOCostMs.add(TimerUtil.timeElapsedSince(startTimeNs, TimeUnit.NANOSECONDS));
+                    fillObjects(ctx, stream, objects, lastRangeIndex, streamObjectIndex, streamObjects,
+                        finalIndex, streamSetObjects, loadedIndexExclusive, node);
+                }).exceptionally(exception -> {
+                    ctx.cf.completeExceptionally(exception);
+                    return null;
+                });
+        });
     }
 
     private void completeWithSanityCheck(GetObjectsContext ctx, List<S3ObjectMetadata> objects) {
@@ -525,7 +533,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
      * should be invalidated, so we can refresh the index from object storage next time
      */
     private CompletableFuture<Long> getStartStreamSetObjectId(int nodeId, long startOffset, GetObjectsContext ctx) {
-        if (StreamSetObjectRangeIndex.ENABLED) {
+        if (StreamSetObjectRangeIndex.enabled) {
             return StreamSetObjectRangeIndex.getInstance().searchObjectId(nodeId, ctx.streamId, startOffset);
         }
 

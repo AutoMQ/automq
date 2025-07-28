@@ -18,20 +18,6 @@
  */
 package kafka.log.stream.s3.metadata;
 
-import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.DataBlockIndex;
-import com.automq.stream.s3.ObjectReader;
-import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
-import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
-import com.automq.stream.s3.index.lazy.StreamSetObjectRangeIndex;
-import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
-import com.automq.stream.s3.metadata.S3StreamConstant;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.metadata.StreamState;
-import com.automq.stream.s3.operator.MemoryObjectStorage;
-import com.google.common.base.Preconditions;
-import io.netty.buffer.ByteBuf;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.image.DeltaList;
@@ -48,6 +34,21 @@ import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.timeline.TimelineHashMap;
+
+import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.DataBlockIndex;
+import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
+import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
+import com.automq.stream.s3.index.lazy.StreamSetObjectRangeIndex;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metadata.S3StreamConstant;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
+import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.google.common.base.Preconditions;
+
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import io.netty.buffer.ByteBuf;
 
 
 @Tag("S3Unit")
@@ -188,7 +191,7 @@ public class S3StreamsMetadataImageTest {
             return ssoRanges;
         }
 
-        private Object DUMMY_OBJECT = new Object();
+        private static final Object DUMMY_OBJECT = new Object();
         public ConcurrentHashMap<Long, Object> accessed = new ConcurrentHashMap<>();
 
         public S3StreamsMetadataImage.GetObjectsContext getObjectsContext;
@@ -238,11 +241,13 @@ public class S3StreamsMetadataImageTest {
         }
     }
 
+    @SuppressWarnings("NPathComplexity")
     public static S3StreamsMetadataImageTest.GeneratorResult generate(
         long randomSeed,
         Random random,
         long streamId, long totalLength, int numNodes, int maxSegmentSize,
-        double streamSetObjectProbability, double nodeMigrationProbability, int maxStreamPerSSO, double SSOContainsStreamProbability) {
+        double streamSetObjectProbability, double nodeMigrationProbability, int maxStreamPerSSO,
+        double streamSetObjectNotContainsStreamProbability) {
 
         List<S3StreamObject> streamObjects = new ArrayList<>();
         Map<Integer, List<S3StreamSetObject>> nodeObjectsMap = new HashMap<>();
@@ -260,7 +265,7 @@ public class S3StreamsMetadataImageTest {
         RangeMetadata rangeMetadata = new RangeMetadata(streamId, nextEpoch, rangeIndex,
             currentOffset, currentOffset, currentNodeId);
         while (currentOffset < totalLength) {
-            if (random.nextDouble() < SSOContainsStreamProbability) {
+            if (random.nextDouble() < streamSetObjectNotContainsStreamProbability) {
                 notStreamNodeObjectsMap.computeIfAbsent(currentNodeId, k -> new ArrayList<>())
                     .add(new S3StreamSetObject(nextObjectId, random.nextInt(numNodes), new ArrayList<>(), nextObjectId));
                 nextObjectId++;
@@ -481,38 +486,37 @@ public class S3StreamsMetadataImageTest {
     public void testGetObjectsResult() {
         Random random = new Random();
         ArrayList<Long> seedList = new ArrayList<>();
-        StreamSetObjectRangeIndex.ENABLED = true;
-
+        StreamSetObjectRangeIndex.enabled = true;
 
         StreamSetObjectRangeIndex.getInstance().clear();
 
         StreamMetadataManager.DefaultRangeGetter.STREAM_ID_BLOOM_FILTER.clear();
-        long STREAM_ID = 420000L;
-        long TOTAL_STREAM_LENGTH = 50000L;
-        int NUMBER_OF_NODES = 10;
-        int MAX_SEGMENT_SIZE = 100;
-        double STREAM_SET_OBJECT_PROBABILITY = 0.7;
-        double NODE_MIGRATION_PROBABILITY = 0.2;
-        double SSONotContainsStreamProbability = 0.5;
+        long streamId = 420000L;
+        long totalStreamLength = 50000L;
+        int numberOfNodes = 10;
+        int maxSegmentSize = 100;
+        double streamSetObjectProbability = 0.7;
+        double nodeMigrationProbability = 0.2;
+        double streamSetObjectNotContainsStreamProbability = 0.5;
 
         long now = System.currentTimeMillis();
         seedList.add(now);
         random.setSeed(now);
 
         S3StreamsMetadataImageTest.GeneratorResult generatorResult = generate(now, random,
-            STREAM_ID, TOTAL_STREAM_LENGTH, NUMBER_OF_NODES, MAX_SEGMENT_SIZE,
-            STREAM_SET_OBJECT_PROBABILITY, NODE_MIGRATION_PROBABILITY,
-            10000, SSONotContainsStreamProbability
+            streamId, totalStreamLength, numberOfNodes, maxSegmentSize,
+            streamSetObjectProbability, nodeMigrationProbability,
+            10000, streamSetObjectNotContainsStreamProbability
         );
 
-        List<S3ObjectMetadata> allObjects = getS3ObjectMetadata(STREAM_ID, generatorResult.generatedStreamMetadata);
+        List<S3ObjectMetadata> allObjects = getS3ObjectMetadata(streamId, generatorResult.generatedStreamMetadata);
 
         allObjects.sort(Comparator.comparingLong(S3ObjectMetadata::startOffset));
 
         List<S3ObjectMetadata> originResult = allObjects;
 
         CompletableFuture<InRangeObjects> objects = null;
-        objects = generatorResult.image.getObjects(STREAM_ID, 0, TOTAL_STREAM_LENGTH, Integer.MAX_VALUE, generatorResult.generatedStreamMetadata);
+        objects = generatorResult.image.getObjects(streamId, 0, totalStreamLength, Integer.MAX_VALUE, generatorResult.generatedStreamMetadata);
         InRangeObjects inRangeObjects = null;
         try {
             inRangeObjects = objects.get();
@@ -523,16 +527,16 @@ public class S3StreamsMetadataImageTest {
         }
         System.out.println(generatorResult.generatedStreamMetadata.getObjectsContext.dumpStatistics());
 
-        check(now, seedList, 0, (int) TOTAL_STREAM_LENGTH, originResult, inRangeObjects, 0);
+        check(now, seedList, 0, (int) totalStreamLength, originResult, inRangeObjects, 0);
 
 
         int limit = 4;
         for (int i = 0; i < 1000; i++) {
             long startMs = System.nanoTime();
-            int startOffset = random.nextInt((int) TOTAL_STREAM_LENGTH);
-            int endOffset = random.nextInt(startOffset, (int) TOTAL_STREAM_LENGTH);
+            int startOffset = random.nextInt((int) totalStreamLength);
+            int endOffset = random.nextInt(startOffset, (int) totalStreamLength);
 
-            objects = generatorResult.image.getObjects(STREAM_ID, startOffset, endOffset, limit, generatorResult.generatedStreamMetadata);
+            objects = generatorResult.image.getObjects(streamId, startOffset, endOffset, limit, generatorResult.generatedStreamMetadata);
 
             try {
                 inRangeObjects = objects.get();

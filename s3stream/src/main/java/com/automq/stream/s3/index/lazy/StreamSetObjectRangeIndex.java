@@ -26,6 +26,7 @@ import com.google.common.base.Ticker;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.util.concurrent.Striped;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,14 +43,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
 public class StreamSetObjectRangeIndex {
-    public static boolean ENABLED = System.getenv().containsKey("AUTOMQ_STREAM_SET_RANGE_INDEX_ENABLED");
+    public static boolean enabled = System.getenv().containsKey("AUTOMQ_STREAM_SET_RANGE_INDEX_ENABLED");
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamSetObjectRangeIndex.class);
     private static volatile StreamSetObjectRangeIndex instance = null;
 
     public static final ExecutorService UPDATE_INDEX_THREAD_POOL = Executors.newSingleThreadExecutor(
         ThreadUtils.createThreadFactory("StreamSetObjectRangeIndex", true));
 
-    private final Object DUMMAY_OBJECT = new Object();
+    private static final Object DUMMAY_OBJECT = new Object();
     private final ConcurrentHashMap<Long/*streamId*/, TreeMap<Long/*startOffset*/, Long/*objectId*/>> streamOffsetIndexMap =
         new ConcurrentHashMap<>(10240);
     private final Cache<Long /*streamId*/, Object> expireCache;
@@ -66,7 +67,7 @@ public class StreamSetObjectRangeIndex {
             .ticker(ticker)
             .maximumSize(maxSize)
             .expireAfterWrite(Duration.ofMillis(expireTimeMs))
-            .removalListener( notification -> {
+            .removalListener(notification -> {
                 if (notification.getKey() != null) {
                     streamOffsetIndexMap.remove(notification.getKey());
                 }
@@ -88,7 +89,7 @@ public class StreamSetObjectRangeIndex {
 
     public void updateIndex(Long objectId, Long nodeId, Long streamId,
                                          List<StreamOffsetRange> streamOffsetRanges) {
-        if (!ENABLED) {
+        if (!enabled) {
             return;
         }
 

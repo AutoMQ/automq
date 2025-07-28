@@ -16,10 +16,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package kafka.log.stream.s3.metadata;
 
-import com.automq.stream.s3.index.lazy.StreamSetObjectRangeIndex;
 import kafka.server.BrokerServer;
 
 import org.apache.kafka.image.MetadataDelta;
@@ -36,21 +34,22 @@ import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.cache.LRUCache;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
-import com.automq.stream.s3.cache.LRUCache;
+import com.automq.stream.s3.index.lazy.StreamSetObjectRangeIndex;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.google.common.collect.Sets;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
+import com.google.common.collect.Sets;
 
 import org.apache.orc.util.BloomFilter;
 import org.slf4j.Logger;
@@ -397,7 +396,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
 
             BloomFilter bloomFilter = new BloomFilter(streamOffsetRanges.size(), DEFAULT_FPP);
 
-            streamOffsetRanges.forEach((range) -> bloomFilter.addLong(range.streamId()));
+            streamOffsetRanges.forEach(range -> bloomFilter.addLong(range.streamId()));
             cache.put(objectId, bloomFilter);
             cacheSize += Long.BYTES + bloomFilter.sizeInBytes();
 
