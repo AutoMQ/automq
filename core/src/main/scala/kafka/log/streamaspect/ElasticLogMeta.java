@@ -41,7 +41,7 @@ import java.util.Map;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ElasticLogMeta {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final ObjectWriter WRITER = OBJECT_MAPPER.writer();
+    private static final ObjectWriter WRITER = OBJECT_MAPPER.writerFor(ElasticLogMeta.class);
     private static final ObjectReader READER = OBJECT_MAPPER.readerFor(ElasticLogMeta.class);
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogMeta.class);

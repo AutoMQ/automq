@@ -35,6 +35,14 @@ public interface StreamClient {
     CompletableFuture<Stream> createAndOpenStream(CreateStreamOptions options);
 
     /**
+     * PreWarmStream
+     * Expect to preWarm metaStream data cache before real open
+     * @param streamId metaStreamId
+     * @return preWarm result {@link CompletableFuture<Void>}
+     */
+    CompletableFuture<Void> preWarmStream(long streamId);
+
+    /**
      * Open stream.
      *
      * @param streamId stream id.

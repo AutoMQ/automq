@@ -23,9 +23,11 @@ import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.compact.StreamObjectCompactor;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
@@ -33,6 +35,7 @@ import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -131,6 +134,22 @@ public class S3StreamClient implements StreamClient {
                 StreamOperationStats.getInstance().createStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 return openStream0(streamId, options.epoch(), options.tags(), OpenStreamOptions.builder().epoch(options.epoch()).tags(options.tags()).build());
             }), LOGGER, "createAndOpenStream");
+        });
+    }
+
+    public CompletableFuture<Void> preWarmStream(long streamId) {
+        return this.streamManager.getStreams(List.of(streamId)).thenCompose(meta -> {
+            if (meta.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            FetchContext fetchContext = new FetchContext();
+            ReadOptions readOptions = ReadOptions.builder().prioritizedRead(true).build();
+            fetchContext.setReadOptions(readOptions);
+
+            StreamMetadata streamMetadata = meta.get(0);
+            CompletableFuture<ReadDataBlock> read = this.storage.read(fetchContext, streamId, streamMetadata.startOffset(), streamMetadata.endOffset(), 64 * 1024);
+            return read.thenAccept(readDataBlock -> readDataBlock.getRecords().forEach(StreamRecordBatch::release));
         });
     }
 
