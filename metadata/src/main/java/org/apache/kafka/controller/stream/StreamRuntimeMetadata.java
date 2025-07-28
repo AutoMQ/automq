@@ -176,6 +176,11 @@ public class StreamRuntimeMetadata {
             RangeMetadata range = ranges.get(i);
             if (startOffset <= range.startOffset() && range.endOffset() <= endOffset) {
                 removableRanges.add(range);
+                continue;
+            }
+            // remove middle ranges contains no message
+            if (range.startOffset() == range.endOffset()) {
+                removableRanges.add(range);
             }
         }
         return removableRanges;
