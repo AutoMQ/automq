@@ -80,7 +80,7 @@ public class MemoryClient implements Client {
         return FutureUtil.failedFuture(new UnsupportedOperationException());
     }
 
-    static class StreamImpl implements Stream {
+    public static class StreamImpl implements Stream {
         private final AtomicLong nextOffsetAlloc = new AtomicLong();
         private NavigableMap<Long, RecordBatchWithContext> recordMap = new ConcurrentSkipListMap<>();
         private final long streamId;
@@ -132,9 +132,25 @@ public class MemoryClient implements Client {
             if (floorKey == null) {
                 return CompletableFuture.completedFuture(ArrayList::new);
             }
-            List<RecordBatchWithContext> records = new ArrayList<>(recordMap.subMap(floorKey, endOffset).values());
+            NavigableMap<Long, RecordBatchWithContext> subMap = recordMap.subMap(floorKey, true, endOffset, false);
+            List<RecordBatchWithContext> records = new ArrayList<>();
+            int accumulatedSize = 0;
+            for (Map.Entry<Long, RecordBatchWithContext> entry : subMap.entrySet()) {
+                RecordBatchWithContext batch = entry.getValue();
+                int batchSize = batch.rawPayload().remaining();
+                if (accumulatedSize + batchSize > maxSizeHint && !records.isEmpty()) {
+                    break;
+                }
+                records.add(batch);
+                accumulatedSize += batchSize;
+
+                if (accumulatedSize > maxSizeHint) {
+                    break;
+                }
+            }
             return CompletableFuture.completedFuture(() -> records);
         }
+
 
         @Override
         public CompletableFuture<Void> trim(long newStartOffset) {
