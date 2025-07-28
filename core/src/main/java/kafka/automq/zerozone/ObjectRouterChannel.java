@@ -95,6 +95,8 @@ public class ObjectRouterChannel implements RouterChannel {
                 channelEpochQueue.poll();
                 RecordOffset recordOffset = channelEpoch2LastRecordOffset.remove(epoch);
                 wal.trim(recordOffset);
+                // TODO: remove
+                LOGGER.info("RouterChannel trim to epoch={} offset={}", epoch, recordOffset);
             }
         } finally {
             writeLock.unlock();

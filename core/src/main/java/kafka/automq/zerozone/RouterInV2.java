@@ -64,6 +64,10 @@ public class RouterInV2 {
 
 
     public CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request) {
+        if (request.routeEpoch() <= channelProvider.epoch().getFenced()) {
+            String str = String.format("The router request epoch %s is less than fenced epoch %s.", request.routeEpoch(), channelProvider.epoch().getFenced());
+            return CompletableFuture.failedFuture(new IllegalStateException(str));
+        }
         RouterRecordV2 routerRecord = RouterRecordV2.decode(Unpooled.wrappedBuffer(request.metadata()));
         RouterChannel routerChannel = channelProvider.readOnlyChannel(routerRecord.nodeId());
         List<CompletableFuture<AutomqZoneRouterResponseData.Response>> subResponseList = new ArrayList<>(routerRecord.channelOffsets().size());

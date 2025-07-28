@@ -13,7 +13,6 @@ public class Context {
         return INSTANCE;
     }
 
-
     public void snapshotReadCache(SnapshotReadCache snapshotReadCache) {
         this.snapshotReadCache = snapshotReadCache;
     }

@@ -7,9 +7,9 @@ import java.util.function.Function;
 
 public class ConfirmWAL {
     private final WriteAheadLog log;
-    private final Function<Void, CompletableFuture<Void>> commitHandle;
+    private final Function<Long, CompletableFuture<Void>> commitHandle;
 
-    public ConfirmWAL(WriteAheadLog log, Function<Void, CompletableFuture<Void>> commitHandle) {
+    public ConfirmWAL(WriteAheadLog log, Function<Long, CompletableFuture<Void>> commitHandle) {
         this.log = log;
         this.commitHandle = commitHandle;
     }
@@ -18,8 +18,13 @@ public class ConfirmWAL {
         return log.confirmOffset();
     }
 
-    public CompletableFuture<Void> commit() {
-        return commitHandle.apply(null);
+    /**
+     * Commit with lazy timeout.
+     * If in [0, lazyTimeoutMills), there is no other commit happened, then trigger a new commit.
+     * @param lazyTimeoutMillis lazy timeout milliseconds.
+     */
+    public CompletableFuture<Void> commit(long lazyTimeoutMillis) {
+        return commitHandle.apply(lazyTimeoutMillis);
     }
 
 }

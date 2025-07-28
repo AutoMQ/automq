@@ -50,6 +50,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 
+import java.util.concurrent.ConcurrentLinkedQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,6 +119,8 @@ public class S3Storage implements Storage {
     private final Queue<DeltaWALUploadTaskContext> walPrepareQueue = new LinkedList<>();
     private final Queue<DeltaWALUploadTaskContext> walCommitQueue = new LinkedList<>();
     private final List<DeltaWALUploadTaskContext> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
+    private Queue<CompletableFuture<Void>> lazyUploadQueue = new ConcurrentLinkedQueue<>();
+
     /**
      * A lock to ensure only one thread can trigger {@link #forceUpload()} in {@link #maybeForceUpload()}
      */
@@ -171,7 +174,7 @@ public class S3Storage implements Storage {
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
         S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
         Context.instance().snapshotReadCache(new SnapshotReadCache(streamManager, snapshotReadCache, objectStorage, linkRecordDecoder));
-        Context.instance().confirmWAL(new ConfirmWAL(deltaWAL, nil -> forceUpload()));
+        Context.instance().confirmWAL(new ConfirmWAL(deltaWAL, timeout -> lazyUpload(timeout)));
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
@@ -727,6 +730,34 @@ public class S3Storage implements Storage {
         return inflightWALUploadTasks.stream().anyMatch(it -> it.force);
     }
 
+    /**
+     * Commit with lazy timeout. If in [0, lazyTimeoutMills), there is no other commit happened, then trigger a new commit.
+     * @param lazyTimeoutMillis lazy timeout milliseconds.
+     */
+    private CompletableFuture<Void> lazyUpload(long lazyTimeoutMillis) {
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        lazyUploadQueue.add(cf);
+        backgroundExecutor.schedule(() -> {
+            if (!cf.isDone()) {
+                FutureUtil.propagate(forceUpload(), cf);
+            }
+        }, lazyTimeoutMillis, TimeUnit.MILLISECONDS);
+        return cf;
+    }
+
+    private void completeLazyUpload(Throwable ex) {
+        for (;;) {
+            CompletableFuture<Void> lazyUploadCf = lazyUploadQueue.poll();
+            if (lazyUploadCf != null) {
+                if (ex != null) {
+                    lazyUploadCf.completeExceptionally(ex);
+                } else {
+                    lazyUploadCf.complete(null);
+                }
+            }
+        }
+    }
+
     private CompletableFuture<Void> forceUpload() {
         CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
         cf.whenComplete((nil, ignored) -> forceUploadCallback());
@@ -798,6 +829,7 @@ public class S3Storage implements Storage {
     }
 
     CompletableFuture<Void> uploadDeltaWAL(long streamId, boolean force) {
+        CompletableFuture<Void> cf;
         synchronized (deltaWALCache) {
             Optional<LogCache.LogCacheBlock> blockOpt = deltaWALCache.archiveCurrentBlockIfContains(streamId);
             if (blockOpt.isPresent()) {
@@ -805,11 +837,15 @@ public class S3Storage implements Storage {
                 DeltaWALUploadTaskContext context = new DeltaWALUploadTaskContext(logCacheBlock);
                 context.objectManager = this.objectManager;
                 context.force = force;
-                return uploadDeltaWAL(context);
+                cf = uploadDeltaWAL(context);
             } else {
-                return CompletableFuture.completedFuture(null);
+                cf = CompletableFuture.completedFuture(null);
             }
         }
+        cf.whenComplete((nil, ex) -> {
+            completeLazyUpload(ex);
+        });
+        return cf;
     }
 
     // only for test

@@ -43,6 +43,7 @@ import org.apache.kafka.image.loader.LoaderManifest;
 import org.apache.kafka.image.publisher.MetadataPublisher;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
+import com.automq.stream.Context;
 import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
@@ -59,6 +60,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataPublisher {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroZoneTrafficInterceptor.class);
@@ -71,6 +73,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     private final RouterOut routerOut;
     private final RouterIn routerIn;
 
+    private final DefaultRouterChannelProvider routerChannelProvider;
     private final RouterOutV2 routerOutV2;
     private final RouterInV2 routerInV2;
 
@@ -111,14 +114,15 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.routerOut = new RouterOut(currentNode, bucketURI, objectStorage, mapping::getRouteOutNode, kafkaApis, asyncSender, time);
         this.routerIn = new RouterIn(objectStorage, kafkaApis, kafkaConfig.rack().get());
 
-        RouterChannelProvider routerChannelProvider = new DefaultRouterChannelProvider(nodeId, kafkaConfig.automq().nodeEpoch(), bucketURI, objectStorage, kafkaApis.clusterId());
+        this.routerChannelProvider = new DefaultRouterChannelProvider(nodeId, kafkaConfig.automq().nodeEpoch(), bucketURI, objectStorage, kafkaApis.clusterId());
         this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode, kafkaApis, asyncSender, time);
         this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get());
 
-        S3Storage.setLinkRecordDecoder(new LinkRecordDecoder(routerChannelProvider));
-
         // TODO: better dependencies injection
+        S3Storage.setLinkRecordDecoder(new LinkRecordDecoder(routerChannelProvider));
+        routerChannelProvider.addEpochListener(epoch -> Context.instance().confirmWAL().commit(TimeUnit.SECONDS.toMillis(10)));
         DefaultReplayer replayer = new DefaultReplayer();
+
         this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), replayer, kafkaApis.clusterId());
         replayer.setCacheEventListener(this.snapshotReadPartitionsManager.cacheEventListener());
         mapping.registerListener(snapshotReadPartitionsManager);
@@ -179,6 +183,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
             mapping.onChange(delta, newImage);
             snapshotReadPartitionsManager.onChange(delta, newImage);
             autoMQVersion = newImage.features().autoMQVersion();
+            routerChannelProvider.onChange(delta, newImage);
         } catch (Throwable e) {
             LOGGER.error("Failed to handle metadata update", e);
         }

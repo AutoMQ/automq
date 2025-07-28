@@ -105,7 +105,7 @@ public class PartitionSnapshotsManager {
             }
         }
         AutomqGetPartitionSnapshotResponse resp = session.snapshotsDelta();
-        CompletableFuture<Void> commitCf = request.data().requestCommit() ? confirmWAL.commit() : CompletableFuture.completedFuture(null);
+        CompletableFuture<Void> commitCf = request.data().requestCommit() ? confirmWAL.commit(0) : CompletableFuture.completedFuture(null);
         return commitCf.exceptionally(nil -> null).thenApply(nil -> resp);
     }
 

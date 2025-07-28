@@ -1345,6 +1345,7 @@ project(':metadata') {
     implementation libs.guava
     implementation libs.awsSdkAuth
     implementation project(':s3stream')
+    implementation ("org.apache.avro:avro:${versions.avro}")
 
     implementation libs.jacksonDatabind
     implementation libs.jacksonJDK8Datatypes
