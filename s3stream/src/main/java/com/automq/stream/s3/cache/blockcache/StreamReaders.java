@@ -28,6 +28,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
+import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,16 +71,10 @@ public class StreamReaders implements S3BlockCache {
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
 
-        Threads.COMMON_SCHEDULER.scheduleAtFixedRate(this::cleanExpiredStreamReaders,
-            0,
-            STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS * 2,
+        Threads.COMMON_SCHEDULER.scheduleAtFixedRate(this::triggerExpiredStreamReaderCleanup,
+            STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS,
+            STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS,
             TimeUnit.MILLISECONDS);
-    }
-
-    private void cleanExpiredStreamReaders() {
-        for (Cache cache : caches) {
-            cache.submitCleanupExpiredStreamReader();
-        }
     }
 
     @Override
@@ -87,6 +82,26 @@ public class StreamReaders implements S3BlockCache {
         int maxBytes) {
         Cache cache = caches[Math.abs((int) (streamId % caches.length))];
         return cache.read(streamId, startOffset, endOffset, maxBytes);
+    }
+
+    /**
+     * Get the total number of active StreamReaders across all caches.
+     * This method is intended for testing purposes only.
+     */
+    @VisibleForTesting
+    int getActiveStreamReaderCount() {
+        int total = 0;
+        for (Cache cache : caches) {
+            total += cache.getStreamReaderCount();
+        }
+        return total;
+    }
+
+    @VisibleForTesting
+    void triggerExpiredStreamReaderCleanup() {
+        for (Cache cache : caches) {
+            cache.submitCleanupExpiredStreamReader();
+        }
     }
 
     static class StreamReaderKey {
@@ -163,6 +178,15 @@ public class StreamReaders implements S3BlockCache {
 
         private void submitCleanupExpiredStreamReader() {
             eventLoop.execute(this::cleanupExpiredStreamReader);
+        }
+
+        /**
+         * Get the number of StreamReaders in this cache.
+         * This method is intended for testing purposes only.
+         */
+        @VisibleForTesting
+        int getStreamReaderCount() {
+            return streamReaders.size();
         }
 
         private void cleanupExpiredStreamReader() {
