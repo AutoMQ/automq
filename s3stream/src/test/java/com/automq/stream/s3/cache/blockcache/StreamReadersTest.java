@@ -20,7 +20,6 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -153,7 +152,7 @@ public class StreamReadersTest {
     }
 
     @Test
-    public void testPeriodicCleanupExecution() throws Exception {
+    public void testExpiredStreamReaderCleanupExecution() throws Exception {
         TraceContext context = TraceContext.DEFAULT;
 
         // Create a StreamReader
@@ -163,13 +162,12 @@ public class StreamReadersTest {
 
         assertEquals(1, streamReaders.getActiveStreamReaderCount());
 
-        // Wait for the periodic cleanup task to execute
-        // The scheduled task runs every 1 minutes (STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS)
-        // After 1+ minutes, the StreamReader will be expired and should be cleaned up
-        await().atMost(120, TimeUnit.SECONDS)  // Wait up to 2 minutes
-               .pollInterval(10, TimeUnit.SECONDS)  // Check every 10 seconds
+        await().atMost(90, TimeUnit.SECONDS)  // Wait up to 1.5min
+               .pollInterval(10, TimeUnit.SECONDS)
                .until(() -> {
-                   // The periodic task should eventually clean up the expired StreamReader
+                   // Trigger cleanup
+                   streamReaders.triggerExpiredStreamReaderCleanup();
+                   // Check if all StreamReaders are cleaned up
                    return streamReaders.getActiveStreamReaderCount() == 0;
                });
 
