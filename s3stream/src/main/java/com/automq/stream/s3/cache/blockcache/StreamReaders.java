@@ -26,8 +26,8 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
+import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,6 +69,17 @@ public class StreamReaders implements S3BlockCache {
         this.objectReaderFactory = objectReaderFactory;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
+
+        Threads.COMMON_SCHEDULER.scheduleAtFixedRate(this::cleanExpiredStreamReaders,
+            0,
+            STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS * 2,
+            TimeUnit.MILLISECONDS);
+    }
+
+    private void cleanExpiredStreamReaders() {
+        for (Cache cache : caches) {
+            cache.submitCleanupExpiredStreamReader();
+        }
     }
 
     @Override
@@ -148,6 +159,10 @@ public class StreamReaders implements S3BlockCache {
                 FutureUtil.propagate(streamReadCf, cf);
             });
             return cf;
+        }
+
+        private void submitCleanupExpiredStreamReader() {
+            eventLoop.execute(this::cleanupExpiredStreamReader);
         }
 
         private void cleanupExpiredStreamReader() {
