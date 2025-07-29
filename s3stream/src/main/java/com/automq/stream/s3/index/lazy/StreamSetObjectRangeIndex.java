@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
 public class StreamSetObjectRangeIndex {
-    public static final boolean ENABLED = System.getenv().containsKey("AUTOMQ_STREAM_SET_RANGE_INDEX_ENABLED");
+    private static boolean ENABLED = System.getenv().containsKey("AUTOMQ_STREAM_SET_RANGE_INDEX_ENABLED");
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamSetObjectRangeIndex.class);
     private static volatile StreamSetObjectRangeIndex instance = null;
 
@@ -85,6 +85,14 @@ public class StreamSetObjectRangeIndex {
             }
         }
         return instance;
+    }
+
+    public static boolean isEnabled() {
+        return ENABLED;
+    }
+
+    public static void setEnabled(boolean enabled) {
+        ENABLED = enabled;
     }
 
     public void updateIndex(Long objectId, Long nodeId, Long streamId,

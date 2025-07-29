@@ -485,24 +485,7 @@ public class S3StreamsMetadataImageTest {
     }
 
     private static void enableStreamSetObjectRangeIndex() {
-        try {
-            Class<?> clazz = StreamSetObjectRangeIndex.class;
-            // 2. 获取 ENABLED 字段
-            Field field = clazz.getDeclaredField("ENABLED");
-
-            // 3. 确保我们可以访问该字段，即使它是私有的
-            field.setAccessible(true);
-
-            // 4. 去掉字段的 final 修饰符
-            Field modifiersField = Field.class.getDeclaredField("modifiers");
-            modifiersField.setAccessible(true);
-            modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
-
-            // 5. 设置字段的新值
-            field.set(null, true);
-        } catch (Exception e) {
-            Assertions.fail(e);
-        }
+        StreamSetObjectRangeIndex.setEnabled(true);
     }
 
     @Test
