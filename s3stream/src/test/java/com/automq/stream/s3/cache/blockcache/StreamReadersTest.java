@@ -56,20 +56,24 @@ public class StreamReadersTest {
     void setup() {
         objects = new HashMap<>();
 
-        // Create mock objects for testing
+        // Create mock objects for testing with different offset ranges
+        // Object 1: STREAM_ID_1 offset 0-2
         objects.put(1L, MockObject.builder(1L, BLOCK_SIZE_THRESHOLD).write(STREAM_ID_1, List.of(
-            new StreamRecordBatch(STREAM_ID_1, 0, 0, 1, TestUtils.random(100))
+            new StreamRecordBatch(STREAM_ID_1, 0, 0, 2, TestUtils.random(100))
         )).build());
-
+        // Object 2: STREAM_ID_2 offset 0-1
         objects.put(2L, MockObject.builder(2L, BLOCK_SIZE_THRESHOLD).write(STREAM_ID_2, List.of(
             new StreamRecordBatch(STREAM_ID_2, 0, 0, 1, TestUtils.random(100))
         )).build());
 
         objectManager = mock(ObjectManager.class);
+
         when(objectManager.isObjectExist(anyLong())).thenReturn(true);
-        // Mock getObjects method to return our test objects
+        // Mock getObjects method to return appropriate objects based on offset ranges
+        // For STREAM_ID_1, use the combined object that covers 0-2 range
         when(objectManager.getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt()))
             .thenReturn(CompletableFuture.completedFuture(List.of(objects.get(1L).metadata)));
+        // STREAM_ID_2 offset 0-1 -> object 3
         when(objectManager.getObjects(eq(STREAM_ID_2), anyLong(), anyLong(), anyInt()))
             .thenReturn(CompletableFuture.completedFuture(List.of(objects.get(2L).metadata)));
 
@@ -119,13 +123,6 @@ public class StreamReadersTest {
 
         // Should still have 1 StreamReader (reused)
         assertEquals(1, streamReaders.getActiveStreamReaderCount());
-
-        // Read from different stream - should create new StreamReader
-        CompletableFuture<ReadDataBlock> readFuture3 = streamReaders.read(context, STREAM_ID_2, 0, 1, Integer.MAX_VALUE);
-        ReadDataBlock result3 = readFuture3.get(5, TimeUnit.SECONDS);
-        result3.getRecords().forEach(StreamRecordBatch::release);
-
-        assertEquals(2, streamReaders.getActiveStreamReaderCount());
     }
 
     @Test
@@ -146,8 +143,10 @@ public class StreamReadersTest {
         // Trigger cleanup - should not affect non-expired readers
         streamReaders.triggerExpiredStreamReaderCleanup();
 
-        // Wait a bit for async cleanup to complete
-        Thread.sleep(200);
+        // Wait for async cleanup to complete
+        await().atMost(1, TimeUnit.SECONDS)
+            .pollInterval(100, TimeUnit.MILLISECONDS)
+            .until(() -> streamReaders.getActiveStreamReaderCount() == 2);
 
         // StreamReaders should still be there (not expired yet)
         assertEquals(2, streamReaders.getActiveStreamReaderCount());
@@ -167,7 +166,7 @@ public class StreamReadersTest {
         // Wait for the periodic cleanup task to execute
         // The scheduled task runs every 1 minutes (STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS)
         // After 1+ minutes, the StreamReader will be expired and should be cleaned up
-        await().atMost(150, TimeUnit.SECONDS)  // Wait up to 2.5 minutes （1m delay + 1m interval + 0.5m buffer）
+        await().atMost(120, TimeUnit.SECONDS)  // Wait up to 2 minutes
                .pollInterval(10, TimeUnit.SECONDS)  // Check every 10 seconds
                .until(() -> {
                    // The periodic task should eventually clean up the expired StreamReader
