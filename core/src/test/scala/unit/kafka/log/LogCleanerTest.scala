@@ -30,7 +30,7 @@ import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.coordinator.transaction.TransactionLogConfigs
 import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics}
 import org.apache.kafka.server.util.MockTime
-import org.apache.kafka.storage.internals.log.{AbortedTxn, AppendOrigin, CleanerConfig, LogAppendInfo, LogConfig, LogDirFailureChannel, LogFileUtils, LogSegment, LogSegments, LogStartOffsetIncrementReason, OffsetMap, ProducerStateManager, ProducerStateManagerConfig}
+import org.apache.kafka.storage.internals.log._
 import org.apache.kafka.storage.internals.utils.Throttler
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.{AfterEach, Test}
@@ -1437,8 +1437,20 @@ class LogCleanerTest extends Logging {
     //create 3 segments
     for (i <- 0 until 3) {
       log.appendAsLeader(TestUtils.singletonRecords(value = v, key = k), leaderEpoch = 0)
-      //0 to Int.MaxValue is Int.MaxValue+1 message, -1 will be the last message of i-th segment
-      val records = messageWithOffset(k, v, (i + 1L) * (Int.MaxValue + 1L) -1 )
+
+      // AutoMQ inject start
+      val records = if (log.isInstanceOf[ElasticUnifiedLog]) {
+        // Create a sparse segment by appending a record with a large offset.
+        // A segment can contain up to Int.MaxValue messages (see https://github.com/AutoMQ/automq/issues/2717).
+        // The offset `(i + 1L) * Int.MaxValue - 1` ensures that this is the last message of the i-th segment,
+        // creating a large gap to the next segment's base offset. This helps test segment grouping with sparse offsets.
+        messageWithOffset(k, v, (i + 1L) * Int.MaxValue - 1)
+      } else {
+        //0 to Int.MaxValue is Int.MaxValue+1 message, -1 will be the last message of i-th segment
+        messageWithOffset(k, v, (i + 1L) * (Int.MaxValue + 1L) -1 )
+      }
+
+      // AutoMQ inject end
       log.appendAsFollower(records)
       assertEquals(i + 1, log.numberOfSegments)
     }
@@ -1469,6 +1481,13 @@ class LogCleanerTest extends Logging {
     //trigger a clean and 2 empty segments should cleaned to 1
     cleaner.clean(LogToClean(log.topicPartition, log, 0, firstUncleanableOffset))
     assertEquals(totalSegments - 1, log.numberOfSegments)
+
+    // AutoMQ inject start
+
+    // after clean, the 2nd and 3rd segment should be none empty
+    assertEquals(2, log.logSegments.asScala.takeRight(2).count(_.size > 0))
+
+    // AutoMQ inject end
   }
 
   /**
@@ -1492,12 +1511,21 @@ class LogCleanerTest extends Logging {
       log.appendAsLeader(TestUtils.singletonRecords(value = "hello".getBytes, key = "hello".getBytes), leaderEpoch = 0)
 
     // forward offset and append message to next segment at offset Int.MaxValue
-    val records = messageWithOffset("hello".getBytes, "hello".getBytes, Int.MaxValue - 1)
+    // AutoMQ inject start
+    val records = if (log.isInstanceOf[ElasticUnifiedLog]) {
+      messageWithOffset("hello".getBytes, "hello".getBytes, Int.MaxValue - 2)
+    } else {
+      messageWithOffset("hello".getBytes, "hello".getBytes, Int.MaxValue - 1)
+    }
+    // AutoMQ inject end
+
     log.appendAsFollower(records)
     log.appendAsLeader(TestUtils.singletonRecords(value = "hello".getBytes, key = "hello".getBytes), leaderEpoch = 0)
 
     // AutoMQ inject start
-    if (!log.isInstanceOf[ElasticUnifiedLog]) {
+    if (log.isInstanceOf[ElasticUnifiedLog]) {
+      assertEquals(Int.MaxValue - 1, log.activeSegment.readNextOffset() - 1)
+    } else {
       assertEquals(Int.MaxValue, log.activeSegment.offsetIndex.lastOffset)
     }
     // AutoMQ inject end

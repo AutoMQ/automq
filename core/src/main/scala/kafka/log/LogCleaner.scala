@@ -17,31 +17,32 @@
 
 package kafka.log
 
-import java.io.{File, IOException}
-import java.nio._
-import java.util.Date
-import java.util.concurrent.TimeUnit
 import kafka.common._
-import kafka.log.LogCleaner.{CleanerRecopyPercentMetricName, DeadThreadCountMetricName, MaxBufferUtilizationPercentMetricName, MaxCleanTimeMetricName, MaxCompactionDelayMetricsName}
+import kafka.log.LogCleaner._
+import kafka.log.streamaspect.ElasticUnifiedLog
 import kafka.log.streamaspect.ElasticLogSegment
 import kafka.server.{BrokerReconfigurable, KafkaConfig}
 import kafka.utils.{Logging, Pool}
-import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.errors.{CorruptRecordException, KafkaStorageException}
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter
 import org.apache.kafka.common.record.MemoryRecords.RecordFilter.BatchRetention
 import org.apache.kafka.common.record._
 import org.apache.kafka.common.utils.{BufferSupplier, Time}
+import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.apache.kafka.server.config.ServerConfigs
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.ShutdownableThread
-import org.apache.kafka.storage.internals.log.{AbortedTxn, CleanerConfig, LastRecord, LogDirFailureChannel, LogSegment, LogSegmentOffsetOverflowException, OffsetMap, SkimpyOffsetMap, TransactionIndex}
+import org.apache.kafka.storage.internals.log._
 import org.apache.kafka.storage.internals.utils.Throttler
 
-import scala.jdk.CollectionConverters._
+import java.io.{File, IOException}
+import java.nio._
+import java.util.Date
+import java.util.concurrent.TimeUnit
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Iterable, Seq, Set, mutable}
+import scala.jdk.CollectionConverters._
 import scala.util.control.ControlThrowable
 
 /**
@@ -622,8 +623,16 @@ private[log] class Cleaner(val id: Int,
     info("Cleaning log %s (cleaning prior to %s, discarding tombstones prior to upper bound deletion horizon %s)...".format(log.name, new Date(cleanableHorizonMs), new Date(legacyDeleteHorizonMs)))
     val transactionMetadata = new CleanedTransactionMetadata
 
-    val groupedSegments = groupSegmentsBySize(log.logSegments(0, endOffset), log.config.segmentSize,
-      log.config.maxIndexSize, cleanable.firstUncleanableOffset)
+    // AutoMQ inject start
+    val groupedSegments = if (log.isInstanceOf[ElasticUnifiedLog]) {
+      groupSegmentsBySizeV2(log.logSegments(0, endOffset), log.config.segmentSize,
+        log.config.maxIndexSize, cleanable.firstUncleanableOffset)
+    } else {
+      groupSegmentsBySize(log.logSegments(0, endOffset), log.config.segmentSize,
+        log.config.maxIndexSize, cleanable.firstUncleanableOffset)
+    }
+    // AutoMQ inject end
+
     for (group <- groupedSegments)
       cleanSegments(log, group, offsetMap, currentTime, stats, transactionMetadata, legacyDeleteHorizonMs)
 
@@ -1001,6 +1010,53 @@ private[log] class Cleaner(val id: Int,
     }
     grouped.reverse
   }
+
+  /**
+   * Group the segments in a log into groups totaling less than a given size. the size is enforced separately for the log data and the index data.
+   * We collect a group of such segments together into a single
+   * destination segment. This prevents segment sizes from shrinking too much.
+   *
+   * This method is a variant of `groupSegmentsBySize` that uses a stricter offset range check (`< Int.MaxValue` instead of `<=`)
+   * to prevent potential offset overflow issues as described in https://github.com/AutoMQ/automq/issues/2717.
+   *
+   * @param segments The log segments to group
+   * @param maxSize the maximum size in bytes for the total of all log data in a group
+   * @param maxIndexSize the maximum size in bytes for the total of all index data in a group
+   * @param firstUncleanableOffset The upper(exclusive) offset to clean to
+   *
+   * @return A list of grouped segments
+   */
+  private[log] def groupSegmentsBySizeV2(segments: Iterable[LogSegment], maxSize: Int, maxIndexSize: Int, firstUncleanableOffset: Long): List[Seq[LogSegment]] = {
+    var grouped = List[List[LogSegment]]()
+    var segs = segments.toList
+    while (segs.nonEmpty) {
+      var group = List(segs.head)
+      var logSize = segs.head.size.toLong
+      var indexSize = offsetIndexSize(segs.head).toLong
+      var timeIndexSize = segs.head.timeIndex.sizeInBytes.toLong
+      segs = segs.tail
+      while (segs.nonEmpty &&
+        logSize + segs.head.size <= maxSize &&
+        indexSize + offsetIndexSize(segs.head) <= maxIndexSize &&
+        timeIndexSize + segs.head.timeIndex.sizeInBytes <= maxIndexSize &&
+        //if first segment size is 0, we don't need to do the index offset range check.
+        //this will avoid empty log left every 2^31 message.
+        (segs.head.size == 0 ||
+          // The check `lastOffset - baseOffset < Int.MaxValue` ensures the relative offset fits in an Integer.
+          // This prevents an offset overflow issue where a segment could hold `Int.MaxValue + 1` messages.
+          // See: https://github.com/AutoMQ/automq/issues/2717
+          lastOffsetForFirstSegment(segs, firstUncleanableOffset) - group.last.baseOffset < Int.MaxValue)) {
+        group = segs.head :: group
+        logSize += segs.head.size
+        indexSize += offsetIndexSize(segs.head)
+        timeIndexSize += segs.head.timeIndex.sizeInBytes
+        segs = segs.tail
+      }
+      grouped ::= group.reverse
+    }
+    grouped.reverse
+  }
+
 
   /**
     * We want to get the last offset in the first log segment in segs.
