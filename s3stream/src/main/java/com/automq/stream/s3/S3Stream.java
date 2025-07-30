@@ -171,6 +171,9 @@ public class S3Stream implements Stream, StreamMetadataListener {
         if (snapshotRead()) {
             return FutureUtil.failedFuture(new IllegalStateException("Append operation is not support for readonly stream"));
         }
+        if (recordBatch.count() < 0) {
+            return FutureUtil.failedFuture(new IllegalArgumentException("record batch count is negative"));
+        }
         long startTimeNanos = System.nanoTime();
         readLock.lock();
         try {
