@@ -17,12 +17,13 @@
 
 package kafka.server
 
+import com.automq.stream.s3.S3Storage
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
 import kafka.automq.table.TableManager
-import kafka.automq.zerozone.{DefaultClientRackProvider, ZeroZoneTrafficInterceptor}
+import kafka.automq.zerozone.{DefaultClientRackProvider, DefaultRouterChannelProvider, LinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -163,6 +164,7 @@ class BrokerServer(
 
   def metadataLoader: MetadataLoader = sharedServer.loader
 
+  var routerChannelProvider: RouterChannelProvider = _
   var trafficInterceptor: TrafficInterceptor = _
 
   var backPressureManager: BackPressureManager = _
@@ -568,8 +570,12 @@ class BrokerServer(
 
       // AutoMQ inject start
       // S3Storage depends on LinkRecordDecoder injected by ZeroZoneTrafficInterceptor
-      trafficInterceptor = newTrafficInterceptor()
+      routerChannelProvider = newRouterChannelProvider()
+      if (routerChannelProvider != null) {
+        S3Storage.setLinkRecordDecoder(new LinkRecordDecoder(routerChannelProvider))
+      }
       ElasticLogManager.init(config, clusterId, this)
+      trafficInterceptor = newTrafficInterceptor()
       dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
       replicaManager.setTrafficInterceptor(trafficInterceptor)
       replicaManager.setS3StreamContext(com.automq.stream.Context.instance())
@@ -831,6 +837,14 @@ class BrokerServer(
       s"broker-${config.nodeId}-",
       retryTimeout
     )
+  }
+
+  protected def newRouterChannelProvider(): DefaultRouterChannelProvider = {
+    if (config.automq.zoneRouterChannels().isEmpty) {
+      return null
+    }
+    val bucketURI = config.automq.zoneRouterChannels.get
+    new DefaultRouterChannelProvider(config.nodeId, config.automq.nodeEpoch, bucketURI, dataPlaneRequestProcessor.clusterId)
   }
 
   protected def newTrafficInterceptor(): TrafficInterceptor = {

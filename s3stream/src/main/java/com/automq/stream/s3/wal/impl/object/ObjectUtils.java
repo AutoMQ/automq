@@ -61,6 +61,7 @@ public class ObjectUtils {
 
     /**
      * Remove overlap objects.
+     *
      * @return overlap objects.
      */
     public static List<WALObject> skipOverlapObjects(List<WALObject> objects) {
@@ -83,18 +84,12 @@ public class ObjectUtils {
     }
 
     public static String nodePrefix(String clusterId, int nodeId, String type) {
-        String prefix = DigestUtils.md5Hex(String.valueOf(nodeId)).toUpperCase(Locale.ROOT) + "/" + Constants.DEFAULT_NAMESPACE + clusterId + "/" + nodeId + "/";
-        if (!StringUtils.isBlank(type)) {
-            return prefix + type + "/";
-        } else {
-            return prefix;
-        }
+        return DigestUtils.md5Hex(String.valueOf(nodeId)).toUpperCase(Locale.ROOT) + "/" + Constants.DEFAULT_NAMESPACE + clusterId + "/" + nodeId + (StringUtils.isBlank(type) ? "" : ("_" + type)) + "/";
     }
 
     public static String nodePrefix(String clusterId, int nodeId) {
         return nodePrefix(clusterId, nodeId, null);
     }
-
 
     public static String genObjectPathV0(String nodePrefix, long epoch, long objectStartOffset) {
         return nodePrefix + epoch + "/wal/" + objectStartOffset;

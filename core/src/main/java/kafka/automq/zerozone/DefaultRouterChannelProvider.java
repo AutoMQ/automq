@@ -5,8 +5,11 @@ import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.loader.MetadataListener;
 
+import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
@@ -39,10 +42,15 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider, Meta
     private final List<EpochListener> epochListeners = new CopyOnWriteArrayList<>();
     private volatile RouterChannelEpoch epoch;
 
-    public DefaultRouterChannelProvider(int nodeId, long epoch, BucketURI bucketURI, ObjectStorage objectStorage, String clusterId) {
+    public DefaultRouterChannelProvider(int nodeId, long epoch, BucketURI bucketURI, String clusterId) {
         this.nodeId = nodeId;
         this.channelId = bucketURI.bucketId();
-        this.objectStorage = objectStorage;
+        // FIXME: the global limiter depends on S3StreamClient
+        this.objectStorage = ObjectStorageFactory.instance().builder(bucketURI)
+            .readWriteIsolate(true)
+            .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
+            .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
+            .build();
         this.clusterId = clusterId;
         ObjectWALConfig config = ObjectWALConfig.builder().withClusterId(clusterId).withNodeId(nodeId).withEpoch(epoch).withOpenMode(OpenMode.READ_WRITE).withType(WAL_TYPE).build();
         ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
@@ -92,9 +100,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider, Meta
         if (value == null) {
             return;
         }
-        byte[] bytes = new byte[value.remaining()];
-        value.get(bytes);
-        this.epoch = RouterChannelEpoch.decode(Unpooled.wrappedBuffer(bytes));
+        this.epoch = RouterChannelEpoch.decode(Unpooled.wrappedBuffer(value.slice()));
         this.routerChannel.nextEpoch(epoch.getCurrent());
         // delay 10s to ensure the delayed replayer can read the data.
         Threads.COMMON_SCHEDULER.schedule(() -> this.routerChannel.trim(epoch.getCommited()), 10, TimeUnit.SECONDS);

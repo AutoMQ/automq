@@ -16,13 +16,6 @@
  */
 package org.apache.kafka.controller.stream;
 
-import com.automq.stream.utils.Threads;
-import io.netty.buffer.Unpooled;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.OptionalLong;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.utils.Time;
@@ -32,8 +25,19 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineObject;
+
+import com.automq.stream.utils.Threads;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.LinkedList;
+import java.util.List;
+import java.util.OptionalLong;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+import io.netty.buffer.Unpooled;
 
 public class RouterChannelEpochControlManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterChannelEpochControlManager.class);
@@ -121,9 +125,9 @@ public class RouterChannelEpochControlManager {
                 continue;
             }
             try {
-                if (key.startsWith(RouterChannelEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX)) {
-                    int nodeId = Integer.parseInt(key.substring(RouterChannelEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX.length()));
-                    NodeCommitedEpoch epoch = NodeCommitedEpoch.decode(Unpooled.wrappedBuffer(kv.value()));
+                if (key.startsWith(NodeCommittedEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX)) {
+                    int nodeId = Integer.parseInt(key.substring(NodeCommittedEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX.length()));
+                    NodeCommittedEpoch epoch = NodeCommittedEpoch.decode(Unpooled.wrappedBuffer(kv.value()));
                     node2commitedEpoch.put(nodeId, epoch.getEpoch());
                 } else if (key.startsWith(RouterChannelEpoch.ROUTER_CHANNEL_EPOCH_KEY)) {
                     RouterChannelEpoch epoch = RouterChannelEpoch.decode(Unpooled.wrappedBuffer(kv.value()));
@@ -138,8 +142,8 @@ public class RouterChannelEpochControlManager {
     public void replay(RemoveKVRecord kvRecord) {
         for (String key : kvRecord.keys()) {
             try {
-                if (key.startsWith(RouterChannelEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX)) {
-                    int nodeId = Integer.parseInt(key.substring(RouterChannelEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX.length()));
+                if (key.startsWith(NodeCommittedEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX)) {
+                    int nodeId = Integer.parseInt(key.substring(NodeCommittedEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX.length()));
                     node2commitedEpoch.remove(nodeId);
                 }
             } catch (Throwable e) {

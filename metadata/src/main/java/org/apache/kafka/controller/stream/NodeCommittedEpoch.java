@@ -16,21 +16,25 @@
  */
 package org.apache.kafka.controller.stream;
 
-import io.netty.buffer.ByteBuf;
-import java.io.IOException;
+import org.apache.kafka.controller.automq.utils.AvroUtils;
+
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.kafka.controller.automq.utils.AvroUtils;
 
-public class NodeCommitedEpoch {
+import java.io.IOException;
+
+import io.netty.buffer.ByteBuf;
+
+public class NodeCommittedEpoch {
+    public static final String NODE_COMMITED_EPOCH_KEY_PREFIX = "__a_r_c_nce/";
     private static final Schema SCHEMA0 = SchemaBuilder.record("NodeCommitedEpoch").fields()
         .name("epoch").type().longType().noDefault()
         .endRecord();
     private long epoch;
 
-    public NodeCommitedEpoch(long epoch) {
+    public NodeCommittedEpoch(long epoch) {
         this.epoch = epoch;
     }
 
@@ -49,12 +53,12 @@ public class NodeCommitedEpoch {
             '}';
     }
 
-    public static ByteBuf encode(NodeCommitedEpoch nodeCommitedEpoch, int version) {
+    public static ByteBuf encode(NodeCommittedEpoch nodeCommittedEpoch, int version) {
         if (version != 0) {
             throw new IllegalArgumentException("version must be 0");
         }
         GenericRecord record = new GenericData.Record(SCHEMA0);
-        record.put("epoch", nodeCommitedEpoch.epoch);
+        record.put("epoch", nodeCommittedEpoch.epoch);
 
         try {
             return AvroUtils.encode(record, (short) 0);
@@ -63,7 +67,7 @@ public class NodeCommitedEpoch {
         }
     }
 
-    public static NodeCommitedEpoch decode(ByteBuf buf) {
+    public static NodeCommittedEpoch decode(ByteBuf buf) {
         try {
             GenericRecord record = AvroUtils.decode(buf, version -> {
                 if (version != 0) {
@@ -71,7 +75,7 @@ public class NodeCommitedEpoch {
                 }
                 return SCHEMA0;
             });
-            return new NodeCommitedEpoch((Long) record.get("epoch"));
+            return new NodeCommittedEpoch((Long) record.get("epoch"));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

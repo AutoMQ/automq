@@ -16,18 +16,20 @@
  */
 package org.apache.kafka.controller.stream;
 
-import io.netty.buffer.ByteBuf;
-import java.io.IOException;
-import java.util.Objects;
+import org.apache.kafka.controller.automq.utils.AvroUtils;
+
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.kafka.controller.automq.utils.AvroUtils;
+
+import java.io.IOException;
+import java.util.Objects;
+
+import io.netty.buffer.ByteBuf;
 
 public class RouterChannelEpoch {
     public static final String ROUTER_CHANNEL_EPOCH_KEY = "__a_r_c/metadata";
-    public static final String NODE_COMMITED_EPOCH_KEY_PREFIX = "__a_r_c_nce/";
     private static final Schema SCHEMA0 = SchemaBuilder.record("RouterChannelEpoch").fields()
         .name("commited").type().longType().noDefault()
         .name("fenced").type().longType().noDefault()

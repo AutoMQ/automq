@@ -50,7 +50,6 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 
-import java.util.concurrent.ConcurrentLinkedQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,6 +69,7 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -748,12 +748,13 @@ public class S3Storage implements Storage {
     private void completeLazyUpload(Throwable ex) {
         for (;;) {
             CompletableFuture<Void> lazyUploadCf = lazyUploadQueue.poll();
-            if (lazyUploadCf != null) {
-                if (ex != null) {
-                    lazyUploadCf.completeExceptionally(ex);
-                } else {
-                    lazyUploadCf.complete(null);
-                }
+            if (lazyUploadCf == null) {
+                break;
+            }
+            if (ex != null) {
+                lazyUploadCf.completeExceptionally(ex);
+            } else {
+                lazyUploadCf.complete(null);
             }
         }
     }

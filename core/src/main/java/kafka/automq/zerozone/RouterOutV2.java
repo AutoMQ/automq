@@ -55,7 +55,6 @@ public class RouterOutV2 {
     private final Time time;
     private final NetworkBandwidthLimiter inboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
 
-
     public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
         ElasticKafkaApis kafkaApis, AsyncSender asyncSender, Time time) {
         this.currentNode = currentNode;
@@ -154,13 +153,18 @@ public class RouterOutV2 {
                     return;
                 }
                 // TODO: batch request count
-                // TODO: group by route epoch
-                batchSend(requests).whenComplete((nil, ex) -> inflightLimiter.release());
+                // group the requests by epoch, convert List<ProxyRequest> to Map<Long /* epoch */, ProxyRequest>
+                List<CompletableFuture<Void>> futures = new ArrayList<>();
+                requests.stream()
+                    .collect(Collectors.groupingBy(r -> r.epoch))
+                    .forEach((epoch, batchSendList) -> futures.add(batchSend(epoch, batchSendList)));
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .whenComplete((nil, ex) -> inflightLimiter.release());
             }
 
         }
 
-        private CompletableFuture<Void> batchSend(List<ProxyRequest> requests) {
+        private CompletableFuture<Void> batchSend(long epoch, List<ProxyRequest> requests) {
             RouterRecordV2 routerRecord = new RouterRecordV2(
                 currentNode.id(),
                 requests.stream().map(r -> r.channelOffset).collect(Collectors.toList())
@@ -168,7 +172,7 @@ public class RouterOutV2 {
             AutomqZoneRouterRequest.Builder builder = new AutomqZoneRouterRequest.Builder(
                 new AutomqZoneRouterRequestData().setMetadata(routerRecord.encode().array())
                     .setVersion((short) 1)
-                    .setRouteEpoch(0)
+                    .setRouteEpoch(epoch)
             );
             return asyncSender.sendRequest(node, builder).thenAccept(clientResponse -> {
                 if (!clientResponse.hasResponse()) {
