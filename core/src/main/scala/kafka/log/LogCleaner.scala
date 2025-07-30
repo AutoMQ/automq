@@ -624,7 +624,6 @@ private[log] class Cleaner(val id: Int,
 
     val groupedSegments = groupSegmentsBySize(log.logSegments(0, endOffset), log.config.segmentSize,
       log.config.maxIndexSize, cleanable.firstUncleanableOffset)
-
     for (group <- groupedSegments)
       cleanSegments(log, group, offsetMap, currentTime, stats, transactionMetadata, legacyDeleteHorizonMs)
 
