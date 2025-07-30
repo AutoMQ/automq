@@ -152,6 +152,9 @@ public class S3Stream implements Stream {
     @WithSpan
     public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
         long startTimeNanos = System.nanoTime();
+        if (recordBatch.count() < 0) {
+            return FutureUtil.failedFuture(new IllegalArgumentException("record batch count is negative"));
+        }
         readLock.lock();
         try {
             CompletableFuture<AppendResult> cf = exec(() -> {

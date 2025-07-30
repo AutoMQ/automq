@@ -31,6 +31,7 @@ import org.apache.kafka.storage.internals.log.LogConfig;
 import org.apache.kafka.storage.internals.log.LogFileUtils;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.apache.kafka.storage.internals.log.LogSegment;
+import org.apache.kafka.storage.internals.log.LogSegmentOffsetOverflowException;
 import org.apache.kafka.storage.internals.log.OffsetIndex;
 import org.apache.kafka.storage.internals.log.OffsetPosition;
 import org.apache.kafka.storage.internals.log.ProducerAppendInfo;
@@ -186,9 +187,26 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         return log.sizeInBytes();
     }
 
+    /**
+     * Checks that the argument offset can be represented as an integer offset relative to the baseOffset.
+     * This method is similar in purpose to {@see org.apache.kafka.storage.internals.log.LogSegment#canConvertToRelativeOffset}.
+     * <p>
+     * The implementation is inspired by {@see org.apache.kafka.storage.internals.log.AbstractIndex#canAppendOffset},
+     * but uses {@code < Integer.MAX_VALUE} instead of {@code <= Integer.MAX_VALUE} to address an offset overflow issue.
+     *
+     * @param offset The offset to check.
+     * @return true if the offset can be converted, false otherwise.
+     * @see <a href="https://github.com/AutoMQ/automq/issues/2718">Issue #2718</a>
+     */
     private boolean canConvertToRelativeOffset(long offset) {
         long relativeOffset = offset - baseOffset;
-        return relativeOffset >= 0 && relativeOffset <= Integer.MAX_VALUE;
+        // Note: The check is `relativeOffset < Integer.MAX_VALUE` instead of `<=` to avoid overflow.
+        // See https://github.com/AutoMQ/automq/issues/2718 for details.
+        return relativeOffset >= 0 && relativeOffset < Integer.MAX_VALUE;
+    }
+    private void ensureOffsetInRange(long offset) throws IOException {
+        if (!canConvertToRelativeOffset(offset))
+            throw new LogSegmentOffsetOverflowException(this, offset);
     }
 
     @Override
@@ -207,6 +225,8 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
                 rollingBasedTimestamp = OptionalLong.of(largestTimestampMs);
                 meta.firstBatchTimestamp(largestTimestampMs);
             }
+
+            ensureOffsetInRange(largestOffset);
 
             // append the messages
             long appendedBytes = log.append(records, largestOffset + 1);
