@@ -26,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -163,14 +164,17 @@ public class StreamReadersTest {
 
         assertEquals(1, streamReaders.getActiveStreamReaderCount());
 
-        await().atMost(90, TimeUnit.SECONDS)  // Wait up to 1.5min
-               .pollInterval(10, TimeUnit.SECONDS)
-               .until(() -> {
-                   // Trigger cleanup
-                   streamReaders.triggerExpiredStreamReaderCleanup();
-                   // Check if all StreamReaders are cleaned up
-                   return streamReaders.getActiveStreamReaderCount() == 0;
-               });
+        // Use reflection to modify lastStreamReaderExpiredCheckTime to simulate time passage
+        // This forces the cleanup to consider StreamReaders as expired
+        forceExpiredStreamReaderCleanup();
+
+        // Trigger cleanup - should now clean up expired StreamReaders
+        streamReaders.triggerExpiredStreamReaderCleanup();
+
+        // Wait for async cleanup to complete
+        await().atMost(5, TimeUnit.SECONDS)
+            .pollInterval(100, TimeUnit.MILLISECONDS)
+            .until(() -> streamReaders.getActiveStreamReaderCount() == 0);
 
         // Verify system still works after cleanup
         CompletableFuture<ReadDataBlock> readFuture2 = streamReaders.read(context, STREAM_ID_2, 0, 1, Integer.MAX_VALUE);
@@ -178,6 +182,41 @@ public class StreamReadersTest {
         result2.getRecords().forEach(StreamRecordBatch::release);
 
         assertEquals(1, streamReaders.getActiveStreamReaderCount());
+    }
+
+    /**
+     * Force expired StreamReader cleanup by modifying lastStreamReaderExpiredCheckTime
+     * and StreamReader lastAccessTimestamp using reflection to simulate time passage
+     * beyond the expiration threshold.
+     */
+    private void forceExpiredStreamReaderCleanup() throws Exception {
+        // Get the caches field from StreamReaders
+        Field cachesField = StreamReaders.class.getDeclaredField("caches");
+        cachesField.setAccessible(true);
+        Object[] caches = (Object[]) cachesField.get(streamReaders);
+
+        // Time far in the past to force expiration (current time - 2 minutes, expiration is 1 minute)
+        long pastTime = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(2);
+
+        // For each cache, modify lastStreamReaderExpiredCheckTime and StreamReader timestamps
+        for (Object cache : caches) {
+            // Modify lastStreamReaderExpiredCheckTime to force cleanup check
+            Field lastCheckTimeField = cache.getClass().getDeclaredField("lastStreamReaderExpiredCheckTime");
+            lastCheckTimeField.setAccessible(true);
+            lastCheckTimeField.setLong(cache, pastTime);
+
+            // Get streamReaders map and modify each StreamReader's lastAccessTimestamp
+            Field streamReadersField = cache.getClass().getDeclaredField("streamReaders");
+            streamReadersField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Map<Object, Object> streamReadersMap = (java.util.Map<Object, Object>) streamReadersField.get(cache);
+
+            for (Object streamReader : streamReadersMap.values()) {
+                Field lastAccessTimestampField = streamReader.getClass().getDeclaredField("lastAccessTimestamp");
+                lastAccessTimestampField.setAccessible(true);
+                lastAccessTimestampField.setLong(streamReader, pastTime);
+            }
+        }
     }
 
 }
