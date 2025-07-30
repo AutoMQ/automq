@@ -1272,6 +1272,7 @@ project(':core') {
     duplicatesStrategy 'exclude'
   }
 
+  // AutoMQ inject start
   tasks.create(name: "releaseE2ETar", dependsOn: [configurations.archives.artifacts, 'copyDependantTestLibs'], type: Tar) {
     def prefix = project.findProperty('prefix') ?: ''
     archiveBaseName = "${prefix}kafka"
@@ -1301,6 +1302,7 @@ project(':core') {
     }
     duplicatesStrategy 'exclude'
   }
+  // AutoMQ inject end
 
   jar {
     dependsOn('copyDependantLibs')
