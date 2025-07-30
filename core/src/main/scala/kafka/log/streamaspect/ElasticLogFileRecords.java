@@ -414,7 +414,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     static class StreamSegmentInputStream implements LogInputStream<RecordBatch> {
-        private static final int FETCH_BATCH_SIZE = 64 * 1024;
+        private static final int FETCH_BATCH_SIZE = 512 * 1024;
         private final ElasticLogFileRecords elasticLogFileRecords;
         private final Queue<RecordBatch> remaining = new LinkedList<>();
         private final int maxSize;
