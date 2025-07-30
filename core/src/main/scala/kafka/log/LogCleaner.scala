@@ -1002,7 +1002,8 @@ private[log] class Cleaner(val id: Int,
             timeIndexSize + segs.head.timeIndex.sizeInBytes <= maxIndexSize &&
             //if first segment size is 0, we don't need to do the index offset range check.
             //this will avoid empty log left every 2^31 message.
-            (segs.head.size == 0 || isOffsetRangeValid(group))) {
+            (segs.head.size == 0 ||
+              isOffsetRangeValid(group))) {
         group = segs.head :: group
         logSize += segs.head.size
         indexSize += offsetIndexSize(segs.head)
