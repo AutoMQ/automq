@@ -33,7 +33,7 @@ if [ -z "$INCLUDE_TEST_JARS" ]; then
 fi
 
 # Exclude jars not necessary for running commands.
-regex="(-(test-sources|src|scaladoc|javadoc)\.jar|jar.asc)$"
+regex="(-(test|test-sources|src|scaladoc|javadoc)\.jar|jar.asc|connect-file.*\.jar)$"
 should_include_file() {
   if [ "$INCLUDE_TEST_JARS" = true ]; then
     return 0

@@ -3328,9 +3328,9 @@ project(':connect:api') {
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
-      include('reload4j*jar')
     from (configurations.testRuntimeClasspath) {
       include('slf4j-log4j12*')
+      include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
@@ -3367,9 +3367,9 @@ project(':connect:transforms') {
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
-      include('reload4j*jar')
     from (configurations.testRuntimeClasspath) {
       include('slf4j-log4j12*')
+      include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
@@ -3410,9 +3410,9 @@ project(':connect:json') {
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
-      include('reload4j*jar')
     from (configurations.testRuntimeClasspath) {
       include('slf4j-log4j12*')
+      include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
