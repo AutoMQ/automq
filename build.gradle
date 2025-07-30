@@ -1275,7 +1275,8 @@ project(':core') {
     from(project(':tools:tools-api').configurations.runtimeClasspath) { into("libs/") }
     duplicatesStrategy 'exclude'
   }
-
+  
+  // AutoMQ inject start
   tasks.create(name: "releaseE2ETar", dependsOn: [configurations.archives.artifacts, 'copyDependantTestLibs'], type: Tar) {
     def prefix = project.findProperty('prefix') ?: ''
     archiveBaseName = "${prefix}kafka"
@@ -1305,6 +1306,7 @@ project(':core') {
     }
     duplicatesStrategy 'exclude'
   }
+  // AutoMQ inject end
 
   jar {
     dependsOn('copyDependantLibs')
@@ -3326,9 +3328,9 @@ project(':connect:api') {
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
+      include('reload4j*jar')
     from (configurations.testRuntimeClasspath) {
       include('slf4j-log4j12*')
-      include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
@@ -3365,9 +3367,9 @@ project(':connect:transforms') {
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
+      include('reload4j*jar')
     from (configurations.testRuntimeClasspath) {
       include('slf4j-log4j12*')
-      include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
@@ -3408,9 +3410,9 @@ project(':connect:json') {
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
+      include('reload4j*jar')
     from (configurations.testRuntimeClasspath) {
       include('slf4j-log4j12*')
-      include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
