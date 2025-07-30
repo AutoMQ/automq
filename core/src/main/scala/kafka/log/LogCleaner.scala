@@ -1003,7 +1003,9 @@ private[log] class Cleaner(val id: Int,
             //if first segment size is 0, we don't need to do the index offset range check.
             //this will avoid empty log left every 2^31 message.
             (segs.head.size == 0 ||
+              // AutoMQ inject start
               isOffsetRangeValid(group))) {
+              // AutoMQ inject end
         group = segs.head :: group
         logSize += segs.head.size
         indexSize += offsetIndexSize(segs.head)
