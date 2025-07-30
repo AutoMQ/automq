@@ -1272,6 +1272,38 @@ project(':core') {
     duplicatesStrategy 'exclude'
   }
 
+  // AutoMQ inject start
+  tasks.create(name: "releaseE2ETar", dependsOn: [configurations.archives.artifacts, 'copyDependantTestLibs'], type: Tar) {
+    def prefix = project.findProperty('prefix') ?: ''
+    archiveBaseName = "${prefix}kafka"
+
+    into "${prefix}kafka-${archiveVersion.get()}"
+    compression = Compression.GZIP
+    from(project.file("$rootDir/bin")) { into "bin/" }
+    from(project.file("$rootDir/config")) { into "config/" }
+    from(project.file("$rootDir/licenses")) { into "licenses/" }
+    from(project.file("$rootDir/docker/docker-compose.yaml")) { into "docker/" }
+    from(project.file("$rootDir/docker/telemetry")) { into "docker/telemetry/" }
+    from(project.file("$rootDir/LICENSE")) { into "" }
+    from "$rootDir/NOTICE-binary" rename {String filename -> filename.replace("-binary", "")}
+    from(configurations.runtimeClasspath) { into("libs/") }
+    from(configurations.archives.artifacts.files) { into("libs/") }
+    from(project.siteDocsTar) { into("site-docs/") }
+
+    // Include main and test jars from all subprojects
+    rootProject.subprojects.each { subproject ->
+      if (subproject.tasks.findByName('jar')) {
+        from(subproject.tasks.named('jar')) { into('libs/') }
+      }
+      if (subproject.tasks.findByName('testJar')) {
+        from(subproject.tasks.named('testJar')) { into('libs/') }
+      }
+      from(subproject.configurations.runtimeClasspath) { into('libs/') }
+    }
+    duplicatesStrategy 'exclude'
+  }
+  // AutoMQ inject end
+
   jar {
     dependsOn('copyDependantLibs')
   }
