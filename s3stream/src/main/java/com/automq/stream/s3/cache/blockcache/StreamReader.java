@@ -34,6 +34,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
+import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import com.google.common.annotations.VisibleForTesting;
 
@@ -80,19 +81,27 @@ import static com.automq.stream.utils.FutureUtil.exec;
     private final ObjectManager objectManager;
     private final ObjectReaderFactory objectReaderFactory;
     private final DataBlockCache dataBlockCache;
+    private final Time time;
     long nextReadOffset;
     private CompletableFuture<Void> inflightLoadIndexCf;
     private volatile CompletableFuture<Void> afterReadTryReadaheadCf;
-    private long lastAccessTimestamp = System.currentTimeMillis();
+    private long lastAccessTimestamp;
     private boolean reading = false;
 
     private boolean closed = false;
 
     public StreamReader(long streamId, long nextReadOffset, EventLoop eventLoop, ObjectManager objectManager,
         ObjectReaderFactory objectReaderFactory, DataBlockCache dataBlockCache) {
+        this(streamId, nextReadOffset, eventLoop, objectManager, objectReaderFactory, dataBlockCache, Time.SYSTEM);
+    }
+
+    public StreamReader(long streamId, long nextReadOffset, EventLoop eventLoop, ObjectManager objectManager,
+        ObjectReaderFactory objectReaderFactory, DataBlockCache dataBlockCache, Time time) {
         this.streamId = streamId;
         this.nextReadOffset = nextReadOffset;
         this.readahead = new Readahead();
+        this.time = time;
+        this.lastAccessTimestamp = time.milliseconds();
 
         this.eventLoop = eventLoop;
         this.objectManager = objectManager;
@@ -117,7 +126,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
     }
 
     CompletableFuture<ReadDataBlock> read(long startOffset, long endOffset, int maxBytes, int leftRetries) {
-        lastAccessTimestamp = System.currentTimeMillis();
+        lastAccessTimestamp = time.milliseconds();
         ReadContext readContext = new ReadContext();
         read0(readContext, startOffset, endOffset, maxBytes);
         CompletableFuture<ReadDataBlock> retCf = new CompletableFuture<>();
@@ -617,7 +626,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         private int cacheMissCount;
 
         public void tryReadahead(boolean cacheMiss) {
-            if (System.currentTimeMillis() - resetTimestamp < READAHEAD_RESET_COLD_DOWN_MILLS) {
+            if (time.milliseconds() - resetTimestamp < READAHEAD_RESET_COLD_DOWN_MILLS) {
                 // skip readahead when readahead is in cold down
                 return;
             }
@@ -660,7 +669,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
 
         public void reset() {
             requireReset = true;
-            resetTimestamp = System.currentTimeMillis();
+            resetTimestamp = time.milliseconds();
         }
     }
 
