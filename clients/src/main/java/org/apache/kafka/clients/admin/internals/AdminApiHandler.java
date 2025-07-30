@@ -128,7 +128,7 @@ public interface AdminApiHandler<K, V> {
         }
 
         public static <K, V> ApiResult<K, V> unmapped(List<K> keys) {
-            return new ApiResult<K, V>(
+            return new ApiResult<>(
                 Collections.emptyMap(),
                 Collections.emptyMap(),
                 keys
