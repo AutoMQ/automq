@@ -978,6 +978,18 @@ private[log] class Cleaner(val id: Int,
   private[log] def groupSegmentsBySize(segments: Iterable[LogSegment], maxSize: Int, maxIndexSize: Int, firstUncleanableOffset: Long): List[Seq[LogSegment]] = {
     var grouped = List[List[LogSegment]]()
     var segs = segments.toList
+
+    // AutoMQ inject start
+    def isOffsetRangeValid(group: List[LogSegment]) = {
+      val offsetRange = lastOffsetForFirstSegment(segs, firstUncleanableOffset) - group.last.baseOffset
+      // For ElasticLogSegment, use a stricter offset range check (`< Int.MaxValue`) to prevent a potential overflow
+      // issue as described in https://github.com/AutoMQ/automq/issues/2717.
+      // For other segment types, the original less-strict check (`<= Int.MaxValue`) is retained.
+      if (group.last.isInstanceOf[ElasticLogSegment]) offsetRange < Int.MaxValue
+      else offsetRange <= Int.MaxValue
+    }
+    // AutoMQ inject end
+
     while (segs.nonEmpty) {
       var group = List(segs.head)
       var logSize = segs.head.size.toLong
@@ -985,19 +997,12 @@ private[log] class Cleaner(val id: Int,
       var timeIndexSize = segs.head.timeIndex.sizeInBytes.toLong
       segs = segs.tail
       while (segs.nonEmpty &&
-        logSize + segs.head.size <= maxSize &&
-        indexSize + offsetIndexSize(segs.head) <= maxIndexSize &&
-        timeIndexSize + segs.head.timeIndex.sizeInBytes <= maxIndexSize &&
-        //if first segment size is 0, we don't need to do the index offset range check.
-        //this will avoid empty log left every 2^31 message.
-        (segs.head.size == 0 || {
-          val offsetRange = lastOffsetForFirstSegment(segs, firstUncleanableOffset) - group.last.baseOffset
-          // For ElasticLogSegment, use a stricter offset range check (`< Int.MaxValue`) to prevent a potential overflow
-          // issue as described in https://github.com/AutoMQ/automq/issues/2717.
-          // For other segment types, the original less-strict check (`<= Int.MaxValue`) is retained.
-          if (group.last.isInstanceOf[ElasticLogSegment]) offsetRange < Int.MaxValue
-          else offsetRange <= Int.MaxValue
-        })) {
+          logSize + segs.head.size <= maxSize &&
+          indexSize + offsetIndexSize(segs.head) <= maxIndexSize &&
+          timeIndexSize + segs.head.timeIndex.sizeInBytes <= maxIndexSize &&
+          //if first segment size is 0, we don't need to do the index offset range check.
+          //this will avoid empty log left every 2^31 message.
+          (segs.head.size == 0 || isOffsetRangeValid(group))) {
         group = segs.head :: group
         logSize += segs.head.size
         indexSize += offsetIndexSize(segs.head)
