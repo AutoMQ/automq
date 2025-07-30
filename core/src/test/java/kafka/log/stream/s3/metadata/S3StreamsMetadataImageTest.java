@@ -55,8 +55,6 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -338,7 +336,7 @@ public class S3StreamsMetadataImageTest {
         TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeMetadataMap =
             new TimelineHashMap<>(ref.registry(), 10000);
 
-        Map<Long /*objectId*/, List<StreamOffsetRange>> ranges = new HashMap<>();
+        TreeMap<Long /*objectId*/, List<StreamOffsetRange>> ranges = new TreeMap<>();
         nodeObjectsMap.entrySet().forEach(entry -> {
             Integer nodeId = entry.getKey();
             List<S3StreamSetObject> objects = entry.getValue();
@@ -427,6 +425,8 @@ public class S3StreamsMetadataImageTest {
         }
     }
 
+    private static final ConcurrentHashMap<Long, Long> FILL_STREAM_END_OFFSET = new ConcurrentHashMap<>();
+
     public static S3StreamsMetadataImageTest.StreamSetObjectRange fillRandomStreamRangeInfo(long streamId, Random r, int maxStreamPerSso, S3StreamSetObject s3StreamSetObject) {
         S3StreamSetObject object = new S3StreamSetObject(s3StreamSetObject.objectId(), s3StreamSetObject.nodeId(), Bytes.EMPTY, s3StreamSetObject.orderId(), s3StreamSetObject.dataTimeInMs());
 
@@ -434,13 +434,25 @@ public class S3StreamsMetadataImageTest {
         generatedStream.add(streamId);
         List<StreamOffsetRange> sfrs = new ArrayList<>(s3StreamSetObject.offsetRangeList());
         for (int i = 0; i < maxStreamPerSso; i++) {
-            long startOffset = r.nextLong(0, Long.MAX_VALUE / 2);
             long gStreamId;
             do {
                 gStreamId = r.nextInt(0, (int) streamId * 2);
             } while (generatedStream.contains(gStreamId));
-            sfrs.add(new StreamOffsetRange(gStreamId, startOffset,
-                startOffset + r.nextLong(0, 1024)));
+
+            if (FILL_STREAM_END_OFFSET.containsKey(gStreamId)) {
+                long lastEnd = FILL_STREAM_END_OFFSET.get(gStreamId);
+                long newStartOffset = r.nextLong(lastEnd, lastEnd + 10240);
+                long newEndOffset = newStartOffset + r.nextLong(0, newStartOffset);
+                sfrs.add(new StreamOffsetRange(gStreamId, newStartOffset, newEndOffset));
+                FILL_STREAM_END_OFFSET.put(gStreamId, newEndOffset);
+            } else {
+                long startOffset = r.nextLong(0, Integer.MAX_VALUE / 4);
+                long endOffset = startOffset + r.nextLong(0, 10240);
+                FILL_STREAM_END_OFFSET.put(gStreamId, endOffset);
+                sfrs.add(new StreamOffsetRange(gStreamId, startOffset,
+                    endOffset));
+            }
+
         }
 
         Collections.sort(sfrs);
@@ -489,7 +501,7 @@ public class S3StreamsMetadataImageTest {
     }
 
     @Test
-    public void testGetObjectsResult() {
+    public void testGetObjectsResult() throws InterruptedException {
         Random random = new Random();
         ArrayList<Long> seedList = new ArrayList<>();
         enableStreamSetObjectRangeIndex();
@@ -498,12 +510,13 @@ public class S3StreamsMetadataImageTest {
 
         StreamMetadataManager.DefaultRangeGetter.STREAM_ID_BLOOM_FILTER.clear();
         long streamId = 420000L;
-        long totalStreamLength = 50000L;
+        long totalStreamLength = 2000L;
         int numberOfNodes = 10;
-        int maxSegmentSize = 100;
-        double streamSetObjectProbability = 0.7;
-        double nodeMigrationProbability = 0.2;
-        double streamSetObjectNotContainsStreamProbability = 0.5;
+        int maxSegmentSize = 200;
+        int maxStreamPerStreamSetObject = 5;
+        double streamSetObjectProbability = 0.8;
+        double nodeMigrationProbability = 0.01;
+        double streamSetObjectNotContainsStreamProbability = 0.8;
 
         long now = System.currentTimeMillis();
         seedList.add(now);
@@ -512,7 +525,7 @@ public class S3StreamsMetadataImageTest {
         S3StreamsMetadataImageTest.GeneratorResult generatorResult = generate(now, random,
             streamId, totalStreamLength, numberOfNodes, maxSegmentSize,
             streamSetObjectProbability, nodeMigrationProbability,
-            10000, streamSetObjectNotContainsStreamProbability
+            maxStreamPerStreamSetObject, streamSetObjectNotContainsStreamProbability
         );
 
         List<S3ObjectMetadata> allObjects = getS3ObjectMetadata(streamId, generatorResult.generatedStreamMetadata);
