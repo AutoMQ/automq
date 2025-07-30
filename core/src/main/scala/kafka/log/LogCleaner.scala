@@ -997,12 +997,12 @@ private[log] class Cleaner(val id: Int,
       var timeIndexSize = segs.head.timeIndex.sizeInBytes.toLong
       segs = segs.tail
       while (segs.nonEmpty &&
-          logSize + segs.head.size <= maxSize &&
-          indexSize + offsetIndexSize(segs.head) <= maxIndexSize &&
-          timeIndexSize + segs.head.timeIndex.sizeInBytes <= maxIndexSize &&
-          //if first segment size is 0, we don't need to do the index offset range check.
-          //this will avoid empty log left every 2^31 message.
-          (segs.head.size == 0 || isOffsetRangeValid(group))) {
+            logSize + segs.head.size <= maxSize &&
+            indexSize + offsetIndexSize(segs.head) <= maxIndexSize &&
+            timeIndexSize + segs.head.timeIndex.sizeInBytes <= maxIndexSize &&
+            //if first segment size is 0, we don't need to do the index offset range check.
+            //this will avoid empty log left every 2^31 message.
+            (segs.head.size == 0 || isOffsetRangeValid(group))) {
         group = segs.head :: group
         logSize += segs.head.size
         indexSize += offsetIndexSize(segs.head)
