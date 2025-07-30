@@ -709,6 +709,7 @@ object ElasticLog extends Logging {
                 stream
             } else {
                 val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
+                client.streamClient().preWarmStream(metaStreamId)
                 val awaitCostMs = awaitStreamReadyForOpen(openStreamChecker, topicId.get, topicPartition.partition(), metaStreamId, leaderEpoch, logIdent = logIdent)
                 // open partition meta stream
                 val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.builder().epoch(leaderEpoch).tags(streamTags).build())
