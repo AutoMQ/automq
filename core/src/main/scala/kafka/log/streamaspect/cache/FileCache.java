@@ -219,7 +219,11 @@ public class FileCache {
                 }
                 long cacheBlockStartPosition = cacheBlockEndPosition - blockSize;
                 int readSize = (int) Math.min(remaining, cacheBlockEndPosition - nextPosition);
-                buf.writeBytes(cacheByteBuffer.slice(blocks.indexes[i] * blockSize + (int) (nextPosition - cacheBlockStartPosition), readSize));
+                // Use Java 11 compatible approach instead of Java 13+ slice(int, int) method
+                int slicePosition = blocks.indexes[i] * blockSize + (int) (nextPosition - cacheBlockStartPosition);
+                MappedByteBuffer slicedBuffer = cacheByteBuffer.duplicate();
+                slicedBuffer.position(slicePosition).limit(slicePosition + readSize);
+                buf.writeBytes(slicedBuffer.slice());
                 remaining -= readSize;
                 nextPosition += readSize;
                 if (remaining <= 0) {
