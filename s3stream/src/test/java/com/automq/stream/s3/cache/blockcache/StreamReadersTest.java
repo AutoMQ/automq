@@ -20,13 +20,13 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.utils.MockTime;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +52,7 @@ public class StreamReadersTest {
     private ObjectStorage objectStorage;
     private ObjectReaderFactory objectReaderFactory;
     private StreamReaders streamReaders;
+    private MockTime mockTime;
 
     @BeforeEach
     void setup() {
@@ -92,7 +93,8 @@ public class StreamReadersTest {
             }
         };
 
-        streamReaders = new StreamReaders(Long.MAX_VALUE, objectManager, objectStorage, objectReaderFactory, 2);
+        mockTime = new MockTime();
+        streamReaders = new StreamReaders(Long.MAX_VALUE, objectManager, objectStorage, objectReaderFactory, 2, mockTime);
     }
 
     @AfterEach
@@ -164,9 +166,8 @@ public class StreamReadersTest {
 
         assertEquals(1, streamReaders.getActiveStreamReaderCount());
 
-        // Use reflection to modify lastStreamReaderExpiredCheckTime to simulate time passage
-        // This forces the cleanup to consider StreamReaders as expired
-        forceExpiredStreamReaderCleanup();
+        // Advance mock time to simulate expiration (advance by 2 minutes, expiration is 1 minute)
+        mockTime.sleep(TimeUnit.MINUTES.toMillis(2));
 
         // Trigger cleanup - should now clean up expired StreamReaders
         streamReaders.triggerExpiredStreamReaderCleanup();
@@ -184,39 +185,6 @@ public class StreamReadersTest {
         assertEquals(1, streamReaders.getActiveStreamReaderCount());
     }
 
-    /**
-     * Force expired StreamReader cleanup by modifying lastStreamReaderExpiredCheckTime
-     * and StreamReader lastAccessTimestamp using reflection to simulate time passage
-     * beyond the expiration threshold.
-     */
-    private void forceExpiredStreamReaderCleanup() throws Exception {
-        // Get the caches field from StreamReaders
-        Field cachesField = StreamReaders.class.getDeclaredField("caches");
-        cachesField.setAccessible(true);
-        Object[] caches = (Object[]) cachesField.get(streamReaders);
 
-        // Time far in the past to force expiration (current time - 2 minutes, expiration is 1 minute)
-        long pastTime = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(2);
-
-        // For each cache, modify lastStreamReaderExpiredCheckTime and StreamReader timestamps
-        for (Object cache : caches) {
-            // Modify lastStreamReaderExpiredCheckTime to force cleanup check
-            Field lastCheckTimeField = cache.getClass().getDeclaredField("lastStreamReaderExpiredCheckTime");
-            lastCheckTimeField.setAccessible(true);
-            lastCheckTimeField.setLong(cache, pastTime);
-
-            // Get streamReaders map and modify each StreamReader's lastAccessTimestamp
-            Field streamReadersField = cache.getClass().getDeclaredField("streamReaders");
-            streamReadersField.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            java.util.Map<Object, Object> streamReadersMap = (java.util.Map<Object, Object>) streamReadersField.get(cache);
-
-            for (Object streamReader : streamReadersMap.values()) {
-                Field lastAccessTimestampField = streamReader.getClass().getDeclaredField("lastAccessTimestamp");
-                lastAccessTimestampField.setAccessible(true);
-                lastAccessTimestampField.setLong(streamReader, pastTime);
-            }
-        }
-    }
 
 }

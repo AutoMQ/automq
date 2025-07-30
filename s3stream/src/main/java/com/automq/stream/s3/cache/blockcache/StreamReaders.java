@@ -27,6 +27,7 @@ import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import com.google.common.annotations.VisibleForTesting;
 
@@ -45,6 +46,7 @@ public class StreamReaders implements S3BlockCache {
     private static final long STREAM_READER_EXPIRED_MILLS = TimeUnit.MINUTES.toMillis(1);
     private static final long STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS = TimeUnit.MINUTES.toMillis(1);
     private final Cache[] caches;
+    private final Time time;
     private final DataBlockCache dataBlockCache;
     private final ObjectReaderFactory objectReaderFactory;
 
@@ -53,11 +55,17 @@ public class StreamReaders implements S3BlockCache {
 
     public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage,
         ObjectReaderFactory objectReaderFactory) {
-        this(size, objectManager, objectStorage, objectReaderFactory, Systems.CPU_CORES);
+        this(size, objectManager, objectStorage, objectReaderFactory, Systems.CPU_CORES, Time.SYSTEM);
     }
 
     public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage,
         ObjectReaderFactory objectReaderFactory, int concurrency) {
+        this(size, objectManager, objectStorage, objectReaderFactory, concurrency, Time.SYSTEM);
+    }
+
+    public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage,
+        ObjectReaderFactory objectReaderFactory, int concurrency, Time time) {
+        this.time = time;
         EventLoop[] eventLoops = new EventLoop[concurrency];
         for (int i = 0; i < concurrency; i++) {
             eventLoops[i] = new EventLoop("stream-reader-" + i);
@@ -141,10 +149,11 @@ public class StreamReaders implements S3BlockCache {
     class Cache {
         private final EventLoop eventLoop;
         private final Map<StreamReaderKey, StreamReader> streamReaders = new HashMap<>();
-        private long lastStreamReaderExpiredCheckTime = System.currentTimeMillis();
+        private long lastStreamReaderExpiredCheckTime;
 
         public Cache(EventLoop eventLoop) {
             this.eventLoop = eventLoop;
+            this.lastStreamReaderExpiredCheckTime = time.milliseconds();
         }
 
         public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset,
@@ -156,7 +165,7 @@ public class StreamReaders implements S3BlockCache {
                 StreamReaderKey key = new StreamReaderKey(streamId, startOffset);
                 StreamReader streamReader = streamReaders.remove(key);
                 if (streamReader == null) {
-                    streamReader = new StreamReader(streamId, startOffset, eventLoop, objectManager, objectReaderFactory, dataBlockCache);
+                    streamReader = new StreamReader(streamId, startOffset, eventLoop, objectManager, objectReaderFactory, dataBlockCache, time);
                 }
                 StreamReader finalStreamReader = streamReader;
                 CompletableFuture<ReadDataBlock> streamReadCf = streamReader.read(startOffset, endOffset, maxBytes)
@@ -191,7 +200,7 @@ public class StreamReaders implements S3BlockCache {
         }
 
         private void cleanupExpiredStreamReader() {
-            long now = System.currentTimeMillis();
+            long now = time.milliseconds();
             if (now > lastStreamReaderExpiredCheckTime + STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS) {
                 lastStreamReaderExpiredCheckTime = now;
                 Iterator<Map.Entry<StreamReaderKey, StreamReader>> it = streamReaders.entrySet().iterator();
