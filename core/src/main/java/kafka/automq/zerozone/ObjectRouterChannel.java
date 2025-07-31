@@ -75,8 +75,8 @@ public class ObjectRouterChannel implements RouterChannel {
         writeLock.lock();
         try {
             if (epoch > this.channelEpoch) {
-                this.channelEpoch = epoch;
                 this.channelEpochQueue.add(epoch);
+                this.channelEpoch = epoch;
             }
         } finally {
             writeLock.unlock();
@@ -94,9 +94,11 @@ public class ObjectRouterChannel implements RouterChannel {
                 }
                 channelEpochQueue.poll();
                 RecordOffset recordOffset = channelEpoch2LastRecordOffset.remove(epoch);
-                wal.trim(recordOffset);
-                // TODO: remove
-                LOGGER.info("RouterChannel trim to epoch={} offset={}", epoch, recordOffset);
+                if (recordOffset != null) {
+                    wal.trim(recordOffset);
+                    // TODO: remove
+                    LOGGER.info("RouterChannel trim to epoch={} offset={}", epoch, recordOffset);
+                }
             }
         } finally {
             writeLock.unlock();

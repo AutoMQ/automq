@@ -50,6 +50,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,8 +69,8 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -120,7 +121,7 @@ public class S3Storage implements Storage {
     private final Queue<DeltaWALUploadTaskContext> walPrepareQueue = new LinkedList<>();
     private final Queue<DeltaWALUploadTaskContext> walCommitQueue = new LinkedList<>();
     private final List<DeltaWALUploadTaskContext> inflightWALUploadTasks = new CopyOnWriteArrayList<>();
-    private Queue<CompletableFuture<Void>> lazyUploadQueue = new ConcurrentLinkedQueue<>();
+    private BlockingQueue<CompletableFuture<Void>> lazyUploadQueue = new LinkedBlockingQueue<>();
 
     /**
      * A lock to ensure only one thread can trigger {@link #forceUpload()} in {@link #maybeForceUpload()}
@@ -134,6 +135,7 @@ public class S3Storage implements Storage {
         ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
     private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPoolWithMonitor(
         4, "s3-storage-upload-wal", true, LOGGER);
+    private final DelayTrim delayTrim;
     /**
      * A ticker used for batching force upload WAL.
      *
@@ -170,6 +172,9 @@ public class S3Storage implements Storage {
         if (config.snapshotReadEnable()) {
             deltaWALCacheSize = Math.max(config.walCacheSize() / 3, 10L * 1024 * 1024);
             snapshotReadCacheSize = Math.max(config.walCacheSize() / 3 * 2, 10L * 1024 * 1024);
+            delayTrim = new DelayTrim(TimeUnit.SECONDS.toMillis(10));
+        } else {
+            delayTrim = new DelayTrim(0);
         }
         this.deltaWALCache = new LogCache(deltaWALCacheSize, config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
@@ -513,6 +518,7 @@ public class S3Storage implements Storage {
         for (WalWriteRequest request : backoffRecords) {
             request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
         }
+        FutureUtil.suppress(() -> delayTrim.close(), LOGGER);
         deltaWAL.shutdownGracefully();
         ThreadUtils.shutdownExecutor(backgroundExecutor, 10, TimeUnit.SECONDS, LOGGER);
     }
@@ -741,24 +747,20 @@ public class S3Storage implements Storage {
         lazyUploadQueue.add(cf);
         backgroundExecutor.schedule(() -> {
             if (!cf.isDone()) {
-                FutureUtil.propagate(forceUpload(), cf);
+                forceUpload();
             }
         }, lazyTimeoutMillis, TimeUnit.MILLISECONDS);
         return cf;
     }
 
-    private void completeLazyUpload(Throwable ex) {
-        for (; ; ) {
-            CompletableFuture<Void> lazyUploadCf = lazyUploadQueue.poll();
-            if (lazyUploadCf == null) {
-                break;
-            }
+    private void completeLazyUpload(List<CompletableFuture<Void>> lazyUploadCfList, Throwable ex) {
+        lazyUploadCfList.forEach(lazyUploadCf -> {
             if (ex != null) {
                 lazyUploadCf.completeExceptionally(ex);
             } else {
                 lazyUploadCf.complete(null);
             }
-        }
+        });
     }
 
     private CompletableFuture<Void> forceUpload() {
@@ -833,6 +835,9 @@ public class S3Storage implements Storage {
 
     CompletableFuture<Void> uploadDeltaWAL(long streamId, boolean force) {
         CompletableFuture<Void> cf;
+        List<CompletableFuture<Void>> lazyUploadTasks = new ArrayList<>();
+        lazyUploadQueue.drainTo(lazyUploadTasks);
+
         synchronized (deltaWALCache) {
             Optional<LogCache.LogCacheBlock> blockOpt = deltaWALCache.archiveCurrentBlockIfContains(streamId);
             if (blockOpt.isPresent()) {
@@ -845,8 +850,14 @@ public class S3Storage implements Storage {
                 cf = CompletableFuture.completedFuture(null);
             }
         }
-        cf.whenComplete((nil, ex) -> {
-            completeLazyUpload(ex);
+
+        // notify lazy upload tasks
+        CompletableFuture.allOf(inflightWALUploadTasks.stream()
+            .map(t -> t.trimCf)
+            .collect(Collectors.toList())
+            .toArray(new CompletableFuture[0])
+        ).whenComplete((nil, ex) -> {
+            completeLazyUpload(lazyUploadTasks, ex);
         });
         return cf;
     }
@@ -946,8 +957,7 @@ public class S3Storage implements Storage {
             walCommitQueue.poll();
             if (context.cache.lastRecordOffset() != null) {
                 LOGGER.info("try trim WAL to {}", context.cache.lastRecordOffset());
-                // TODO: 等 trim 完成, 不然 router channel 可能先删除成功
-                deltaWAL.trim(context.cache.lastRecordOffset());
+                delayTrim.trim(context.cache.lastRecordOffset(), context.trimCf);
             }
             // transfer records ownership to block cache.
             freeCache(context.cache);
@@ -973,11 +983,51 @@ public class S3Storage implements Storage {
         deltaWALCache.markFree(cacheBlock);
     }
 
+    class DelayTrim {
+        private final long delayMillis;
+        private final BlockingQueue<Pair<RecordOffset, CompletableFuture<Void>>> offsets = new LinkedBlockingQueue<>();
+
+        public DelayTrim(long delayMillis) {
+            this.delayMillis = delayMillis;
+        }
+
+        public void trim(RecordOffset recordOffset, CompletableFuture<Void> cf) {
+            if (delayMillis == 0) {
+                FutureUtil.propagate(deltaWAL.trim(recordOffset), cf);
+            } else {
+                offsets.add(Pair.of(recordOffset, cf));
+                Threads.COMMON_SCHEDULER.schedule(() -> {
+                    run();
+                }, delayMillis, TimeUnit.MILLISECONDS);
+            }
+        }
+
+        private void run() {
+            Pair<RecordOffset, CompletableFuture<Void>> pair = offsets.poll();
+            if (pair == null) {
+                return;
+            }
+            FutureUtil.propagate(deltaWAL.trim(pair.getKey()), pair.getValue());
+        }
+
+        public void close() {
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            List<Pair<RecordOffset, CompletableFuture<Void>>> pending = new ArrayList<>();
+            offsets.drainTo(pending);
+            for (Pair<RecordOffset, CompletableFuture<Void>> pair : pending) {
+                FutureUtil.propagate(deltaWAL.trim(pair.getKey()), pair.getValue());
+                futures.add(pair.getValue());
+            }
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        }
+    }
+
     public static class DeltaWALUploadTaskContext {
         TimerUtil timer;
         LogCache.LogCacheBlock cache;
         UploadWriteAheadLogTask task;
         CompletableFuture<Void> cf;
+        CompletableFuture<Void> trimCf = new CompletableFuture<>();
         ObjectManager objectManager;
         /**
          * Indicate whether to force upload the delta wal.

@@ -172,6 +172,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
+        logger.info("read object {} {}-{}", path, start, end);
         GetObjectRequest.Builder builder = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end));
 
         if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {

@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -25,7 +26,9 @@ public class CommittedEpochManager implements RouterChannelProvider.EpochListene
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private RouterChannelEpoch routerChannelEpoch;
+    private long waitingCommitEpoch = -1L;
     private long committedEpoch = -1L;
+    private CompletableFuture<Void> commitCf = CompletableFuture.completedFuture(null);
     private final NavigableMap<Long, AtomicLong> epoch2inflight = new ConcurrentSkipListMap<>();
 
     private final int nodeId;
@@ -60,7 +63,7 @@ public class CommittedEpochManager implements RouterChannelProvider.EpochListene
     private void tryBumpCommittedEpoch0() {
         long fencedEpoch = routerChannelEpoch.getFenced();
         Iterator<Map.Entry<Long, AtomicLong>> it = epoch2inflight.entrySet().iterator();
-        long newCommittedEpoch = committedEpoch;
+        long newWaitingEpoch = waitingCommitEpoch;
         while (it.hasNext()) {
             Map.Entry<Long, AtomicLong> entry = it.next();
             long epoch = entry.getKey();
@@ -70,17 +73,31 @@ public class CommittedEpochManager implements RouterChannelProvider.EpochListene
             AtomicLong inflight = entry.getValue();
             if (inflight.get() == 0) {
                 it.remove();
-                newCommittedEpoch = epoch;
+                newWaitingEpoch = epoch;
             }
         }
         if (epoch2inflight.isEmpty()) {
-            newCommittedEpoch = fencedEpoch;
+            newWaitingEpoch = fencedEpoch;
         }
-        if (newCommittedEpoch != committedEpoch) {
-            this.committedEpoch = newCommittedEpoch;
+        if (newWaitingEpoch != waitingCommitEpoch) {
+            this.waitingCommitEpoch = newWaitingEpoch;
             // TODO: better dependencies injection
             Context.instance().kvClient()
-                .putKV(KeyValue.of(NodeCommittedEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX + nodeId, NodeCommittedEpoch.encode(new NodeCommittedEpoch(newCommittedEpoch), (short) 0).nioBuffer()));
+                .putKV(KeyValue.of(NodeCommittedEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX + nodeId, NodeCommittedEpoch.encode(new NodeCommittedEpoch(newWaitingEpoch), (short) 0).nioBuffer()));
+        }
+        if (commitCf.isDone() && waitingCommitEpoch != committedEpoch) {
+            long newCommittedEpoch = waitingCommitEpoch;
+            commitCf = commitCf
+                .thenCompose(nil -> Context.instance().confirmWAL().commit(TimeUnit.SECONDS.toMillis(10)))
+                .thenCompose(nil ->
+                    Context.instance().kvClient().putKV(KeyValue.of(
+                        NodeCommittedEpoch.NODE_COMMITED_EPOCH_KEY_PREFIX + nodeId,
+                        NodeCommittedEpoch.encode(new NodeCommittedEpoch(newCommittedEpoch), (short) 0).nioBuffer()
+                    )).thenAccept(rst -> committedEpoch = newCommittedEpoch)
+                ).exceptionally(ex -> {
+                    LOGGER.error("[BUMP_COMMITTED_EPOCH_FAIL]", ex);
+                    return null;
+                });
         }
     }
 

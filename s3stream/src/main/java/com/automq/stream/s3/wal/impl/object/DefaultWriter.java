@@ -386,14 +386,12 @@ public class DefaultWriter implements Writer {
             // We cannot force upload an empty wal object cause of the recover workflow don't accept an empty wal object.
             // So we use a fake record to trigger the wal object upload.
             persistTrimOffsetCf = append(new StreamRecordBatch(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER));
-            unsafeUpload(false);
         } catch (Throwable e) {
             persistTrimOffsetCf = CompletableFuture.failedFuture(e);
         } finally {
             lock.writeLock().unlock();
         }
-
-        return persistTrimOffsetCf.thenAccept(nil -> {
+        return persistTrimOffsetCf.thenCompose(nil -> {
             Long lastFlushedRecordOffset = lastRecordOffset2object.lastKey();
             if (lastFlushedRecordOffset != null) {
                 lastRecordOffset2object.headMap(newStartOffset, true)
@@ -424,22 +422,21 @@ public class DefaultWriter implements Writer {
                 deleteObjectList.addAll(list);
             }
             if (deleteObjectList.isEmpty()) {
-                return;
+                return CompletableFuture.completedFuture(null);
             }
 
-            utilityService.schedule(() -> {
-                // - Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
-                // - Delay delete to ensure the async replay success rate
-                objectStorage.delete(deleteObjectList).whenComplete((v, throwable) -> {
-                    ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
-                    objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
-
-                    // Never fail the delete task, the under layer storage will retry forever.
-                    if (throwable != null) {
-                        log.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
-                    }
-                });
-            }, 30, TimeUnit.SECONDS);
+            return objectStorage.delete(deleteObjectList).whenComplete((v, throwable) -> {
+                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
+                objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
+                // Never fail the delete task, the under layer storage will retry forever.
+                if (throwable != null) {
+                    log.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
+                }
+                utilityService.schedule(() -> {
+                    // - Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
+                    objectStorage.delete(deleteObjectList);
+                }, 30, TimeUnit.SECONDS);
+            });
         });
     }
 

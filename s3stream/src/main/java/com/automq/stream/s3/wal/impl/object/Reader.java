@@ -121,9 +121,6 @@ public class Reader {
             long objectStartObject = floorAlignOffset(readTask.offset);
             String objectPath = genObjectPathV1(nodePrefix, epoch, objectStartObject);
             long relativeStartOffset = readTask.offset - objectStartObject + WALObjectHeader.WAL_HEADER_SIZE_V1;
-            // TODO: remove
-            LOGGER.info("read object {} {}-{}", objectPath, relativeStartOffset, relativeStartOffset + readTask.size);
-
             objectStorage.rangeRead(
                 new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
                 objectPath,

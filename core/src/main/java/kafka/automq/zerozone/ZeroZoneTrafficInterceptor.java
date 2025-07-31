@@ -122,8 +122,6 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get());
         this.committedEpochManager = new CommittedEpochManager(nodeId);
         this.routerChannelProvider.addEpochListener(committedEpochManager);
-
-        routerChannelProvider.addEpochListener(epoch -> Context.instance().confirmWAL().commit(TimeUnit.SECONDS.toMillis(10)));
         DefaultReplayer replayer = new DefaultReplayer();
 
         this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), replayer, kafkaApis.clusterId());
