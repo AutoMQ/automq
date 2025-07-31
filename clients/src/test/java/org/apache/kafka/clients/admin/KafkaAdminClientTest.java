@@ -116,6 +116,7 @@ import org.apache.kafka.common.message.ElectLeadersResponseData.PartitionResult;
 import org.apache.kafka.common.message.ElectLeadersResponseData.ReplicaElectionResult;
 import org.apache.kafka.common.message.FindCoordinatorRequestData;
 import org.apache.kafka.common.message.FindCoordinatorResponseData;
+import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetTelemetrySubscriptionsResponseData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsResponseData;
 import org.apache.kafka.common.message.IncrementalAlterConfigsResponseData.AlterConfigsResourceResponse;
@@ -141,6 +142,7 @@ import org.apache.kafka.common.message.OffsetDeleteResponseData.OffsetDeleteResp
 import org.apache.kafka.common.message.OffsetFetchRequestData;
 import org.apache.kafka.common.message.OffsetFetchRequestData.OffsetFetchRequestGroup;
 import org.apache.kafka.common.message.OffsetFetchRequestData.OffsetFetchRequestTopics;
+import org.apache.kafka.common.message.PutKVsResponseData;
 import org.apache.kafka.common.message.UnregisterBrokerResponseData;
 import org.apache.kafka.common.message.WriteTxnMarkersResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -6948,7 +6950,7 @@ public class KafkaAdminClientTest {
             assertNotNull(result.descriptions().get(1).get());
         }
     }
-    
+
     @Test
     public void testDescribeReplicaLogDirsWithNonExistReplica() throws Exception {
         int brokerId = 0;
@@ -6967,7 +6969,7 @@ public class KafkaAdminClientTest {
 
             DescribeReplicaLogDirsResult result = env.adminClient().describeReplicaLogDirs(asList(tpr1, tpr2));
             Map<TopicPartitionReplica, KafkaFuture<DescribeReplicaLogDirsResult.ReplicaLogDirInfo>> values = result.values();
-            
+
             assertEquals(logDir, values.get(tpr1).get().getCurrentReplicaLogDir());
             assertNull(values.get(tpr1).get().getFutureReplicaLogDir());
             assertEquals(offsetLag, values.get(tpr1).get().getCurrentReplicaOffsetLag());

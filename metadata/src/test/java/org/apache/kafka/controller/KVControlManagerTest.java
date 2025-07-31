@@ -31,6 +31,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -41,8 +42,11 @@ import org.junit.jupiter.api.Timeout;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static org.apache.kafka.common.protocol.Errors.INVALID_KV_RECORD_EPOCH;
+import static org.apache.kafka.controller.FeatureControlManagerTest.features;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(40)
 @Tag("S3Unit")
@@ -54,7 +58,12 @@ public class KVControlManagerTest {
     public void setUp() {
         LogContext logContext = new LogContext();
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
-        this.manager = new KVControlManager(registry, logContext);
+        FeatureControlManager featureControlManager = new FeatureControlManager.Builder().
+            setQuorumFeatures(features("foo", 1, 2)).
+            setSnapshotRegistry(registry).
+            setMetadataVersion(MetadataVersion.IBP_3_3_IV0).
+            build();
+        this.manager = new KVControlManager(registry, logContext, featureControlManager);
     }
 
     @Test
@@ -111,6 +120,149 @@ public class KVControlManagerTest {
             .setKey("key1"));
         assertEquals(0, result3.records().size());
         assertEquals(Errors.KEY_NOT_EXIST.code(), result3.response().errorCode());
+    }
+
+    @Test
+    public void testNamespacedReadWrite() {
+        ControllerResult<PutKVResponse> result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value1".getBytes())
+            .setNamespace("__automq_test")
+        );
+        assertEquals(1, result.records().size());
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals("value1", new String(result.response().value()));
+        replay(manager, result.records());
+
+        result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value1-1".getBytes())
+            .setNamespace("__automq_test")
+        );
+        assertEquals(0, result.records().size());
+        assertEquals(Errors.KEY_EXIST.code(), result.response().errorCode());
+        assertEquals("value1", new String(result.response().value()));
+
+        result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value1-2".getBytes())
+            .setNamespace("__automq_test")
+            .setOverwrite(true));
+        assertEquals(1, result.records().size());
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals("value1-2", new String(result.response().value()));
+        replay(manager, result.records());
+
+        GetKVResponse result2 = manager.getKV(new GetKVRequest()
+            .setKey("key1")
+            .setNamespace("__automq_test"));
+        assertEquals("value1-2", new String(result2.value()));
+
+        result2 = manager.getKV(new GetKVRequest()
+            .setKey("key2")
+            .setNamespace("__automq_test"));
+        assertNull(result2.value());
+
+        ControllerResult<DeleteKVResponse> result3 = manager.deleteKV(new DeleteKVRequest()
+            .setKey("key2")
+            .setNamespace("__automq_test"));
+        assertEquals(0, result3.records().size());
+        assertEquals(Errors.KEY_NOT_EXIST.code(), result3.response().errorCode());
+
+        result3 = manager.deleteKV(new DeleteKVRequest()
+            .setKey("key1")
+            .setNamespace("__automq_test")
+        );
+        assertEquals(1, result3.records().size());
+        assertEquals(Errors.NONE.code(), result3.response().errorCode());
+        assertEquals("value1-2", new String(result3.response().value()));
+        replay(manager, result3.records());
+        // key1 is deleted
+        result2 = manager.getKV(new GetKVRequest()
+            .setKey("key1")
+            .setNamespace("__automq_test"));
+        assertNull(result2.value());
+
+        result3 = manager.deleteKV(new DeleteKVRequest()
+            .setKey("key1")
+            .setNamespace("__automq_test"));
+        assertEquals(0, result3.records().size());
+        assertEquals(Errors.KEY_NOT_EXIST.code(), result3.response().errorCode());
+    }
+
+    @Test
+    public void testPutWithEpochValidation() {
+        ControllerResult<PutKVResponse> result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value1".getBytes())
+            .setNamespace("__epoch_test")
+            .setEpoch(0));
+        assertEquals(1, result.records().size());
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        long initialEpoch = result.response().epoch();
+        assertTrue(initialEpoch > 0);
+        replay(manager, result.records());
+        result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value2".getBytes())
+            .setNamespace("__epoch_test")
+            .setEpoch(initialEpoch - 1)
+            .setOverwrite(true));
+        assertEquals(0, result.records().size());
+        assertEquals(INVALID_KV_RECORD_EPOCH.code(), result.response().errorCode());
+        assertEquals(initialEpoch, result.response().epoch());
+        // without overwrite, should fail
+        result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value2".getBytes())
+            .setNamespace("__epoch_test")
+            .setEpoch(initialEpoch));
+        assertEquals(0, result.records().size());
+        assertEquals(Errors.KEY_EXIST.code(), result.response().errorCode());
+        // with overwrite, should succeed
+        result = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value2".getBytes())
+            .setNamespace("__epoch_test")
+            .setEpoch(initialEpoch)
+            .setOverwrite(true));
+        assertEquals(1, result.records().size());
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        long newEpoch = result.response().epoch();
+        assertTrue(newEpoch > initialEpoch);
+        replay(manager, result.records());
+        GetKVResponse readResp = manager.getKV(new GetKVRequest()
+            .setKey("key1")
+            .setNamespace("__epoch_test"));
+        assertEquals(newEpoch, readResp.epoch());
+    }
+
+    @Test
+    public void testDeleteWithEpochValidation() {
+        ControllerResult<PutKVResponse> putResult = manager.putKV(new PutKVRequest()
+            .setKey("key1")
+            .setValue("value1".getBytes())
+            .setNamespace("__epoch_test"));
+        long initialEpoch = putResult.response().epoch();
+        replay(manager, putResult.records());
+        ControllerResult<DeleteKVResponse> delResult = manager.deleteKV(new DeleteKVRequest()
+            .setKey("key1")
+            .setNamespace("__epoch_test")
+            .setEpoch(initialEpoch - 1));
+        assertEquals(0, delResult.records().size());
+        assertEquals(INVALID_KV_RECORD_EPOCH.code(), delResult.response().errorCode());
+        assertEquals(initialEpoch, delResult.response().epoch());
+        delResult = manager.deleteKV(new DeleteKVRequest()
+            .setKey("key1")
+            .setNamespace("__epoch_test")
+            .setEpoch(initialEpoch));
+        assertEquals(1, delResult.records().size());
+        assertEquals(Errors.NONE.code(), delResult.response().errorCode());
+        replay(manager, delResult.records());
+        GetKVResponse readResp = manager.getKV(new GetKVRequest()
+            .setKey("key1")
+            .setNamespace("__epoch_test"));
+        assertNull(readResp.value());
     }
 
     private void replay(KVControlManager manager, List<ApiMessageAndVersion> records) {

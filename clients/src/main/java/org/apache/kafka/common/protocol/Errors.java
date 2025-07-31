@@ -61,6 +61,7 @@ import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.errors.InvalidFetchSessionEpochException;
 import org.apache.kafka.common.errors.InvalidFetchSizeException;
 import org.apache.kafka.common.errors.InvalidGroupIdException;
+import org.apache.kafka.common.errors.InvalidKVRecordEpochException;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
 import org.apache.kafka.common.errors.InvalidPidMappingException;
 import org.apache.kafka.common.errors.InvalidPrincipalTypeException;
@@ -440,6 +441,7 @@ public enum Errors {
     NODE_LOCKED(515, "The node is locked", NodeLockedException::new),
     OBJECT_NOT_COMMITED(516, "The object is not commited.", ObjectNotCommittedException::new),
     STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new),
+    INVALID_KV_RECORD_EPOCH(600, "The KV record epoch is invalid.", InvalidKVRecordEpochException::new),
     // AutoMQ inject end
 
     INVALID_RECORD_STATE(121, "The record state is invalid. The acknowledgement of delivery could not be completed.", InvalidRecordStateException::new),
