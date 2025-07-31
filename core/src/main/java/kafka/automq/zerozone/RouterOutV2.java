@@ -20,6 +20,7 @@ import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
 import org.slf4j.Logger;
@@ -31,11 +32,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.TreeMap;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -122,66 +123,52 @@ public class RouterOutV2 {
         private static final int MAX_BATCH_REQUEST_COUNT = 4096;
         private static final int MAX_INFLIGHT_SIZE = 4;
         private final Node node;
-        private final BlockingQueue<ProxyRequest> waitingRequests = new ArrayBlockingQueue<>(1 << 15);
-        private final List<ProxyRequest> reusableBatchSendList = new ArrayList<>(MAX_BATCH_REQUEST_COUNT);
         private final Semaphore inflightLimiter = new Semaphore(MAX_INFLIGHT_SIZE);
+        private final Queue<RequestBatch> requestBatchQueue = new ConcurrentLinkedQueue<>();
+        private RequestBatch requestBatch = null;
 
         public RemoteProxy(Node node) {
             this.node = node;
         }
 
-        public void send(ProxyRequest request) {
-            boolean success = waitingRequests.offer(request);
-            if (!success) {
-                // TODO: return 503
-                LOGGER.error("[ROUTE_PROXY],[WAITING_FULL],node={},size={}", node, waitingRequests.size());
-                return;
+        public synchronized void send(ProxyRequest request) {
+            if (requestBatch == null) {
+                requestBatch = new RequestBatch(time, 1, 8192);
+                Threads.COMMON_SCHEDULER.schedule(() -> trySendRequestBatch(requestBatch), 1, TimeUnit.MILLISECONDS);
             }
-            drainAndBatchSend();
+            if (requestBatch.add(request)) {
+                requestBatchQueue.add(requestBatch);
+                requestBatch = null;
+                trySendRequestBatch(null);
+            }
         }
 
-        private void drainAndBatchSend() {
-            if (!inflightLimiter.tryAcquire()) {
+        private synchronized void trySendRequestBatch(RequestBatch forceSend) {
+            if (inflightLimiter.availablePermits() == 0) {
                 return;
             }
-            synchronized (waitingRequests) {
-                if (waitingRequests.isEmpty()) {
-                    inflightLimiter.release();
-                    return;
+            if ((requestBatch != null && requestBatch.lingerTimeout())
+                || (forceSend != null && requestBatch == forceSend)) {
+                requestBatchQueue.add(requestBatch);
+                requestBatch = null;
+            }
+            for (; ; ) {
+                RequestBatch waitingSend = requestBatchQueue.peek();
+                if (waitingSend == null) {
+                    break;
                 }
-                List<ProxyRequest> requests = reusableBatchSendList;
-                requests.clear();
-                waitingRequests.drainTo(requests);
-                if (requests.isEmpty()) {
-                    inflightLimiter.release();
-                    return;
+                if (!inflightLimiter.tryAcquire()) {
+                    break;
                 }
+                requestBatchQueue.poll();
                 List<CompletableFuture<Void>> futures = new ArrayList<>();
-                groupByEpoch(requests).forEach((epoch, batchSendList) -> futures.add(batchSend(epoch, batchSendList)));
+                waitingSend.getRequests().forEach((epoch, requests) -> futures.add(batchSend(epoch, requests)));
                 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .whenComplete((nil, ex) -> {
                         inflightLimiter.release();
-                        drainAndBatchSend();
+                        trySendRequestBatch(null);
                     });
             }
-        }
-
-        private Map<Long, List<ProxyRequest>> groupByEpoch(List<ProxyRequest> requests) {
-            long epoch = -1L;
-            for (ProxyRequest proxyRequest : requests) {
-                if (epoch == -1L) {
-                    epoch = proxyRequest.epoch;
-                } else if (epoch != proxyRequest.epoch) {
-                    // slow path
-                    Map<Long, List<ProxyRequest>> groupByEpoch = new TreeMap<>();
-                    int requestSize = requests.size();
-                    for (ProxyRequest req : requests) {
-                        groupByEpoch.computeIfAbsent(req.epoch, k -> new ArrayList<>(requestSize)).add(req);
-                    }
-                    return groupByEpoch;
-                }
-            }
-            return Map.of(epoch, new ArrayList<>(requests));
         }
 
         private CompletableFuture<Void> batchSend(long epoch, List<ProxyRequest> requests) {
@@ -232,7 +219,41 @@ public class RouterOutV2 {
             }
 
         }
+    }
 
+    static class RequestBatch {
+        private final long batchStartNanos;
+
+        private final Time time;
+        private final long lingerNanos;
+        private final long batchSize;
+        private final Map<Long, List<ProxyRequest>> requests = new TreeMap<>();
+
+        public RequestBatch(Time time, long lingerMs, int batchSize) {
+            this.time = time;
+            this.lingerNanos = TimeUnit.MILLISECONDS.toNanos(lingerMs);
+            this.batchSize = batchSize;
+            this.batchStartNanos = System.nanoTime();
+        }
+
+        /**
+         * Add request to batch
+         *
+         * @param request {@link ProxyRequest}
+         * @return whether the batch is full
+         */
+        public boolean add(ProxyRequest request) {
+            requests.computeIfAbsent(request.epoch, key -> new ArrayList<>()).add(request);
+            return requests.size() > batchSize || time.nanoseconds() - batchStartNanos >= lingerNanos;
+        }
+
+        public boolean lingerTimeout() {
+            return time.nanoseconds() - batchStartNanos >= lingerNanos;
+        }
+
+        public Map<Long, List<ProxyRequest>> getRequests() {
+            return requests;
+        }
     }
 
     static class ProxyRequest {
