@@ -1383,7 +1383,6 @@ class ElasticReplicaManager(
     }
     partitionOpenOpExecutor.shutdown()
     partitionCloseOpExecutor.shutdown()
-    CoreUtils.swallow(ElasticLogManager.shutdown(), this)
   }
 
   /**

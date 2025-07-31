@@ -161,7 +161,6 @@ public class DefaultWriter implements Writer {
         startPeriodUpload();
         startMonitor();
 
-
         closed = false;
     }
 
@@ -283,7 +282,8 @@ public class DefaultWriter implements Writer {
         return flushedOffset.get();
     }
 
-    public CompletableFuture<AppendResult> append0(StreamRecordBatch streamRecordBatch) throws OverCapacityException, WALFencedException {
+    public CompletableFuture<AppendResult> append0(
+        StreamRecordBatch streamRecordBatch) throws OverCapacityException, WALFencedException {
         long startTime = time.nanoseconds();
         checkWriteStatus();
 
@@ -393,7 +393,7 @@ public class DefaultWriter implements Writer {
             lock.writeLock().unlock();
         }
 
-        return persistTrimOffsetCf.thenCompose(nil -> {
+        return persistTrimOffsetCf.thenAccept(nil -> {
             Long lastFlushedRecordOffset = lastRecordOffset2object.lastKey();
             if (lastFlushedRecordOffset != null) {
                 lastRecordOffset2object.headMap(newStartOffset, true)
@@ -424,11 +424,13 @@ public class DefaultWriter implements Writer {
                 deleteObjectList.addAll(list);
             }
             if (deleteObjectList.isEmpty()) {
-                return CompletableFuture.completedFuture(null);
+                return;
             }
 
-            return objectStorage.delete(deleteObjectList)
-                .whenComplete((v, throwable) -> {
+            utilityService.schedule(() -> {
+                // - Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
+                // - Delay delete to ensure the async replay success rate
+                objectStorage.delete(deleteObjectList).whenComplete((v, throwable) -> {
                     ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
                     objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
 
@@ -436,12 +438,8 @@ public class DefaultWriter implements Writer {
                     if (throwable != null) {
                         log.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
                     }
-
-                    utilityService.schedule(() -> {
-                        // Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
-                        objectStorage.delete(deleteObjectList);
-                    }, 30, TimeUnit.SECONDS);
                 });
+            }, 30, TimeUnit.SECONDS);
         });
     }
 

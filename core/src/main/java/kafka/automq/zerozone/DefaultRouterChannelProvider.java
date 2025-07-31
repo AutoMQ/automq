@@ -13,7 +13,6 @@ import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
-import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 
 import org.slf4j.Logger;
@@ -25,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 
 import io.netty.buffer.Unpooled;
 
@@ -102,8 +100,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider, Meta
         }
         this.epoch = RouterChannelEpoch.decode(Unpooled.wrappedBuffer(value.slice()));
         this.routerChannel.nextEpoch(epoch.getCurrent());
-        // delay 10s to ensure the delayed replayer can read the data.
-        Threads.COMMON_SCHEDULER.schedule(() -> this.routerChannel.trim(epoch.getCommited()), 10, TimeUnit.SECONDS);
+        this.routerChannel.trim(epoch.getCommited());
         notifyEpochListeners(epoch);
 
     }

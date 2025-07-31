@@ -31,11 +31,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -83,6 +85,7 @@ public class RouterOutV2 {
                 continue;
             }
             short orderHint = orderHint(tp, args.clientId().connectionId());
+            LOGGER.trace("[ROUTER_OUT],[CHANNEL_APPEND],tp={}", tp);
             CompletableFuture<RouterChannel.AppendResult> channelCf = routerChannel.append(node.id(), orderHint, zoneRouterProduceRequest(args, flag, tp, records));
             CompletableFuture<Void> proxyCf = channelCf.thenCompose(channelRst -> {
                 ProxyRequest proxyRequest = new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(), timeoutMillis);
@@ -93,7 +96,8 @@ public class RouterOutV2 {
             i++;
         }
         Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback = args.responseCallback();
-        CompletableFuture.allOf(cfList).thenAccept(nil -> responseCallback.accept(responseMap)).exceptionally(ex -> {
+        CompletableFuture<Void> cf = CompletableFuture.allOf(cfList);
+        cf.thenAccept(nil -> responseCallback.accept(responseMap)).exceptionally(ex -> {
             LOGGER.error("[UNEXPECTED],[ROUTE_FAIL]", ex);
             return null;
         });
@@ -152,16 +156,32 @@ public class RouterOutV2 {
                     inflightLimiter.release();
                     return;
                 }
-                // TODO: batch request count
-                // group the requests by epoch, convert List<ProxyRequest> to Map<Long /* epoch */, ProxyRequest>
                 List<CompletableFuture<Void>> futures = new ArrayList<>();
-                requests.stream()
-                    .collect(Collectors.groupingBy(r -> r.epoch))
-                    .forEach((epoch, batchSendList) -> futures.add(batchSend(epoch, batchSendList)));
+                groupByEpoch(requests).forEach((epoch, batchSendList) -> futures.add(batchSend(epoch, batchSendList)));
                 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                    .whenComplete((nil, ex) -> inflightLimiter.release());
+                    .whenComplete((nil, ex) -> {
+                        inflightLimiter.release();
+                        drainAndBatchSend();
+                    });
             }
+        }
 
+        private Map<Long, List<ProxyRequest>> groupByEpoch(List<ProxyRequest> requests) {
+            long epoch = -1L;
+            for (ProxyRequest proxyRequest : requests) {
+                if (epoch == -1L) {
+                    epoch = proxyRequest.epoch;
+                } else if (epoch != proxyRequest.epoch) {
+                    // slow path
+                    Map<Long, List<ProxyRequest>> groupByEpoch = new TreeMap<>();
+                    int requestSize = requests.size();
+                    for (ProxyRequest req : requests) {
+                        groupByEpoch.computeIfAbsent(req.epoch, k -> new ArrayList<>(requestSize)).add(req);
+                    }
+                    return groupByEpoch;
+                }
+            }
+            return Map.of(epoch, new ArrayList<>(requests));
         }
 
         private CompletableFuture<Void> batchSend(long epoch, List<ProxyRequest> requests) {
@@ -193,6 +213,11 @@ public class RouterOutV2 {
         }
 
         private void handleRouterResponse(AutomqZoneRouterResponse zoneRouterResponse, List<ProxyRequest> requests) {
+            if (zoneRouterResponse.data().errorCode() != Errors.NONE.code()) {
+                Errors error = Errors.forCode(zoneRouterResponse.data().errorCode());
+                requests.forEach(r -> r.completeWithError(error));
+                return;
+            }
             List<AutomqZoneRouterResponseData.Response> responses = zoneRouterResponse.data().responses();
             Iterator<ProxyRequest> requestIt = requests.iterator();
             Iterator<AutomqZoneRouterResponseData.Response> responseIt = responses.iterator();

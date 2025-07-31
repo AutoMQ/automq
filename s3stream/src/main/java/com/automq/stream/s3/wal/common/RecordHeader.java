@@ -88,7 +88,7 @@ public class RecordHeader {
 
     @Override
     public String toString() {
-        return "RecordHeaderCoreData{" +
+        return "RecordHeader{" +
             "magicCode=" + magicCode0 +
             ", recordBodyLength=" + recordBodyLength1 +
             ", recordBodyOffset=" + recordBodyOffset2 +

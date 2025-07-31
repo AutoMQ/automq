@@ -720,6 +720,8 @@ class BrokerServer(
       // 2. before metadataListener start close to ensure S3Stream can read the latest metadata.
       if (replicaManager != null) {
         CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
+        CoreUtils.swallow(trafficInterceptor.close(), this)
+        CoreUtils.swallow(ElasticLogManager.shutdown(), this)
       }
       // AutoMQ for Kafka inject end
 

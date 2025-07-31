@@ -81,6 +81,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     private final SnapshotReadPartitionsManager snapshotReadPartitionsManager;
     private volatile AutoMQVersion autoMQVersion;
+    private volatile boolean closed = false;
 
     public ZeroZoneTrafficInterceptor(
         ElasticKafkaApis kafkaApis,
@@ -135,6 +136,11 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     }
 
     @Override
+    public void close() {
+        closed = true;
+    }
+
+    @Override
     public void handleProduceRequest(ProduceRequestArgs args) {
         ClientIdMetadata clientId = args.clientId();
         fillRackIfMissing(clientId);
@@ -159,6 +165,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
             ReentrantReadWriteLock.ReadLock readLock = committedEpochManager.readLock();
             readLock.lock();
             AtomicLong inflight = committedEpochManager.epochInflight(request.routeEpoch());
+            inflight.incrementAndGet();
             try {
                 return routerInV2.handleZoneRouterRequest(request)
                     .whenComplete((resp, ex) -> inflight.decrementAndGet());
@@ -189,6 +196,9 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     @Override
     public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage, LoaderManifest manifest) {
+        if (closed) {
+            return;
+        }
         try {
             mapping.onChange(delta, newImage);
             snapshotReadPartitionsManager.onChange(delta, newImage);

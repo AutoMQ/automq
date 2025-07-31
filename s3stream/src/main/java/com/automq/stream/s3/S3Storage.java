@@ -100,7 +100,8 @@ public class S3Storage implements Storage {
         throw new UnsupportedOperationException();
     };
 
-    public static void setLinkRecordDecoder(Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
+    public static void setLinkRecordDecoder(
+        Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
         S3Storage.linkRecordDecoder = linkRecordDecoder;
     }
 
@@ -391,7 +392,7 @@ public class S3Storage implements Storage {
         }
         LogCache.LogCacheBlock cacheBlock = recoverBlockRst.cacheBlock;
         int size = 0;
-        for (List<StreamRecordBatch> l: cacheBlock.records().values()) {
+        for (List<StreamRecordBatch> l : cacheBlock.records().values()) {
             size += l.size();
         }
         List<CompletableFuture<Void>> futures = new ArrayList<>(size);
@@ -732,6 +733,7 @@ public class S3Storage implements Storage {
 
     /**
      * Commit with lazy timeout. If in [0, lazyTimeoutMills), there is no other commit happened, then trigger a new commit.
+     *
      * @param lazyTimeoutMillis lazy timeout milliseconds.
      */
     private CompletableFuture<Void> lazyUpload(long lazyTimeoutMillis) {
@@ -746,7 +748,7 @@ public class S3Storage implements Storage {
     }
 
     private void completeLazyUpload(Throwable ex) {
-        for (;;) {
+        for (; ; ) {
             CompletableFuture<Void> lazyUploadCf = lazyUploadQueue.poll();
             if (lazyUploadCf == null) {
                 break;
@@ -944,6 +946,7 @@ public class S3Storage implements Storage {
             walCommitQueue.poll();
             if (context.cache.lastRecordOffset() != null) {
                 LOGGER.info("try trim WAL to {}", context.cache.lastRecordOffset());
+                // TODO: 等 trim 完成, 不然 router channel 可能先删除成功
                 deltaWAL.trim(context.cache.lastRecordOffset());
             }
             // transfer records ownership to block cache.

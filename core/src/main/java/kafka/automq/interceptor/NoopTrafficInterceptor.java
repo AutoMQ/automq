@@ -44,6 +44,11 @@ public class NoopTrafficInterceptor implements TrafficInterceptor {
     }
 
     @Override
+    public void close() {
+
+    }
+
+    @Override
     public void handleProduceRequest(ProduceRequestArgs args) {
         kafkaApis.handleProduceAppendJavaCompatible(args);
     }

@@ -25,7 +25,6 @@ import java.util.List;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
-// TODO: add test
 public class RouterRecordV2 {
     private static final short MAGIC = 0x02;
     private final int nodeId;

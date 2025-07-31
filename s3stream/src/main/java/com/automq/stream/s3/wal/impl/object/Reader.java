@@ -31,6 +31,9 @@ import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import com.automq.stream.utils.threads.EventLoopSafe;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +50,7 @@ import static com.automq.stream.s3.wal.impl.object.ObjectUtils.genObjectPathV1;
 
 @EventLoopSafe
 public class Reader {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Reader.class);
     private static final EventLoop[] EVENT_LOOPS = new EventLoop[4];
     private static final ByteBufSeqAlloc ALLOC = new ByteBufSeqAlloc(ByteBufAlloc.DECODE_RECORD, 4);
 
@@ -117,6 +121,9 @@ public class Reader {
             long objectStartObject = floorAlignOffset(readTask.offset);
             String objectPath = genObjectPathV1(nodePrefix, epoch, objectStartObject);
             long relativeStartOffset = readTask.offset - objectStartObject + WALObjectHeader.WAL_HEADER_SIZE_V1;
+            // TODO: remove
+            LOGGER.info("read object {} {}-{}", objectPath, relativeStartOffset, relativeStartOffset + readTask.size);
+
             objectStorage.rangeRead(
                 new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
                 objectPath,

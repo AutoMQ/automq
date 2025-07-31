@@ -80,7 +80,7 @@ public class RouterInV2 {
             PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
             partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
             unpackLinkQueue.add(partitionProduceRequest);
-            partitionProduceRequest.unpackLinkCf.thenAccept(nil -> handleUnpackLink());
+            partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> handleUnpackLink());
             subResponseList.add(partitionProduceRequest.responseCf);
         }
         return CompletableFuture.allOf(subResponseList.toArray(new CompletableFuture[0])).thenApply(nil -> {
@@ -108,6 +108,7 @@ public class RouterInV2 {
                         }
                     }, eventLoop).whenComplete((resp, ex) -> {
                         if (ex != null) {
+                            LOGGER.error("[ROUTER_IN],[FAILED]", ex);
                             req.responseCf.completeExceptionally(ex);
                             return;
                         }

@@ -30,6 +30,8 @@ import java.util.concurrent.CompletableFuture;
 
 public interface TrafficInterceptor {
 
+    void close();
+
     void handleProduceRequest(ProduceRequestArgs args);
 
     CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request);
