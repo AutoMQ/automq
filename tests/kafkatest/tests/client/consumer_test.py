@@ -85,7 +85,6 @@ class OffsetValidationTest(VerifiableConsumerTest):
         group_protocol=consumer_group.all_group_protocols
     )
     def test_broker_rolling_bounce(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
-    def test_broker_rolling_bounce(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         """
         Verify correct consumer behavior when the brokers are consecutively restarted.
 
@@ -356,7 +355,7 @@ class OffsetValidationTest(VerifiableConsumerTest):
             num_rebalances = consumer.num_rebalances()
             conflict_consumer.start()
             if group_protocol == consumer_group.classic_group_protocol:
-                # Classic protocol: conflicting members should join, and the intial ones with conflicting instance id should fail.
+                # Classic protocol: conflicting members should join, and the initial ones with conflicting instance id should fail.
                 self.await_members(conflict_consumer, num_conflict_consumers)
                 self.await_members(consumer, len(consumer.nodes) - num_conflict_consumers)
 
