@@ -110,9 +110,11 @@ public class Deploy implements Callable<Integer> {
             String globalAccessKey = null;
             String globalSecretKey = null;
             for (Env env : topo.getGlobal().getEnvs()) {
-                if ("KAFKA_S3_ACCESS_KEY".equals(env.getName())) {
+                if ("KAFKA_S3_ACCESS_KEY".equals(env.getName()) ||
+                    "AWS_ACCESS_KEY_ID".equals(env.getName())) {
                     globalAccessKey = env.getValue();
-                } else if ("KAFKA_S3_SECRET_KEY".equals(env.getName())) {
+                } else if ("KAFKA_S3_SECRET_KEY".equals(env.getName()) ||
+                            "AWS_SECRET_ACCESS_KEY".equals(env.getName())) {
                     globalSecretKey = env.getValue();
                 }
             }
