@@ -1006,6 +1006,8 @@ project(':core') {
     implementation ('org.apache.hadoop:hadoop-common:3.4.1') {
       exclude group: 'org.eclipse.jetty', module: '*'
       exclude group: 'com.sun.jersey', module: '*'
+      exclude group: 'com.sun.jersey.contribs', module: '*'
+      exclude group: 'com.github.pjfanning', module: 'jersey-json'
     }
     // for hadoop common
     implementation ("org.eclipse.jetty:jetty-webapp:${versions.jetty}")
@@ -1038,7 +1040,11 @@ project(':core') {
       exclude group: "org.apache.hive", module: "hive-service-rpc"
       exclude group: "com.github.joshelser", module: "dropwizard-metrics-hadoop-metrics2-reporter"
     }
-    implementation 'org.apache.hadoop:hadoop-mapreduce-client-core:3.4.1'
+    implementation ('org.apache.hadoop:hadoop-mapreduce-client-core:3.4.1') {
+      exclude group: 'com.sun.jersey', module: '*'
+      exclude group: 'com.sun.jersey.contribs', module: '*'
+      exclude group: 'com.github.pjfanning', module: 'jersey-json'
+    }
     // > hive ext end
 
     // > Protobuf ext start
