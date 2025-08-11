@@ -1002,8 +1002,6 @@ project(':core') {
     implementation ('org.apache.hadoop:hadoop-common:3.4.1') {
       exclude group: 'org.eclipse.jetty', module: '*'
       exclude group: 'com.sun.jersey', module: '*'
-      exclude group: 'com.sun.jersey.contribs', module: '*'
-      exclude group: 'com.github.pjfanning', module: 'jersey-json'
     }
     // for hadoop common
     implementation ("org.eclipse.jetty:jetty-webapp:${versions.jetty}")
