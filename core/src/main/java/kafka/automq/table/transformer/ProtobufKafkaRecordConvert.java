@@ -30,10 +30,12 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.protobuf.Message;
 
+import kafka.automq.table.deserializer.proto.HeaderBasedSchemaResolutionResolver;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.protobuf.ProtoConversions;
 import org.apache.avro.protobuf.ProtobufData;
+import org.apache.kafka.common.utils.Utils;
 
 import java.time.Duration;
 import java.util.Map;
@@ -48,21 +50,27 @@ public class ProtobufKafkaRecordConvert implements KafkaRecordConvert<GenericRec
         .maximumSize(10000)
         .build();
 
+    private final SchemaResolutionResolver resolver;
+
     public ProtobufKafkaRecordConvert() {
-        this.deserializer = new CustomKafkaProtobufDeserializer<>();
+        this.resolver = new HeaderBasedSchemaResolutionResolver();
+        this.deserializer = new CustomKafkaProtobufDeserializer<>(resolver);
     }
 
     public ProtobufKafkaRecordConvert(SchemaRegistryClient schemaRegistry) {
-        this.deserializer = new CustomKafkaProtobufDeserializer<>(schemaRegistry);
+        this.resolver = new HeaderBasedSchemaResolutionResolver();
+        this.deserializer = new CustomKafkaProtobufDeserializer<>(schemaRegistry, resolver);
     }
 
     public ProtobufKafkaRecordConvert(SchemaRegistryClient schemaRegistry, SchemaResolutionResolver resolver) {
         this.deserializer = new CustomKafkaProtobufDeserializer<>(schemaRegistry, resolver);
+        this.resolver = resolver;
     }
 
     @VisibleForTesting
     public ProtobufKafkaRecordConvert(Deserializer<Message> deserializer) {
         this.deserializer = deserializer;
+        this.resolver = new HeaderBasedSchemaResolutionResolver();
     }
 
     @Override
@@ -76,6 +84,11 @@ public class ProtobufKafkaRecordConvert implements KafkaRecordConvert<GenericRec
             avroSchemaCache.put(schemaId, schema);
         }
         return ProtoToAvroConverter.convert(protoMessage, schema);
+    }
+
+    @Override
+    public int getSchemaId(String topic, Record record) {
+        return resolver.resolve(topic, Utils.toNullableArray(record.value())).getSchemaId();
     }
 
     @Override

@@ -55,7 +55,7 @@ public class RegistrySchemaAvroConverter implements Converter {
 
     @Override
     public Record convert(org.apache.kafka.common.record.Record record) {
-        int schemaId = getSchemaId(record);
+        int schemaId = recordConvert.getSchemaId(topic, record);
         GenericRecord value;
         try {
             value = recordConvert.convert(topic, record, schemaId);
