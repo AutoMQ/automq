@@ -27,7 +27,8 @@ import static java.util.Arrays.asList;
 
 public enum TableTopicSchemaType {
     SCHEMALESS("schemaless"),
-    SCHEMA("schema");
+    SCHEMA("schema"),
+    SCHEMA_LATEST("schema_latest");
 
     public final String name;
     private static final List<TableTopicSchemaType> VALUES = asList(values());

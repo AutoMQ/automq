@@ -39,6 +39,11 @@ public class CustomKafkaProtobufDeserializer<T extends Message>
         this.schemaRegistry = schemaRegistry;
     }
 
+    public CustomKafkaProtobufDeserializer(SchemaRegistryClient schemaRegistry, SchemaResolutionResolver schemaResolutionResolver) {
+        super(schemaResolutionResolver);
+        this.schemaRegistry = schemaRegistry;
+    }
+
     @Override
     public void configure(Map<String, ?> configs, boolean isKey) {
         CustomKafkaProtobufDeserializerConfig config = new CustomKafkaProtobufDeserializerConfig(configs);
