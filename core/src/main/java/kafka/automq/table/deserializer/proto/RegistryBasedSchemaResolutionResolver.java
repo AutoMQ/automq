@@ -19,18 +19,20 @@
 
 package kafka.automq.table.deserializer.proto;
 
+import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
+
 import org.apache.kafka.common.errors.SerializationException;
+import org.apache.kafka.common.record.Record;
 
 import com.automq.stream.utils.Time;
-
-import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
-import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
-import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
-import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.concurrent.ConcurrentHashMap;
+
+import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 
 /**
  * Implementation of SchemaResolutionResolver that retrieves the latest schema from Schema Registry by subject name.
@@ -61,6 +63,13 @@ public class RegistryBasedSchemaResolutionResolver implements SchemaResolutionRe
         RegistryBasedSchemaResolutionResolver.CachedSchemaInfo cachedInfo = getCachedSchemaInfo(subject);
 
         return new SchemaResolution(cachedInfo.schemaId, DEFAULT_INDEXES, payload);
+    }
+
+    @Override
+    public int getSchemaId(String topic, Record record) {
+        String subject = getSubjectName(topic);
+        RegistryBasedSchemaResolutionResolver.CachedSchemaInfo cachedInfo = getCachedSchemaInfo(subject);
+        return cachedInfo.schemaId;
     }
 
     private RegistryBasedSchemaResolutionResolver.CachedSchemaInfo getCachedSchemaInfo(String subject) {

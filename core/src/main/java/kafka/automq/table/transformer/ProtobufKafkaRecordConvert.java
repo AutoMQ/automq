@@ -20,8 +20,9 @@
 package kafka.automq.table.transformer;
 
 import kafka.automq.table.deserializer.proto.CustomKafkaProtobufDeserializer;
-
+import kafka.automq.table.deserializer.proto.HeaderBasedSchemaResolutionResolver;
 import kafka.automq.table.deserializer.proto.SchemaResolutionResolver;
+
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.Deserializer;
 
@@ -30,12 +31,10 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.protobuf.Message;
 
-import kafka.automq.table.deserializer.proto.HeaderBasedSchemaResolutionResolver;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.protobuf.ProtoConversions;
 import org.apache.avro.protobuf.ProtobufData;
-import org.apache.kafka.common.utils.Utils;
 
 import java.time.Duration;
 import java.util.Map;
@@ -88,7 +87,7 @@ public class ProtobufKafkaRecordConvert implements KafkaRecordConvert<GenericRec
 
     @Override
     public int getSchemaId(String topic, Record record) {
-        return resolver.resolve(topic, Utils.toNullableArray(record.value())).getSchemaId();
+        return resolver.getSchemaId(topic, record);
     }
 
     @Override

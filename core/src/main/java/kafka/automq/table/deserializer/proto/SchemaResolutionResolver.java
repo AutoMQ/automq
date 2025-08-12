@@ -21,6 +21,9 @@ package kafka.automq.table.deserializer.proto;
 
 import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
 
+import org.apache.kafka.common.record.Record;
+
+
 /**
  * Interface for resolving schema information for protobuf message deserialization.
  * This interface supports different strategies for obtaining schema ID and message structure:
@@ -38,6 +41,9 @@ public interface SchemaResolutionResolver {
      * @throws org.apache.kafka.common.errors.SerializationException if resolution fails
      */
     SchemaResolution resolve(String topic, byte[] payload);
+
+
+    int getSchemaId(String topic, Record record);
 
     /**
      * Container class for resolved schema information.

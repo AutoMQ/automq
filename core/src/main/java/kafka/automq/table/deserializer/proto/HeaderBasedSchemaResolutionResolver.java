@@ -20,8 +20,10 @@
 package kafka.automq.table.deserializer.proto;
 
 import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
+import kafka.automq.table.transformer.InvalidDataException;
 
 import org.apache.kafka.common.errors.SerializationException;
+import org.apache.kafka.common.record.Record;
 
 import java.nio.ByteBuffer;
 
@@ -67,4 +69,15 @@ public class HeaderBasedSchemaResolutionResolver implements SchemaResolutionReso
 
         return new SchemaResolution(schemaId, indexes, messageBytes);
     }
+
+    @Override
+    public int getSchemaId(String topic, Record record) {
+        // io.confluent.kafka.serializers.DeserializationContext#constructor
+        ByteBuffer buffer = record.value().duplicate();
+        if (buffer.get() != MAGIC_BYTE) {
+            throw new InvalidDataException("Unknown magic byte!");
+        }
+        return buffer.getInt();
+    }
+
 }
