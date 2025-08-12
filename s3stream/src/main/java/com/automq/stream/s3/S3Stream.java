@@ -393,10 +393,11 @@ public class S3Stream implements Stream, StreamMetadataListener {
 
             // await all pending append/fetch/trim request
             List<CompletableFuture<?>> pendingRequests = new ArrayList<>(pendingAppends);
+            // add timeout to prevent the fetch(catch-up read) network throttle to block Stream#close.
             if (GlobalSwitch.STRICT) {
-                pendingRequests.addAll(pendingFetches);
+                pendingRequests.addAll(FutureUtil.timeoutAndSilence(pendingFetches.stream(), 10, TimeUnit.SECONDS));
             }
-            pendingRequests.add(lastPendingTrim);
+            pendingRequests.add(FutureUtil.timeoutAndSilence(lastPendingTrim, 10, TimeUnit.SECONDS));
             if (force) {
                 pendingRequests.forEach(cf -> cf.completeExceptionally(new StreamClientException(ErrorCode.UNEXPECTED, "FORCE_CLOSE")));
             }
