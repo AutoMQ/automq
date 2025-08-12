@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -31,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
@@ -165,4 +168,11 @@ public class FutureUtil {
         return newCf;
     }
 
+    public static List<CompletableFuture<?>> timeoutAndSilence(Stream<CompletableFuture<?>> stream, long timeout, TimeUnit timeUnit) {
+        return stream.map(l -> timeoutAndSilence(l, timeout, timeUnit)).collect(Collectors.toList());
+    }
+
+    public static <T> CompletableFuture<T> timeoutAndSilence(CompletableFuture<T> cf, long timeout, TimeUnit timeUnit) {
+        return cf.orTimeout(timeout, timeUnit).exceptionally(ex -> null);
+    }
 }
