@@ -26,12 +26,16 @@ import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.avro.generic.GenericRecord;
 
+import java.nio.ByteBuffer;
 import java.util.Map;
 
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 
 public class AvroKafkaRecordConvert implements KafkaRecordConvert<GenericRecord> {
+    // Source: io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe#MAGIC_BYTE
+    private static final byte MAGIC_BYTE = 0x0;
+
     private final Deserializer<Object> deserializer;
 
     public AvroKafkaRecordConvert() {
@@ -55,6 +59,16 @@ public class AvroKafkaRecordConvert implements KafkaRecordConvert<GenericRecord>
         } else {
             return null;
         }
+    }
+
+    // io.confluent.kafka.serializers.DeserializationContext#constructor
+    @Override
+    public int getSchemaId(String topic, org.apache.kafka.common.record.Record record) {
+        ByteBuffer buffer = record.value().duplicate();
+        if (buffer.get() != MAGIC_BYTE) {
+            throw new InvalidDataException("Unknown magic byte!");
+        }
+        return buffer.getInt();
     }
 
     @Override

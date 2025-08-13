@@ -20,6 +20,8 @@
 package kafka.automq.table.transformer;
 
 import kafka.automq.table.deserializer.proto.CustomKafkaProtobufDeserializer;
+import kafka.automq.table.deserializer.proto.HeaderBasedSchemaResolutionResolver;
+import kafka.automq.table.deserializer.proto.SchemaResolutionResolver;
 
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.Deserializer;
@@ -47,17 +49,27 @@ public class ProtobufKafkaRecordConvert implements KafkaRecordConvert<GenericRec
         .maximumSize(10000)
         .build();
 
+    private final SchemaResolutionResolver resolver;
+
     public ProtobufKafkaRecordConvert() {
-        this.deserializer = new CustomKafkaProtobufDeserializer<>();
+        this.resolver = new HeaderBasedSchemaResolutionResolver();
+        this.deserializer = new CustomKafkaProtobufDeserializer<>(resolver);
     }
 
     public ProtobufKafkaRecordConvert(SchemaRegistryClient schemaRegistry) {
-        this.deserializer = new CustomKafkaProtobufDeserializer<>(schemaRegistry);
+        this.resolver = new HeaderBasedSchemaResolutionResolver();
+        this.deserializer = new CustomKafkaProtobufDeserializer<>(schemaRegistry, resolver);
+    }
+
+    public ProtobufKafkaRecordConvert(SchemaRegistryClient schemaRegistry, SchemaResolutionResolver resolver) {
+        this.deserializer = new CustomKafkaProtobufDeserializer<>(schemaRegistry, resolver);
+        this.resolver = resolver;
     }
 
     @VisibleForTesting
     public ProtobufKafkaRecordConvert(Deserializer<Message> deserializer) {
         this.deserializer = deserializer;
+        this.resolver = new HeaderBasedSchemaResolutionResolver();
     }
 
     @Override
@@ -71,6 +83,11 @@ public class ProtobufKafkaRecordConvert implements KafkaRecordConvert<GenericRec
             avroSchemaCache.put(schemaId, schema);
         }
         return ProtoToAvroConverter.convert(protoMessage, schema);
+    }
+
+    @Override
+    public int getSchemaId(String topic, Record record) {
+        return resolver.getSchemaId(topic, record);
     }
 
     @Override
