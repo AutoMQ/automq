@@ -39,7 +39,6 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.streams.StreamManager;
@@ -240,28 +239,19 @@ public class S3Stream implements Stream, StreamMetadataListener {
         readLock.lock();
         try {
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(context, startOffset, endOffset, maxBytes), LOGGER, "fetch");
-            CompletableFuture<FetchResult> retCf = cf.thenCompose(rs -> {
-                if (networkOutboundLimiter != null) {
-                    long totalSize = 0L;
-                    for (RecordBatch recordBatch : rs.recordBatchList()) {
-                        totalSize += recordBatch.rawPayload().remaining();
-                    }
-                    final long finalSize = totalSize;
-                    long start = System.nanoTime();
-                    ThrottleStrategy throttleStrategy = context.readOptions().prioritizedRead() ? ThrottleStrategy.BYPASS
-                        : (context.readOptions().fastRead() ? ThrottleStrategy.TAIL : ThrottleStrategy.CATCH_UP);
-                    return networkOutboundLimiter.consume(throttleStrategy, totalSize).thenApply(nil -> {
-                        NetworkStats.getInstance().networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, throttleStrategy)
-                            .record(TimerUtil.timeElapsedSince(start, TimeUnit.NANOSECONDS));
-                        if (context.readOptions().fastRead()) {
-                            NetworkStats.getInstance().fastReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
-                        } else {
-                            NetworkStats.getInstance().slowReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
-                        }
-                        return rs;
-                    });
+            CompletableFuture<FetchResult> retCf = cf.thenApply(rs -> {
+                // TODO: move the fast / slow read metrics to kafka module.
+                long totalSize = 0L;
+                for (RecordBatch recordBatch : rs.recordBatchList()) {
+                    totalSize += recordBatch.rawPayload().remaining();
                 }
-                return CompletableFuture.completedFuture(rs);
+                final long finalSize = totalSize;
+                if (context.readOptions().fastRead()) {
+                    NetworkStats.getInstance().fastReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
+                } else {
+                    NetworkStats.getInstance().slowReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
+                }
+                return rs;
             });
             pendingFetches.add(retCf);
             pendingFetchTimestamps.push(timerUtil.lastAs(TimeUnit.NANOSECONDS));
