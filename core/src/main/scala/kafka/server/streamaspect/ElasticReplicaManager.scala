@@ -1,7 +1,9 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.api.exceptions.FastReadFailFastException
+import com.automq.stream.s3.metrics.stats.NetworkStats
 import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
+import com.automq.stream.s3.network.{AsyncNetworkBandwidthLimiter, GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.FutureUtil
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
@@ -889,14 +891,16 @@ class ElasticReplicaManager(
     }
 
     var partitionIndex = 0;
-    while (remainingBytes.get() > 0 && partitionIndex < readPartitionInfo.size) {
+    while (remainingBytes.get() > 0 && partitionIndex < readPartitionInfo.size && fastReadFastFail.get() == null) {
       // In each iteration, we read as many partitions as possible until we reach the maximum bytes limit.
       val readCfArray = readFutureBuffer.get()
       readCfArray.clear()
       var assignedBytes = 0 // The total bytes we have assigned to the read requests.
       val availableBytes = remainingBytes.get() // The remaining bytes we can assign to the read requests, used to control the following loop.
 
-      while (assignedBytes < availableBytes && partitionIndex < readPartitionInfo.size) {
+      while (assignedBytes < availableBytes && partitionIndex < readPartitionInfo.size
+        // When there is a fast read exception, quit the loop earlier.
+        && fastReadFastFail.get() == null) {
         // Iterate over the partitions.
         val tp = readPartitionInfo(partitionIndex)._1
         val partitionData = readPartitionInfo(partitionIndex)._2
@@ -971,7 +975,16 @@ class ElasticReplicaManager(
       release()
       throw fastReadFastFail.get()
     }
+    acquireNetworkOutPermit(limitBytes - remainingBytes.get(), if (ReadHint.isFastRead) ThrottleStrategy.TAIL else ThrottleStrategy.CATCH_UP)
     result
+  }
+
+  private def acquireNetworkOutPermit(size: Int, throttleStrategy: ThrottleStrategy): Unit = {
+    val start = time.nanoseconds()
+    GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND)
+      .consume(throttleStrategy, size).join()
+    val networkStats = NetworkStats.getInstance()
+    networkStats.networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, throttleStrategy).record(time.nanoseconds() - start)
   }
 
   def handlePartitionFailure(partitionDir: String): Unit = {
