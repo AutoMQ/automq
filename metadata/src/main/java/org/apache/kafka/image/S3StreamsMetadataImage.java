@@ -215,6 +215,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         List<S3ObjectMetadata> objects = new LinkedList<>();
 
         ctx.readEndOffset = readEndOffset(streamId, endOffset);
+        ctx.recordRange(stream.getRanges());
 
         // floor value < 0 means that all stream objects' ranges are greater than startOffset
         int streamObjectIndex = Math.max(0, stream.floorStreamObjectIndex(startOffset));
@@ -645,6 +646,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     }
 
     private void preLoadStreamSetObject(GetObjectsContext ctx, long nodeId, List<S3StreamSetObject> streamSetObjects, List<Integer> indexProvider) {
+        int round = ctx.loadStreamSetObjectInfo;
+
         indexProvider.forEach(index -> {
             S3StreamSetObject streamSetObject = streamSetObjects.get(index);
             if (streamSetObject.ranges().length != 0) {
@@ -659,7 +662,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 .find(streamSetObject.objectId(), ctx.streamId, nodeId, streamSetObject.orderId())
                 .thenAccept(range -> {
                     ctx.object2range.put(streamSetObject.objectId(), range);
-                    PreLoadHistory preLoadHistory = new PreLoadHistory(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - ctx.startTime), nodeId, index, range.orElse(null));
+                    PreLoadHistory preLoadHistory = new PreLoadHistory(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - ctx.startTime),
+                        round, nodeId, index, range.orElse(null));
                     ctx.recordPreload(preLoadHistory);
                 });
         });
@@ -672,7 +676,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             ctx.incLastObjectLoaded(nodeId);
 
             List<Integer> preLoadPos = new ArrayList<>();
-            for (int i = streamSetObjectsSize - 5 * lastLoadedCount; i < streamSetObjectsSize - 5 && i >= 0; i++) {
+            int startPos = streamSetObjectsSize - 5 * lastLoadedCount;
+            int endPos = streamSetObjectsSize - 5 * (lastLoadedCount - 1);
+            for (int i = startPos; i < endPos && i >= 0; i++) {
                 preLoadPos.add(i);
             }
 
@@ -928,13 +934,15 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     public static class PreLoadHistory {
         long nodeId;
         long index;
+        int round;
         StreamOffsetRange streamOffsetRange;
         long id;
 
-        public PreLoadHistory(long id, long nodeId, long index, StreamOffsetRange streamOffsetRange) {
+        public PreLoadHistory(long id, int round, long nodeId, long index, StreamOffsetRange streamOffsetRange) {
             this.id = id;
             this.nodeId = nodeId;
             this.index = index;
+            this.round = round;
             this.streamOffsetRange = streamOffsetRange;
         }
 
@@ -942,6 +950,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         public String toString() {
             return "PreLoadHistory{" +
                 "id=" + id +
+                ", round=" + round +
                 ", nodeId=" + nodeId +
                 ", index=" + index +
                 ", streamOffsetRange=" + streamOffsetRange +
