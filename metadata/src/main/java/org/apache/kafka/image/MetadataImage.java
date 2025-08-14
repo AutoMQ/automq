@@ -246,9 +246,25 @@ public final class MetadataImage {
 
     // AutoMQ inject start
     public void retain() {
-        streamsMetadata().retain();
-        objectsMetadata().retain();
-        kv().retain();
+        // this only safeguard for bug ref count,
+        // avoid ref leak on other metadata image.
+        boolean streamMetadataAcquire = false;
+        boolean objectsMetadataAcquire = false;
+        try {
+            streamsMetadata().retain();
+            streamMetadataAcquire = true;
+            objectsMetadata().retain();
+            objectsMetadataAcquire = true;
+            kv().retain();
+        } catch (IllegalStateException e) {
+            if (streamMetadataAcquire) {
+                streamsMetadata().release();
+            }
+            if (objectsMetadataAcquire) {
+                objectsMetadata().release();
+            }
+            throw e;
+        }
     }
 
     public void release() {

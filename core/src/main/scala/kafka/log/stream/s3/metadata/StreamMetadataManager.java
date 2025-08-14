@@ -102,6 +102,13 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             if (newImage.highestOffsetAndEpoch().equals(this.metadataImage.highestOffsetAndEpoch())) {
                 return;
             }
+
+            newImage.retain();
+
+            if (this.metadataImage != MetadataImage.EMPTY) {
+                this.metadataImage.release();
+            }
+
             this.metadataImage = newImage;
             changedStreams = delta.getOrCreateStreamsMetadataDelta().changedStreams();
         }
