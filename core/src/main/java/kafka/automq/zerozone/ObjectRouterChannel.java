@@ -1,3 +1,22 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka.automq.zerozone;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -6,9 +25,9 @@ import com.automq.stream.s3.wal.DefaultRecordOffset;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
+import com.automq.stream.utils.LogContext;
 
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -21,7 +40,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import io.netty.buffer.ByteBuf;
 
 public class ObjectRouterChannel implements RouterChannel {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ObjectRouterChannel.class);
+    private final Logger logger;
     private final AtomicLong mockOffset = new AtomicLong(0);
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
@@ -36,6 +55,7 @@ public class ObjectRouterChannel implements RouterChannel {
     private final Map<Long, RecordOffset> channelEpoch2LastRecordOffset = new HashMap<>();
 
     public ObjectRouterChannel(int nodeId, short channelId, ObjectWALService wal) {
+        this.logger = new LogContext(String.format("[OBJECT_ROUTER_CHANNEL-%s-%s] ", channelId, nodeId)).logger(ObjectRouterChannel.class);
         this.nodeId = nodeId;
         this.channelId = channelId;
         this.wal = wal;
@@ -96,8 +116,7 @@ public class ObjectRouterChannel implements RouterChannel {
                 RecordOffset recordOffset = channelEpoch2LastRecordOffset.remove(epoch);
                 if (recordOffset != null) {
                     wal.trim(recordOffset);
-                    // TODO: remove
-                    LOGGER.info("RouterChannel trim to epoch={} offset={}", epoch, recordOffset);
+                    logger.info("trim to epoch={} offset={}", epoch, recordOffset);
                 }
             }
         } finally {

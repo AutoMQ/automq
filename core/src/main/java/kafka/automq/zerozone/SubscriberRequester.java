@@ -98,7 +98,6 @@ import io.netty.buffer.Unpooled;
             return;
         }
         lastRequestTime = time.milliseconds();
-        // TODO: version control
         AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch).setVersion((short) 1);
         if (version.isZeroZoneV2Supported()) {
             data.setVersion((short) 1);

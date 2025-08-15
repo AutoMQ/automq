@@ -315,6 +315,7 @@ public class AutoMQConfig {
     private String walConfig;
     private String metricsExporterURI;
     private List<Pair<String, String>> baseLabels;
+    @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
     private Optional<List<BucketURI>> zoneRouterChannels;
 
     public AutoMQConfig setup(KafkaConfig config) {
