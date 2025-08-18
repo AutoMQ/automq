@@ -82,12 +82,12 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
         buffer.writeBytes(streamRecordBatch.encoded());
         streamRecordBatch.release();
         dataMap.put(offset, buffer);
-        return CompletableFuture.completedFuture(() -> new RecordOffsetImpl(offset));
+        return CompletableFuture.completedFuture(() -> DefaultRecordOffset.of(0, offset, 0));
     }
 
     @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
-        return CompletableFuture.completedFuture(StreamRecordBatchCodec.decode(dataMap.get(((RecordOffsetImpl) recordOffset).recordOffset()), true));
+        return CompletableFuture.completedFuture(StreamRecordBatchCodec.decode(dataMap.get(DefaultRecordOffset.of(recordOffset).offset()), true));
     }
 
     @Override
@@ -113,7 +113,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
 
                 @Override
                 public RecordOffset recordOffset() {
-                    return new RecordOffsetImpl(e.getKey());
+                    return DefaultRecordOffset.of(0, e.getKey(), 0);
                 }
             })
             .collect(Collectors.toList())
@@ -128,32 +128,11 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
 
     @Override
     public CompletableFuture<Void> trim(RecordOffset offset) {
-        dataMap.headMap(((RecordOffsetImpl) offset).recordOffset())
+        dataMap.headMap(DefaultRecordOffset.of(offset).offset())
             .forEach((key, value) -> {
                 dataMap.remove(key);
                 value.release();
             });
         return CompletableFuture.completedFuture(null);
-    }
-
-    static class RecordOffsetImpl implements RecordOffset {
-        private static final byte MAGIC = (byte) 0xA0;
-        private final long recordOffset;
-
-        public RecordOffsetImpl(long offset) {
-            this.recordOffset = offset;
-        }
-
-        public long recordOffset() {
-            return recordOffset;
-        }
-
-        @Override
-        public ByteBuf buffer() {
-            ByteBuf buf = Unpooled.buffer(1 + 8);
-            buf.writeByte(MAGIC);
-            buf.writeLong(recordOffset);
-            return null;
-        }
     }
 }
