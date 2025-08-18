@@ -148,6 +148,7 @@ import org.apache.kafka.controller.metrics.QuorumControllerMetrics;
 import org.apache.kafka.controller.stream.DefaultNodeRuntimeInfoManager;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.NodeControlManager;
+import org.apache.kafka.controller.stream.RouterChannelEpochControlManager;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamClient;
 import org.apache.kafka.controller.stream.StreamControlManager;
@@ -1808,6 +1809,7 @@ public final class QuorumController implements Controller {
                 kvControlManager.replay(record);
                 topicDeletionManager.replay(record);
                 nodeControlManager.replay(record);
+                routerChannelEpochControlManager.replay(record);
                 break;
             }
             case REMOVE_KVRECORD: {
@@ -1815,6 +1817,7 @@ public final class QuorumController implements Controller {
                 kvControlManager.replay(record);
                 topicDeletionManager.replay(record);
                 nodeControlManager.replay(record);
+                routerChannelEpochControlManager.replay(record);
                 break;
             }
             case UPDATE_NEXT_NODE_ID_RECORD:
@@ -2075,6 +2078,11 @@ public final class QuorumController implements Controller {
      */
     private final NodeControlManager nodeControlManager;
 
+    /**
+     * Manage the router channel epoch;
+     */
+    private final RouterChannelEpochControlManager routerChannelEpochControlManager;
+
     private final QuorumControllerExtension extension;
     // AutoMQ for Kafka inject end
 
@@ -2246,6 +2254,7 @@ public final class QuorumController implements Controller {
                 this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager, kvControlManager);
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
+        this.routerChannelEpochControlManager = new RouterChannelEpochControlManager(snapshotRegistry, this, nodeControlManager, time);
         this.extension = extension.apply(this);
 
         // set the nodeControlManager here to avoid circular dependency
