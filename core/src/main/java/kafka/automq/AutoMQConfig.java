@@ -114,7 +114,7 @@ public class AutoMQConfig {
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_CONFIG = "s3.stream.set.object.compaction.interval.minutes";
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL_DOC = "Set the interpublic static final String for Stream object compaction. The smaller this value, the smaller the scale of metadata storage, and the earlier the data can become compact. " +
         "However, the number of compactions that the final generated stream object goes through will increase.";
-    public static final int S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL = 10; // 10min
+    public static final int S3_STREAM_SET_OBJECT_COMPACTION_INTERVAL = 5; // 5min
 
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_CONFIG = "s3.stream.set.object.compaction.cache.size";
     public static final String S3_STREAM_SET_OBJECT_COMPACTION_CACHE_SIZE_DOC = "The size of memory is available during the Stream object compaction process. The larger this value, the lower the cost of API calls.";
@@ -309,12 +309,14 @@ public class AutoMQConfig {
             .define(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, STRING, null, MEDIUM, AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC);
     }
 
+    private final long nodeEpoch = System.currentTimeMillis();
     private List<BucketURI> dataBuckets;
     private List<BucketURI> opsBuckets;
     private String walConfig;
     private String metricsExporterURI;
     private List<Pair<String, String>> baseLabels;
-    private Optional<BucketURI> zoneRouterChannels;
+    @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
+    private Optional<List<BucketURI>> zoneRouterChannels;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
@@ -324,6 +326,10 @@ public class AutoMQConfig {
         baseLabels = parseBaseLabels(config);
         zoneRouterChannels = genZoneRouterChannels(config);
         return this;
+    }
+
+    public long nodeEpoch() {
+        return nodeEpoch;
     }
 
     public List<BucketURI> dataBuckets() {
@@ -346,7 +352,7 @@ public class AutoMQConfig {
         return baseLabels;
     }
 
-    public Optional<BucketURI> zoneRouterChannels() {
+    public Optional<List<BucketURI>> zoneRouterChannels() {
         return zoneRouterChannels;
     }
 
@@ -475,7 +481,7 @@ public class AutoMQConfig {
     }
 
 
-    private static Optional<BucketURI> genZoneRouterChannels(KafkaConfig config) {
+    private static Optional<List<BucketURI>> genZoneRouterChannels(KafkaConfig config) {
         String str = config.getString(ZONE_ROUTER_CHANNELS_CONFIG);
         if (StringUtils.isBlank(str)) {
             return Optional.empty();
@@ -483,10 +489,8 @@ public class AutoMQConfig {
         List<BucketURI> buckets = BucketURI.parseBuckets(str);
         if (buckets.isEmpty()) {
             return Optional.empty();
-        } else if (buckets.size() > 1) {
-            throw new IllegalArgumentException(ZONE_ROUTER_CHANNELS_CONFIG + " only supports one object storage, but it's config with " + str);
         } else {
-            return Optional.of(buckets.get(0));
+            return Optional.of(buckets);
         }
     }
 }

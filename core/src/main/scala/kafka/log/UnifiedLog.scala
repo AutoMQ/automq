@@ -455,7 +455,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   private var metricNames: Map[String, java.util.Map[String, String]] = Map.empty
 
   newMetrics()
-  private[log] def newMetrics(): Unit = {
+  def newMetrics(): Unit = {
     val tags = (Map("topic" -> topicPartition.topic, "partition" -> topicPartition.partition.toString) ++
       (if (isFuture) Map("is-future" -> "true") else Map.empty)).asJava
     metricsGroup.newGauge(LogMetricNames.NumLogSegments, () => numberOfSegments, tags)
