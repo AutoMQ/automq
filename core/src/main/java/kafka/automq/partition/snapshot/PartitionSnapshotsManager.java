@@ -19,6 +19,7 @@
 
 package kafka.automq.partition.snapshot;
 
+import kafka.automq.AutoMQConfig;
 import kafka.cluster.LogEventListener;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionListener;
@@ -39,8 +40,11 @@ import org.apache.kafka.common.message.AutomqGetPartitionSnapshotResponseData.To
 import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotRequest;
 import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotResponse;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
+import org.apache.kafka.storage.internals.log.TimestampOffset;
 
+import com.automq.stream.s3.ConfirmWAL;
 import com.automq.stream.utils.Threads;
 
 import java.util.ArrayList;
@@ -48,9 +52,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class PartitionSnapshotsManager {
@@ -58,10 +64,23 @@ public class PartitionSnapshotsManager {
     private final Map<Integer, Session> sessions = new HashMap<>();
     private final List<PartitionWithVersion> snapshotVersions = new CopyOnWriteArrayList<>();
     private final Time time;
+    private final String confirmWalConfig;
+    private final ConfirmWAL confirmWAL;
 
-    public PartitionSnapshotsManager(Time time) {
+    public PartitionSnapshotsManager(Time time, AutoMQConfig config, ConfirmWAL confirmWAL, Supplier<AutoMQVersion> versionGetter) {
         this.time = time;
-        Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::cleanExpiredSessions, 1, 1, TimeUnit.MINUTES);
+        this.confirmWalConfig = config.walConfig();
+        this.confirmWAL = confirmWAL;
+        if (config.zoneRouterChannels().isPresent()) {
+            Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::cleanExpiredSessions, 1, 1, TimeUnit.MINUTES);
+            Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(() -> {
+                // In ZERO_ZONE_V0 we need to fast commit the WAL data to KRaft,
+                // then another nodes could replay the SSO to support snapshot read.
+                if (!versionGetter.get().isZeroZoneV2Supported()) {
+                    confirmWAL.commit(0, false);
+                }
+            }, 1, 1, TimeUnit.SECONDS);
+        }
     }
 
     public void onPartitionOpen(Partition partition) {
@@ -78,7 +97,7 @@ public class PartitionSnapshotsManager {
         }
     }
 
-    public AutomqGetPartitionSnapshotResponse handle(AutomqGetPartitionSnapshotRequest request) {
+    public CompletableFuture<AutomqGetPartitionSnapshotResponse> handle(AutomqGetPartitionSnapshotRequest request) {
         Session session;
         synchronized (this) {
             AutomqGetPartitionSnapshotRequestData requestData = request.data();
@@ -96,7 +115,9 @@ public class PartitionSnapshotsManager {
                 sessions.put(sessionId, session);
             }
         }
-        return session.snapshotsDelta();
+        AutomqGetPartitionSnapshotResponse resp = session.snapshotsDelta(request.data().version());
+        CompletableFuture<Void> commitCf = request.data().requestCommit() ? confirmWAL.commit(0, false) : CompletableFuture.completedFuture(null);
+        return commitCf.exceptionally(nil -> null).thenApply(nil -> resp);
     }
 
     private synchronized int nextSessionId() {
@@ -113,6 +134,7 @@ public class PartitionSnapshotsManager {
     }
 
     class Session {
+        private static final short ZERO_ZONE_V0_REQUEST_VERSION = (short) 0;
         private final int sessionId;
         private int sessionEpoch = 0;
         private final Map<Partition, PartitionSnapshotVersion> synced = new HashMap<>();
@@ -127,7 +149,7 @@ public class PartitionSnapshotsManager {
             return sessionEpoch;
         }
 
-        public synchronized AutomqGetPartitionSnapshotResponse snapshotsDelta() {
+        public synchronized AutomqGetPartitionSnapshotResponse snapshotsDelta(short requestVersion) {
             AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
             sessionEpoch++;
             resp.setSessionId(sessionId);
@@ -161,6 +183,13 @@ public class PartitionSnapshotsManager {
                 topics.add(topic);
             });
             resp.setTopics(topics);
+            if (requestVersion > ZERO_ZONE_V0_REQUEST_VERSION) {
+                if (sessionEpoch == 1) {
+                    // return the WAL config in the session first response
+                    resp.setConfirmWalConfig(confirmWalConfig);
+                }
+                resp.setConfirmWalEndOffset(confirmWAL.confirmOffset().bufferAsBytes());
+            }
             lastGetSnapshotsTimestamp = time.milliseconds();
             return new AutomqGetPartitionSnapshotResponse(resp);
         }
@@ -201,6 +230,7 @@ public class PartitionSnapshotsManager {
                 if (includeSegments) {
                     snapshot.setLogMetadata(logMetadata(src.logMeta()));
                 }
+                snapshot.setLastTimestampOffset(timestampOffset(src.lastTimestampOffset()));
                 return snapshot;
             });
         }
@@ -252,6 +282,11 @@ public class PartitionSnapshotsManager {
     static AutomqGetPartitionSnapshotResponseData.TimestampOffsetData timestampOffset(
         ElasticStreamSegmentMeta.TimestampOffsetData src) {
         return new AutomqGetPartitionSnapshotResponseData.TimestampOffsetData().setTimestamp(src.timestamp()).setOffset(src.offset());
+    }
+
+    static AutomqGetPartitionSnapshotResponseData.TimestampOffsetData timestampOffset(
+        TimestampOffset src) {
+        return new AutomqGetPartitionSnapshotResponseData.TimestampOffsetData().setTimestamp(src.timestamp).setOffset(src.offset);
     }
 
     static class PartitionWithVersion {

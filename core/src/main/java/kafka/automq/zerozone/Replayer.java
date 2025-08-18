@@ -17,28 +17,26 @@
  * limitations under the License.
  */
 
-package kafka.automq.interceptor;
+package kafka.automq.zerozone;
 
-import org.apache.kafka.common.Node;
-import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
-import org.apache.kafka.common.message.MetadataResponseData;
-import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.wal.RecordOffset;
+import com.automq.stream.s3.wal.WriteAheadLog;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
-public interface TrafficInterceptor {
+public interface Replayer {
 
-    void close();
+    /**
+     * Replay SSO to snapshot-read cache
+     */
+    CompletableFuture<Void> replay(List<S3ObjectMetadata> objects);
 
-    void handleProduceRequest(ProduceRequestArgs args);
-
-    CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request);
-
-    List<MetadataResponseData.MetadataResponseTopic> handleMetadataResponse(ClientIdMetadata clientId,
-        List<MetadataResponseData.MetadataResponseTopic> topics);
-
-    Optional<Node> getLeaderNode(int leaderId, ClientIdMetadata clientId, String listenerName);
+    /**
+     * Replay WAL to snapshot-read cache.
+     * If the record in WAL is a linked record, it will decode the linked record to the real record.
+     */
+    CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset, RecordOffset endOffset);
 
 }
