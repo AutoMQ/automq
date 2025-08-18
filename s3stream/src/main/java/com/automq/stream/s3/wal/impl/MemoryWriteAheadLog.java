@@ -19,8 +19,11 @@
 
 package com.automq.stream.s3.wal.impl;
 
+import com.automq.stream.s3.StreamRecordBatchCodec;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.RecordHeader;
@@ -29,6 +32,7 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -66,30 +70,35 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
-    public AppendResult append(TraceContext traceContext, ByteBuf data, int crc) throws OverCapacityException {
+    public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) {
         if (full) {
-            data.release();
-            throw new OverCapacityException("MemoryWriteAheadLog is full");
+            streamRecordBatch.release();
+            return CompletableFuture.failedFuture(new OverCapacityException("MemoryWriteAheadLog is full"));
         }
-        int dataLength = data.readableBytes();
+        int dataLength = streamRecordBatch.encoded().readableBytes();
         long offset = offsetAlloc.getAndAdd(RecordHeader.RECORD_HEADER_SIZE + dataLength);
 
         ByteBuf buffer = Unpooled.buffer(dataLength);
-        buffer.writeBytes(data);
-        data.release();
+        buffer.writeBytes(streamRecordBatch.encoded());
+        streamRecordBatch.release();
         dataMap.put(offset, buffer);
+        return CompletableFuture.completedFuture(() -> DefaultRecordOffset.of(0, offset, 0));
+    }
 
-        return new AppendResult() {
-            @Override
-            public long recordOffset() {
-                return offset;
-            }
+    @Override
+    public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
+        return CompletableFuture.completedFuture(StreamRecordBatchCodec.decode(dataMap.get(DefaultRecordOffset.of(recordOffset).offset()), true));
+    }
 
-            @Override
-            public CompletableFuture<CallbackResult> future() {
-                return CompletableFuture.completedFuture(null);
-            }
-        };
+    @Override
+    public CompletableFuture<List<StreamRecordBatch>> get(RecordOffset startOffset, RecordOffset endOffset) {
+        List<StreamRecordBatch> list = dataMap.subMap(DefaultRecordOffset.of(startOffset).offset(), true, DefaultRecordOffset.of(endOffset).offset(), false).values().stream().map(StreamRecordBatchCodec::decode).collect(Collectors.toList());
+        return CompletableFuture.completedFuture(list);
+    }
+
+    @Override
+    public RecordOffset confirmOffset() {
+        return DefaultRecordOffset.of(0, offsetAlloc.get(), 0);
     }
 
     @Override
@@ -98,13 +107,13 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
             .stream()
             .map(e -> (RecoverResult) new RecoverResult() {
                 @Override
-                public ByteBuf record() {
-                    return e.getValue();
+                public StreamRecordBatch record() {
+                    return StreamRecordBatchCodec.decode(e.getValue());
                 }
 
                 @Override
-                public long recordOffset() {
-                    return e.getKey();
+                public RecordOffset recordOffset() {
+                    return DefaultRecordOffset.of(0, e.getKey(), 0);
                 }
             })
             .collect(Collectors.toList())
@@ -118,8 +127,8 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
-    public CompletableFuture<Void> trim(long offset) {
-        dataMap.headMap(offset)
+    public CompletableFuture<Void> trim(RecordOffset offset) {
+        dataMap.headMap(DefaultRecordOffset.of(offset).offset())
             .forEach((key, value) -> {
                 dataMap.remove(key);
                 value.release();
