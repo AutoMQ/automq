@@ -74,7 +74,7 @@ public class ZoneRouterPackWriter {
         return writer.close();
     }
 
-    static ByteBuf encodeDataBlock(List<ZoneRouterProduceRequest> produceRequests) {
+    public static ByteBuf encodeDataBlock(List<ZoneRouterProduceRequest> produceRequests) {
         int size = 1 /* magic */;
         List<ObjectSerializationCache> objectSerializationCaches = new ArrayList<>(produceRequests.size());
         List<Integer> dataSizes = new ArrayList<>(produceRequests.size());

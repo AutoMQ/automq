@@ -235,6 +235,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
                     @SuppressWarnings("OptionalGetWithoutIsPresent") long endOffset = streamsImage.streamEndOffset(streamId).getAsLong();
                     StreamMetadata streamMetadata = new StreamMetadata(streamId, streamImage.getEpoch(),
                         streamImage.getStartOffset(), endOffset, streamImage.state());
+                    Optional.ofNullable(streamImage.lastRange()).ifPresent(r -> streamMetadata.nodeId(r.nodeId()));
                     streamMetadataList.add(streamMetadata);
                 }
             });

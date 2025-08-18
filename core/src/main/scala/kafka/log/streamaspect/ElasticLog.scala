@@ -602,6 +602,10 @@ class ElasticLog(val metaStream: MetaStream,
         logSegmentManager.streams().forEach(stream => {
             snapshot.streamEndOffset(stream.streamId(), stream.confirmOffset())
         })
+        val lastSegmentOpt = segments.lastSegment()
+        if (lastSegmentOpt.isPresent) {
+            snapshot.lastTimestampOffset(lastSegmentOpt.get().asInstanceOf[ElasticLogSegment].timeIndex().lastEntry())
+        }
     }
 
     def snapshot(snapshot: PartitionSnapshot): Unit = {
@@ -619,6 +623,17 @@ class ElasticLog(val metaStream: MetaStream,
         var logEndOffset = snapshot.logEndOffset()
         val segmentBaseOffset = segments.floorSegment(logEndOffset.messageOffset).get().baseOffset()
         logEndOffset = new LogOffsetMetadata(logEndOffset.messageOffset, segmentBaseOffset, logEndOffset.relativePositionInSegment);
+
+        streamManager.streams().forEach((_, stream) => {
+            val endOffset = snapshot.streamEndOffsets().get(stream.streamId())
+            if (endOffset != null) {
+                stream.confirmOffset(endOffset)
+            }
+        })
+        val lastSegment = segments.lastSegment()
+        if (lastSegment.isPresent) {
+            lastSegment.get().asInstanceOf[ElasticLogSegment].snapshot(snapshot)
+        }
         nextOffsetMetadata = logEndOffset
         _confirmOffset.set(logEndOffset)
     }

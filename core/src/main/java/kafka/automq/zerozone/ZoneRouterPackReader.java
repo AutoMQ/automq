@@ -56,6 +56,9 @@ public class ZoneRouterPackReader {
             });
     }
 
+    /**
+     * Caution: ProduceRequestData$PartitionProduceData.records is a slice of buf.
+     */
     static List<ZoneRouterProduceRequest> decodeDataBlock(ByteBuf buf) {
         byte magic = buf.readByte();
         if (magic != PRODUCE_DATA_BLOCK_MAGIC) {
@@ -70,7 +73,8 @@ public class ZoneRouterPackReader {
             ProduceRequestData produceRequestData = new ProduceRequestData();
             produceRequestData.read(new ByteBufferAccessor(dataBuf.nioBuffer()), apiVersion);
             buf.skipBytes(dataSize);
-            requests.add(new ZoneRouterProduceRequest(apiVersion, flag, produceRequestData));
+            buf.retain();
+            requests.add(new ZoneRouterProduceRequest(apiVersion, flag, produceRequestData, buf::release));
         }
         return requests;
     }
