@@ -19,17 +19,17 @@
 
 package com.automq.stream.s3.wal.common;
 
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 
 import java.util.Objects;
 
-import io.netty.buffer.ByteBuf;
-
 public class RecoverResultImpl implements RecoverResult {
-    private final ByteBuf record;
-    private final long recordOffset;
+    private final StreamRecordBatch record;
+    private final RecordOffset recordOffset;
 
-    public RecoverResultImpl(ByteBuf record, long recordOffset) {
+    public RecoverResultImpl(StreamRecordBatch record, RecordOffset recordOffset) {
         this.record = record;
         this.recordOffset = recordOffset;
     }
@@ -43,12 +43,12 @@ public class RecoverResultImpl implements RecoverResult {
     }
 
     @Override
-    public ByteBuf record() {
+    public StreamRecordBatch record() {
         return record;
     }
 
     @Override
-    public long recordOffset() {
+    public RecordOffset recordOffset() {
         return recordOffset;
     }
 
@@ -61,8 +61,7 @@ public class RecoverResultImpl implements RecoverResult {
             return false;
         }
         var that = (RecoverResultImpl) obj;
-        return Objects.equals(this.record, that.record) &&
-               this.recordOffset == that.recordOffset;
+        return Objects.equals(this.record, that.record) && Objects.equals(this.recordOffset, that.recordOffset);
     }
 
     @Override

@@ -19,7 +19,6 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
@@ -181,7 +180,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
-                CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
+                CompositeByteBuf buf = Unpooled.compositeBuffer();
                 responsePublisher.subscribe(bytes -> {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
                     buf.addComponent(true, Unpooled.wrappedBuffer(bytes));

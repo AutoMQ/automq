@@ -30,6 +30,7 @@ import com.automq.stream.utils.AsyncSemaphore;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
+import com.automq.stream.utils.threads.EventLoopSafe;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

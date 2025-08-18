@@ -25,6 +25,7 @@ public class StreamMetadata {
     private long startOffset;
     private long endOffset;
     private StreamState state;
+    private int nodeId = -1;
 
     @SuppressWarnings("unused")
     public StreamMetadata() {
@@ -78,6 +79,14 @@ public class StreamMetadata {
         this.state = state;
     }
 
+    public int nodeId() {
+        return nodeId;
+    }
+
+    public void nodeId(int nodeId) {
+        this.nodeId = nodeId;
+    }
+
     @Override
     public String toString() {
         return "StreamMetadata{" +
@@ -86,6 +95,7 @@ public class StreamMetadata {
             ", startOffset=" + startOffset +
             ", endOffset=" + endOffset +
             ", state=" + state +
+            ", nodeId=" + nodeId +
             '}';
     }
 }

@@ -325,6 +325,11 @@ public class S3StreamClient implements StreamClient {
         }
 
         @Override
+        public void confirmOffset(long offset) {
+            stream.confirmOffset(offset);
+        }
+
+        @Override
         public long nextOffset() {
             return stream.nextOffset();
         }

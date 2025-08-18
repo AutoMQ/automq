@@ -65,7 +65,12 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
     }
 
     public long getLastOffset() {
-        return baseOffset + count;
+        if (count > 0) {
+            return baseOffset + count;
+        } else {
+            // link record
+            return baseOffset - count;
+        }
     }
 
     public int getCount() {

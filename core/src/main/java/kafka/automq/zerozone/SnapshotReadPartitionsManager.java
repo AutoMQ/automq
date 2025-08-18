@@ -51,7 +51,7 @@ import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 
-import com.automq.stream.s3.cache.SnapshotReadCache;
+import com.automq.stream.Context;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
@@ -103,7 +103,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         this.time = time;
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
-        this.dataLoader = objects -> SnapshotReadCache.instance().load(objects);
+        // FIXME: tmp code in merging
+        this.dataLoader = objects -> Context.instance().snapshotReadCache().replay(objects);
         this.asyncSender = new AsyncSender.BrokersAsyncSender(config, metrics, "snapshot_read", Time.SYSTEM, "AUTOMQ_SNAPSHOT_READ", new LogContext());
     }
 

@@ -195,13 +195,16 @@ public class ObjectStorageFactory {
             if (StringUtils.isEmpty(this.threadPrefix)) {
                 this.threadPrefix = Long.toString(defaultThreadPrefixCounter.getAndIncrement());
             }
-            ObjectStorage objectStorage;
+            Function<Builder, ObjectStorage> protocolHandle;
             if (buckets != null && buckets.size() > 1) {
-                objectStorage = protocolHandlers.get(PROTOCOL_ROOT).apply(this);
+                protocolHandle = protocolHandlers.get(PROTOCOL_ROOT);
             } else {
-                objectStorage = protocolHandlers.get(bucket.protocol()).apply(this);
+                protocolHandle = protocolHandlers.get(bucket.protocol());
             }
-            return objectStorage;
+            if (protocolHandle == null) {
+                throw new IllegalArgumentException("Cannot find protocol " + bucket.protocol());
+            }
+            return protocolHandle.apply(this);
         }
     }
 }
