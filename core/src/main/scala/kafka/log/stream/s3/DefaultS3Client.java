@@ -34,6 +34,7 @@ import kafka.server.BrokerServer;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
+import com.automq.stream.Context;
 import com.automq.stream.api.Client;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.api.StreamClient;
@@ -173,6 +174,7 @@ public class DefaultS3Client implements Client {
         storageFailureHandlerChain.addHandler(new HaltStorageFailureHandler());
         this.streamClient.registerStreamLifeCycleListener(localIndexCache);
         this.kvClient = new ControllerKVClient(this.requestSender);
+        Context.instance().kvClient(this.kvClient);
         this.failover = failover();
 
         S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));

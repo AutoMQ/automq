@@ -75,14 +75,20 @@ class ProxyNodeMapping {
      */
     public Node getRouteOutNode(String topicName, int partition, ClientIdMetadata clientId) {
         String clientRack = clientId.rack();
-        if (clientRack == null) {
-            throw new IllegalArgumentException("[BUG] The client rack must be set");
-        }
 
         BrokerRegistration target = metadataCache.getPartitionLeaderNode(topicName, partition);
         if (target == null) {
             return currentNode;
         }
+        if (clientRack == null) {
+            // If the client rack isn't set, expect produce send to the real leader.
+            if (target.id() == currentNode.id()) {
+                return currentNode;
+            } else {
+                return Node.noNode();
+            }
+        }
+
         Map<String, Map<Integer, BrokerRegistration>> main2proxyByRack = this.main2proxyByRack;
         if (Objects.equals(clientRack, currentRack)) {
             if (target.id() == currentNode.id()) {

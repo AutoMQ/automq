@@ -51,7 +51,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Seq, mutable}
 import scala.compat.java8.OptionConverters
 import scala.compat.java8.OptionConverters.RichOptionalGeneric
-import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala, SetHasAsJava}
+import scala.jdk.CollectionConverters.{CollectionHasAsScala, EnumerationHasAsScala, MapHasAsScala, SetHasAsJava}
 
 object ElasticReplicaManager {
   def emptyReadResults(partitions: Seq[TopicIdPartition]): Seq[(TopicIdPartition, LogReadResult)] = {
@@ -104,7 +104,7 @@ class ElasticReplicaManager(
   directoryEventHandler) {
 
   partitionMetricsCleanerExecutor.scheduleAtFixedRate(() => {
-    brokerTopicStats.removeRedundantMetrics(allPartitions.keys)
+    brokerTopicStats.removeRedundantMetrics(allPartitions.keys ++ snapshotReadPartitions.keys.asScala)
   }, 1, 1, TimeUnit.HOURS)
 
   protected val openingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
@@ -193,7 +193,7 @@ class ElasticReplicaManager(
 
   private var kafkaLinkingManager = Option.empty[KafkaLinkingManager]
 
-  private val partitionSnapshotsManager = new PartitionSnapshotsManager(time)
+  private var partitionSnapshotsManager: PartitionSnapshotsManager = null
 
   private val snapshotReadPartitions = new ConcurrentHashMap[TopicPartition, Partition]()
 
@@ -369,7 +369,6 @@ class ElasticReplicaManager(
 
     entriesPerPartition.map { case (topicPartition, records) =>
       brokerTopicStats.topicStats(topicPartition.topic).totalProduceRequestRate.mark()
-      brokerTopicStats.topicPartitionStats(topicPartition).totalProduceRequestRate.mark()
       brokerTopicStats.allTopicsStats.totalProduceRequestRate.mark()
 
       // reject appending to internal topics if it is not allowed
@@ -386,7 +385,7 @@ class ElasticReplicaManager(
           val numAppendedMessages = info.numMessages
 
           // update stats for successfully appended bytes and messages as bytesInRate and messageInRate
-          brokerTopicStats.topicPartitionStats(topicPartition).bytesInRate.mark(records.sizeInBytes())
+          brokerTopicStats.updatePartitionBytesIn(topicPartition, records.sizeInBytes())
           brokerTopicStats.topicStats(topicPartition.topic).bytesInRate.mark(records.sizeInBytes)
           brokerTopicStats.allTopicsStats.bytesInRate.mark(records.sizeInBytes)
           brokerTopicStats.topicStats(topicPartition.topic).messagesInRate.mark(numAppendedMessages)
@@ -508,7 +507,7 @@ class ElasticReplicaManager(
 
     logReadResults.foreach { case (topicIdPartition, logReadResult) =>
       brokerTopicStats.topicStats(topicIdPartition.topicPartition.topic).totalFetchRequestRate.mark()
-      brokerTopicStats.topicPartitionStats(topicIdPartition.topicPartition).totalFetchRequestRate.mark()
+      brokerTopicStats.updatePartitionFetchRequestRate(topicIdPartition.topicPartition())
       brokerTopicStats.allTopicsStats.totalFetchRequestRate.mark()
       if (logReadResult.error != Errors.NONE)
         errorReadingData = true
@@ -1396,7 +1395,6 @@ class ElasticReplicaManager(
     }
     partitionOpenOpExecutor.shutdown()
     partitionCloseOpExecutor.shutdown()
-    CoreUtils.swallow(ElasticLogManager.shutdown(), this)
   }
 
   /**
@@ -1503,7 +1501,7 @@ class ElasticReplicaManager(
     }
   }
 
-  def handleGetPartitionSnapshotRequest(request: AutomqGetPartitionSnapshotRequest): AutomqGetPartitionSnapshotResponse = {
+  def handleGetPartitionSnapshotRequest(request: AutomqGetPartitionSnapshotRequest): CompletableFuture[AutomqGetPartitionSnapshotResponse] = {
     partitionSnapshotsManager.handle(request)
   }
 
@@ -1513,7 +1511,13 @@ class ElasticReplicaManager(
 
   def computeSnapshotReadPartition(topicPartition: TopicPartition,
     remappingFunction: BiFunction[TopicPartition, Partition, Partition]): Partition = {
-    snapshotReadPartitions.compute(topicPartition, remappingFunction)
+    snapshotReadPartitions.compute(topicPartition, (tp, partition) => {
+      val newPartition = remappingFunction.apply(tp, partition)
+      if (newPartition == null) {
+        brokerTopicStats.removeMetrics(tp)
+      }
+      newPartition
+    })
   }
 
   def newSnapshotReadPartition(topicIdPartition: TopicIdPartition): Partition = {
@@ -1548,6 +1552,10 @@ class ElasticReplicaManager(
 
   def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {
     this.trafficInterceptor = trafficInterceptor
+  }
+
+  def setS3StreamContext(ctx: com.automq.stream.Context): Unit = {
+    this.partitionSnapshotsManager = new PartitionSnapshotsManager(time, config.automq, ctx.confirmWAL(), () => metadataCache.autoMQVersion())
   }
 
 }
