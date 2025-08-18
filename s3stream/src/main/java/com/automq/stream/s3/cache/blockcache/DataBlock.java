@@ -24,6 +24,7 @@ import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.Time;
+import com.automq.stream.utils.threads.EventLoopSafe;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

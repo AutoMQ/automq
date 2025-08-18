@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.wal.common;
 
+
 public class WALMetadata {
     private final int nodeId;
     private final long epoch;

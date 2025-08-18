@@ -17,35 +17,18 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.context;
-
-import com.automq.stream.s3.trace.context.TraceContext;
+package com.automq.stream.s3.wal;
 
 import io.netty.buffer.ByteBuf;
-import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.context.Context;
 
-public class AppendContext extends TraceContext {
-    public static final AppendContext DEFAULT = new AppendContext();
-    private ByteBuf linkRecord;
+public interface RecordOffset {
 
-    public AppendContext() {
-        super(false, null, null);
-    }
+    ByteBuf buffer();
 
-    public AppendContext(TraceContext context) {
-        super(context);
-    }
-
-    public AppendContext(boolean isTraceEnabled, Tracer tracer, Context currentContext) {
-        super(isTraceEnabled, tracer, currentContext);
-    }
-
-    public void linkRecord(ByteBuf record) {
-        this.linkRecord = record;
-    }
-
-    public ByteBuf linkRecord() {
-        return this.linkRecord;
+    default byte[] bufferAsBytes() {
+        ByteBuf buffer = buffer().slice();
+        byte[] bytes = new byte[buffer.readableBytes()];
+        buffer.readBytes(bytes);
+        return bytes;
     }
 }

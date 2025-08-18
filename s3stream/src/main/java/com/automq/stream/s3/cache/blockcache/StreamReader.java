@@ -36,6 +36,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
+import com.automq.stream.utils.threads.EventLoopSafe;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;

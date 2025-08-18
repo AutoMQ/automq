@@ -17,10 +17,10 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.cache.blockcache;
+package com.automq.stream.s3.wal;
 
-/**
- * All the methods in this class should be called from the same stream's eventLoop.
- */
-public @interface EventLoopSafe {
+public enum OpenMode {
+    READ_WRITE,
+    FAILOVER,
+    READ_ONLY,
 }
