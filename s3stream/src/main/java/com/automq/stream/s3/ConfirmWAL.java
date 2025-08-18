@@ -19,35 +19,37 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.context.AppendContext;
-import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.S3Storage.LazyCommit;
 import com.automq.stream.s3.wal.RecordOffset;
+import com.automq.stream.s3.wal.WriteAheadLog;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
-public class WalWriteRequest implements Comparable<WalWriteRequest> {
-    final StreamRecordBatch record;
-    final AppendContext context;
-    final CompletableFuture<Void> cf;
-    RecordOffset offset;
+public class ConfirmWAL {
+    private final WriteAheadLog log;
+    private final Function<LazyCommit, CompletableFuture<Void>> commitHandle;
 
-    public WalWriteRequest(StreamRecordBatch record, RecordOffset offset, CompletableFuture<Void> cf, AppendContext context) {
-        this.record = record;
-        this.offset = offset;
-        this.cf = cf;
-        this.context = context;
+    public ConfirmWAL(WriteAheadLog log, Function<LazyCommit, CompletableFuture<Void>> commitHandle) {
+        this.log = log;
+        this.commitHandle = commitHandle;
     }
 
-    @Override
-    public int compareTo(WalWriteRequest o) {
-        return record.compareTo(o.record);
+    public RecordOffset confirmOffset() {
+        return log.confirmOffset();
     }
 
-    @Override
-    public String toString() {
-        return "WalWriteRequest{" +
-            "record=" + record +
-            ", offset=" + offset +
-            '}';
+    /**
+     * Commit with lazy timeout.
+     * If in [0, lazyLingerMs), there is no other commit happened, then trigger a new commit.
+     * @param lazyLingerMs lazy linger milliseconds.
+     */
+    public CompletableFuture<Void> commit(long lazyLingerMs, boolean awaitTrim) {
+        return commitHandle.apply(new LazyCommit(lazyLingerMs, awaitTrim));
     }
+
+    public CompletableFuture<Void> commit(long lazyLingerMs) {
+        return commit(lazyLingerMs, true);
+    }
+
 }

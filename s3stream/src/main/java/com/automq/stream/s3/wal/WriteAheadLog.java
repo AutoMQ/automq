@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.wal;
 
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
@@ -26,6 +27,7 @@ import com.automq.stream.s3.wal.exception.RuntimeIOException;
 
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
@@ -50,19 +52,14 @@ public interface WriteAheadLog {
      *
      * @return The data position will be written.
      */
-    AppendResult append(TraceContext context, ByteBuf data, int crc) throws OverCapacityException;
+    // TODO: change the doc
+    CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
-    default AppendResult append(TraceContext context, ByteBuf data) throws OverCapacityException {
-        return append(context, data, 0);
-    }
+    CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset);
 
-    default AppendResult append(ByteBuf data, int crc) throws OverCapacityException {
-        return append(TraceContext.DEFAULT, data, crc);
-    }
+    CompletableFuture<List<StreamRecordBatch>> get(RecordOffset startOffset, RecordOffset endOffset);
 
-    default AppendResult append(ByteBuf data) throws OverCapacityException {
-        return append(TraceContext.DEFAULT, data, 0);
-    }
+    RecordOffset confirmOffset();
 
     /**
      * Recover log from the beginning. The iterator will return the recovered result in order.
@@ -86,5 +83,5 @@ public interface WriteAheadLog {
      * @param offset inclusive trim offset.
      * @return future complete when trim done.
      */
-    CompletableFuture<Void> trim(long offset);
+    CompletableFuture<Void> trim(RecordOffset offset);
 }

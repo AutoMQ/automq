@@ -19,11 +19,14 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.wal.OpenMode;
+import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.utils.IdURI;
 
 import org.apache.commons.lang3.StringUtils;
 
 public class ObjectWALConfig {
+    private final ReservationService reservationService;
     private final long batchInterval;
     private final long maxBytesInBatch;
     private final long maxUnflushedBytes;
@@ -32,17 +35,19 @@ public class ObjectWALConfig {
     private final String clusterId;
     private final int nodeId;
     private final long epoch;
-    private final boolean failover;
+    private final OpenMode openMode;
     private final short bucketId;
-    private final boolean strictBatchLimit;
+    private final String type;
 
     public static Builder builder() {
         return new Builder();
     }
 
-    public ObjectWALConfig(long batchInterval, long maxBytesInBatch, long maxUnflushedBytes, int maxInflightUploadCount,
-        int readAheadObjectCount, String clusterId, int nodeId, long epoch, boolean failover, short bucketId,
-        boolean strictBatchLimit) {
+    public ObjectWALConfig(ReservationService reservationService, long batchInterval, long maxBytesInBatch,
+        long maxUnflushedBytes, int maxInflightUploadCount,
+        int readAheadObjectCount, String clusterId, int nodeId, long epoch, OpenMode openMode, short bucketId,
+        String type) {
+        this.reservationService = reservationService;
         this.batchInterval = batchInterval;
         this.maxBytesInBatch = maxBytesInBatch;
         this.maxUnflushedBytes = maxUnflushedBytes;
@@ -51,9 +56,13 @@ public class ObjectWALConfig {
         this.clusterId = clusterId;
         this.nodeId = nodeId;
         this.epoch = epoch;
-        this.failover = failover;
+        this.openMode = openMode;
         this.bucketId = bucketId;
-        this.strictBatchLimit = strictBatchLimit;
+        this.type = type;
+    }
+
+    public ReservationService reservationService() {
+        return this.reservationService;
     }
 
     public long batchInterval() {
@@ -88,19 +97,20 @@ public class ObjectWALConfig {
         return epoch;
     }
 
-    public boolean failover() {
-        return failover;
+    public OpenMode openMode() {
+        return openMode;
     }
 
     public short bucketId() {
         return bucketId;
     }
 
-    public boolean strictBatchLimit() {
-        return strictBatchLimit;
+    public String type() {
+        return type;
     }
 
     public static final class Builder {
+        private ReservationService reservationService = ReservationService.NOOP;
         private long batchInterval = 256; // 256ms
         private long maxBytesInBatch = 8 * 1024 * 1024L; // 8MB
         private long maxUnflushedBytes = 1024 * 1024 * 1024L; // 1GB
@@ -109,9 +119,9 @@ public class ObjectWALConfig {
         private String clusterId;
         private int nodeId;
         private long epoch;
-        private boolean failover;
+        private OpenMode openMode = OpenMode.READ_WRITE;
         private short bucketId;
-        private boolean strictBatchLimit = false;
+        private String type = "";
 
         private Builder() {
         }
@@ -139,10 +149,11 @@ public class ObjectWALConfig {
             if (StringUtils.isNumeric(readAheadObjectCount)) {
                 withReadAheadObjectCount(Integer.parseInt(readAheadObjectCount));
             }
-            String strictBatchLimit = uri.extensionString("strictBatchLimit");
-            if (StringUtils.isNumeric(strictBatchLimit)) {
-                withStrictBatchLimit(Boolean.parseBoolean(strictBatchLimit));
-            }
+            return this;
+        }
+
+        public Builder withReservationService(ReservationService reservationService) {
+            this.reservationService = reservationService;
             return this;
         }
 
@@ -194,8 +205,8 @@ public class ObjectWALConfig {
             return this;
         }
 
-        public Builder withFailover(boolean failover) {
-            this.failover = failover;
+        public Builder withOpenMode(OpenMode openMode) {
+            this.openMode = openMode;
             return this;
         }
 
@@ -204,13 +215,13 @@ public class ObjectWALConfig {
             return this;
         }
 
-        public Builder withStrictBatchLimit(boolean strictBatchLimit) {
-            this.strictBatchLimit = strictBatchLimit;
+        public Builder withType(String type) {
+            this.type = type;
             return this;
         }
 
         public ObjectWALConfig build() {
-            return new ObjectWALConfig(batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, failover, bucketId, strictBatchLimit);
+            return new ObjectWALConfig(reservationService, batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, openMode, bucketId, type);
         }
     }
 }

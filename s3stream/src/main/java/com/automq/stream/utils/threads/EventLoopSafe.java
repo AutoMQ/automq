@@ -17,35 +17,11 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.context;
+package com.automq.stream.utils.threads;
 
-import com.automq.stream.s3.trace.context.TraceContext;
-
-import io.netty.buffer.ByteBuf;
-import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.context.Context;
-
-public class AppendContext extends TraceContext {
-    public static final AppendContext DEFAULT = new AppendContext();
-    private ByteBuf linkRecord;
-
-    public AppendContext() {
-        super(false, null, null);
-    }
-
-    public AppendContext(TraceContext context) {
-        super(context);
-    }
-
-    public AppendContext(boolean isTraceEnabled, Tracer tracer, Context currentContext) {
-        super(isTraceEnabled, tracer, currentContext);
-    }
-
-    public void linkRecord(ByteBuf record) {
-        this.linkRecord = record;
-    }
-
-    public ByteBuf linkRecord() {
-        return this.linkRecord;
-    }
+/**
+ * - If it's annotated to a class means that all the methods in this class should be called from the eventLoop.
+ * - If it's annotated to a method means that the method should be called in the eventLoop.
+ */
+public @interface EventLoopSafe {
 }

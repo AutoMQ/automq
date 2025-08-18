@@ -17,37 +17,30 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3;
+package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecordOffset;
+import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.exception.WALFencedException;
 
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
-public class WalWriteRequest implements Comparable<WalWriteRequest> {
-    final StreamRecordBatch record;
-    final AppendContext context;
-    final CompletableFuture<Void> cf;
-    RecordOffset offset;
+public interface Writer {
+    void start();
 
-    public WalWriteRequest(StreamRecordBatch record, RecordOffset offset, CompletableFuture<Void> cf, AppendContext context) {
-        this.record = record;
-        this.offset = offset;
-        this.cf = cf;
-        this.context = context;
-    }
+    void close();
 
-    @Override
-    public int compareTo(WalWriteRequest o) {
-        return record.compareTo(o.record);
-    }
+    CompletableFuture<AppendResult> append(StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
-    @Override
-    public String toString() {
-        return "WalWriteRequest{" +
-            "record=" + record +
-            ", offset=" + offset +
-            '}';
-    }
+    RecordOffset confirmOffset();
+
+    CompletableFuture<Void> reset() throws WALFencedException;
+
+    CompletableFuture<Void> trim(RecordOffset recordOffset) throws WALFencedException;
+
+    Iterator<RecoverResult> recover();
 }

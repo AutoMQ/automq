@@ -172,6 +172,14 @@ public class S3Stream implements Stream, StreamMetadataListener {
     }
 
     @Override
+    public void confirmOffset(long offset) {
+        if (!snapshotRead()) {
+            throw new UnsupportedOperationException("Only snapshot-read mode support set confirmOffset");
+        }
+        updateSnapshotReadConfirmOffset(offset);
+    }
+
+    @Override
     public long nextOffset() {
         return nextOffset.get();
     }
@@ -478,9 +486,15 @@ public class S3Stream implements Stream, StreamMetadataListener {
 
     @Override
     public void onNewStreamMetadata(StreamMetadata metadata) {
-        this.nextOffset.set(metadata.endOffset());
-        this.confirmOffset.set(metadata.endOffset());
+        updateSnapshotReadConfirmOffset(metadata.endOffset());
         this.startOffset = metadata.startOffset();
+    }
+
+    private void updateSnapshotReadConfirmOffset(long newOffset) {
+        synchronized (this.confirmOffset) {
+            this.confirmOffset.updateAndGet(operand -> Math.max(newOffset, operand));
+            this.nextOffset.set(this.confirmOffset.get());
+        }
     }
 
     static class DefaultFetchResult implements FetchResult {

@@ -51,6 +51,11 @@ public interface Stream {
     long confirmOffset();
 
     /**
+     * Set confirm offset. Only support in snapshotRead mode
+     */
+    void confirmOffset(long offset);
+
+    /**
      * Get stream next append record offset.
      */
     long nextOffset();
