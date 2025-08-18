@@ -20,7 +20,7 @@
     "broker"
   ],
   "name": "AutomqGetPartitionSnapshotRequest",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -34,6 +34,18 @@
       "type": "int32",
       "versions": "0+",
       "about": "The get session epoch, which is used for ordering requests in a session"
+    },
+    {
+      "name": "RequestCommit",
+      "type": "bool",
+      "versions": "1+",
+      "about": "Request commit the ConfirmWAL data to the main storage."
+    },
+    {
+      "name": "Version",
+      "type": "int16",
+      "versions": "1+",
+      "about": "The route request version"
     }
   ]
 }

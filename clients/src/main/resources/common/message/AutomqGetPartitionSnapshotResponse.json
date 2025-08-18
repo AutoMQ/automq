@@ -17,7 +17,7 @@
   "apiKey": 516,
   "type": "response",
   "name": "AutomqGetPartitionSnapshotResponse",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     { "name": "ErrorCode", "type": "int16", "versions": "0+", "about": "The top level response error code" },
@@ -36,9 +36,22 @@
         { "name": "StreamMetadata", "type": "[]StreamMetadata", "versions": "0+", "nullableVersions": "0+", "fields": [
           { "name": "StreamId", "type": "int64", "versions": "0+", "about": "The streamId" },
           { "name": "EndOffset", "type": "int64", "versions": "0+", "about": "The stream end offset" }
-        ]}
+        ]},
+        { "name": "LastTimestampOffset", "type": "TimestampOffsetData", "versions": "1+", "nullableVersions": "1+", "about": "The last segment's last time index" }
       ]}
-    ]}
+    ]},
+    {
+      "name": "ConfirmWalEndOffset",
+      "type": "bytes",
+      "versions": "1+",
+      "about": "The confirm WAL end offset."
+    },
+    {
+      "name": "ConfirmWalConfig",
+      "type": "string",
+      "versions": "1+",
+      "about": "The confirm WAL config."
+    }
   ],
   "commonStructs": [
     { "name": "LogMetadata", "versions": "0+", "fields": [
