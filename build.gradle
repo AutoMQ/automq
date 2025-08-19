@@ -840,6 +840,13 @@ tasks.create(name: "jarConnect", dependsOn: connectPkgs.collect { it + ":jar" })
 
 tasks.create(name: "testConnect", dependsOn: connectPkgs.collect { it + ":test" }) {}
 
+// OpenTelemetry related tasks
+tasks.create(name: "jarOpenTelemetry", dependsOn: ":opentelemetry:jar") {}
+
+tasks.create(name: "testOpenTelemetry", dependsOn: ":opentelemetry:test") {}
+
+tasks.create(name: "buildOpenTelemetry", dependsOn: [":opentelemetry:jar", ":opentelemetry:test"]) {}
+
 project(':server') {
   base {
     archivesName = "kafka-server"
@@ -2482,7 +2489,7 @@ project(':trogdor') {
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
     }
-    into "$buildDir/dependant-libs-${versions.scala}"
+    into "$buildDir/dependant-libs"
     duplicatesStrategy 'exclude'
   }
 
@@ -3451,6 +3458,7 @@ project(':connect:runtime') {
     api project(':clients')
     api project(':connect:json')
     api project(':connect:transforms')
+    api project(':opentelemetry')
 
     implementation libs.slf4jApi
     implementation libs.reload4j
@@ -3812,6 +3820,43 @@ project(':connect:test-plugins') {
     implementation libs.jacksonDatabind
   }
 }
+
+// AutoMQ inject start
+project(':opentelemetry') {
+  base {
+    archivesName = "opentelemetry"
+  }
+
+  dependencies {
+    // OpenTelemetry core dependencies
+    api libs.opentelemetryJava8
+    api libs.opentelemetryOshi
+    api libs.opentelemetrySdk
+    api libs.opentelemetrySdkMetrics
+    api libs.opentelemetryExporterLogging
+    api libs.opentelemetryExporterProm
+    api libs.opentelemetryExporterOTLP
+    api libs.opentelemetryJmx
+    
+    // Logging dependencies
+    api libs.slf4jApi
+    api libs.slf4jBridge  // 添加 SLF4J Bridge 依赖
+    api libs.reload4j
+
+    api libs.commonLang
+
+    // Yammer metrics (for integration)
+    api 'com.yammer.metrics:metrics-core:2.2.0'
+    
+    // Test dependencies
+    testImplementation libs.junitJupiter
+    testImplementation libs.mockitoCore
+    testImplementation libs.slf4jReload4j
+    
+    testRuntimeOnly libs.junitPlatformLanucher
+  }
+}
+// AutoMQ inject end
 
 task aggregatedJavadoc(type: Javadoc, dependsOn: compileJava) {
   def projectsWithJavadoc = subprojects.findAll { it.javadoc.enabled }
