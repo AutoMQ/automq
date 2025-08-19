@@ -40,7 +40,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 
 public class MultiPartWriter implements Writer {
-    private static final long MAX_MERGE_WRITE_SIZE = 16L * 1024 * 1024;
+    private static final long MAX_MERGE_WRITE_SIZE = 32L * 1024 * 1024;
     final CompletableFuture<String> uploadIdCf = new CompletableFuture<>();
     private final AbstractObjectStorage operator;
     private final String path;
