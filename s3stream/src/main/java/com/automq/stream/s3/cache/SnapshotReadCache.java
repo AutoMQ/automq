@@ -183,13 +183,13 @@ public class SnapshotReadCache {
             this.loadCf = new CompletableFuture<>();
             loadCf.whenComplete((rst, ex) -> {
                 if (ex != null) {
-                    LOGGER.error("Replay WAL [{}, {}) fail", startOffset, endOffset);
+                    LOGGER.error("Replay WAL [{}, {}) fail", startOffset, endOffset, ex);
                 }
             });
         }
 
         public void run() {
-            wal.get(startOffset, endOffset).thenAccept(walRecords -> {
+            wal.get(startOffset, endOffset).thenCompose(walRecords -> {
                 List<CompletableFuture<StreamRecordBatch>> cfList = new ArrayList<>(walRecords.size());
                 for (StreamRecordBatch walRecord : walRecords) {
                     if (walRecord.getCount() >= 0) {
@@ -198,12 +198,11 @@ public class SnapshotReadCache {
                         cfList.add(linkRecordDecoder.apply(walRecord));
                     }
                 }
-                CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
+                return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
                     if (ex != null) {
                         loadCf.completeExceptionally(ex);
                         // release other success record
                         cfList.forEach(cf -> cf.thenAccept(StreamRecordBatch::release));
-                        LOGGER.error("Replay WAL [{}, {}] fail", startOffset, endOffset, ex);
                         return;
                     }
                     records.addAll(cfList.stream().map(CompletableFuture::join).collect(Collectors.toList()));
@@ -211,6 +210,10 @@ public class SnapshotReadCache {
                     records.forEach(StreamRecordBatch::encoded);
                     loadCf.complete(null);
                 });
+            }).whenComplete((rst, ex) -> {
+                if (ex != null) {
+                    loadCf.completeExceptionally(ex);
+                }
             });
         }
     }

@@ -172,7 +172,7 @@ public class S3Storage implements Storage {
         if (config.snapshotReadEnable()) {
             deltaWALCacheSize = Math.max(config.walCacheSize() / 3, 10L * 1024 * 1024);
             snapshotReadCacheSize = Math.max(config.walCacheSize() / 3 * 2, 10L * 1024 * 1024);
-            delayTrim = new DelayTrim(TimeUnit.SECONDS.toMillis(10));
+            delayTrim = new DelayTrim(TimeUnit.SECONDS.toMillis(30));
         } else {
             delayTrim = new DelayTrim(0);
         }
