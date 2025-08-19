@@ -77,10 +77,10 @@ public class ProxyWriterTest {
         writer.write(TestUtils.random(17 * 1024 * 1024));
         assertTrue(writer.hasBatchingPart());
         assertNull(writer.largeObjectWriter);
-        writer.write(TestUtils.random(17 * 1024 * 1024));
+        writer.write(TestUtils.random(33 * 1024 * 1024));
         assertNotNull(writer.largeObjectWriter);
         assertFalse(writer.hasBatchingPart());
-        writer.write(TestUtils.random(17 * 1024 * 1024));
+        writer.write(TestUtils.random(33 * 1024 * 1024));
         assertNotNull(writer.largeObjectWriter);
         assertFalse(writer.hasBatchingPart());
         writer.close();
