@@ -110,8 +110,6 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         return CompletableFuture.allOf(subResponseList.toArray(new CompletableFuture[0])).thenApply(nil -> {
             AutomqZoneRouterResponseData response = new AutomqZoneRouterResponseData();
             response.setResponses(subResponseList.stream().map(CompletableFuture::join).collect(Collectors.toList()));
-            // - The outbound traffic was consumed by RouterChannel#get
-            // - The inbound traffic was consumed by S3Stream#append
             ZoneRouterMetricsManager.recordRouterInBytes(routerRecord.nodeId(), size.get());
             return new AutomqZoneRouterResponse(response);
         });

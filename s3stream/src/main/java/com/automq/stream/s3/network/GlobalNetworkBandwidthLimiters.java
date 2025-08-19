@@ -26,6 +26,8 @@ public class GlobalNetworkBandwidthLimiters {
     private final Map<AsyncNetworkBandwidthLimiter.Type, AsyncNetworkBandwidthLimiter> limiters = new HashMap<>();
 
     private static final GlobalNetworkBandwidthLimiters INSTANCE = new GlobalNetworkBandwidthLimiters();
+    private NetworkBandwidthLimiter inboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
+    private NetworkBandwidthLimiter outboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
 
     public static GlobalNetworkBandwidthLimiters instance() {
         return INSTANCE;
@@ -36,6 +38,11 @@ public class GlobalNetworkBandwidthLimiters {
             throw new IllegalArgumentException(type + " is already setup");
         }
         limiters.put(type, new AsyncNetworkBandwidthLimiter(type, tokenSize, refillIntervalMs, maxTokens));
+        if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
+            inboundLimiter = limiters.get(type);
+        } else if (type == AsyncNetworkBandwidthLimiter.Type.OUTBOUND) {
+            outboundLimiter = limiters.get(type);
+        }
     }
 
     public NetworkBandwidthLimiter get(AsyncNetworkBandwidthLimiter.Type type) {
@@ -44,6 +51,14 @@ public class GlobalNetworkBandwidthLimiters {
             return AsyncNetworkBandwidthLimiter.NOOP;
         }
         return limiter;
+    }
+
+    public NetworkBandwidthLimiter inbound() {
+        return inboundLimiter;
+    }
+
+    public  NetworkBandwidthLimiter outbound() {
+        return outboundLimiter;
     }
 
 }

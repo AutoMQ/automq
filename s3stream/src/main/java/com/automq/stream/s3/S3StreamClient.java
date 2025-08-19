@@ -206,7 +206,7 @@ public class S3StreamClient implements StreamClient {
         return S3Stream.create(
             metadata.streamId(), metadata.epoch(),
             metadata.startOffset(), metadata.endOffset(),
-            storage, streamManager, networkInboundBucket, networkOutboundBucket, options);
+            storage, streamManager, options);
     }
 
     @Override
