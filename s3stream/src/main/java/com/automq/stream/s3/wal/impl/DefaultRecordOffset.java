@@ -21,6 +21,8 @@ package com.automq.stream.s3.wal.impl;
 
 import com.automq.stream.s3.wal.RecordOffset;
 
+import java.util.Objects;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
@@ -85,5 +87,18 @@ public class DefaultRecordOffset implements RecordOffset {
             ", offset=" + offset +
             ", size=" + size +
             '}';
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass())
+            return false;
+        DefaultRecordOffset offset1 = (DefaultRecordOffset) o;
+        return epoch == offset1.epoch && offset == offset1.offset && size == offset1.size;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(epoch, offset, size);
     }
 }

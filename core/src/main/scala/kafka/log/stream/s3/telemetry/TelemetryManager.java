@@ -20,7 +20,6 @@
 package kafka.log.stream.s3.telemetry;
 
 import kafka.automq.table.TableTopicMetricsManager;
-import kafka.automq.zerozone.ZoneRouterMetricsManager;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporter;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporterURI;
 import kafka.log.stream.s3.telemetry.otel.OTelHistogramReporter;
@@ -31,6 +30,7 @@ import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
+import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
@@ -173,6 +173,8 @@ public class TelemetryManager {
                 return null;
             }
         });
+        MetricsConfig globalConfig = new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs());
+        Metrics.instance().setup(meter, globalConfig);
         S3StreamMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
         S3StreamMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
 
@@ -182,7 +184,6 @@ public class TelemetryManager {
         // kraft controller may not have s3WALPath config.
         ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
 
-        ZoneRouterMetricsManager.initMetrics(meter);
         TableTopicMetricsManager.initMetrics(meter);
 
         this.oTelHistogramReporter.start(meter);

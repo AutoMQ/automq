@@ -133,7 +133,7 @@ public class RouterOut {
                         .build()
                 );
             } else {
-                ZoneRouterMetricsManager.recordRouterOutBytes(node.id(), request.size);
+                ZeroZoneMetricsManager.recordRouterOutBytes(node.id(), request.size);
                 pendingRequests.compute(node, (n, queue) -> {
                     if (queue == null) {
                         queue = new LinkedBlockingQueue<>();

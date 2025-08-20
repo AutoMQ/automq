@@ -21,9 +21,9 @@ package kafka.automq.zerozone;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
-import com.automq.stream.s3.wal.DefaultRecordOffset;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.LogContext;
 
@@ -83,7 +83,7 @@ public class ObjectRouterChannel implements RouterChannel {
 
     @Override
     public CompletableFuture<ByteBuf> get(ByteBuf channelOffset) {
-        return wal.get(new DefaultRecordOffset(ChannelOffset.of(channelOffset).walRecordOffset())).thenApply(streamRecordBatch -> {
+        return wal.get(DefaultRecordOffset.of(ChannelOffset.of(channelOffset).walRecordOffset())).thenApply(streamRecordBatch -> {
             ByteBuf payload = streamRecordBatch.getPayload().retainedSlice();
             streamRecordBatch.release();
             return payload;
