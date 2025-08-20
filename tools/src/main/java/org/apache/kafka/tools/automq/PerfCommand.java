@@ -144,11 +144,12 @@ public class PerfCommand implements AutoCloseable {
         if (config.catchupTopicPrefix != null && !config.catchupTopicPrefix.isEmpty()) {
             LOGGER.info("Using catch-up topics, skipping message accumulation phase");
             preparing = false; // Directly start consuming without accumulation
-        } else if (config.awaitTopicReady) {
-            LOGGER.info("Waiting for topics to be ready...");
-            waitTopicsReady(consumerService.consumerCount() > 0);
-            LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
-
+        } else {
+            if (config.awaitTopicReady) {
+                LOGGER.info("Waiting for topics to be ready...");
+                waitTopicsReady(consumerService.consumerCount() > 0);
+                LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
+            }
             Function<String, List<byte[]>> payloads = payloads(config, topics);
             producerService.start(payloads, config.sendRate);
             preparing = false;
@@ -161,11 +162,6 @@ public class PerfCommand implements AutoCloseable {
                 producerService.adjustRate(warmupMiddle, config.sendRate);
                 collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
             }
-        } else {
-            // If not waiting for topic ready and not using catchup topics, start producing immediately.
-            Function<String, List<byte[]>> payloads = payloads(config, topics);
-            producerService.start(payloads, config.sendRate);
-            preparing = false;
         }
 
         Result result;

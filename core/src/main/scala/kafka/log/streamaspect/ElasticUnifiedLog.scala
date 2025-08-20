@@ -299,7 +299,6 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             })
         }
         highWatermarkMetadata = localLog.logEndOffsetMetadata
-
     }
 
 }
