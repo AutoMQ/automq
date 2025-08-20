@@ -2367,7 +2367,11 @@ class Partition(val topicPartition: TopicPartition,
       leaderEpoch = snapshot.leaderEpoch
       val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
       log.snapshot(snapshot)
-      handleLeaderConfirmOffsetMove()
+      log.getLocalLog().appendAckThread.submit(() => {
+        // async it to avoid deadlock
+        tryCompleteDelayedRequests()
+        null
+      });
     }
   }
   // AutoMQ injection end
