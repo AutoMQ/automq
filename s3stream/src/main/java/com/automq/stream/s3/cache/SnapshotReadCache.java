@@ -4,6 +4,9 @@ import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
@@ -11,6 +14,8 @@ import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.utils.CloseableIterator;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Systems;
+import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import com.automq.stream.utils.threads.EventLoopSafe;
 import com.google.common.cache.Cache;
@@ -32,14 +37,25 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+
 public class SnapshotReadCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
+
+    private static final Metrics.HistogramBundle OPERATION_LATENCY = Metrics.instance().histogram("kafka_stream_snapshot_read_cache", "Snapshot read cache operation latency", "nanoseconds");
+    private static final DeltaHistogram REPLAY_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "replay"));
+    private static final DeltaHistogram READ_WAL_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "read_wal"));
+    private static final DeltaHistogram DECODE_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "decode"));
+    private static final DeltaHistogram PUT_INTO_CACHE_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "put_into_cache"));
+
     private final Map<Long, AtomicLong> streamNextOffsets = new HashMap<>();
     private final Cache<Long /* streamId */, Boolean> activeStreams;
     private final EventLoop eventLoop = new EventLoop("SNAPSHOT_READ_CACHE");
@@ -51,6 +67,7 @@ public class SnapshotReadCache {
     private final LogCache cache;
     private final ObjectStorage objectStorage;
     private final Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder;
+    private final Time time = Time.SYSTEM;
 
     public SnapshotReadCache(StreamManager streamManager, LogCache cache, ObjectStorage objectStorage, Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
         activeStreams = CacheBuilder.newBuilder()
@@ -66,6 +83,7 @@ public class SnapshotReadCache {
 
     @EventLoopSafe
     void put(CloseableIterator<StreamRecordBatch> it) {
+        long startNanos = time.nanoseconds();
         try (it) {
             LogCache cache = this.cache;
             if (cache == null) {
@@ -98,6 +116,7 @@ public class SnapshotReadCache {
                 expectedNextOffset.set(batch.getLastOffset());
             }
         }
+        PUT_INTO_CACHE_LATENCY.record(time.nanoseconds() - startNanos);
     }
 
     public synchronized CompletableFuture<Void> replay(List<S3ObjectMetadata> objects) {
@@ -105,7 +124,9 @@ public class SnapshotReadCache {
     }
 
     public synchronized CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset, RecordOffset endOffset) {
-        return walReplay.replay(confirmWAL, startOffset, endOffset);
+        long startNanos = time.nanoseconds();
+        return walReplay.replay(confirmWAL, startOffset, endOffset)
+            .whenComplete((nil, ex) -> REPLAY_LATENCY.record(time.nanoseconds() - startNanos));
     }
 
     public void addEventListener(EventListener eventListener) {
@@ -127,22 +148,22 @@ public class SnapshotReadCache {
     }
 
     class WalReplay {
+        // soft limit the inflight memory
+        private final Semaphore inflightLimiter = new Semaphore(Systems.CPU_CORES * 4);
         private final Queue<WalReplayTask> waitingLoadTasks = new ConcurrentLinkedQueue<>();
         private final Queue<WalReplayTask> loadingTasks = new ConcurrentLinkedQueue<>();
 
         public CompletableFuture<Void> replay(WriteAheadLog wal, RecordOffset startOffset, RecordOffset endOffset) {
+            inflightLimiter.acquireUninterruptibly();
             WalReplayTask task = new WalReplayTask(wal, startOffset, endOffset);
-            eventLoop.submit(() -> {
-                waitingLoadTasks.add(task);
-                tryLoad();
-            });
-            return task.replayCf;
+            waitingLoadTasks.add(task);
+            eventLoop.submit(this::tryLoad);
+            return task.replayCf.whenComplete((nil, ex) -> inflightLimiter.release());
         }
 
         @EventLoopSafe
         private void tryLoad() {
             for (; ; ) {
-                // TODO: inflight limit
                 WalReplayTask task = waitingLoadTasks.poll();
                 if (task == null) {
                     break;
@@ -189,7 +210,10 @@ public class SnapshotReadCache {
         }
 
         public void run() {
+            long startNanos = time.nanoseconds();
             wal.get(startOffset, endOffset).thenCompose(walRecords -> {
+                long readWalDoneNanos = time.nanoseconds();
+                READ_WAL_LATENCY.record(readWalDoneNanos - startNanos);
                 List<CompletableFuture<StreamRecordBatch>> cfList = new ArrayList<>(walRecords.size());
                 for (StreamRecordBatch walRecord : walRecords) {
                     if (walRecord.getCount() >= 0) {
@@ -199,6 +223,7 @@ public class SnapshotReadCache {
                     }
                 }
                 return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
+                    DECODE_LATENCY.record(time.nanoseconds() - readWalDoneNanos);
                     if (ex != null) {
                         loadCf.completeExceptionally(ex);
                         // release other success record

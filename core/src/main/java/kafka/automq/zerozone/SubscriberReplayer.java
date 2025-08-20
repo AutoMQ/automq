@@ -71,7 +71,8 @@ class SubscriberReplayer {
         if (startOffset == null) {
             return;
         }
-        this.lastDataLoadCf = lastDataLoadCf.thenCompose(nil -> replayer.replay(wal, startOffset, endOffset)).thenAccept(nil -> {
+        // The replayer will ensure the order of replay
+        this.lastDataLoadCf = replayer.replay(wal, startOffset, endOffset).thenAccept(nil -> {
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("replay {} confirm wal [{}, {})", node, startOffset, endOffset);
             }
