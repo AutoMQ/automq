@@ -1,6 +1,7 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.s3.metrics.TimerUtil
+import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import com.yammer.metrics.core.Histogram
 import kafka.automq.interceptor.{ClientIdMetadata, NoopTrafficInterceptor, ProduceRequestArgs, TrafficInterceptor}
@@ -392,6 +393,7 @@ class ElasticKafkaApis(
       }
 
       def doAppendRecords(): Unit = {
+        GlobalNetworkBandwidthLimiters.instance().inbound().consume(ThrottleStrategy.BYPASS, request.sizeInBytes)
         trafficInterceptor.handleProduceRequest(
           ProduceRequestArgs.builder()
             .apiVersion(request.header.apiVersion)

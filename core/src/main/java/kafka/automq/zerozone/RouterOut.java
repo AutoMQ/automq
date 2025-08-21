@@ -39,7 +39,6 @@ import org.apache.kafka.common.utils.Time;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.Systems;
@@ -121,12 +120,10 @@ public class RouterOut {
         boolean forceRoute = perfMode.isRouteInPerfMode(args.entriesPerPartition());
         requests.forEach((node, request) -> {
             if (node.id() == Node.noNode().id()) {
-                inboundLimiter.consume(ThrottleStrategy.BYPASS, request.size);
                 request.completeWithNotLeaderNotFollower();
                 return;
             }
             if (node.id() == currentNode.id() && !forceRoute) {
-                // inbound is recorded by s3stream
                 kafkaApis.handleProduceAppendJavaCompatible(
                     args.toBuilder()
                         .entriesPerPartition(ZeroZoneTrafficInterceptor.produceRequestToMap(request.data))
@@ -136,9 +133,7 @@ public class RouterOut {
                         .build()
                 );
             } else {
-                inboundLimiter.consume(ThrottleStrategy.BYPASS, request.size);
                 ZoneRouterMetricsManager.recordRouterOutBytes(node.id(), request.size);
-                // outbound is consumed by object storage
                 pendingRequests.compute(node, (n, queue) -> {
                     if (queue == null) {
                         queue = new LinkedBlockingQueue<>();
