@@ -103,7 +103,7 @@ class RouterIn {
             LOGGER.trace("[ROUTER_IN],data={}", routerRecord);
         }
         // inbound is consumed by the object storage
-        ZoneRouterMetricsManager.recordRouterInBytes(routerRecord.nodeId(), routerRecord.size());
+        ZeroZoneMetricsManager.recordRouterInBytes(routerRecord.nodeId(), routerRecord.size());
         CompletableFuture<List<ZoneRouterProduceRequest>> readCf = new ZoneRouterPackReader(routerRecord.nodeId(), routerRecord.bucketId(), routerRecord.objectId(), objectStorage)
             .readProduceRequests(new Position(routerRecord.position(), routerRecord.size()));
         // Orderly handle the request
