@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -79,6 +80,16 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private final Map<String, DoubleGauge> gauges = new ConcurrentHashMap<>();
     private final Map<String, LongCounter> counters = new ConcurrentHashMap<>();
     private final Map<String, Double> lastValues = new ConcurrentHashMap<>();
+    
+    static {
+        LOGGER.info("OpenTelemetryMetricsReporter initialized");
+        // 在测试初始化代码中
+        Properties telemetryProps = new Properties();
+        telemetryProps.setProperty("automq.telemetry.exporter.uri", "prometheus://0.0.0.0:9464");
+        telemetryProps.setProperty("service.name", "kafka-connect-test");
+        telemetryProps.setProperty("service.instance.id", "worker-1");
+        AutoMQTelemetryManager.initializeInstance(telemetryProps);
+    }
     
     @Override
     public void configure(Map<String, ?> configs) {
