@@ -37,7 +37,6 @@ import org.apache.kafka.common.utils.Time;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
@@ -93,9 +92,6 @@ public class RouterOutV2 {
             TopicPartition tp = entry.getKey();
             MemoryRecords records = entry.getValue();
             Node node = mapping.getRouteOutNode(tp.topic(), tp.partition(), args.clientId());
-            if (node.id() != currentNode.id()) {
-                inboundLimiter.consume(ThrottleStrategy.BYPASS, records.buffer().remaining());
-            }
             if (node.id() == Node.noNode().id()) {
                 responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
                 continue;
@@ -127,11 +123,6 @@ public class RouterOutV2 {
         if (node.id() == currentNode.id()) {
             localProxy.send(proxyRequest);
         } else {
-            // - If route the records to local, then S3Stream will consume the inbound traffic.
-            // - If route the records to another node, we need to consume the inbound traffic right here
-            //  and the outbound traffic is consumed by RouterChannel.
-            inboundLimiter.consume(ThrottleStrategy.BYPASS, proxyRequest.recordSize);
-
             Proxy proxy = proxies.computeIfAbsent(node, RemoteProxy::new);
             proxy.send(proxyRequest);
         }
