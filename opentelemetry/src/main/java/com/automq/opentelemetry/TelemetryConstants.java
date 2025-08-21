@@ -52,6 +52,10 @@ public class TelemetryConstants {
     public static final String METRIC_CARDINALITY_LIMIT_KEY = "automq.telemetry.metric.cardinality.limit";
     public static final int DEFAULT_METRIC_CARDINALITY_LIMIT = 20000;
 
+    public static final String TELEMETRY_METRICS_BASE_LABELS_CONFIG = "automq.telemetry.metrics.base.labels";
+    public static final String TELEMETRY_METRICS_BASE_LABELS_DOC = "The base labels that will be added to all metrics. The format is key1=value1,key2=value2.";
+
+
     //################################################################
     // Prometheus specific Attributes, for compatibility
     //################################################################
@@ -64,4 +68,23 @@ public class TelemetryConstants {
     public static final AttributeKey<Long> STREAM_ID_KEY = AttributeKey.longKey("streamId");
     public static final AttributeKey<Long> START_OFFSET_KEY = AttributeKey.longKey("startOffset");
     public static final AttributeKey<Long> END_OFFSET_KEY = AttributeKey.longKey("endOffset");
+    
+    //################################################################
+    // S3 Metrics Exporter Configuration
+    //################################################################
+    
+    public static final String S3_BUCKET = "automq.telemetry.s3.bucket";
+    
+    /**
+     * The cluster ID for S3 metrics.
+     */
+    public static final String S3_CLUSTER_ID_KEY = "automq.telemetry.s3.cluster.id";
+    /**
+     * The node ID for S3 metrics.
+     */
+    public static final String S3_NODE_ID_KEY = "automq.telemetry.s3.node.id";
+    /**
+     * Whether this node is the primary uploader for S3 metrics.
+     */
+    public static final String S3_PRIMARY_NODE_KEY = "automq.telemetry.s3.primary.node";
 }

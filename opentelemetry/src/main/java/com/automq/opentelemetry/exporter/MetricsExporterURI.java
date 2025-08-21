@@ -1,7 +1,11 @@
 package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.TelemetryConfig;
+import com.automq.opentelemetry.exporter.s3.S3MetricsExporterAdapter;
+import com.automq.opentelemetry.exporter.s3.UploaderNodeSelector;
+import com.automq.stream.s3.operator.BucketURI;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,6 +83,8 @@ public class MetricsExporterURI {
                 return buildPrometheusExporter(config, queries, uri);
             case OTLP:
                 return buildOtlpExporter(config, queries, uri);
+            case S3:
+                return buildS3MetricsExporter(config, queries, uri);
             default:
                 LOGGER.warn("Unsupported metrics exporter type: {}", type);
                 return null;
@@ -162,5 +168,54 @@ public class MetricsExporterURI {
             return values.get(0);
         }
         return defaultValue;
+    }
+    
+    private static MetricsExporter buildS3MetricsExporter(TelemetryConfig config,
+                                                         Map<String, List<String>> queries, URI uri) {
+        LOGGER.info("Creating S3 metrics exporter from URI: {}", uri);
+        
+        // Get S3 configuration from config and query parameters
+        String clusterId = getStringFromQuery(queries, "clusterId", config.getS3ClusterId());
+        int nodeId = config.getS3NodeId();
+        int intervalMs = (int)config.getExporterIntervalMs();
+        BucketURI metricsBucket = config.getMetricsBucket();
+        
+        if (metricsBucket == null) {
+            LOGGER.error("S3 bucket configuration is missing for S3 metrics exporter");
+            return null;
+        }
+        
+        List<Pair<String, String>> baseLabels = config.getBaseLabels();
+        
+        // Create node selector based on configuration
+        UploaderNodeSelector nodeSelector;
+        
+        // Get the selector type from query parameters
+        
+        String selectorType = getStringFromQuery(queries, "selectorType", "static");
+        
+        // Convert query parameters to a simple map for the factory
+        Map<String, String> selectorConfig = new HashMap<>();
+        for (Map.Entry<String, List<String>> entry : queries.entrySet()) {
+            if (!entry.getValue().isEmpty()) {
+                selectorConfig.put(entry.getKey(), entry.getValue().get(0));
+            }
+        }
+        
+        // Add isPrimaryUploader from config if not in query parameters
+        if (!selectorConfig.containsKey("isPrimaryUploader")) {
+            selectorConfig.put("isPrimaryUploader", String.valueOf(config.isS3PrimaryNode()));
+        }
+        
+        // Use the factory to create a node selector
+        nodeSelector = com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorFactory
+            .createSelector(selectorType, clusterId, nodeId, selectorConfig);
+        
+        LOGGER.info("S3 metrics configuration: clusterId={}, nodeId={}, bucket={}, selectorType={}", 
+                   clusterId, nodeId, metricsBucket, selectorType);
+        
+        // Create the S3MetricsExporterAdapter with appropriate configuration
+        return new com.automq.opentelemetry.exporter.s3.S3MetricsExporterAdapter(
+            clusterId, nodeId, intervalMs, metricsBucket, baseLabels, nodeSelector);
     }
 }
