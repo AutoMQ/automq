@@ -25,12 +25,12 @@ import java.lang.reflect.Method;
 
 public class ClientFactoryProxy {
     private static final String PROTOCOL_SEPARATOR = ":";
-    private static final String FACTORY_CLASS_FORMAT = "kafka.log.streamaspect.client.%s.ClientFactory";
 
     public static Client get(Context context) {
         String endpoint = context.config.elasticStreamEndpoint();
         String protocol = endpoint.split(PROTOCOL_SEPARATOR)[0];
-        String className = String.format(FACTORY_CLASS_FORMAT, protocol);
+        String proxyPackage = ClientFactoryProxy.class.getPackage().getName();
+        String className = String.format("%s.%s.ClientFactory", proxyPackage, protocol);
         try {
             Class<?> clazz = Class.forName(className);
             Method method = clazz.getDeclaredMethod("get", Context.class);
