@@ -39,8 +39,6 @@ import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.metrics.stats.StreamOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
-import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
@@ -91,22 +89,14 @@ public class S3Stream implements Stream, StreamMetadataListener {
     private final Deque<Long> pendingAppendTimestamps = new ConcurrentLinkedDeque<>();
     private final Set<CompletableFuture<?>> pendingFetches = ConcurrentHashMap.newKeySet();
     private final Deque<Long> pendingFetchTimestamps = new ConcurrentLinkedDeque<>();
-    private final NetworkBandwidthLimiter networkInboundLimiter;
-    private final NetworkBandwidthLimiter networkOutboundLimiter;
     private final OpenStreamOptions options;
     private long startOffset;
     private CompletableFuture<Void> lastPendingTrim = CompletableFuture.completedFuture(null);
     private CompletableFuture<Void> closeCf;
     private StreamMetadataListener.Handle listenerHandle;
 
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager) {
-        this(streamId, epoch, startOffset, nextOffset, storage, streamManager, null, null, OpenStreamOptions.DEFAULT);
-    }
-
-    public S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
-        StreamManager streamManager, NetworkBandwidthLimiter networkInboundLimiter,
-        NetworkBandwidthLimiter networkOutboundLimiter, OpenStreamOptions options) {
+    private S3Stream(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager, OpenStreamOptions options) {
         this.streamId = streamId;
         this.epoch = epoch;
         this.startOffset = startOffset;
@@ -116,9 +106,22 @@ public class S3Stream implements Stream, StreamMetadataListener {
         this.status = new Status();
         this.storage = storage;
         this.streamManager = streamManager;
-        this.networkInboundLimiter = networkInboundLimiter;
-        this.networkOutboundLimiter = networkOutboundLimiter;
         this.options = options;
+    }
+
+    public static S3Stream create(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager) {
+        return create(streamId, epoch, startOffset, nextOffset, storage, streamManager, OpenStreamOptions.DEFAULT);
+    }
+
+    public static S3Stream create(long streamId, long epoch, long startOffset, long nextOffset, Storage storage,
+        StreamManager streamManager, OpenStreamOptions options) {
+        S3Stream s3Stream = new S3Stream(streamId, epoch, startOffset, nextOffset, storage, streamManager, options);
+        s3Stream.completeInitialization();
+        return s3Stream;
+    }
+
+    private void completeInitialization() {
         if (snapshotRead()) {
             listenerHandle = streamManager.addMetadataListener(streamId, this);
         }
@@ -185,9 +188,6 @@ public class S3Stream implements Stream, StreamMetadataListener {
         readLock.lock();
         try {
             CompletableFuture<AppendResult> cf = exec(() -> {
-                if (networkInboundLimiter != null) {
-                    networkInboundLimiter.consume(ThrottleStrategy.BYPASS, recordBatch.rawPayload().remaining());
-                }
                 appendLock.lock();
                 try {
                     return append0(context, recordBatch);
