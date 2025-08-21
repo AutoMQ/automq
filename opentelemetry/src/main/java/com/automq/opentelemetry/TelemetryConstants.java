@@ -74,7 +74,12 @@ public class TelemetryConstants {
     //################################################################
     
     public static final String S3_BUCKET = "automq.telemetry.s3.bucket";
-    
+    public static final String S3_BUCKETS_DOC = "The buckets url with format 0@s3://$bucket?region=$region. \n" +
+            "the full url format for s3 is 0@s3://$bucket?region=$region[&endpoint=$endpoint][&pathStyle=$enablePathStyle][&authType=$authType][&accessKey=$accessKey][&secretKey=$secretKey][&checksumAlgorithm=$checksumAlgorithm]" +
+            "- pathStyle: true|false. The object storage access path style. When using MinIO, it should be set to true.\n" +
+            "- authType: instance|static. When set to instance, it will use instance profile to auth. When set to static, it will get accessKey and secretKey from the url or from system environment KAFKA_S3_ACCESS_KEY/KAFKA_S3_SECRET_KEY.";
+
+
     /**
      * The cluster ID for S3 metrics.
      */
@@ -87,4 +92,9 @@ public class TelemetryConstants {
      * Whether this node is the primary uploader for S3 metrics.
      */
     public static final String S3_PRIMARY_NODE_KEY = "automq.telemetry.s3.primary.node";
+    /**
+     * The selector type for S3 metrics uploader node selection.
+     * Values include: static, nodeid, file, or custom SPI implementations.
+     */
+    public static final String S3_SELECTOR_TYPE_KEY = "automq.telemetry.s3.selector.type";
 }

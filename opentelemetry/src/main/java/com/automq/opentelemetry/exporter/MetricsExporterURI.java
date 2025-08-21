@@ -1,8 +1,6 @@
 package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.TelemetryConfig;
-import com.automq.opentelemetry.exporter.s3.S3MetricsExporterAdapter;
-import com.automq.opentelemetry.exporter.s3.UploaderNodeSelector;
 import com.automq.stream.s3.operator.BucketURI;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -175,7 +173,7 @@ public class MetricsExporterURI {
         LOGGER.info("Creating S3 metrics exporter from URI: {}", uri);
         
         // Get S3 configuration from config and query parameters
-        String clusterId = getStringFromQuery(queries, "clusterId", config.getS3ClusterId());
+        String clusterId = config.getS3ClusterId();
         int nodeId = config.getS3NodeId();
         int intervalMs = (int)config.getExporterIntervalMs();
         BucketURI metricsBucket = config.getMetricsBucket();
@@ -188,11 +186,10 @@ public class MetricsExporterURI {
         List<Pair<String, String>> baseLabels = config.getBaseLabels();
         
         // Create node selector based on configuration
-        UploaderNodeSelector nodeSelector;
+        com.automq.opentelemetry.exporter.s3.UploaderNodeSelector nodeSelector;
         
-        // Get the selector type from query parameters
-        
-        String selectorType = getStringFromQuery(queries, "selectorType", "static");
+        // Get the selector type from config
+        String selectorTypeString = config.getS3SelectorType();
         
         // Convert query parameters to a simple map for the factory
         Map<String, String> selectorConfig = new HashMap<>();
@@ -207,12 +204,12 @@ public class MetricsExporterURI {
             selectorConfig.put("isPrimaryUploader", String.valueOf(config.isS3PrimaryNode()));
         }
         
-        // Use the factory to create a node selector
+        // Use the factory to create a node selector with the enum-based approach
         nodeSelector = com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorFactory
-            .createSelector(selectorType, clusterId, nodeId, selectorConfig);
+            .createSelector(selectorTypeString, clusterId, nodeId, selectorConfig);
         
         LOGGER.info("S3 metrics configuration: clusterId={}, nodeId={}, bucket={}, selectorType={}", 
-                   clusterId, nodeId, metricsBucket, selectorType);
+                   clusterId, nodeId, metricsBucket, selectorTypeString);
         
         // Create the S3MetricsExporterAdapter with appropriate configuration
         return new com.automq.opentelemetry.exporter.s3.S3MetricsExporterAdapter(

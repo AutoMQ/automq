@@ -148,4 +148,13 @@ public class TelemetryConfig {
     public boolean isS3PrimaryNode() {
         return Boolean.parseBoolean(props.getProperty(TelemetryConstants.S3_PRIMARY_NODE_KEY, "false"));
     }
+    
+    /**
+     * Get the S3 metrics selector type.
+     * 
+     * @return The selector type, defaults to "static".
+     */
+    public String getS3SelectorType() {
+        return props.getProperty(TelemetryConstants.S3_SELECTOR_TYPE_KEY, "static");
+    }
 }

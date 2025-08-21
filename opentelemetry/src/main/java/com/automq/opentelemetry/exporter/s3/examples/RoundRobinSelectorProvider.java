@@ -40,7 +40,7 @@ public class RoundRobinSelectorProvider implements UploaderNodeSelectorProvider 
     
     @Override
     public String getType() {
-        return "roundrobin";
+        return "roundRobin";
     }
     
     @Override
@@ -63,7 +63,7 @@ public class RoundRobinSelectorProvider implements UploaderNodeSelectorProvider 
                     totalNodes = 1;
                 }
             } catch (NumberFormatException e) {
-                LOGGER.warn("Invalid totalNodes value: {}, using 1", config.get("totalNodes"));
+                LOGGER.error("Invalid totalNodes value: {}, using 1", config.get("totalNodes"));
             }
         }
         

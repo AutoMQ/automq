@@ -160,63 +160,78 @@ The S3 Metrics Exporter allows you to export metrics data to S3-compatible stora
 #### URI Format
 
 ```
-s3://<access-key>:<secret-key>@<bucket-name>?endpoint=<endpoint>&clusterId=<cluster-id>&selectorType=<selector-type>&other-parameters
+s3://<access-key>:<secret-key>@<bucket-name>?endpoint=<endpoint>&<other-parameters>
+```
+
+S3桶URI格式完整说明：
+```
+s3://<bucket-name>?region=<region>[&endpoint=<endpoint>][&pathStyle=<enablePathStyle>][&authType=<authType>][&accessKey=<accessKey>][&secretKey=<secretKey>][&checksumAlgorithm=<checksumAlgorithm>]
+```
+
+- **pathStyle**: `true|false`. 对象存储访问路径样式。使用MinIO时，应设置为true。
+- **authType**: `instance|static`. 设置为instance时，将使用实例配置文件进行身份验���。设置为static时，将从URL或系统环境变量KAFKA_S3_ACCESS_KEY/KAFKA_S3_SECRET_KEY获取accessKey和secretKey。
+
+也支持简化格式，其中凭证信息作为用户信息部分：
+```
+s3://<access-key>:<secret-key>@<bucket-name>?endpoint=<endpoint>&<other-parameters>
 ```
 
 Examples:
-- `s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com&clusterId=prod-cluster`
-- `s3://accessKey:secretKey@metrics-bucket?endpoint=https://minio:9000&selectorType=file&leaderFile=/tmp/s3-leader`
+- `s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com`
+- `s3://metrics-bucket?region=us-west-2&authType=instance`
 
 #### Configuration Properties
 
 | Configuration | Description | Default Value |
 |---------------|-------------|---------------|
-| `automq.telemetry.exporter.s3.cluster-id` | Cluster identifier | `automq-cluster` |
-| `automq.telemetry.exporter.s3.node-id` | Node identifier | `0` |
-| `automq.telemetry.exporter.s3.primary-node` | Whether this node is the primary uploader | `false` |
+| `automq.telemetry.exporter.s3.cluster.id` | Cluster identifier | `automq-cluster` |
+| `automq.telemetry.exporter.s3.node.id` | Node identifier | `0` |
+| `automq.telemetry.exporter.s3.primary.node` | Whether this node is the primary uploader | `false` |
+| `automq.telemetry.exporter.s3.selector.type` | Node selection strategy type | `static` |
 | `automq.telemetry.exporter.s3.bucket` | S3 bucket URI | None |
 
 #### Node Selection Strategies
 
-The S3 Metrics Exporter supports multiple node selection strategies to ensure only one node uploads metrics:
+In a multi-node cluster, typically only one node should upload metrics to S3 to avoid duplication. The S3 Metrics Exporter provides several built-in node selection strategies through the `UploaderNodeSelector` interface:
 
-1. **Static Selection (default)**
+1. **Static Selection** (`static`)
 
    Uses a static configuration to determine which node uploads metrics.
 
-   ```
-   s3://accessKey:secretKey@metrics-bucket?selectorType=static&isPrimaryUploader=true
+   ```properties
+   automq.telemetry.exporter.s3.selector.type=static
+   automq.telemetry.exporter.s3.primary.node=true
    ```
 
-2. **Node ID Based Selection**
+2. **Node ID Based Selection** (`nodeid`)
 
    Selects the node with a specific node ID as the primary uploader.
 
-   ```
-   s3://accessKey:secretKey@metrics-bucket?selectorType=nodeid&primaryNodeId=1
+   ```properties
+   automq.telemetry.exporter.s3.selector.type=nodeid
+   # Additional parameters
+   # primaryNodeId=1  # Can be specified in URI query parameters if needed
    ```
 
-3. **File-Based Leader Election**
+3. **File-Based Leader Election** (`file`)
 
    Uses a file on a shared filesystem to implement simple leader election.
 
-   ```
-   s3://accessKey:secretKey@metrics-bucket?selectorType=file&leaderFile=/path/to/leader-file&leaderTimeoutMs=60000
-   ```
-
-   - `leaderFile`: Path to the shared leader file
-   - `leaderTimeoutMs`: Timeout in milliseconds for leadership (default: 60000)
-
-4. **Round-Robin Selection** (Example SPI implementation)
-
-   Rotates the primary uploader role among nodes based on time.
-
-   ```
-   s3://accessKey:secretKey@metrics-bucket?selectorType=roundrobin&totalNodes=3&rotationIntervalMs=300000
+   ```properties
+   automq.telemetry.exporter.s3.selector.type=file
+   # Additional parameters (can be specified in URI query parameters)
+   # leaderFile=/path/to/leader-file
+   # leaderTimeoutMs=60000
    ```
 
-   - `totalNodes`: Total number of nodes in the cluster
-   - `rotationIntervalMs`: Interval in milliseconds between rotations (default: 60000)
+4. **Custom SPI-based Selectors**
+
+   The system supports custom node selection strategies through Java's ServiceLoader SPI mechanism.
+
+   ```properties
+   automq.telemetry.exporter.s3.selector.type=custom-type-name
+   # Additional custom parameters as needed
+   ```
 
 #### Custom Node Selection using SPI
 
@@ -259,11 +274,55 @@ You can implement custom node selection strategies by implementing the `Uploader
    com.example.CustomSelectorProvider
    ```
 
-3. **Use the Custom Selector**
+3. **Configure the Custom Selector**
 
+   ```properties
+   automq.telemetry.exporter.s3.selector.type=custom-type
+   # Any additional parameters your custom selector needs
    ```
-   s3://accessKey:secretKey@metrics-bucket?selectorType=custom-type&customParam1=value1&customParam2=value2
-   ```
+
+### Example Configurations
+
+#### Single Node Setup
+
+```properties
+automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com
+automq.telemetry.exporter.s3.cluster.id=my-cluster
+automq.telemetry.exporter.s3.node.id=1
+automq.telemetry.exporter.s3.primary.node=true
+automq.telemetry.exporter.s3.selector.type=static
+```
+
+#### Multi-Node Cluster with Node ID Selection
+
+```properties
+# Configuration for all nodes
+automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com
+automq.telemetry.exporter.s3.cluster.id=my-cluster
+automq.telemetry.exporter.s3.selector.type=nodeid
+
+# Node 1 (primary uploader)
+automq.telemetry.exporter.s3.node.id=1
+# Node-specific URI parameters
+# ?primaryNodeId=1
+
+# Node 2 
+automq.telemetry.exporter.s3.node.id=2
+```
+
+#### Multi-Node Cluster with File-Based Leader Election
+
+```properties
+# All nodes have the same configuration
+automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com&leaderFile=/path/to/shared/leader-file
+automq.telemetry.exporter.s3.cluster.id=my-cluster
+automq.telemetry.exporter.s3.selector.type=file
+# Each node has a unique ID
+# Node 1
+automq.telemetry.exporter.s3.node.id=1
+# Node 2
+# automq.telemetry.exporter.s3.node.id=2
+```
 
 ### Advanced Configuration
 
