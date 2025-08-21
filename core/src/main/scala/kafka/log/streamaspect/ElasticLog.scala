@@ -110,7 +110,7 @@ class ElasticLog(val metaStream: MetaStream,
     var confirmOffsetChangeListener: Option[() => Unit] = None
 
     private val appendAckQueue = new LinkedBlockingQueue[Long]()
-    private val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
+    val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
     @volatile private[log] var lastAppendAckFuture: Future[?] = CompletableFuture.completedFuture(null)
 
     private val readAsyncThread = READ_ASYNC_EXECUTOR(math.abs(logIdent.hashCode % READ_ASYNC_EXECUTOR.length))
@@ -596,7 +596,7 @@ class ElasticLog(val metaStream: MetaStream,
 
     def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
         snapshot.logMeta(logSegmentManager.logMeta())
-        snapshot.logEndOffset(logEndOffsetMetadata)
+        snapshot.logEndOffset(confirmOffset)
         logSegmentManager.streams().forEach(stream => {
             snapshot.streamEndOffset(stream.streamId(), stream.confirmOffset())
         })
