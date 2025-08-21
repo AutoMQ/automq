@@ -128,20 +128,31 @@ public class DefaultReader {
         }
     }
 
-    @SuppressWarnings("NPathComplexity")
     private void doRunBatchGet() {
         for (; ; ) {
             BatchReadTask readTask = batchReadTasks.poll();
             if (readTask == null) {
                 break;
             }
-            CompletableFuture<Void> indexCf;
-            if (indexLargestEpoch < readTask.endOffset.epoch()) {
-                indexCf = rebuildIndexMap();
-            } else {
-                indexCf = CompletableFuture.completedFuture(null);
+            try {
+                doRunBatchGet0(readTask);
+            } catch (Throwable e) {
+                LOGGER.error("[UNEXPECTED] Failed to run {}", readTask, e);
+                readTask.cf.completeExceptionally(e);
             }
-            indexCf.thenAcceptAsync(nil -> {
+        }
+    }
+
+    @SuppressWarnings("NPathComplexity")
+    private void doRunBatchGet0(BatchReadTask readTask) {
+        CompletableFuture<Void> indexCf;
+        if (indexLargestEpoch < readTask.endOffset.epoch()) {
+            indexCf = rebuildIndexMap();
+        } else {
+            indexCf = CompletableFuture.completedFuture(null);
+        }
+        indexCf
+            .thenComposeAsync(nil -> {
                 NavigableMap<Long, Long> indexMap;
                 Long floorKey = this.indexMap.floorKey(readTask.startOffset.offset());
                 if (floorKey == null) {
@@ -191,7 +202,7 @@ public class DefaultReader {
                         nextGetOffset = objectStartOffset + DATA_FILE_ALIGN_SIZE;
                     }
                 }
-                CompletableFuture.allOf(getCfList.toArray(new CompletableFuture[0])).whenCompleteAsync((nil2, ex) -> {
+                return CompletableFuture.allOf(getCfList.toArray(new CompletableFuture[0])).whenCompleteAsync((nil2, ex) -> {
                     if (ex != null) {
                         getCfList.forEach(cf -> cf.thenAccept(l -> l.forEach(StreamRecordBatch::release)));
                         readTask.cf.completeExceptionally(ex);
@@ -203,8 +214,13 @@ public class DefaultReader {
                     }
                     readTask.cf.complete(batches);
                 }, eventLoop);
-            }, eventLoop);
-        }
+            }, eventLoop)
+            .whenComplete((nil, ex) -> {
+                if (ex != null && !readTask.cf.isDone()) {
+                    LOGGER.error("[UNEXPECTED] Failed to run {}", readTask, ex);
+                    readTask.cf.completeExceptionally(ex);
+                }
+            });
     }
 
     private CompletableFuture<Void> rebuildIndexMap() {
@@ -212,22 +228,23 @@ public class DefaultReader {
             rebuildIndexCf = rebuildIndexMap0();
             return rebuildIndexCf;
         } else {
-            if (awaitRebuildIndexCf == null) {
-                awaitRebuildIndexCf = new CompletableFuture<>();
-                CompletableFuture<Void> retCf = awaitRebuildIndexCf;
-                rebuildIndexCf.whenCompleteAsync((nil, ex) -> {
-                    awaitRebuildIndexCf = null;
-                    rebuildIndexCf = rebuildIndexMap0();
-                    rebuildIndexCf.whenCompleteAsync((nil2, ex2) -> {
-                        if (ex2 != null) {
-                            retCf.completeExceptionally(ex2);
-                        } else {
-                            retCf.complete(null);
-                        }
-                    });
-                }, eventLoop);
+            if (awaitRebuildIndexCf != null) {
+                return awaitRebuildIndexCf;
             }
-            return awaitRebuildIndexCf;
+            awaitRebuildIndexCf = new CompletableFuture<>();
+            CompletableFuture<Void> retCf = awaitRebuildIndexCf;
+            rebuildIndexCf.whenCompleteAsync((nil, ex) -> {
+                awaitRebuildIndexCf = null;
+                rebuildIndexCf = rebuildIndexMap0();
+                rebuildIndexCf.whenComplete((nil2, ex2) -> {
+                    if (ex2 != null) {
+                        retCf.completeExceptionally(ex2);
+                    } else {
+                        retCf.complete(null);
+                    }
+                });
+            }, eventLoop);
+            return retCf;
         }
     }
 
@@ -271,6 +288,14 @@ public class DefaultReader {
             this.startOffset = DefaultRecordOffset.of(startOffset);
             this.endOffset = DefaultRecordOffset.of(endOffset);
             this.cf = new CompletableFuture<>();
+        }
+
+        @Override
+        public String toString() {
+            return "BatchReadTask{" +
+                "startOffset=" + startOffset +
+                ", endOffset=" + endOffset +
+                '}';
         }
     }
 
