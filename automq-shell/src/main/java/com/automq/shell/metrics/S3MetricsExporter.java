@@ -197,33 +197,37 @@ public class S3MetricsExporter implements MetricExporter {
             for (MetricData metric : metrics) {
                 switch (metric.getType()) {
                     case LONG_SUM:
+                        String longSumMetricsName = PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), metric.getLongSumData().isMonotonic(), false);
                         metric.getLongSumData().getPoints().forEach(point ->
-                            lineList.add(serializeCounter(
-                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), metric.getLongSumData().isMonotonic(), false),
+                            lineList.add(serializeCounter(longSumMetricsName,
                                 point.getValue(), point.getAttributes(), point.getEpochNanos())));
                         break;
                     case DOUBLE_SUM:
+                        String doubleSumMetricsName = PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), metric.getDoubleSumData().isMonotonic(), false);
                         metric.getDoubleSumData().getPoints().forEach(point ->
                             lineList.add(serializeCounter(
-                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), metric.getDoubleSumData().isMonotonic(), false),
+                                doubleSumMetricsName,
                                 point.getValue(), point.getAttributes(), point.getEpochNanos())));
                         break;
                     case LONG_GAUGE:
+                        String longGaugeMetricsName = PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, true);
                         metric.getLongGaugeData().getPoints().forEach(point ->
                             lineList.add(serializeGauge(
-                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, true),
+                                longGaugeMetricsName,
                                 point.getValue(), point.getAttributes(), point.getEpochNanos())));
                         break;
                     case DOUBLE_GAUGE:
+                        String doubleGaugeMetricsName = PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, true);
                         metric.getDoubleGaugeData().getPoints().forEach(point ->
                             lineList.add(serializeGauge(
-                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, true),
+                                doubleGaugeMetricsName,
                                 point.getValue(), point.getAttributes(), point.getEpochNanos())));
                         break;
                     case HISTOGRAM:
+                        String histogramMetricsName = PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, false);
                         metric.getHistogramData().getPoints().forEach(point ->
                             lineList.add(serializeHistogram(
-                                PrometheusUtils.mapMetricsName(metric.getName(), metric.getUnit(), false, false),
+                                histogramMetricsName,
                                 point)));
                         break;
                     default:

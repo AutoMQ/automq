@@ -127,7 +127,9 @@ private[group] case object Empty extends GroupState {
 
 
 private object GroupMetadata extends Logging {
+  // AutoMQ for Kafka inject start
   private val CommitOffset: String = "CommitOffset"
+  // AutoMQ for Kafka inject end
 
   def loadGroup(groupId: String,
                 initialState: GroupState,
@@ -226,6 +228,7 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
 
   var newMemberAdded: Boolean = false
 
+  // AutoMQ for Kafka inject start
   private val metricsGroup = new KafkaMetricsGroup(GroupMetadata.getClass)
   private def recreateOffsetMetric(tp: TopicPartition): Unit = {
     removeOffsetMetric(tp)
@@ -247,7 +250,7 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
     metricsGroup.removeMetric(GroupMetadata.CommitOffset,
       Map("group" -> groupId, "topic" -> tp.topic, "partition" -> tp.partition.toString).asJava)
   }
-
+  // AutoMQ for Kafka inject end
   def inLock[T](fun: => T): T = CoreUtils.inLock(lock)(fun)
 
   def is(groupState: GroupState): Boolean = state == groupState
@@ -452,8 +455,10 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
     assertValidTransition(groupState)
     state = groupState
     currentStateTimestamp = Some(time.milliseconds())
+    // AutoMQ for Kafka inject start
     if (groupState == Dead)
       offsets.foreach(offset => removeOffsetMetric(offset._1))
+    // AutoMQ for Kafka inject end
   }
 
   def selectProtocol: String = {
@@ -643,10 +648,12 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
 
   def initializeOffsets(offsets: collection.Map[TopicPartition, CommitRecordMetadataAndOffset],
                         pendingTxnOffsets: Map[Long, mutable.Map[TopicPartition, CommitRecordMetadataAndOffset]]): Unit = {
+    // AutoMQ for Kafka inject start
     offsets.forKeyValue { (topicPartition, _) =>
       if (!this.offsets.contains(topicPartition))
         recreateOffsetMetric(topicPartition)
     }
+    // AutoMQ for Kafka inject end
     this.offsets ++= offsets
     this.pendingTransactionalOffsetCommits ++= pendingTxnOffsets
   }
@@ -657,8 +664,10 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
       if (offsetWithCommitRecordMetadata.appendedBatchOffset.isEmpty)
         throw new IllegalStateException("Cannot complete offset commit write without providing the metadata of the record " +
           "in the log.")
+      // AutoMQ for Kafka inject start
       if (!offsets.contains(topicPartition))
         recreateOffsetMetric(topicPartition)
+      // AutoMQ for Kafka inject end
       if (!offsets.contains(topicPartition) || offsets(topicPartition).olderThan(offsetWithCommitRecordMetadata))
         offsets.put(topicPartition, offsetWithCommitRecordMetadata)
     }
@@ -781,9 +790,11 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
         pendingOffsets.remove(topicPartition)
       }
       val removedOffset = offsets.remove(topicPartition)
+      // AutoMQ for Kafka inject start
       if (removedOffset.isDefined) {
         removeOffsetMetric(topicPartition)
       }
+      // AutoMQ for Kafka inject end
       removedOffset.map(topicPartition -> _.offsetAndMetadata)
     }.toMap
   }
