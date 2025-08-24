@@ -74,7 +74,7 @@ public class S3OperationStats {
 
     public static S3OperationStats getInstance() {
         if (instance == null) {
-            synchronized (StreamOperationStats.class) {
+            synchronized (S3OperationStats.class) {
                 if (instance == null) {
                     instance = new S3OperationStats();
                 }
