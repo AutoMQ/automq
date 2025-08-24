@@ -44,7 +44,7 @@ public class AsyncLRUCacheStats {
 
     public static AsyncLRUCacheStats getInstance() {
         if (instance == null) {
-            synchronized (NetworkStats.class) {
+            synchronized (AsyncLRUCacheStats.class) {
                 if (instance == null) {
                     instance = new AsyncLRUCacheStats();
                 }
