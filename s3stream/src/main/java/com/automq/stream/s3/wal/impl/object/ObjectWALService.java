@@ -51,7 +51,7 @@ public class ObjectWALService implements WriteAheadLog {
     public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
         this.objectStorage = objectStorage;
         this.config = config;
-        if (config.openMode() == OpenMode.READ_WRITE) {
+        if (config.openMode() == OpenMode.READ_WRITE || config.openMode() == OpenMode.FAILOVER) {
             this.writer = new DefaultWriter(time, objectStorage, config);
         } else {
             this.writer = new NoopWriter();
