@@ -120,6 +120,9 @@ public class DefaultWriter implements Writer {
         this.nodePrefix = ObjectUtils.nodePrefix(config.clusterId(), config.nodeId(), config.type());
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
         this.scheduler = Threads.newSingleThreadScheduledExecutor("s3-wal-schedule", true, LOGGER);
+        if (!(config.openMode() == OpenMode.READ_WRITE || config.openMode() == OpenMode.FAILOVER)) {
+            throw new IllegalArgumentException("The open mode must be READ_WRITE or FAILOVER, but got " + config.openMode());
+        }
         ObjectWALMetricsManager.setInflightUploadCountSupplier(() -> (long) uploadingBulks.size());
         ObjectWALMetricsManager.setBufferedDataInBytesSupplier(bufferedDataBytes::get);
         ObjectWALMetricsManager.setObjectDataInBytesSupplier(objectDataBytes::get);
@@ -213,10 +216,6 @@ public class DefaultWriter implements Writer {
     }
 
     protected void checkWriteStatus() throws WALFencedException {
-        if (config.openMode() != OpenMode.READ_WRITE) {
-            throw new IllegalStateException("WAL is in failover mode.");
-        }
-
         checkStatus();
     }
 
@@ -420,7 +419,7 @@ public class DefaultWriter implements Writer {
             // The inflight uploading bulks count was decreased, then trigger the upload of Bulk in waitingUploadBulks
             tryUploadBulkInWaiting();
             long commitStartTime = time.nanoseconds();
-            return reservationService.verify(config.nodeId(), config.epoch(), false)
+            return reservationService.verify(config.nodeId(), config.epoch(), config.openMode() == OpenMode.FAILOVER)
                 .whenComplete((rst, ex) -> {
                     ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - commitStartTime, "commit", ex == null);
                     if (ex != null) {
