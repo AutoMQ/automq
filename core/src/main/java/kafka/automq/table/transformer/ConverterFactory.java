@@ -20,6 +20,8 @@
 package kafka.automq.table.transformer;
 
 import kafka.automq.table.deserializer.proto.ProtobufSchemaProvider;
+import kafka.automq.table.deserializer.proto.RegistryBasedSchemaResolutionResolver;
+import kafka.automq.table.deserializer.proto.SchemaResolutionResolver;
 
 import org.apache.kafka.server.record.TableTopicSchemaType;
 
@@ -41,11 +43,9 @@ import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
 
-import static kafka.automq.table.transformer.SchemaFormat.AVRO;
-
 public class ConverterFactory {
     private final String registryUrl;
-    private final Map<SchemaFormat, KafkaRecordConvert<GenericRecord>> recordConvertMap = new ConcurrentHashMap<>();
+    private final Map<String, KafkaRecordConvert<GenericRecord>> recordConvertMap = new ConcurrentHashMap<>();
     private SchemaRegistryClient schemaRegistry;
 
     private final Cache<String, SchemaFormat> topicSchemaFormatCache = CacheBuilder.newBuilder()
@@ -80,7 +80,10 @@ public class ConverterFactory {
                 return new SchemalessConverter();
             }
             case SCHEMA: {
-                return new LazyRegistrySchemaConvert(() -> createRegistrySchemaConverter(topic));
+                return new LazyRegistrySchemaConvert(() -> createRegistrySchemaConverter(topic, false));
+            }
+            case SCHEMA_LATEST: {
+                return new LazyRegistrySchemaConvert(() -> createRegistrySchemaConverter(topic, true));
             }
             default: {
                 throw new IllegalArgumentException("Unsupported converter type: " + type);
@@ -88,7 +91,7 @@ public class ConverterFactory {
         }
     }
 
-    private Converter createRegistrySchemaConverter(String topic) {
+    private Converter createRegistrySchemaConverter(String topic, boolean useLatestSchema) {
         if (schemaRegistry != null) {
             try {
                 SchemaFormat format = topicSchemaFormatCache.getIfPresent(topic);
@@ -104,7 +107,7 @@ public class ConverterFactory {
                         return createAvroConverter(topic);
                     }
                     case PROTOBUF: {
-                        return createProtobufConverter(topic);
+                        return createProtobufConverter(topic, useLatestSchema);
                     }
                     default: {
                         throw new IllegalArgumentException("Unsupported schema format: " + format);
@@ -123,14 +126,15 @@ public class ConverterFactory {
     }
 
     private Converter createAvroConverter(String topic) {
-        KafkaRecordConvert<GenericRecord> recordConvert = recordConvertMap.computeIfAbsent(AVRO,
+        KafkaRecordConvert<GenericRecord> recordConvert = recordConvertMap.computeIfAbsent(SchemaFormat.AVRO.name(),
             format -> createKafkaAvroRecordConvert(registryUrl));
         return new RegistrySchemaAvroConverter(recordConvert, topic);
     }
 
-    private Converter createProtobufConverter(String topic) {
-        KafkaRecordConvert<GenericRecord> recordConvert = recordConvertMap.computeIfAbsent(SchemaFormat.PROTOBUF,
-            format -> createKafkaProtobufRecordConvert(registryUrl));
+    private Converter createProtobufConverter(String topic, boolean useLatestSchema) {
+        String cacheKey = useLatestSchema ? SchemaFormat.PROTOBUF.name() + "_LATEST" : SchemaFormat.PROTOBUF.name();
+        KafkaRecordConvert<GenericRecord> recordConvert = recordConvertMap.computeIfAbsent(cacheKey,
+            key -> createKafkaProtobufRecordConvert(registryUrl, useLatestSchema));
         return new RegistrySchemaAvroConverter(recordConvert, topic);
     }
 
@@ -142,8 +146,14 @@ public class ConverterFactory {
     }
 
     @SuppressWarnings("unchecked")
-    private KafkaRecordConvert<GenericRecord> createKafkaProtobufRecordConvert(String registryUrl) {
-        ProtobufKafkaRecordConvert protobufKafkaRecordConvert = new ProtobufKafkaRecordConvert(schemaRegistry);
+    private KafkaRecordConvert<GenericRecord> createKafkaProtobufRecordConvert(String registryUrl, boolean useLatestSchema) {
+        ProtobufKafkaRecordConvert protobufKafkaRecordConvert;
+        if (useLatestSchema) {
+            SchemaResolutionResolver resolver = new RegistryBasedSchemaResolutionResolver(schemaRegistry);
+            protobufKafkaRecordConvert = new ProtobufKafkaRecordConvert(schemaRegistry, resolver);
+        } else {
+            protobufKafkaRecordConvert = new ProtobufKafkaRecordConvert(schemaRegistry);
+        }
         protobufKafkaRecordConvert.configure(Map.of("schema.registry.url", registryUrl), false);
         return protobufKafkaRecordConvert;
     }

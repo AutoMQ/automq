@@ -33,7 +33,6 @@ import com.google.protobuf.Message;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InterruptedIOException;
-import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Objects;
 
@@ -43,13 +42,18 @@ import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe;
 
 public abstract class AbstractCustomKafkaProtobufDeserializer<T extends Message>
     extends AbstractKafkaSchemaSerDe {
-    private static final int SCHEMA_ID_SIZE = 4;
-    private static final int HEADER_SIZE = SCHEMA_ID_SIZE + 1; // magic byte + schema id
 
     protected final Map<SchemaKey, ProtobufSchemaWrapper> schemaCache;
+    protected final SchemaResolutionResolver schemaResolutionResolver;
 
     public AbstractCustomKafkaProtobufDeserializer() {
         this.schemaCache = new BoundedConcurrentHashMap<>(1000);
+        this.schemaResolutionResolver = new HeaderBasedSchemaResolutionResolver();
+    }
+
+    public AbstractCustomKafkaProtobufDeserializer(SchemaResolutionResolver schemaResolutionResolver) {
+        this.schemaCache = new BoundedConcurrentHashMap<>(1000);
+        this.schemaResolutionResolver = schemaResolutionResolver != null ? schemaResolutionResolver : new HeaderBasedSchemaResolutionResolver();
     }
 
     protected void configure(CustomKafkaProtobufDeserializerConfig config) {
@@ -76,30 +80,27 @@ public abstract class AbstractCustomKafkaProtobufDeserializer<T extends Message>
             throw new InvalidConfigurationException("Schema registry not found, make sure the schema.registry.url is set");
         }
 
-        int schemaId = 0;
-        byte[] messageBytes;
-        MessageIndexes indexes;
-        Message message;
-
         try {
-            // Phase 2: Message Header Parsing
-            ByteBuffer buffer = processHeader(payload);
-            schemaId = extractSchemaId(buffer);
-            indexes = extractMessageIndexes(buffer);
-            messageBytes = extractMessageBytes(buffer);
+            // Phase 2: Schema Resolution
+            SchemaResolutionResolver.SchemaResolution resolution = schemaResolutionResolver.resolve(topic, payload);
+            int schemaId = resolution.getSchemaId();
+            MessageIndexes indexes = resolution.getIndexes();
+            byte[] messageBytes = resolution.getMessageBytes();
 
             // Phase 3: Schema Processing
             ProtobufSchemaWrapper protobufSchemaWrapper = processSchema(topic, schemaId, indexes);
             Descriptors.Descriptor targetDescriptor = protobufSchemaWrapper.getDescriptor();
 
             // Phase 4: Message Deserialization
-            message = deserializeMessage(targetDescriptor, messageBytes);
+            Message message = deserializeMessage(targetDescriptor, messageBytes);
 
-            return (T) message;
+            @SuppressWarnings("unchecked")
+            T result = (T) message;
+            return result;
         } catch (InterruptedIOException e) {
-            throw new TimeoutException("Error deserializing Protobuf message for id " + schemaId, e);
+            throw new TimeoutException("Error deserializing Protobuf message", e);
         } catch (IOException | RuntimeException e) {
-            throw new SerializationException("Error deserializing Protobuf message for id " + schemaId, e);
+            throw new SerializationException("Error deserializing Protobuf message", e);
         }
     }
 
@@ -108,62 +109,6 @@ public abstract class AbstractCustomKafkaProtobufDeserializer<T extends Message>
             throw new SerializationException("No Protobuf Descriptor found");
         }
         return DynamicMessage.parseFrom(descriptor, new ByteArrayInputStream(messageBytes));
-    }
-
-    /**
-     * Phase 2a: Process the header of the message
-     *
-     * @param payload The serialized payload
-     * @return ByteBuffer positioned after the magic byte
-     */
-    protected ByteBuffer processHeader(byte[] payload) {
-        return getByteBuffer(payload);
-    }
-
-    protected ByteBuffer getByteBuffer(byte[] payload) {
-        if (payload == null || payload.length < HEADER_SIZE) {
-            throw new SerializationException("Invalid payload size");
-        }
-        ByteBuffer buffer = ByteBuffer.wrap(payload);
-        byte magicByte = buffer.get();
-        if (magicByte != MAGIC_BYTE) {
-            throw new SerializationException("Unknown magic byte: " + magicByte);
-        }
-        return buffer;
-    }
-
-    /**
-     * Phase 2b: Extract the schema ID from the buffer
-     *
-     * @param buffer The byte buffer positioned after the magic byte
-     * @return The schema ID
-     */
-    protected int extractSchemaId(ByteBuffer buffer) {
-        return buffer.getInt();
-    }
-
-    /**
-     * Phase 2c: Extract message indexes from the buffer
-     *
-     * @param buffer The byte buffer positioned after the schema ID
-     * @return The message indexes
-     */
-    protected MessageIndexes extractMessageIndexes(ByteBuffer buffer) {
-        return MessageIndexes.readFrom(buffer);
-    }
-
-    /**
-     * Phase 2d: Extract the actual message bytes from the buffer
-     *
-     * @param buffer The byte buffer positioned after the message indexes
-     * @return The message bytes
-     */
-    protected byte[] extractMessageBytes(ByteBuffer buffer) {
-        int messageLength = buffer.remaining();
-
-        byte[] messageBytes = new byte[messageLength];
-        buffer.get(messageBytes);
-        return messageBytes;
     }
 
     /**

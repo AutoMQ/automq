@@ -25,6 +25,10 @@ public interface KafkaRecordConvert<T> {
 
     T convert(String topic, org.apache.kafka.common.record.Record record, int schemaId);
 
+
+    // io.confluent.kafka.serializers.DeserializationContext#constructor
+    int getSchemaId(String topic, org.apache.kafka.common.record.Record record);
+
     /**
      * Configure this class.
      * @param configs configs in key/value pairs
