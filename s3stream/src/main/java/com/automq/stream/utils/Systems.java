@@ -21,8 +21,12 @@ package com.automq.stream.utils;
 
 import org.apache.commons.lang3.StringUtils;
 
+import io.netty.util.internal.PlatformDependent;
+
 public class Systems {
     public static final int CPU_CORES = Runtime.getRuntime().availableProcessors();
+    public static final long HEAP_MEMORY_SIZE = Runtime.getRuntime().maxMemory();
+    public static final long DIRECT_MEMORY_SIZE = PlatformDependent.maxDirectMemory();
 
     public static long getEnvLong(String name, long defaultValue) {
         String value = System.getenv(name);

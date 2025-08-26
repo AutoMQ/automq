@@ -282,7 +282,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             });
         }
 
-        private void run() {
+        void run() {
             eventLoop.execute(this::unsafeRun);
         }
 

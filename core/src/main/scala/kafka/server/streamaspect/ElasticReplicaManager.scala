@@ -4,7 +4,7 @@ import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.s3.metrics.stats.NetworkStats
 import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
 import com.automq.stream.s3.network.{AsyncNetworkBandwidthLimiter, GlobalNetworkBandwidthLimiters, ThrottleStrategy}
-import com.automq.stream.utils.FutureUtil
+import com.automq.stream.utils.{FutureUtil, Systems}
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
 import kafka.automq.kafkalinking.KafkaLinkingManager
@@ -124,8 +124,12 @@ class ElasticReplicaManager(
     fetchExecutorQueueSizeGaugeMap
   })
 
-  private val fastFetchLimiter = new FairLimiter(200 * 1024 * 1024, FETCH_LIMITER_FAST_NAME) // 200MiB
-  private val slowFetchLimiter = new FairLimiter(200 * 1024 * 1024, FETCH_LIMITER_SLOW_NAME) // 200MiB
+  private val fetchLimiterSize = Systems.getEnvInt("AUTOMQ_FETCH_LIMITER_SIZE",
+    // autoscale the fetch limiter size based on heap size, min 200MiB, max 1GiB, every 3GB heap add 100MiB limiter
+     Math.min(1024, 100 * Math.max(2, (Systems.HEAP_MEMORY_SIZE / (1024 * 1024 * 1024) / 3)).asInstanceOf[Int]) * 1024 * 1024
+  )
+  private val fastFetchLimiter = new FairLimiter(fetchLimiterSize, FETCH_LIMITER_FAST_NAME)
+  private val slowFetchLimiter = new FairLimiter(fetchLimiterSize, FETCH_LIMITER_SLOW_NAME)
   private val fetchLimiterWaitingTasksGaugeMap = new util.HashMap[String, Integer]()
   S3StreamKafkaMetricsManager.setFetchLimiterWaitingTaskNumSupplier(() => {
     fetchLimiterWaitingTasksGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.waitingThreads())

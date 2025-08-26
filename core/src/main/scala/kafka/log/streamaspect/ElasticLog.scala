@@ -640,7 +640,10 @@ class ElasticLog(val metaStream: MetaStream,
 }
 
 object ElasticLog extends Logging {
-    private val APPEND_PERMIT = 100 * 1024 * 1024
+    private val APPEND_PERMIT = Systems.getEnvInt("AUTOMQ_APPEND_PERMIT_SIZE",
+        // autoscale the append permit size based on heap size, min 100MiB, max 1GiB, every 6GB heap add 100MiB permit
+        Math.min(1024, 100 * Math.max(1, (Systems.HEAP_MEMORY_SIZE / (1024 * 1024 * 1024) / 6)).asInstanceOf[Int]) * 1024 * 1024
+    )
     private val APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT)
     S3StreamKafkaMetricsManager.setLogAppendPermitNumSupplier(() => APPEND_PERMIT_SEMAPHORE.availablePermits())
 
