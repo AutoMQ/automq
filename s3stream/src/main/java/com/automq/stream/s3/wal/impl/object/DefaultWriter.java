@@ -21,6 +21,7 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
@@ -34,7 +35,6 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.RuntimeIOException;
 import com.automq.stream.s3.wal.exception.WALFencedException;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
-import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 import com.automq.stream.s3.wal.util.WALUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
@@ -123,9 +123,6 @@ public class DefaultWriter implements Writer {
         if (!(config.openMode() == OpenMode.READ_WRITE || config.openMode() == OpenMode.FAILOVER)) {
             throw new IllegalArgumentException("The open mode must be READ_WRITE or FAILOVER, but got " + config.openMode());
         }
-        ObjectWALMetricsManager.setInflightUploadCountSupplier(() -> (long) uploadingBulks.size());
-        ObjectWALMetricsManager.setBufferedDataInBytesSupplier(bufferedDataBytes::get);
-        ObjectWALMetricsManager.setObjectDataInBytesSupplier(objectDataBytes::get);
     }
 
     public void start() {
@@ -239,7 +236,6 @@ public class DefaultWriter implements Writer {
 
     public CompletableFuture<AppendResult> append0(
         StreamRecordBatch streamRecordBatch) throws OverCapacityException, WALFencedException {
-        long startTime = time.nanoseconds();
         checkWriteStatus();
 
         if (bufferedDataBytes.get() > config.maxUnflushedBytes()) {
@@ -273,10 +269,7 @@ public class DefaultWriter implements Writer {
             bufferedDataBytes.addAndGet(-dataSize);
             if (throwable != null) {
                 LOGGER.error("Failed to append record to S3 WAL", throwable);
-            } else {
-                ObjectWALMetricsManager.recordOperationDataSize(dataSize, "append");
             }
-            ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "append", throwable == null);
         });
     }
 
@@ -386,12 +379,11 @@ public class DefaultWriter implements Writer {
             FutureUtil.propagate(objectStorage.write(writeOptions, path, objectBuffer), bulk.uploadCf);
             long finalLastRecordOffset = lastRecordOffset;
             bulk.uploadCf.whenCompleteAsync((rst, ex) -> {
-                ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "upload", ex == null);
                 if (ex != null) {
                     fenced = true;
                     LOGGER.error("S3WAL upload {} fail", path, ex);
                 } else {
-                    ObjectWALMetricsManager.recordOperationDataSize(objectLength, "upload");
+                    StorageOperationStats.getInstance().appendWALWriteStats.record(time.nanoseconds() - startTime);
                     lastRecordOffset2object.put(finalLastRecordOffset, new WALObject(rst.bucket(), path, config.epoch(), firstOffset, endOffset, objectLength));
                     objectDataBytes.addAndGet(objectLength);
                 }
@@ -418,10 +410,8 @@ public class DefaultWriter implements Writer {
             }
             // The inflight uploading bulks count was decreased, then trigger the upload of Bulk in waitingUploadBulks
             tryUploadBulkInWaiting();
-            long commitStartTime = time.nanoseconds();
             return reservationService.verify(config.nodeId(), config.epoch(), config.openMode() == OpenMode.FAILOVER)
                 .whenComplete((rst, ex) -> {
-                    ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - commitStartTime, "commit", ex == null);
                     if (ex != null) {
                         LOGGER.error("Unexpected S3WAL lease check fail. Make the WAL fenced", ex);
                         fenced = true;
@@ -484,7 +474,6 @@ public class DefaultWriter implements Writer {
         checkStatus();
         List<ObjectStorage.ObjectPath> deleteObjectList = new ArrayList<>();
         AtomicLong deletedObjectSize = new AtomicLong();
-        long startTime = time.nanoseconds();
         CompletableFuture<?> persistTrimOffsetCf;
         lock.writeLock().lock();
         try {
@@ -530,7 +519,6 @@ public class DefaultWriter implements Writer {
                 }
 
                 return objectStorage.delete(deleteObjectList).whenComplete((v, throwable) -> {
-                    ObjectWALMetricsManager.recordOperationLatency(time.nanoseconds() - startTime, "trim", throwable == null);
                     objectDataBytes.addAndGet(-1 * deletedObjectSize.get());
                     // Never fail the delete task, the under layer storage will retry forever.
                     if (throwable != null) {
