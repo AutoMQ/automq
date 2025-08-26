@@ -34,7 +34,6 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.wal.metrics.ObjectWALMetricsManager;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -180,10 +179,6 @@ public class TelemetryManager {
 
         S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel(), Attributes.empty(), kafkaConfig.s3ExporterReportIntervalMs()));
         S3StreamKafkaMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_METRICS_PREFIX);
-
-        // kraft controller may not have s3WALPath config.
-        ObjectWALMetricsManager.initMetrics(meter, TelemetryConstants.KAFKA_WAL_METRICS_PREFIX);
-
         TableTopicMetricsManager.initMetrics(meter);
 
         this.oTelHistogramReporter.start(meter);
