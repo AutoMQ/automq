@@ -31,6 +31,7 @@ import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 
 import org.slf4j.Logger;
@@ -122,6 +123,12 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
     @Override
     public void addEpochListener(EpochListener listener) {
         epochListeners.add(listener);
+    }
+
+    @Override
+    public void close() {
+        FutureUtil.suppress(() -> routerChannel.close(), LOGGER);
+        routerChannels.forEach((nodeId, channel) -> FutureUtil.suppress(channel::close, LOGGER));
     }
 
     @Override

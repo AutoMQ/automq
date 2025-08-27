@@ -29,6 +29,7 @@ import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.utils.FutureUtil;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,6 +102,13 @@ class SubscriberReplayer {
 
     public CompletableFuture<Void> replayWal() {
         return lastDataLoadCf;
+    }
+
+    public void close() {
+        WriteAheadLog wal = this.wal;
+        if (wal != null) {
+            FutureUtil.suppress(wal::shutdownGracefully, LOGGER);
+        }
     }
 
     private List<S3ObjectMetadata> nextObjects() {
