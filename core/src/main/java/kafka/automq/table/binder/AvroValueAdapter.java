@@ -116,7 +116,7 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
     protected List<?> convertList(Object sourceValue, Schema sourceSchema, Types.ListType targetType) {
         Schema elementSchema = sourceSchema.getElementType();
         List<?> sourceList = (List<?>) sourceValue;
-        List<Object> list = new ArrayList<>();
+        List<Object> list = new ArrayList<>(sourceList.size());
         for (Object element : sourceList) {
             Object convert = convert(element, elementSchema, targetType.elementType());
             list.add(convert);
@@ -129,7 +129,7 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
         if (sourceValue instanceof GenericData.Array) {
             GenericData.Array<?> arrayValue = (GenericData.Array<?>) sourceValue;
             // Handle map represented as an array of key-value records
-            Map<Object, Object> recordMap = new HashMap<>();
+            Map<Object, Object> recordMap = new HashMap<>(arrayValue.size());
             Schema kvSchema = sourceSchema.getElementType();
 
             if (kvSchema.getType() == Schema.Type.UNION) {
