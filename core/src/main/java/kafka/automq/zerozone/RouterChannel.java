@@ -33,6 +33,8 @@ public interface RouterChannel {
 
     void trim(long epoch);
 
+    void close();
+
     class AppendResult {
         private final long epoch;
         private final ByteBuf channelOffset;

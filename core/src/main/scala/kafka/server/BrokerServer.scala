@@ -23,7 +23,7 @@ import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
 import kafka.automq.table.TableManager
-import kafka.automq.zerozone.{DefaultClientRackProvider, DefaultRouterChannelProvider, LinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
+import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultRouterChannelProvider, LinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -164,6 +164,7 @@ class BrokerServer(
   def metadataLoader: MetadataLoader = sharedServer.loader
 
   var routerChannelProvider: RouterChannelProvider = _
+  var confirmWALProvider: ConfirmWALProvider = _
   var trafficInterceptor: TrafficInterceptor = _
 
   var backPressureManager: BackPressureManager = _
@@ -566,6 +567,7 @@ class BrokerServer(
 
       // AutoMQ inject start
       routerChannelProvider = newRouterChannelProvider()
+      confirmWALProvider = newConfirmWALProvider()
       if (routerChannelProvider != null) {
         S3Storage.setLinkRecordDecoder(new LinkRecordDecoder(routerChannelProvider))
       }
@@ -716,6 +718,9 @@ class BrokerServer(
       if (replicaManager != null) {
         CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
         CoreUtils.swallow(trafficInterceptor.close(), this)
+        if (routerChannelProvider != null) {
+          CoreUtils.swallow(routerChannelProvider.close(), this)
+        }
         CoreUtils.swallow(ElasticLogManager.shutdown(), this)
       }
       // AutoMQ for Kafka inject end
@@ -850,11 +855,18 @@ class BrokerServer(
     new DefaultRouterChannelProvider(config.nodeId, config.automq.nodeEpoch, bucketURI, dataPlaneRequestProcessor.clusterId)
   }
 
+  protected def newConfirmWALProvider(): ConfirmWALProvider = {
+    if (config.automq.zoneRouterChannels().isEmpty) {
+      return null
+    }
+    new DefaultConfirmWALProvider(dataPlaneRequestProcessor.clusterId)
+  }
+
   protected def newTrafficInterceptor(): TrafficInterceptor = {
     val trafficInterceptor = if (config.automq.zoneRouterChannels().isEmpty) {
       new NoopTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
     } else {
-      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(routerChannelProvider, dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, clientRackProvider, config)
+      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(routerChannelProvider, confirmWALProvider, dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, clientRackProvider, config)
       metadataLoader.installPublishers(util.List.of(zeroZoneRouter))
       zeroZoneRouter
     }

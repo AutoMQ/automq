@@ -136,7 +136,7 @@ public class SnapshotReadPartitionsManagerTest {
             }
         };
 
-        manager = new SnapshotReadPartitionsManager(config, time, replicaManager, metadataCache, replayer, asyncSender);
+        manager = new SnapshotReadPartitionsManager(config, time, null, replicaManager, metadataCache, replayer, asyncSender);
     }
 
     @Test
