@@ -71,9 +71,9 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     static final long REQUEST_INTERVAL_MS = 1;
     private final KafkaConfig config;
     private final Time time;
+    private final ConfirmWALProvider confirmWALProvider;
     private final ElasticReplicaManager replicaManager;
     private final MetadataCache metadataCache;
-    private final String clusterId;
     private final AsyncSender asyncSender;
     private final Replayer replayer;
     private final ScheduledExecutorService scheduler = Threads.newSingleThreadScheduledExecutor("AUTOMQ_SNAPSHOT_READ", true, LOGGER);
@@ -84,27 +84,27 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     final EventLoop eventLoop = new EventLoop("AUTOMQ_SNAPSHOT_READ_WORKER");
     private AutoMQVersion version;
 
-    public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time,
-        ElasticReplicaManager replicaManager, MetadataCache metadataCache, Replayer replayer, String clusterId) {
+    public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time, ConfirmWALProvider confirmWALProvider,
+        ElasticReplicaManager replicaManager, MetadataCache metadataCache, Replayer replayer) {
         this.config = config;
         this.time = time;
+        this.confirmWALProvider = confirmWALProvider;
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
         this.replayer = replayer;
         this.asyncSender = new AsyncSender.BrokersAsyncSender(config, metrics, "snapshot_read", Time.SYSTEM, "AUTOMQ_SNAPSHOT_READ", new LogContext());
-        this.clusterId = clusterId;
     }
 
     // test only
-    SnapshotReadPartitionsManager(KafkaConfig config, Time time, ElasticReplicaManager replicaManager,
+    SnapshotReadPartitionsManager(KafkaConfig config, Time time, ConfirmWALProvider confirmWALProvider, ElasticReplicaManager replicaManager,
         MetadataCache metadataCache, Replayer replayer, AsyncSender asyncSender) {
         this.config = config;
         this.time = time;
+        this.confirmWALProvider = confirmWALProvider;
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
         this.replayer = replayer;
         this.asyncSender = asyncSender;
-        this.clusterId = "";
     }
 
     @Override
@@ -240,7 +240,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             this.node = node;
             this.version = version;
             this.requester = new SubscriberRequester(this, node, version, asyncSender, SnapshotReadPartitionsManager.this::getTopicName, eventLoop, time);
-            this.replayer = new SubscriberReplayer(new DefaultConfirmWALProvider(clusterId), SnapshotReadPartitionsManager.this.replayer, node, metadataCache);
+            this.replayer = new SubscriberReplayer(confirmWALProvider, SnapshotReadPartitionsManager.this.replayer, node, metadataCache);
             LOGGER.info("[SNAPSHOT_READ_SUBSCRIBE],node={}", node);
             run();
         }
