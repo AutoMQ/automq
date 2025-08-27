@@ -722,6 +722,9 @@ class BrokerServer(
       if (replicaManager != null) {
         CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
         CoreUtils.swallow(trafficInterceptor.close(), this)
+        if (routerChannelProvider != null) {
+          CoreUtils.swallow(routerChannelProvider.close(), this)
+        }
         CoreUtils.swallow(ElasticLogManager.shutdown(), this)
       }
       // AutoMQ for Kafka inject end

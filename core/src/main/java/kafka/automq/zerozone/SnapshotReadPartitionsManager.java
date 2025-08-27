@@ -279,6 +279,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                 partitions.forEach(SnapshotReadPartitionsManager.this::removePartition);
                 partitions.clear();
                 snapshotWithOperations.clear();
+                replayer.close();
             });
         }
 
