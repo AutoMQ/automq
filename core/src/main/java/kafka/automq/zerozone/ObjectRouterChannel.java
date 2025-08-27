@@ -123,4 +123,9 @@ public class ObjectRouterChannel implements RouterChannel {
             writeLock.unlock();
         }
     }
+
+    @Override
+    public void close() {
+        wal.shutdownGracefully();
+    }
 }

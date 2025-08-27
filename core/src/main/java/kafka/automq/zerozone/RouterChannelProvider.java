@@ -32,6 +32,8 @@ public interface RouterChannelProvider extends MetadataListener {
 
     void addEpochListener(EpochListener listener);
 
+    void close();
+
     interface EpochListener {
         void onNewEpoch(RouterChannelEpoch epoch);
     }

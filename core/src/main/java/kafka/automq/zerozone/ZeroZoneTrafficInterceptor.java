@@ -83,6 +83,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     public ZeroZoneTrafficInterceptor(
         RouterChannelProvider routerChannelProvider,
+        ConfirmWALProvider confirmWALProvider,
         ElasticKafkaApis kafkaApis,
         MetadataCache metadataCache,
         ClientRackProvider clientRackProvider,
@@ -128,7 +129,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         this.version = metadataCache.autoMQVersion();
 
-        this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), replayer, kafkaApis.clusterId());
+        this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, confirmWALProvider,
+            (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), replayer);
         this.snapshotReadPartitionsManager.setVersion(version);
         replayer.setCacheEventListener(this.snapshotReadPartitionsManager.cacheEventListener());
         mapping.registerListener(snapshotReadPartitionsManager);
