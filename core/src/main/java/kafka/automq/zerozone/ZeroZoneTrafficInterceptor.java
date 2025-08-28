@@ -65,6 +65,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroZoneTrafficInterceptor.class);
     private final ElasticKafkaApis kafkaApis;
     private final ClientRackProvider clientRackProvider;
+    private final List<BucketURI> config;
     private final BucketURI bucketURI;
 
     private final ProxyNodeMapping mapping;
@@ -108,6 +109,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         Time time = Time.SYSTEM;
 
         AsyncSender asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time, ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext());
+
+        this.config = kafkaConfig.automq().zoneRouterChannels().get();
 
         //noinspection OptionalGetWithoutIsPresent
         this.bucketURI = kafkaConfig.automq().zoneRouterChannels().get().get(0);
@@ -225,7 +228,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     @Override
     public String toString() {
-        return "ObjectProduceRouter{bucketURI=" + bucketURI + '}';
+        return "ZeroZoneTrafficInterceptor{config=" + config + '}';
     }
 
     private void fillRackIfMissing(ClientIdMetadata clientId) {
