@@ -44,13 +44,19 @@ public class ValueUnwrapTransform implements Transform {
         if (record == null) {
             return null;
         }
-        // Check if the record schema matches the standard ValueRecord structure.
-        Object value = record.get(Converter.VALUE_FIELD_NAME);
-        Schema.Field field = record.getSchema().getField(Converter.VALUE_FIELD_NAME);
 
-        if (value instanceof GenericRecord && field.schema().getType() == Schema.Type.RECORD) {
+        Schema.Field valueField = record.getSchema().getField(Converter.VALUE_FIELD_NAME);
+        if (valueField == null) {
+            throw new TransformException(
+                String.format("Record with schema %s does not contain a '%s' field to unwrap.",
+                    record.getSchema().getFullName(), Converter.VALUE_FIELD_NAME));
+        }
+
+        Object value = record.get(Converter.VALUE_FIELD_NAME);
+        if (value instanceof GenericRecord) {
             return (GenericRecord) value;
         } else {
+            // The 'value' field exists but is not a record, so return the original wrapped record.
             return record;
         }
     }

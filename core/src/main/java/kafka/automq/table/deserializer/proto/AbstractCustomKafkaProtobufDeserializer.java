@@ -19,7 +19,6 @@
 
 package kafka.automq.table.deserializer.proto;
 
-import kafka.automq.table.deserializer.HeaderBasedSchemaResolutionResolver;
 import kafka.automq.table.deserializer.SchemaResolutionResolver;
 
 import org.apache.kafka.common.errors.InvalidConfigurationException;

@@ -100,12 +100,10 @@ public class DefaultRecordProcessor implements RecordProcessor {
         TransformContext context = new TransformContext(conversionResult.getKafkaRecord(), topicName);
 
         for (Transform transform : transformChain) {
-            log.debug("Applying transform: {}", transform.getName());
             currentRecord = transform.apply(currentRecord, context);
 
             if (currentRecord == null) {
-                throw new TransformException("Transform " + transform.getName() +
-                                           " returned null record");
+                throw new TransformException("Transform " + transform.getName() + " returned null record");
             }
         }
 

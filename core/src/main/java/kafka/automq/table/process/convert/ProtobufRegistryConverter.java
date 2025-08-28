@@ -18,9 +18,9 @@
  */
 package kafka.automq.table.process.convert;
 
-import kafka.automq.table.deserializer.HeaderBasedSchemaResolutionResolver;
 import kafka.automq.table.deserializer.SchemaResolutionResolver;
 import kafka.automq.table.deserializer.proto.CustomKafkaProtobufDeserializer;
+import kafka.automq.table.deserializer.proto.HeaderBasedSchemaResolutionResolver;
 import kafka.automq.table.transformer.ProtoToAvroConverter;
 
 import org.apache.kafka.common.record.Record;

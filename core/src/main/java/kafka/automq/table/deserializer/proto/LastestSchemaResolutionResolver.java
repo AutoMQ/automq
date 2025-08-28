@@ -27,10 +27,12 @@ import org.apache.kafka.common.record.Record;
 
 import com.automq.stream.utils.Time;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
-import java.util.concurrent.ConcurrentHashMap;
 
 import io.confluent.kafka.schemaregistry.client.SchemaMetadata;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
@@ -42,12 +44,14 @@ import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientExcept
  * Cache entries are refreshed every 5 minutes.
  */
 public class LastestSchemaResolutionResolver implements SchemaResolutionResolver {
+    private static final Logger log = LoggerFactory.getLogger(LastestSchemaResolutionResolver.class);
 
     private static final long CACHE_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
     private static final MessageIndexes DEFAULT_INDEXES = new MessageIndexes(Collections.singletonList(0));
 
     private final SchemaRegistryClient schemaRegistry;
-    private final ConcurrentHashMap<String, LastestSchemaResolutionResolver.CachedSchemaInfo> schemaCache = new ConcurrentHashMap<>();
+
+    private volatile LastestSchemaResolutionResolver.CachedSchemaInfo schemaCache;
 
     private final Time time;
     private final String subject;
@@ -86,27 +90,27 @@ public class LastestSchemaResolutionResolver implements SchemaResolutionResolver
 
     private LastestSchemaResolutionResolver.CachedSchemaInfo getCachedSchemaInfo(String subject) {
         long currentTime = time.milliseconds();
-
-        return schemaCache.compute(subject, (key, existing) -> {
-            // If we have existing data and it's still fresh, use it
-            if (existing != null && currentTime - existing.lastUpdated <= CACHE_REFRESH_INTERVAL_MS) {
-                return existing;
-            }
-
-            // Try to get fresh data from registry
-            try {
-                SchemaMetadata latestSchema = schemaRegistry.getLatestSchemaMetadata(subject);
-                return new LastestSchemaResolutionResolver.CachedSchemaInfo(latestSchema.getId(), currentTime);
-            } catch (IOException | RestClientException e) {
-                // If we have existing cached data (even if expired), use it as fallback
-                if (existing != null) {
-                    return existing;
+        // First check (no lock)
+        if (schemaCache == null || currentTime - schemaCache.lastUpdated > CACHE_REFRESH_INTERVAL_MS) {
+            synchronized (this) {
+                // Second check (with lock)
+                if (schemaCache == null || currentTime - schemaCache.lastUpdated > CACHE_REFRESH_INTERVAL_MS) {
+                    try {
+                        SchemaMetadata latestSchema = schemaRegistry.getLatestSchemaMetadata(subject);
+                        schemaCache = new LastestSchemaResolutionResolver.CachedSchemaInfo(latestSchema.getId(), currentTime);
+                    } catch (IOException | RestClientException e) {
+                        if (schemaCache == null) {
+                            // No cached data and fresh fetch failed - this is a hard error
+                            throw new SerializationException("Error retrieving schema for subject " + subject +
+                                " and no cached data available", e);
+                        } else {
+                            log.warn("Failed to retrieve latest schema for subject '{}'. Using stale cache.", subject, e);
+                        }
+                    }
                 }
-                // No cached data and fresh fetch failed - this is a hard error
-                throw new SerializationException("Error retrieving schema for subject " + subject +
-                    " and no cached data available", e);
             }
-        });
+        }
+        return schemaCache;
     }
 
 

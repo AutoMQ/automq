@@ -19,16 +19,13 @@
 
 package kafka.automq.table.process.convert;
 
-import kafka.automq.table.deserializer.HeaderBasedSchemaResolutionResolver;
-import kafka.automq.table.deserializer.SchemaResolutionResolver;
-
+import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.Deserializer;
 
 import org.apache.avro.generic.GenericRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import java.nio.ByteBuffer;
 import java.util.Map;
 
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
@@ -46,11 +43,12 @@ import io.confluent.kafka.serializers.KafkaAvroDeserializer;
  * @see KafkaAvroDeserializer
  */
 public class AvroRegistryConverter extends RegistrySchemaConverter {
-
-    private static final Logger log = LoggerFactory.getLogger(AvroRegistryConverter.class);
+    private static final int SCHEMA_ID_SIZE = 4;
+    private static final int HEADER_SIZE = SCHEMA_ID_SIZE + 1; // magic byte + schema id
+    private static final byte MAGIC_BYTE = 0x0;
 
     private final Deserializer<Object> deserializer;
-    private final SchemaResolutionResolver resolver;
+
     /**
      * Creates a new Avro converter with schema registry support.
      *
@@ -60,7 +58,6 @@ public class AvroRegistryConverter extends RegistrySchemaConverter {
     public AvroRegistryConverter(SchemaRegistryClient client, String registryUrl) {
         // Initialize deserializer with the provided client
         this.deserializer = new KafkaAvroDeserializer(client);
-        this.resolver = new HeaderBasedSchemaResolutionResolver();
 
         // Configure the deserializer immediately upon creation
         Map<String, String> configs = Map.of("schema.registry.url", registryUrl);
@@ -69,11 +66,10 @@ public class AvroRegistryConverter extends RegistrySchemaConverter {
         deserializer.configure(configs, false);
     }
 
+
     public AvroRegistryConverter(Deserializer deserializer) {
         this.deserializer = deserializer;
-        this.resolver = new HeaderBasedSchemaResolutionResolver();
     }
-
 
     @Override
     protected GenericRecord performConversion(String topic, Record record) {
@@ -87,6 +83,14 @@ public class AvroRegistryConverter extends RegistrySchemaConverter {
 
     @Override
     protected int getSchemaId(String topic, Record record) {
-        return resolver.getSchemaId(topic, record);
+        ByteBuffer buffer = record.value();
+        if (buffer.remaining() < HEADER_SIZE) {
+            throw new SerializationException("Invalid payload size: " + buffer.remaining() + ", expected at least " + HEADER_SIZE);
+        }
+        byte magicByte = buffer.get();
+        if (magicByte != MAGIC_BYTE) {
+            throw new SerializationException("Unknown magic byte: " + magicByte);
+        }
+        return buffer.getInt();
     }
 }

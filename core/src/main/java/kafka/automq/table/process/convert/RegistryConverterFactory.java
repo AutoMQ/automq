@@ -58,7 +58,7 @@ public class RegistryConverterFactory {
     private String schemaRegistryUrl;
     private SchemaRegistryClient client;
 
-    private final Map<SchemaFormat, Converter> converterCache = new ConcurrentHashMap<>();
+    private final Map<String, Converter> converterCache = new ConcurrentHashMap<>();
 
     // Cache topic schema format to avoid repeated Schema Registry queries
     private final Cache<String, String> topicSchemaFormatCache = CacheBuilder.newBuilder()
@@ -108,15 +108,15 @@ public class RegistryConverterFactory {
                 }
 
                 if (useLatestSchema && "PROTOBUF".equals(schemaType)) {
-                    return new ProtobufRegistryConverter(client, schemaRegistryUrl, new LastestSchemaResolutionResolver(client, getSubjectName(topic)));
+                    String subject = getSubjectName(topic);
+                    String cacheKey = schemaType + "-" + subject;
+                    return converterCache.computeIfAbsent(cacheKey, v -> new ProtobufRegistryConverter(client, schemaRegistryUrl, new LastestSchemaResolutionResolver(client, subject)));
                 }
 
                 if (!useLatestSchema) {
                     SchemaFormat cacheKey = SchemaFormat.fromString(schemaType);
-                    // 2. Get or create converter for this format (cached by format, not by topic)
-                    return converterCache.computeIfAbsent(cacheKey, this::createConverterForFormat);
+                    return converterCache.computeIfAbsent(cacheKey.name(), this::createConverterForFormat);
                 }
-                log.error("Unsupported schema format '{}'", schemaType);
                 throw new RuntimeException("Unsupported schema format: " + schemaType);
             });
         } catch (Exception e) {
@@ -133,9 +133,10 @@ public class RegistryConverterFactory {
      * Creates a concrete converter instance for a given format.
      * This method is called by the {@link LazyConverter} supplier.
      */
-    private Converter createConverterForFormat(SchemaFormat format) {
+    private Converter createConverterForFormat(String format) {
         log.info("Creating new converter for format: {}", format);
-        switch (format) {
+        SchemaFormat schemaFormat = SchemaFormat.fromString(format);
+        switch (schemaFormat) {
             case AVRO:
                 return new AvroRegistryConverter(client, schemaRegistryUrl);
             case PROTOBUF:

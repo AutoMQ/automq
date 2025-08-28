@@ -27,10 +27,10 @@ import java.util.Map;
 
 /**
  * Transform interface for Avro GenericRecord data processing.
- * 
- * <p>Stateless, chainable transformations for content manipulation like CDC unwrapping, 
+ *
+ * <p>Stateless, chainable transformations for content manipulation like CDC unwrapping,
  * field mapping, and data enrichment. Implementations must be thread-safe.</p>
- * 
+ *
  * @see Converter
  * @see TransformException
  */

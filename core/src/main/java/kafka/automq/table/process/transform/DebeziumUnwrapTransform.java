@@ -83,15 +83,14 @@ public class DebeziumUnwrapTransform implements Transform {
     public GenericRecord apply(GenericRecord record, TransformContext context) throws TransformException {
         Objects.requireNonNull(record, "Input record cannot be null");
 
-        GenericRecord payload = unwrapValue(record);
         try {
             // If it's not a Debezium record, throw an exception.
-            if (!isDebeziumRecord(payload)) {
+            if (!isDebeziumRecord(record)) {
                 throw new TransformException("Record is not in a recognizable Debezium format.");
             }
 
             // Extract operation type
-            String operation = getStringValue(payload, FIELD_OP);
+            String operation = getStringValue(record, FIELD_OP);
             if (operation == null) {
                 throw new TransformException("Invalid Debezium record: missing required field '" + FIELD_OP + "'");
             }
@@ -99,44 +98,19 @@ public class DebeziumUnwrapTransform implements Transform {
             log.debug("Processing Debezium record with operation: {}", operation);
 
             // Extract business data based on operation type
-            GenericRecord businessData = extractBusinessData(payload, operation);
+            GenericRecord businessData = extractBusinessData(record, operation);
             if (businessData == null) {
                 throw new TransformException("Invalid Debezium record: no extractable data for operation '" + operation + "'");
             }
 
             // Enrich with metadata
-            return enrichWithMetadata(businessData, payload, operation, context);
+            return enrichWithMetadata(businessData, record, operation, context);
 
         } catch (TransformException e) {
             throw e;
         } catch (Exception e) {
             throw new TransformException("Failed to process Debezium record", e);
         }
-    }
-
-    /**
-     * Unwraps a ValueRecord container to extract the payload.
-     */
-    private GenericRecord unwrapValue(GenericRecord record) throws TransformException {
-        // Check if it's a ValueRecord by schema name and field existence.
-        if (!Converter.RECORD_NAME.equals(record.getSchema().getName()) || record.getSchema().getField(Converter.VALUE_FIELD_NAME) == null) {
-            return null;
-        }
-
-        // Check if the extracted value is a non-null GenericRecord.
-        Object value = record.get(Converter.VALUE_FIELD_NAME);
-        if (value == null) {
-            log.debug("ValueRecord's value is null.");
-            return null;
-        }
-
-        if (!(value instanceof GenericRecord)) {
-            log.warn("ValueRecord's value is not an instance of GenericRecord. Type is {}.", value.getClass().getName());
-            throw new TransformException("ValueRecord's 'value' field is not a GenericRecord, but " + value.getClass().getName());
-        }
-
-        log.debug("Successfully unwrapped record from ValueRecord container.");
-        return (GenericRecord) value;
     }
 
     private boolean isDebeziumRecord(GenericRecord record) {
@@ -293,5 +267,24 @@ public class DebeziumUnwrapTransform implements Transform {
     @Override
     public String getName() {
         return "DebeziumUnwrap";
+    }
+
+    /**
+     * Unwraps a ValueRecord container to extract the payload.
+     */
+    private GenericRecord unwrapValue(GenericRecord record) throws TransformException {
+        // Check if it's a ValueRecord by schema name and field existence.
+        if (!Converter.RECORD_NAME.equals(record.getSchema().getName()) || record.getSchema().getField(Converter.VALUE_FIELD_NAME) == null) {
+            return null;
+        }
+        // Check if the extracted value is a non-null GenericRecord.
+        Object value = record.get(Converter.VALUE_FIELD_NAME);
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof GenericRecord)) {
+            throw new TransformException("ValueRecord's 'value' field is not a GenericRecord, but " + value.getClass().getName());
+        }
+        return (GenericRecord) value;
     }
 }

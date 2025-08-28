@@ -17,8 +17,9 @@
  * limitations under the License.
  */
 
-package kafka.automq.table.deserializer;
+package kafka.automq.table.deserializer.proto;
 
+import kafka.automq.table.deserializer.SchemaResolutionResolver;
 import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
 
 import org.apache.kafka.common.errors.SerializationException;

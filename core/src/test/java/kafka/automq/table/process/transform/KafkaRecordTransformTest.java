@@ -1,5 +1,6 @@
 package kafka.automq.table.process.transform;
 
+import kafka.automq.table.process.Converter;
 import kafka.automq.table.process.TransformContext;
 import kafka.automq.table.process.exception.TransformException;
 
@@ -15,9 +16,11 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -90,5 +93,30 @@ class KafkaRecordTransformTest {
         assertTrue(outputRecord.get("value") instanceof GenericRecord);
         assertEquals(inputRecord, outputRecord.get("value"));
         assertEquals(emptySchema, ((GenericRecord) outputRecord.get("value")).getSchema());
+    }
+
+    @Test
+    void testWrapAndUnwrapRoundtrip() throws TransformException {
+        // Setup: Create an initial record
+        Schema eventSchema = SchemaBuilder.record("Event")
+            .fields()
+            .name("id").type().longType().noDefault()
+            .endRecord();
+        GenericRecord initialRecord = new GenericRecordBuilder(eventSchema)
+            .set("id", 12345L)
+            .build();
+        when(kafkaRecord.timestamp()).thenReturn(KAFKA_TIMESTAMP);
+        when(kafkaRecord.key()).thenReturn(KAFKA_KEY);
+
+        // 1. Wrap the record
+        GenericRecord wrappedRecord = Converter.buildValueRecord(initialRecord);
+
+        // 2. Unwrap the record
+        ValueUnwrapTransform valueUnwrap = new ValueUnwrapTransform();
+        valueUnwrap.configure(Collections.emptyMap());
+        GenericRecord unwrappedRecord = valueUnwrap.apply(wrappedRecord, context);
+
+        // 3. Assert the result is the same as the initial record
+        assertSame(initialRecord, unwrappedRecord, "Wrap and unwrap should result in the original record.");
     }
 }
