@@ -43,25 +43,25 @@ import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientExcept
  * This implementation includes caching mechanism to avoid frequent registry queries.
  * Cache entries are refreshed every 5 minutes.
  */
-public class LastestSchemaResolutionResolver implements SchemaResolutionResolver {
-    private static final Logger log = LoggerFactory.getLogger(LastestSchemaResolutionResolver.class);
+public class LatestSchemaResolutionResolver implements SchemaResolutionResolver {
+    private static final Logger log = LoggerFactory.getLogger(LatestSchemaResolutionResolver.class);
 
     private static final long CACHE_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
     private static final MessageIndexes DEFAULT_INDEXES = new MessageIndexes(Collections.singletonList(0));
 
     private final SchemaRegistryClient schemaRegistry;
 
-    private volatile LastestSchemaResolutionResolver.CachedSchemaInfo schemaCache;
+    private volatile LatestSchemaResolutionResolver.CachedSchemaInfo schemaCache;
 
     private final Time time;
     private final String subject;
     private final String messageFullName;
 
-    public LastestSchemaResolutionResolver(SchemaRegistryClient schemaRegistry, String subject) {
+    public LatestSchemaResolutionResolver(SchemaRegistryClient schemaRegistry, String subject) {
         this(schemaRegistry, subject, null);
     }
 
-    public LastestSchemaResolutionResolver(SchemaRegistryClient schemaRegistry, String subject, String messageFullName) {
+    public LatestSchemaResolutionResolver(SchemaRegistryClient schemaRegistry, String subject, String messageFullName) {
         this.schemaRegistry = schemaRegistry;
         this.time = Time.SYSTEM;
         this.subject = subject;
@@ -73,7 +73,7 @@ public class LastestSchemaResolutionResolver implements SchemaResolutionResolver
         if (payload == null) {
             throw new SerializationException("Payload cannot be null");
         }
-        LastestSchemaResolutionResolver.CachedSchemaInfo cachedInfo = getCachedSchemaInfo(subject);
+        LatestSchemaResolutionResolver.CachedSchemaInfo cachedInfo = getCachedSchemaInfo(subject);
 
         if (messageFullName == null) {
             return new SchemaResolution(cachedInfo.schemaId, DEFAULT_INDEXES, payload);
@@ -84,11 +84,11 @@ public class LastestSchemaResolutionResolver implements SchemaResolutionResolver
 
     @Override
     public int getSchemaId(String topic, Record record) {
-        LastestSchemaResolutionResolver.CachedSchemaInfo cachedInfo = getCachedSchemaInfo(subject);
+        LatestSchemaResolutionResolver.CachedSchemaInfo cachedInfo = getCachedSchemaInfo(subject);
         return cachedInfo.schemaId;
     }
 
-    private LastestSchemaResolutionResolver.CachedSchemaInfo getCachedSchemaInfo(String subject) {
+    private LatestSchemaResolutionResolver.CachedSchemaInfo getCachedSchemaInfo(String subject) {
         long currentTime = time.milliseconds();
         // First check (no lock)
         if (schemaCache == null || currentTime - schemaCache.lastUpdated > CACHE_REFRESH_INTERVAL_MS) {
@@ -97,7 +97,7 @@ public class LastestSchemaResolutionResolver implements SchemaResolutionResolver
                 if (schemaCache == null || currentTime - schemaCache.lastUpdated > CACHE_REFRESH_INTERVAL_MS) {
                     try {
                         SchemaMetadata latestSchema = schemaRegistry.getLatestSchemaMetadata(subject);
-                        schemaCache = new LastestSchemaResolutionResolver.CachedSchemaInfo(latestSchema.getId(), currentTime);
+                        schemaCache = new LatestSchemaResolutionResolver.CachedSchemaInfo(latestSchema.getId(), currentTime);
                     } catch (IOException | RestClientException e) {
                         if (schemaCache == null) {
                             // No cached data and fresh fetch failed - this is a hard error

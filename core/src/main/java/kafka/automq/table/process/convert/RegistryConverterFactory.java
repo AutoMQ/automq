@@ -19,7 +19,7 @@
 
 package kafka.automq.table.process.convert;
 
-import kafka.automq.table.deserializer.proto.LastestSchemaResolutionResolver;
+import kafka.automq.table.deserializer.proto.LatestSchemaResolutionResolver;
 import kafka.automq.table.deserializer.proto.ProtobufSchemaProvider;
 import kafka.automq.table.process.Converter;
 import kafka.automq.table.process.exception.ProcessorInitializationException;
@@ -110,7 +110,7 @@ public class RegistryConverterFactory {
                 if (useLatestSchema && "PROTOBUF".equals(schemaType)) {
                     String subject = getSubjectName(topic);
                     String cacheKey = schemaType + "-" + subject;
-                    return converterCache.computeIfAbsent(cacheKey, v -> new ProtobufRegistryConverter(client, schemaRegistryUrl, new LastestSchemaResolutionResolver(client, subject)));
+                    return converterCache.computeIfAbsent(cacheKey, v -> new ProtobufRegistryConverter(client, schemaRegistryUrl, new LatestSchemaResolutionResolver(client, subject)));
                 }
 
                 if (!useLatestSchema) {
