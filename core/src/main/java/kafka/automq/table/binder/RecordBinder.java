@@ -18,6 +18,9 @@
  */
 package kafka.automq.table.binder;
 
+
+import kafka.automq.table.transformer.FieldMetric;
+
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.iceberg.avro.AvroSchemaUtil;
@@ -25,8 +28,11 @@ import org.apache.iceberg.data.Record;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
 
+import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A factory that creates lazy-evaluation Record views of Avro GenericRecords.
@@ -42,6 +48,9 @@ public class RecordBinder {
     // Pre-computed RecordBinders for nested STRUCT fields
     private final Map<String, RecordBinder> nestedStructBinders;
 
+    // Field count statistics for this batch
+    private final AtomicLong batchFieldCount;
+
 
     public RecordBinder(GenericRecord avroRecord) {
         this(AvroSchemaUtil.toIceberg(avroRecord.getSchema()), avroRecord.getSchema());
@@ -52,8 +61,13 @@ public class RecordBinder {
     }
 
     public RecordBinder(org.apache.iceberg.Schema icebergSchema, Schema avroSchema, TypeAdapter<Schema> typeAdapter) {
+        this(icebergSchema, avroSchema, typeAdapter, new AtomicLong(0));
+    }
+
+    public RecordBinder(org.apache.iceberg.Schema icebergSchema, Schema avroSchema, TypeAdapter<Schema> typeAdapter, AtomicLong batchFieldCount) {
         this.icebergSchema = icebergSchema;
         this.typeAdapter = typeAdapter;
+        this.batchFieldCount = batchFieldCount;
 
         // Pre-compute field name to position mapping
         this.fieldNameToPosition = new HashMap<>();
@@ -83,7 +97,22 @@ public class RecordBinder {
             return null;
         }
         return new AvroRecordView(avroRecord, icebergSchema, typeAdapter,
-            fieldNameToPosition, fieldMappings, nestedStructBinders);
+            fieldNameToPosition, fieldMappings, nestedStructBinders, this);
+    }
+
+    /**
+     * Gets the accumulated field count for this batch and resets it to zero.
+     * Should be called after each flush to collect field statistics.
+     */
+    public long getAndResetFieldCount() {
+        return batchFieldCount.getAndSet(0);
+    }
+
+    /**
+     * Adds field count to the batch total. Called by AvroRecordView instances.
+     */
+    void addFieldCount(long count) {
+        batchFieldCount.addAndGet(count);
     }
 
     private void initializeFieldMappings(Schema avroSchema) {
@@ -138,7 +167,8 @@ public class RecordBinder {
                     RecordBinder nestedBinder = new RecordBinder(
                         mapping.nestedSchema(),
                         mapping.avroSchema(),
-                        typeAdapter
+                        typeAdapter,
+                        batchFieldCount
                     );
                     binders.put(structId, nestedBinder);
                 }
@@ -155,19 +185,22 @@ public class RecordBinder {
         private final Map<String, Integer> fieldNameToPosition;
         private final FieldMapping[] fieldMappings;
         private final Map<String, RecordBinder> nestedStructBinders;
+        private final RecordBinder parentBinder;
 
         AvroRecordView(GenericRecord avroRecord,
                     org.apache.iceberg.Schema icebergSchema,
                     TypeAdapter<Schema> typeAdapter,
                     Map<String, Integer> fieldNameToPosition,
                     FieldMapping[] fieldMappings,
-                    Map<String, RecordBinder> nestedStructBinders) {
+                    Map<String, RecordBinder> nestedStructBinders,
+                    RecordBinder parentBinder) {
             this.avroRecord = avroRecord;
             this.icebergSchema = icebergSchema;
             this.typeAdapter = typeAdapter;
             this.fieldNameToPosition = fieldNameToPosition;
             this.fieldMappings = fieldMappings;
             this.nestedStructBinders = nestedStructBinders;
+            this.parentBinder = parentBinder;
         }
 
         @Override
@@ -189,18 +222,81 @@ public class RecordBinder {
                 return null;
             }
 
-            // Handle STRUCT type
+            // Handle STRUCT type - delegate to nested binder
             if (mapping.typeId() == Type.TypeID.STRUCT) {
                 String structId = mapping.nestedSchemaId();
                 RecordBinder nestedBinder = nestedStructBinders.get(structId);
                 if (nestedBinder == null) {
                     throw new IllegalStateException("Nested binder not found for struct: " + structId);
                 }
+                parentBinder.addFieldCount(1);
                 return nestedBinder.bind((GenericRecord) avroValue);
             }
 
-            // Delegate conversion of all other types to the adapter
-            return typeAdapter.convert(avroValue, mapping.avroSchema(), mapping.icebergType());
+            // Convert non-STRUCT types
+            Object result = typeAdapter.convert(avroValue, mapping.avroSchema(), mapping.icebergType());
+
+            // Calculate and accumulate field count
+            long fieldCount = calculateFieldCount(result, mapping.icebergType());
+            parentBinder.addFieldCount(fieldCount);
+
+            return result;
+        }
+
+        /**
+         * Calculates the field count for a converted value based on its size.
+         * Large fields are counted multiple times based on the size threshold.
+         */
+        private long calculateFieldCount(Object value, Type icebergType) {
+            if (value == null) {
+                return 0;
+            }
+
+            switch (icebergType.typeId()) {
+                case STRING:
+                    return FieldMetric.count((String) value);
+                case BINARY:
+                    return FieldMetric.count((ByteBuffer) value);
+                case FIXED:
+                    return FieldMetric.count((byte[]) value);
+                case LIST:
+                    return calculateListFieldCount((List<?>) value, ((Types.ListType) icebergType).elementType());
+                case MAP:
+                    return calculateMapFieldCount((Map<?, ?>) value, (Types.MapType) icebergType);
+                default:
+                    return 1; // Struct or Primitive types count as 1 field
+            }
+        }
+
+        /**
+         * Calculates field count for List values by summing element costs.
+         */
+        private long calculateListFieldCount(List<?> list, Type elementType) {
+            if (list == null) {
+                return 0;
+            }
+
+            long total = 1;
+            for (Object element : list) {
+                total += calculateFieldCount(element, elementType);
+            }
+            return total;
+        }
+
+        /**
+         * Calculates field count for Map values by summing key and value costs.
+         */
+        private long calculateMapFieldCount(Map<?, ?> map, Types.MapType mapType) {
+            if (map == null || map.isEmpty()) {
+                return 0;
+            }
+
+            long total = 1;
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                total += calculateFieldCount(entry.getKey(), mapType.keyType());
+                total += calculateFieldCount(entry.getValue(), mapType.valueType());
+            }
+            return total;
         }
 
         @Override

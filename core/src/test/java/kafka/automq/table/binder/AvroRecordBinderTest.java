@@ -1042,4 +1042,209 @@ public class AvroRecordBinderTest {
         Record boundRecordWithNull = recordBinder.bind(envelopeRecordWithNull);
         assertNull(boundRecordWithNull.getField("before"));
     }
+
+    // Test method for field count statistics
+    @Test
+    public void testFieldCountStatistics() {
+        // Test different field types and their count calculations
+        String avroSchemaStr = "{\n" +
+            "  \"type\": \"record\",\n" +
+            "  \"name\": \"TestRecord\",\n" +
+            "  \"fields\": [\n" +
+            "    {\"name\": \"smallString\", \"type\": \"string\"},\n" +
+            "    {\"name\": \"largeString\", \"type\": \"string\"},\n" +
+            "    {\"name\": \"intField\", \"type\": \"int\"},\n" +
+            "    {\"name\": \"binaryField\", \"type\": \"bytes\"}\n" +
+            "  ]\n" +
+            "}";
+
+        Schema avroSchema = new Schema.Parser().parse(avroSchemaStr);
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        RecordBinder recordBinder = new RecordBinder(icebergSchema, avroSchema);
+
+        // Create test record with different field sizes
+        GenericRecord avroRecord = new GenericData.Record(avroSchema);
+        avroRecord.put("smallString", "small"); // 5 chars = 1 field (5+23)/24 = 1
+        avroRecord.put("largeString", "a".repeat(50)); // 50 chars = 3 fields (50+23)/24 = 3
+        avroRecord.put("intField", 42); // primitive = 1 field
+        avroRecord.put("binaryField", ByteBuffer.wrap("test".repeat(10).getBytes())); // 40 bytes = 2 fields (40+31)/32 = 2
+
+        // Bind record - this should trigger field counting
+        Record icebergRecord = recordBinder.bind(avroRecord);
+
+        // Access all fields to trigger counting
+        assertEquals("small", icebergRecord.getField("smallString"));
+        assertEquals("a".repeat(50), icebergRecord.getField("largeString"));
+        assertEquals(42, icebergRecord.getField("intField"));
+        assertEquals("test".repeat(10), new String(((ByteBuffer) icebergRecord.getField("binaryField")).array()));
+
+        // Check field count: 1 + 3 + 1 + 2 = 7 fields total
+        long fieldCount = recordBinder.getAndResetFieldCount();
+        assertEquals(7, fieldCount);
+
+        // Second call should return 0 (reset)
+        assertEquals(0, recordBinder.getAndResetFieldCount());
+
+        testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
+        assertEquals(7, recordBinder.getAndResetFieldCount());
+    }
+
+    @Test
+    public void testFieldCountWithComplexTypes() {
+        // Test field counting for LIST and MAP types
+        String avroSchemaStr = "{\n" +
+            "  \"type\": \"record\",\n" +
+            "  \"name\": \"ComplexRecord\",\n" +
+            "  \"fields\": [\n" +
+            "    {\"name\": \"stringList\", \"type\": {\"type\": \"array\", \"items\": \"string\"}},\n" +
+            "    {\"name\": \"stringMap\", \"type\": {\"type\": \"map\", \"values\": \"string\"}}\n" +
+            "  ]\n" +
+            "}";
+
+        Schema avroSchema = new Schema.Parser().parse(avroSchemaStr);
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        RecordBinder recordBinder = new RecordBinder(icebergSchema, avroSchema);
+
+        GenericRecord avroRecord = new GenericData.Record(avroSchema);
+        // List with 3 small strings: 1 (list itself) + 3 * 1 = 4 fields
+        avroRecord.put("stringList", Arrays.asList("a", "b", "c"));
+
+        // Map with 2 entries: 1 (map itself) + 2 * (1 key + 1 value) = 5 fields
+        Map<String, String> map = new HashMap<>();
+        map.put("key1", "val1");
+        map.put("key2", "val2");
+        avroRecord.put("stringMap", map);
+
+        Record icebergRecord = recordBinder.bind(avroRecord);
+
+        // Access fields to trigger counting
+        assertEquals(Arrays.asList("a", "b", "c"), icebergRecord.getField("stringList"));
+        assertEquals(map, icebergRecord.getField("stringMap"));
+
+        // Total: 4 (list) + 5 (map) = 9 fields
+        long fieldCount = recordBinder.getAndResetFieldCount();
+        assertEquals(9, fieldCount);
+
+        testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
+        assertEquals(9, recordBinder.getAndResetFieldCount());
+    }
+
+    @Test
+    public void testFieldCountWithNestedStructure() {
+        // Test field counting for nested records
+        String avroSchemaStr = "{\n" +
+            "  \"type\": \"record\",\n" +
+            "  \"name\": \"NestedRecord\",\n" +
+            "  \"fields\": [\n" +
+            "    {\"name\": \"simpleField\", \"type\": \"string\"},\n" +
+            "    {\n" +
+            "      \"name\": \"nestedField\",\n" +
+            "      \"type\": {\n" +
+            "        \"type\": \"record\",\n" +
+            "        \"name\": \"Nested\",\n" +
+            "        \"fields\": [\n" +
+            "          {\"name\": \"nestedString\", \"type\": \"string\"},\n" +
+            "          {\"name\": \"nestedInt\", \"type\": \"int\"}\n" +
+            "        ]\n" +
+            "      }\n" +
+            "    }\n" +
+            "  ]\n" +
+            "}";
+
+        Schema avroSchema = new Schema.Parser().parse(avroSchemaStr);
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        RecordBinder recordBinder = new RecordBinder(icebergSchema, avroSchema);
+
+        // Create nested record
+        GenericRecord nestedRecord = new GenericData.Record(avroSchema.getField("nestedField").schema());
+        nestedRecord.put("nestedString", "nested"); // 1 field
+        nestedRecord.put("nestedInt", 123); // 1 field
+
+        GenericRecord mainRecord = new GenericData.Record(avroSchema);
+        mainRecord.put("simpleField", "simple"); // 1 field
+        mainRecord.put("nestedField", nestedRecord); // STRUCT fields are counted when accessed
+
+        Record icebergRecord = recordBinder.bind(mainRecord);
+
+        // Access all fields including nested ones
+        assertEquals("simple", icebergRecord.getField("simpleField"));
+        Record nested = (Record) icebergRecord.getField("nestedField");
+        assertEquals("nested", nested.getField("nestedString"));
+        assertEquals(123, nested.getField("nestedInt"));
+
+        // Total: 1 (simple) + 1(struct) + 1 (nested string) + 1 (nested int) = 4 fields
+        // Note: STRUCT type itself doesn't add to count, only its leaf fields
+        long fieldCount = recordBinder.getAndResetFieldCount();
+        assertEquals(4, fieldCount);
+
+        testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
+        assertEquals(4, recordBinder.getAndResetFieldCount());
+    }
+
+    @Test
+    public void testFieldCountBatchAccumulation() {
+        // Test that field counts accumulate across multiple record bindings
+        String avroSchemaStr = "{\n" +
+            "  \"type\": \"record\",\n" +
+            "  \"name\": \"SimpleRecord\",\n" +
+            "  \"fields\": [\n" +
+            "    {\"name\": \"stringField\", \"type\": \"string\"},\n" +
+            "    {\"name\": \"intField\", \"type\": \"int\"}\n" +
+            "  ]\n" +
+            "}";
+
+        Schema avroSchema = new Schema.Parser().parse(avroSchemaStr);
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        RecordBinder recordBinder = new RecordBinder(icebergSchema, avroSchema);
+
+        // Process multiple records
+        for (int i = 0; i < 3; i++) {
+            GenericRecord avroRecord = new GenericData.Record(avroSchema);
+            avroRecord.put("stringField", "test" + i); // 1 field each
+            avroRecord.put("intField", i); // 1 field each
+
+            Record icebergRecord = recordBinder.bind(avroRecord);
+            // Access fields to trigger counting
+            icebergRecord.getField("stringField");
+            icebergRecord.getField("intField");
+        }
+
+        // Total: 3 records * 2 fields each = 6 fields
+        long totalFieldCount = recordBinder.getAndResetFieldCount();
+        assertEquals(6, totalFieldCount);
+    }
+
+    @Test
+    public void testFieldCountWithNullValues() {
+        // Test that null values don't contribute to field count
+        String avroSchemaStr = "{\n" +
+            "  \"type\": \"record\",\n" +
+            "  \"name\": \"NullableRecord\",\n" +
+            "  \"fields\": [\n" +
+            "    {\"name\": \"nonNullField\", \"type\": \"string\"},\n" +
+            "    {\"name\": \"nullField\", \"type\": [\"null\", \"string\"], \"default\": null}\n" +
+            "  ]\n" +
+            "}";
+
+        Schema avroSchema = new Schema.Parser().parse(avroSchemaStr);
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        RecordBinder recordBinder = new RecordBinder(icebergSchema, avroSchema);
+
+        GenericRecord avroRecord = new GenericData.Record(avroSchema);
+        avroRecord.put("nonNullField", "value"); // 1 field
+        avroRecord.put("nullField", null); // 0 fields
+
+        Record icebergRecord = recordBinder.bind(avroRecord);
+
+        // Access both fields
+        assertEquals("value", icebergRecord.getField("nonNullField"));
+        assertNull(icebergRecord.getField("nullField"));
+
+        // Only the non-null field should count
+        long fieldCount = recordBinder.getAndResetFieldCount();
+        assertEquals(1, fieldCount);
+
+        testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
+        assertEquals(1, recordBinder.getAndResetFieldCount());
+    }
 }
