@@ -19,6 +19,8 @@
 
 package kafka.automq.table.deserializer.proto;
 
+import kafka.automq.table.deserializer.SchemaResolutionResolver;
+
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Deserializer;
 
@@ -35,7 +37,16 @@ public class CustomKafkaProtobufDeserializer<T extends Message>
     public CustomKafkaProtobufDeserializer() {
     }
 
+    public CustomKafkaProtobufDeserializer(SchemaResolutionResolver resolver) {
+        super(resolver);
+    }
+
     public CustomKafkaProtobufDeserializer(SchemaRegistryClient schemaRegistry) {
+        this.schemaRegistry = schemaRegistry;
+    }
+
+    public CustomKafkaProtobufDeserializer(SchemaRegistryClient schemaRegistry, SchemaResolutionResolver schemaResolutionResolver) {
+        super(schemaResolutionResolver);
         this.schemaRegistry = schemaRegistry;
     }
 

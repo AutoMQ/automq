@@ -44,7 +44,10 @@ public class ProtobufSchemaWrapper {
     private static final Logger LOGGER = Logger.getLogger(ProtobufSchemaWrapper.class.getName());
 
     private final CustomProtobufSchema schema;
-    private final MessageIndexes messageIndexes;
+
+    private MessageIndexes messageIndexes;
+    private String messageTypeName;
+
     private static final Base64.Decoder DECODER = Base64.getDecoder();
     private ProtoFileElement rootElem;
     private Map<String, ProtoFileElement> dependencies;
@@ -53,6 +56,11 @@ public class ProtobufSchemaWrapper {
     public ProtobufSchemaWrapper(CustomProtobufSchema schema, MessageIndexes messageIndexes) {
         this.schema = schema;
         this.messageIndexes = messageIndexes;
+    }
+
+    public ProtobufSchemaWrapper(CustomProtobufSchema schema, String messageTypeName) {
+        this.schema = schema;
+        this.messageTypeName = messageTypeName;
     }
 
 
@@ -108,24 +116,27 @@ public class ProtobufSchemaWrapper {
     }
 
     private Descriptors.Descriptor buildDescriptor() {
-        if (schema == null || messageIndexes == null) {
+        if (schema == null || (messageIndexes == null && messageTypeName == null)) {
             throw new IllegalArgumentException("Schema and message indexes must be provided");
         }
         String schemaString = schema.canonicalString();
         this.rootElem = buildProtoFile(schemaString);
         this.dependencies = parseDependencies(schema.resolvedReferences());
 
-        String messageName = toMessageName(rootElem, messageIndexes);
+        String messageName = toMessageName(rootElem, messageIndexes, messageTypeName);
 
         DynamicSchema dynamicSchema = ProtobufSchemaParser.toDynamicSchema(messageName, rootElem, dependencies);
         return dynamicSchema.getMessageDescriptor(messageName);
     }
 
-    private String toMessageName(ProtoFileElement rootElem, MessageIndexes indexes) {
+    private String toMessageName(ProtoFileElement rootElem, MessageIndexes indexes, String messageTypeName) {
+        if (messageTypeName != null) {
+            return messageTypeName;
+        }
         StringBuilder sb = new StringBuilder();
         List<TypeElement> types = rootElem.getTypes();
         boolean first = true;
-        for (Integer index : indexes.indexes()) {
+        for (Integer index : indexes.getIndexes()) {
             if (!first) {
                 sb.append(".");
             } else {
