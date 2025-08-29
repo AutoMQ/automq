@@ -22,6 +22,7 @@ package kafka.automq.table.process.convert;
 import kafka.automq.table.process.ConversionResult;
 import kafka.automq.table.process.Converter;
 import kafka.automq.table.process.exception.ConverterException;
+import kafka.automq.table.process.exception.InvalidDataException;
 
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.record.Record;
@@ -48,6 +49,9 @@ public abstract class RegistrySchemaConverter implements Converter {
     @Override
     public final ConversionResult convert(String topic, Record record) throws ConverterException {
         try {
+            if (record.value() == null) {
+                throw new InvalidDataException("Kafka record value cannot be null");
+            }
             int schemaId = getSchemaId(topic, record);
             GenericRecord convertedRecord = performConversion(topic, record);
 

@@ -20,10 +20,14 @@
 package kafka.automq.table.process;
 
 import kafka.automq.table.process.exception.ConverterException;
+import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.process.exception.RecordProcessorException;
 import kafka.automq.table.process.exception.TransformException;
 
+import org.apache.kafka.common.record.Record;
+
 import org.apache.avro.generic.GenericRecord;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,26 +77,24 @@ public class DefaultRecordProcessor implements RecordProcessor {
 
             GenericRecord transformedRecord = applyTransformChain(conversionResult);
 
-            // Stage 3: Final Avro Record Creation
             return createFinalAvroRecord(conversionResult, transformedRecord);
         } catch (ConverterException e) {
-            String recordContext = buildRecordContext(kafkaRecord);
-            String errorMsg = String.format("Convert operation failed for record: %s", recordContext);
-            DataError error = new DataError(DataError.ErrorType.DATA_ERROR, errorMsg + ": " + e.getMessage(), e);
-            return new ProcessingResult(error);
-
+            return getProcessingResult(kafkaRecord, "Convert operation failed for record: %s", DataError.ErrorType.CONVERT_ERROR, e);
         } catch (TransformException e) {
-            String recordContext = buildRecordContext(kafkaRecord);
-            String errorMsg = String.format("Transform operation failed for record: %s", recordContext);
-            DataError error = new DataError(DataError.ErrorType.TRANSFORMATION_ERROR, errorMsg + ": " + e.getMessage(), e);
-            return new ProcessingResult(error);
-
+            return getProcessingResult(kafkaRecord, "Transform operation failed for record: %s", DataError.ErrorType.TRANSFORMATION_ERROR, e);
+        } catch (InvalidDataException e) {
+            return getProcessingResult(kafkaRecord, "Transform operation failed for record: %s", DataError.ErrorType.DATA_ERROR, e);
         } catch (Exception e) {
-            String recordContext = buildRecordContext(kafkaRecord);
-            String errorMsg = String.format("Unexpected error processing record: %s", recordContext);
-            DataError error = new DataError(DataError.ErrorType.UNKNOW, errorMsg + ": " + e.getMessage(), e);
-            return new ProcessingResult(error);
+            return getProcessingResult(kafkaRecord, "Unexpected error processing record: %s", DataError.ErrorType.UNKNOW_ERROR, e);
         }
+    }
+
+    @NotNull
+    private ProcessingResult getProcessingResult(Record kafkaRecord, String format, DataError.ErrorType unknow, Exception e) {
+        String recordContext = buildRecordContext(kafkaRecord);
+        String errorMsg = String.format(format, recordContext);
+        DataError error = new DataError(unknow, errorMsg + ": " + e.getMessage(), e);
+        return new ProcessingResult(error);
     }
 
     private GenericRecord applyTransformChain(ConversionResult conversionResult) throws TransformException {

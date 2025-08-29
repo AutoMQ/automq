@@ -19,7 +19,7 @@
 
 package kafka.automq.table.worker;
 
-import kafka.automq.table.transformer.InvalidDataException;
+import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.transformer.SchemalessConverter;
 
 import org.apache.kafka.common.record.Record;

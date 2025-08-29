@@ -19,6 +19,8 @@
 
 package kafka.automq.table.transformer;
 
+import kafka.automq.table.process.exception.ConverterException;
+
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
@@ -43,7 +45,7 @@ public class ProtoToAvroConverter {
             protobufData.addLogicalTypeConversion(new ProtoConversions.TimestampMicrosConversion());
             return convertRecord(protoMessage, schema, protobufData);
         } catch (Exception e) {
-            throw new InvalidDataException("Proto to Avro conversion failed", e);
+            throw new ConverterException("Proto to Avro conversion failed", e);
         }
     }
 
@@ -135,7 +137,7 @@ public class ProtoToAvroConverter {
         } else if (value instanceof Enum) {
             return value.toString(); // protobuf Enum is represented as string
         } else if (value instanceof List) {
-            throw new InvalidDataException("Should be handled in convertValue");
+            throw new ConverterException("Should be handled in convertValue");
         }
 
         // primitive types

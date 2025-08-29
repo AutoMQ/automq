@@ -19,6 +19,7 @@
 
 package kafka.automq.table.transformer;
 
+import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.worker.convert.AvroToIcebergVisitor;
 import kafka.automq.table.worker.convert.IcebergRecordConverter;
 
