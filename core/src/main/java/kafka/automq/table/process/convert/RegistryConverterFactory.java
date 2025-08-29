@@ -98,9 +98,6 @@ public class RegistryConverterFactory {
 
                         // Cache the result for future queries
                         topicSchemaFormatCache.put(topic, schemaType);
-                        log.debug("Cached schema type '{}' for topic '{}'", schemaType, topic);
-                    } else {
-                        log.debug("Cache hit: schema type '{}' for topic '{}'", schemaType, topic);
                     }
                 } catch (IOException | io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException e) {
                     log.error("Failed to get schema metadata for topic '{}' due to Schema Registry error", topic, e);

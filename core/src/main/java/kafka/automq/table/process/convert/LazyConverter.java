@@ -62,7 +62,6 @@ public class LazyConverter implements Converter {
         if (delegate == null) {
             synchronized (this) {
                 if (delegate == null) {
-                    log.debug("Initializing delegate converter...");
                     Converter localDelegate = converterSupplier.get();
                     if (localDelegate == null) {
                         throw new IllegalStateException("Converter supplier returned null");

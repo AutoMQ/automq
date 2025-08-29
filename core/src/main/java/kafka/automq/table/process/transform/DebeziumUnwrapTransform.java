@@ -95,8 +95,6 @@ public class DebeziumUnwrapTransform implements Transform {
                 throw new TransformException("Invalid Debezium record: missing required field '" + FIELD_OP + "'");
             }
 
-            log.debug("Processing Debezium record with operation: {}", operation);
-
             // Extract business data based on operation type
             GenericRecord businessData = extractBusinessData(record, operation);
             if (businessData == null) {

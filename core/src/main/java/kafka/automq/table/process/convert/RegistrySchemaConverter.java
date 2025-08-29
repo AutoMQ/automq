@@ -48,14 +48,10 @@ public abstract class RegistrySchemaConverter implements Converter {
     @Override
     public final ConversionResult convert(String topic, Record record) throws ConverterException {
         try {
-            log.debug("Converting record for topic: {}", topic);
-
             int schemaId = getSchemaId(topic, record);
             GenericRecord convertedRecord = performConversion(topic, record);
 
             if (convertedRecord != null) {
-                log.debug("Successfully converted record with schema: {}",
-                         convertedRecord.getSchema().getName());
                 return new ConversionResult(record, Converter.buildValueRecord(convertedRecord), String.valueOf(schemaId));
             } else {
                 throw new ConverterException("Conversion returned null record for topic: " + topic);
