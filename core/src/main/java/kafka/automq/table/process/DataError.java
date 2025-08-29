@@ -48,17 +48,6 @@ public final class DataError {
     private final Throwable cause;
 
     /**
-     * Creates a new DataError with the specified type and message.
-     *
-     * @param type the classification of this error
-     * @param message a human-readable description of the error
-     * @throws IllegalArgumentException if type or message is null
-     */
-    public DataError(ErrorType type, String message) {
-        this(type, message, null);
-    }
-
-    /**
      * Creates a new DataError with the specified type, message, and underlying cause.
      *
      * @param type the classification of this error
@@ -155,19 +144,24 @@ public final class DataError {
      * Classification of data processing errors for appropriate error handling.
      */
     public enum ErrorType {
-
         /**
-         * Data-level errors (recoverable, skip record and continue).
-         * Covers format, schema, validation, and general conversion errors.
+         * Indicates that the record's data is malformed or invalid.
+         * This can be due to a null payload, incorrect data size, or a missing or unknown magic byte that prevents further processing.
          */
         DATA_ERROR,
-
         /**
-         * Business logic transformation errors (recoverable, skip record and continue).
-         * Occurs during Transform stage processing.
+         * Indicates a failure during the data deserialization or conversion step.
+         * This can be caused by an inability to fetch a schema from a registry, serialization errors (e.g., Avro, Protobuf), or other schema-related failures.
+         */
+        CONVERT_ERROR,
+        /**
+         * Indicates a failure within a data transformation step.
+         * This can be due to the input data not matching the format expected by a transform (e.g., an invalid Debezium record).
          */
         TRANSFORMATION_ERROR,
-
-        UNKNOW
+        /**
+         * Unknown exception during processing.
+         */
+        UNKNOW_ERROR
     }
 }
