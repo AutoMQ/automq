@@ -185,7 +185,10 @@ public class DebeziumUnwrapTransform implements Transform {
 
             GenericRecord source = getRecordValue(debeziumRecord, FIELD_SOURCE);
             if (source != null) {
-                String schema = getStringValue(source, "schema");
+                String schema = null;
+                if (source.hasField("schema")) {
+                    schema = getStringValue(source, "schema");
+                }
                 String db = (schema == null) ? getStringValue(source, "db") : schema;
                 String table = getStringValue(source, "table");
                 if (db != null && table != null) {
@@ -197,7 +200,7 @@ public class DebeziumUnwrapTransform implements Transform {
             return builder.build();
 
         } catch (Exception e) {
-            throw new TransformException("Failed to enrich record with Debezium metadata", e);
+            throw new TransformException("Failed to enrich record with Debezium metadata:" + e.getMessage(), e);
         }
     }
 
