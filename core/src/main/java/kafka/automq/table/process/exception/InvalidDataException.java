@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package kafka.automq.table.transformer;
+package kafka.automq.table.process.exception;
 
 public class InvalidDataException extends RuntimeException {
     private static final long serialVersionUID = 4029025366392702726L;

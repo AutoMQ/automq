@@ -19,7 +19,8 @@
 
 package kafka.automq.table.process.convert;
 
-import org.apache.kafka.common.errors.SerializationException;
+import kafka.automq.table.process.exception.InvalidDataException;
+
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.Deserializer;
 
@@ -85,11 +86,11 @@ public class AvroRegistryConverter extends RegistrySchemaConverter {
     protected int getSchemaId(String topic, Record record) {
         ByteBuffer buffer = record.value();
         if (buffer.remaining() < HEADER_SIZE) {
-            throw new SerializationException("Invalid payload size: " + buffer.remaining() + ", expected at least " + HEADER_SIZE);
+            throw new InvalidDataException("Invalid payload size: " + buffer.remaining() + ", expected at least " + HEADER_SIZE);
         }
         byte magicByte = buffer.get();
         if (magicByte != MAGIC_BYTE) {
-            throw new SerializationException("Unknown magic byte: " + magicByte);
+            throw new InvalidDataException("Unknown magic byte: " + magicByte);
         }
         return buffer.getInt();
     }

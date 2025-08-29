@@ -21,8 +21,8 @@ package kafka.automq.table.worker;
 
 import kafka.automq.table.events.PartitionMetric;
 import kafka.automq.table.events.TopicMetric;
+import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.transformer.Converter;
-import kafka.automq.table.transformer.InvalidDataException;
 
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.utils.FutureUtil;

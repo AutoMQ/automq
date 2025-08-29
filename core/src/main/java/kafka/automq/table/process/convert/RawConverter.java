@@ -20,7 +20,7 @@ package kafka.automq.table.process.convert;
 
 import kafka.automq.table.process.ConversionResult;
 import kafka.automq.table.process.Converter;
-import kafka.automq.table.process.exception.ConverterException;
+import kafka.automq.table.process.exception.InvalidDataException;
 
 import org.apache.kafka.common.record.Record;
 
@@ -32,9 +32,9 @@ public class RawConverter implements Converter {
     private static final String SCHEMA_IDENTITY = String.valueOf(SCHEMA.hashCode());
 
     @Override
-    public ConversionResult convert(String topic, Record record) throws ConverterException {
+    public ConversionResult convert(String topic, Record record) {
         if (record.value() == null) {
-            throw new ConverterException("Kafka record value cannot be null");
+            throw new InvalidDataException("Kafka record value cannot be null");
         }
         return new ConversionResult(record, Converter.buildValueRecord(record.value(), SCHEMA), SCHEMA_IDENTITY);
     }
