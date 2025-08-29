@@ -22,12 +22,7 @@
 <a href="https://trendshift.io/repositories/9782" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9782" alt="AutoMQ%2Fautomq | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
-## 👥 Big Companies Worldwide are Using AutoMQ
-
-<img width="1500" height="500" alt="automq-solgan" src="https://github.com/user-attachments/assets/059c1a4c-fd3d-4a7f-b022-85ffe9665ea8" />
-
-
-> Here are some of our customers worldwide using AutoMQ.
+<img width="80%" alt="automq-solgan" src="https://github.com/user-attachments/assets/c0b73879-b7a6-4a9e-8378-10d79f2a1a58" />
 
 
 <a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank">
