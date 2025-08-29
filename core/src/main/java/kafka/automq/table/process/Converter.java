@@ -20,6 +20,7 @@
 package kafka.automq.table.process;
 
 import kafka.automq.table.process.exception.ConverterException;
+import kafka.automq.table.process.exception.InvalidDataException;
 
 import org.apache.kafka.common.record.Record;
 
@@ -34,8 +35,6 @@ import org.apache.avro.generic.GenericRecordBuilder;
  *
  * <p>Implementations handle different data formats (e.g., Avro, JSON, Protobuf)
  * and may interact with services like a Schema Registry.</p>
- *
- * <p>Converters are stateful and must be closed to release resources.</p>
  */
 public interface Converter {
 
@@ -53,13 +52,20 @@ public interface Converter {
      *              used for topic-specific schema resolution and routing
      * @param record the Kafka record containing the byte[] payload to convert,
      *               must not be null
-     * @return a ConversionResult containing either the successfully converted
-     *         GenericRecord or detailed error information
+     * @return a {@code ConversionResult} containing the successfully converted data
      * @throws IllegalArgumentException if topic or record is null
+     * @throws InvalidDataException if the input record data is invalid (e.g., null value)
+     * @throws ConverterException if a non-data-related error occurs during conversion (e.g., schema resolution failure)
      */
     ConversionResult convert(String topic, Record record) throws ConverterException;
 
-
+    /**
+     * A convenience wrapper for {@link #buildValueRecord(Object, Schema)}.
+     * Extracts the schema from the given record.
+     *
+     * @param valueRecord the record to wrap.
+     * @return a new GenericRecord wrapping the value record.
+     */
     static GenericRecord buildValueRecord(GenericRecord valueRecord) {
         return buildValueRecord(valueRecord, valueRecord.getSchema());
     }
