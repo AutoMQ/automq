@@ -23,6 +23,10 @@
 </div>
 
 ## 👥 Big Companies Worldwide are Using AutoMQ
+
+<img width="1500" height="500" alt="automq-solgan" src="https://github.com/user-attachments/assets/059c1a4c-fd3d-4a7f-b022-85ffe9665ea8" />
+
+
 > Here are some of our customers worldwide using AutoMQ.
 
 
